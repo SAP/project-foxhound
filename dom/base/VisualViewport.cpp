@@ -7,11 +7,13 @@
 #include "VisualViewport.h"
 
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/ToString.h"
 #include "nsIScrollableFrame.h"
 #include "nsIDocShell.h"
 #include "nsPresContext.h"
 #include "nsRefreshDriver.h"
+#include "DocumentInlines.h"
 
 #define VVP_LOG(...)
 // #define VVP_LOG(...) printf_stderr("VVP: " __VA_ARGS__)
@@ -59,8 +61,15 @@ void VisualViewport::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
 CSSSize VisualViewport::VisualViewportSize() const {
   CSSSize size = CSSSize(0, 0);
 
-  nsIPresShell* presShell = GetPresShell();
-  if (presShell) {
+  // Flush layout, as that may affect the answer below (e.g. scrollbars
+  // may have appeared, decreasing the available viewport size).
+  RefPtr<const VisualViewport> kungFuDeathGrip(this);
+  if (Document* doc = GetDocument()) {
+    doc->FlushPendingNotifications(FlushType::Layout);
+  }
+
+  // Fetch the pres shell after the layout flush, as it might have destroyed it.
+  if (PresShell* presShell = GetPresShell()) {
     if (presShell->IsVisualViewportSizeSet()) {
       size = CSSRect::FromAppUnits(presShell->GetVisualViewportSize());
     } else {
@@ -85,8 +94,7 @@ double VisualViewport::Height() const {
 
 double VisualViewport::Scale() const {
   double scale = 1;
-  nsIPresShell* presShell = GetPresShell();
-  if (presShell) {
+  if (PresShell* presShell = GetPresShell()) {
     scale = presShell->GetResolution();
   }
   return scale;
@@ -95,8 +103,7 @@ double VisualViewport::Scale() const {
 CSSPoint VisualViewport::VisualViewportOffset() const {
   CSSPoint offset = CSSPoint(0, 0);
 
-  nsIPresShell* presShell = GetPresShell();
-  if (presShell) {
+  if (PresShell* presShell = GetPresShell()) {
     offset = CSSPoint::FromAppUnits(presShell->GetVisualViewportOffset());
   }
   return offset;
@@ -105,7 +112,7 @@ CSSPoint VisualViewport::VisualViewportOffset() const {
 CSSPoint VisualViewport::LayoutViewportOffset() const {
   CSSPoint offset = CSSPoint(0, 0);
 
-  if (nsIPresShell* presShell = GetPresShell()) {
+  if (PresShell* presShell = GetPresShell()) {
     offset = CSSPoint::FromAppUnits(presShell->GetLayoutViewportOffset());
   }
   return offset;
@@ -123,7 +130,7 @@ double VisualViewport::OffsetTop() const {
   return PageTop() - LayoutViewportOffset().Y();
 }
 
-nsIPresShell* VisualViewport::GetPresShell() const {
+Document* VisualViewport::GetDocument() const {
   nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
   if (!window) {
     return nullptr;
@@ -134,28 +141,35 @@ nsIPresShell* VisualViewport::GetPresShell() const {
     return nullptr;
   }
 
-  return docShell->GetPresShell();
+  return docShell->GetDocument();
+}
+
+PresShell* VisualViewport::GetPresShell() const {
+  RefPtr<Document> document = GetDocument();
+  return document ? document->GetPresShell() : nullptr;
 }
 
 nsPresContext* VisualViewport::GetPresContext() const {
-  nsIPresShell* presShell = GetPresShell();
-  if (!presShell) {
-    return nullptr;
-  }
-
-  return presShell->GetPresContext();
+  RefPtr<Document> document = GetDocument();
+  return document ? document->GetPresContext() : nullptr;
 }
 
 /* ================= Resize event handling ================= */
 
 void VisualViewport::PostResizeEvent() {
-  VVP_LOG("%p: PostResizeEvent\n", this);
-  if (mResizeEvent) {
+  VVP_LOG("%p: PostResizeEvent (pre-existing: %d)\n", this, !!mResizeEvent);
+  nsPresContext* presContext = GetPresContext();
+  if (mResizeEvent && mResizeEvent->HasPresContext(presContext)) {
     return;
+  }
+  if (mResizeEvent) {
+    // prescontext changed, so discard the old resize event and queue a new one
+    mResizeEvent->Revoke();
+    mResizeEvent = nullptr;
   }
 
   // The event constructor will register itself with the refresh driver.
-  if (nsPresContext* presContext = GetPresContext()) {
+  if (presContext) {
     mResizeEvent = new VisualViewportResizeEvent(this, presContext);
     VVP_LOG("%p: PostResizeEvent, created new event\n", this);
   }
@@ -164,8 +178,21 @@ void VisualViewport::PostResizeEvent() {
 VisualViewport::VisualViewportResizeEvent::VisualViewportResizeEvent(
     VisualViewport* aViewport, nsPresContext* aPresContext)
     : Runnable("VisualViewport::VisualViewportResizeEvent"),
-      mViewport(aViewport) {
+      mViewport(aViewport),
+      mPresContext(aPresContext) {
+  VVP_LOG("%p: Registering PostResize on %p %p\n", aViewport, aPresContext,
+          aPresContext->RefreshDriver());
   aPresContext->RefreshDriver()->PostVisualViewportResizeEvent(this);
+}
+
+bool VisualViewport::VisualViewportResizeEvent::HasPresContext(
+    nsPresContext* aContext) const {
+  return mPresContext.get() == aContext;
+}
+
+void VisualViewport::VisualViewportResizeEvent::Revoke() {
+  mViewport = nullptr;
+  mPresContext = nullptr;
 }
 
 NS_IMETHODIMP
@@ -197,14 +224,22 @@ void VisualViewport::FireResizeEvent() {
 
 void VisualViewport::PostScrollEvent(const nsPoint& aPrevVisualOffset,
                                      const nsPoint& aPrevLayoutOffset) {
-  VVP_LOG("%p: PostScrollEvent, prevRelativeOffset=%s\n", this,
-          ToString(aPrevVisualOffset - aPrevLayoutOffset).c_str());
-  if (mScrollEvent) {
+  VVP_LOG("%p: PostScrollEvent, prevRelativeOffset=%s (pre-existing: %d)\n",
+          this, ToString(aPrevVisualOffset - aPrevLayoutOffset).c_str(),
+          !!mScrollEvent);
+  nsPresContext* presContext = GetPresContext();
+  if (mScrollEvent && mScrollEvent->HasPresContext(presContext)) {
     return;
   }
 
+  if (mScrollEvent) {
+    // prescontext changed, so discard the old scroll event and queue a new one
+    mScrollEvent->Revoke();
+    mScrollEvent = nullptr;
+  }
+
   // The event constructor will register itself with the refresh driver.
-  if (nsPresContext* presContext = GetPresContext()) {
+  if (presContext) {
     mScrollEvent = new VisualViewportScrollEvent(
         this, presContext, aPrevVisualOffset, aPrevLayoutOffset);
     VVP_LOG("%p: PostScrollEvent, created new event\n", this);
@@ -216,9 +251,22 @@ VisualViewport::VisualViewportScrollEvent::VisualViewportScrollEvent(
     const nsPoint& aPrevVisualOffset, const nsPoint& aPrevLayoutOffset)
     : Runnable("VisualViewport::VisualViewportScrollEvent"),
       mViewport(aViewport),
+      mPresContext(aPresContext),
       mPrevVisualOffset(aPrevVisualOffset),
       mPrevLayoutOffset(aPrevLayoutOffset) {
+  VVP_LOG("%p: Registering PostScroll on %p %p\n", aViewport, aPresContext,
+          aPresContext->RefreshDriver());
   aPresContext->RefreshDriver()->PostVisualViewportScrollEvent(this);
+}
+
+bool VisualViewport::VisualViewportScrollEvent::HasPresContext(
+    nsPresContext* aContext) const {
+  return mPresContext.get() == aContext;
+}
+
+void VisualViewport::VisualViewportScrollEvent::Revoke() {
+  mViewport = nullptr;
+  mPresContext = nullptr;
 }
 
 NS_IMETHODIMP
@@ -236,7 +284,7 @@ void VisualViewport::FireScrollEvent() {
   mScrollEvent->Revoke();
   mScrollEvent = nullptr;
 
-  if (nsIPresShell* presShell = GetPresShell()) {
+  if (PresShell* presShell = GetPresShell()) {
     if (presShell->GetVisualViewportOffset() != prevVisualOffset) {
       // The internal event will be fired whenever the visual viewport's
       // *absolute* offset changed, i.e. relative to the page.

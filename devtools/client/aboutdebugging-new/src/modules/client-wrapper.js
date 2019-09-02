@@ -4,11 +4,12 @@
 
 "use strict";
 
-const { checkVersionCompatibility } =
-  require("devtools/client/shared/remote-debugging/version-checker");
+const {
+  checkVersionCompatibility,
+} = require("devtools/client/shared/remote-debugging/version-checker");
 
 const { RUNTIME_PREFERENCE } = require("../constants");
-const { WorkersListener } = require("./workers-listener");
+const { WorkersListener } = require("devtools/client/shared/workers-listener");
 
 const PREF_TYPES = {
   BOOL: "BOOL",
@@ -24,10 +25,7 @@ const PREF_TO_TYPE = {
 };
 
 // Some events are fired by mainRoot rather than client.
-const MAIN_ROOT_EVENTS = [
-  "addonListChanged",
-  "tabListChanged",
-];
+const MAIN_ROOT_EVENTS = ["addonListChanged", "tabListChanged"];
 
 /**
  * The ClientWrapper class is used to isolate aboutdebugging from the DevTools client API
@@ -39,31 +37,31 @@ class ClientWrapper {
     this.workersListener = new WorkersListener(client.mainRoot);
   }
 
-  addOneTimeListener(evt, listener) {
+  once(evt, listener) {
     if (MAIN_ROOT_EVENTS.includes(evt)) {
       this.client.mainRoot.once(evt, listener);
     } else {
-      this.client.addOneTimeListener(evt, listener);
+      this.client.once(evt, listener);
     }
   }
 
-  addListener(evt, listener) {
+  on(evt, listener) {
     if (evt === "workersUpdated") {
       this.workersListener.addListener(listener);
     } else if (MAIN_ROOT_EVENTS.includes(evt)) {
       this.client.mainRoot.on(evt, listener);
     } else {
-      this.client.addListener(evt, listener);
+      this.client.on(evt, listener);
     }
   }
 
-  removeListener(evt, listener) {
+  off(evt, listener) {
     if (evt === "workersUpdated") {
       this.workersListener.removeListener(listener);
     } else if (MAIN_ROOT_EVENTS.includes(evt)) {
       this.client.mainRoot.off(evt, listener);
     } else {
-      this.client.removeListener(evt, listener);
+      this.client.off(evt, listener);
     }
   }
 
@@ -106,8 +104,10 @@ class ClientWrapper {
 
   async getPreference(prefName, defaultValue) {
     if (typeof defaultValue === "undefined") {
-      throw new Error("Default value is mandatory for getPreference, the actor will " +
-        "throw if the preference is not set on the target runtime");
+      throw new Error(
+        "Default value is mandatory for getPreference, the actor will " +
+          "throw if the preference is not set on the target runtime"
+      );
     }
 
     const prefType = PREF_TO_TYPE[prefName];
@@ -140,14 +140,20 @@ class ClientWrapper {
     return this.client.mainRoot.getAddon({ id });
   }
 
+  async getMainProcess() {
+    return this.client.mainRoot.getMainProcess();
+  }
+
   async getServiceWorkerFront({ id }) {
-    const { serviceWorkers } = await this.listWorkers();
-    const workerFronts = serviceWorkers.map(sw => sw.workerTargetFront);
-    return workerFronts.find(front => front && front.actorID === id);
+    return this.client.mainRoot.getWorker(id);
   }
 
   async listWorkers() {
-    const { other, service, shared } = await this.client.mainRoot.listAllWorkers();
+    const {
+      other,
+      service,
+      shared,
+    } = await this.client.mainRoot.listAllWorkers();
 
     return {
       otherWorkers: other,

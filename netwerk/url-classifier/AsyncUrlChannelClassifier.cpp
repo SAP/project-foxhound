@@ -165,6 +165,8 @@ class TableData {
 
   const nsACString& Table() const;
 
+  const LookupResultArray& Result() const;
+
   State MatchState() const;
 
   bool IsEqual(URIData* aURIData, const nsACString& aTable) const;
@@ -202,6 +204,11 @@ nsIURI* TableData::URI() const {
 const nsACString& TableData::Table() const {
   MOZ_ASSERT(NS_IsMainThread());
   return mTable;
+}
+
+const LookupResultArray& TableData::Result() const {
+  MOZ_ASSERT(NS_IsMainThread());
+  return mResults;
 }
 
 TableData::State TableData::MatchState() const {
@@ -424,26 +431,34 @@ bool FeatureData::MaybeCompleteClassification(nsIChannel* aChannel) {
     return true;
   }
 
-  nsAutoCString list;
-  list.Assign(mHostInPrefTables[nsIUrlClassifierFeature::blacklist]);
+  nsTArray<nsCString> list;
+  nsTArray<nsCString> hashes;
+  if (!mHostInPrefTables[nsIUrlClassifierFeature::blacklist].IsEmpty()) {
+    list.AppendElement(mHostInPrefTables[nsIUrlClassifierFeature::blacklist]);
+
+    // Telemetry expects every tracking channel has hash, create it for test
+    // entry
+    Completion complete;
+    complete.FromPlaintext(
+        mHostInPrefTables[nsIUrlClassifierFeature::blacklist]);
+    hashes.AppendElement(complete.ToString());
+  }
 
   for (TableData* tableData : mBlacklistTables) {
     if (tableData->MatchState() == TableData::eMatch) {
-      if (!list.IsEmpty()) {
-        list.AppendLiteral(",");
-      }
+      list.AppendElement(tableData->Table());
 
-      list.Append(tableData->Table());
+      for (const auto& r : tableData->Result()) {
+        hashes.AppendElement(r->hash.complete.ToString());
+      }
     }
   }
 
-  UC_LOG(
-      ("FeatureData::MaybeCompleteClassification[%p] - process channel %p with "
-       "list %s",
-       this, aChannel, list.get()));
+  UC_LOG(("FeatureData::MaybeCompleteClassification[%p] - process channel %p",
+          this, aChannel));
 
   bool shouldContinue = false;
-  rv = mFeature->ProcessChannel(aChannel, list, &shouldContinue);
+  rv = mFeature->ProcessChannel(aChannel, list, hashes, &shouldContinue);
   Unused << NS_WARN_IF(NS_FAILED(rv));
 
   return shouldContinue;
@@ -526,7 +541,7 @@ nsresult FeatureTask::Create(nsIChannel* aChannel,
   UrlClassifierFeatureFactory::GetFeaturesFromChannel(aChannel, features);
   if (features.IsEmpty()) {
     UC_LOG(("FeatureTask::Create: Nothing to do for channel %p", aChannel));
-    return NS_ERROR_FAILURE;
+    return NS_OK;
   }
 
   RefPtr<FeatureTask> task = new FeatureTask(aChannel, std::move(aCallback));
@@ -757,6 +772,12 @@ nsresult AsyncUrlChannelClassifier::CheckChannel(
       FeatureTask::Create(aChannel, std::move(aCallback), getter_AddRefs(task));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
+  }
+
+  if (!task) {
+    // No task is needed for this channel, return an error so the caller won't
+    // wait for a callback.
+    return NS_ERROR_FAILURE;
   }
 
   RefPtr<nsUrlClassifierDBServiceWorker> workerClassifier =

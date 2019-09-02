@@ -6,8 +6,9 @@
 
 add_task(async function test_execute() {
   try {
-    var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].
-                  getService(Ci.nsINavHistoryService);
+    var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].getService(
+      Ci.nsINavHistoryService
+    );
   } catch (ex) {
     do_throw("Unable to initialize Places services");
   }
@@ -39,7 +40,7 @@ add_task(async function test_execute() {
   // query for that query
   options = histsvc.getNewQueryOptions();
   query = histsvc.getNewQuery();
-  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid]);
   result = histsvc.executeQuery(query, options);
   root = result.root;
   root.containerOpen = true;

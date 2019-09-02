@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8">
   <title>Test autofill submission for a country without address-level1</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="formautofill_common.js"></script>
   <script type="text/javascript" src="satchel_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
@@ -45,8 +44,8 @@ add_task(async function test_DE_is_valid_testcase() {
     chromeScript.destroy();
   });
 
-  let result = chromeScript.sendSyncMessage("CheckSubKeys");
-  ok(result[0][0], "Check that there are no sub_keys for the test country");
+  let result = await chromeScript.sendQuery("CheckSubKeys");
+  ok(result, "Check that there are no sub_keys for the test country");
 });
 
 add_task(async function test_form_will_submit_without_sub_keys() {

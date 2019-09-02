@@ -100,8 +100,7 @@ class ChromeUtils {
   static bool IsOriginAttributesEqualIgnoringFPD(
       const dom::OriginAttributesDictionary& aA,
       const dom::OriginAttributesDictionary& aB) {
-    return aA.mAppId == aB.mAppId &&
-           aA.mInIsolatedMozBrowser == aB.mInIsolatedMozBrowser &&
+    return aA.mInIsolatedMozBrowser == aB.mInIsolatedMozBrowser &&
            aA.mUserContextId == aB.mUserContextId &&
            aA.mPrivateBrowsingId == aB.mPrivateBrowsingId;
   }
@@ -140,6 +139,11 @@ class ChromeUtils {
 
   static already_AddRefed<Promise> RequestPerformanceMetrics(
       GlobalObject& aGlobal, ErrorResult& aRv);
+
+  static void SetPerfStatsCollectionMask(GlobalObject& aGlobal, uint64_t aMask);
+
+  static already_AddRefed<Promise> CollectPerfStats(GlobalObject& aGlobal,
+                                                    ErrorResult& aRv);
 
   static already_AddRefed<Promise> RequestProcInfo(GlobalObject& aGlobal,
                                                    ErrorResult& aRv);

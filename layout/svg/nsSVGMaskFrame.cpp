@@ -11,11 +11,12 @@
 #include "AutoReferenceChainGuard.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
-#include "mozilla/gfx/2D.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
-#include "SVGObserverUtils.h"
 #include "mozilla/dom/SVGMaskElement.h"
 #include "mozilla/dom/SVGUnitTypesBinding.h"
+#include "mozilla/gfx/2D.h"
+#include "SVGObserverUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -36,7 +37,7 @@ static LuminanceType GetLuminanceType(uint8_t aNSMaskType) {
   }
 }
 
-nsIFrame* NS_NewSVGMaskFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewSVGMaskFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsSVGMaskFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -53,25 +54,17 @@ already_AddRefed<SourceSurface> nsSVGMaskFrame::GetMaskForMaskedFrame(
   }
 
   gfxRect maskArea = GetMaskArea(aParams.maskedFrame);
+  if (maskArea.IsEmpty()) {
+    return nullptr;
+  }
   gfxContext* context = aParams.ctx;
   // Get the clip extents in device space:
   // Minimizing the mask surface extents (using both the current clip extents
   // and maskArea) is important for performance.
-  context->Save();
-  nsSVGUtils::SetClipRect(context, aParams.toUserSpace, maskArea);
-  gfxRect maskSurfaceRect = context->GetClipExtents(gfxContext::eDeviceSpace);
+  //
+  gfxRect maskSurfaceRectDouble = aParams.toUserSpace.TransformBounds(maskArea);
+  Rect maskSurfaceRect = ToRect(maskSurfaceRectDouble);
   maskSurfaceRect.RoundOut();
-  context->Restore();
-
-  bool resultOverflows;
-  IntSize maskSurfaceSize = nsSVGUtils::ConvertToSurfaceSize(
-      maskSurfaceRect.Size(), &resultOverflows);
-
-  if (resultOverflows || maskSurfaceSize.IsEmpty()) {
-    // Return value other then ImgDrawResult::SUCCESS, so the caller can skip
-    // painting the masked frame(aParams.maskedFrame).
-    return nullptr;
-  }
 
   uint8_t maskType;
   if (aParams.maskMode == StyleMaskMode::MatchSource) {
@@ -85,42 +78,33 @@ already_AddRefed<SourceSurface> nsSVGMaskFrame::GetMaskForMaskedFrame(
   RefPtr<DrawTarget> maskDT;
   if (maskType == NS_STYLE_MASK_TYPE_LUMINANCE) {
     maskDT = context->GetDrawTarget()->CreateClippedDrawTarget(
-        maskSurfaceSize,
-        Matrix::Translation(maskSurfaceRect.x, maskSurfaceRect.y),
-        SurfaceFormat::B8G8R8A8);
+        maskSurfaceRect, SurfaceFormat::B8G8R8A8);
   } else {
     maskDT = context->GetDrawTarget()->CreateClippedDrawTarget(
-        maskSurfaceSize,
-        Matrix::Translation(maskSurfaceRect.x, maskSurfaceRect.y),
-        SurfaceFormat::A8);
+        maskSurfaceRect, SurfaceFormat::A8);
   }
 
   if (!maskDT || !maskDT->IsValid()) {
     return nullptr;
   }
 
-  Matrix maskSurfaceMatrix =
-      context->CurrentMatrix() *
-      ToMatrix(gfxMatrix::Translation(-maskSurfaceRect.TopLeft()));
-
-  RefPtr<gfxContext> tmpCtx = gfxContext::CreateOrNull(maskDT);
+  RefPtr<gfxContext> tmpCtx =
+      gfxContext::CreatePreservingTransformOrNull(maskDT);
   MOZ_ASSERT(tmpCtx);  // already checked the draw target above
-  tmpCtx->SetMatrix(maskSurfaceMatrix);
 
   mMatrixForChildren =
       GetMaskTransform(aParams.maskedFrame) * aParams.toUserSpace;
 
   for (nsIFrame* kid = mFrames.FirstChild(); kid; kid = kid->GetNextSibling()) {
+    gfxMatrix m = mMatrixForChildren;
+
     // The CTM of each frame referencing us can be different
     nsSVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
     if (SVGFrame) {
       SVGFrame->NotifySVGChanged(nsSVGDisplayableFrame::TRANSFORM_CHANGED);
+      m = nsSVGUtils::GetTransformMatrixInUserSpace(kid) * m;
     }
-    gfxMatrix m = mMatrixForChildren;
-    if (kid->GetContent()->IsSVGElement()) {
-      m = static_cast<SVGElement*>(kid->GetContent())
-              ->PrependLocalTransformsTo(m, eUserSpaceToParent);
-    }
+
     nsSVGUtils::PaintFrameWithEffects(kid, *tmpCtx, m, aParams.imgParams);
   }
 
@@ -138,8 +122,7 @@ already_AddRefed<SourceSurface> nsSVGMaskFrame::GetMaskForMaskedFrame(
     }
     surface = maskSnapshot.forget();
   } else {
-    maskDT->SetTransform(Matrix());
-    maskDT->FillRect(Rect(0, 0, maskSurfaceSize.width, maskSurfaceSize.height),
+    maskDT->FillRect(maskSurfaceRect,
                      ColorPattern(Color(1.0f, 1.0f, 1.0f, aParams.opacity)),
                      DrawOptions(1, CompositionOp::OP_IN));
     RefPtr<SourceSurface> maskSnapshot = maskDT->Snapshot();
@@ -149,12 +132,6 @@ already_AddRefed<SourceSurface> nsSVGMaskFrame::GetMaskForMaskedFrame(
     surface = maskSnapshot.forget();
   }
 
-  // Moz2D transforms in the opposite direction to Thebes
-  if (!maskSurfaceMatrix.Invert()) {
-    return nullptr;
-  }
-
-  *aParams.maskTransform = maskSurfaceMatrix;
   return surface.forget();
 }
 
@@ -208,7 +185,7 @@ gfxMatrix nsSVGMaskFrame::GetCanvasTM() { return mMatrixForChildren; }
 gfxMatrix nsSVGMaskFrame::GetMaskTransform(nsIFrame* aMaskedFrame) {
   SVGMaskElement* content = static_cast<SVGMaskElement*>(GetContent());
 
-  SVGEnum* maskContentUnits =
+  SVGAnimatedEnumeration* maskContentUnits =
       &content->mEnumAttributes[SVGMaskElement::MASKCONTENTUNITS];
 
   uint32_t flags = nsSVGUtils::eBBoxIncludeFillGeometry |

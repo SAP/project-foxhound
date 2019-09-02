@@ -13,7 +13,6 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
@@ -118,15 +117,9 @@ void PrincipalVerifier::VerifyOnMainThread() {
     return;
   }
 
-  nsCOMPtr<nsIScriptSecurityManager> ssm = nsContentUtils::GetSecurityManager();
-  if (NS_WARN_IF(!ssm)) {
-    DispatchToInitiatingThread(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
-    return;
-  }
-
   // Verify if a child process uses system principal, which is not allowed
   // to prevent system principal is spoofed.
-  if (NS_WARN_IF(actor && ssm->IsSystemPrincipal(principal))) {
+  if (NS_WARN_IF(actor && principal->IsSystemPrincipal())) {
     DispatchToInitiatingThread(NS_ERROR_FAILURE);
     return;
   }
@@ -137,7 +130,7 @@ void PrincipalVerifier::VerifyOnMainThread() {
   // Sanity check principal origin by using it to construct a URI and security
   // checking it.  Don't do this for the system principal, though, as its origin
   // is a synthetic [System Principal] string.
-  if (!ssm->IsSystemPrincipal(principal)) {
+  if (!principal->IsSystemPrincipal()) {
     nsAutoCString origin;
     rv = principal->GetOriginNoSuffix(origin);
     if (NS_WARN_IF(NS_FAILED(rv))) {

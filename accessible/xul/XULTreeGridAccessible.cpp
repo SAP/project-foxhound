@@ -20,6 +20,7 @@
 #include "nsPersistentProperties.h"
 #include "nsITreeSelection.h"
 #include "nsComponentManagerUtils.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/TreeColumnBinding.h"
 #include "mozilla/dom/XULTreeElementBinding.h"
@@ -257,7 +258,7 @@ Accessible* XULTreeGridRowAccessible::ChildAtPoint(
   if (!frame) return nullptr;
 
   nsPresContext* presContext = frame->PresContext();
-  nsIPresShell* presShell = presContext->PresShell();
+  PresShell* presShell = presContext->PresShell();
 
   nsIFrame* rootFrame = presShell->GetRootFrame();
   NS_ENSURE_TRUE(rootFrame, nullptr);
@@ -640,7 +641,9 @@ void XULTreeGridCellAccessible::DispatchClickEvent(
     nsIContent* aContent, uint32_t aActionIndex) const {
   if (IsDefunct()) return;
 
-  nsCoreUtils::DispatchClickEvent(mTree, mRow, mColumn);
+  RefPtr<dom::XULTreeElement> tree = mTree;
+  RefPtr<nsTreeColumn> column = mColumn;
+  nsCoreUtils::DispatchClickEvent(tree, mRow, column);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

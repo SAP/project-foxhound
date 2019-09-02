@@ -76,12 +76,8 @@ using namespace mozilla::ipc::windows;
 extern const wchar_t* kPropNameTabContent;
 #endif
 
-// widget related message id constants we need to defer
-namespace mozilla {
-namespace widget {
+// widget related message id constants we need to defer, see nsAppShell.
 extern UINT sAppShellGeckoMsgId;
-}
-}  // namespace mozilla
 
 namespace {
 
@@ -152,7 +148,9 @@ void CALLBACK WinEventHook(HWINEVENTHOOK aWinEventHook, DWORD aEvent,
       }
       break;
     }
-    default: { return; }
+    default: {
+      return;
+    }
   }
 }
 
@@ -390,7 +388,7 @@ ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     default: {
       // Unknown messages only are logged in debug builds and sent to
       // DefWindowProc.
-      if (uMsg && uMsg == mozilla::widget::sAppShellGeckoMsgId) {
+      if (uMsg && uMsg == sAppShellGeckoMsgId) {
         // Widget's registered native event callback
         deferred = new DeferredSendMessage(hwnd, uMsg, wParam, lParam);
       }
@@ -604,6 +602,9 @@ namespace ipc {
 namespace windows {
 
 void InitUIThread() {
+  if (!XRE_UseNativeEventProcessing()) {
+    return;
+  }
   // If we aren't setup before a call to NotifyWorkerThread, we'll hang
   // on startup.
   if (!gUIThreadId) {
@@ -767,6 +768,9 @@ void MessageChannel::SpinInternalEventLoop() {
 static HHOOK gWindowHook;
 
 static inline void StartNeutering() {
+  if (!gUIThreadId) {
+    mozilla::ipc::windows::InitUIThread();
+  }
   MOZ_ASSERT(gUIThreadId);
   MOZ_ASSERT(!gWindowHook);
   NS_ASSERTION(!MessageChannel::IsPumpingMessages(),
@@ -792,7 +796,8 @@ static void StopNeutering() {
 
 NeuteredWindowRegion::NeuteredWindowRegion(
     bool aDoNeuter MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
-    : mNeuteredByThis(!gWindowHook && aDoNeuter) {
+    : mNeuteredByThis(!gWindowHook && aDoNeuter &&
+                      XRE_UseNativeEventProcessing()) {
   MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (mNeuteredByThis) {
     StartNeutering();
@@ -916,7 +921,9 @@ bool MessageChannel::WaitForSyncNotifyWithA11yReentry() {
 bool MessageChannel::WaitForSyncNotify(bool aHandleWindowsMessages) {
   mMonitor->AssertCurrentThreadOwns();
 
-  MOZ_ASSERT(gUIThreadId, "InitUIThread was not called!");
+  if (!gUIThreadId) {
+    mozilla::ipc::windows::InitUIThread();
+  }
 
 #if defined(ACCESSIBILITY)
   if (mFlags & REQUIRE_A11Y_REENTRY) {
@@ -1059,7 +1066,9 @@ bool MessageChannel::WaitForSyncNotify(bool aHandleWindowsMessages) {
 bool MessageChannel::WaitForInterruptNotify() {
   mMonitor->AssertCurrentThreadOwns();
 
-  MOZ_ASSERT(gUIThreadId, "InitUIThread was not called!");
+  if (!gUIThreadId) {
+    mozilla::ipc::windows::InitUIThread();
+  }
 
   // Re-use sync notification wait code if this channel does not require
   // Windows message deferral behavior.

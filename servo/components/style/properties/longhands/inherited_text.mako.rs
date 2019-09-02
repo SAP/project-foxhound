@@ -7,11 +7,21 @@
 <% data.new_style_struct("InheritedText", inherited=True, gecko_name="Text") %>
 
 ${helpers.predefined_type(
+    "color",
+    "ColorPropertyValue",
+    "::cssparser::RGBA::new(0, 0, 0, 255)",
+    animation_value_type="AnimatedRGBA",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
+    ignored_when_colors_disabled="True",
+    spec="https://drafts.csswg.org/css-color/#color",
+)}
+
+${helpers.predefined_type(
     "line-height",
     "LineHeight",
     "computed::LineHeight::normal()",
     animation_value_type="LineHeight",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE \
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE \
            APPLIES_TO_PLACEHOLDER GETCS_NEEDS_LAYOUT_FLUSH",
     spec="https://drafts.csswg.org/css2/visudet.html#propdef-line-height",
     servo_restyle_damage="reflow"
@@ -19,11 +29,10 @@ ${helpers.predefined_type(
 
 // CSS Text Module Level 3
 
-// TODO(pcwalton): `full-width`
-${helpers.single_keyword(
+${helpers.predefined_type(
     "text-transform",
-    "none capitalize uppercase lowercase",
-    extra_gecko_values="full-width full-size-kana",
+    "TextTransform",
+    "computed::TextTransform::none()",
     animation_value_type="discrete",
     flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://drafts.csswg.org/css-text/#propdef-text-transform",
@@ -57,7 +66,7 @@ ${helpers.predefined_type(
     "computed::LengthPercentage::zero()",
     animation_value_type="ComputedValue",
     spec="https://drafts.csswg.org/css-text/#propdef-text-indent",
-    allow_quirks=True,
+    allow_quirks="Yes",
     servo_restyle_damage = "reflow",
 )}
 
@@ -69,6 +78,7 @@ ${helpers.predefined_type(
     "computed::OverflowWrap::Normal",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-overflow-wrap",
+    flags="APPLIES_TO_CUE",
     alias="word-wrap",
     needs_context=False,
     servo_restyle_damage="rebuild_and_reflow",
@@ -167,12 +177,12 @@ ${helpers.predefined_type(
 <%helpers:single_keyword
     name="white-space"
     values="normal pre nowrap pre-wrap pre-line"
-    extra_gecko_values="-moz-pre-space"
+    extra_gecko_values="break-spaces -moz-pre-space"
     gecko_enum_prefix="StyleWhiteSpace"
     needs_conversion="True"
     animation_value_type="discrete"
     // Only allowed for UA sheets, which set it !important.
-    flags="APPLIES_TO_PLACEHOLDER"
+    flags="APPLIES_TO_CUE APPLIES_TO_PLACEHOLDER"
     spec="https://drafts.csswg.org/css-text/#propdef-white-space"
     servo_restyle_damage="rebuild_and_reflow"
 >
@@ -219,7 +229,8 @@ ${helpers.predefined_type(
     vector_animation_type="with_zero",
     animation_value_type="AnimatedTextShadowList",
     ignored_when_colors_disabled=True,
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    simple_vector_bindings=True,
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://drafts.csswg.org/css-text-decor-3/#text-shadow-property",
 )}
 
@@ -264,6 +275,16 @@ ${helpers.predefined_type(
     spec="https://drafts.csswg.org/css-text-3/#tab-size-property",
 )}
 
+${helpers.predefined_type(
+    "line-break",
+    "LineBreak",
+    "computed::LineBreak::Auto",
+    products="gecko",
+    animation_value_type="discrete",
+    spec="https://drafts.csswg.org/css-text-3/#line-break-property",
+    needs_context=False,
+)}
+
 // CSS Compatibility
 // https://compat.spec.whatwg.org
 ${helpers.predefined_type(
@@ -271,7 +292,6 @@ ${helpers.predefined_type(
     "Color",
     "computed_value::T::currentcolor()",
     products="gecko",
-    gecko_pref="layout.css.prefixes.webkit",
     animation_value_type="AnimatedColor",
     ignored_when_colors_disabled=True,
     flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
@@ -286,7 +306,6 @@ ${helpers.predefined_type(
     products="gecko",
     animation_value_type="AnimatedColor",
     ignored_when_colors_disabled=True,
-    gecko_pref="layout.css.prefixes.webkit",
     flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://compat.spec.whatwg.org/#the-webkit-text-stroke-color",
 )}
@@ -298,7 +317,6 @@ ${helpers.predefined_type(
     initial_specified_value="specified::BorderSideWidth::zero()",
     computed_type="crate::values::computed::NonNegativeLength",
     products="gecko",
-    gecko_pref="layout.css.prefixes.webkit",
     flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://compat.spec.whatwg.org/#the-webkit-text-stroke-width",
     animation_value_type="discrete",
@@ -320,6 +338,7 @@ ${helpers.single_keyword(
     products="gecko",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-ruby/#ruby-position-property",
+    flags="APPLIES_TO_CUE",
 )}
 
 // CSS Writing Modes Module Level 3
@@ -331,6 +350,7 @@ ${helpers.single_keyword(
     products="gecko",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-writing-modes-3/#text-combine-upright",
+    flags="APPLIES_TO_CUE APPLIES_TO_MARKER",
 )}
 
 // SVG 1.1: Section 11 - Painting: Filling, Stroking and Marker Symbols
@@ -353,4 +373,27 @@ ${helpers.single_keyword(
     gecko_ffi_name="mControlCharacterVisibility",
     products="gecko",
     spec="Nonstandard",
+)}
+
+// text underline offset
+${helpers.predefined_type(
+    "text-underline-offset",
+    "LengthOrAuto",
+    "computed::LengthOrAuto::auto()",
+    products="gecko",
+    animation_value_type="ComputedValue",
+    gecko_pref="layout.css.text-underline-offset.enabled",
+    spec="https://drafts.csswg.org/css-text-decor-4/#underline-offset",
+)}
+
+// text decoration skip ink
+${helpers.predefined_type(
+    "text-decoration-skip-ink",
+    "TextDecorationSkipInk",
+    "computed::TextDecorationSkipInk::Auto",
+    products="gecko",
+    needs_context=False,
+    animation_value_type="discrete",
+    gecko_pref="layout.css.text-decoration-skip-ink.enabled",
+    spec="https://drafts.csswg.org/css-text-decor-4/#text-decoration-skip-ink-property",
 )}

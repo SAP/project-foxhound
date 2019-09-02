@@ -139,7 +139,10 @@ class HitTestingTreeNode {
   /* Returns the mOverride flag. */
   EventRegionsOverride GetEventRegionsOverride() const;
   const CSSTransformMatrix& GetTransform() const;
-  LayerToScreenMatrix4x4 GetCSSTransformToRoot() const;
+  /* This is similar to APZCTreeManager::GetApzcToGeckoTransform but without
+   * the async bits. It's used on the main-thread for transforming coordinates
+   * across a BrowserParent/BrowserChild interface.*/
+  LayerToScreenMatrix4x4 GetTransformToGecko() const;
   const LayerIntRegion& GetVisibleRegion() const;
 
   bool IsAsyncZoomContainer() const;
@@ -221,7 +224,7 @@ class HitTestingTreeNode {
  * Clear() being called, it unlocks the underlying node at which point it can
  * be recycled or freed.
  */
-class MOZ_RAII HitTestingTreeNodeAutoLock {
+class MOZ_RAII HitTestingTreeNodeAutoLock final {
  public:
   HitTestingTreeNodeAutoLock();
   HitTestingTreeNodeAutoLock(const HitTestingTreeNodeAutoLock&) = delete;

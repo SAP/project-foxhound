@@ -40,9 +40,10 @@
 #include "nsNodeUtils.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
-#include "nsIHTMLDocument.h"
+#include "nsHTMLDocument.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/XMLDocumentBinding.h"
@@ -120,15 +121,13 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
   }
 
   if (isHTML) {
-    nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(d);
-    NS_ASSERTION(htmlDoc, "HTML Document doesn't implement nsIHTMLDocument?");
-    htmlDoc->SetCompatibilityMode(eCompatibility_FullStandards);
-    htmlDoc->SetIsXHTML(isXHTML);
+    d->SetCompatibilityMode(eCompatibility_FullStandards);
+    d->AsHTMLDocument()->SetIsXHTML(isXHTML);
   }
   d->SetLoadedAsData(aLoadedAsData);
   d->SetDocumentURI(aDocumentURI);
   // Must set the principal first, since SetBaseURI checks it.
-  d->SetPrincipal(aPrincipal);
+  d->SetPrincipals(aPrincipal, aPrincipal);
   d->SetBaseURI(aBaseURI);
 
   // We need to set the script handling object after we set the principal such
@@ -251,14 +250,15 @@ void XMLDocument::Reset(nsIChannel* aChannel, nsILoadGroup* aLoadGroup) {
 }
 
 void XMLDocument::ResetToURI(nsIURI* aURI, nsILoadGroup* aLoadGroup,
-                             nsIPrincipal* aPrincipal) {
+                             nsIPrincipal* aPrincipal,
+                             nsIPrincipal* aStoragePrincipal) {
   if (mChannelIsPending) {
     StopDocumentLoad();
     mChannel->Cancel(NS_BINDING_ABORTED);
     mChannelIsPending = false;
   }
 
-  Document::ResetToURI(aURI, aLoadGroup, aPrincipal);
+  Document::ResetToURI(aURI, aLoadGroup, aPrincipal, aStoragePrincipal);
 }
 
 bool XMLDocument::Load(const nsAString& aUrl, CallerType aCallerType,
@@ -273,6 +273,7 @@ bool XMLDocument::Load(const nsAString& aUrl, CallerType aCallerType,
 
   nsCOMPtr<Document> callingDoc = GetEntryDocument();
   nsCOMPtr<nsIPrincipal> principal = NodePrincipal();
+  nsCOMPtr<nsIPrincipal> storagePrincipal = EffectiveStoragePrincipal();
 
   // The callingDoc's Principal and doc's Principal should be the same
   if (callingDoc && (callingDoc->NodePrincipal() != principal)) {
@@ -369,7 +370,7 @@ bool XMLDocument::Load(const nsAString& aUrl, CallerType aCallerType,
     loadGroup = callingDoc->GetDocumentLoadGroup();
   }
 
-  ResetToURI(uri, loadGroup, principal);
+  ResetToURI(uri, loadGroup, principal, storagePrincipal);
 
   mListenerManager = elm;
 

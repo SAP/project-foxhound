@@ -13,6 +13,8 @@
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 #include "mozilla/dom/EventTarget.h"
+#include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TaskCategory.h"
 #include "js/TypeDecls.h"
 #include "nsRefPtrHashtable.h"
@@ -23,16 +25,17 @@
 #define DOM_WINDOW_THAWED_TOPIC "dom-window-thawed"
 
 class nsDOMOfflineResourceList;
-class nsDOMWindowList;
 class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
 class nsIArray;
 class nsIChannel;
 class nsIContent;
+class nsIContentSecurityPolicy;
 class nsICSSDeclaration;
 class nsIDocShell;
 class nsDocShellLoadState;
 class nsIPrincipal;
+class nsIRunnable;
 class nsIScriptTimeoutHandler;
 class nsISerialEventTarget;
 class nsIURI;
@@ -144,9 +147,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_PIDOMWINDOWINNER_IID)
 
-  nsPIDOMWindowInner* AsInner() { return this; }
-  const nsPIDOMWindowInner* AsInner() const { return this; }
-
   nsIGlobalObject* AsGlobal();
   const nsIGlobalObject* AsGlobal() const;
 
@@ -174,7 +174,17 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   inline bool IsHandlingResizeEvent() const;
 
   // Note: not related to IsLoading.  Set to false if there's an error, etc.
-  void SetActiveLoadingState(bool aIsActiveLoading);
+  virtual void SetActiveLoadingState(bool aIsActiveLoading) = 0;
+
+  nsPIDOMWindowInner* GetWindowForDeprioritizedLoadRunner();
+
+  /**
+   * The runnable will be called once there is idle time, or the top level
+   * page has been loaded or if a timeout has fired.
+   * Must be called only on the top level window, the one
+   * GetWindowForDeprioritizedLoadRunner returns.
+   */
+  virtual void AddDeprioritizedLoadRunner(nsIRunnable* aRunner) = 0;
 
   bool AddAudioContext(mozilla::dom::AudioContext* aAudioContext);
   void RemoveAudioContext(mozilla::dom::AudioContext* aAudioContext);
@@ -325,6 +335,10 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const;
   mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor> GetController() const;
 
+  void SetCsp(nsIContentSecurityPolicy* aCsp);
+  void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp);
+  nsIContentSecurityPolicy* GetCsp();
+
   void NoteCalledRegisterForServiceWorkerScope(const nsACString& aScope);
 
   void NoteDOMContentLoaded();
@@ -381,6 +395,11 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
    * Get the docshell in this window.
    */
   inline nsIDocShell* GetDocShell() const;
+
+  /**
+   * Get the browsing context in this window.
+   */
+  inline mozilla::dom::BrowsingContext* GetBrowsingContext() const;
 
   /**
    * Call this to indicate that some node (this window, its document,
@@ -526,8 +545,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   virtual nsresult GetControllers(nsIControllers** aControllers) = 0;
 
-  virtual nsDOMWindowList* GetFrames() = 0;
-
   virtual nsresult GetInnerWidth(int32_t* aWidth) = 0;
   virtual nsresult GetInnerHeight(int32_t* aHeight) = 0;
 
@@ -555,7 +572,7 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   void BroadcastReport(mozilla::dom::Report* aReport);
 
-  void NotifyReportingObservers();
+  MOZ_CAN_RUN_SCRIPT void NotifyReportingObservers();
 
   void SaveStorageAccessGranted(const nsACString& aPermissionKey);
 
@@ -621,6 +638,8 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   RefPtr<mozilla::dom::TabGroup> mTabGroup;
 
+  RefPtr<mozilla::dom::BrowsingContext> mBrowsingContext;
+
   // A unique (as long as our 64-bit counter doesn't roll over) id for
   // this window.
   uint64_t mWindowID;
@@ -684,13 +703,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_PIDOMWINDOWOUTER_IID)
 
-  nsPIDOMWindowOuter* AsOuter() { return this; }
-  const nsPIDOMWindowOuter* AsOuter() const { return this; }
-
-  nsPIDOMWindowOuter* GetOuterWindow() const {
-    return const_cast<nsPIDOMWindowOuter*>(this);
-  }
-
   static nsPIDOMWindowOuter* From(mozIDOMWindowProxy* aFrom) {
     return static_cast<nsPIDOMWindowOuter*>(aFrom);
   }
@@ -714,10 +726,9 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   bool IsRootOuterWindow() { return mIsRootOuterWindow; }
 
   /**
-   * Set initial keyboard indicator state for accelerators and focus rings.
+   * Set initial keyboard indicator state for focus rings.
    */
-  void SetInitialKeyboardIndicators(UIStateChangeType aShowAccelerators,
-                                    UIStateChangeType aShowFocusRings);
+  void SetInitialKeyboardIndicators(UIStateChangeType aShowFocusRings);
 
   // Internal getter/setter for the frame element, this version of the
   // getter crosses chrome boundaries whereas the public scriptable
@@ -825,8 +836,8 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   }
 
   // Set the window up with an about:blank document with the current subject
-  // principal.
-  virtual void SetInitialPrincipalToSubject() = 0;
+  // principal and potentially a CSP.
+  virtual void SetInitialPrincipalToSubject(nsIContentSecurityPolicy* aCSP) = 0;
 
   // Returns an object containing the window's state.  This also suspends
   // all running timeouts in the window.
@@ -958,8 +969,7 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   /**
    * Set the keyboard indicator state for accelerators and focus rings.
    */
-  virtual void SetKeyboardIndicators(UIStateChangeType aShowAccelerators,
-                                     UIStateChangeType aShowFocusRings) = 0;
+  virtual void SetKeyboardIndicators(UIStateChangeType aShowFocusRings) = 0;
 
   /**
    * Indicates that the page in the window has been hidden. This is used to
@@ -1008,8 +1018,12 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
                                      const nsAString& aPopupWindowName,
                                      const nsAString& aPopupWindowFeatures) = 0;
 
-  virtual void NotifyContentBlockingEvent(unsigned aEvent, nsIChannel* aChannel,
-                                          bool aBlocked, nsIURI* aURIHint) = 0;
+  virtual void NotifyContentBlockingEvent(
+      unsigned aEvent, nsIChannel* aChannel, bool aBlocked, nsIURI* aURIHint,
+      nsIChannel* aTrackingChannel,
+      const mozilla::Maybe<
+          mozilla::AntiTrackingCommon::StorageAccessGrantedReason>& aReason =
+          mozilla::Nothing()) = 0;
 
   // WebIDL-ish APIs
   void MarkUncollectableForCCGeneration(uint32_t aGeneration) {
@@ -1027,8 +1041,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   virtual nsresult GetControllers(nsIControllers** aControllers) = 0;
   virtual already_AddRefed<mozilla::dom::Selection> GetSelection() = 0;
   virtual already_AddRefed<nsPIDOMWindowOuter> GetOpener() = 0;
-
-  virtual nsDOMWindowList* GetFrames() = 0;
 
   // aLoadState will be passed on through to the windowwatcher.
   // aForceNoOpener will act just like a "noopener" feature in aOptions except

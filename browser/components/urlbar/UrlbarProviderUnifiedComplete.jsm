@@ -12,7 +12,9 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarProviderUnifiedComplete"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "resource://gre/modules/Log.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
@@ -23,18 +25,22 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetter(this, "unifiedComplete",
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "unifiedComplete",
   "@mozilla.org/autocomplete/search;1?name=unifiedcomplete",
-  "nsIAutoCompleteSearch");
+  "nsIAutoCompleteSearch"
+);
 
-XPCOMUtils.defineLazyGetter(this, "logger",
-  () => Log.repository.getLogger("Urlbar.Provider.UnifiedComplete"));
+XPCOMUtils.defineLazyGetter(this, "logger", () =>
+  Log.repository.getLogger("Urlbar.Provider.UnifiedComplete")
+);
 
-XPCOMUtils.defineLazyGetter(this, "bundle",
-  () => Services.strings.createBundle("chrome://global/locale/autocomplete.properties"));
-
-// See UnifiedComplete.
-const TITLE_TAGS_SEPARATOR = " \u2013 ";
+XPCOMUtils.defineLazyGetter(this, "bundle", () =>
+  Services.strings.createBundle(
+    "chrome://global/locale/autocomplete.properties"
+  )
+);
 
 /**
  * Class used to create the provider.
@@ -63,18 +69,25 @@ class ProviderUnifiedComplete extends UrlbarProvider {
   }
 
   /**
-   * Returns the sources returned by this provider.
-   * @returns {array} one or multiple types from UrlbarUtils.RESULT_SOURCE.*
+   * Whether this provider should be invoked for the given context.
+   * If this method returns false, the providers manager won't start a query
+   * with this provider, to save on resources.
+   * @param {UrlbarQueryContext} queryContext The query context object
+   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  get sources() {
-    return [
-      UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.TABS,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
-    ];
+  isActive(queryContext) {
+    return true;
+  }
+
+  /**
+   * Whether this provider wants to restrict results to just itself.
+   * Other providers won't be invoked, unless this provider doesn't
+   * support the current query.
+   * @param {UrlbarQueryContext} queryContext The query context object
+   * @returns {boolean} Whether this provider wants to restrict results.
+   */
+  isRestricting(queryContext) {
+    return false;
   }
 
   /**
@@ -114,7 +127,7 @@ class ProviderUnifiedComplete extends UrlbarProvider {
     if (queryContext.userContextId) {
       params.push(`user-context-id:${queryContext.userContextId}}`);
     }
-    if (!queryContext.enableAutofill) {
+    if (!queryContext.allowAutofill) {
       params.push("prohibit-autofill");
     }
 
@@ -122,19 +135,27 @@ class ProviderUnifiedComplete extends UrlbarProvider {
     await new Promise(resolve => {
       let listener = {
         onSearchResult(_, result) {
-          let {done, matches} = convertResultToMatches(queryContext, result, urls);
+          let { done, matches } = convertResultToMatches(
+            queryContext,
+            result,
+            urls
+          );
           for (let match of matches) {
             addCallback(UrlbarProviderUnifiedComplete, match);
           }
           if (done) {
+            delete this._resolveSearch;
             resolve();
           }
         },
       };
-      unifiedComplete.startSearch(queryContext.searchString,
-                                  params.join(" "),
-                                  null, // previousResult
-                                  listener);
+      this._resolveSearch = resolve;
+      unifiedComplete.startSearch(
+        queryContext.searchString,
+        params.join(" "),
+        null, // previousResult
+        listener
+      );
     });
 
     // We are done.
@@ -150,6 +171,9 @@ class ProviderUnifiedComplete extends UrlbarProvider {
     // This doesn't properly support being used concurrently by multiple fields.
     this.queries.delete(queryContext);
     unifiedComplete.stopSearch();
+    if (this._resolveSearch) {
+      this._resolveSearch();
+    }
   }
 }
 
@@ -171,12 +195,13 @@ var UrlbarProviderUnifiedComplete = new ProviderUnifiedComplete();
  */
 function convertResultToMatches(context, result, urls) {
   let matches = [];
-  let done = [
-    Ci.nsIAutoCompleteResult.RESULT_IGNORED,
-    Ci.nsIAutoCompleteResult.RESULT_FAILURE,
-    Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
-    Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
-  ].includes(result.searchResult) || result.errorDescription;
+  let done =
+    [
+      Ci.nsIAutoCompleteResult.RESULT_IGNORED,
+      Ci.nsIAutoCompleteResult.RESULT_FAILURE,
+      Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
+      Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
+    ].includes(result.searchResult) || result.errorDescription;
 
   for (let i = 0; i < result.matchCount; ++i) {
     // First, let's check if we already added this match.
@@ -188,41 +213,45 @@ function convertResultToMatches(context, result, urls) {
       continue;
     }
     urls.add(url);
-    // Not used yet: result.getLabelAt(i)
     let style = result.getStyleAt(i);
+    let isHeuristic = i == 0 && style.includes("heuristic");
     let match = makeUrlbarResult(context.tokens, {
       url,
       icon: result.getImageAt(i),
       style,
       comment: result.getCommentAt(i),
       firstToken: context.tokens[0],
+      isHeuristic,
     });
     // Should not happen, but better safe than sorry.
     if (!match) {
       continue;
     }
     // Manage autofill and preselected properties for the first match.
-    if (i == 0) {
+    if (isHeuristic) {
       if (style.includes("autofill") && result.defaultIndex == 0) {
         let autofillValue = result.getValueAt(i);
-        if (autofillValue.toLocaleLowerCase()
-            .startsWith(context.searchString.toLocaleLowerCase())) {
+        if (
+          autofillValue
+            .toLocaleLowerCase()
+            .startsWith(context.searchString.toLocaleLowerCase())
+        ) {
           match.autofill = {
-            value: context.searchString +
-                   autofillValue.substring(context.searchString.length),
+            value:
+              context.searchString +
+              autofillValue.substring(context.searchString.length),
             selectionStart: context.searchString.length,
             selectionEnd: autofillValue.length,
           };
         }
       }
-      if (style.includes("heuristic")) {
-        context.preselected = true;
-        match.heuristic = true;
-      }
+
+      context.preselected = true;
+      match.heuristic = true;
     }
     matches.push(match);
   }
-  return {matches, done};
+  return { matches, done };
 }
 
 /**
@@ -235,7 +264,17 @@ function makeUrlbarResult(tokens, info) {
   let action = PlacesUtils.parseActionUrl(info.url);
   if (action) {
     switch (action.type) {
-      case "searchengine":
+      case "searchengine": {
+        let keywordOffer = UrlbarUtils.KEYWORD_OFFER.NONE;
+        if (
+          action.params.alias &&
+          !action.params.searchQuery.trim() &&
+          action.params.alias.startsWith("@")
+        ) {
+          keywordOffer = info.isHeuristic
+            ? UrlbarUtils.KEYWORD_OFFER.HIDE
+            : UrlbarUtils.KEYWORD_OFFER.SHOW;
+        }
         return new UrlbarResult(
           UrlbarUtils.RESULT_TYPE.SEARCH,
           UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -245,19 +284,27 @@ function makeUrlbarResult(tokens, info) {
             keyword: [action.params.alias, true],
             query: [action.params.searchQuery.trim(), true],
             icon: [info.icon, false],
-            isKeywordOffer: [
-              action.params.alias &&
-                !action.params.searchQuery.trim() &&
-                action.params.alias.startsWith("@"),
-              false,
-            ],
+            keywordOffer,
           })
         );
+      }
       case "keyword": {
         let title = info.comment;
-        if (tokens && tokens.length > 1) {
-          title = bundle.formatStringFromName("bookmarkKeywordSearch",
-            [info.comment, tokens.slice(1).map(t => t.value).join(" ")], 2);
+        if (!title) {
+          // If the url doesn't have an host (e.g. javascript urls), comment
+          // will be empty, and we can't build the usual title. Thus use the url.
+          title = Services.textToSubURI.unEscapeURIForUI(
+            "UTF-8",
+            action.params.url
+          );
+        } else if (tokens && tokens.length > 1) {
+          title = bundle.formatStringFromName("bookmarkKeywordSearch", [
+            info.comment,
+            tokens
+              .slice(1)
+              .map(t => t.value)
+              .join(" "),
+          ]);
         }
         return new UrlbarResult(
           UrlbarUtils.RESULT_TYPE.KEYWORD,
@@ -343,12 +390,19 @@ function makeUrlbarResult(tokens, info) {
     source = UrlbarUtils.RESULT_SOURCE.BOOKMARKS;
     if (info.style.includes("tag")) {
       // Split title and tags.
-      [comment, tags] = info.comment.split(TITLE_TAGS_SEPARATOR);
+      [comment, tags] = info.comment.split(UrlbarUtils.TITLE_TAGS_SEPARATOR);
       // Tags are separated by a comma and in a random order.
       // We should also just include tags that match the searchString.
-      tags = tags.split(",").map(t => t.trim()).filter(tag => {
-        return tokens.some(token => tag.includes(token.value));
-      }).sort();
+      tags = tags
+        .split(",")
+        .map(t => t.trim())
+        .filter(tag => {
+          let lowerCaseTag = tag.toLocaleLowerCase();
+          return tokens.some(token =>
+            lowerCaseTag.includes(token.lowerCaseValue)
+          );
+        })
+        .sort();
     }
   } else if (info.style.includes("preloaded-top-sites")) {
     source = UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL;

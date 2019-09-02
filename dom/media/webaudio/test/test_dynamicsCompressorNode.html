@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test DynamicsCompressorNode</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -27,7 +27,7 @@ addLoadEvent(function() {
   compressor.connect(context.destination);
 
   is(compressor.channelCount, 2, "compressor node has 2 input channels by default");
-  is(compressor.channelCountMode, "explicit", "Correct channelCountMode for the compressor node");
+  is(compressor.channelCountMode, "clamped-max", "Correct channelCountMode for the compressor node");
   is(compressor.channelInterpretation, "speakers", "Correct channelCountInterpretation for the compressor node");
 
   // Verify default values

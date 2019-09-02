@@ -21,6 +21,7 @@
 #  include "mozilla/Move.h"
 #  include "mozilla/UniquePtr.h"
 #  include "mozilla/Vector.h"
+#  include "mozilla/WinHeaderOnlyUtils.h"
 
 #  include <wchar.h>
 #  include <windows.h>
@@ -87,7 +88,7 @@ inline bool strimatch(const wchar_t* lowerstr, const wchar_t* mixedstr) {
   return internal::strimatch(&towlower, lowerstr, mixedstr);
 }
 
-enum class FlagLiteral { osint, safemode };
+enum class FlagLiteral { osint, safemode, url };
 
 template <typename CharT, FlagLiteral Literal>
 inline const CharT* GetLiteral();
@@ -105,11 +106,12 @@ inline const CharT* GetLiteral();
 
 DECLARE_FLAG_LITERAL(osint, "osint")
 DECLARE_FLAG_LITERAL(safemode, "safe-mode")
+DECLARE_FLAG_LITERAL(url, "url")
 
 enum class CheckArgFlag : uint32_t {
   None = 0,
-  CheckOSInt = (1 << 0),  // Retrun ARG_BAD if osint arg is also present.
-  RemoveArg = (1 << 1)    // Remove the argument from the argv array.
+  // (1 << 0) Used to be CheckOSInt
+  RemoveArg = (1 << 1)  // Remove the argument from the argv array.
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CheckArgFlag)
@@ -187,19 +189,72 @@ inline ArgResult CheckArg(int& aArgc, CharT** aArgv, const CharT* aArg,
     ++curarg;
   }
 
-  if ((aFlags & CheckArgFlag::CheckOSInt) && ar == ARG_FOUND) {
-    ArgResult arOSInt =
-        CheckArg(aArgc, aArgv, GetLiteral<CharT, FlagLiteral::osint>(),
-                 static_cast<const CharT**>(nullptr), CheckArgFlag::None);
-    if (arOSInt == ARG_FOUND) {
-      ar = ARG_BAD;
-#if defined(MOZILLA_INTERNAL_API)
-      PR_fprintf(PR_STDERR, "Error: argument --osint is invalid\n");
-#endif  // defined(MOZILLA_INTERNAL_API)
+  return ar;
+}
+
+template <typename CharT>
+inline void EnsureCommandlineSafe(int& aArgc, CharT** aArgv) {
+  // We expect either no -osint, or the full commandline to be:
+  // app -osint -url foo
+  // If this varies, we abort to avoid abuse of other commandline handlers
+  // from apps that do a poor job escaping links they give to the OS.
+
+  const CharT* osintLit = GetLiteral<CharT, FlagLiteral::osint>();
+
+  if (CheckArg(aArgc, aArgv, osintLit, static_cast<const CharT**>(nullptr),
+               CheckArgFlag::None) == ARG_FOUND) {
+    // There should be 4 items left (app name + -osint + -url + param)
+    if (aArgc != 4) {
+      exit(127);
+    }
+
+    // The first should be osint.
+    CharT* arg = aArgv[1];
+    if (*arg != '-'
+#ifdef XP_WIN
+        && *arg != '/'
+#endif
+    ) {
+      exit(127);
+    }
+    ++arg;
+    if (*arg == '-') {
+      ++arg;
+    }
+    if (!strimatch(osintLit, arg)) {
+      exit(127);
+    }
+    // Strip it:
+    RemoveArg(aArgc, aArgv + 1);
+
+    // Now only the -url bit should be left:
+    arg = aArgv[1];
+    if (*arg != '-'
+#ifdef XP_WIN
+        && *arg != '/'
+#endif
+    ) {
+      exit(127);
+    }
+    ++arg;
+    if (*arg == '-') {
+      ++arg;
+    }
+    if (!strimatch(GetLiteral<CharT, FlagLiteral::url>(), arg)) {
+      exit(127);
+    }
+    // The param after url shouldn't be another switch:
+    arg = aArgv[2];
+    if (*arg == '-'
+#ifdef XP_WIN
+        || *arg == '/'
+#endif
+    ) {
+      exit(127);
     }
   }
-
-  return ar;
+  // Either no osint, so nothing to do, or we ensured nothing nefarious was
+  // passed.
 }
 
 #if defined(XP_WIN)
@@ -357,39 +412,6 @@ inline UniquePtr<wchar_t[]> MakeCommandLine(int argc, wchar_t** argv,
   *c = '\0';
 
   return s;
-}
-
-inline UniquePtr<wchar_t[]> GetFullBinaryPath() {
-  DWORD bufLen = MAX_PATH;
-  mozilla::UniquePtr<wchar_t[]> buf;
-  DWORD retLen;
-
-  while (true) {
-    buf = mozilla::MakeUnique<wchar_t[]>(bufLen);
-    retLen = ::GetModuleFileNameW(nullptr, buf.get(), bufLen);
-    if (!retLen) {
-      return nullptr;
-    }
-
-    if (retLen == bufLen && ::GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-      bufLen *= 2;
-      continue;
-    }
-
-    break;
-  }
-
-  // Upon success, retLen *excludes* the null character
-  ++retLen;
-
-  // Since we're likely to have a bunch of unused space in buf, let's reallocate
-  // a string to the actual size of the file name.
-  auto result = mozilla::MakeUnique<wchar_t[]>(retLen);
-  if (wcscpy_s(result.get(), retLen, buf.get())) {
-    return nullptr;
-  }
-
-  return result;
 }
 
 inline bool SetArgv0ToFullBinaryPath(wchar_t* aArgv[]) {

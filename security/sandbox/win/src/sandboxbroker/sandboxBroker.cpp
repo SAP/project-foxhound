@@ -11,6 +11,7 @@
 #include "base/win/windows_version.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ImportDir.h"
 #include "mozilla/Logging.h"
 #include "mozilla/NSPRLogModulesParser.h"
 #include "mozilla/Preferences.h"
@@ -273,6 +274,52 @@ bool SandboxBroker::LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
           last_error, last_warning);
   }
 
+  // moduleHandle holds a strong reference to the module, whereas realBase
+  // is weak and might reference a module from another process (and thus must
+  // not be considered valid to pass in to any Win32 APIs from within this
+  // process).
+  nsModuleHandle moduleHandle;
+  HMODULE realBase = nullptr;
+  if (XRE_GetChildProcBinPathType(aProcessType) == BinPathType::Self) {
+    // We use GetModuleHandleEx here so that we increment the module's refcount
+    HMODULE ourExe;
+    if (::GetModuleHandleExW(0, nullptr, &ourExe)) {
+      moduleHandle.own(ourExe);
+      // We can assign ourExe to realBase because the child process's binary is
+      // the same as ours; ASLR will map it to the same address.
+      realBase = ourExe;
+    }
+  } else {
+    // Load the child executable as a datafile so that we can examine its
+    // headers without doing a full load with dependencies and such.
+    moduleHandle.own(
+        ::LoadLibraryExW(aPath, nullptr, LOAD_LIBRARY_AS_DATAFILE));
+    LauncherResult<HMODULE> procExeModule =
+        nt::GetProcessExeModule(targetInfo.hProcess);
+    if (procExeModule.isOk()) {
+      realBase = procExeModule.unwrap();
+    } else {
+      LOG_E("nt::GetProcessExeModule failed with HRESULT 0x%08lX",
+            procExeModule.unwrapErr().AsHResult());
+    }
+  }
+
+  if (moduleHandle && realBase) {
+    nt::PEHeaders exeImage(moduleHandle.get());
+    if (!!exeImage) {
+      LauncherVoidResult importsRestored = RestoreImportDirectory(
+          aPath, exeImage, targetInfo.hProcess, realBase);
+      if (importsRestored.isErr()) {
+        LOG_E("Failed to restore import directory with HRESULT 0x%08lX",
+              importsRestored.unwrapErr().AsHResult());
+        TerminateProcess(targetInfo.hProcess, 1);
+        CloseHandle(targetInfo.hThread);
+        CloseHandle(targetInfo.hProcess);
+        return false;
+      }
+    }
+  }
+
   // The sandboxed process is started in a suspended state, resume it now that
   // we've set things up.
   ResumeThread(targetInfo.hThread);
@@ -368,8 +415,6 @@ static sandbox::ResultCode SetJobLevel(sandbox::TargetPolicy* aPolicy,
   return aPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
 }
 
-#if defined(MOZ_CONTENT_SANDBOX)
-
 void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
                                                       bool aIsFileProcess) {
   MOZ_RELEASE_ASSERT(mPolicy, "mPolicy must be set before this call.");
@@ -424,13 +469,13 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
     }
   }
 
-#  if defined(DEBUG)
+#if defined(DEBUG)
   // This is required for a MOZ_ASSERT check in WindowsMessageLoop.cpp
   // WinEventHook, see bug 1366694 for details.
   DWORD uiExceptions = JOB_OBJECT_UILIMIT_HANDLES;
-#  else
+#else
   DWORD uiExceptions = 0;
-#  endif
+#endif
   sandbox::ResultCode result = SetJobLevel(mPolicy, jobLevel, uiExceptions);
   MOZ_RELEASE_ASSERT(sandbox::SBOX_ALL_OK == result,
                      "Setting job level failed, have you set memory limit when "
@@ -462,6 +507,13 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_DEP_NO_ATL_THUNK |
       sandbox::MITIGATION_DEP | sandbox::MITIGATION_EXTENSION_POINT_DISABLE |
       sandbox::MITIGATION_IMAGE_LOAD_PREFER_SYS32;
+
+#if defined(_M_ARM64)
+  // Disable CFG on older versions of ARM64 Windows to avoid a crash in COM.
+  if (!IsWin10Sep2018UpdateOrLater()) {
+    mitigations |= sandbox::MITIGATION_CONTROL_FLOW_GUARD_DISABLE;
+  }
+#endif
 
   if (aSandboxLevel > 4) {
     result = mPolicy->SetAlternateDesktop(false);
@@ -530,11 +582,11 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
     AddCachedDirRule(mPolicy, sandbox::TargetPolicy::FILES_ALLOW_READONLY,
                      sUserExtensionsDevDir, NS_LITERAL_STRING("\\*"));
 
-#  ifdef ENABLE_SYSTEM_EXTENSION_DIRS
+#ifdef ENABLE_SYSTEM_EXTENSION_DIRS
     // Add rule to allow read access to the per-user extensions directory.
     AddCachedDirRule(mPolicy, sandbox::TargetPolicy::FILES_ALLOW_READONLY,
                      sUserExtensionsDir, NS_LITERAL_STRING("\\*"));
-#  endif
+#endif
   }
 
   // Add the policy for the client side of a pipe. It is just a file
@@ -592,7 +644,6 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
       sandbox::SBOX_ALL_OK == result,
       "With these static arguments AddRule should never fail, what happened?");
 }
-#endif
 
 void SandboxBroker::SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) {
   MOZ_RELEASE_ASSERT(mPolicy, "mPolicy must be set before this call.");
@@ -741,7 +792,9 @@ bool SandboxBroker::SetSecurityLevelForRDDProcess() {
       sandbox::MITIGATION_DEP_NO_ATL_THUNK | sandbox::MITIGATION_DEP |
       sandbox::MITIGATION_IMAGE_LOAD_PREFER_SYS32;
 
-  if (sRddWin32kDisable) {
+  // On Windows 7, where Win32k lockdown is not supported, the Chromium
+  // sandbox does something weird that breaks COM instantiation.
+  if (sRddWin32kDisable && IsWin8OrLater()) {
     mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
     result =
         mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,

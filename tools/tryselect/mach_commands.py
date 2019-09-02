@@ -18,6 +18,7 @@ from mach.decorators import (
 from mozboot.util import get_state_dir
 from mozbuild.base import BuildEnvironmentNotFoundException, MachCommandBase
 
+
 CONFIG_ENVIRONMENT_NOT_FOUND = '''
 No config environment detected. This means we are unable to properly
 detect test files in the specified paths or tags. Please run:
@@ -69,16 +70,14 @@ class TrySelect(MachCommandBase):
         push.MAX_HISTORY = self._mach_context.settings['try']['maxhistory']
         self.subcommand = self._mach_context.handler.subcommand
         self.parser = self._mach_context.handler.parser
+        self._presets = None
 
-    def handle_presets(self, preset_action, save, preset, **kwargs):
-        """Handle preset related arguments.
+    @property
+    def presets(self):
+        if self._presets:
+            return self._presets
 
-        This logic lives here so that the underlying selectors don't need
-        special preset handling. They can all save and load presets the same
-        way.
-        """
-        from tryselect.preset import MergedHandler, migrate_old_presets
-        from tryselect.util.dicttools import merge
+        from tryselect.preset import MergedHandler
 
         # Create our handler using both local and in-tree presets. The first
         # path in this list will be treated as the 'user' file for the purposes
@@ -92,14 +91,26 @@ class TrySelect(MachCommandBase):
                 os.path.join(self.topsrcdir, 'tools', 'tryselect', 'try_presets.yml'),
             ]
 
-        presets = MergedHandler(*preset_paths)
-        user_presets = presets.handlers[0]
+        self._presets = MergedHandler(*preset_paths)
+        return self._presets
+
+    def handle_presets(self, preset_action, save, preset, **kwargs):
+        """Handle preset related arguments.
+
+        This logic lives here so that the underlying selectors don't need
+        special preset handling. They can all save and load presets the same
+        way.
+        """
+        from tryselect.preset import migrate_old_presets
+        from tryselect.util.dicttools import merge
+
+        user_presets = self.presets.handlers[0]
 
         # TODO: Remove after Jan 1, 2020.
         migrate_old_presets(user_presets)
 
         if preset_action == 'list':
-            presets.list()
+            self.presets.list()
             sys.exit()
 
         if preset_action == 'edit':
@@ -117,11 +128,11 @@ class TrySelect(MachCommandBase):
             sys.exit()
 
         if preset:
-            if preset not in presets:
+            if preset not in self.presets:
                 self.parser.error("preset '{}' does not exist".format(preset))
 
             name = preset
-            preset = presets[name]
+            preset = self.presets[name]
             selector = preset.pop('selector')
             preset.pop('description', None)  # description isn't used by any selectors
 
@@ -147,12 +158,13 @@ class TrySelect(MachCommandBase):
 
         return kwargs
 
-    def handle_templates(self, **kwargs):
-        kwargs.setdefault('templates', {})
+    def handle_try_config(self, **kwargs):
+        from tryselect.util.dicttools import merge
+        kwargs.setdefault('try_config', {})
         for cls in self.parser.templates.itervalues():
-            context = cls.context(**kwargs)
-            if context is not None:
-                kwargs['templates'].update(context)
+            try_config = cls.try_config(**kwargs)
+            if try_config is not None:
+                kwargs['try_config'] = merge(kwargs['try_config'], try_config)
 
             for name in cls.dests:
                 del kwargs[name]
@@ -164,7 +176,7 @@ class TrySelect(MachCommandBase):
             kwargs = self.handle_presets(**kwargs)
 
         if self.parser.templates:
-            kwargs = self.handle_templates(**kwargs)
+            kwargs = self.handle_try_config(**kwargs)
 
         mod = importlib.import_module('tryselect.selectors.{}'.format(self.subcommand))
         return mod.run(**kwargs)
@@ -187,8 +199,12 @@ class TrySelect(MachCommandBase):
         """
         # We do special handling of presets here so that `./mach try --preset foo`
         # works no matter what subcommand 'foo' was saved with.
-        if kwargs['preset']:
-            kwargs = self.handle_presets(**kwargs)
+        preset = kwargs['preset']
+        if preset:
+            if preset not in self.presets:
+                self.parser.error("preset '{}' does not exist".format(preset))
+
+            self.subcommand = self.presets[preset]['selector']
 
         sub = self.subcommand or self._mach_context.settings['try']['default']
         return self._mach_context.commands.dispatch(
@@ -241,6 +257,9 @@ class TrySelect(MachCommandBase):
 
           ^start 'exact | !ignore fuzzy end$
         """
+        if kwargs.pop('interactive'):
+            kwargs['query'].append('INTERACTIVE')
+
         if kwargs.pop('intersection'):
             kwargs['intersect_query'] = kwargs['query']
             del kwargs['query']
@@ -339,7 +358,7 @@ class TrySelect(MachCommandBase):
 
         The command requires either its own mercurial extension ("push-to-try",
         installable from mach vcs-setup) or a git repo using git-cinnabar
-        (installable from mach vcs-setup --git).
+        (installable from mach vcs-setup).
 
         """
         try:

@@ -14,18 +14,25 @@
   the performance timeline.
   */
   async_test(function(t) {
+    if (!window.PerformanceElementTiming) {
+      assert_unreached("PerformanceElementTiming is not implemented");
+    }
     beforeRender = performance.now();
     const img = document.createElement('img');
     img.src = 'resources/square20.jpg';
     img.setAttribute('elementtiming', 'my_image');
+    img.setAttribute('id', 'my_id');
     document.body.appendChild(img);
     window.onload = t.step_func_done( () => {
-      const entries = performance.getEntriesByName('my_image');
-      assert_equals(entries.length, 1);
-      assert_greater_than_equal(performance.getEntriesByType('element').length, 1);
-      assert_equals(performance.getEntries().filter(e => e.name === 'my_image').length, 1);
+      const entries = performance.getEntriesByType('element');
+      assert_greater_than_equal(entries.length, 1);
+      assert_equals(performance.getEntries().filter(e => e.identifier === 'my_image').length, 1);
       const entry = entries[0];
-      checkElement(entry, 'my_image', beforeRender);
+      const index = window.location.href.lastIndexOf('/');
+      const pathname = window.location.href.substring(0, index) +
+          '/resources/square20.jpg';
+      checkElement(entry, pathname, 'my_image', 'my_id', beforeRender, img);
+      checkNaturalSize(entry, 20, 20);
     });
   }, "Element Timing: image loads before onload.");
 

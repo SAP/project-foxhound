@@ -40,11 +40,14 @@
   <string name="firstrun_customize_message">&firstrun_customize_message;</string>
   <string name="firstrun_customize_subtext">&firstrun_customize_subtext;</string>
   <string name="firstrun_sync_title">&firstrun_sync_title;</string>
+  <string name="updatednewfirstrun_sync_title">&updatednewfirstrun_sync_title;</string>
   <string name="firstrun_sync_message">&firstrun_sync_message2;</string>
   <string name="firstrun_sync_subtext">&firstrun_sync_subtext2;</string>
   <string name="newfirstrun_sync_subtext">&newfirstrun_sync_subtext;</string>
+  <string name="updatednewfirstrun_sync_subtext">&updatednewfirstrun_sync_subtext;</string>
   <string name="firstrun_signin_button">&firstrun_signin_button;</string>
   <string name="newfirstrun_signin_button">&newfirstrun_signin_button;</string>
+  <string name="updatednewfirstrun_signin_button">&updatednewfirstrun_signin_button;</string>
   <string name="firstrun_welcome_button_browser">&onboard_start_button_browser;</string>
   <string name="firstrun_button_next">&firstrun_button_next;</string>
 
@@ -69,6 +72,9 @@
   <string name="sending_crash_report">&sending_crash_report;</string>
   <string name="crash_close_label">&crash_close_label;</string>
   <string name="crash_restart_label">&crash_restart_label;</string>
+  <string name="crash_notification_title">&crash_notification_title;</string>
+  <string name="crash_notification_message">&crash_notification_message;</string>
+  <string name="crash_notification_negative_button_text">&crash_notification_negative_button_text;</string>
 
   <string name="url_bar_default_text">&url_bar_default_text2;</string>
   <string name="url_bar_qrcode_text">&url_bar_qrcode_text2;</string>
@@ -99,6 +105,7 @@
   <string name="bookmark_folder_updated">&bookmark_folder_updated;</string>
   <string name="bookmark_parent_folder">&bookmark_parent_folder;</string>
   <string name="bookmark_add_folder">&bookmark_add_folder;</string>
+  <string name="bookmark_default_folder_title">&bookmark_default_folder_title;</string>
 
   <string name="reader_saved_offline">&reader_saved_offline;</string>
   <string name="reader_switch_to_bookmarks">&reader_switch_to_bookmarks;</string>
@@ -123,6 +130,7 @@
   <string name="find_prev">&find_prev;</string>
   <string name="find_next">&find_next;</string>
   <string name="find_close">&find_close;</string>
+  <string name="find_error">&find_error;</string>
 
   <string name="media_sending_to">&media_sending_to;</string>
   <string name="media_play">&media_play;</string>
@@ -206,6 +214,7 @@
   <string name="pref_cookies_menu">&pref_cookies_menu;</string>
   <string name="pref_cookies_accept_all">&pref_cookies_accept_all;</string>
   <string name="pref_cookies_not_accept_foreign">&pref_cookies_not_accept_foreign;</string>
+  <string name="pref_cookies_not_accept_trackers">&pref_cookies_not_accept_trackers;</string>
   <string name="pref_cookies_disabled">&pref_cookies_disabled;</string>
 
   <string name="pref_category_data_saver">&pref_category_data_saver;</string>
@@ -289,11 +298,6 @@
   <string name="pref_update_autodownload_disabled">&pref_update_autodownload_never;</string>
   <string name="pref_update_autodownload_enabled">&pref_update_autodownload_always;</string>
 
-  <string name="tracking_protection_prompt_title">&tracking_protection_prompt_title;</string>
-  <string name="tracking_protection_prompt_text">&tracking_protection_prompt_text;</string>
-  <string name="tracking_protection_prompt_tip_text">&tracking_protection_prompt_tip_text;</string>
-  <string name="tracking_protection_prompt_action_button">&tracking_protection_prompt_action_button;</string>
-
   <string name="pref_tab_queue_title">&pref_tab_queue_title3;</string>
   <string name="pref_tab_queue_summary">&pref_tab_queue_summary4;</string>
   <string name="tab_queue_prompt_title">&tab_queue_prompt_title;</string>
@@ -312,7 +316,6 @@
   <string name="tab_queue_notification_settings">&tab_queue_notification_settings;</string>
 
   <string name="pref_default_browser">&pref_default_browser2;</string>
-  <string name="pref_default_browser_mozilla_support_tablet">&pref_default_browser_mozilla_support_tablet;</string>
   <string name="default_browser_system_settings_toast">&default_browser_system_settings_toast;</string>
 
   <string name="pref_about_firefox">&pref_about_firefox;</string>
@@ -436,6 +439,7 @@
   <string name="bookmark_edit_location">&bookmark_edit_location;</string>
   <string name="bookmark_edit_keyword">&bookmark_edit_keyword;</string>
   <string name="bookmark_select_folder">&bookmark_select_folder;</string>
+  <string name="bookmark_edit_undo">&bookmark_edit_undo;</string>
 
   <string name="pref_use_master_password">&pref_use_master_password;</string>
   <string name="masterpassword_create_title">&masterpassword_create_title;</string>
@@ -486,6 +490,8 @@
   <string name="filepicker_audio_title">&filepicker_audio_title;</string>
   <string name="filepicker_image_title">&filepicker_image_title;</string>
   <string name="filepicker_video_title">&filepicker_video_title;</string>
+  <!-- Toast for default file picker when authority is denied. -->
+  <string name="filepicker_permission_denied">&filepicker_permission_denied;</string>
 
   <!-- Default bookmarks. We used to use bookmark titles shared with XUL from mobile's
        profile/bookmarks.inc (see bug 964946). Don't expose the URLs to L10N. -->
@@ -658,6 +664,7 @@
   <string name="pip_pause_button_title">&pip_pause_button_title;</string>
   <string name="pip_pause_button_description">&pip_pause_button_description;</string>
 
+  <string name="pref_notification_settings_link">&pref_notification_settings_link;</string>
   <string name="default_notification_channel2">&default_notification_channel2;</string>
   <string name="mls_notification_channel">&mls_notification_channel;</string>
   <string name="media_notification_channel2">&media_notification_channel2;</string>
@@ -666,4 +673,5 @@
   <string name="updater_notification_channel">&updater_notification_channel;</string>
   <string name="synced_tabs_notification_channel">&synced_tabs_notification_channel;</string>
   <string name="site_notifications_channel">&site_notifications_channel;</string>
+  <string name="crash_handler_notifications_channel">&crash_handler_notifications_channel;</string>
 </resources>

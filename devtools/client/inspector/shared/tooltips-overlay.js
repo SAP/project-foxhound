@@ -17,28 +17,69 @@ const {
   VIEW_NODE_VALUE_TYPE,
   VIEW_NODE_FONT_TYPE,
   VIEW_NODE_IMAGE_URL_TYPE,
+  VIEW_NODE_INACTIVE_CSS,
   VIEW_NODE_VARIABLE_TYPE,
 } = require("devtools/client/inspector/shared/node-types");
 
-loader.lazyRequireGetter(this, "getColor",
-  "devtools/client/shared/theme", true);
-loader.lazyRequireGetter(this, "HTMLTooltip",
-  "devtools/client/shared/widgets/tooltip/HTMLTooltip", true);
-loader.lazyRequireGetter(this, "getImageDimensions",
-  "devtools/client/shared/widgets/tooltip/ImageTooltipHelper", true);
-loader.lazyRequireGetter(this, "setImageTooltip",
-  "devtools/client/shared/widgets/tooltip/ImageTooltipHelper", true);
-loader.lazyRequireGetter(this, "setBrokenImageTooltip",
-  "devtools/client/shared/widgets/tooltip/ImageTooltipHelper", true);
-loader.lazyRequireGetter(this, "setVariableTooltip",
-  "devtools/client/shared/widgets/tooltip/VariableTooltipHelper", true);
+loader.lazyRequireGetter(
+  this,
+  "getColor",
+  "devtools/client/shared/theme",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "HTMLTooltip",
+  "devtools/client/shared/widgets/tooltip/HTMLTooltip",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "getImageDimensions",
+  "devtools/client/shared/widgets/tooltip/ImageTooltipHelper",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "setImageTooltip",
+  "devtools/client/shared/widgets/tooltip/ImageTooltipHelper",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "setBrokenImageTooltip",
+  "devtools/client/shared/widgets/tooltip/ImageTooltipHelper",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "setVariableTooltip",
+  "devtools/client/shared/widgets/tooltip/VariableTooltipHelper",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "InactiveCssTooltipHelper",
+  "devtools/client/shared/widgets/tooltip/inactive-css-tooltip-helper",
+  false
+);
+loader.lazyRequireGetter(
+  this,
+  "Telemetry",
+  "devtools/client/shared/telemetry",
+  false
+);
 
 const PREF_IMAGE_TOOLTIP_SIZE = "devtools.inspector.imagePreviewTooltipSize";
 
 // Types of existing tooltips
 const TOOLTIP_IMAGE_TYPE = "image";
 const TOOLTIP_FONTFAMILY_TYPE = "font-family";
+const TOOLTIP_INACTIVE_CSS = "inactive-css";
 const TOOLTIP_VARIABLE_TYPE = "variable";
+
+// Telemetry
+const TOOLTIP_SHOWN_SCALAR = "devtools.tooltip.shown";
 
 /**
  * Manages all tooltips in the style-inspector.
@@ -49,6 +90,7 @@ const TOOLTIP_VARIABLE_TYPE = "variable";
 function TooltipsOverlay(view) {
   this.view = view;
   this._instances = new Map();
+  this.telemetry = new Telemetry();
 
   this._onNewSelection = this._onNewSelection.bind(this);
   this.view.inspector.selection.on("new-node-front", this._onNewSelection);
@@ -63,7 +105,7 @@ TooltipsOverlay.prototype = {
 
   get isEditing() {
     for (const [, tooltip] of this._instances) {
-      if (typeof (tooltip.isEditing) == "function" && tooltip.isEditing()) {
+      if (typeof tooltip.isEditing == "function" && tooltip.isEditing()) {
         return true;
       }
     }
@@ -81,16 +123,25 @@ TooltipsOverlay.prototype = {
 
     this._isStarted = true;
 
-    // Instantiate the preview tooltip when the rule/computed view is hovered over in
-    // order to call tooltip.starTogglingOnHover. This will allow the preview tooltip
-    // to be shown when an appropriate element is hovered over.
-    if (flags.testing) {
-      this.getTooltip("previewTooltip");
-    } else {
-      // Lazily get the preview tooltip to avoid loading HTMLTooltip.
-      this.view.element.addEventListener("mousemove", () => {
-        this.getTooltip("previewTooltip");
-      }, { once: true });
+    this.inactiveCssTooltipHelper = new InactiveCssTooltipHelper();
+
+    // Instantiate the interactiveTooltip and preview tooltip when the
+    // rule/computed view is hovered over in order to call
+    // `tooltip.startTogglingOnHover`. This will allow the tooltip to be shown
+    // when an appropriate element is hovered over.
+    for (const type of ["interactiveTooltip", "previewTooltip"]) {
+      if (flags.testing) {
+        this.getTooltip(type);
+      } else {
+        // Lazily get the preview tooltip to avoid loading HTMLTooltip.
+        this.view.element.addEventListener(
+          "mousemove",
+          () => {
+            this.getTooltip(type);
+          },
+          { once: true }
+        );
+      }
     }
   },
 
@@ -110,29 +161,46 @@ TooltipsOverlay.prototype = {
     const { doc } = this.view.inspector.toolbox;
     switch (name) {
       case "colorPicker":
-        const SwatchColorPickerTooltip =
-          require("devtools/client/shared/widgets/tooltip/SwatchColorPickerTooltip");
-        tooltip = new SwatchColorPickerTooltip(doc, this.view.inspector,
-          this._cssProperties);
+        const SwatchColorPickerTooltip = require("devtools/client/shared/widgets/tooltip/SwatchColorPickerTooltip");
+        tooltip = new SwatchColorPickerTooltip(
+          doc,
+          this.view.inspector,
+          this._cssProperties
+        );
         break;
       case "cubicBezier":
-        const SwatchCubicBezierTooltip =
-          require("devtools/client/shared/widgets/tooltip/SwatchCubicBezierTooltip");
+        const SwatchCubicBezierTooltip = require("devtools/client/shared/widgets/tooltip/SwatchCubicBezierTooltip");
         tooltip = new SwatchCubicBezierTooltip(doc);
         break;
       case "filterEditor":
-        const SwatchFilterTooltip =
-          require("devtools/client/shared/widgets/tooltip/SwatchFilterTooltip");
-        tooltip = new SwatchFilterTooltip(doc,
-          this._cssProperties.getValidityChecker(this.view.inspector.panelDoc));
+        const SwatchFilterTooltip = require("devtools/client/shared/widgets/tooltip/SwatchFilterTooltip");
+        tooltip = new SwatchFilterTooltip(
+          doc,
+          this._cssProperties.getValidityChecker(this.view.inspector.panelDoc)
+        );
+        break;
+      case "interactiveTooltip":
+        tooltip = new HTMLTooltip(doc, {
+          type: "doorhanger",
+          useXulWrapper: true,
+        });
+        tooltip.startTogglingOnHover(
+          this.view.element,
+          this.onInteractiveTooltipTargetHover.bind(this),
+          {
+            interactive: true,
+          }
+        );
         break;
       case "previewTooltip":
         tooltip = new HTMLTooltip(doc, {
           type: "arrow",
           useXulWrapper: true,
         });
-        tooltip.startTogglingOnHover(this.view.element,
-          this._onPreviewTooltipTargetHover.bind(this));
+        tooltip.startTogglingOnHover(
+          this.view.element,
+          this._onPreviewTooltipTargetHover.bind(this)
+        );
         break;
       default:
         throw new Error(`Unsupported tooltip '${name}'`);
@@ -154,6 +222,8 @@ TooltipsOverlay.prototype = {
       tooltip.destroy();
     }
 
+    this.inactiveCssTooltipHelper.destroy();
+
     this._isStarted = false;
   },
 
@@ -164,7 +234,7 @@ TooltipsOverlay.prototype = {
    * @param {Object} nodeInfo
    * @return {String} The tooltip type to be shown, or null
    */
-  _getTooltipType: function({type, value: prop}) {
+  _getTooltipType: function({ type, value: prop }) {
     let tooltipType = null;
 
     // Image preview tooltip
@@ -173,12 +243,19 @@ TooltipsOverlay.prototype = {
     }
 
     // Font preview tooltip
-    if ((type === VIEW_NODE_VALUE_TYPE && prop.property === "font-family") ||
-        (type === VIEW_NODE_FONT_TYPE)) {
+    if (
+      (type === VIEW_NODE_VALUE_TYPE && prop.property === "font-family") ||
+      type === VIEW_NODE_FONT_TYPE
+    ) {
       const value = prop.value.toLowerCase();
       if (value !== "inherit" && value !== "unset" && value !== "initial") {
         tooltipType = TOOLTIP_FONTFAMILY_TYPE;
       }
+    }
+
+    // Inactive CSS tooltip
+    if (type === VIEW_NODE_INACTIVE_CSS) {
+      tooltipType = TOOLTIP_INACTIVE_CSS;
     }
 
     // Variable preview tooltip
@@ -224,9 +301,14 @@ TooltipsOverlay.prototype = {
       try {
         await this._setImagePreviewTooltip(nodeInfo.value.url);
       } catch (e) {
-        await setBrokenImageTooltip(this.getTooltip("previewTooltip"),
-          this.view.inspector.panelDoc);
+        await setBrokenImageTooltip(
+          this.getTooltip("previewTooltip"),
+          this.view.inspector.panelDoc
+        );
       }
+
+      this.sendOpenScalarToTelemetry(type);
+
       return true;
     }
 
@@ -234,6 +316,8 @@ TooltipsOverlay.prototype = {
       const font = nodeInfo.value.value;
       const nodeFront = inspector.selection.nodeFront;
       await this._setFontPreviewTooltip(font, nodeFront);
+
+      this.sendOpenScalarToTelemetry(type);
 
       if (nodeInfo.type === VIEW_NODE_FONT_TYPE) {
         // If the hovered element is on the font family span, anchor
@@ -243,13 +327,82 @@ TooltipsOverlay.prototype = {
       return true;
     }
 
-    if (type === TOOLTIP_VARIABLE_TYPE && nodeInfo.value.value.startsWith("--")) {
+    if (
+      type === TOOLTIP_VARIABLE_TYPE &&
+      nodeInfo.value.value.startsWith("--")
+    ) {
       const variable = nodeInfo.value.variable;
       await this._setVariablePreviewTooltip(variable);
+
+      this.sendOpenScalarToTelemetry(type);
+
       return true;
     }
 
     return false;
+  },
+
+  /**
+   * Executed by the tooltip when the pointer hovers over an element of the
+   * view. Used to decide whether the tooltip should be shown or not and to
+   * actually put content in it.
+   * Checks if the hovered target is a css value we support tooltips for.
+   *
+   * @param  {DOMNode} target
+   *         The currently hovered node
+   * @return {Boolean}
+   *         true if shown, false otherwise.
+   */
+  async onInteractiveTooltipTargetHover(target) {
+    const nodeInfo = this.view.getNodeInfo(target);
+    if (!nodeInfo) {
+      // The hovered node isn't something we care about.
+      return false;
+    }
+
+    const type = this._getTooltipType(nodeInfo);
+    if (!type) {
+      // There is no tooltip type defined for the hovered node.
+      return false;
+    }
+
+    // Remove previous tooltip instances.
+    for (const [, tooltip] of this._instances) {
+      if (tooltip.isVisible()) {
+        if (tooltip.revert) {
+          tooltip.revert();
+        }
+        tooltip.hide();
+      }
+    }
+
+    if (type === TOOLTIP_INACTIVE_CSS) {
+      // Ensure this is the correct node and not a parent.
+      if (!target.classList.contains("ruleview-unused-warning")) {
+        return false;
+      }
+
+      await this.inactiveCssTooltipHelper.setContent(
+        nodeInfo.value,
+        this.getTooltip("interactiveTooltip")
+      );
+
+      this.sendOpenScalarToTelemetry(type);
+
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Send a telemetry Scalar showing that a tooltip of `type` has been opened.
+   *
+   * @param {String} type
+   *        The node type from `devtools/client/inspector/shared/node-types`.
+   */
+  sendOpenScalarToTelemetry(type) {
+    this.telemetry.keyedScalarAdd(TOOLTIP_SHOWN_SCALAR, type, 1);
   },
 
   /**
@@ -273,14 +426,20 @@ TooltipsOverlay.prototype = {
       naturalHeight = size.naturalHeight;
     } else {
       const inspectorFront = this.view.inspector.inspector;
-      const {data, size} = await inspectorFront.getImageDataFromURL(imageUrl, maxDim);
+      const { data, size } = await inspectorFront.getImageDataFromURL(
+        imageUrl,
+        maxDim
+      );
       imageUrl = await data.string();
       naturalWidth = size.naturalWidth;
       naturalHeight = size.naturalHeight;
     }
 
-    await setImageTooltip(this.getTooltip("previewTooltip"), doc, imageUrl,
-      {maxDim, naturalWidth, naturalHeight});
+    await setImageTooltip(this.getTooltip("previewTooltip"), doc, imageUrl, {
+      maxDim,
+      naturalWidth,
+      naturalHeight,
+    });
   },
 
   /**
@@ -294,7 +453,11 @@ TooltipsOverlay.prototype = {
    * @return {Promise} A promise that resolves when the preview tooltip content is ready
    */
   async _setFontPreviewTooltip(font, nodeFront) {
-    if (!font || !nodeFront || typeof nodeFront.getFontFamilyDataURL !== "function") {
+    if (
+      !font ||
+      !nodeFront ||
+      typeof nodeFront.getFontFamilyDataURL !== "function"
+    ) {
       throw new Error("Unable to create font preview tooltip content.");
     }
 
@@ -303,15 +466,25 @@ TooltipsOverlay.prototype = {
     font = font.trim();
 
     const fillStyle = getColor("body-color");
-    const {data, size: maxDim} = await nodeFront.getFontFamilyDataURL(font, fillStyle);
+    const { data, size: maxDim } = await nodeFront.getFontFamilyDataURL(
+      font,
+      fillStyle
+    );
 
     const imageUrl = await data.string();
     const doc = this.view.inspector.panelDoc;
-    const {naturalWidth, naturalHeight} = await getImageDimensions(doc, imageUrl);
+    const { naturalWidth, naturalHeight } = await getImageDimensions(
+      doc,
+      imageUrl
+    );
 
-    await setImageTooltip(this.getTooltip("previewTooltip"), doc, imageUrl,
-      {hideDimensionLabel: true, hideCheckeredBackground: true,
-       maxDim, naturalWidth, naturalHeight});
+    await setImageTooltip(this.getTooltip("previewTooltip"), doc, imageUrl, {
+      hideDimensionLabel: true,
+      hideCheckeredBackground: true,
+      maxDim,
+      naturalWidth,
+      naturalHeight,
+    });
   },
 
   /**
@@ -340,6 +513,7 @@ TooltipsOverlay.prototype = {
 
     this.view.inspector.selection.off("new-node-front", this._onNewSelection);
     this.view = null;
+    this.telemetry = null;
 
     this._isDestroyed = true;
   },

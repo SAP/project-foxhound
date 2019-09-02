@@ -176,6 +176,13 @@ function StartTestURI(type, uri, uriTargetType, timeout)
     LoadURI(gCurrentURL);
 }
 
+function setupTextZoom(contentRootElement) {
+    if (!contentRootElement || !contentRootElement.hasAttribute('reftest-text-zoom'))
+        return;
+    markupDocumentViewer().textZoom =
+        contentRootElement.getAttribute('reftest-text-zoom');
+}
+
 function setupFullZoom(contentRootElement) {
     if (!contentRootElement || !contentRootElement.hasAttribute('reftest-zoom'))
         return;
@@ -183,8 +190,9 @@ function setupFullZoom(contentRootElement) {
         contentRootElement.getAttribute('reftest-zoom');
 }
 
-function resetZoom() {
+function resetZoomAndTextZoom() {
     markupDocumentViewer().fullZoom = 1.0;
+    markupDocumentViewer().textZoom = 1.0;
 }
 
 function doPrintMode(contentRootElement) {
@@ -219,7 +227,7 @@ function setupPrintMode() {
    ps.footerStrLeft = "";
    ps.footerStrCenter = "";
    ps.footerStrRight = "";
-   docShell.contentViewer.setPageMode(true, ps);
+   docShell.contentViewer.setPageModeForTesting(/* aPageMode */ true, ps);
 }
 
 // Prints current page to a PDF file and calls callback when sucessfully
@@ -256,7 +264,6 @@ function printToPdf(callback) {
     ps.printBGColors = true;
     ps.printToFile = true;
     ps.toFileName = file.path;
-    ps.printFrameType = Ci.nsIPrintSettings.kFramesAsIs;
     ps.outputFormat = Ci.nsIPrintSettings.kOutputFormatPDF;
 
     if (isPrintSelection) {
@@ -300,7 +307,11 @@ function setupViewport(contentRootElement) {
         windowUtils().setVisualViewportSize(sw, sh);
     }
 
-    // XXX support resolution when needed
+    var res = attrOrDefault(contentRootElement, "reftest-resolution", 1);
+    if (res !== 1) {
+        LogInfo("Setting resolution to " + res);
+        windowUtils().setResolutionAndScaleTo(res);
+    }
 
     // XXX support viewconfig when needed
 }
@@ -521,7 +532,11 @@ function FlushRendering(aFlushMode) {
         }
 
         for (var i = 0; i < win.frames.length; ++i) {
-            flushWindow(win.frames[i]);
+            try {
+                flushWindow(win.frames[i]);
+            } catch (e) {
+                Cu.reportError(e);
+            }
         }
     }
 
@@ -852,6 +867,7 @@ function OnDocumentLoad(event)
     var contentRootElement = currentDoc ? currentDoc.documentElement : null;
     currentDoc = null;
     setupFullZoom(contentRootElement);
+    setupTextZoom(contentRootElement);
     setupViewport(contentRootElement);
     setupDisplayport(contentRootElement);
     var inPrintMode = false;
@@ -940,7 +956,7 @@ function CheckLayerAssertions(contentRootElement)
         try {
             var elements = layerNameToElementsMap[layerName];
             oneOfEach.push(elements[0]);
-            var numberOfLayers = windowUtils().numberOfAssignedPaintedLayers(elements, elements.length);
+            var numberOfLayers = windowUtils().numberOfAssignedPaintedLayers(elements);
             if (numberOfLayers !== 1) {
                 SendFailedAssignedLayer('these elements are assigned to ' + numberOfLayers +
                                         ' different layers, instead of sharing just one layer: ' +
@@ -954,7 +970,7 @@ function CheckLayerAssertions(contentRootElement)
     // Check that elements with different reftest-assigned-layer are assigned to different PaintedLayers.
     if (oneOfEach.length > 0) {
         try {
-            var numberOfLayers = windowUtils().numberOfAssignedPaintedLayers(oneOfEach, oneOfEach.length);
+            var numberOfLayers = windowUtils().numberOfAssignedPaintedLayers(oneOfEach);
             if (numberOfLayers !== oneOfEach.length) {
                 SendFailedAssignedLayer('these elements are assigned to ' + numberOfLayers +
                                         ' different layers, instead of having none in common (expected ' +
@@ -1191,7 +1207,7 @@ function RecvLoadPrintTest(uri, timeout)
 
 function RecvResetRenderingState()
 {
-    resetZoom();
+    resetZoomAndTextZoom();
     resetDisplayportAndViewport();
 }
 

@@ -19,7 +19,7 @@ class RenderViewMLGPU;
 class ContainerLayerMLGPU final : public ContainerLayer, public LayerMLGPU {
  public:
   explicit ContainerLayerMLGPU(LayerManagerMLGPU* aManager);
-  ~ContainerLayerMLGPU() override;
+  virtual ~ContainerLayerMLGPU();
 
   MOZ_LAYER_DECL_NAME("ContainerLayerMLGPU", TYPE_CONTAINER)
 
@@ -54,6 +54,15 @@ class ContainerLayerMLGPU final : public ContainerLayer, public LayerMLGPU {
   }
 
   void ComputeIntermediateSurfaceBounds();
+
+  // Similar to ContainerLayerComposite, we need to include the pres shell
+  // resolution, if there is one, in the layer's post-scale.
+  float GetPostXScale() const override {
+    return mSimpleAttrs.GetPostXScale() * mPresShellResolution;
+  }
+  float GetPostYScale() const override {
+    return mSimpleAttrs.GetPostYScale() * mPresShellResolution;
+  }
 
  protected:
   bool OnPrepareToRender(FrameBuilder* aBuilder) override;

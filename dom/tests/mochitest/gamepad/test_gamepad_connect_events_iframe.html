@@ -7,7 +7,7 @@
 <html>
 <head>
   <title>Test hidden frames</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -37,6 +37,8 @@ function startTests() {
                             GamepadService.noHand,
                             4, // buttons
                             2,
+                            0,
+                            0,
                             0).then(function(i) {
                               gamepad_index = i;
                               gamepad_connected()

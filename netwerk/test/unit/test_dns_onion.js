@@ -1,55 +1,57 @@
 var dns = Cc["@mozilla.org/network/dns-service;1"].getService(Ci.nsIDNSService);
-var threadManager = Cc["@mozilla.org/thread-manager;1"].getService(Ci.nsIThreadManager);
+var threadManager = Cc["@mozilla.org/thread-manager;1"].getService(
+  Ci.nsIThreadManager
+);
 var mainThread = threadManager.currentThread;
 
 var onionPref;
 var localdomainPref;
-var prefs = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
+var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
+  Ci.nsIPrefBranch
+);
 
 // check that we don't lookup .onion
 var listenerBlock = {
-  onLookupComplete: function(inRequest, inRecord, inStatus) {
+  onLookupComplete(inRequest, inRecord, inStatus) {
     Assert.ok(!Components.isSuccessCode(inStatus));
     do_test_dontBlock();
   },
-  QueryInterface: function(aIID) {
-    if (aIID.equals(Ci.nsIDNSListener) ||
-        aIID.equals(Ci.nsISupports)) {
-      return this;
-    }
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  }
+  QueryInterface: ChromeUtils.generateQI(["nsIDNSListener"]),
 };
 
 // check that we do lookup .onion (via pref)
 var listenerDontBlock = {
-  onLookupComplete: function(inRequest, inRecord, inStatus) {
+  onLookupComplete(inRequest, inRecord, inStatus) {
     var answer = inRecord.getNextAddrAsString();
     Assert.ok(answer == "127.0.0.1" || answer == "::1");
     all_done();
   },
-  QueryInterface: function(aIID) {
-    if (aIID.equals(Ci.nsIDNSListener) ||
-        aIID.equals(Ci.nsISupports)) {
-      return this;
-    }
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  }
+  QueryInterface: ChromeUtils.generateQI(["nsIDNSListener"]),
 };
 
 const defaultOriginAttributes = {};
 
 function do_test_dontBlock() {
   prefs.setBoolPref("network.dns.blockDotOnion", false);
-  dns.asyncResolve("private.onion", 0, listenerDontBlock,
-                   mainThread, defaultOriginAttributes);
+  dns.asyncResolve(
+    "private.onion",
+    0,
+    listenerDontBlock,
+    mainThread,
+    defaultOriginAttributes
+  );
 }
 
 function do_test_block() {
   prefs.setBoolPref("network.dns.blockDotOnion", true);
   try {
-    dns.asyncResolve("private.onion", 0, listenerBlock,
-                     mainThread, defaultOriginAttributes);
+    dns.asyncResolve(
+      "private.onion",
+      0,
+      listenerBlock,
+      mainThread,
+      defaultOriginAttributes
+    );
   } catch (e) {
     // it is ok for this negative test to fail fast
     Assert.ok(true);
@@ -71,4 +73,3 @@ function run_test() {
   do_test_block();
   do_test_pending();
 }
-

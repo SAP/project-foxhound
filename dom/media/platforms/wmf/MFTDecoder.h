@@ -36,9 +36,10 @@ class MFTDecoder final {
   //  - aOutputType needs at least major and minor types set.
   //    This is used to select the matching output type out
   //    of all the available output types of the MFT.
-  HRESULT SetMediaTypes(IMFMediaType* aInputType, IMFMediaType* aOutputType,
-                        std::function<HRESULT(IMFMediaType*)>&& aCallback =
-                            [](IMFMediaType* aOutput) { return S_OK; });
+  HRESULT SetMediaTypes(
+      IMFMediaType* aInputType, IMFMediaType* aOutputType,
+      std::function<HRESULT(IMFMediaType*)>&& aCallback =
+          [](IMFMediaType* aOutput) { return S_OK; });
 
   // Returns the MFT's IMFAttributes object.
   already_AddRefed<IMFAttributes> GetAttributes();
@@ -54,11 +55,11 @@ class MFTDecoder final {
   //  - MF_E_NOTACCEPTING if the decoder can't accept input. The data
   //    must be resubmitted after Output() stops producing output.
   HRESULT Input(const uint8_t* aData, uint32_t aDataSize,
-                int64_t aTimestampUsecs, int64_t aDurationUsecs);
+                int64_t aTimestampUsecs);
   HRESULT Input(IMFSample* aSample);
 
   HRESULT CreateInputSample(const uint8_t* aData, uint32_t aDataSize,
-                            int64_t aTimestampUsecs, int64_t aDurationUsecs,
+                            int64_t aTimestampUsecs,
                             RefPtr<IMFSample>* aOutSample);
 
   // Retrieves output from the MFT. Call this once Input() returns

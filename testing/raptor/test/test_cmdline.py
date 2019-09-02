@@ -16,7 +16,10 @@ def test_verify_options(filedir):
                      page_cycles=1,
                      page_timeout=60000,
                      debug='True',
-                     power_test=False)
+                     power_test=False,
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     parser = ArgumentParser()
 
     with pytest.raises(SystemExit):
@@ -27,38 +30,67 @@ def test_verify_options(filedir):
 
     args = Namespace(app='geckoview',
                      binary='org.mozilla.geckoview_example',
-                     activity='GeckoViewActivity',
+                     activity='org.mozilla.geckoview_example.GeckoViewActivity',
+                     intent='android.intent.action.MAIN',
                      gecko_profile='False',
                      is_release_build=False,
                      host='sophie',
-                     power_test=False)
+                     power_test=False,
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     verify_options(parser, args)  # assert no exception
 
     args = Namespace(app='refbrow',
                      binary='org.mozilla.reference.browser',
-                     activity='BrowserTestActivity',
+                     activity='org.mozilla.reference.browser.BrowserTestActivity',
+                     intent='android.intent.action.MAIN',
                      gecko_profile='False',
                      is_release_build=False,
                      host='sophie',
-                     power_test=False)
+                     power_test=False,
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     verify_options(parser, args)  # assert no exception
 
     args = Namespace(app='fenix',
                      binary='org.mozilla.fenix.browser',
-                     activity='BrowserTestActivity',
+                     activity='org.mozilla.fenix.browser.BrowserPerformanceTestActivity',
+                     intent='android.intent.action.VIEW',
                      gecko_profile='False',
                      is_release_build=False,
                      host='sophie',
-                     power_test=False)
+                     power_test=False,
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
+    verify_options(parser, args)  # assert no exception
+
+    args = Namespace(app='geckoview',
+                     binary='org.mozilla.geckoview_example',
+                     activity='org.mozilla.geckoview_example.GeckoViewActivity',
+                     intent='android.intent.action.MAIN',
+                     gecko_profile='False',
+                     is_release_build=False,
+                     host='sophie',
+                     power_test=False,
+                     cpu_test=True,
+                     memory_test=False,
+                     enable_webrender=False)
     verify_options(parser, args)  # assert no exception
 
     args = Namespace(app='refbrow',
                      binary='org.mozilla.reference.browser',
                      activity=None,
+                     intent='android.intent.action.MAIN',
                      gecko_profile='False',
                      is_release_build=False,
                      host='sophie',
-                     power_test=False)
+                     power_test=False,
+                     cpu_test=False,
+                     memory_test=False,
+                     enable_webrender=False)
     parser = ArgumentParser()
 
     verify_options(parser, args)  # also will work as uses default activity

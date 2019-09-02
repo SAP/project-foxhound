@@ -155,6 +155,19 @@ class BackgroundParentImpl : public PBackgroundParent {
   virtual bool DeallocPTemporaryIPCBlobParent(
       PTemporaryIPCBlobParent* aActor) override;
 
+  virtual PFileCreatorParent* AllocPFileCreatorParent(
+      const nsString& aFullPath, const nsString& aType, const nsString& aName,
+      const Maybe<int64_t>& aLastModified, const bool& aExistenceCheck,
+      const bool& aIsFromNsIFile) override;
+
+  virtual mozilla::ipc::IPCResult RecvPFileCreatorConstructor(
+      PFileCreatorParent* actor, const nsString& aFullPath,
+      const nsString& aType, const nsString& aName,
+      const Maybe<int64_t>& aLastModified, const bool& aExistenceCheck,
+      const bool& aIsFromNsIFile) override;
+
+  virtual bool DeallocPFileCreatorParent(PFileCreatorParent* aActor) override;
+
   virtual mozilla::dom::PRemoteWorkerParent* AllocPRemoteWorkerParent(
       const RemoteWorkerData& aData) override;
 
@@ -262,14 +275,6 @@ class BackgroundParentImpl : public PBackgroundParent {
   virtual mozilla::ipc::IPCResult RecvMessagePortForceClose(
       const nsID& aUUID, const nsID& aDestinationUUID,
       const uint32_t& aSequenceID) override;
-
-  virtual PAsmJSCacheEntryParent* AllocPAsmJSCacheEntryParent(
-      const dom::asmjscache::OpenMode& aOpenMode,
-      const dom::asmjscache::WriteParams& aWriteParams,
-      const PrincipalInfo& aPrincipalInfo) override;
-
-  virtual bool DeallocPAsmJSCacheEntryParent(
-      PAsmJSCacheEntryParent* aActor) override;
 
   virtual PQuotaParent* AllocPQuotaParent() override;
 

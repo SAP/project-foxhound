@@ -8,16 +8,21 @@ package org.mozilla.geckoview;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.ArrayList;
+import java.util.Locale;
 
 import android.app.Service;
 import android.graphics.Rect;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.LocaleList;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.annotation.AnyThread;
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.text.TextUtils;
 
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.util.GeckoBundle;
@@ -32,7 +37,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
             extends RuntimeSettings.Builder<GeckoRuntimeSettings> {
         @Override
         protected @NonNull GeckoRuntimeSettings newSettings(
-                final GeckoRuntimeSettings settings) {
+                final @Nullable GeckoRuntimeSettings settings) {
             return new GeckoRuntimeSettings(settings);
         }
 
@@ -74,6 +79,19 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
                 throw new IllegalArgumentException("Extras must not  be null");
             }
             getSettings().mExtras = extras;
+            return this;
+        }
+
+        /**
+         * Path to configuration file from which GeckoView will read configuration options such as
+         * Gecko process arguments, environment variables, and preferences.
+         *
+         * @param configFilePath Configuration file path to read from, or <code>null</code> to use
+         *                       default location <code>/data/local/tmp/$PACKAGE-geckoview-config.yaml</code>.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder configFilePath(final @Nullable String configFilePath) {
+            getSettings().mConfigFilePath = configFilePath;
             return this;
         }
 
@@ -280,7 +298,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
          * @see <a href="https://developer.android.com/about/versions/oreo/background">Android Background Execution Limits</a>
          * @see GeckoRuntime#ACTION_CRASHED
          */
-        public @NonNull Builder crashHandler(final Class<? extends Service> handler) {
+        public @NonNull Builder crashHandler(final @Nullable Class<? extends Service> handler) {
             getSettings().mCrashHandler = handler;
             return this;
         }
@@ -291,7 +309,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
          * @param requestedLocales List of locale codes in Gecko format ("en" or "en-US").
          * @return The builder instance.
          */
-        public @NonNull Builder locales(final String[] requestedLocales) {
+        public @NonNull Builder locales(final @Nullable String[] requestedLocales) {
             getSettings().mRequestedLocales = requestedLocales;
             return this;
         }
@@ -312,12 +330,58 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
             getSettings().mAutoplayDefault.set(autoplay);
             return this;
         }
+
+        /**
+         * Sets the preferred color scheme override for web content.
+         *
+         * @param scheme The preferred color scheme. Must be one of the
+         *               {@link GeckoRuntimeSettings#COLOR_SCHEME_LIGHT COLOR_SCHEME_*} constants.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder preferredColorScheme(final @ColorScheme int scheme) {
+            getSettings().mPreferredColorScheme.set(scheme);
+            return this;
+        }
+
+        /**
+         * Set whether auto-zoom to editable fields should be enabled.
+         *
+         * @param flag True if auto-zoom should be enabled, false otherwise.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder inputAutoZoomEnabled(final boolean flag) {
+            getSettings().mInputAutoZoom.set(flag);
+            return this;
+        }
+
+        /**
+         * Set whether double tap zooming should be enabled.
+         *
+         * @param flag True if double tap zooming should be enabled, false otherwise.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder doubleTapZoomingEnabled(final boolean flag) {
+            getSettings().mDoubleTapZooming.set(flag);
+            return this;
+        }
+
+        /**
+         * Sets the WebGL MSAA level.
+         *
+         * @param level number of MSAA samples, 0 if MSAA should be disabled.
+         * @return This GeckoRuntimeSettings instance.
+         */
+        public @NonNull Builder glMsaaLevel(final int level) {
+            getSettings().mGlMsaaLevel.set(level);
+            return this;
+        }
     }
 
     private GeckoRuntime mRuntime;
     /* package */ boolean mUseContentProcess;
     /* package */ String[] mArgs;
     /* package */ Bundle mExtras;
+    /* package */ String mConfigFilePath;
 
     /* package */ ContentBlocking.Settings mContentBlocking;
 
@@ -339,6 +403,14 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         "font.size.systemFontScale", 100);
     /* package */ final Pref<Integer> mFontInflationMinTwips = new Pref<>(
         "font.size.inflation.minTwips", 0);
+    /* package */ final Pref<Integer> mPreferredColorScheme = new Pref<>(
+        "ui.systemUsesDarkTheme", -1);
+    /* package */ final Pref<Boolean> mInputAutoZoom = new Pref<>(
+            "formhelper.autozoom", true);
+    /* package */ final Pref<Boolean> mDoubleTapZooming = new Pref<>(
+            "apz.allow_double_tap_zooming", true);
+    /* package */ final Pref<Integer> mGlMsaaLevel = new Pref<>(
+            "gl.msaa-level", 0);
 
     /* package */ boolean mDebugPause;
     /* package */ boolean mUseMaxScreenDepth;
@@ -398,6 +470,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         mScreenHeightOverride = settings.mScreenHeightOverride;
         mCrashHandler = settings.mCrashHandler;
         mRequestedLocales = settings.mRequestedLocales;
+        mConfigFilePath = settings.mConfigFilePath;
     }
 
     /* package */ void commit() {
@@ -430,6 +503,18 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
      */
     public @NonNull Bundle getExtras() {
         return mExtras;
+    }
+
+    /**
+     * Path to configuration file from which GeckoView will read configuration options such as
+     * Gecko process arguments, environment variables, and preferences.
+     *
+     * @return Path to configuration file from which GeckoView will read configuration options,
+     * or <code>null</code> for default location
+     * <code>/data/local/tmp/$PACKAGE-geckoview-config.yaml</code>.
+     */
+    public @Nullable String getConfigFilePath() {
+        return mConfigFilePath;
     }
 
     /**
@@ -571,12 +656,64 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     private void commitLocales() {
-        if (mRequestedLocales == null) {
-            return;
-        }
         final GeckoBundle data = new GeckoBundle(1);
         data.putStringArray("requestedLocales", mRequestedLocales);
+        data.putString("acceptLanguages", computeAcceptLanguages());
         EventDispatcher.getInstance().dispatch("GeckoView:SetLocale", data);
+    }
+
+    private String computeAcceptLanguages() {
+        ArrayList<String> locales = new ArrayList<String>();
+
+        // Explicitly-set app prefs come first:
+        if (mRequestedLocales != null) {
+            for (String locale : mRequestedLocales) {
+                locales.add(locale.toLowerCase());
+            }
+        }
+        // OS prefs come second:
+        for (String locale : getDefaultLocales()) {
+            locale = locale.toLowerCase();
+            if (!locales.contains(locale)) {
+                locales.add(locale);
+            }
+        }
+
+        return TextUtils.join(",", locales);
+    }
+
+    private static String[] getDefaultLocales() {
+        if (Build.VERSION.SDK_INT >= 24) {
+            final LocaleList localeList = LocaleList.getDefault();
+            String[] locales = new String[localeList.size()];
+            for (int i = 0; i < localeList.size(); i++) {
+                locales[i] = localeList.get(i).toLanguageTag();
+            }
+            return locales;
+        }
+        String[] locales = new String[1];
+        final Locale locale = Locale.getDefault();
+        if (Build.VERSION.SDK_INT >= 21) {
+            locales[0] = locale.toLanguageTag();
+            return locales;
+        }
+
+        locales[0] = getLanguageTag(locale);
+        return locales;
+    }
+
+    private static String getLanguageTag(final Locale locale) {
+        final StringBuilder out = new StringBuilder(locale.getLanguage());
+        final String country = locale.getCountry();
+        final String variant = locale.getVariant();
+        if (!TextUtils.isEmpty(country)) {
+            out.append('-').append(country);
+        }
+        if (!TextUtils.isEmpty(variant)) {
+            out.append('-').append(variant);
+        }
+        // e.g. "en", "en-US", or "en-US-POSIX".
+        return out.toString();
     }
 
     /**
@@ -606,10 +743,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
 
     /**
      * Set whether or not font sizes in web content should be automatically scaled according to
-     * the device's current system font scale setting.
-     * Disabling this setting will restore the previously used values for
-     * {@link GeckoRuntimeSettings#getFontSizeFactor()} and
-     * {@link GeckoRuntimeSettings#getFontInflationEnabled()}.
+     * the device's current system font scale setting. Enabling this will prevent modification of
+     * the {@link GeckoRuntimeSettings#setFontSizeFactor font size factor}.
+     * Disabling this setting will restore the previously used value for the
+     * {@link GeckoRuntimeSettings#getFontSizeFactor font size factor}.
      *
      * @param enabled A flag determining whether or not font sizes should be scaled automatically
      *                to match the device's system font scale.
@@ -698,7 +835,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         }
 
         final int fontSizePercentage = Math.round(fontSizeFactor * 100);
-        mFontSizeFactor.commit(Math.round(fontSizePercentage));
+        mFontSizeFactor.commit(fontSizePercentage);
         if (getFontInflationEnabled()) {
             final int scaledFontInflation = Math.round(FONT_INFLATION_BASE_VALUE * fontSizeFactor);
             mFontInflationMinTwips.commit(scaledFontInflation);
@@ -729,21 +866,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
      *
      * <p>Currently, any changes only take effect after a reload of the session.
      *
-     * <p>This setting cannot be modified while
-     * {@link GeckoRuntimeSettings#setAutomaticFontSizeAdjustment automatic font size adjustment}
-     * is enabled.
-     *
      * @param enabled A flag determining whether or not font inflation should be enabled.
      * @return This GeckoRuntimeSettings instance.
      */
     public @NonNull GeckoRuntimeSettings setFontInflationEnabled(final boolean enabled) {
-        if (getAutomaticFontSizeAdjustment()) {
-            throw new IllegalStateException("Not allowed when automatic font size adjustment is enabled");
-        }
-        return setFontInflationEnabledInternal(enabled);
-    }
-
-    /* package */ @NonNull GeckoRuntimeSettings setFontInflationEnabledInternal(final boolean enabled) {
         final int minTwips =
                 enabled ? Math.round(FONT_INFLATION_BASE_VALUE * getFontSizeFactor()) : 0;
         mFontInflationMinTwips.commit(minTwips);
@@ -757,6 +883,100 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
      */
     public boolean getFontInflationEnabled() {
         return mFontInflationMinTwips.get() > 0;
+    }
+
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef({COLOR_SCHEME_LIGHT,
+             COLOR_SCHEME_DARK,
+             COLOR_SCHEME_SYSTEM})
+    /* package */ @interface ColorScheme {}
+
+    /** A light theme for web content is preferred. */
+    public static final int COLOR_SCHEME_LIGHT = 0;
+    /** A dark theme for web content is preferred. */
+    public static final int COLOR_SCHEME_DARK = 1;
+    /** The preferred color scheme will be based on system settings. */
+    public static final int COLOR_SCHEME_SYSTEM = -1;
+
+    /**
+     * Gets the preferred color scheme override for web content.
+     *
+     * @return One of the {@link GeckoRuntimeSettings#COLOR_SCHEME_LIGHT COLOR_SCHEME_*} constants.
+     */
+    public @ColorScheme int getPreferredColorScheme() {
+        return mPreferredColorScheme.get();
+    }
+
+    /**
+     * Sets the preferred color scheme override for web content.
+     *
+     * @param scheme The preferred color scheme. Must be one of the
+     *               {@link GeckoRuntimeSettings#COLOR_SCHEME_LIGHT COLOR_SCHEME_*} constants.
+     * @return This GeckoRuntimeSettings instance.
+     */
+    public @NonNull GeckoRuntimeSettings setPreferredColorScheme(final @ColorScheme int scheme) {
+        mPreferredColorScheme.commit(scheme);
+        return this;
+    }
+
+    /**
+     * Gets whether auto-zoom to editable fields is enabled.
+     *
+     * @return True if auto-zoom is enabled, false otherwise.
+     */
+    public boolean getInputAutoZoomEnabled() {
+        return mInputAutoZoom.get();
+    }
+
+    /**
+     * Set whether auto-zoom to editable fields should be enabled.
+     *
+     * @param flag True if auto-zoom should be enabled, false otherwise.
+     * @return This GeckoRuntimeSettings instance.
+     */
+    public @NonNull GeckoRuntimeSettings setInputAutoZoomEnabled(final boolean flag) {
+        mInputAutoZoom.commit(flag);
+        return this;
+    }
+
+    /**
+     * Gets whether double-tap zooming is enabled.
+     *
+     * @return True if double-tap zooming is enabled, false otherwise.
+     */
+    public boolean getDoubleTapZoomingEnabled() {
+        return mDoubleTapZooming.get();
+    }
+
+    /**
+     * Sets whether double tap zooming is enabled.
+     *
+     * @param flag true if double tap zooming should be enabled, false otherwise.
+     * @return This GeckoRuntimeSettings instance.
+     */
+    public @NonNull GeckoRuntimeSettings setDoubleTapZoomingEnabled(final boolean flag) {
+        mDoubleTapZooming.commit(flag);
+        return this;
+    }
+
+    /**
+     * Gets the current WebGL MSAA level.
+     *
+     * @return number of MSAA samples, 0 if MSAA is disabled.
+     */
+    public int getGlMsaaLevel() {
+        return mGlMsaaLevel.get();
+    }
+
+    /**
+     * Sets the WebGL MSAA level.
+     *
+     * @param level number of MSAA samples, 0 if MSAA should be disabled.
+     * @return This GeckoRuntimeSettings instance.
+     */
+    public @NonNull GeckoRuntimeSettings setGlMsaaLevel(final int level) {
+        mGlMsaaLevel.commit(level);
+        return this;
     }
 
     @Override // Parcelable
@@ -774,6 +994,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         out.writeInt(mScreenHeightOverride);
         out.writeString(mCrashHandler != null ? mCrashHandler.getName() : null);
         out.writeStringArray(mRequestedLocales);
+        out.writeString(mConfigFilePath);
     }
 
     // AIDL code may call readFromParcel even though it's not part of Parcelable.
@@ -803,6 +1024,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         }
 
         mRequestedLocales = source.createStringArray();
+        mConfigFilePath = source.readString();
     }
 
     public static final Parcelable.Creator<GeckoRuntimeSettings> CREATOR

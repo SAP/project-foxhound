@@ -6,17 +6,15 @@
 /* import-globals-from head.js */
 
 function _getSupportsFile(path) {
-  const cr = Cc["@mozilla.org/chrome/chrome-registry;1"]
-    .getService(Ci.nsIChromeRegistry);
+  const cr = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(
+    Ci.nsIChromeRegistry
+  );
   const uri = Services.io.newURI(CHROME_URL_ROOT + path);
   const fileurl = cr.convertChromeURL(uri);
   return fileurl.QueryInterface(Ci.nsIFileURL);
 }
 
 async function enableExtensionDebugging() {
-  // Force enabling of addons debugging
-  await pushPref("devtools.chrome.enabled", true);
-  await pushPref("devtools.debugger.remote-enabled", true);
   // Disable security prompt
   await pushPref("devtools.debugger.prompt-connection", false);
   // Enable Browser toolbox test script execution via env variable
@@ -52,7 +50,10 @@ function installRegularExtension(pathOrFile) {
  * Will use a mock file picker to select the file.
  */
 async function installTemporaryExtension(pathOrFile, name, document) {
-  const { Management } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
+  const { Management } = ChromeUtils.import(
+    "resource://gre/modules/Extension.jsm",
+    null
+  );
 
   info("Install temporary extension named " + name);
   // Mock the file picker to select a test addon
@@ -70,7 +71,7 @@ async function installTemporaryExtension(pathOrFile, name, document) {
   });
 
   // Trigger the file picker by clicking on the button
-  document.querySelector(".js-temporary-extension-install-button").click();
+  document.querySelector(".qa-temporary-extension-install-button").click();
 
   info("Wait for addon to be installed");
   await onAddonInstalled;
@@ -78,20 +79,30 @@ async function installTemporaryExtension(pathOrFile, name, document) {
 /* exported installTemporaryExtension */
 
 function createTemporaryXPI(xpiData) {
-  const { ExtensionTestCommon } =
-    ChromeUtils.import("resource://testing-common/ExtensionTestCommon.jsm", {});
+  const { ExtensionTestCommon } = ChromeUtils.import(
+    "resource://testing-common/ExtensionTestCommon.jsm",
+    {}
+  );
 
   const { background, files, id, name, extraProperties } = xpiData;
   info("Generate XPI file for " + id);
 
-  const manifest = Object.assign({}, {
-    applications: { gecko: { id }},
-    manifest_version: 2,
-    name,
-    version: "1.0",
-  }, extraProperties);
+  const manifest = Object.assign(
+    {},
+    {
+      applications: { gecko: { id } },
+      manifest_version: 2,
+      name,
+      version: "1.0",
+    },
+    extraProperties
+  );
 
-  const xpiFile = ExtensionTestCommon.generateXPI({ background, files, manifest });
+  const xpiFile = ExtensionTestCommon.generateXPI({
+    background,
+    files,
+    manifest,
+  });
   registerCleanupFunction(() => xpiFile.exists() && xpiFile.remove(false));
   return xpiFile;
 }
@@ -113,7 +124,9 @@ function updateTemporaryXPI(xpiData, existingXPI) {
   const xpiFile = createTemporaryXPI(xpiData);
   // Check that the name of the new file is correct
   if (xpiFile.leafName !== existingName) {
-    throw new Error("New XPI created with unexpected name: " + xpiFile.leafName);
+    throw new Error(
+      "New XPI created with unexpected name: " + xpiFile.leafName
+    );
   }
   return xpiFile;
 }
@@ -134,9 +147,15 @@ async function installTemporaryExtensionFromXPI(xpiData, document) {
 /* exported installTemporaryExtensionFromXPI */
 
 async function removeTemporaryExtension(name, document) {
+  info(`Wait for removable extension with name: '${name}'`);
+  const buttonName = ".qa-temporary-extension-remove-button";
+  await waitUntil(() => {
+    const extension = findDebugTargetByText(name, document);
+    return extension && extension.querySelector(buttonName);
+  });
   info(`Remove the temporary extension with name: '${name}'`);
   const temporaryExtensionItem = findDebugTargetByText(name, document);
-  temporaryExtensionItem.querySelector(".js-temporary-extension-remove-button").click();
+  temporaryExtensionItem.querySelector(buttonName).click();
 
   info("Wait until the debug target item disappears");
   await waitUntil(() => !findDebugTargetByText(name, document));
@@ -144,7 +163,9 @@ async function removeTemporaryExtension(name, document) {
 /* exported removeTemporaryExtension */
 
 async function removeExtension(id, name, document) {
-  info("Retrieve the extension instance from the addon manager, and uninstall it");
+  info(
+    "Retrieve the extension instance from the addon manager, and uninstall it"
+  );
   const extension = await AddonManager.getAddonByID(id);
   extension.uninstall();
 

@@ -4,42 +4,7 @@
 
 var EXPORTED_SYMBOLS = ["PrivateBrowsingUtils"];
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-function PrivateBrowsingContentBlockingAllowList() {
-  Services.obs.addObserver(this, "last-pb-context-exited", true);
-}
-
-PrivateBrowsingContentBlockingAllowList.prototype = {
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
-
-  /**
-   * Add the provided URI to the list of allowed tracking sites.
-   *
-   * @param uri nsIURI
-   *        The URI to add to the list.
-   */
-  addToAllowList(uri) {
-    Services.perms.add(uri, "trackingprotection-pb", Ci.nsIPermissionManager.ALLOW_ACTION,
-                       Ci.nsIPermissionManager.EXPIRE_SESSION);
-  },
-
-  /**
-   * Remove the provided URI from the list of allowed tracking sites.
-   *
-   * @param uri nsIURI
-   *        The URI to remove from the list.
-   */
-  removeFromAllowList(uri) {
-    Services.perms.remove(uri, "trackingprotection-pb");
-  },
-
-  observe(subject, topic, data) {
-    if (topic == "last-pb-context-exited") {
-      Services.perms.removeByType("trackingprotection-pb");
-    }
-  },
-};
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const kAutoStartPref = "browser.privatebrowsing.autostart";
 
@@ -56,9 +21,11 @@ var PrivateBrowsingUtils = {
   // isBrowserPrivate since it works with e10s.
   isWindowPrivate: function pbu_isWindowPrivate(aWindow) {
     if (!aWindow.isChromeWindow) {
-      dump("WARNING: content window passed to PrivateBrowsingUtils.isWindowPrivate. " +
-           "Use isContentWindowPrivate instead (but only for frame scripts).\n"
-           + new Error().stack);
+      dump(
+        "WARNING: content window passed to PrivateBrowsingUtils.isWindowPrivate. " +
+          "Use isContentWindowPrivate instead (but only for frame scripts).\n" +
+          new Error().stack
+      );
     }
 
     return this.privacyContextFromWindow(aWindow).usePrivateBrowsing;
@@ -79,30 +46,19 @@ var PrivateBrowsingUtils = {
       // content window doesn't exist.
       return this.isWindowPrivate(chromeWin);
     }
-    return this.privacyContextFromWindow(aBrowser.contentWindow).usePrivateBrowsing;
+    return this.privacyContextFromWindow(aBrowser.contentWindow)
+      .usePrivateBrowsing;
   },
 
   privacyContextFromWindow: function pbu_privacyContextFromWindow(aWindow) {
     return aWindow.docShell.QueryInterface(Ci.nsILoadContext);
   },
 
-  get _pbCBAllowList() {
-    delete this._pbCBAllowList;
-    return this._pbCBAllowList = new PrivateBrowsingContentBlockingAllowList();
-  },
-
-  addToTrackingAllowlist(aURI) {
-    this._pbCBAllowList.addToAllowList(aURI);
-  },
-
-  removeFromTrackingAllowlist(aURI) {
-    this._pbCBAllowList.removeFromAllowList(aURI);
-  },
-
   get permanentPrivateBrowsing() {
     try {
-      return gTemporaryAutoStartMode ||
-             Services.prefs.getBoolPref(kAutoStartPref);
+      return (
+        gTemporaryAutoStartMode || Services.prefs.getBoolPref(kAutoStartPref)
+      );
     } catch (e) {
       // The pref does not exist
       return false;
@@ -117,4 +73,3 @@ var PrivateBrowsingUtils = {
     return gTemporaryAutoStartMode;
   },
 };
-

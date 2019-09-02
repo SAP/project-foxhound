@@ -8,13 +8,20 @@
 
 /* General utilities used throughout devtools. */
 
-var { Ci, Cu, components } = require("chrome");
+var { Ci, Cc, Cu, components } = require("chrome");
 var Services = require("Services");
 var flags = require("./flags");
-var {getStack, callFunctionWithAsyncStack} = require("devtools/shared/platform/stack");
+var {
+  getStack,
+  callFunctionWithAsyncStack,
+} = require("devtools/shared/platform/stack");
 
-loader.lazyRequireGetter(this, "FileUtils",
-                         "resource://gre/modules/FileUtils.jsm", true);
+loader.lazyRequireGetter(
+  this,
+  "FileUtils",
+  "resource://gre/modules/FileUtils.jsm",
+  true
+);
 
 // Using this name lets the eslint plugin know about lazy defines in
 // this file.
@@ -37,7 +44,7 @@ for (const key of Object.keys(ThreadSafeDevToolsUtils)) {
 exports.isCPOW = function(debuggerObject) {
   try {
     return Cu.isCrossProcessWrapper(debuggerObject.unsafeDereference());
-  } catch (e) { }
+  } catch (e) {}
   return false;
 };
 
@@ -216,10 +223,15 @@ exports.unwrap = function unwrap(obj) {
  * @return boolean
  */
 exports.isSafeDebuggerObject = function(obj) {
+  // CPOW usage is forbidden outside tests (bug 1465911)
+  if (exports.isCPOW(obj)) {
+    return false;
+  }
+
   const unwrapped = exports.unwrap(obj);
 
   // Objects belonging to an invisible-to-debugger compartment might be proxies,
-  // so just in case consider them unsafe. CPOWs are included in this case.
+  // so just in case consider them unsafe.
   if (unwrapped === undefined) {
     return false;
   }
@@ -310,8 +322,9 @@ exports.isSafeJSObject = function(obj) {
     return false;
   }
 
-  if (Cu.getGlobalForObject(obj) ==
-      Cu.getGlobalForObject(exports.isSafeJSObject)) {
+  if (
+    Cu.getGlobalForObject(obj) == Cu.getGlobalForObject(exports.isSafeJSObject)
+  ) {
     // obj is not a cross-compartment wrapper.
     return true;
   }
@@ -323,7 +336,7 @@ exports.isSafeJSObject = function(obj) {
 
   // If there aren't Xrays, only allow chrome objects.
   const principal = Cu.getObjectPrincipal(obj);
-  if (!Services.scriptSecurityManager.isSystemPrincipal(principal)) {
+  if (!principal.isSystemPrincipal) {
     return false;
   }
 
@@ -399,7 +412,7 @@ DevToolsUtils.defineLazyGetter(this, "AppConstants", () => {
 /**
  * No operation. The empty function.
  */
-exports.noop = function() { };
+exports.noop = function() {};
 
 let assertionFailureCount = 0;
 
@@ -434,9 +447,10 @@ function reallyAssert(condition, message) {
  * If assertions are not enabled, then this function is a no-op.
  */
 Object.defineProperty(exports, "assert", {
-  get: () => (AppConstants.DEBUG_JS_MODULES || flags.testing)
-    ? reallyAssert
-    : exports.noop,
+  get: () =>
+    AppConstants.DEBUG_JS_MODULES || flags.testing
+      ? reallyAssert
+      : exports.noop,
 });
 
 /**
@@ -503,13 +517,18 @@ DevToolsUtils.defineLazyGetter(this, "NetworkHelper", () => {
  * without relying on caching when we can (not for eval, etc.):
  * http://www.softwareishard.com/blog/firebug/nsitraceablechannel-intercept-http-traffic/
  */
-function mainThreadFetch(urlIn, aOptions = { loadFromCache: true,
-                                             policy: Ci.nsIContentPolicy.TYPE_OTHER,
-                                             window: null,
-                                             charset: null,
-                                             principal: null,
-                                             cacheKey: 0 }) {
-  return new Promise((resolve, reject) =>{
+function mainThreadFetch(
+  urlIn,
+  aOptions = {
+    loadFromCache: true,
+    policy: Ci.nsIContentPolicy.TYPE_OTHER,
+    window: null,
+    charset: null,
+    principal: null,
+    cacheKey: 0,
+  }
+) {
+  return new Promise((resolve, reject) => {
     // Create a channel.
     const url = urlIn.split(" -> ").pop();
     let channel;
@@ -527,16 +546,19 @@ function mainThreadFetch(urlIn, aOptions = { loadFromCache: true,
 
     // When loading from cache, the cacheKey allows us to target a specific
     // SHEntry and offer ways to restore POST requests from cache.
-    if (aOptions.loadFromCache &&
-        aOptions.cacheKey != 0 && channel instanceof Ci.nsICacheInfoChannel) {
+    if (
+      aOptions.loadFromCache &&
+      aOptions.cacheKey != 0 &&
+      channel instanceof Ci.nsICacheInfoChannel
+    ) {
       channel.cacheKey = aOptions.cacheKey;
     }
 
     if (aOptions.window) {
       // Respect private browsing.
-      channel.loadGroup = aOptions.window.docShell
-                            .QueryInterface(Ci.nsIDocumentLoader)
-                            .loadGroup;
+      channel.loadGroup = aOptions.window.docShell.QueryInterface(
+        Ci.nsIDocumentLoader
+      ).loadGroup;
     }
 
     const onResponse = (stream, status, request) => {
@@ -560,16 +582,26 @@ function mainThreadFetch(urlIn, aOptions = { loadFromCache: true,
         // implementation of the "decode" algorithm
         // (https://encoding.spec.whatwg.org/#decode) exposed to JS.
         let bomCharset = null;
-        if (available >= 3 && source.codePointAt(0) == 0xef &&
-            source.codePointAt(1) == 0xbb && source.codePointAt(2) == 0xbf) {
+        if (
+          available >= 3 &&
+          source.codePointAt(0) == 0xef &&
+          source.codePointAt(1) == 0xbb &&
+          source.codePointAt(2) == 0xbf
+        ) {
           bomCharset = "UTF-8";
           source = source.slice(3);
-        } else if (available >= 2 && source.codePointAt(0) == 0xfe &&
-                  source.codePointAt(1) == 0xff) {
+        } else if (
+          available >= 2 &&
+          source.codePointAt(0) == 0xfe &&
+          source.codePointAt(1) == 0xff
+        ) {
           bomCharset = "UTF-16BE";
           source = source.slice(2);
-        } else if (available >= 2 && source.codePointAt(0) == 0xff &&
-                  source.codePointAt(1) == 0xfe) {
+        } else if (
+          available >= 2 &&
+          source.codePointAt(0) == 0xff &&
+          source.codePointAt(1) == 0xfe
+        ) {
           bomCharset = "UTF-16LE";
           source = source.slice(2);
         }
@@ -600,7 +632,10 @@ function mainThreadFetch(urlIn, aOptions = { loadFromCache: true,
         });
       } catch (ex) {
         const uri = request.originalURI;
-        if (ex.name === "NS_BASE_STREAM_CLOSED" && uri instanceof Ci.nsIFileURL) {
+        if (
+          ex.name === "NS_BASE_STREAM_CLOSED" &&
+          uri instanceof Ci.nsIFileURL
+        ) {
           // Empty files cause NS_BASE_STREAM_CLOSED exception. Use OS.File to
           // differentiate between empty files and other errors (bug 1170864).
           // This can be removed when bug 982654 is fixed.
@@ -642,7 +677,11 @@ function mainThreadFetch(urlIn, aOptions = { loadFromCache: true,
  * @param {Object} options - The options object passed to @method fetch.
  * @return {nsIChannel} - The newly created channel. Throws on failure.
  */
-function newChannelForURL(url, { policy, window, principal }) {
+function newChannelForURL(
+  url,
+  { policy, window, principal },
+  recursing = false
+) {
   const securityFlags = Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
 
   let uri;
@@ -679,8 +718,7 @@ function newChannelForURL(url, { policy, window, principal }) {
     // and it may not be correct.
     let prin = principal;
     if (!prin) {
-      prin = Services.scriptSecurityManager
-                     .createCodebasePrincipal(uri, {});
+      prin = Services.scriptSecurityManager.createCodebasePrincipal(uri, {});
     }
 
     channelOptions.loadingPrincipal = prin;
@@ -689,11 +727,20 @@ function newChannelForURL(url, { policy, window, principal }) {
   try {
     return NetUtil.newChannel(channelOptions);
   } catch (e) {
+    // Don't infinitely recurse if newChannel keeps throwing.
+    if (recursing) {
+      throw e;
+    }
+
     // In xpcshell tests on Windows, nsExternalProtocolHandler::NewChannel()
     // can throw NS_ERROR_UNKNOWN_PROTOCOL if the external protocol isn't
     // supported by Windows, so we also need to handle the exception here if
     // parsing the URL above doesn't throw.
-    return newChannelForURL("file://" + url, { policy, window, principal });
+    return newChannelForURL(
+      "file://" + url,
+      { policy, window, principal },
+      /* recursing */ true
+    );
   }
 }
 
@@ -734,6 +781,62 @@ exports.openFileStream = function(filePath) {
   });
 };
 
+/**
+ * Save the given data to disk after asking the user where to do so.
+ *
+ * @param {Window} parentWindow
+ *        The parent window to use to display the filepicker.
+ * @param {UInt8Array} dataArray
+ *        The data to write to the file.
+ * @param {String} fileName
+ *        The suggested filename.
+ */
+exports.saveAs = async function(parentWindow, dataArray, fileName = "") {
+  let returnFile;
+  try {
+    returnFile = await exports.showSaveFileDialog(parentWindow, fileName);
+  } catch (ex) {
+    return;
+  }
+
+  await OS.File.writeAtomic(returnFile.path, dataArray, {
+    tmpPath: returnFile.path + ".tmp",
+  });
+};
+
+/**
+ * Show file picker and return the file user selected.
+ *
+ * @param nsIWindow parentWindow
+ *        Optional parent window. If null the parent window of the file picker
+ *        will be the window of the attached input element.
+ * @param AString suggestedFilename
+ *        The suggested filename when toSave is true.
+ *
+ * @return Promise
+ *         A promise that is resolved after the file is selected by the file picker
+ */
+exports.showSaveFileDialog = function(parentWindow, suggestedFilename) {
+  const fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+
+  if (suggestedFilename) {
+    fp.defaultString = suggestedFilename;
+  }
+
+  fp.init(parentWindow, null, fp.modeSave);
+  fp.appendFilters(fp.filterAll);
+
+  return new Promise((resolve, reject) => {
+    fp.open(result => {
+      if (result == Ci.nsIFilePicker.returnCancel) {
+        reject();
+      } else {
+        resolve(fp.file);
+      }
+    });
+  });
+};
+
 /*
  * All of the flags have been moved to a different module. Make sure
  * nobody is accessing them anymore, and don't write new code using
@@ -742,14 +845,16 @@ exports.openFileStream = function(filePath) {
 function errorOnFlag(exports, name) {
   Object.defineProperty(exports, name, {
     get: () => {
-      const msg = `Cannot get the flag ${name}. ` +
-            `Use the "devtools/shared/flags" module instead`;
+      const msg =
+        `Cannot get the flag ${name}. ` +
+        `Use the "devtools/shared/flags" module instead`;
       console.error(msg);
       throw new Error(msg);
     },
     set: () => {
-      const msg = `Cannot set the flag ${name}. ` +
-            `Use the "devtools/shared/flags" module instead`;
+      const msg =
+        `Cannot set the flag ${name}. ` +
+        `Use the "devtools/shared/flags" module instead`;
       console.error(msg);
       throw new Error(msg);
     },
@@ -767,7 +872,7 @@ errorOnFlag(exports, "wantVerbose");
 // avoids the use of unsafeDeference. This is useful for example in workers,
 // where unsafeDereference will return an opaque security wrapper to the
 // referent.
-function callPropertyOnObject(object, name) {
+function callPropertyOnObject(object, name, ...args) {
   // Find the property.
   let descriptor;
   let proto = object;
@@ -787,7 +892,7 @@ function callPropertyOnObject(object, name) {
   }
 
   // Call the property.
-  const result = value.call(object);
+  const result = value.call(object, ...args);
   if (result === null) {
     throw new Error("Code was terminated.");
   }
@@ -812,3 +917,13 @@ function* makeDebuggeeIterator(object) {
 }
 
 exports.makeDebuggeeIterator = makeDebuggeeIterator;
+
+/**
+ * Shared helper to retrieve the topmost window. This can be used to retrieve the chrome
+ * window embedding the DevTools frame.
+ */
+function getTopWindow(win) {
+  return win.windowRoot ? win.windowRoot.ownerGlobal : win.top;
+}
+
+exports.getTopWindow = getTopWindow;

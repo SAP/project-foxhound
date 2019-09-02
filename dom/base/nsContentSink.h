@@ -236,7 +236,7 @@ class nsContentSink : public nsICSSLoaderObserver,
  protected:
   // Tries to scroll to the URI's named anchor. Once we've successfully
   // done that, further calls to this method will be ignored.
-  void ScrollToRef();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void ScrollToRef();
 
   // Start layout.  If aIgnorePendingSheets is true, this will happen even if
   // we still have stylesheet loads pending.  Otherwise, we'll wait until the
@@ -288,8 +288,6 @@ class nsContentSink : public nsICSSLoaderObserver,
   // Timer used for notification
   nsCOMPtr<nsITimer> mNotificationTimer;
 
-  // Have we already called BeginUpdate for this set of content changes?
-  uint8_t mBeganUpdate : 1;
   uint8_t mLayoutStarted : 1;
   uint8_t mDynamicLowerValue : 1;
   uint8_t mParsing : 1;

@@ -929,7 +929,7 @@ macro_rules! define_string_types {
 
         impl From<Box<[$char_t]>> for $String {
             fn from(s: Box<[$char_t]>) -> $String {
-                s.to_vec().into()
+                s.into_vec().into()
             }
         }
 
@@ -1175,12 +1175,12 @@ impl nsCStringLike for Box<str> {
     }
 }
 
-/// This trait is implemented on types which are Latin1 `nsCString`-like,
-/// in that they can at very low cost be converted to a borrowed
-/// `&nsACString` and do not denote UTF-8ness in the Rust type system.
-///
-/// This trait is used to DWIM when calling the methods on
-/// `nsACString`.
+// This trait is implemented on types which are Latin1 `nsCString`-like,
+// in that they can at very low cost be converted to a borrowed
+// `&nsACString` and do not denote UTF-8ness in the Rust type system.
+//
+// This trait is used to DWIM when calling the methods on
+// `nsACString`.
 string_like! {
     char_t = u8;
 

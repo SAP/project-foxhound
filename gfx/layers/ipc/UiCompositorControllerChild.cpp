@@ -13,6 +13,7 @@
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/StaticPtr.h"
 #include "nsBaseWidget.h"
+#include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 
 #if defined(MOZ_WIDGET_ANDROID)
@@ -109,6 +110,10 @@ bool UiCompositorControllerChild::SetMaxToolbarHeight(const int32_t& aHeight) {
   return SendMaxToolbarHeight(aHeight);
 }
 
+bool UiCompositorControllerChild::SetFixedBottomOffset(int32_t aOffset) {
+  return SendFixedBottomOffset(aOffset);
+}
+
 bool UiCompositorControllerChild::SetPinned(const bool& aPinned,
                                             const int32_t& aReason) {
   if (!mIsOpen) {
@@ -178,9 +183,16 @@ void UiCompositorControllerChild::Destroy() {
     return;
   }
 
+  if (mWidget) {
+    // Dispatch mWidget to main thread to prevent it from being destructed by
+    // the ui thread.
+    RefPtr<nsIWidget> widget = mWidget.forget();
+    NS_ReleaseOnMainThreadSystemGroup("UiCompositorControllerChild::mWidget",
+                                      widget.forget());
+  }
+
   if (mIsOpen) {
     // Close the underlying IPC channel.
-    mWidget = nullptr;
     PUiCompositorControllerChild::Close();
     mIsOpen = false;
   }
@@ -211,7 +223,7 @@ void UiCompositorControllerChild::ActorDestroy(ActorDestroyReason aWhy) {
   }
 }
 
-void UiCompositorControllerChild::DeallocPUiCompositorControllerChild() {
+void UiCompositorControllerChild::ActorDealloc() {
   if (mParent) {
     mParent = nullptr;
   }
@@ -220,8 +232,10 @@ void UiCompositorControllerChild::DeallocPUiCompositorControllerChild() {
 
 void UiCompositorControllerChild::ProcessingError(Result aCode,
                                                   const char* aReason) {
-  MOZ_RELEASE_ASSERT(aCode == MsgDropped,
-                     "Processing error in UiCompositorControllerChild");
+  if (aCode != MsgDropped) {
+    gfxDevCrash(gfx::LogReason::ProcessingError)
+        << "Processing error in UiCompositorControllerChild: " << int(aCode);
+  }
 }
 
 void UiCompositorControllerChild::HandleFatalError(const char* aMsg) const {

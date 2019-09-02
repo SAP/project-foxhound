@@ -54,7 +54,7 @@ class ShSurfHandle;
 
 class SharedSurface {
  public:
-  static void ProdCopy(SharedSurface* src, SharedSurface* dest,
+  static bool ProdCopy(SharedSurface* src, SharedSurface* dest,
                        SurfaceFactory* factory);
 
   const SharedSurfaceType mType;
@@ -288,7 +288,7 @@ class SurfaceFactory : public SupportsWeakPtr<SurfaceFactory> {
   bool Recycle(layers::SharedSurfaceTextureClient* texClient);
 };
 
-class ScopedReadbackFB {
+class ScopedReadbackFB final {
   GLContext* const mGL;
   ScopedBindFramebuffer mAutoFB;
   GLuint mTempFB = 0;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Various mouse tests that spawn in new windows</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="apz_test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
@@ -16,6 +16,12 @@ var subtests = [
   {"file": "helper_click.html?dtc=true"},
   // Sanity test for click but with some mouse movement between the down and up
   {"file": "helper_drag_click.html"},
+  // Test for dragging on the scrollbar of the root scrollable element works.
+  // This takes different codepaths with async zooming support enabled and
+  // disabled, and so needs to be tested separately for both.
+  // TODO(bug 1556556): Once we get this working with zooming enabled,
+  // add an entry to run this with apz.allow_zooming=true as well.
+  {"file": "helper_drag_root_scrollbar.html", "prefs": [["apz.allow_zooming", false]]},
   // Test for dragging on a fake-scrollbar element that scrolls the page
   {"file": "helper_drag_scroll.html"},
   // Test for dragging the scrollbar with a fixed-pos element overlaying it
@@ -32,10 +38,13 @@ var subtests = [
   // Tests for scrollbar-dragging on scrollframes inside nested transforms
   {"file": "helper_bug1490393.html"},
   {"file": "helper_bug1490393-2.html"},
+  // Scrollbar-dragging on scrollframes inside filters inside transforms
+  {"file": "helper_bug1550510.html"},
 ];
 
 if (isApzEnabled()) {
   SimpleTest.waitForExplicitFinish();
+  SimpleTest.expectAssertions(0, 2); // from helper_bug1550510.html, bug 1232856
   window.onload = function() {
     runSubtestsSeriallyInFreshWindows(subtests)
     .then(SimpleTest.finish, SimpleTest.finish);

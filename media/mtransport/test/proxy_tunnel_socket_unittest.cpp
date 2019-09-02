@@ -9,8 +9,7 @@
 #include <vector>
 #include <numeric>
 
-#include "mozilla/dom/PBrowserOrId.h"
-
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nr_socket_proxy.h"
 #include "nr_socket_proxy_config.h"
 #include "WebrtcProxyChannelWrapper.h"
@@ -23,8 +22,6 @@ using namespace mozilla;
 
 // update TestReadMultipleSizes if you change this
 const std::string kHelloMessage = "HELLO IS IT ME YOU'RE LOOKING FOR?";
-
-typedef mozilla::dom::PBrowserOrId PBrowserOrId;
 
 class NrSocketProxyTest : public MtransportTest {
  public:
@@ -40,10 +37,10 @@ class NrSocketProxyTest : public MtransportTest {
   void SetUp() override {
     nsCString alpn = NS_LITERAL_CSTRING("webrtc");
     std::shared_ptr<NrSocketProxyConfig> config;
-    config.reset(new NrSocketProxyConfig(PBrowserOrId(), alpn));
+    config.reset(new NrSocketProxyConfig(0, alpn, net::LoadInfoArgs()));
     // config is never used but must be non-null
     mSProxy = new NrSocketProxy(config);
-    int r = nr_socket_create_int((void *)mSProxy.get(), mSProxy->vtbl(),
+    int r = nr_socket_create_int((void*)mSProxy.get(), mSProxy->vtbl(),
                                  &nr_socket_);
     ASSERT_EQ(0, r);
 
@@ -53,13 +50,13 @@ class NrSocketProxyTest : public MtransportTest {
 
   void TearDown() override { mSProxy->close(); }
 
-  static void readable_cb(NR_SOCKET s, int how, void *cb_arg) {
-    NrSocketProxyTest *test = (NrSocketProxyTest *)cb_arg;
+  static void readable_cb(NR_SOCKET s, int how, void* cb_arg) {
+    NrSocketProxyTest* test = (NrSocketProxyTest*)cb_arg;
     size_t capacity = std::min(test->mReadChunkSize, test->mReadAllowance);
     nsTArray<uint8_t> array(capacity);
     size_t read;
 
-    nr_socket_read(test->nr_socket_, (char *)array.Elements(), array.Capacity(),
+    nr_socket_read(test->nr_socket_, (char*)array.Elements(), array.Capacity(),
                    &read, 0);
 
     ASSERT_TRUE(read <= array.Capacity());
@@ -78,18 +75,18 @@ class NrSocketProxyTest : public MtransportTest {
     }
   }
 
-  static void writable_cb(NR_SOCKET s, int how, void *cb_arg) {
-    NrSocketProxyTest *test = (NrSocketProxyTest *)cb_arg;
+  static void writable_cb(NR_SOCKET s, int how, void* cb_arg) {
+    NrSocketProxyTest* test = (NrSocketProxyTest*)cb_arg;
     test->mConnected = true;
   }
 
   const std::string DataString() {
-    return std::string((char *)mData.Elements(), mData.Length());
+    return std::string((char*)mData.Elements(), mData.Length());
   }
 
  protected:
   RefPtr<NrSocketProxy> mSProxy;
-  nr_socket *nr_socket_;
+  nr_socket* nr_socket_;
 
   nsTArray<uint8_t> mData;
   nsTArray<uint8_t> mEmptyArray;

@@ -65,6 +65,9 @@ connection-proxy-noproxy = No proxy for
 
 connection-proxy-noproxy-desc = Example: .mozilla.org, .net.nz, 192.168.1.0/24
 
+# Do not translate localhost, 127.0.0.1 and ::1.
+connection-proxy-noproxy-localhost-desc = Connections to localhost, 127.0.0.1, and ::1 are never proxied.
+
 connection-proxy-autotype =
     .label = Automatic proxy configuration URL
     .accesskey = A
@@ -86,14 +89,18 @@ connection-dns-over-https =
     .label = Enable DNS over HTTPS
     .accesskey = b
 
+connection-dns-over-https-url-resolver = Use Provider
+    .accesskey = P
+
 # Variables:
-#   $url (String) - URL for the DNS over HTTPS provider
-connection-dns-over-https-url-default =
-    .label = Use default ({ $url })
-    .accesskey = U
+#   $name (String) - Display name or URL for the DNS over HTTPS provider
+connection-dns-over-https-url-item-default =
+    .label = { $name } (Default)
     .tooltiptext = Use the default URL for resolving DNS over HTTPS
 
 connection-dns-over-https-url-custom =
     .label = Custom
     .accesskey = C
     .tooltiptext = Enter your preferred URL for resolving DNS over HTTPS
+
+connection-dns-over-https-custom-label = Custom

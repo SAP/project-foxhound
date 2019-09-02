@@ -17,6 +17,7 @@
 #include "gmp-video-decode.h"
 #include "gmp-video-encode.h"
 #include "GMPPlatform.h"
+#include "GMPProcessParent.h"
 #include "mozilla/Algorithm.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
@@ -37,7 +38,7 @@ using namespace mozilla::ipc;
 #  include <unistd.h>  // for _exit()
 #endif
 
-#if defined(MOZ_GMP_SANDBOX)
+#if defined(MOZ_SANDBOX)
 #  if defined(XP_MACOSX)
 #    include "mozilla/Sandbox.h"
 #  endif
@@ -132,7 +133,7 @@ static nsCString GetNativeTarget(nsIFile* aFile) {
   return path;
 }
 
-#  if defined(MOZ_GMP_SANDBOX)
+#  if defined(MOZ_SANDBOX)
 static bool GetPluginPaths(const nsAString& aPluginPath,
                            nsCString& aPluginDirectoryPath,
                            nsCString& aPluginFilePath) {
@@ -192,7 +193,7 @@ static bool GetAppPaths(nsCString& aAppPath, nsCString& aAppBinaryPath) {
   return true;
 }
 
-bool GMPChild::SetMacSandboxInfo(MacSandboxPluginType aPluginType) {
+bool GMPChild::SetMacSandboxInfo(bool aAllowWindowServer) {
   if (!mGMPLoader) {
     return false;
   }
@@ -206,19 +207,19 @@ bool GMPChild::SetMacSandboxInfo(MacSandboxPluginType aPluginType) {
   }
 
   MacSandboxInfo info;
-  info.type = MacSandboxType_Plugin;
+  info.type = MacSandboxType_GMP;
   info.shouldLog = Preferences::GetBool("security.sandbox.logging.enabled") ||
                    PR_GetEnv("MOZ_SANDBOX_LOGGING");
-  info.pluginInfo.type = aPluginType;
-  info.pluginInfo.pluginPath.assign(pluginDirectoryPath.get());
-  info.pluginInfo.pluginBinaryPath.assign(pluginFilePath.get());
+  info.hasWindowServer = aAllowWindowServer;
+  info.pluginPath.assign(pluginDirectoryPath.get());
+  info.pluginBinaryPath.assign(pluginFilePath.get());
   info.appPath.assign(appPath.get());
   info.appBinaryPath.assign(appBinaryPath.get());
 
   mGMPLoader->SetSandboxInfo(&info);
   return true;
 }
-#  endif  // MOZ_GMP_SANDBOX
+#  endif  // MOZ_SANDBOX
 #endif    // XP_MACOSX
 
 bool GMPChild::Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
@@ -305,7 +306,7 @@ static bool ResolveLinks(nsCOMPtr<nsIFile>& aPath) {
 }
 
 bool GMPChild::GetUTF8LibPath(nsACString& aOutLibPath) {
-#if defined(XP_MACOSX) && defined(MOZ_GMP_SANDBOX)
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
   nsAutoCString pluginDirectoryPath, pluginFilePath;
   if (!GetPluginPaths(mPluginPath, pluginDirectoryPath, pluginFilePath)) {
     MOZ_CRASH("Error scanning plugin path");
@@ -553,27 +554,29 @@ mozilla::ipc::IPCResult GMPChild::AnswerStartPlugin(const nsString& aAdapter) {
   InitPlatformAPI(*platformAPI, this);
 
   mGMPLoader = MakeUnique<GMPLoader>();
-#if defined(MOZ_GMP_SANDBOX)
+#if defined(MOZ_SANDBOX)
   if (!mGMPLoader->CanSandbox()) {
     LOGD("%s Can't sandbox GMP, failing", __FUNCTION__);
     delete platformAPI;
     return IPC_FAIL(this, "Can't sandbox GMP.");
   }
 #endif
+
   bool isChromium = aAdapter.EqualsLiteral("chromium");
-#if defined(MOZ_GMP_SANDBOX) && defined(XP_MACOSX)
-  MacSandboxPluginType pluginType = MacSandboxPluginType_GMPlugin_Default;
-  if (isChromium) {
-    pluginType = MacSandboxPluginType_GMPlugin_EME_Widevine;
-  }
-  if (!SetMacSandboxInfo(pluginType)) {
-    NS_WARNING("Failed to set Mac GMP sandbox info");
-    delete platformAPI;
-    return IPC_FAIL(
-        this, nsPrintfCString(
-                  "Failed to set Mac GMP sandbox info with plugin type %d.",
-                  pluginType)
-                  .get());
+
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  // If we started the sandbox at launch ("earlyinit"), then we don't
+  // need to setup sandbox arguments here with SetMacSandboxInfo().
+  if (!IsMacSandboxStarted()) {
+    // Use of the chromium adapter indicates we are going to be
+    // running the Widevine plugin which requires access to the
+    // WindowServer in the Mac GMP sandbox policy.
+    if (!SetMacSandboxInfo(isChromium /* allow-window-server */)) {
+      NS_WARNING("Failed to set Mac GMP sandbox info");
+      delete platformAPI;
+      return IPC_FAIL(
+          this, nsPrintfCString("Failed to set Mac GMP sandbox info.").get());
+    }
   }
 #endif
 

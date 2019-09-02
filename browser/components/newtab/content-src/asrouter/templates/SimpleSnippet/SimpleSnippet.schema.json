@@ -35,9 +35,27 @@
       "type": "string",
       "description": "Snippet icon. 64x64px. SVG or PNG preferred."
     },
+    "icon_dark_theme": {
+      "type": "string",
+      "description": "Snippet icon, dark theme variant. 64x64px. SVG or PNG preferred."
+    },
+    "icon_alt_text": {
+      "type": "string",
+      "description": "Alt text describing icon for screen readers",
+      "default": ""
+    },
     "title_icon": {
       "type": "string",
       "description": "Small icon that shows up before the title / text. 16x16px. SVG or PNG preferred. Grayscale."
+    },
+    "title_icon_dark_theme": {
+      "type": "string",
+      "description": "Small icon that shows up before the title / text. Dark theme variant. 16x16px. SVG or PNG preferred. Grayscale."
+    },
+    "title_icon_alt_text": {
+      "type": "string",
+      "description": "Alt text describing title icon for screen readers",
+      "default": ""
     },
     "button_action": {
       "type": "string",
@@ -50,7 +68,6 @@
       ]
     },
     "button_action_args": {
-      "type": "string",
       "description": "Additional parameters for button action, example which specific menu the button should open"
     },
     "button_label": {
@@ -101,6 +118,10 @@
     "section_title_icon": {
       "type": "string",
       "description": "Section title icon. 16x16px. SVG or PNG preferred. section_title_text must also be specified to display."
+    },
+    "section_title_icon_dark_theme": {
+      "type": "string",
+      "description": "Section title icon, dark theme variant. 16x16px. SVG or PNG preferred. section_title_text must also be specified to display."
     },
     "section_title_text": {
       "type": "string",

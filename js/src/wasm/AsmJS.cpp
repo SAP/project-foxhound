@@ -572,12 +572,8 @@ static ParseNode* ElemIndex(ParseNode* pn) {
   return &pn->as<PropertyByValue>().key();
 }
 
-static inline JSFunction* FunctionObject(FunctionNode* funNode) {
-  return funNode->funbox()->function();
-}
-
 static inline PropertyName* FunctionName(FunctionNode* funNode) {
-  if (JSAtom* name = FunctionObject(funNode)->explicitName()) {
+  if (JSAtom* name = funNode->funbox()->explicitName()) {
     return name->asPropertyName();
   }
   return nullptr;
@@ -594,7 +590,8 @@ static inline ParseNode* FunctionStatementList(FunctionNode* funNode) {
 }
 
 static inline bool IsNormalObjectField(ParseNode* pn) {
-  return pn->isKind(ParseNodeKind::Colon) && pn->getOp() == JSOP_INITPROP &&
+  return pn->isKind(ParseNodeKind::PropertyDefinition) &&
+         pn->as<PropertyDefinition>().accessorType() == AccessorType::None &&
          BinaryLeft(pn)->isKind(ParseNodeKind::ObjectPropertyName);
 }
 
@@ -645,7 +642,7 @@ static bool GetToken(AsmJSParser<Unit>& parser, TokenKind* tkp) {
   auto& ts = parser.tokenStream;
   TokenKind tk;
   while (true) {
-    if (!ts.getToken(&tk, TokenStreamShared::Operand)) {
+    if (!ts.getToken(&tk, TokenStreamShared::SlashIsRegExp)) {
       return false;
     }
     if (tk != TokenKind::Semi) {
@@ -661,13 +658,13 @@ static bool PeekToken(AsmJSParser<Unit>& parser, TokenKind* tkp) {
   auto& ts = parser.tokenStream;
   TokenKind tk;
   while (true) {
-    if (!ts.peekToken(&tk, TokenStream::Operand)) {
+    if (!ts.peekToken(&tk, TokenStream::SlashIsRegExp)) {
       return false;
     }
     if (tk != TokenKind::Semi) {
       break;
     }
-    ts.consumeKnownToken(TokenKind::Semi, TokenStreamShared::Operand);
+    ts.consumeKnownToken(TokenKind::Semi, TokenStreamShared::SlashIsRegExp);
   }
   *tkp = tk;
   return true;
@@ -2020,7 +2017,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
     }
 
     env_.asmJSSigToTableIndex[sigIndex] = env_.tables.length();
-    if (!env_.tables.emplaceBack(TableKind::TypedFunction, Limits(mask + 1))) {
+    if (!env_.tables.emplaceBack(TableKind::AsmJS, Limits(mask + 1))) {
       return false;
     }
 
@@ -2112,7 +2109,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
 
     TokenPos pos;
     MOZ_ALWAYS_TRUE(
-        tokenStream().peekTokenPos(&pos, TokenStreamShared::Operand));
+        tokenStream().peekTokenPos(&pos, TokenStreamShared::SlashIsRegExp));
     uint32_t endAfterCurly = pos.end;
     asmJSMetadata_->srcLengthWithRightBrace =
         endAfterCurly - asmJSMetadata_->srcStart;
@@ -3085,7 +3082,7 @@ static bool CheckModuleProcessingDirectives(ModuleValidator<Unit>& m) {
   while (true) {
     bool matched;
     if (!ts.matchToken(&matched, TokenKind::String,
-                       TokenStreamShared::Operand)) {
+                       TokenStreamShared::SlashIsRegExp)) {
       return false;
     }
     if (!matched) {
@@ -5998,14 +5995,14 @@ static bool ParseFunction(ModuleValidator<Unit>& m, FunctionNode** funNodeOut,
   auto& tokenStream = m.tokenStream();
 
   tokenStream.consumeKnownToken(TokenKind::Function,
-                                TokenStreamShared::Operand);
+                                TokenStreamShared::SlashIsRegExp);
 
   auto& anyChars = tokenStream.anyCharsAccess();
   uint32_t toStringStart = anyChars.currentToken().pos.begin;
   *line = anyChars.lineNumber(anyChars.lineToken(toStringStart));
 
   TokenKind tk;
-  if (!tokenStream.getToken(&tk, TokenStreamShared::Operand)) {
+  if (!tokenStream.getToken(&tk, TokenStreamShared::SlashIsRegExp)) {
     return false;
   }
   if (tk == TokenKind::Mul) {
@@ -6039,7 +6036,8 @@ static bool ParseFunction(ModuleValidator<Unit>& m, FunctionNode** funNodeOut,
   if (!funbox) {
     return false;
   }
-  funbox->initWithEnclosingParseContext(outerpc, FunctionSyntaxKind::Statement);
+  funbox->initWithEnclosingParseContext(outerpc, fun,
+                                        FunctionSyntaxKind::Statement);
 
   Directives newDirectives = directives;
   SourceParseContext funpc(&m.parser(), funbox, &newDirectives);
@@ -6564,7 +6562,8 @@ static bool ValidateGlobalVariable(JSContext* cx, const AsmJSGlobal& global,
         }
         case ValType::Ref:
         case ValType::NullRef:
-        case ValType::AnyRef: {
+        case ValType::AnyRef:
+        case ValType::FuncRef: {
           MOZ_CRASH("not available in asm.js");
         }
       }
@@ -6594,6 +6593,10 @@ static bool ValidateArrayView(JSContext* cx, const AsmJSGlobal& global,
                               HandleValue globalVal) {
   if (!global.field()) {
     return true;
+  }
+
+  if (Scalar::isBigIntType(global.viewType())) {
+    return LinkFail(cx, "bad typed array constructor");
   }
 
   RootedValue v(cx);
@@ -6781,8 +6784,7 @@ static bool CheckBuffer(JSContext* cx, const AsmJSMetadata& metadata,
 
 static bool GetImports(JSContext* cx, const AsmJSMetadata& metadata,
                        HandleValue globalVal, HandleValue importVal,
-                       MutableHandle<FunctionVector> funcImports,
-                       MutableHandleValVector valImports) {
+                       ImportValues* imports) {
   Rooted<FunctionVector> ffis(cx, FunctionVector(cx));
   if (!ffis.resize(metadata.numFFIs)) {
     return false;
@@ -6795,7 +6797,7 @@ static bool GetImports(JSContext* cx, const AsmJSMetadata& metadata,
         if (!ValidateGlobalVariable(cx, global, importVal, &litVal)) {
           return false;
         }
-        if (!valImports.append(Val(litVal->asLitVal()))) {
+        if (!imports->globalValues.append(Val(litVal->asLitVal()))) {
           return false;
         }
         break;
@@ -6825,7 +6827,7 @@ static bool GetImports(JSContext* cx, const AsmJSMetadata& metadata,
   }
 
   for (const AsmJSImport& import : metadata.asmJSImports) {
-    if (!funcImports.append(ffis[import.ffiIndex()])) {
+    if (!imports->funcs.append(ffis[import.ffiIndex()])) {
       return false;
     }
   }
@@ -6847,30 +6849,27 @@ static bool TryInstantiate(JSContext* cx, CallArgs args, const Module& module,
     return LinkFail(cx, "no compiler support");
   }
 
-  RootedArrayBufferObjectMaybeShared buffer(cx);
-  RootedWasmMemoryObject memory(cx);
+  Rooted<ImportValues> imports(cx);
+
   if (module.metadata().usesMemory()) {
+    RootedArrayBufferObjectMaybeShared buffer(cx);
     if (!CheckBuffer(cx, metadata, bufferVal, &buffer)) {
       return false;
     }
 
-    memory = WasmMemoryObject::create(cx, buffer, nullptr);
-    if (!memory) {
+    imports.get().memory = WasmMemoryObject::create(cx, buffer, nullptr);
+    if (!imports.get().memory) {
       return false;
     }
   }
 
-  RootedValVector valImports(cx);
-  Rooted<FunctionVector> funcs(cx, FunctionVector(cx));
-  if (!GetImports(cx, metadata, globalVal, importVal, &funcs, &valImports)) {
+  if (!GetImports(cx, metadata, globalVal, importVal, imports.address())) {
     return false;
   }
 
-  Rooted<WasmGlobalObjectVector> globalObjs(cx);
-  Rooted<WasmTableObjectVector> tables(cx);
-  if (!module.instantiate(cx, funcs, tables.get(), memory, valImports,
-                          globalObjs.get(), nullptr, instanceObj))
+  if (!module.instantiate(cx, imports.get(), nullptr, instanceObj)) {
     return false;
+  }
 
   exportObj.set(&instanceObj->exportsObj());
   return true;
@@ -6888,8 +6887,8 @@ static bool HandleInstantiationFailure(JSContext* cx, CallArgs args,
 
   // Source discarding is allowed to affect JS semantics because it is never
   // enabled for normal JS content.
-  bool haveSource = source->hasSourceText();
-  if (!haveSource && !JSScript::loadSource(cx, source, &haveSource)) {
+  bool haveSource;
+  if (!ScriptSource::loadSource(cx, source, &haveSource)) {
     return false;
   }
   if (!haveSource) {
@@ -7003,7 +7002,7 @@ static JSFunction* NewAsmJSModuleFunction(JSContext* cx, JSFunction* origFun,
 // Top-level js::CompileAsmJS
 
 static bool NoExceptionPending(JSContext* cx) {
-  return cx->helperThread() || !cx->isExceptionPending();
+  return cx->isHelperThreadContext() || !cx->isExceptionPending();
 }
 
 static bool SuccessfulValidation(frontend::ParserBase& parser,
@@ -7143,10 +7142,7 @@ bool js::IsAsmJSModule(JSFunction* fun) {
 }
 
 bool js::IsAsmJSFunction(JSFunction* fun) {
-  if (IsExportedFunction(fun)) {
-    return ExportedFunctionToInstance(fun).metadata().isAsmJS();
-  }
-  return false;
+  return fun->kind() == JSFunction::AsmJS;
 }
 
 bool js::IsAsmJSStrictModeModuleOrFunction(JSFunction* fun) {
@@ -7217,14 +7213,14 @@ JSString* js::AsmJSModuleToString(JSContext* cx, HandleFunction fun,
   uint32_t end = metadata.srcEndAfterCurly();
   ScriptSource* source = metadata.scriptSource.get();
 
-  StringBuffer out(cx);
+  JSStringBuilder out(cx);
 
   if (isToSource && fun->isLambda() && !out.append("(")) {
     return nullptr;
   }
 
-  bool haveSource = source->hasSourceText();
-  if (!haveSource && !JSScript::loadSource(cx, source, &haveSource)) {
+  bool haveSource;
+  if (!ScriptSource::loadSource(cx, source, &haveSource)) {
     return nullptr;
   }
 
@@ -7268,14 +7264,14 @@ JSString* js::AsmJSFunctionToString(JSContext* cx, HandleFunction fun) {
   uint32_t end = metadata.srcStart + f.endOffsetInModule();
 
   ScriptSource* source = metadata.scriptSource.get();
-  StringBuffer out(cx);
+  JSStringBuilder out(cx);
 
   if (!out.append("function ")) {
     return nullptr;
   }
 
-  bool haveSource = source->hasSourceText();
-  if (!haveSource && !JSScript::loadSource(cx, source, &haveSource)) {
+  bool haveSource;
+  if (!ScriptSource::loadSource(cx, source, &haveSource)) {
     return nullptr;
   }
 

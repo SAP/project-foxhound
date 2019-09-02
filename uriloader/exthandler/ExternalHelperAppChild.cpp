@@ -6,7 +6,7 @@
 
 #include "ExternalHelperAppChild.h"
 #include "mozilla/net/ChannelDiverterChild.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "nsIDivertableChannel.h"
 #include "nsIInputStream.h"
 #include "nsIFTPChannel.h"
@@ -27,8 +27,8 @@ ExternalHelperAppChild::~ExternalHelperAppChild() {}
 // nsIStreamListener
 //-----------------------------------------------------------------------------
 NS_IMETHODIMP
-ExternalHelperAppChild::OnDataAvailable(nsIRequest *request,
-                                        nsIInputStream *input, uint64_t offset,
+ExternalHelperAppChild::OnDataAvailable(nsIRequest* request,
+                                        nsIInputStream* input, uint64_t offset,
                                         uint32_t count) {
   if (NS_FAILED(mStatus)) return mStatus;
 
@@ -60,24 +60,24 @@ ExternalHelperAppChild::OnDataAvailable(nsIRequest *request,
 //////////////////////////////////////////////////////////////////////////////
 
 NS_IMETHODIMP
-ExternalHelperAppChild::OnStartRequest(nsIRequest *request) {
+ExternalHelperAppChild::OnStartRequest(nsIRequest* request) {
   nsresult rv = mHandler->OnStartRequest(request);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_UNEXPECTED);
 
   // Calling OnStartRequest could cause mHandler to close the window it was
-  // loaded for. In that case, the TabParent in the parent context might then
-  // point to the wrong window. Re-send the window context along with either
-  // DivertToParent or SendOnStartRequest just in case.
+  // loaded for. In that case, the BrowserParent in the parent context might
+  // then point to the wrong window. Re-send the window context along with
+  // either DivertToParent or SendOnStartRequest just in case.
   nsCOMPtr<nsPIDOMWindowOuter> window =
       do_GetInterface(mHandler->GetDialogParent());
   NS_ENSURE_TRUE(window, NS_ERROR_NOT_AVAILABLE);
 
-  TabChild *tabChild = mozilla::dom::TabChild::GetFrom(window);
-  NS_ENSURE_TRUE(tabChild, NS_ERROR_NOT_AVAILABLE);
+  BrowserChild* browserChild = mozilla::dom::BrowserChild::GetFrom(window);
+  NS_ENSURE_TRUE(browserChild, NS_ERROR_NOT_AVAILABLE);
 
   nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
   if (divertable) {
-    return DivertToParent(divertable, request, tabChild);
+    return DivertToParent(divertable, request, browserChild);
   }
 
   nsCString entityID;
@@ -85,12 +85,12 @@ ExternalHelperAppChild::OnStartRequest(nsIRequest *request) {
   if (resumable) {
     resumable->GetEntityID(entityID);
   }
-  SendOnStartRequest(entityID, tabChild);
+  SendOnStartRequest(entityID, browserChild);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-ExternalHelperAppChild::OnStopRequest(nsIRequest *request, nsresult status) {
+ExternalHelperAppChild::OnStopRequest(nsIRequest* request, nsresult status) {
   // mHandler can be null if we diverted the request to the parent
   if (mHandler) {
     nsresult rv = mHandler->OnStopRequest(request, status);
@@ -102,19 +102,20 @@ ExternalHelperAppChild::OnStopRequest(nsIRequest *request, nsresult status) {
 }
 
 nsresult ExternalHelperAppChild::DivertToParent(
-    nsIDivertableChannel *divertable, nsIRequest *request, TabChild *tabChild) {
+    nsIDivertableChannel* divertable, nsIRequest* request,
+    BrowserChild* browserChild) {
   // nsIDivertable must know about content conversions before being diverted.
   MOZ_ASSERT(mHandler);
   mHandler->MaybeApplyDecodingForExtension(request);
 
-  mozilla::net::ChannelDiverterChild *diverter = nullptr;
+  mozilla::net::ChannelDiverterChild* diverter = nullptr;
   nsresult rv = divertable->DivertToParent(&diverter);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
   MOZ_ASSERT(diverter);
 
-  if (SendDivertToParentUsing(diverter, tabChild)) {
+  if (SendDivertToParentUsing(diverter, browserChild)) {
     mHandler->DidDivertRequest(request);
     mHandler = nullptr;
     return NS_OK;
@@ -124,7 +125,7 @@ nsresult ExternalHelperAppChild::DivertToParent(
 }
 
 mozilla::ipc::IPCResult ExternalHelperAppChild::RecvCancel(
-    const nsresult &aStatus) {
+    const nsresult& aStatus) {
   mStatus = aStatus;
   return IPC_OK();
 }

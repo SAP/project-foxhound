@@ -16,6 +16,7 @@
 
 #define LABEL_MAX_CHAR_WIDTH 48
 
+using std::ios;
 using std::string;
 using std::vector;
 
@@ -65,6 +66,53 @@ static void LoadSettings() {
   }
 }
 
+static string Escape(const string& str) {
+  string ret;
+  for (auto c : str) {
+    if (c == '\\') {
+      ret += "\\\\";
+    } else if (c == '\n') {
+      ret += "\\n";
+    } else if (c == '\t') {
+      ret += "\\t";
+    } else {
+      ret.push_back(c);
+    }
+  }
+
+  return ret;
+}
+
+static bool WriteStrings(ostream& out, const string& header,
+                         StringTable& strings, bool escape) {
+  out << "[" << header << "]" << std::endl;
+  for (const auto& iter : strings) {
+    out << iter.first << "=";
+    if (escape) {
+      out << Escape(iter.second);
+    } else {
+      out << iter.second;
+    }
+
+    out << std::endl;
+  }
+
+  return true;
+}
+
+static bool WriteStringsToFile(const string& path, const string& header,
+                               StringTable& strings, bool escape) {
+  ofstream* f = UIOpenWrite(path, ios::trunc);
+  bool success = false;
+  if (f->is_open()) {
+    success = WriteStrings(*f, header, strings, escape);
+    f->close();
+  }
+
+  delete f;
+  return success;
+}
+
 void SaveSettings() {
   /*
    * NOTE! This code needs to stay in sync with the preference setting
@@ -95,9 +143,7 @@ void SaveSettings() {
 }
 
 void SendReport() {
-#ifdef MOZ_ENABLE_GCONF
   LoadProxyinfo();
-#endif
 
   // spawn a thread to do the sending
   gSendThreadID = g_thread_create(SendThread, nullptr, TRUE, nullptr);

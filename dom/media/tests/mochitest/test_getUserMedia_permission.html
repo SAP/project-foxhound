@@ -41,7 +41,7 @@ runTest(async () => {
       } catch(e) {
         message = e.name;
       }
-      parent.postMessage(message, 'http://mochi.test:8888');
+      parent.postMessage(message, 'https://example.com:443');
 
       if (message == "success") {
         stream.getTracks().forEach(track => track.stop());
@@ -55,7 +55,7 @@ runTest(async () => {
 
   // Test gUM in sandboxed vs. regular iframe.
 
-  for (const origin of ["http://mochi.test:8888", "http://test1.mochi.test:8888"]) {
+  for (const origin of ["https://example.com", "https://test1.example.com"]) {
     const src = origin + path;
     is(await iframeGum({ src, sandbox: "allow-scripts" }),
        "NotAllowedError", "gUM fails in sandboxed iframe " + origin);
@@ -86,9 +86,9 @@ runTest(async () => {
 
   src = `data:text/html;base64,${btoa(source)}`;
   is(await iframeGum({ src, sandbox: "allow-scripts" }),
-     "NotAllowedError", "gUM fails in sandboxed data iframe");
+     "TypeError", "navigator.mediaDevices undefined in sandboxed data iframe");
   is(await iframeGum({ src, sandbox: "allow-scripts allow-same-origin"}),
-     "NotAllowedError", "gUM fails in regular data iframe");
+     "TypeError", "navigator.mediaDevices undefined in regular data iframe");
 });
 </script>
 </pre>

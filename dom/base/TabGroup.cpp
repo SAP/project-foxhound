@@ -7,7 +7,7 @@
 #include "mozilla/dom/TabGroup.h"
 
 #include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/AbstractThread.h"
@@ -80,8 +80,12 @@ void TabGroup::EnsureThrottledEventQueues() {
 
   for (size_t i = 0; i < size_t(TaskCategory::Count); i++) {
     TaskCategory category = static_cast<TaskCategory>(i);
-    if (category == TaskCategory::Worker || category == TaskCategory::Timer) {
-      mEventTargets[i] = ThrottledEventQueue::Create(mEventTargets[i]);
+    if (category == TaskCategory::Worker) {
+      mEventTargets[i] = ThrottledEventQueue::Create(mEventTargets[i],
+                                                     "TabGroup worker queue");
+    } else if (category == TaskCategory::Timer) {
+      mEventTargets[i] =
+          ThrottledEventQueue::Create(mEventTargets[i], "TabGroup timer queue");
     }
   }
 }
@@ -97,15 +101,15 @@ TabGroup* TabGroup::GetChromeTabGroup() {
 
 /* static */
 TabGroup* TabGroup::GetFromWindow(mozIDOMWindowProxy* aWindow) {
-  if (TabChild* tabChild = TabChild::GetFrom(aWindow)) {
-    return tabChild->TabGroup();
+  if (BrowserChild* browserChild = BrowserChild::GetFrom(aWindow)) {
+    return browserChild->TabGroup();
   }
 
   return nullptr;
 }
 
 /* static */
-TabGroup* TabGroup::GetFromActor(TabChild* aTabChild) {
+TabGroup* TabGroup::GetFromActor(BrowserChild* aBrowserChild) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
   // Middleman processes do not assign event targets to their tab children.
@@ -114,7 +118,7 @@ TabGroup* TabGroup::GetFromActor(TabChild* aTabChild) {
   }
 
   nsCOMPtr<nsIEventTarget> target =
-      aTabChild->Manager()->GetEventTargetFor(aTabChild);
+      aBrowserChild->Manager()->GetEventTargetFor(aBrowserChild);
   if (!target) {
     return nullptr;
   }
@@ -296,6 +300,46 @@ bool TabGroup::IsBackground() const {
 #endif
 
   return mForegroundCount == 0;
+}
+
+nsresult TabGroup::QueuePostMessageEvent(
+    already_AddRefed<nsIRunnable>&& aRunnable) {
+  if (StaticPrefs::dom_separate_event_queue_for_post_message_enabled()) {
+    if (!mPostMessageEventQueue) {
+      nsCOMPtr<nsISerialEventTarget> target = GetMainThreadSerialEventTarget();
+      mPostMessageEventQueue = ThrottledEventQueue::Create(
+          target, "PostMessage Queue",
+          nsIRunnablePriority::PRIORITY_DEFERRED_TIMERS);
+      nsresult rv = mPostMessageEventQueue->SetIsPaused(false);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+    }
+
+    // Ensure the queue is enabled
+    if (mPostMessageEventQueue->IsPaused()) {
+      nsresult rv = mPostMessageEventQueue->SetIsPaused(false);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+    }
+
+    if (mPostMessageEventQueue) {
+      mPostMessageEventQueue->Dispatch(std::move(aRunnable),
+                                       NS_DISPATCH_NORMAL);
+      return NS_OK;
+    }
+  }
+  return NS_ERROR_FAILURE;
+}
+
+void TabGroup::FlushPostMessageEvents() {
+  if (StaticPrefs::dom_separate_event_queue_for_post_message_enabled()) {
+    if (mPostMessageEventQueue) {
+      nsresult rv = mPostMessageEventQueue->SetIsPaused(true);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+      nsCOMPtr<nsIRunnable> event;
+      while ((event = mPostMessageEventQueue->GetEvent())) {
+        Dispatch(TaskCategory::Other, event.forget());
+      }
+    }
+  }
 }
 
 uint32_t TabGroup::Count(bool aActiveOnly) const {

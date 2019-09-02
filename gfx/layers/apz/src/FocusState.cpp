@@ -102,7 +102,7 @@ void FocusState::Update(LayersId aRootLayerTreeId,
       FocusState& mFocusState;
       const uint64_t mSequenceNumber;
 
-      bool match(const FocusTarget::NoFocusTarget& aNoFocusTarget) {
+      bool operator()(const FocusTarget::NoFocusTarget& aNoFocusTarget) {
         FS_LOG("Setting target to nil (reached a nil target) with seq=%" PRIu64
                "\n",
                mSequenceNumber);
@@ -123,7 +123,7 @@ void FocusState::Update(LayersId aRootLayerTreeId,
         return true;
       }
 
-      bool match(const LayersId& aRefLayerId) {
+      bool operator()(const LayersId& aRefLayerId) {
         // Guard against infinite loops
         MOZ_ASSERT(mFocusState.mFocusLayersId != aRefLayerId);
         if (mFocusState.mFocusLayersId == aRefLayerId) {
@@ -141,7 +141,7 @@ void FocusState::Update(LayersId aRootLayerTreeId,
         return false;
       }
 
-      bool match(const FocusTarget::ScrollTargets& aScrollTargets) {
+      bool operator()(const FocusTarget::ScrollTargets& aScrollTargets) {
         FS_LOG("Setting target to h=%" PRIu64 ", v=%" PRIu64
                ", and seq=%" PRIu64 "\n",
                aScrollTargets.mHorizontal, aScrollTargets.mVertical,
@@ -218,12 +218,6 @@ bool FocusState::CanIgnoreKeyboardShortcutMisses() const {
   MutexAutoLock lock(mMutex);
 
   return IsCurrent(lock) && !mFocusHasKeyEventListeners;
-}
-
-LayersId FocusState::GetFocusLayersId() const {
-  MutexAutoLock lock(mMutex);
-
-  return mFocusLayersId;
 }
 
 }  // namespace layers

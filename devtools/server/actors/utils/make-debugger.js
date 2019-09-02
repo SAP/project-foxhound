@@ -57,27 +57,33 @@ const { reportException } = require("devtools/shared/DevToolsUtils");
  *              current globals that should be debuggees (as determined by
  *              |findDebuggees|) to the |Debugger| instance.
  */
-module.exports = function makeDebugger({ findDebuggees, shouldAddNewGlobalAsDebuggee }) {
-  let dbg;
-  if (Debugger.recordReplayProcessKind() == "Middleman") {
-    dbg = new ReplayDebugger();
-  } else {
-    dbg = new Debugger();
-  }
+module.exports = function makeDebugger({
+  findDebuggees,
+  shouldAddNewGlobalAsDebuggee,
+}) {
+  const dbg = isReplaying ? new ReplayDebugger() : new Debugger();
   EventEmitter.decorate(dbg);
 
   dbg.allowUnobservedAsmJS = true;
   dbg.uncaughtExceptionHook = reportDebuggerHookException;
 
+  function onNewDebuggee(global) {
+    if (dbg.onNewDebuggee) {
+      dbg.onNewDebuggee(global);
+    }
+  }
+
   dbg.onNewGlobalObject = function(global) {
     if (shouldAddNewGlobalAsDebuggee(global)) {
       safeAddDebuggee(this, global);
+      onNewDebuggee(global);
     }
   };
 
   dbg.addDebuggees = function() {
     for (const global of findDebuggees(this)) {
       safeAddDebuggee(this, global);
+      onNewDebuggee(global);
     }
   };
 

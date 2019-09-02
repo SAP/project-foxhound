@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_SVGFEMorphologyElement_h
 #define mozilla_dom_SVGFEMorphologyElement_h
 
-#include "SVGEnum.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedNumberPair.h"
+#include "SVGAnimatedString.h"
 #include "SVGFilters.h"
-#include "SVGNumberPair.h"
-#include "SVGString.h"
 
 nsresult NS_NewSVGFEMorphologyElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -39,7 +39,7 @@ class SVGFEMorphologyElement : public SVGFEMorphologyElementBase {
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
   virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
                                          nsAtom* aAttribute) const override;
-  virtual SVGString& GetResultImageName() override {
+  virtual SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
@@ -47,10 +47,10 @@ class SVGFEMorphologyElement : public SVGFEMorphologyElementBase {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedString> In1();
-  already_AddRefed<SVGAnimatedEnumeration> Operator();
-  already_AddRefed<SVGAnimatedNumber> RadiusX();
-  already_AddRefed<SVGAnimatedNumber> RadiusY();
+  already_AddRefed<DOMSVGAnimatedString> In1();
+  already_AddRefed<DOMSVGAnimatedEnumeration> Operator();
+  already_AddRefed<DOMSVGAnimatedNumber> RadiusX();
+  already_AddRefed<DOMSVGAnimatedNumber> RadiusY();
   void SetRadius(float rx, float ry);
 
  protected:
@@ -61,16 +61,16 @@ class SVGFEMorphologyElement : public SVGFEMorphologyElementBase {
   virtual StringAttributesInfo GetStringInfo() override;
 
   enum { RADIUS };
-  SVGNumberPair mNumberPairAttributes[1];
+  SVGAnimatedNumberPair mNumberPairAttributes[1];
   static NumberPairInfo sNumberPairInfo[1];
 
   enum { OPERATOR };
-  SVGEnum mEnumAttributes[1];
+  SVGAnimatedEnumeration mEnumAttributes[1];
   static SVGEnumMapping sOperatorMap[];
   static EnumInfo sEnumInfo[1];
 
   enum { RESULT, IN1 };
-  SVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 };
 

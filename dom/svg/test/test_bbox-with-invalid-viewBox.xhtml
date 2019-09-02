@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=433063
 -->
 <head>
   <title>Test for getBBox when the viewBox is invalid</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -22,8 +22,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=433063
 <script class="testbody" type="application/javascript">
 SimpleTest.waitForExplicitFinish();
 
-function run()
-{
+function run() {
   var bbox = $("svg").getBBox();
   is(bbox.x, 0, "Check bbox.x");
   is(bbox.y, 0, "Check bbox.y");
@@ -32,7 +31,7 @@ function run()
   SimpleTest.finish();
 }
 
-window.addEventListener("load", run, false);
+window.addEventListener("load", run);
 </script>
 </pre>
 </body>

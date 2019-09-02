@@ -5,16 +5,21 @@
 "use strict";
 /* global frame */
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-const {WebElementEventTarget} = ChromeUtils.import("chrome://marionette/content/dom.js");
-const {element} = ChromeUtils.import("chrome://marionette/content/element.js");
-const {
-  NoSuchWindowError,
-  UnsupportedOperationError,
-} = ChromeUtils.import("chrome://marionette/content/error.js");
-const {Log} = ChromeUtils.import("chrome://marionette/content/log.js");
+const { WebElementEventTarget } = ChromeUtils.import(
+  "chrome://marionette/content/dom.js"
+);
+const { element } = ChromeUtils.import(
+  "chrome://marionette/content/element.js"
+);
+const { NoSuchWindowError, UnsupportedOperationError } = ChromeUtils.import(
+  "chrome://marionette/content/error.js"
+);
+const { Log } = ChromeUtils.import("chrome://marionette/content/log.js");
 const {
   MessageManagerDestroyedPromise,
   waitForEvent,
@@ -81,7 +86,7 @@ browser.getBrowserForTab = function(tab) {
   if (tab && "browser" in tab) {
     return tab.browser;
 
-  // Firefox
+    // Firefox
   } else if (tab && "linkedBrowser" in tab) {
     return tab.linkedBrowser;
   }
@@ -103,11 +108,11 @@ browser.getTabBrowser = function(window) {
   if ("BrowserApp" in window) {
     return window.BrowserApp;
 
-  // Firefox
+    // Firefox
   } else if ("gBrowser" in window) {
     return window.gBrowser;
 
-  // Thunderbird
+    // Thunderbird
   } else if (window.document.getElementById("tabmail")) {
     return window.document.getElementById("tabmail");
   }
@@ -173,8 +178,10 @@ browser.Context = class {
   get contentBrowser() {
     if (this.tab) {
       return browser.getBrowserForTab(this.tab);
-    } else if (this.tabBrowser &&
-        this.driver.isReftestBrowser(this.tabBrowser)) {
+    } else if (
+      this.tabBrowser &&
+      this.driver.isReftestBrowser(this.tabBrowser)
+    ) {
       return this.tabBrowser;
     }
 
@@ -232,7 +239,8 @@ browser.Context = class {
       return this.contentBrowser.contentTitle;
     }
     throw new NoSuchWindowError(
-        "Current window does not have a content browser");
+      "Current window does not have a content browser"
+    );
   }
 
   /**
@@ -251,7 +259,8 @@ browser.Context = class {
       return this.contentBrowser.currentURI;
     }
     throw new NoSuchWindowError(
-        "Current window does not have a content browser");
+      "Current window does not have a content browser"
+    );
   }
 
   /**
@@ -282,7 +291,9 @@ browser.Context = class {
     // The modal is a direct sibling of the browser element.
     // See tabbrowser.xml's getTabModalPromptBox.
     let modalElements = br.parentNode.getElementsByTagNameNS(
-        XUL_NS, "tabmodalprompt");
+      XUL_NS,
+      "tabmodalprompt"
+    );
 
     return br.tabModalPromptBox.prompts.get(modalElements[0]);
   }
@@ -295,12 +306,30 @@ browser.Context = class {
    */
   closeWindow() {
     let destroyed = new MessageManagerDestroyedPromise(
-        this.window.messageManager);
+      this.window.messageManager
+    );
     let unloaded = waitForEvent(this.window, "unload");
 
     this.window.close();
 
     return Promise.all([destroyed, unloaded]);
+  }
+
+  /**
+   * Focus the current window.
+   *
+   * @return {Promise}
+   *     A promise which is resolved when the current window has been focused.
+   */
+  async focusWindow() {
+    if (Services.focus.activeWindow != this.window) {
+      let activated = waitForEvent(this.window, "activate");
+      let focused = waitForEvent(this.window, "focus", { capture: true });
+
+      this.window.focus();
+
+      await Promise.all([activated, focused]);
+    }
   }
 
   /**
@@ -318,9 +347,11 @@ browser.Context = class {
         let win = this.window.OpenBrowserWindow();
 
         let activated = waitForEvent(win, "activate");
-        let focused = waitForEvent(win, "focus", {capture: true});
-        let startup = waitForObserverTopic("browser-delayed-startup-finished",
-            subject => subject == win);
+        let focused = waitForEvent(win, "focus", { capture: true });
+        let startup = waitForObserverTopic(
+          "browser-delayed-startup-finished",
+          subject => subject == win
+        );
 
         // Bug 1509380 - Missing focus/activate event when Firefox is not
         // the top-most application. As such wait for the next tick, and
@@ -330,21 +361,17 @@ browser.Context = class {
         await Promise.all([activated, focused, startup]);
 
         // The new window shouldn't get focused. As such set the
-        // focus back to the opening window if needed.
-        if (!focus && Services.focus.activeWindow != this.window) {
-          activated = waitForEvent(this.window, "activate");
-          focused = waitForEvent(this.window, "focus", {capture: true});
-
-          this.window.focus();
-
-          await Promise.all([activated, focused]);
+        // focus back to the opening window.
+        if (!focus) {
+          await this.focusWindow();
         }
 
         return win;
 
       default:
         throw new UnsupportedOperationError(
-            `openWindow() not supported in ${this.driver.appName}`);
+          `openWindow() not supported in ${this.driver.appName}`
+        );
     }
   }
 
@@ -360,10 +387,12 @@ browser.Context = class {
   closeTab() {
     // If the current window is not a browser then close it directly. Do the
     // same if only one remaining tab is open, or no tab selected at all.
-    if (!this.tabBrowser ||
-        !this.tabBrowser.tabs ||
-        this.tabBrowser.tabs.length === 1 ||
-        !this.tab) {
+    if (
+      !this.tabBrowser ||
+      !this.tabBrowser.tabs ||
+      this.tabBrowser.tabs.length === 1 ||
+      !this.tab
+    ) {
       return this.closeWindow();
     }
 
@@ -384,7 +413,8 @@ browser.Context = class {
 
       default:
         throw new UnsupportedOperationError(
-          `closeTab() not supported in ${this.driver.appName}`);
+          `closeTab() not supported in ${this.driver.appName}`
+        );
     }
 
     return Promise.all([destroyed, tabClosed]);
@@ -417,7 +447,8 @@ browser.Context = class {
 
       default:
         throw new UnsupportedOperationError(
-          `openTab() not supported in ${this.driver.appName}`);
+          `openTab() not supported in ${this.driver.appName}`
+        );
     }
 
     await tabOpened;
@@ -440,7 +471,9 @@ browser.Context = class {
    * @throws UnsupportedOperationError
    *     If tab handling for the current application isn't supported.
    */
-  switchToTab(index, window = undefined, focus = true) {
+  async switchToTab(index, window = undefined, focus = true) {
+    let currentTab = this.tabBrowser.selectedTab;
+
     if (window) {
       this.window = window;
       this.tabBrowser = browser.getTabBrowser(this.window);
@@ -454,16 +487,26 @@ browser.Context = class {
       this.tab = this.tabBrowser.selectedTab;
     } else {
       this.tab = this.tabBrowser.tabs[index];
+    }
 
-      if (focus) {
-        if ("selectTab" in this.tabBrowser) {
+    if (focus && this.tab != currentTab) {
+      let tabSelected = waitForEvent(this.window, "TabSelect");
+
+      switch (this.driver.appName) {
+        case "fennec":
           this.tabBrowser.selectTab(this.tab);
-        } else if ("selectedTab" in this.tabBrowser) {
+          await tabSelected;
+          break;
+
+        case "firefox":
           this.tabBrowser.selectedTab = this.tab;
-        } else {
+          await tabSelected;
+          break;
+
+        default:
           throw new UnsupportedOperationError(
-            `switchToTab() not supported in ${this.driver.appName}`);
-        }
+            `switchToTab() not supported in ${this.driver.appName}`
+          );
       }
     }
 
@@ -515,15 +558,15 @@ browser.Context = class {
   }
 
   /**
-    * This function intercepts commands interacting with content and queues
-    * or executes them as needed.
-    *
-    * No commands interacting with content are safe to process until
-    * the new listener script is loaded and registered itself.
-    * This occurs when a command whose effect is asynchronous (such
-    * as goBack) results in process change of the frame script and new
-    * commands are subsequently posted to the server.
-    */
+   * This function intercepts commands interacting with content and queues
+   * or executes them as needed.
+   *
+   * No commands interacting with content are safe to process until
+   * the new listener script is loaded and registered itself.
+   * This occurs when a command whose effect is asynchronous (such
+   * as goBack) results in process change of the frame script and new
+   * commands are subsequently posted to the server.
+   */
   executeWhenReady(cb) {
     if (this._needsFlushPendingCommands) {
       this.pendingCommands.push(cb);

@@ -5,6 +5,9 @@
 #include <string>
 #include <vector>
 
+using namespace mozilla;
+using namespace mozilla::net;
+
 void testServerTimingHeader(
     const char* headerValue,
     std::vector<std::vector<std::string>> expectedResults) {
@@ -34,7 +37,8 @@ void testServerTimingHeader(
   }
 }
 
-TEST(TestServerTimingHeader, HeaderParsing) {
+TEST(TestServerTimingHeader, HeaderParsing)
+{
   // Test cases below are copied from
   // https://cs.chromium.org/chromium/src/third_party/WebKit/Source/platform/network/HTTPParsersTest.cpp
 

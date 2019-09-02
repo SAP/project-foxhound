@@ -21,6 +21,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import org.json.JSONObject;
 import org.mozilla.gecko.ActivityHandlerHelper;
 import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.BrowserApp;
@@ -43,6 +44,7 @@ import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.GeckoViewBridge;
 import org.mozilla.geckoview.WebRequestError;
 
 public class WebAppActivity extends AppCompatActivity
@@ -157,8 +159,9 @@ public class WebAppActivity extends AppCompatActivity
             }
         });
 
-        mPromptService = new PromptService(this, mGeckoView.getEventDispatcher());
-        mDoorHangerPopup = new DoorHangerPopup(this, mGeckoView.getEventDispatcher());
+        mPromptService = new PromptService(this, GeckoViewBridge.getEventDispatcher(mGeckoView));
+        mDoorHangerPopup = new DoorHangerPopup(this,
+                                               GeckoViewBridge.getEventDispatcher(mGeckoView));
 
         mFormAssistPopup = (FormAssistPopup) findViewById(R.id.pwa_form_assist_popup);
         mFormAssistPopup.create(mGeckoView);
@@ -324,20 +327,8 @@ public class WebAppActivity extends AppCompatActivity
     }
 
     @Override // GeckoSession.NavigationDelegate
-    public void onLocationChange(GeckoSession session, String url) {
-    }
-
-    @Override // GeckoSession.NavigationDelegate
     public void onCanGoBack(GeckoSession session, boolean canGoBack) {
         mCanGoBack = canGoBack;
-    }
-
-    @Override // GeckoSession.NavigationDelegate
-    public void onCanGoForward(GeckoSession session, boolean canGoForward) {
-    }
-
-    @Override // GeckoSession.ContentDelegate
-    public void onTitleChange(GeckoSession session, String title) {
     }
 
     @Override // GeckoSession.ContentDelegate
@@ -345,11 +336,6 @@ public class WebAppActivity extends AppCompatActivity
         Intent intent = new Intent(getIntent());
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         startActivity(intent);
-    }
-
-    @Override // GeckoSession.ContentDelegate
-    public void onCloseRequest(GeckoSession session) {
-        // Ignore
     }
 
     @Override // GeckoSession.ContentDelegate
@@ -365,20 +351,6 @@ public class WebAppActivity extends AppCompatActivity
         }
 
         WebApps.openInFennec(validUri, WebAppActivity.this);
-    }
-
-    @Override // GeckoSession.ContentDelegate
-    public void onExternalResponse(final GeckoSession session, final GeckoSession.WebResponseInfo request) {
-        // Won't happen, as we don't use the GeckoView download support in Fennec
-    }
-
-    @Override // GeckoSession.ContentDelegate
-    public void onCrash(final GeckoSession session) {
-        // Won't happen, as we don't use e10s in Fennec
-    }
-
-    @Override
-    public void onFirstComposite(final GeckoSession session) {
     }
 
     @Override // GeckoSession.ContentDelegate

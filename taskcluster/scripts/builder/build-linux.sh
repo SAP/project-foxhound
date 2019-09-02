@@ -88,7 +88,7 @@ export TOOLTOOL_CACHE
 
 config_path_cmds=""
 for path in ${MOZHARNESS_CONFIG_PATHS}; do
-    config_path_cmds="${config_path_cmds} --extra-config-path ${WORKSPACE}/build/src/${path}"
+    config_path_cmds="${config_path_cmds} --extra-config-path ${GECKO_PATH}/${path}"
 done
 
 # support multiple, space delimited, config files
@@ -117,7 +117,7 @@ fi
 
 cd /builds/worker
 
-python2.7 $WORKSPACE/build/src/testing/${MOZHARNESS_SCRIPT} \
+$GECKO_PATH/mach python $GECKO_PATH/testing/${MOZHARNESS_SCRIPT} \
   ${config_path_cmds} \
   ${config_cmds} \
   $debug_flag \
@@ -125,7 +125,6 @@ python2.7 $WORKSPACE/build/src/testing/${MOZHARNESS_SCRIPT} \
   $actions \
   $options \
   --log-level=debug \
-  --scm-level=$MOZ_SCM_LEVEL \
   --work-dir=$WORKSPACE/build \
   --branch=${MH_BRANCH} \
   --build-pool=${MH_BUILD_POOL}

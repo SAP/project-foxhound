@@ -4,19 +4,27 @@
 
 "use strict";
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {LogManager} = ChromeUtils.import("resource://normandy/lib/LogManager.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { LogManager } = ChromeUtils.import(
+  "resource://normandy/lib/LogManager.jsm"
+);
 
-XPCOMUtils.defineLazyServiceGetter(this, "timerManager",
-                                   "@mozilla.org/updates/timer-manager;1",
-                                   "nsIUpdateTimerManager");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "timerManager",
+  "@mozilla.org/updates/timer-manager;1",
+  "nsIUpdateTimerManager"
+);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   RemoteSettings: "resource://services-settings/remote-settings.js",
   FeatureGate: "resource://featuregates/FeatureGate.jsm",
   Storage: "resource://normandy/lib/Storage.jsm",
-  FilterExpressions: "resource://gre/modules/components-utils/FilterExpressions.jsm",
+  FilterExpressions:
+    "resource://gre/modules/components-utils/FilterExpressions.jsm",
   NormandyApi: "resource://normandy/lib/NormandyApi.jsm",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
   CleanupManager: "resource://normandy/lib/CleanupManager.jsm",
@@ -41,6 +49,10 @@ const DEV_MODE_PREF = `${PREF_PREFIX}.dev_mode`;
 const API_URL_PREF = `${PREF_PREFIX}.api_url`;
 const LAZY_CLASSIFY_PREF = `${PREF_PREFIX}.experiments.lazy_classify`;
 
+// Timer last update preference.
+// see https://searchfox.org/mozilla-central/rev/11cfa0462/toolkit/components/timermanager/UpdateTimerManager.jsm#8
+const TIMER_LAST_UPDATE_PREF = `app.update.lastUpdateTime.${TIMER_NAME}`;
+
 const PREFS_TO_WATCH = [
   RUN_INTERVAL_PREF,
   TELEMETRY_ENABLED_PREF,
@@ -50,8 +62,13 @@ const PREFS_TO_WATCH = [
 
 XPCOMUtils.defineLazyGetter(this, "gRemoteSettingsClient", () => {
   return RemoteSettings(REMOTE_SETTINGS_COLLECTION, {
-    filterFunc: async recipe => (await RecipeRunner.checkFilter(recipe)) ? recipe : null,
+    filterFunc: async entry =>
+      (await RecipeRunner.checkFilter(entry.recipe)) ? entry : null,
   });
+});
+
+XPCOMUtils.defineLazyGetter(this, "gRemoteSettingsGate", () => {
+  return FeatureGate.fromId("normandy-remote-settings");
 });
 
 /**
@@ -71,17 +88,39 @@ function cacheProxy(target) {
 
 var RecipeRunner = {
   async init() {
+    this.running = false;
     this.enabled = null;
+    this.loadFromRemoteSettings = false;
+
     this.checkPrefs(); // sets this.enabled
     this.watchPrefs();
+    await this.setUpRemoteSettings();
 
-    // Run if enabled immediately on first run, or if dev mode is enabled.
+    // Here "first run" means the first run this profile has ever done. This
+    // preference is set to true at the end of this function, and never reset to
+    // false.
     const firstRun = Services.prefs.getBoolPref(FIRST_RUN_PREF, true);
+
+    // Dev mode is a mode used for development and QA that bypasses the normal
+    // timer function of Normandy, to make testing more convenient.
     const devMode = Services.prefs.getBoolPref(DEV_MODE_PREF, false);
 
     if (this.enabled && (devMode || firstRun)) {
+      // In dev mode, if remote settings is enabled, force an immediate sync
+      // before running. This ensures that the latest data is used for testing.
+      // This is not needed for the first run case, because remote settings
+      // already handles empty collections well.
+      if (devMode) {
+        let remoteSettingsGate = await gRemoteSettingsGate;
+        if (await remoteSettingsGate.isEnabled()) {
+          await gRemoteSettingsClient.sync();
+        }
+      }
       await this.run();
     }
+
+    // Update the firstRun pref, to indicate that Normandy has run at least once
+    // on this profile.
     if (firstRun) {
       Services.prefs.setBoolPref(FIRST_RUN_PREF, false);
     }
@@ -137,7 +176,9 @@ var RecipeRunner = {
             break;
 
           default:
-            log.debug(`Observer fired with unexpected pref change: ${prefName}`);
+            log.debug(
+              `Observer fired with unexpected pref change: ${prefName}`
+            );
         }
 
         break;
@@ -148,13 +189,17 @@ var RecipeRunner = {
   checkPrefs() {
     // Only run if Unified Telemetry is enabled.
     if (!Services.prefs.getBoolPref(TELEMETRY_ENABLED_PREF)) {
-      log.debug("Disabling RecipeRunner because Unified Telemetry is disabled.");
+      log.debug(
+        "Disabling RecipeRunner because Unified Telemetry is disabled."
+      );
       this.disable();
       return;
     }
 
     if (!Services.prefs.getBoolPref(SHIELD_ENABLED_PREF)) {
-      log.debug(`Disabling Shield because ${SHIELD_ENABLED_PREF} is set to false`);
+      log.debug(
+        `Disabling Shield because ${SHIELD_ENABLED_PREF} is set to false`
+      );
       this.disable();
       return;
     }
@@ -172,7 +217,9 @@ var RecipeRunner = {
       return;
     }
     if (!apiUrl.startsWith("https://")) {
-      log.warn(`Disabling Shield because ${API_URL_PREF} is not an HTTPS url: ${apiUrl}.`);
+      log.warn(
+        `Disabling Shield because ${API_URL_PREF} is not an HTTPS url: ${apiUrl}.`
+      );
       this.disable();
       return;
     }
@@ -183,11 +230,51 @@ var RecipeRunner = {
 
   registerTimer() {
     this.updateRunInterval();
-    CleanupManager.addCleanupHandler(() => timerManager.unregisterTimer(TIMER_NAME));
+    CleanupManager.addCleanupHandler(() =>
+      timerManager.unregisterTimer(TIMER_NAME)
+    );
   },
 
   unregisterTimer() {
     timerManager.unregisterTimer(TIMER_NAME);
+  },
+
+  async setUpRemoteSettings() {
+    const remoteSettingsGate = await gRemoteSettingsGate;
+    if (await remoteSettingsGate.isEnabled()) {
+      this.attachRemoteSettings();
+    }
+    const observer = {
+      onEnable: this.attachRemoteSettings.bind(this),
+      onDisable: this.detachRemoteSettings.bind(this),
+    };
+    remoteSettingsGate.addObserver(observer);
+    CleanupManager.addCleanupHandler(() =>
+      remoteSettingsGate.removeObserver(observer)
+    );
+  },
+
+  attachRemoteSettings() {
+    this.loadFromRemoteSettings = true;
+    if (!this._onSync) {
+      this._onSync = async () => {
+        if (!this.enabled) {
+          return;
+        }
+        this.run({ trigger: "sync" });
+      };
+
+      gRemoteSettingsClient.on("sync", this._onSync);
+    }
+  },
+
+  detachRemoteSettings() {
+    this.loadFromRemoteSettings = false;
+    if (this._onSync) {
+      // Ignore if no event listener was setup or was already removed (ie. pref changed while enabled).
+      gRemoteSettingsClient.off("sync", this._onSync);
+    }
+    this._onSync = null;
   },
 
   updateRunInterval() {
@@ -198,43 +285,69 @@ var RecipeRunner = {
     timerManager.registerTimer(TIMER_NAME, () => this.run(), runInterval);
   },
 
-  async run() {
-    this.clearCaches();
-    // Unless lazy classification is enabled, prep the classify cache.
-    if (!Services.prefs.getBoolPref(LAZY_CLASSIFY_PREF, false)) {
-      try {
-        await ClientEnvironment.getClientClassification();
-      } catch (err) {
-        // Try to go on without this data; the filter expressions will
-        // gracefully fail without this info if they need it.
-      }
-    }
+  async run(options = {}) {
+    const { trigger = "timer" } = options;
 
-    // Fetch recipes before execution in case we fail and exit early.
-    let recipesToRun;
-    try {
-      recipesToRun = await this.loadRecipes();
-    } catch (e) {
-      // The legacy call to `Normandy.fetchRecipes()` can throw.
+    if (this.running) {
+      // Do nothing if already running.
       return;
     }
+    try {
+      this.running = true;
 
-    const actions = new ActionsManager();
-    await actions.fetchRemoteActions();
-    await actions.preExecution();
+      Services.obs.notifyObservers(null, "recipe-runner:start");
+      this.clearCaches();
+      // Unless lazy classification is enabled, prep the classify cache.
+      if (!Services.prefs.getBoolPref(LAZY_CLASSIFY_PREF, false)) {
+        try {
+          await ClientEnvironment.getClientClassification();
+        } catch (err) {
+          // Try to go on without this data; the filter expressions will
+          // gracefully fail without this info if they need it.
+        }
+      }
 
-    // Execute recipes, if we have any.
-    if (recipesToRun.length === 0) {
-      log.debug("No recipes to execute");
-    } else {
-      for (const recipe of recipesToRun) {
-        await actions.runRecipe(recipe);
+      // Fetch recipes before execution in case we fail and exit early.
+      let recipesToRun;
+      try {
+        recipesToRun = await this.loadRecipes();
+      } catch (e) {
+        // Either we failed at fetching the recipes from server (legacy),
+        // or the recipes signature verification failed.
+        let status = Uptake.RUNNER_SERVER_ERROR;
+        if (/NetworkError/.test(e)) {
+          status = Uptake.RUNNER_NETWORK_ERROR;
+        } else if (e instanceof NormandyApi.InvalidSignatureError) {
+          status = Uptake.RUNNER_INVALID_SIGNATURE;
+        }
+        await Uptake.reportRunner(status);
+        return;
+      }
+
+      const actions = new ActionsManager();
+
+      // Execute recipes, if we have any.
+      if (recipesToRun.length === 0) {
+        log.debug("No recipes to execute");
+      } else {
+        for (const recipe of recipesToRun) {
+          await actions.runRecipe(recipe);
+        }
+      }
+
+      await actions.finalize();
+
+      await Uptake.reportRunner(Uptake.RUNNER_SUCCESS);
+      Services.obs.notifyObservers(null, "recipe-runner:end");
+    } finally {
+      this.running = false;
+      if (trigger != "timer") {
+        // `run()` was executed outside the scheduled timer.
+        // Update the last time it ran to make sure it is rescheduled later.
+        const lastUpdateTime = Math.round(Date.now() / 1000);
+        Services.prefs.setIntPref(TIMER_LAST_UPDATE_PREF, lastUpdateTime);
       }
     }
-
-    await actions.finalize();
-
-    await Uptake.reportRunner(Uptake.RUNNER_SUCCESS);
   },
 
   /**
@@ -242,29 +355,30 @@ var RecipeRunner = {
    */
   async loadRecipes() {
     // If RemoteSettings is enabled, we read the list of recipes from there.
-    // The JEXL filtering is done via the provided callback.
-    if (await FeatureGate.isEnabled("normandy-remote-settings")) {
-      return gRemoteSettingsClient.get();
+    // The JEXL filtering is done via the provided callback (see `gRemoteSettingsClient`).
+    if (this.loadFromRemoteSettings) {
+      // First, fetch recipes whose JEXL filters match.
+      const entries = await gRemoteSettingsClient.get();
+      // Then, verify the signature of each recipe. It will throw if invalid.
+      return Promise.all(
+        entries.map(async ({ recipe, signature }) => {
+          await NormandyApi.verifyObjectSignature(recipe, signature, "recipe");
+          return recipe;
+        })
+      );
     }
+
     // Obtain the recipes from the Normandy server (legacy).
     let recipes;
     try {
-      recipes = await NormandyApi.fetchRecipes({enabled: true});
+      recipes = await NormandyApi.fetchRecipes({ enabled: true });
       log.debug(
         `Fetched ${recipes.length} recipes from the server: ` +
-        recipes.map(r => r.name).join(", ")
+          recipes.map(r => r.name).join(", ")
       );
     } catch (e) {
       const apiUrl = Services.prefs.getCharPref(API_URL_PREF);
       log.error(`Could not fetch recipes from ${apiUrl}: "${e}"`);
-
-      let status = Uptake.RUNNER_SERVER_ERROR;
-      if (/NetworkError/.test(e)) {
-        status = Uptake.RUNNER_NETWORK_ERROR;
-      } else if (e instanceof NormandyApi.InvalidSignatureError) {
-        status = Uptake.RUNNER_INVALID_SIGNATURE;
-      }
-      await Uptake.reportRunner(status);
       throw e;
     }
     // Evaluate recipe filters
@@ -303,7 +417,11 @@ var RecipeRunner = {
     try {
       result = await FilterExpressions.eval(recipe.filter_expression, context);
     } catch (err) {
-      log.error(`Error checking filter for "${recipe.name}". Filter: [${recipe.filter_expression}]. Error: "${err}"`);
+      log.error(
+        `Error checking filter for "${recipe.name}". Filter: [${
+          recipe.filter_expression
+        }]. Error: "${err}"`
+      );
       await Uptake.reportRecipe(recipe, Uptake.RECIPE_FILTER_BROKEN);
       return false;
     }

@@ -54,7 +54,7 @@ class CSSPseudoElement final : public nsWrapperCache {
     return retVal.forget();
   }
 
-  void GetAnimations(const AnimationFilter& filter,
+  void GetAnimations(const GetAnimationsOptions& aOptions,
                      nsTArray<RefPtr<Animation>>& aRetVal);
   already_AddRefed<Animation> Animate(
       JSContext* aContext, JS::Handle<JSObject*> aKeyframes,
@@ -69,7 +69,7 @@ class CSSPseudoElement final : public nsWrapperCache {
       dom::Element* aElement, PseudoStyleType aType);
 
  private:
-  // Only ::before and ::after are supported.
+  // Only ::before, ::after and ::marker are supported.
   CSSPseudoElement(dom::Element* aElement, PseudoStyleType aType);
 
   static nsAtom* GetCSSPseudoElementPropertyAtom(PseudoStyleType aType);

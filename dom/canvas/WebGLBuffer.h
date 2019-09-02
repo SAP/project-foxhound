@@ -49,35 +49,9 @@ class WebGLBuffer final : public nsWrapperCache,
                                JS::Handle<JSObject*> givenProto) override;
 
   bool ValidateCanBindToTarget(GLenum target);
-  void BufferData(GLenum target, size_t size, const void* data, GLenum usage);
-  void BufferSubData(GLenum target, size_t dstByteOffset, size_t dataLen,
+  void BufferData(GLenum target, uint64_t size, const void* data, GLenum usage);
+  void BufferSubData(GLenum target, uint64_t dstByteOffset, uint64_t dataLen,
                      const void* data) const;
-
-  ////
-
-  static void AddBindCount(GLenum target, WebGLBuffer* buffer, int8_t addVal) {
-    if (!buffer) return;
-
-    if (target == LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER) {
-      MOZ_ASSERT_IF(addVal < 0, buffer->mTFBindCount >= size_t(-addVal));
-      buffer->mTFBindCount += addVal;
-      buffer->mFetchInvalidator.InvalidateCaches();
-    } else {
-      MOZ_ASSERT_IF(addVal < 0, buffer->mNonTFBindCount >= size_t(-addVal));
-      buffer->mNonTFBindCount += addVal;
-    }
-  }
-
-  static void SetSlot(GLenum target, WebGLBuffer* newBuffer,
-                      WebGLRefPtr<WebGLBuffer>* const out_slot) {
-    WebGLBuffer* const oldBuffer = *out_slot;
-    AddBindCount(target, oldBuffer, -1);
-    AddBindCount(target, newBuffer, +1);
-    *out_slot = newBuffer;
-  }
-
-  bool IsBoundForTF() const { return bool(mTFBindCount); }
-  bool IsBoundForNonTF() const { return bool(mNonTFBindCount); }
 
   ////
 
@@ -91,11 +65,9 @@ class WebGLBuffer final : public nsWrapperCache,
 
   void InvalidateCacheRange(uint64_t byteOffset, uint64_t byteLength) const;
 
-  Kind mContent;
-  GLenum mUsage;
-  size_t mByteLength;
-  size_t mTFBindCount;
-  size_t mNonTFBindCount;
+  Kind mContent = Kind::Undefined;
+  GLenum mUsage = LOCAL_GL_STATIC_DRAW;
+  size_t mByteLength = 0;
   mutable uint64_t mLastUpdateFenceId = 0;
 
   struct IndexRange final {

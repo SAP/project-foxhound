@@ -7,6 +7,7 @@
 #include "nsBidiPresUtils.h"
 
 #include "mozilla/IntegerRange.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Text.h"
 
 #include "gfxContext.h"
@@ -127,8 +128,6 @@ struct MOZ_STACK_CLASS BidiParagraphData {
   nsBidiLevel mParaLevel;
   nsIContent* mPrevContent;
   nsIFrame* mPrevFrame;
-  // Cache the block frame which needs bidi resolution.
-  const nsIFrame* mBlock;
 #ifdef DEBUG
   // Only used for NOISY debug output.
   nsBlockFrame* mCurrentBlock;
@@ -140,16 +139,12 @@ struct MOZ_STACK_CLASS BidiParagraphData {
         mRequiresBidi(false),
         mParaLevel(nsBidiPresUtils::BidiLevelFromStyle(aBlockFrame->Style())),
         mPrevContent(nullptr),
-        mPrevFrame(nullptr),
-        mBlock(aBlockFrame)
+        mPrevFrame(nullptr)
 #ifdef DEBUG
         ,
         mCurrentBlock(aBlockFrame)
 #endif
   {
-    MOZ_ASSERT(mBlock->FirstContinuation() == mBlock,
-               "mBlock must be the first continuation!");
-
     if (mParaLevel > 0) {
       mRequiresBidi = true;
     }
@@ -464,6 +459,7 @@ void MOZ_EXPORT DumpBidiLine(BidiLineData* aData, bool aVisualOrder) {
 
 // Should this frame be split between text runs?
 static bool IsBidiSplittable(nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame);
   // Bidi inline containers should be split, unless they're line frames.
   LayoutFrameType frameType = aFrame->Type();
   return (aFrame->IsFrameOfType(nsIFrame::eBidiInlineContainer) &&
@@ -489,7 +485,7 @@ static bool IsBidiLeaf(nsIFrame* aFrame) {
 static nsresult SplitInlineAncestors(nsContainerFrame* aParent,
                                      nsIFrame* aFrame) {
   nsPresContext* presContext = aParent->PresContext();
-  nsIPresShell* presShell = presContext->PresShell();
+  PresShell* presShell = presContext->PresShell();
   nsIFrame* frame = aFrame;
   nsContainerFrame* parent = aParent;
   nsContainerFrame* newParent;
@@ -560,7 +556,7 @@ static void MakeContinuationsNonFluidUpParentChain(nsIFrame* aFrame,
 // If it isn't the last child, make sure that its continuation is fluid.
 static void JoinInlineAncestors(nsIFrame* aFrame) {
   nsIFrame* frame = aFrame;
-  do {
+  while (frame && IsBidiSplittable(frame)) {
     nsIFrame* next = frame->GetNextContinuation();
     if (next) {
       MakeContinuationFluid(frame, next);
@@ -568,7 +564,7 @@ static void JoinInlineAncestors(nsIFrame* aFrame) {
     // Join the parent only as long as we're its last child.
     if (frame->GetNextSibling()) break;
     frame = frame->GetParent();
-  } while (frame && IsBidiSplittable(frame));
+  }
 }
 
 static nsresult CreateContinuation(nsIFrame* aFrame, nsIFrame** aNewFrame,
@@ -579,7 +575,7 @@ static nsresult CreateContinuation(nsIFrame* aFrame, nsIFrame** aNewFrame,
   *aNewFrame = nullptr;
 
   nsPresContext* presContext = aFrame->PresContext();
-  nsIPresShell* presShell = presContext->PresShell();
+  PresShell* presShell = presContext->PresShell();
   NS_ASSERTION(presShell,
                "PresShell must be set on PresContext before calling "
                "nsBidiPresUtils::CreateContinuation");
@@ -1276,10 +1272,10 @@ bool nsBidiPresUtils::ChildListMayRequireBidi(nsIFrame* aFirstChild,
 
         // Check whether the text frame has any RTL characters; if so, bidi
         // resolution will be needed.
-        nsIContent* content = frame->GetContent();
+        dom::Text* content = frame->GetContent()->AsText();
         if (content != *aCurrContent) {
           *aCurrContent = content;
-          const nsTextFragment* txt = content->GetText();
+          const nsTextFragment* txt = &content->TextFragment();
           if (txt->Is2b() &&
               HasRTLChars(MakeSpan(txt->Get2b(), txt->GetLength()))) {
             return true;
@@ -1355,10 +1351,11 @@ nsBidiLevel nsBidiPresUtils::GetFrameBaseLevel(nsIFrame* aFrame) {
   return firstLeaf->GetBaseLevel();
 }
 
-void nsBidiPresUtils::IsFirstOrLast(
-    nsIFrame* aFrame, const nsContinuationStates* aContinuationStates,
-    bool aSpanDirMatchesLineDir, bool& aIsFirst /* out */,
-    bool& aIsLast /* out */) {
+void nsBidiPresUtils::IsFirstOrLast(nsIFrame* aFrame,
+                                    nsContinuationStates* aContinuationStates,
+                                    bool aSpanDirMatchesLineDir,
+                                    bool& aIsFirst /* out */,
+                                    bool& aIsLast /* out */) {
   /*
    * Since we lay out frames in the line's direction, visiting a frame with
    * 'mFirstVisualFrame == nullptr', means it's the first appearance of one
@@ -1371,7 +1368,7 @@ void nsBidiPresUtils::IsFirstOrLast(
    */
 
   bool firstInLineOrder, lastInLineOrder;
-  nsFrameContinuationState* frameState = aContinuationStates->GetEntry(aFrame);
+  nsFrameContinuationState* frameState = aContinuationStates->Get(aFrame);
   nsFrameContinuationState* firstFrameState;
 
   if (!frameState->mFirstVisualFrame) {
@@ -1389,7 +1386,7 @@ void nsBidiPresUtils::IsFirstOrLast(
      */
     // Traverse continuation chain backward
     for (frame = aFrame->GetPrevContinuation();
-         frame && (contState = aContinuationStates->GetEntry(frame));
+         frame && (contState = aContinuationStates->Get(frame));
          frame = frame->GetPrevContinuation()) {
       frameState->mFrameCount++;
       contState->mFirstVisualFrame = aFrame;
@@ -1398,7 +1395,7 @@ void nsBidiPresUtils::IsFirstOrLast(
 
     // Traverse continuation chain forward
     for (frame = aFrame->GetNextContinuation();
-         frame && (contState = aContinuationStates->GetEntry(frame));
+         frame && (contState = aContinuationStates->Get(frame));
          frame = frame->GetNextContinuation()) {
       frameState->mFrameCount++;
       contState->mFirstVisualFrame = aFrame;
@@ -1410,8 +1407,7 @@ void nsBidiPresUtils::IsFirstOrLast(
   } else {
     // aFrame is not the first visual frame of its continuation chain
     firstInLineOrder = false;
-    firstFrameState =
-        aContinuationStates->GetEntry(frameState->mFirstVisualFrame);
+    firstFrameState = aContinuationStates->Get(frameState->mFirstVisualFrame);
   }
 
   lastInLineOrder = (firstFrameState->mFrameCount == 1);
@@ -1506,7 +1502,7 @@ void nsBidiPresUtils::RepositionRubyContentFrame(
 
 /* static */
 nscoord nsBidiPresUtils::RepositionRubyFrame(
-    nsIFrame* aFrame, const nsContinuationStates* aContinuationStates,
+    nsIFrame* aFrame, nsContinuationStates* aContinuationStates,
     const WritingMode aContainerWM, const LogicalMargin& aBorderPadding) {
   LayoutFrameType frameType = aFrame->Type();
   MOZ_ASSERT(RubyUtils::IsRubyBox(frameType));
@@ -1569,7 +1565,7 @@ nscoord nsBidiPresUtils::RepositionRubyFrame(
 /* static */
 nscoord nsBidiPresUtils::RepositionFrame(
     nsIFrame* aFrame, bool aIsEvenLevel, nscoord aStartOrEnd,
-    const nsContinuationStates* aContinuationStates, WritingMode aContainerWM,
+    nsContinuationStates* aContinuationStates, WritingMode aContainerWM,
     bool aContainerReverseDir, const nsSize& aContainerSize) {
   nscoord lineSize =
       aContainerWM.IsVertical() ? aContainerSize.height : aContainerSize.width;
@@ -1670,7 +1666,7 @@ nscoord nsBidiPresUtils::RepositionFrame(
 
 void nsBidiPresUtils::InitContinuationStates(
     nsIFrame* aFrame, nsContinuationStates* aContinuationStates) {
-  aContinuationStates->PutEntry(aFrame);
+  aContinuationStates->Insert(aFrame);
   if (!IsBidiLeaf(aFrame) || RubyUtils::IsRubyBox(aFrame->Type())) {
     // Continue for child frames
     for (nsIFrame* frame : aFrame->PrincipalChildList()) {
@@ -1793,9 +1789,7 @@ void nsBidiPresUtils::RemoveBidiContinuation(BidiParagraphData* aBpd,
       // so they can be reused or deleted by normal reflow code
       frame->SetProperty(nsIFrame::BidiDataProperty(), bidiData);
       frame->AddStateBits(NS_FRAME_IS_BIDI);
-
-      // Go no further than the block which needs resolution.
-      while (frame && aBpd->mBlock != frame->FirstContinuation()) {
+      while (frame && IsBidiSplittable(frame)) {
         nsIFrame* prev = frame->GetPrevContinuation();
         if (prev) {
           MakeContinuationFluid(prev, frame);

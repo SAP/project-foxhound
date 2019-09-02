@@ -95,7 +95,7 @@
 @BINPATH@/platform.ini
 @BINPATH@/blocklist.xml
 @BINPATH@/defaults/settings/blocklists/addons.json
-@BINPATH@/defaults/settings/blocklists/certificates.json
+@BINPATH@/defaults/settings/security-state/onecrl.json
 
 ; [Components]
 @BINPATH@/components/components.manifest
@@ -107,6 +107,8 @@
 @BINPATH@/components/toolkitsearch.manifest
 
 @BINPATH@/components/extensions.manifest
+
+@BINPATH@/components/antitracking.manifest
 
 #ifndef MOZ_GECKOVIEW_JAR
 @BINPATH@/components/amContentHandler.js
@@ -129,6 +131,11 @@
 @BINPATH@/components/HandlerService.js
 @BINPATH@/components/servicesComponents.manifest
 @BINPATH@/components/servicesSettings.manifest
+@BINPATH@/components/l10n-registry.manifest
+
+#ifndef MOZ_GECKOVIEW_JAR
+@BINPATH@/components/TelemetryStartup.manifest
+#endif
 
 #if defined(ENABLE_TESTS) && defined(MOZ_DEBUG)
 @BINPATH@/components/TestInterfaceJS.js
@@ -158,13 +165,19 @@
 ; [Default Preferences]
 ; All the pref files must be part of base to prevent migration bugs
 #ifdef MOZ_GECKOVIEW_JAR
-@BINPATH@/@PREF_DIR@/geckoview-prefs.js
+#ifndef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+@BINPATH@/@ANDROID_CPU_ARCH@/greprefs.js
+@BINPATH@/@PREF_DIR@/@ANDROID_CPU_ARCH@/geckoview-prefs.js
 #else
+@BINPATH@/*/greprefs.js
+@BINPATH@/@PREF_DIR@/*/geckoview-prefs.js
+#endif # !MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+#else
+@BINPATH@/@ANDROID_CPU_ARCH@/greprefs.js
 @BINPATH@/@PREF_DIR@/mobile.js
-#endif
+#endif # MOZ_GECKOVIEW_JAR
 @BINPATH@/@PREF_DIR@/channel-prefs.js
 @BINPATH@/ua-update.json
-@BINPATH@/greprefs.js
 @BINPATH@/defaults/autoconfig/prefcalls.js
 
 ; [Layout Engine Resources]
@@ -261,7 +274,7 @@
 @BINPATH@/chrome/marionette.manifest
 @BINPATH@/components/marionette.manifest
 @BINPATH@/components/marionette.js
-@BINPATH@/defaults/pref/marionette.js
+@BINPATH@/@PREF_DIR@/marionette.js
 #endif
 
 #ifdef PKG_LOCALE_MANIFEST

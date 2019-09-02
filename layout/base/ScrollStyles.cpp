@@ -5,35 +5,64 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ScrollStyles.h"
-#include "nsStyleStruct.h"  // for nsStyleDisplay and nsStyleBackground::Position
+#include "mozilla/WritingModes.h"
+#include "nsStyleStruct.h"  // for nsStyleDisplay & nsStyleBackground::Position
 
 namespace mozilla {
 
-ScrollStyles::ScrollStyles(StyleOverflow aH, StyleOverflow aV,
-                           const nsStyleDisplay* aDisplay)
+void ScrollStyles::InitializeScrollSnapStrictness(
+    WritingMode aWritingMode, const nsStyleDisplay* aDisplay) {
+  mScrollSnapStrictnessX = StyleScrollSnapStrictness::None;
+  mScrollSnapStrictnessY = StyleScrollSnapStrictness::None;
+
+  if (aDisplay->mScrollSnapType.strictness == StyleScrollSnapStrictness::None) {
+    return;
+  }
+
+  switch (aDisplay->mScrollSnapType.axis) {
+    case StyleScrollSnapAxis::X:
+      mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      break;
+    case StyleScrollSnapAxis::Y:
+      mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      break;
+    case StyleScrollSnapAxis::Block:
+      if (aWritingMode.IsVertical()) {
+        mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      } else {
+        mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      }
+      break;
+    case StyleScrollSnapAxis::Inline:
+      if (aWritingMode.IsVertical()) {
+        mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      } else {
+        mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      }
+      break;
+    case StyleScrollSnapAxis::Both:
+      mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      break;
+  }
+}
+
+ScrollStyles::ScrollStyles(WritingMode aWritingMode, StyleOverflow aH,
+                           StyleOverflow aV, const nsStyleDisplay* aDisplay)
     : mHorizontal(aH),
       mVertical(aV),
-      mScrollBehavior(aDisplay->mScrollBehavior),
       mOverscrollBehaviorX(aDisplay->mOverscrollBehaviorX),
-      mOverscrollBehaviorY(aDisplay->mOverscrollBehaviorY),
-      mScrollSnapTypeX(aDisplay->mScrollSnapTypeX),
-      mScrollSnapTypeY(aDisplay->mScrollSnapTypeY),
-      mScrollSnapPointsX(aDisplay->mScrollSnapPointsX),
-      mScrollSnapPointsY(aDisplay->mScrollSnapPointsY),
-      mScrollSnapDestinationX(aDisplay->mScrollSnapDestination.horizontal),
-      mScrollSnapDestinationY(aDisplay->mScrollSnapDestination.vertical) {}
+      mOverscrollBehaviorY(aDisplay->mOverscrollBehaviorY) {
+  InitializeScrollSnapStrictness(aWritingMode, aDisplay);
+}
 
-ScrollStyles::ScrollStyles(const nsStyleDisplay* aDisplay)
+ScrollStyles::ScrollStyles(WritingMode aWritingMode,
+                           const nsStyleDisplay* aDisplay)
     : mHorizontal(aDisplay->mOverflowX),
       mVertical(aDisplay->mOverflowY),
-      mScrollBehavior(aDisplay->mScrollBehavior),
       mOverscrollBehaviorX(aDisplay->mOverscrollBehaviorX),
-      mOverscrollBehaviorY(aDisplay->mOverscrollBehaviorY),
-      mScrollSnapTypeX(aDisplay->mScrollSnapTypeX),
-      mScrollSnapTypeY(aDisplay->mScrollSnapTypeY),
-      mScrollSnapPointsX(aDisplay->mScrollSnapPointsX),
-      mScrollSnapPointsY(aDisplay->mScrollSnapPointsY),
-      mScrollSnapDestinationX(aDisplay->mScrollSnapDestination.horizontal),
-      mScrollSnapDestinationY(aDisplay->mScrollSnapDestination.vertical) {}
+      mOverscrollBehaviorY(aDisplay->mOverscrollBehaviorY) {
+  InitializeScrollSnapStrictness(aWritingMode, aDisplay);
+}
 
 }  // namespace mozilla

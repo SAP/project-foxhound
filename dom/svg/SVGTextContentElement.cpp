@@ -8,7 +8,7 @@
 
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGTextContentElementBinding.h"
-#include "mozilla/dom/SVGIRect.h"
+#include "mozilla/dom/SVGRect.h"
 #include "nsBidiUtils.h"
 #include "nsISVGPoint.h"
 #include "nsTextFragment.h"
@@ -48,11 +48,12 @@ SVGTextContentElement::GetSVGTextFrameForNonLayoutDependentQuery() {
   return static_cast<SVGTextFrame*>(textFrame);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGTextContentElement::TextLength() {
+already_AddRefed<DOMSVGAnimatedLength> SVGTextContentElement::TextLength() {
   return LengthAttributes()[TEXTLENGTH].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedEnumeration> SVGTextContentElement::LengthAdjust() {
+already_AddRefed<DOMSVGAnimatedEnumeration>
+SVGTextContentElement::LengthAdjust() {
   return EnumAttributes()[LENGTHADJUST].ToDOMAnimatedEnum(this);
 }
 
@@ -82,7 +83,7 @@ Maybe<int32_t> SVGTextContentElement::GetNonLayoutDependentNumberOfChars() {
       return Nothing();
     }
 
-    const nsTextFragment* text = static_cast<nsTextNode*>(n)->GetText();
+    const nsTextFragment* text = &n->AsText()->TextFragment();
     uint32_t length = text->GetLength();
 
     if (text->Is2b()) {
@@ -162,7 +163,7 @@ already_AddRefed<nsISVGPoint> SVGTextContentElement::GetEndPositionOfChar(
   return point.forget();
 }
 
-already_AddRefed<SVGIRect> SVGTextContentElement::GetExtentOfChar(
+already_AddRefed<SVGRect> SVGTextContentElement::GetExtentOfChar(
     uint32_t charnum, ErrorResult& rv) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
 
@@ -171,7 +172,7 @@ already_AddRefed<SVGIRect> SVGTextContentElement::GetExtentOfChar(
     return nullptr;
   }
 
-  RefPtr<SVGIRect> rect;
+  RefPtr<SVGRect> rect;
   rv = textFrame->GetExtentOfChar(this, charnum, getter_AddRefs(rect));
   return rect.forget();
 }
@@ -190,9 +191,10 @@ float SVGTextContentElement::GetRotationOfChar(uint32_t charnum,
   return rotation;
 }
 
-int32_t SVGTextContentElement::GetCharNumAtPosition(nsISVGPoint& aPoint) {
+int32_t SVGTextContentElement::GetCharNumAtPosition(
+    const DOMPointInit& aPoint) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
-  return textFrame ? textFrame->GetCharNumAtPosition(this, &aPoint) : -1;
+  return textFrame ? textFrame->GetCharNumAtPosition(this, aPoint) : -1;
 }
 
 }  // namespace dom

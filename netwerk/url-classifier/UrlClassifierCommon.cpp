@@ -89,7 +89,8 @@ void UrlClassifierCommon::NotifyChannelBlocked(nsIChannel* aChannel,
 
   nsCOMPtr<nsIURI> uri;
   aChannel->GetURI(getter_AddRefs(uri));
-  pwin->NotifyContentBlockingEvent(aBlockedReason, aChannel, true, uri);
+  pwin->NotifyContentBlockingEvent(aBlockedReason, aChannel, true, uri,
+                                   aChannel);
 }
 
 /* static */
@@ -114,7 +115,8 @@ bool UrlClassifierCommon::ShouldEnableClassifier(nsIChannel* aChannel) {
   }
 
   rv = channel->GetTopWindowURI(getter_AddRefs(topWinURI));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  if (NS_FAILED(rv)) {
+    // Skipping top-level load.
     return false;
   }
 
@@ -136,6 +138,38 @@ bool UrlClassifierCommon::ShouldEnableClassifier(nsIChannel* aChannel) {
   }
 
   return true;
+}
+
+/* static */
+nsresult UrlClassifierCommon::SetTrackingInfo(
+    nsIChannel* aChannel, const nsTArray<nsCString>& aLists,
+    const nsTArray<nsCString>& aFullHashes) {
+  NS_ENSURE_ARG(!aLists.IsEmpty());
+
+  // Can be called in EITHER the parent or child process.
+  nsCOMPtr<nsIParentChannel> parentChannel;
+  NS_QueryNotificationCallbacks(aChannel, parentChannel);
+  if (parentChannel) {
+    // This channel is a parent-process proxy for a child process request.
+    // Tell the child process channel to do this instead.
+    nsAutoCString strLists, strHashes;
+    TablesToString(aLists, strLists);
+    TablesToString(aFullHashes, strHashes);
+
+    parentChannel->SetClassifierMatchedTrackingInfo(strLists, strHashes);
+    return NS_OK;
+  }
+
+  nsresult rv;
+  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
+      do_QueryInterface(aChannel, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (classifiedChannel) {
+    classifiedChannel->SetMatchedTrackingInfo(aLists, aFullHashes);
+  }
+
+  return NS_OK;
 }
 
 /* static */
@@ -195,8 +229,8 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   // Log a warning to the web console.
   nsCOMPtr<nsIURI> uri;
   channel->GetURI(getter_AddRefs(uri));
-  NS_ConvertUTF8toUTF16 spec(uri->GetSpecOrDefault());
-  const char16_t* params[] = {spec.get()};
+  AutoTArray<nsString, 1> params;
+  CopyUTF8toUTF16(uri->GetSpecOrDefault(), *params.AppendElement());
   const char* message;
   nsCString category;
 
@@ -210,7 +244,7 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
 
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, category, doc,
                                   nsContentUtils::eNECKO_PROPERTIES, message,
-                                  params, ArrayLength(params));
+                                  params);
 
   return NS_OK;
 }
@@ -312,7 +346,7 @@ void LowerPriorityHelper(nsIChannel* aChannel) {
 
   nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(aChannel));
   if (cos) {
-    if (nsContentUtils::IsTailingEnabled()) {
+    if (StaticPrefs::network_http_tailing_enabled()) {
       uint32_t cosFlags = 0;
       cos->GetClassFlags(&cosFlags);
       isBlockingResource =
@@ -362,7 +396,8 @@ void UrlClassifierCommon::AnnotateChannel(
   MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
              aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
              aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining);
+             aPurpose == AntiTrackingCommon::eCryptomining ||
+             aPurpose == AntiTrackingCommon::eSocialTracking);
 
   nsCOMPtr<nsIURI> chanURI;
   nsresult rv = aChannel->GetURI(getter_AddRefs(chanURI));
@@ -382,7 +417,14 @@ void UrlClassifierCommon::AnnotateChannel(
   SetClassificationFlagsHelper(aChannel, aClassificationFlags,
                                isThirdPartyWithTopLevelWinURI);
 
-  if (isThirdPartyWithTopLevelWinURI || IsAllowListed(aChannel, aPurpose)) {
+  // We consider valid tracking flags (based on the current strict vs basic list
+  // prefs) and cryptomining (which is not considered as tracking).
+  bool validClassificationFlags =
+      IsTrackingClassificationFlag(aClassificationFlags) ||
+      IsCryptominingClassificationFlag(aClassificationFlags);
+
+  if (validClassificationFlags &&
+      (isThirdPartyWithTopLevelWinURI || IsAllowListed(aChannel, aPurpose))) {
     UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
         aChannel, aLoadingState);
   }
@@ -400,7 +442,8 @@ bool UrlClassifierCommon::IsAllowListed(
   MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
              aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
              aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining);
+             aPurpose == AntiTrackingCommon::eCryptomining ||
+             aPurpose == AntiTrackingCommon::eSocialTracking);
 
   nsCOMPtr<nsIHttpChannelInternal> channel = do_QueryInterface(aChannel);
   if (!channel) {
@@ -456,7 +499,66 @@ bool UrlClassifierCommon::IsAllowListed(
 
 // static
 bool UrlClassifierCommon::IsTrackingClassificationFlag(uint32_t aFlag) {
-  return (aFlag & nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_TRACKING);
+  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled()) {
+    return (
+        aFlag &
+        nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_STRICT_TRACKING);
+  }
+  return (aFlag &
+          nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_BASIC_TRACKING);
+}
+
+// static
+bool UrlClassifierCommon::IsCryptominingClassificationFlag(uint32_t aFlag) {
+  if (aFlag & nsIHttpChannel::ClassificationFlags::CLASSIFIED_CRYPTOMINING) {
+    return true;
+  }
+
+  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled() &&
+      (aFlag &
+       nsIHttpChannel::ClassificationFlags::CLASSIFIED_CRYPTOMINING_CONTENT)) {
+    return true;
+  }
+
+  return false;
+}
+
+void UrlClassifierCommon::TablesToString(const nsTArray<nsCString>& aList,
+                                         nsACString& aString) {
+  aString.Truncate();
+
+  for (const nsCString& table : aList) {
+    if (!aString.IsEmpty()) {
+      aString.Append(",");
+    }
+    aString.Append(table);
+  }
+}
+
+uint32_t UrlClassifierCommon::TablesToClassificationFlags(
+    const nsTArray<nsCString>& aList,
+    const std::vector<ClassificationData>& aData, uint32_t aDefaultFlag) {
+  uint32_t flags = 0;
+  for (const nsCString& table : aList) {
+    flags |= TableToClassificationFlag(table, aData);
+  }
+
+  if (flags == 0) {
+    flags |= aDefaultFlag;
+  }
+
+  return flags;
+}
+
+uint32_t UrlClassifierCommon::TableToClassificationFlag(
+    const nsACString& aTable, const std::vector<ClassificationData>& aData) {
+  for (const ClassificationData& data : aData) {
+    if (StringBeginsWith(aTable, data.mPrefix)) {
+      return data.mFlag;
+    }
+  }
+
+  return 0;
 }
 
 }  // namespace net

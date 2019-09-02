@@ -26,7 +26,7 @@ class DomainPolicyClone;
 [ptr] native JSObjectPtr(JSObject);
 [ptr] native DomainPolicyClonePtr(mozilla::dom::DomainPolicyClone);
 
-[scriptable, uuid(51daad87-3a0c-44cc-b620-7356801c9022)]
+[scriptable, builtinclass, uuid(51daad87-3a0c-44cc-b620-7356801c9022)]
 interface nsIScriptSecurityManager : nsISupports
 {
     /**
@@ -178,6 +178,19 @@ interface nsIScriptSecurityManager : nsISupports
     nsIPrincipal createCodebasePrincipalFromOrigin(in ACString origin);
 
     /**
+     * Takes a principal and returns a string representation of it or a nullptr if it can't be serialized.
+     * Example output: `{"1": {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}}`
+     */
+    ACString principalToJSON(in nsIPrincipal principal);
+
+    /**
+     * Takes a string of the following format:
+     * `{"1": {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}}`
+     * and turns it into a principal or a nullptr on error.
+     */
+    nsIPrincipal JSONToPrincipal(in ACString json);
+
+    /**
      * Returns a unique nonce principal with |originAttributes|.
      * See nsIPrincipal.idl for a description of origin attributes, and
      * ChromeUtils.webidl for a list of origin attributes and their defaults.
@@ -197,12 +210,30 @@ interface nsIScriptSecurityManager : nsISupports
                             in nsIURI aTargetURI,
                             in boolean reportError,
                             in boolean fromPrivateWindow);
+
     /**
      * Get the principal for the given channel.  This will typically be the
      * channel owner if there is one, and the codebase principal for the
      * channel's URI otherwise.  aChannel must not be null.
      */
     nsIPrincipal getChannelResultPrincipal(in nsIChannel aChannel);
+
+    /**
+     * Get the storage principal for the given channel.  This is basically the
+     * same of getChannelResultPrincipal() execept for trackers, where we
+     * return a principal with a different OriginAttributes.
+     */
+    nsIPrincipal getChannelResultStoragePrincipal(in nsIChannel aChannel);
+
+    /**
+     * This method does getChannelResultPrincipal() +
+     * getChannelResultStoragePrincipal().
+     * This method is mainly done for Document::Reset(). There are no other
+     * reasons to use this method.
+     */
+    void getChannelResultPrincipals(in nsIChannel aChannel,
+                                    out nsIPrincipal aPrincipal,
+                                    out nsIPrincipal aStoragePrincipal);
 
     /**
      * Temporary API until bug 1220687 is fixed.
@@ -227,27 +258,6 @@ interface nsIScriptSecurityManager : nsISupports
      * aChannel must not be null.
      */
     nsIPrincipal getChannelURIPrincipal(in nsIChannel aChannel);
-
-    /**
-     * Check whether a given principal is a system principal.  This allows us
-     * to avoid handing back the system principal to script while allowing
-     * script to check whether a given principal is system.
-     *
-     * @deprecated use nsIPrincipal's accessors for this boolean.
-     * https://bugzilla.mozilla.org/show_bug.cgi?id=1517483 tracks removing
-     * this.
-     */
-    boolean isSystemPrincipal(in nsIPrincipal aPrincipal);
-%{C++
-    bool IsSystemPrincipal(nsIPrincipal* aPrincipal) {
-      bool isSystem = false;
-      IsSystemPrincipal(aPrincipal, &isSystem);
-      return isSystem;
-    }
-%}
-
-    const unsigned long NO_APP_ID = 0;
-    const unsigned long UNKNOWN_APP_ID = 4294967295; // UINT32_MAX
 
     const unsigned long DEFAULT_USER_CONTEXT_ID = 0;
 

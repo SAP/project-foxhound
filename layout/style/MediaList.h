@@ -16,13 +16,14 @@
 
 #include "nsWrapperCache.h"
 
-class nsPresContext;
 class nsMediaQueryResultCacheKey;
 
 namespace mozilla {
 class StyleSheet;
 
 namespace dom {
+
+class Document;
 
 class MediaList final : public nsISupports, public nsWrapperCache {
  public:
@@ -43,7 +44,7 @@ class MediaList final : public nsISupports, public nsWrapperCache {
 
   void GetText(nsAString& aMediaText);
   void SetText(const nsAString& aMediaText);
-  bool Matches(nsPresContext* aPresContext) const;
+  bool Matches(const Document&) const;
 
   void SetStyleSheet(StyleSheet* aSheet);
 
@@ -75,6 +76,8 @@ class MediaList final : public nsISupports, public nsWrapperCache {
   ~MediaList() {
     MOZ_ASSERT(!mStyleSheet, "Backpointer should have been cleared");
   }
+
+  bool IsReadOnly() const;
 
   // not refcounted; sheet will let us know when it goes away
   // mStyleSheet is the sheet that needs to be dirtied when this

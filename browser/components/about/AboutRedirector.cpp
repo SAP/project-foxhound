@@ -22,12 +22,12 @@ namespace browser {
 NS_IMPL_ISUPPORTS(AboutRedirector, nsIAboutModule)
 
 bool AboutRedirector::sNewTabPageEnabled = false;
-bool AboutRedirector::sNewCertErrorPageEnabled = false;
+bool AboutRedirector::sAboutLoginsEnabled = false;
 
 static const uint32_t ACTIVITY_STREAM_FLAGS =
     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::ENABLE_INDEXED_DB |
     nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
-    nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGED_CHILD |
+    nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT;
 
 struct RedirEntry {
@@ -54,6 +54,13 @@ static const RedirEntry kRedirMap[] = {
          nsIAboutModule::URI_CAN_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
     {"config", "chrome://browser/content/aboutconfig/aboutconfig.html", 0},
+    {"framecrashed", "chrome://browser/content/aboutFrameCrashed.html",
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+    {"logins", "chrome://browser/content/aboutlogins/aboutLogins.html",
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
+         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
+         nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
     {"tabcrashed", "chrome://browser/content/aboutTabCrashed.xhtml",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
@@ -78,7 +85,7 @@ static const RedirEntry kRedirMap[] = {
     {"newtab", "about:blank", ACTIVITY_STREAM_FLAGS},
     {"welcome", "about:blank",
      nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
-         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGED_CHILD |
+         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
          nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT},
     {"library", "chrome://browser/content/aboutLibrary.xhtml",
@@ -108,6 +115,10 @@ static const RedirEntry kRedirMap[] = {
      nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
          nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+    {"protections", "chrome://browser/content/protections.html",
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::URI_MUST_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
+         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS},
 };
 
 static nsAutoCString GetAboutModuleName(nsIURI* aURI) {
@@ -145,11 +156,11 @@ AboutRedirector::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
     sNTPEnabledCacheInited = true;
   }
 
-  static bool sNCEPEnabledCacheInited = false;
-  if (!sNCEPEnabledCacheInited) {
-    Preferences::AddBoolVarCache(&AboutRedirector::sNewCertErrorPageEnabled,
-                                 "browser.security.newcerterrorpage.enabled");
-    sNCEPEnabledCacheInited = true;
+  static bool sAboutLoginsCacheInited = false;
+  if (!sAboutLoginsCacheInited) {
+    Preferences::AddBoolVarCache(&AboutRedirector::sAboutLoginsEnabled,
+                                 "signon.management.page.enabled");
+    sAboutLoginsCacheInited = true;
   }
 
   for (auto& redir : kRedirMap) {
@@ -167,16 +178,16 @@ AboutRedirector::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
+      if (!sAboutLoginsEnabled && path.EqualsLiteral("logins")) {
+        return NS_ERROR_NOT_AVAILABLE;
+      }
+
       if (path.EqualsLiteral("welcome")) {
         nsCOMPtr<nsIAboutNewTabService> aboutNewTabService =
             do_GetService("@mozilla.org/browser/aboutnewtab-service;1", &rv);
         NS_ENSURE_SUCCESS(rv, rv);
         rv = aboutNewTabService->GetWelcomeURL(url);
         NS_ENSURE_SUCCESS(rv, rv);
-      }
-
-      if (sNewCertErrorPageEnabled && path.EqualsLiteral("certerror")) {
-        url.AssignLiteral("chrome://browser/content/aboutNetError-new.xhtml");
       }
 
       // fall back to the specified url in the map

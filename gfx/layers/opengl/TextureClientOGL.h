@@ -38,30 +38,32 @@ class AndroidSurfaceTextureData : public TextureData {
  public:
   static already_AddRefed<TextureClient> CreateTextureClient(
       AndroidSurfaceTextureHandle aHandle, gfx::IntSize aSize, bool aContinuous,
-      gl::OriginPos aOriginPos, LayersIPCChannel* aAllocator,
+      gl::OriginPos aOriginPos, bool aHasAlpha, LayersIPCChannel* aAllocator,
       TextureFlags aFlags);
 
-  ~AndroidSurfaceTextureData();
+  virtual ~AndroidSurfaceTextureData();
 
-  virtual void FillInfo(TextureData::Info& aInfo) const override;
+  void FillInfo(TextureData::Info& aInfo) const override;
 
-  virtual bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
+  bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
 
   // Useless functions.
-  virtual bool Lock(OpenMode) override { return true; }
+  bool Lock(OpenMode) override { return true; }
 
-  virtual void Unlock() override {}
+  void Unlock() override {}
 
   // Our data is always owned externally.
-  virtual void Deallocate(LayersIPCChannel*) override {}
+  void Deallocate(LayersIPCChannel*) override {}
 
  protected:
   AndroidSurfaceTextureData(AndroidSurfaceTextureHandle aHandle,
-                            gfx::IntSize aSize, bool aContinuous);
+                            gfx::IntSize aSize, bool aContinuous,
+                            bool aHasAlpha);
 
   const AndroidSurfaceTextureHandle mHandle;
   const gfx::IntSize mSize;
   const bool mContinuous;
+  const bool mHasAlpha;
 };
 
 class AndroidNativeWindowTextureData : public TextureData {
@@ -69,19 +71,19 @@ class AndroidNativeWindowTextureData : public TextureData {
   static AndroidNativeWindowTextureData* Create(gfx::IntSize aSize,
                                                 gfx::SurfaceFormat aFormat);
 
-  virtual void FillInfo(TextureData::Info& aInfo) const override;
+  void FillInfo(TextureData::Info& aInfo) const override;
 
-  virtual bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
+  bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
 
-  virtual bool Lock(OpenMode) override;
-  virtual void Unlock() override;
+  bool Lock(OpenMode) override;
+  void Unlock() override;
 
-  virtual void Forget(LayersIPCChannel*) override;
-  virtual void Deallocate(LayersIPCChannel*) override {}
+  void Forget(LayersIPCChannel*) override;
+  void Deallocate(LayersIPCChannel*) override {}
 
-  virtual already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() override;
+  already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() override;
 
-  virtual void OnForwardedToHost() override;
+  void OnForwardedToHost() override;
 
  protected:
   AndroidNativeWindowTextureData(java::GeckoSurface::Param aSurface,

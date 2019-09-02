@@ -93,9 +93,9 @@ class SVGTests : public nsISupports {
   void MaybeInvalidate();
 
   // WebIDL
-  already_AddRefed<DOMSVGStringList> RequiredFeatures();
   already_AddRefed<DOMSVGStringList> RequiredExtensions();
   already_AddRefed<DOMSVGStringList> SystemLanguage();
+
   bool HasExtension(const nsAString& aExtension) const;
 
   virtual SVGElement* AsSVGElement() = 0;
@@ -105,12 +105,12 @@ class SVGTests : public nsISupports {
   }
 
  protected:
-  virtual ~SVGTests() {}
+  virtual ~SVGTests() = default;
 
  private:
-  enum { FEATURES, EXTENSIONS, LANGUAGE };
-  SVGStringList mStringListAttributes[3];
-  static nsStaticAtom* const sStringListNames[3];
+  enum { EXTENSIONS, LANGUAGE };
+  SVGStringList mStringListAttributes[2];
+  static nsStaticAtom* const sStringListNames[2];
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(SVGTests, MOZILLA_DOMSVGTESTS_IID)

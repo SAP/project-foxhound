@@ -17,11 +17,14 @@ function run_test() {
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-black-box",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             testBlackBox();
-                           });
+    attachTestTabAndResume(gClient, "test-black-box", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      testBlackBox();
+    });
   });
   do_test_pending();
 }
@@ -30,7 +33,7 @@ const BLACK_BOXED_URL = "http://example.com/black-boxed.min.js";
 const SOURCE_URL = "http://example.com/source.js";
 
 const testBlackBox = async function() {
-  await executeOnNextTickAndWaitForPause(evalCode, gClient);
+  await executeOnNextTickAndWaitForPause(evalCode, gThreadClient);
 
   const { sources } = await getSources(gThreadClient);
   equal(sources.length, 2);
@@ -41,6 +44,7 @@ const testBlackBox = async function() {
   const regularSource = sources.filter(s => s.url === SOURCE_URL)[0];
   equal(regularSource.isBlackBoxed, false);
 
+  await gThreadClient.resume();
   finishClient(gClient);
 };
 
@@ -54,8 +58,7 @@ function evalCode() {
   );
 
   Cu.evalInSandbox(
-    "" + function source() {}
-      + "\ndebugger;",
+    "" + function source() {} + "\ndebugger;",
     gDebuggee,
     "1.8",
     SOURCE_URL,

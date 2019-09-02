@@ -6,15 +6,27 @@
 
 var EXPORTED_SYMBOLS = ["MessagePort", "MessageListener"];
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(this, "AsyncPrefs",
-  "resource://gre/modules/AsyncPrefs.jsm");
-ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "UpdateUtils",
-  "resource://gre/modules/UpdateUtils.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "AsyncPrefs",
+  "resource://gre/modules/AsyncPrefs.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PromiseUtils",
+  "resource://gre/modules/PromiseUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "UpdateUtils",
+  "resource://gre/modules/UpdateUtils.jsm"
+);
 
 /*
  * Used for all kinds of permissions checks which requires explicit
@@ -25,19 +37,29 @@ ChromeUtils.defineModuleGetter(this, "UpdateUtils",
  */
 let RPMAccessManager = {
   accessMap: {
+    "about:certerror": {
+      getFormatURLPref: ["app.support.baseURL"],
+      getBoolPref: [
+        "security.certerrors.mitm.priming.enabled",
+        "security.enterprise_roots.auto-enabled",
+        "security.certerror.hideAddException",
+        "security.ssl.errorReporting.automatic",
+        "security.ssl.errorReporting.enabled",
+      ],
+      getIntPref: [
+        "services.settings.clock_skew_seconds",
+        "services.settings.last_update_seconds",
+      ],
+      getAppBuildID: ["yes"],
+    },
     "about:privatebrowsing": {
       // "sendAsyncMessage": handled within AboutPrivateBrowsingHandler.jsm
-      // "setBoolPref": handled within AsyncPrefs.jsm and uses the pref
-      //                ["privacy.trackingprotection.pbmode.enabled"],
-      "getBoolPref": ["privacy.trackingprotection.pbmode.enabled",
-                      "browser.privatebrowsing.searchUI"],
-      "getFormatURLPref": ["privacy.trackingprotection.introURL",
-                           "app.support.baseURL"],
-      "isWindowPrivate": ["yes"],
+      getFormatURLPref: ["app.support.baseURL"],
+      isWindowPrivate: ["yes"],
     },
     "about:newinstall": {
-      "getUpdateChannel": ["yes"],
-      "getFxAccountsEndpoint": ["yes"],
+      getUpdateChannel: ["yes"],
+      getFxAccountsEndpoint: ["yes"],
     },
   },
 
@@ -46,13 +68,22 @@ let RPMAccessManager = {
     if (!aPrincipal || !aPrincipal.URI) {
       return false;
     }
+
     let uri = aPrincipal.URI.asciiSpec;
+    if (uri.startsWith("about:certerror")) {
+      uri = "about:certerror";
+    }
 
     // check if there is an entry for that requestying URI in the accessMap;
     // if not, deny access.
     let accessMapForURI = this.accessMap[uri];
     if (!accessMapForURI) {
-      Cu.reportError("RPMAccessManager does not allow access to Feature: " + aFeature + " for: " + uri);
+      Cu.reportError(
+        "RPMAccessManager does not allow access to Feature: " +
+          aFeature +
+          " for: " +
+          uri
+      );
       return false;
     }
 
@@ -60,7 +91,12 @@ let RPMAccessManager = {
     // if not, deny access.
     let accessMapForFeature = accessMapForURI[aFeature];
     if (!accessMapForFeature) {
-      Cu.reportError("RPMAccessManager does not allow access to Feature: " + aFeature + " for: " + uri);
+      Cu.reportError(
+        "RPMAccessManager does not allow access to Feature: " +
+          aFeature +
+          " for: " +
+          uri
+      );
       return false;
     }
 
@@ -71,7 +107,12 @@ let RPMAccessManager = {
     }
 
     // otherwise deny access
-    Cu.reportError("RPMAccessManager does not allow access to Feature: " + aFeature + " for: " + uri);
+    Cu.reportError(
+      "RPMAccessManager does not allow access to Feature: " +
+        aFeature +
+        " for: " +
+        uri
+    );
     return false;
   },
 };
@@ -105,15 +146,17 @@ class MessageListener {
   }
 
   addMessageListener(name, callback) {
-    if (!this.listeners.has(name))
+    if (!this.listeners.has(name)) {
       this.listeners.set(name, new Set([callback]));
-    else
+    } else {
       this.listeners.get(name).add(callback);
+    }
   }
 
   removeMessageListener(name, callback) {
-    if (!this.listeners.has(name))
+    if (!this.listeners.has(name)) {
       return;
+    }
 
     this.listeners.get(name).delete(callback);
   }
@@ -147,14 +190,29 @@ class MessagePort {
 
   addMessageListeners() {
     this.messageManager.addMessageListener("RemotePage:Message", this.message);
-    this.messageManager.addMessageListener("RemotePage:Request", this.receiveRequest);
-    this.messageManager.addMessageListener("RemotePage:Response", this.receiveResponse);
+    this.messageManager.addMessageListener(
+      "RemotePage:Request",
+      this.receiveRequest
+    );
+    this.messageManager.addMessageListener(
+      "RemotePage:Response",
+      this.receiveResponse
+    );
   }
 
   removeMessageListeners() {
-    this.messageManager.removeMessageListener("RemotePage:Message", this.message);
-    this.messageManager.removeMessageListener("RemotePage:Request", this.receiveRequest);
-    this.messageManager.removeMessageListener("RemotePage:Response", this.receiveResponse);
+    this.messageManager.removeMessageListener(
+      "RemotePage:Message",
+      this.message
+    );
+    this.messageManager.removeMessageListener(
+      "RemotePage:Request",
+      this.receiveRequest
+    );
+    this.messageManager.removeMessageListener(
+      "RemotePage:Response",
+      this.receiveResponse
+    );
   }
 
   // Called when the message manager used to connect to the other process has
@@ -169,7 +227,9 @@ class MessagePort {
   // once the other process has responded to the request or some error occurs.
   sendRequest(name, data = null) {
     if (this.destroyed) {
-      return this.window.Promise.reject(new Error("Message port has been destroyed"));
+      return this.window.Promise.reject(
+        new Error("Message port has been destroyed")
+      );
     }
 
     let deferred = PromiseUtils.defer();
@@ -187,7 +247,7 @@ class MessagePort {
 
   // Handles an IPC message to perform a request of some kind.
   async receiveRequest({ data: messagedata }) {
-    if (this.destroyed || (messagedata.portID != this.portID)) {
+    if (this.destroyed || messagedata.portID != this.portID) {
       return;
     }
 
@@ -197,7 +257,10 @@ class MessagePort {
     };
 
     try {
-      data.resolve = await this.handleRequest(messagedata.name, messagedata.data);
+      data.resolve = await this.handleRequest(
+        messagedata.name,
+        messagedata.data
+      );
     } catch (e) {
       data.reject = e;
     }
@@ -207,7 +270,7 @@ class MessagePort {
 
   // Handles an IPC message with the response of a request.
   receiveResponse({ data: messagedata }) {
-    if (this.destroyed || (messagedata.portID != this.portID)) {
+    if (this.destroyed || messagedata.portID != this.portID) {
       return;
     }
 
@@ -230,7 +293,7 @@ class MessagePort {
 
   // Handles an IPC message containing any message.
   message({ data: messagedata }) {
-    if (this.destroyed || (messagedata.portID != this.portID)) {
+    if (this.destroyed || messagedata.portID != this.portID) {
       return;
     }
 
@@ -282,7 +345,7 @@ class MessagePort {
     try {
       // This can fail in the child process if the tab has already been closed
       this.removeMessageListeners();
-    } catch (e) { }
+    } catch (e) {}
 
     for (let deferred of this.requests) {
       if (deferred) {
@@ -298,13 +361,43 @@ class MessagePort {
   }
 
   wrapPromise(promise) {
-    return new this.window.Promise((resolve, reject) => promise.then(resolve, reject));
+    return new this.window.Promise((resolve, reject) =>
+      promise.then(resolve, reject)
+    );
   }
 
-  getBoolPref(aPref) {
+  getAppBuildID() {
+    let principal = this.window.document.nodePrincipal;
+    if (!RPMAccessManager.checkAllowAccess(principal, "getAppBuildID", "yes")) {
+      throw new Error(
+        "RPMAccessManager does not allow access to getAppBuildID"
+      );
+    }
+    return Services.appinfo.appBuildID;
+  }
+
+  getIntPref(aPref, defaultValue) {
+    let principal = this.window.document.nodePrincipal;
+    if (!RPMAccessManager.checkAllowAccess(principal, "getIntPref", aPref)) {
+      throw new Error("RPMAccessManager does not allow access to getIntPref");
+    }
+    // Only call with a default value if it's defined, to be able to throw
+    // errors for non-existent prefs.
+    if (defaultValue !== undefined) {
+      return Services.prefs.getIntPref(aPref, defaultValue);
+    }
+    return Services.prefs.getIntPref(aPref);
+  }
+
+  getBoolPref(aPref, defaultValue) {
     let principal = this.window.document.nodePrincipal;
     if (!RPMAccessManager.checkAllowAccess(principal, "getBoolPref", aPref)) {
       throw new Error("RPMAccessManager does not allow access to getBoolPref");
+    }
+    // Only call with a default value if it's defined, to be able to throw
+    // errors for non-existent prefs.
+    if (defaultValue !== undefined) {
+      return Services.prefs.getBoolPref(aPref, defaultValue);
     }
     return Services.prefs.getBoolPref(aPref);
   }
@@ -315,32 +408,56 @@ class MessagePort {
 
   getFormatURLPref(aFormatURL) {
     let principal = this.window.document.nodePrincipal;
-    if (!RPMAccessManager.checkAllowAccess(principal, "getFormatURLPref", aFormatURL)) {
-      throw new Error("RPMAccessManager does not allow access to getFormatURLPref");
+    if (
+      !RPMAccessManager.checkAllowAccess(
+        principal,
+        "getFormatURLPref",
+        aFormatURL
+      )
+    ) {
+      throw new Error(
+        "RPMAccessManager does not allow access to getFormatURLPref"
+      );
     }
     return Services.urlFormatter.formatURLPref(aFormatURL);
   }
 
   isWindowPrivate() {
     let principal = this.window.document.nodePrincipal;
-    if (!RPMAccessManager.checkAllowAccess(principal, "isWindowPrivate", "yes")) {
-      throw new Error("RPMAccessManager does not allow access to isWindowPrivate");
+    if (
+      !RPMAccessManager.checkAllowAccess(principal, "isWindowPrivate", "yes")
+    ) {
+      throw new Error(
+        "RPMAccessManager does not allow access to isWindowPrivate"
+      );
     }
     return PrivateBrowsingUtils.isContentWindowPrivate(this.window);
   }
 
   getUpdateChannel() {
     let principal = this.window.document.nodePrincipal;
-    if (!RPMAccessManager.checkAllowAccess(principal, "getUpdateChannel", "yes")) {
-      throw new Error("RPMAccessManager does not allow access to getUpdateChannel");
+    if (
+      !RPMAccessManager.checkAllowAccess(principal, "getUpdateChannel", "yes")
+    ) {
+      throw new Error(
+        "RPMAccessManager does not allow access to getUpdateChannel"
+      );
     }
     return UpdateUtils.UpdateChannel;
   }
 
   getFxAccountsEndpoint(aEntrypoint) {
     let principal = this.window.document.nodePrincipal;
-    if (!RPMAccessManager.checkAllowAccess(principal, "getFxAccountsEndpoint", "yes")) {
-      throw new Error("RPMAccessManager does not allow access to getFxAccountsEndpoint");
+    if (
+      !RPMAccessManager.checkAllowAccess(
+        principal,
+        "getFxAccountsEndpoint",
+        "yes"
+      )
+    ) {
+      throw new Error(
+        "RPMAccessManager does not allow access to getFxAccountsEndpoint"
+      );
     }
 
     return this.sendRequest("FxAccountsEndpoint", aEntrypoint);

@@ -8,11 +8,14 @@
 #define mozilla_dom_VisualViewport_h
 
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/VisualViewportBinding.h"
 #include "Units.h"
-#include "nsIPresShell.h"
 
 namespace mozilla {
+
+class PresShell;
+
 namespace dom {
 
 /* Visual Viewport API spec:
@@ -25,8 +28,8 @@ class VisualViewport final : public mozilla::DOMEventTargetHelper {
   double OffsetTop() const;
   double PageLeft() const;
   double PageTop() const;
-  double Width() const;
-  double Height() const;
+  MOZ_CAN_RUN_SCRIPT double Width() const;
+  MOZ_CAN_RUN_SCRIPT double Height() const;
   double Scale() const;
   IMPL_EVENT_HANDLER(resize)
   IMPL_EVENT_HANDLER(scroll)
@@ -46,10 +49,12 @@ class VisualViewport final : public mozilla::DOMEventTargetHelper {
     NS_DECL_NSIRUNNABLE
     VisualViewportResizeEvent(VisualViewport* aViewport,
                               nsPresContext* aPresContext);
-    void Revoke() { mViewport = nullptr; }
+    bool HasPresContext(nsPresContext* aContext) const;
+    void Revoke();
 
    private:
     VisualViewport* mViewport;
+    WeakPtr<nsPresContext> mPresContext;
   };
 
   class VisualViewportScrollEvent : public Runnable {
@@ -59,12 +64,14 @@ class VisualViewport final : public mozilla::DOMEventTargetHelper {
                               nsPresContext* aPresContext,
                               const nsPoint& aPrevVisualOffset,
                               const nsPoint& aPrevLayoutOffset);
-    void Revoke() { mViewport = nullptr; }
+    bool HasPresContext(nsPresContext* aContext) const;
+    void Revoke();
     nsPoint PrevVisualOffset() const { return mPrevVisualOffset; }
     nsPoint PrevLayoutOffset() const { return mPrevLayoutOffset; }
 
    private:
     VisualViewport* mViewport;
+    WeakPtr<nsPresContext> mPresContext;
     // The VisualViewport "scroll" event is supposed to be fired only when the
     // *relative* offset between visual and layout viewport changes. The two
     // viewports are updated independently from each other, though, so the only
@@ -81,10 +88,11 @@ class VisualViewport final : public mozilla::DOMEventTargetHelper {
  private:
   virtual ~VisualViewport();
 
-  CSSSize VisualViewportSize() const;
+  MOZ_CAN_RUN_SCRIPT CSSSize VisualViewportSize() const;
   CSSPoint VisualViewportOffset() const;
   CSSPoint LayoutViewportOffset() const;
-  nsIPresShell* GetPresShell() const;
+  Document* GetDocument() const;
+  PresShell* GetPresShell() const;
   nsPresContext* GetPresContext() const;
 
   void FireResizeEvent();

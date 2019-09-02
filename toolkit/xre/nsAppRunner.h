@@ -8,6 +8,7 @@
 
 #ifdef XP_WIN
 #  include <windows.h>
+#  include "mozilla/WindowsConsole.h"
 #else
 #  include <limits.h>
 #endif
@@ -59,9 +60,14 @@ nsresult AppInfoConstructor(nsISupports* aOuter, const nsID& aIID,
 // Exported for gtests.
 void BuildCompatVersion(const char* aAppVersion, const char* aAppBuildID,
                         const char* aToolkitBuildID, nsACString& aBuf);
-bool CheckCompatVersions(const nsACString& aOldCompatVersion,
-                         const nsACString& aNewCompatVersion,
-                         bool* aIsDowngrade);
+
+/**
+ * Compares the provided compatibility versions. Returns 0 if they match,
+ * < 0 if the new version is considered an upgrade from the old version and
+ * > 0 if the new version is considered a downgrade from the old version.
+ */
+int32_t CompareCompatVersions(const nsACString& aOldCompatVersion,
+                              const nsACString& aNewCompatVersion);
 
 /**
  * Create the nativeappsupport implementation.
@@ -107,7 +113,6 @@ void OverrideDefaultLocaleIfNeeded();
 void MozExpectedExit();
 
 #ifdef XP_WIN
-void UseParentConsole();
 
 BOOL WinLaunchChild(const wchar_t* exePath, int argc, char** argv,
                     HANDLE userToken = nullptr, HANDLE* hProcess = nullptr);
@@ -142,6 +147,10 @@ extern "C" {
 void MOZ_EXPORT __sanitizer_set_report_path(const char* path);
 }
 void setASanReporterPath(nsIFile* aDir);
+#endif
+
+#ifdef MOZ_WAYLAND
+bool IsWaylandDisabled();
 #endif
 
 #endif  // nsAppRunner_h__

@@ -56,7 +56,6 @@ namespace ipc {
 class PrincipalInfo;
 }
 
-class AllocationHandle;
 class GetUserMediaTask;
 class GetUserMediaWindowListener;
 class MediaManager;
@@ -117,10 +116,6 @@ class MediaDevice : public nsIMediaDevice {
                              nsString aN);
   static uint32_t FitnessDistance(
       nsString aN, const dom::ConstrainDOMStringParameters& aParams);
-
-  // Assigned on allocation on media thread, then read on the media thread and
-  // graph thread
-  RefPtr<AllocationHandle> mAllocationHandle;
 
  public:
   const RefPtr<MediaEngineSource> mSource;
@@ -188,27 +183,24 @@ class MediaManager final : public nsIMediaManagerService,
     MOZ_ASSERT(NS_IsMainThread());
     return mActiveWindows.GetWeak(aWindowId);
   }
-  void AddWindowID(uint64_t aWindowId, GetUserMediaWindowListener* aListener);
+  void AddWindowID(uint64_t aWindowId,
+                   RefPtr<GetUserMediaWindowListener> aListener);
   void RemoveWindowID(uint64_t aWindowId);
   void SendPendingGUMRequest();
   bool IsWindowStillActive(uint64_t aWindowId) {
     return !!GetWindowListener(aWindowId);
   }
-  bool IsWindowListenerStillActive(GetUserMediaWindowListener* aListener);
-  // Note: also calls aListener->Remove(), even if inactive
-  void RemoveFromWindowList(uint64_t aWindowID,
-                            GetUserMediaWindowListener* aListener);
+  bool IsWindowListenerStillActive(
+      const RefPtr<GetUserMediaWindowListener>& aListener);
 
-  typedef dom::CallbackObjectHolder<dom::NavigatorUserMediaSuccessCallback,
-                                    nsIDOMGetUserMediaSuccessCallback>
-      GetUserMediaSuccessCallback;
-  typedef dom::CallbackObjectHolder<dom::NavigatorUserMediaErrorCallback,
-                                    nsIDOMGetUserMediaErrorCallback>
-      GetUserMediaErrorCallback;
+  typedef dom::NavigatorUserMediaSuccessCallback GetUserMediaSuccessCallback;
+  typedef dom::NavigatorUserMediaErrorCallback GetUserMediaErrorCallback;
 
-  static void CallOnError(const GetUserMediaErrorCallback* aCallback,
+  MOZ_CAN_RUN_SCRIPT
+  static void CallOnError(GetUserMediaErrorCallback& aCallback,
                           dom::MediaStreamError& aError);
-  static void CallOnSuccess(const GetUserMediaSuccessCallback* aCallback,
+  MOZ_CAN_RUN_SCRIPT
+  static void CallOnSuccess(GetUserMediaSuccessCallback& aCallback,
                             DOMMediaStream& aStream);
 
   typedef nsTArray<RefPtr<MediaDevice>> MediaDeviceSet;
@@ -227,6 +219,7 @@ class MediaManager final : public nsIMediaManagerService,
       const dom::MediaStreamConstraints& aConstraints,
       dom::CallerType aCallerType);
 
+  MOZ_CAN_RUN_SCRIPT
   nsresult GetUserMediaDevices(
       nsPIDOMWindowInner* aWindow,
       const dom::MediaStreamConstraints& aConstraints,

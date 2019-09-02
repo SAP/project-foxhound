@@ -43,7 +43,15 @@ defaults = {
 def configure_mach(config, job, taskdesc):
     run = job['run']
 
-    command_prefix = 'cd $GECKO_PATH && ./mach '
+    additional_prefix = []
+    if job['worker-type'].endswith('1014'):
+        additional_prefix = [
+            'LC_ALL=en_US.UTF-8',
+            'LANG=en_US.UTF-8'
+        ]
+
+    command_prefix = ' '.join(['cd $GECKO_PATH'] + additional_prefix + ['&& ./mach '])
+
     mach = run['mach']
     if isinstance(mach, dict):
         ref, pattern = next(iter(mach.items()))

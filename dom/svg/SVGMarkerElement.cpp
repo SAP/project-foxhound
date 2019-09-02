@@ -7,10 +7,10 @@
 #include "mozilla/dom/SVGMarkerElement.h"
 
 #include "nsGkAtoms.h"
+#include "DOMSVGAngle.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "nsError.h"
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/dom/DOMSVGAngle.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGMarkerElementBinding.h"
@@ -78,31 +78,31 @@ SVGMarkerElement::PreserveAspectRatio() {
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedLength> SVGMarkerElement::RefX() {
+already_AddRefed<DOMSVGAnimatedLength> SVGMarkerElement::RefX() {
   return mLengthAttributes[REFX].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGMarkerElement::RefY() {
+already_AddRefed<DOMSVGAnimatedLength> SVGMarkerElement::RefY() {
   return mLengthAttributes[REFY].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedEnumeration> SVGMarkerElement::MarkerUnits() {
+already_AddRefed<DOMSVGAnimatedEnumeration> SVGMarkerElement::MarkerUnits() {
   return mEnumAttributes[MARKERUNITS].ToDOMAnimatedEnum(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGMarkerElement::MarkerWidth() {
+already_AddRefed<DOMSVGAnimatedLength> SVGMarkerElement::MarkerWidth() {
   return mLengthAttributes[MARKERWIDTH].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGMarkerElement::MarkerHeight() {
+already_AddRefed<DOMSVGAnimatedLength> SVGMarkerElement::MarkerHeight() {
   return mLengthAttributes[MARKERHEIGHT].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedEnumeration> SVGMarkerElement::OrientType() {
+already_AddRefed<DOMSVGAnimatedEnumeration> SVGMarkerElement::OrientType() {
   return mOrient.ToDOMAnimatedEnum(this);
 }
 
-already_AddRefed<SVGAnimatedAngle> SVGMarkerElement::OrientAngle() {
+already_AddRefed<DOMSVGAnimatedAngle> SVGMarkerElement::OrientAngle() {
   return mOrient.ToDOMAnimatedAngle(this);
 }
 
@@ -165,11 +165,12 @@ SVGElement::EnumAttributesInfo SVGMarkerElement::GetEnumInfo() {
   return EnumAttributesInfo(mEnumAttributes, sEnumInfo, ArrayLength(sEnumInfo));
 }
 
-SVGOrient* SVGMarkerElement::GetOrient() { return &mOrient; }
+SVGAnimatedOrient* SVGMarkerElement::GetAnimatedOrient() { return &mOrient; }
 
-SVGViewBox* SVGMarkerElement::GetViewBox() { return &mViewBox; }
+SVGAnimatedViewBox* SVGMarkerElement::GetAnimatedViewBox() { return &mViewBox; }
 
-SVGAnimatedPreserveAspectRatio* SVGMarkerElement::GetPreserveAspectRatio() {
+SVGAnimatedPreserveAspectRatio*
+SVGMarkerElement::GetAnimatedPreserveAspectRatio() {
   return &mPreserveAspectRatio;
 }
 
@@ -200,13 +201,13 @@ gfx::Matrix SVGMarkerElement::GetMarkerTransform(float aStrokeWidth,
                      -sin(angle) * scale, cos(angle) * scale, aMark.x, aMark.y);
 }
 
-SVGViewBoxRect SVGMarkerElement::GetViewBoxRect() {
+SVGViewBox SVGMarkerElement::GetViewBox() {
   if (mViewBox.HasRect()) {
     return mViewBox.GetAnimValue();
   }
-  return SVGViewBoxRect(
-      0, 0, mLengthAttributes[MARKERWIDTH].GetAnimValue(mCoordCtx),
-      mLengthAttributes[MARKERHEIGHT].GetAnimValue(mCoordCtx));
+  return SVGViewBox(0, 0,
+                    mLengthAttributes[MARKERWIDTH].GetAnimValue(mCoordCtx),
+                    mLengthAttributes[MARKERHEIGHT].GetAnimValue(mCoordCtx));
 }
 
 gfx::Matrix SVGMarkerElement::GetViewBoxTransform() {
@@ -216,7 +217,7 @@ gfx::Matrix SVGMarkerElement::GetViewBoxTransform() {
     float viewportHeight =
         mLengthAttributes[MARKERHEIGHT].GetAnimValue(mCoordCtx);
 
-    SVGViewBoxRect viewbox = GetViewBoxRect();
+    SVGViewBox viewbox = GetViewBox();
 
     MOZ_ASSERT(viewbox.width > 0.0f && viewbox.height > 0.0f,
                "Rendering should be disabled");

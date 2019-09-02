@@ -25,8 +25,10 @@
 }
 
 #urlbar,
-.searchbar-textbox {
+#searchbar {
   -moz-appearance: none;
+  background-color: -moz-Field;
+  color: -moz-FieldText;
   background-clip: content-box;
   border: 1px solid @fieldBorderColor@;
   border-radius: var(--toolbarbutton-border-radius);
@@ -38,42 +40,49 @@
   overflow: -moz-hidden-unscrollable;
 }
 
+.searchbar-textbox {
+  -moz-appearance: none;
+  background: none;
+  color: inherit;
+  margin: 0;
+}
+
 #urlbar:hover,
-.searchbar-textbox:hover {
+#searchbar:hover {
   border-color: @fieldHoverBorderColor@;
   box-shadow: 0 1px 6px rgba(0,0,0,.1);
 }
 
 #urlbar:-moz-lwtheme,
-#navigator-toolbox .searchbar-textbox:-moz-lwtheme {
+#navigator-toolbox #searchbar:-moz-lwtheme {
   background-color: var(--lwt-toolbar-field-background-color, hsla(0,0%,100%,.8));
   color: var(--lwt-toolbar-field-color, black);
 }
 
 #urlbar:not([focused="true"]):-moz-lwtheme,
 #urlbar.hidden-focus:-moz-lwtheme,
-#navigator-toolbox .searchbar-textbox:not([focused="true"]):-moz-lwtheme {
+#navigator-toolbox #searchbar:not(:focus-within):-moz-lwtheme {
   border-color: var(--lwt-toolbar-field-border-color, @fieldBorderColor@);
 }
 
 #urlbar:not([focused="true"]):-moz-lwtheme:hover,
 #urlbar.hidden-focus:-moz-lwtheme:hover,
-#navigator-toolbox .searchbar-textbox:not([focused="true"]):-moz-lwtheme:hover {
+#navigator-toolbox #searchbar:not(:focus-within):-moz-lwtheme:hover {
   border-color: var(--lwt-toolbar-field-border-color, @fieldHoverBorderColor@);
 }
 
 #urlbar:-moz-lwtheme:hover,
-#navigator-toolbox .searchbar-textbox:-moz-lwtheme:hover {
+#navigator-toolbox #searchbar:-moz-lwtheme:hover {
   background-color: var(--lwt-toolbar-field-background-color, white);
 }
 
 #urlbar:not(.hidden-focus)[focused="true"],
-.searchbar-textbox[focused="true"] {
+#searchbar:focus-within {
   border-color: var(--toolbar-field-focus-border-color);
 }
 
 #urlbar:not(.hidden-focus):-moz-lwtheme[focused="true"],
-#navigator-toolbox .searchbar-textbox:-moz-lwtheme[focused="true"] {
+#navigator-toolbox #searchbar:focus-within:-moz-lwtheme {
   background-color: var(--lwt-toolbar-field-focus, var(--lwt-toolbar-field-background-color, white));
   color: var(--lwt-toolbar-field-focus-color, var(--lwt-toolbar-field-color, black));
 }
@@ -85,14 +94,14 @@
 }
 
 :root[uidensity=compact] #urlbar,
-:root[uidensity=compact] .searchbar-textbox {
+:root[uidensity=compact] #searchbar {
   min-height: 26px;
   margin-top: 3px;
   margin-bottom: 3px;
 }
 
 :root[uidensity=touch] #urlbar,
-:root[uidensity=touch] .searchbar-textbox {
+:root[uidensity=touch] #searchbar {
   min-height: 32px;
 }
 
@@ -103,6 +112,12 @@
 
 :root[customizing] .urlbar-input-box {
   visibility: hidden;
+}
+
+.urlbar-input {
+  /* Remove the 1px padding-left (and padding-right) so that the titles in the
+     urlbar popup align with the text in the input. */
+  padding: 0;
 }
 
 #urlbar-container {
@@ -326,6 +341,19 @@
   -moz-outline-radius: var(--toolbarbutton-border-radius);
 }
 
+.urlbar-display {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.urlbar-display:not(:-moz-lwtheme) {
+  color: GrayText;
+}
+
+.urlbar-display:-moz-lwtheme {
+  opacity: 0.5;
+}
+
 .urlbar-go-button,
 .search-go-button {
   list-style-image: url("chrome://browser/skin/forward.svg");
@@ -337,9 +365,12 @@
 }
 
 .urlbar-history-dropmarker {
-  -moz-appearance: none;
   list-style-image: url(chrome://global/skin/icons/arrow-dropdown-16.svg);
   transition: opacity 0.15s ease;
+}
+
+#urlbar[hidedropmarker] > .urlbar-history-dropmarker {
+  display: none;
 }
 
 /* Avoid re-opening the popup when the dropmarker is clicked while the popup is still open. */

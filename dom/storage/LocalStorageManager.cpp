@@ -198,11 +198,13 @@ void LocalStorageManager::DropCache(LocalStorageCache* aCache) {
 
 nsresult LocalStorageManager::GetStorageInternal(
     CreateMode aCreateMode, mozIDOMWindow* aWindow, nsIPrincipal* aPrincipal,
-    const nsAString& aDocumentURI, bool aPrivate, Storage** aRetval) {
+    nsIPrincipal* aStoragePrincipal, const nsAString& aDocumentURI,
+    bool aPrivate, Storage** aRetval) {
   nsAutoCString originAttrSuffix;
   nsAutoCString originKey;
 
-  nsresult rv = GenerateOriginKey(aPrincipal, originAttrSuffix, originKey);
+  nsresult rv =
+      GenerateOriginKey(aStoragePrincipal, originAttrSuffix, originKey);
   if (NS_FAILED(rv)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -240,7 +242,8 @@ nsresult LocalStorageManager::GetStorageInternal(
     }
 
     PrincipalInfo principalInfo;
-    rv = mozilla::ipc::PrincipalToPrincipalInfo(aPrincipal, &principalInfo);
+    rv = mozilla::ipc::PrincipalToPrincipalInfo(aStoragePrincipal,
+                                                &principalInfo);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -254,7 +257,7 @@ nsresult LocalStorageManager::GetStorageInternal(
 
     // There is always a single instance of a cache per scope
     // in a single instance of a DOM storage manager.
-    cache = PutCache(originAttrSuffix, originKey, aPrincipal);
+    cache = PutCache(originAttrSuffix, originKey, aStoragePrincipal);
 
 #if !defined(MOZ_WIDGET_ANDROID)
     LocalStorageCacheChild* actor = new LocalStorageCacheChild(cache);
@@ -270,8 +273,9 @@ nsresult LocalStorageManager::GetStorageInternal(
   if (aRetval) {
     nsCOMPtr<nsPIDOMWindowInner> inner = nsPIDOMWindowInner::From(aWindow);
 
-    RefPtr<Storage> storage = new LocalStorage(inner, this, cache, aDocumentURI,
-                                               aPrincipal, aPrivate);
+    RefPtr<Storage> storage =
+        new LocalStorage(inner, this, cache, aDocumentURI, aPrincipal,
+                         aStoragePrincipal, aPrivate);
     storage.forget(aRetval);
   }
 
@@ -280,26 +284,31 @@ nsresult LocalStorageManager::GetStorageInternal(
 
 NS_IMETHODIMP
 LocalStorageManager::PrecacheStorage(nsIPrincipal* aPrincipal,
+                                     nsIPrincipal* aStoragePrincipal,
                                      Storage** aRetval) {
   return GetStorageInternal(CreateMode::CreateIfShouldPreload, nullptr,
-                            aPrincipal, EmptyString(), false, aRetval);
+                            aPrincipal, aStoragePrincipal, EmptyString(), false,
+                            aRetval);
 }
 
 NS_IMETHODIMP
 LocalStorageManager::CreateStorage(mozIDOMWindow* aWindow,
                                    nsIPrincipal* aPrincipal,
+                                   nsIPrincipal* aStoragePrincipal,
                                    const nsAString& aDocumentURI, bool aPrivate,
                                    Storage** aRetval) {
   return GetStorageInternal(CreateMode::CreateAlways, aWindow, aPrincipal,
-                            aDocumentURI, aPrivate, aRetval);
+                            aStoragePrincipal, aDocumentURI, aPrivate, aRetval);
 }
 
 NS_IMETHODIMP
 LocalStorageManager::GetStorage(mozIDOMWindow* aWindow,
-                                nsIPrincipal* aPrincipal, bool aPrivate,
+                                nsIPrincipal* aPrincipal,
+                                nsIPrincipal* aStoragePrincipal, bool aPrivate,
                                 Storage** aRetval) {
   return GetStorageInternal(CreateMode::UseIfExistsNeverCreate, aWindow,
-                            aPrincipal, EmptyString(), aPrivate, aRetval);
+                            aPrincipal, aStoragePrincipal, EmptyString(),
+                            aPrivate, aRetval);
 }
 
 NS_IMETHODIMP

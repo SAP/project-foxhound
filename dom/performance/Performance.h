@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "nsCOMPtr.h"
 #include "nsDOMNavigationTiming.h"
 
@@ -79,7 +78,7 @@ class Performance : public DOMEventTargetHelper {
 
   void AddObserver(PerformanceObserver* aObserver);
   void RemoveObserver(PerformanceObserver* aObserver);
-  void NotifyObservers();
+  MOZ_CAN_RUN_SCRIPT void NotifyObservers();
   void CancelNotificationObservers();
 
   virtual PerformanceTiming* Timing() = 0;
@@ -155,13 +154,21 @@ class Performance : public DOMEventTargetHelper {
       mUserEntries;
   AutoTArray<RefPtr<PerformanceEntry>, kDefaultResourceTimingBufferSize>
       mResourceEntries;
+  AutoTArray<RefPtr<PerformanceEntry>, kDefaultResourceTimingBufferSize>
+      mSecondaryResourceEntries;
 
   uint64_t mResourceTimingBufferSize;
   bool mPendingNotificationObserversTask;
 
+  bool mPendingResourceTimingBufferFullEvent;
+
   RefPtr<PerformanceService> mPerformanceService;
 
   bool mSystemPrincipal;
+
+ private:
+  MOZ_ALWAYS_INLINE bool CanAddResourceTimingEntry();
+  void BufferEvent();
 };
 
 }  // namespace dom

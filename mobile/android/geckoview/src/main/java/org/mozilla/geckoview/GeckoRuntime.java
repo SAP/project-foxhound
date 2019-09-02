@@ -6,8 +6,14 @@
 
 package org.mozilla.geckoview;
 
+import android.arch.lifecycle.ProcessLifecycleOwner;
+import android.arch.lifecycle.Lifecycle;
+import android.arch.lifecycle.LifecycleObserver;
+import android.arch.lifecycle.OnLifecycleEvent;
+
 import android.app.ActivityManager;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
@@ -15,7 +21,6 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.content.Context;
 import android.os.Process;
 import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
@@ -25,20 +30,27 @@ import android.util.Log;
 
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoAppShell;
-import org.mozilla.gecko.GeckoSystemStateListener;
+import org.mozilla.gecko.GeckoNetworkManager;
 import org.mozilla.gecko.GeckoScreenOrientation;
+import org.mozilla.gecko.GeckoSystemStateListener;
 import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.PrefsHelper;
 import org.mozilla.gecko.util.BundleEventListener;
+import org.mozilla.gecko.util.ContextUtils;
+import org.mozilla.gecko.util.DebugConfig;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
+import org.yaml.snakeyaml.error.YAMLException;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 
 public final class GeckoRuntime implements Parcelable {
     private static final String LOGTAG = "GeckoRuntime";
     private static final boolean DEBUG = false;
+
+    private static final String CONFIG_FILE_PATH_TEMPLATE = "/data/local/tmp/%s-geckoview-config.yaml";
 
     /**
      * Intent action sent to the crash handler when a crash is encountered.
@@ -87,6 +99,36 @@ public final class GeckoRuntime implements Parcelable {
      */
     public static final String EXTRA_CRASH_FATAL = "fatal";
 
+    private final class LifecycleListener implements LifecycleObserver {
+        public LifecycleListener() {
+        }
+
+        @OnLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        void onCreate() {
+            Log.d(LOGTAG, "Lifecycle: onCreate");
+        }
+
+        @OnLifecycleEvent(Lifecycle.Event.ON_START)
+        void onStart() {
+            Log.d(LOGTAG, "Lifecycle: onStart");
+        }
+
+        @OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        void onResume() {
+            Log.d(LOGTAG, "Lifecycle: onResume");
+            // Monitor network status and send change notifications to Gecko
+            // while active.
+            GeckoNetworkManager.getInstance().start(GeckoAppShell.getApplicationContext());
+        }
+
+        @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        void onPause() {
+            Log.d(LOGTAG, "Lifecycle: onPause");
+            // Stop monitoring network status while inactive.
+            GeckoNetworkManager.getInstance().stop();
+        }
+    }
+
     private static GeckoRuntime sDefaultRuntime;
 
     /**
@@ -117,6 +159,8 @@ public final class GeckoRuntime implements Parcelable {
     private GeckoRuntimeSettings mSettings;
     private Delegate mDelegate;
     private RuntimeTelemetry mTelemetry;
+    private WebExtensionEventDispatcher mWebExtensionDispatcher;
+    private StorageController mStorageController;
 
     /**
      * Attach the runtime to the given context.
@@ -144,7 +188,7 @@ public final class GeckoRuntime implements Parcelable {
             if ("Gecko:Exited".equals(event) && mDelegate != null) {
                 mDelegate.onShutdown();
                 EventDispatcher.getInstance().unregisterUiThreadListener(mEventListener, "Gecko:Exited");
-            } else if ("GeckoView:ContentCrash".equals(event) && crashHandler != null) {
+            } else if ("GeckoView:ContentCrashReport".equals(event) && crashHandler != null) {
                 final Context context = GeckoAppShell.getApplicationContext();
                 Intent i = new Intent(ACTION_CRASHED, null,
                         context, crashHandler);
@@ -194,7 +238,7 @@ public final class GeckoRuntime implements Parcelable {
                     throw new IllegalArgumentException("Crash handler service must run in a separate process");
                 }
 
-                EventDispatcher.getInstance().registerUiThreadListener(mEventListener, "GeckoView:ContentCrash");
+                EventDispatcher.getInstance().registerUiThreadListener(mEventListener, "GeckoView:ContentCrashReport");
 
                 flags |= GeckoThread.FLAG_ENABLE_NATIVE_CRASHREPORTER;
             } catch (PackageManager.NameNotFoundException e) {
@@ -209,11 +253,34 @@ public final class GeckoRuntime implements Parcelable {
         GeckoAppShell.setCrashHandlerService(settings.getCrashHandler());
         GeckoFontScaleListener.getInstance().attachToContext(context, settings);
 
+        mWebExtensionDispatcher = new WebExtensionEventDispatcher();
+
         final GeckoThread.InitInfo info = new GeckoThread.InitInfo();
         info.args = settings.getArguments();
         info.extras = settings.getExtras();
         info.flags = flags;
         info.prefs = settings.getPrefsMap();
+
+        String configFilePath = settings.getConfigFilePath();
+        if (configFilePath == null) {
+            // Default to /data/local/tmp/$PACKAGE-geckoview-config.yaml if android:debuggable="true"
+            // or if this application is the current Android "debug_app", and to not read configuration
+            // from a file otherwise.
+            if (ContextUtils.isApplicationDebuggable(context) || ContextUtils.isApplicationCurrentDebugApp(context)) {
+                configFilePath = String.format(CONFIG_FILE_PATH_TEMPLATE, context.getApplicationInfo().packageName);
+            }
+        }
+
+        if (configFilePath != null && !configFilePath.isEmpty()) {
+            try {
+                final DebugConfig debugConfig = DebugConfig.fromFile(new File(configFilePath));
+                Log.i(LOGTAG, "Adding debug configuration from: " + configFilePath);
+                debugConfig.mergeIntoInitInfo(info);
+            } catch (YAMLException e) {
+                Log.w(LOGTAG, "Failed to add debug configuration from: " + configFilePath, e);
+            } catch (FileNotFoundException e) {
+            }
+        }
 
         if (!GeckoThread.init(info)) {
             Log.w(LOGTAG, "init failed (could not initiate GeckoThread)");
@@ -235,6 +302,9 @@ public final class GeckoRuntime implements Parcelable {
 
         // Initialize the system ClipboardManager by accessing it on the main thread.
         GeckoAppShell.getApplicationContext().getSystemService(Context.CLIPBOARD_SERVICE);
+
+        // Add process lifecycle listener to react to backgrounding events.
+        ProcessLifecycleOwner.get().getLifecycle().addObserver(new LifecycleListener());
         return true;
     }
 
@@ -269,7 +339,11 @@ public final class GeckoRuntime implements Parcelable {
      * Example:
      * <pre><code>
      *     runtime.registerWebExtension(new WebExtension(
-     *              "resource://android/assets/web_extensions/my_webextension/"));
+     *              "resource://android/assets/web_extensions/my_webextension/"))
+     *           .exceptionally(ex -&gt; {
+     *               Log.e("MyActivity", "Could not register WebExtension", ex);
+     *               return null;
+     *           });
      *
      *     runtime.registerWebExtension(new WebExtension(
      *              "file:///path/to/web_extension/my_webextension2.xpi",
@@ -289,7 +363,40 @@ public final class GeckoRuntime implements Parcelable {
     @UiThread
     public @NonNull GeckoResult<Void> registerWebExtension(
             final @NonNull WebExtension webExtension) {
-        final GeckoSession.CallbackResult<Void> result = new GeckoSession.CallbackResult<Void>() {
+        final CallbackResult<Void> result = new CallbackResult<Void>() {
+            @Override
+            public void sendSuccess(final Object response) {
+                complete(null);
+            }
+        };
+
+        final GeckoBundle bundle = new GeckoBundle(3);
+        bundle.putString("locationUri", webExtension.location);
+        bundle.putString("id", webExtension.id);
+        bundle.putBoolean("allowContentMessaging",
+                (webExtension.flags & WebExtension.Flags.ALLOW_CONTENT_MESSAGING) > 0);
+
+        mWebExtensionDispatcher.registerWebExtension(webExtension);
+
+        EventDispatcher.getInstance().dispatch("GeckoView:RegisterWebExtension",
+                bundle, result);
+
+        return result;
+    }
+
+    /**
+     * Unregisters this WebExtension. After a WebExtension is unregistered all
+     * scripts associated with it stop running.
+     *
+     * @param webExtension {@link WebExtension} to unregister
+     *
+     * @return A {@link GeckoResult} that will complete when the WebExtension
+     * has been unregistered.
+     */
+    @UiThread
+    public @NonNull GeckoResult<Void> unregisterWebExtension(
+            final @NonNull WebExtension webExtension) {
+        final CallbackResult<Void> result = new CallbackResult<Void>() {
             @Override
             public void sendSuccess(final Object response) {
                 complete(null);
@@ -297,13 +404,17 @@ public final class GeckoRuntime implements Parcelable {
         };
 
         final GeckoBundle bundle = new GeckoBundle(1);
-        bundle.putString("locationUri", webExtension.location.toString());
         bundle.putString("id", webExtension.id);
 
-        EventDispatcher.getInstance().dispatch("GeckoView:RegisterWebExtension",
-                bundle, result);
+        mWebExtensionDispatcher.unregisterWebExtension(webExtension);
+
+        EventDispatcher.getInstance().dispatch("GeckoView:UnregisterWebExtension", bundle, result);
 
         return result;
+    }
+
+    /* protected */ WebExtensionEventDispatcher getWebExtensionDispatcher() {
+        return mWebExtensionDispatcher;
     }
 
     /**
@@ -450,6 +561,24 @@ public final class GeckoRuntime implements Parcelable {
     public void orientationChanged(final int newOrientation) {
         ThreadUtils.assertOnUiThread();
         GeckoScreenOrientation.getInstance().update(newOrientation);
+    }
+
+
+    /**
+     * Get the storage controller for this runtime.
+     * The storage controller can be used to manage persistent storage data
+     * accumulated by {@link GeckoSession}.
+     *
+     * @return The {@link StorageController} for this instance.
+     */
+    @UiThread
+    public @NonNull StorageController getStorageController() {
+        ThreadUtils.assertOnUiThread();
+
+        if (mStorageController == null) {
+            mStorageController = new StorageController();
+        }
+        return mStorageController;
     }
 
     @Override // Parcelable

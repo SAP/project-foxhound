@@ -82,6 +82,8 @@ enum class ScopeKind : uint8_t {
   WasmFunction
 };
 
+enum class IsFieldInitializer : bool { No, Yes };
+
 static inline bool ScopeKindIsCatch(ScopeKind kind) {
   return kind == ScopeKind::SimpleCatch || kind == ScopeKind::Catch;
 }
@@ -176,7 +178,8 @@ class TrailingNamesArray {
 
   explicit TrailingNamesArray(size_t nameCount) {
     if (nameCount) {
-      AlwaysPoison(&data_, 0xCC, sizeof(BindingName) * nameCount,
+      AlwaysPoison(&data_, JS_SCOPE_DATA_TRAILING_NAMES_PATTERN,
+                   sizeof(BindingName) * nameCount,
                    MemCheckKind::MakeUndefined);
     }
   }
@@ -310,6 +313,9 @@ class Scope : public js::gc::TenuredCell {
 
   template <typename ConcreteScope>
   void initData(MutableHandle<UniquePtr<typename ConcreteScope::Data>> data);
+
+  template <typename F>
+  void applyScopeDataTyped(F&& f);
 
  public:
   static const JS::TraceKind TraceKind = JS::TraceKind::Scope;
@@ -518,6 +524,8 @@ class FunctionScope : public Scope {
     // bindings.
     bool hasParameterExprs = false;
 
+    IsFieldInitializer isFieldInitializer = IsFieldInitializer::No;
+
     // Bindings are sorted by kind in both frames and environments.
     //
     // Positional formal parameter names are those that are not
@@ -561,7 +569,6 @@ class FunctionScope : public Scope {
     Data() = delete;
 
     void trace(JSTracer* trc);
-    Zone* zone() const;
   };
 
   static FunctionScope* create(JSContext* cx, Handle<Data*> data,
@@ -576,12 +583,10 @@ class FunctionScope : public Scope {
                        HandleScope enclosing, MutableHandleScope scope);
 
  private:
-  static FunctionScope* createWithData(JSContext* cx,
-                                       MutableHandle<UniquePtr<Data>> data,
-                                       bool hasParameterExprs,
-                                       bool needsEnvironment,
-                                       HandleFunction fun,
-                                       HandleScope enclosing);
+  static FunctionScope* createWithData(
+      JSContext* cx, MutableHandle<UniquePtr<Data>> data,
+      bool hasParameterExprs, IsFieldInitializer isFieldInitializer,
+      bool needsEnvironment, HandleFunction fun, HandleScope enclosing);
 
   Data& data() { return *static_cast<Data*>(data_); }
 
@@ -595,6 +600,10 @@ class FunctionScope : public Scope {
   JSScript* script() const;
 
   bool hasParameterExprs() const { return data().hasParameterExprs; }
+
+  IsFieldInitializer isFieldInitializer() const {
+    return data().isFieldInitializer;
+  }
 
   uint32_t numPositionalFormalParameters() const {
     return data().nonPositionalFormalStart;
@@ -1014,6 +1023,49 @@ class WasmFunctionScope : public Scope {
 
   static Shape* getEmptyEnvironmentShape(JSContext* cx);
 };
+
+template <typename F>
+void Scope::applyScopeDataTyped(F&& f) {
+  switch (kind()) {
+    case ScopeKind::Function: {
+      f(&as<FunctionScope>().data());
+      break;
+      case ScopeKind::FunctionBodyVar:
+      case ScopeKind::ParameterExpressionVar:
+        f(&as<VarScope>().data());
+        break;
+      case ScopeKind::Lexical:
+      case ScopeKind::SimpleCatch:
+      case ScopeKind::Catch:
+      case ScopeKind::NamedLambda:
+      case ScopeKind::StrictNamedLambda:
+        f(&as<LexicalScope>().data());
+        break;
+      case ScopeKind::With:
+        // With scopes do not have data.
+        break;
+      case ScopeKind::Eval:
+      case ScopeKind::StrictEval:
+        f(&as<EvalScope>().data());
+        break;
+      case ScopeKind::Global:
+      case ScopeKind::NonSyntactic:
+        f(&as<GlobalScope>().data());
+        break;
+      case ScopeKind::Module:
+        f(&as<ModuleScope>().data());
+        break;
+      case ScopeKind::WasmInstance:
+        f(&as<WasmInstanceScope>().data());
+        break;
+      case ScopeKind::WasmFunction:
+        f(&as<WasmFunctionScope>().data());
+        break;
+      default:
+        MOZ_CRASH("Unexpected scope type in ApplyScopeDataTyped");
+    }
+  }
+}
 
 //
 // An iterator for a Scope's bindings. This is the source of truth for frame

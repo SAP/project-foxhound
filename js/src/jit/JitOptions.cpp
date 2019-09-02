@@ -122,23 +122,15 @@ DefaultJitOptions::DefaultJitOptions() {
   // Toggles whether CacheIR stubs are used.
   SET_DEFAULT(disableCacheIR, false);
 
-  // Toggles whether CacheIR stubs for binary arith operations are used
-  SET_DEFAULT(disableCacheIRBinaryArith, false);
-
-// Toggles whether sincos optimization is globally disabled.
-// See bug984018: The MacOS is the only one that has the sincos fast.
-#if defined(XP_MACOSX)
-  SET_DEFAULT(disableSincos, false);
-#else
-  SET_DEFAULT(disableSincos, true);
-#endif
-
   // Toggles whether sink code motion is globally disabled.
   SET_DEFAULT(disableSink, true);
 
   // Toggles whether the use of multiple Ion optimization levels is globally
   // disabled.
   SET_DEFAULT(disableOptimizationLevels, false);
+
+  // Whether the Baseline Interpreter is enabled.
+  SET_DEFAULT(baselineInterpreter, false);
 
   // Whether IonBuilder should prefer IC generation above specialized MIR.
   SET_DEFAULT(forceInlineCaches, false);
@@ -151,6 +143,10 @@ DefaultJitOptions::DefaultJitOptions() {
 
   // Whether to enable extra code to perform dynamic validations.
   SET_DEFAULT(runExtraChecks, false);
+
+  // How many invocations or loop iterations are needed before functions
+  // enter the Baseline Interpreter.
+  SET_DEFAULT(baselineInterpreterWarmUpThreshold, 10);
 
   // How many invocations or loop iterations are needed before functions
   // are compiled with the baseline compiler.
@@ -205,6 +201,14 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(branchPruningEffectfulInstFactor, 3500);
   SET_DEFAULT(branchPruningThreshold, 4000);
 
+  // Limits on bytecode length and number of locals/arguments for Ion
+  // compilation. There are different (lower) limits for when off-thread Ion
+  // compilation isn't available.
+  SET_DEFAULT(ionMaxScriptSize, 100 * 1000);
+  SET_DEFAULT(ionMaxScriptSizeMainThread, 2 * 1000);
+  SET_DEFAULT(ionMaxLocalsAndArgs, 10 * 1000);
+  SET_DEFAULT(ionMaxLocalsAndArgsMainThread, 256);
+
   // Force the used register allocator instead of letting the optimization
   // pass decide.
   const char* forcedRegisterAllocatorEnv = "JIT_OPTION_forcedRegisterAllocator";
@@ -231,9 +235,6 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(spectreJitToCxxCalls, true);
 #endif
 
-  // Toggles whether unboxed plain objects can be created by the VM.
-  SET_DEFAULT(disableUnboxedObjects, false);
-
   // Toggles the optimization whereby offsets are folded into loads and not
   // included in the bounds check.
   SET_DEFAULT(wasmFoldOffsets, true);
@@ -258,10 +259,10 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(enableTraceLogger, false);
 #endif
 
-#ifdef WASM_CODEGEN_DEBUG
   SET_DEFAULT(enableWasmJitExit, true);
   SET_DEFAULT(enableWasmJitEntry, true);
   SET_DEFAULT(enableWasmIonFastCalls, true);
+#ifdef WASM_CODEGEN_DEBUG
   SET_DEFAULT(enableWasmImportCallSpew, false);
   SET_DEFAULT(enableWasmFuncCallSpew, false);
 #endif

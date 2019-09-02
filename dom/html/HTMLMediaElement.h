@@ -18,10 +18,12 @@
 #include "DecoderTraits.h"
 #include "nsIAudioChannelAgent.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/TextTrackManager.h"
-#include "mozilla/WeakPtr.h"
-#include "mozilla/dom/MediaKeys.h"
 #include "mozilla/StateWatching.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/HTMLMediaElementBinding.h"
+#include "mozilla/dom/MediaDebugInfoBinding.h"
+#include "mozilla/dom/MediaKeys.h"
+#include "mozilla/dom/TextTrackManager.h"
 #include "nsGkAtoms.h"
 #include "PrincipalChangeObserver.h"
 #include "nsStubMutationObserver.h"
@@ -31,8 +33,6 @@
 #ifdef CurrentTime
 #  undef CurrentTime
 #endif
-
-#include "mozilla/dom/HTMLMediaElementBinding.h"
 
 // Define to output information on decoding and painting framerate
 /* #define DEBUG_FRAME_RATE 1 */
@@ -147,10 +147,8 @@ class HTMLMediaElement : public nsGenericHTMLElement,
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual void DoneCreatingElement() override;
 
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
@@ -281,6 +279,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // principal. Returns null if nothing is playing.
   already_AddRefed<nsIPrincipal> GetCurrentPrincipal();
 
+  // Return true if the loading of this resource required cross-origin
+  // redirects.
+  bool HadCrossOriginRedirects();
+
   // Principal of the currently playing video resource. Anything accessing the
   // image container of this element must have a principal that subsumes this
   // principal. If there are no live video tracks but content has been rendered
@@ -292,7 +294,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // changed.
   void NotifyDecoderPrincipalChanged() final;
 
-  void GetEMEInfo(nsString& aEMEInfo);
+  void GetEMEInfo(dom::EMEDebugInfo& aInfo);
 
   class StreamCaptureTrackSource;
 
@@ -434,9 +436,16 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   void NotifyAudioPlaybackChanged(AudibleChangedReasons aReason);
 
   void GetPreload(nsAString& aValue) {
+    if (mSrcAttrStream) {
+      nsGkAtoms::none->ToString(aValue);
+      return;
+    }
     GetEnumAttr(nsGkAtoms::preload, nullptr, aValue);
   }
   void SetPreload(const nsAString& aValue, ErrorResult& aRv) {
+    if (mSrcAttrStream) {
+      return;
+    }
     SetHTMLAttr(nsGkAtoms::preload, aValue, aRv);
   }
 
@@ -473,11 +482,21 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   bool Paused() const { return mPaused; }
 
-  double DefaultPlaybackRate() const { return mDefaultPlaybackRate; }
+  double DefaultPlaybackRate() const {
+    if (mSrcAttrStream) {
+      return 1.0;
+    }
+    return mDefaultPlaybackRate;
+  }
 
   void SetDefaultPlaybackRate(double aDefaultPlaybackRate, ErrorResult& aRv);
 
-  double PlaybackRate() const { return mPlaybackRate; }
+  double PlaybackRate() const {
+    if (mSrcAttrStream) {
+      return 1.0;
+    }
+    return mPlaybackRate;
+  }
 
   void SetPlaybackRate(double aPlaybackRate, ErrorResult& aRv);
 
@@ -538,9 +557,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   bool AllowedToPlay() const;
 
   already_AddRefed<MediaSource> GetMozMediaSourceObject() const;
-  // Returns a string describing the state of the media player internal
-  // data. Used for debugging purposes.
-  void GetMozDebugReaderData(nsAString& aString);
 
   // Returns a promise which will be resolved after collecting debugging
   // data from decoder/reader/MDSM. Used for debugging purposes.
@@ -552,8 +568,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // Returns a promise which will be resolved after collecting debugging
   // log associated with this element. Used for debugging purposes.
   already_AddRefed<Promise> MozRequestDebugLog(ErrorResult& aRv);
-
-  already_AddRefed<Promise> MozDumpDebugInfo();
 
   // For use by mochitests. Enabling pref "media.test.video-suspend"
   void SetVisible(bool aVisible);
@@ -729,6 +743,8 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // that we can start AudioContext if it was not allowed to start.
   RefPtr<GenericNonExclusivePromise> GetAllowedToPlayPromise();
 
+  bool GetShowPosterFlag() const { return mShowPoster; }
+
  protected:
   virtual ~HTMLMediaElement();
 
@@ -737,7 +753,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   class ErrorSink;
   class MediaLoadListener;
   class MediaStreamTrackListener;
-  class VideoFrameListener;
+  class FirstFrameListener;
   class ShutdownObserver;
 
   MediaDecoderOwner::NextFrameStatus NextFrameStatus();
@@ -791,15 +807,15 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    * be substituted into the localized message, and aParamCount is the number
    * of parameters in aParams.
    */
-  void ReportLoadError(const char* aMsg, const char16_t** aParams = nullptr,
-                       uint32_t aParamCount = 0);
+  void ReportLoadError(const char* aMsg, const nsTArray<nsString>& aParams =
+                                             nsTArray<nsString>());
 
   /**
    * Log message to web console.
    */
-  void ReportToConsole(uint32_t aErrorFlags, const char* aMsg,
-                       const char16_t** aParams = nullptr,
-                       uint32_t aParamCount = 0) const;
+  void ReportToConsole(
+      uint32_t aErrorFlags, const char* aMsg,
+      const nsTArray<nsString>& aParams = nsTArray<nsString>()) const;
 
   /**
    * Changes mHasPlayedOrSeeked to aValue. If mHasPlayedOrSeeked changes
@@ -857,6 +873,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   void AddCaptureMediaTrackToOutputStream(MediaTrack* aTrack,
                                           OutputMediaStream& aOutputStream,
                                           bool aAsyncAddtrack = true);
+
+  /**
+   * Discard all output streams that are flagged to finish when playback ends.
+   */
+  void DiscardFinishWhenEndedOutputStreams();
 
   /**
    * Returns an DOMMediaStream containing the played contents of this
@@ -1314,10 +1335,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   bool mSrcStreamTracksAvailable = false;
 
   // While mPaused is true and mSrcStream is set, this is the value to use for
-  // CurrentTime(). Otherwise this is set to GRAPH_TIME_MAX.
-  GraphTime mSrcStreamPausedGraphTime = GRAPH_TIME_MAX;
+  // CurrentTime(). Otherwise this is Nothing.
+  Maybe<GraphTime> mSrcStreamPausedGraphTime;
 
-  // The offset in GraphTime that this media element started playing the
+  // The offset in GraphTime at which this media element started playing the
   // playback stream of mSrcStream.
   GraphTime mSrcStreamGraphTimeOffset = 0;
 
@@ -1335,9 +1356,9 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // The next track id to use for a captured MediaDecoder.
   TrackID mNextAvailableMediaDecoderOutputTrackID = 1;
 
-  // Holds a reference to the size-getting track listener attached to
+  // Holds a reference to the first-frame-getting track listener attached to
   // mSelectedVideoStreamTrack.
-  RefPtr<VideoFrameListener> mVideoFrameListener;
+  RefPtr<FirstFrameListener> mFirstFrameListener;
   // The currently selected video stream track.
   RefPtr<VideoStreamTrack> mSelectedVideoStreamTrack;
 
@@ -1655,10 +1676,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // MediaStream.
   nsCOMPtr<nsIPrincipal> mSrcStreamVideoPrincipal;
 
-  // True if UnbindFromTree() is called on the element.
-  // Note this flag is false when the element is in a phase after creation and
-  // before attaching to the DOM tree.
-  bool mUnboundFromTree = false;
+  // True if we've dispatched a task in UnbindFromTree() which runs in a
+  // stable state and attempts to pause playback if we're not in a composed
+  // document. The flag stops us dispatching multiple tasks if the element
+  // is involved in a series of append/remove cycles.
+  bool mDispatchedTaskToPauseIfNotInDocument = false;
 
   // True if the autoplay media was blocked because it hadn't loaded metadata
   // yet.
@@ -1737,6 +1759,9 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   virtual void MaybeBeginCloningVisually(){};
 
+  uint32_t GetPreloadDefault() const;
+  uint32_t GetPreloadDefaultAuto() const;
+
   /**
    * This function is called by AfterSetAttr and OnAttrSetButNotChanged.
    * It will not be called if the value is being unset.
@@ -1795,7 +1820,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // track list, false if all tracks are removed from the track list.
   bool mMediaTracksConstructed = false;
 
-  Visibility mVisibilityState = Visibility::UNTRACKED;
+  Visibility mVisibilityState = Visibility::Untracked;
 
   UniquePtr<ErrorSink> mErrorSink;
 

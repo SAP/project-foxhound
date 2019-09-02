@@ -48,7 +48,7 @@ function HasUnexpectedResult()
 var gDumpFn = function(line) {
   dump(line);
   if (g.logFile) {
-    g.logFile.write(line, line.length);
+    g.logFile.writeString(line);
   }
 }
 var gDumpRawLog = function(record) {
@@ -57,7 +57,7 @@ var gDumpRawLog = function(record) {
   dump(line);
 
   if (g.logFile) {
-    g.logFile.write(line, line.length);
+    g.logFile.writeString(line);
   }
 }
 g.logger = new StructuredLogger('reftest', gDumpRawLog);
@@ -67,6 +67,15 @@ function TestBuffer(str)
 {
   logger.debug(str);
   g.testLog.push(str);
+}
+
+function isWebRenderOnAndroidDevice() {
+  var xr = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime);
+  // This is the best we can do for now; maybe in the future we'll have
+  // more correct detection of this case.
+  return xr.OS == "Android" &&
+      g.browserIsRemote &&
+      g.windowUtils.layerManagerType == "WebRender";
 }
 
 function FlushTestBuffer()
@@ -240,7 +249,10 @@ function InitAndStartRefTests()
         var logFile = prefs.getStringPref("reftest.logFile");
         if (logFile) {
             var f = FileUtils.File(logFile);
-            g.logFile = FileUtils.openFileOutputStream(f, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
+            var out = FileUtils.openFileOutputStream(f, FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE);
+            g.logFile = Cc["@mozilla.org/intl/converter-output-stream;1"]
+                          .createInstance(Ci.nsIConverterOutputStream);
+            g.logFile.init(out, null);
         }
     } catch(e) {}
 
@@ -1102,15 +1114,32 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults)
             // by the actual comparison results
             var fuzz_exceeded = false;
 
+            // what is expected on this platform (PASS, FAIL, RANDOM, or FUZZY)
+            var expected = g.urls[0].expected;
+
             differences = g.windowUtils.compareCanvases(g.canvas1, g.canvas2, maxDifference);
+
+            if (g.urls[0].noAutoFuzz) {
+                // Autofuzzing is disabled
+            } else if (isWebRenderOnAndroidDevice() && maxDifference.value <= 2 && differences > 0) {
+                // Autofuzz for WR on Android physical devices: Reduce any
+                // maxDifference of 2 to 0, because we get a lot of off-by-ones
+                // and off-by-twos that are very random and hard to annotate.
+                // In cases where the difference on any pixel component is more
+                // than 2 we require manual annotation. Note that this applies
+                // to both == tests and != tests, so != tests don't
+                // inadvertently pass due to a random off-by-one pixel
+                // difference.
+                logger.info(`REFTEST wr-on-android dropping fuzz of (${maxDifference.value}, ${differences}) to (0, 0)`);
+                maxDifference.value = 0;
+                differences = 0;
+            }
+
             equal = (differences == 0);
 
             if (maxDifference.value > 0 && equal) {
                 throw "Inconsistent result from compareCanvases.";
             }
-
-            // what is expected on this platform (PASS, FAIL, or RANDOM)
-            var expected = g.urls[0].expected;
 
             if (expected == EXPECTED_FUZZY) {
                 logger.info(`REFTEST fuzzy test ` +
@@ -1570,9 +1599,9 @@ function OnProcessCrashed(subject, topic, data)
     var id;
     subject = subject.QueryInterface(Ci.nsIPropertyBag2);
     if (topic == "plugin-crashed") {
-        id = subject.getPropertyAsAString("pluginDumpID");
+        id = subject.get("pluginDumpID");
     } else if (topic == "ipc:content-shutdown") {
-        id = subject.getPropertyAsAString("dumpID");
+        id = subject.get("dumpID");
     }
     if (id) {
         g.expectedCrashDumpFiles.push(id + ".dmp");

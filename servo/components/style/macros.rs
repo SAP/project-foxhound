@@ -80,6 +80,8 @@ macro_rules! define_keyword_type {
             ToAnimatedZero,
             ToComputedValue,
             ToCss,
+            ToResolvedValue,
+            ToShmem,
         )]
         pub struct $name;
 
@@ -103,19 +105,31 @@ macro_rules! define_keyword_type {
     };
 }
 
-#[cfg(feature = "gecko")]
-macro_rules! impl_bitflags_conversions {
-    ($name:ident) => {
-        impl From<u8> for $name {
-            fn from(bits: u8) -> $name {
-                $name::from_bits(bits).expect("bits contain valid flag")
+/// Place a Gecko profiler label on the stack.
+///
+/// The `label_type` argument must be the name of a variant of `ProfilerLabel`.
+#[cfg(feature = "gecko_profiler")]
+#[macro_export]
+macro_rules! profiler_label {
+    ($label_type:ident) => {
+        let mut _profiler_label: $crate::gecko_bindings::structs::AutoProfilerLabel =
+            unsafe { ::std::mem::uninitialized() };
+        let _profiler_label = if $crate::gecko::profiler::profiler_is_active() {
+            unsafe {
+                Some($crate::gecko::profiler::AutoProfilerLabel::new(
+                    &mut _profiler_label,
+                    $crate::gecko::profiler::ProfilerLabel::$label_type,
+                ))
             }
-        }
-
-        impl From<$name> for u8 {
-            fn from(v: $name) -> u8 {
-                v.bits()
-            }
-        }
+        } else {
+            None
+        };
     };
+}
+
+/// No-op when the Gecko profiler is not available.
+#[cfg(not(feature = "gecko_profiler"))]
+#[macro_export]
+macro_rules! profiler_label {
+    ($label_type:ident) => {};
 }

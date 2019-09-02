@@ -72,6 +72,7 @@
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/HTMLTableElement.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
 #include "nsDeckFrame.h"
 
@@ -338,8 +339,8 @@ void nsAccessibilityService::FireAccessibleEvent(uint32_t aEvent,
 }
 
 Accessible* nsAccessibilityService::GetRootDocumentAccessible(
-    nsIPresShell* aPresShell, bool aCanCreate) {
-  nsIPresShell* ps = aPresShell;
+    PresShell* aPresShell, bool aCanCreate) {
+  PresShell* presShell = aPresShell;
   Document* documentNode = aPresShell->GetDocument();
   if (documentNode) {
     nsCOMPtr<nsIDocShellTreeItem> treeItem(documentNode->GetDocShell());
@@ -348,10 +349,11 @@ Accessible* nsAccessibilityService::GetRootDocumentAccessible(
       treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
       if (treeItem != rootTreeItem) {
         nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(rootTreeItem));
-        ps = docShell->GetPresShell();
+        presShell = docShell->GetPresShell();
       }
 
-      return aCanCreate ? GetDocAccessible(ps) : ps->GetDocAccessible();
+      return aCanCreate ? GetDocAccessible(presShell)
+                        : presShell->GetDocAccessible();
     }
   }
   return nullptr;
@@ -372,9 +374,9 @@ class PluginTimerCallBack final : public nsITimerCallback, public nsINamed {
   NS_IMETHOD Notify(nsITimer* aTimer) final {
     if (!mContent->IsInUncomposedDoc()) return NS_OK;
 
-    nsIPresShell* ps = mContent->OwnerDoc()->GetShell();
-    if (ps) {
-      DocAccessible* doc = ps->GetDocAccessible();
+    PresShell* presShell = mContent->OwnerDoc()->GetPresShell();
+    if (presShell) {
+      DocAccessible* doc = presShell->GetDocAccessible();
       if (doc) {
         // Make sure that if we created an accessible for the plugin that wasn't
         // a plugin accessible we remove it before creating the right
@@ -462,7 +464,7 @@ already_AddRefed<Accessible> nsAccessibilityService::CreatePluginAccessible(
   return nullptr;
 }
 
-void nsAccessibilityService::DeckPanelSwitched(nsIPresShell* aPresShell,
+void nsAccessibilityService::DeckPanelSwitched(PresShell* aPresShell,
                                                nsIContent* aDeckNode,
                                                nsIFrame* aPrevBoxFrame,
                                                nsIFrame* aCurrentBoxFrame) {
@@ -500,7 +502,7 @@ void nsAccessibilityService::DeckPanelSwitched(nsIPresShell* aPresShell,
   }
 }
 
-void nsAccessibilityService::ContentRangeInserted(nsIPresShell* aPresShell,
+void nsAccessibilityService::ContentRangeInserted(PresShell* aPresShell,
                                                   nsIContent* aStartChild,
                                                   nsIContent* aEndChild) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -522,7 +524,7 @@ void nsAccessibilityService::ContentRangeInserted(nsIPresShell* aPresShell,
   }
 }
 
-void nsAccessibilityService::ContentRemoved(nsIPresShell* aPresShell,
+void nsAccessibilityService::ContentRemoved(PresShell* aPresShell,
                                             nsIContent* aChildNode) {
   DocAccessible* document = GetDocAccessible(aPresShell);
 #ifdef A11Y_LOG
@@ -546,13 +548,13 @@ void nsAccessibilityService::ContentRemoved(nsIPresShell* aPresShell,
 #endif
 }
 
-void nsAccessibilityService::UpdateText(nsIPresShell* aPresShell,
+void nsAccessibilityService::UpdateText(PresShell* aPresShell,
                                         nsIContent* aContent) {
   DocAccessible* document = GetDocAccessible(aPresShell);
   if (document) document->UpdateText(aContent);
 }
 
-void nsAccessibilityService::TreeViewChanged(nsIPresShell* aPresShell,
+void nsAccessibilityService::TreeViewChanged(PresShell* aPresShell,
                                              nsIContent* aContent,
                                              nsITreeView* aView) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -565,7 +567,7 @@ void nsAccessibilityService::TreeViewChanged(nsIPresShell* aPresShell,
   }
 }
 
-void nsAccessibilityService::RangeValueChanged(nsIPresShell* aPresShell,
+void nsAccessibilityService::RangeValueChanged(PresShell* aPresShell,
                                                nsIContent* aContent) {
   DocAccessible* document = GetDocAccessible(aPresShell);
   if (document) {
@@ -577,7 +579,7 @@ void nsAccessibilityService::RangeValueChanged(nsIPresShell* aPresShell,
   }
 }
 
-void nsAccessibilityService::UpdateListBullet(nsIPresShell* aPresShell,
+void nsAccessibilityService::UpdateListBullet(PresShell* aPresShell,
                                               nsIContent* aHTMLListItemContent,
                                               bool aHasBullet) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -591,7 +593,7 @@ void nsAccessibilityService::UpdateListBullet(nsIPresShell* aPresShell,
 }
 
 void nsAccessibilityService::UpdateImageMap(nsImageFrame* aImageFrame) {
-  nsIPresShell* presShell = aImageFrame->PresShell();
+  PresShell* presShell = aImageFrame->PresShell();
   DocAccessible* document = GetDocAccessible(presShell);
   if (document) {
     Accessible* accessible = document->GetAccessible(aImageFrame->GetContent());
@@ -609,7 +611,7 @@ void nsAccessibilityService::UpdateImageMap(nsImageFrame* aImageFrame) {
   }
 }
 
-void nsAccessibilityService::UpdateLabelValue(nsIPresShell* aPresShell,
+void nsAccessibilityService::UpdateLabelValue(PresShell* aPresShell,
                                               nsIContent* aLabelElm,
                                               const nsString& aNewValue) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -624,7 +626,7 @@ void nsAccessibilityService::UpdateLabelValue(nsIPresShell* aPresShell,
   }
 }
 
-void nsAccessibilityService::PresShellActivated(nsIPresShell* aPresShell) {
+void nsAccessibilityService::PresShellActivated(PresShell* aPresShell) {
   DocAccessible* document = aPresShell->GetDocAccessible();
   if (document) {
     RootAccessible* rootDocument = document->RootAccessible();
@@ -633,7 +635,7 @@ void nsAccessibilityService::PresShellActivated(nsIPresShell* aPresShell) {
   }
 }
 
-void nsAccessibilityService::RecreateAccessible(nsIPresShell* aPresShell,
+void nsAccessibilityService::RecreateAccessible(PresShell* aPresShell,
                                                 nsIContent* aContent) {
   DocAccessible* document = GetDocAccessible(aPresShell);
   if (document) document->RecreateAccessible(aContent);
@@ -965,8 +967,8 @@ Accessible* nsAccessibilityService::CreateAccessible(nsINode* aNode,
   // Create accessible for visible text frames.
   if (content->IsText()) {
     nsIFrame::RenderedText text = frame->GetRenderedText(
-        0, UINT32_MAX, nsIFrame::TextOffsetType::OFFSETS_IN_CONTENT_TEXT,
-        nsIFrame::TrailingWhitespace::DONT_TRIM_TRAILING_WHITESPACE);
+        0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
+        nsIFrame::TrailingWhitespace::DontTrim);
     // Ignore not rendered text nodes and whitespace text nodes between table
     // cells.
     if (text.mString.IsEmpty() ||
@@ -1393,7 +1395,8 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
         table = aContext->Parent();
 
       if (table) {
-        nsIContent* parentContent = aContent->GetParentOrHostNode()->AsContent();
+        nsIContent* parentContent =
+            aContent->GetParentOrHostNode()->AsContent();
         nsIFrame* parentFrame = nullptr;
         if (parentContent) {
           parentFrame = parentContent->GetPrimaryFrame();

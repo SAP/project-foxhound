@@ -6,11 +6,14 @@
 // Unfortunately, browser tests cannot load that script as it is too reliant on
 // being loaded in the content process.
 
+let dbService = Cc["@mozilla.org/url-classifier/dbservice;1"].getService(
+  Ci.nsIUrlClassifierDBService
+);
+let listmanager = Cc["@mozilla.org/url-classifier/listmanager;1"].getService(
+  Ci.nsIUrlListManager
+);
 
-let dbService = Cc["@mozilla.org/url-classifier/dbservice;1"]
-                .getService(Ci.nsIUrlClassifierDBService);
-
-if (typeof(classifierHelper) == "undefined") {
+if (typeof classifierHelper == "undefined") {
   var classifierHelper = {};
 }
 
@@ -34,27 +37,18 @@ classifierHelper._updatesToCleanup = [];
 // after the event had already been notified, we lookup entries to see if
 // they are already added to database.
 classifierHelper.waitForInit = function() {
-  // This url must sync with the table, url in SafeBrowsing.jsm addMozEntries
-  const table = "test-phish-simple";
-  const url = "http://itisatrap.org/firefox/its-a-trap.html";
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
-    Services.io.newURI(url), {});
-
   return new Promise(function(resolve, reject) {
-    Services.obs.addObserver(function() {
-      resolve();
-    }, "mozentries-update-finished");
+    function checkForInit() {
+      if (listmanager.isRegistered()) {
+        resolve();
+      } else {
+        setTimeout(() => {
+          checkForInit();
+        }, 1000);
+      }
+    }
 
-    let listener = {
-      QueryInterface: ChromeUtils.generateQI(["nsIUrlClassifierUpdateObserver"]),
-
-      handleEvent(value) {
-        if (value === table) {
-          resolve();
-        }
-      },
-    };
-    dbService.lookup(principal, table, listener);
+    checkForInit();
   });
 };
 
@@ -95,9 +89,17 @@ classifierHelper.addUrlToDB = function(updateData) {
     classifierHelper._updatesToCleanup.push(update);
     testUpdate +=
       "n:1000\n" +
-      "i:" + LISTNAME + "\n" +
+      "i:" +
+      LISTNAME +
+      "\n" +
       "ad:1\n" +
-      "a:" + update.addChunk + ":" + HASHLEN + ":" + CHUNKLEN + "\n" +
+      "a:" +
+      update.addChunk +
+      ":" +
+      HASHLEN +
+      ":" +
+      CHUNKLEN +
+      "\n" +
       CHUNKDATA;
   }
 
@@ -110,10 +112,7 @@ classifierHelper.addUrlToDB = function(updateData) {
 classifierHelper.resetDatabase = function() {
   var testUpdate = "";
   for (var update of classifierHelper._updatesToCleanup) {
-    testUpdate +=
-      "n:1000\n" +
-      "i:" + update.db + "\n" +
-      "ad:" + update.addChunk + "\n";
+    testUpdate += "n:1000\ni:" + update.db + "\nad:" + update.addChunk + "\n";
   }
 
   return classifierHelper._update(testUpdate);
@@ -132,9 +131,11 @@ classifierHelper._update = function(update) {
       try {
         await new Promise((resolve, reject) => {
           let listener = {
-            QueryInterface: ChromeUtils.generateQI(["nsIUrlClassifierUpdateObserver"]),
-            updateUrlRequested(url) { },
-            streamFinished(status) { },
+            QueryInterface: ChromeUtils.generateQI([
+              "nsIUrlClassifierUpdateObserver",
+            ]),
+            updateUrlRequested(url) {},
+            streamFinished(status) {},
             updateError(errorCode) {
               reject(errorCode);
             },

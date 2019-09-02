@@ -467,13 +467,14 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
   friend class DestroyRunnable;
 
  public:
-  Session(MediaRecorder* aRecorder, int32_t aTimeSlice)
+  Session(MediaRecorder* aRecorder, uint32_t aTimeSlice)
       : mRecorder(aRecorder),
         mMediaStreamReady(false),
         mTimeSlice(aTimeSlice),
         mRunningState(RunningState::Idling) {
     MOZ_ASSERT(NS_IsMainThread());
 
+    aRecorder->GetMimeType(mMimeType);
     mMaxMemory = Preferences::GetUint("media.recorder.max_memory",
                                       MAX_ALLOW_MEMORY_BUFFER);
     mLastBlobTimeStamp = TimeStamp::Now();
@@ -572,6 +573,19 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
       mEncoder->Stop();
     }
 
+    // Remove main thread state added in Start().
+    if (mMediaStream) {
+      mMediaStream->UnregisterTrackListener(this);
+      mMediaStream = nullptr;
+    }
+
+    {
+      auto tracks(std::move(mMediaStreamTracks));
+      for (RefPtr<MediaStreamTrack>& track : tracks) {
+        track->RemovePrincipalChangeObserver(this);
+      }
+    }
+
     if (mRunningState.isOk() &&
         mRunningState.unwrap() == RunningState::Idling) {
       LOG(LogLevel::Debug, ("Session.Stop Explicit end task %p", this));
@@ -592,7 +606,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
       return NS_ERROR_FAILURE;
     }
 
-    mEncoder->Suspend(TimeStamp::Now());
+    mEncoder->Suspend();
     NS_DispatchToMainThread(
         new DispatchEventRunnable(this, NS_LITERAL_STRING("pause")));
     return NS_OK;
@@ -606,7 +620,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
       return NS_ERROR_FAILURE;
     }
 
-    mEncoder->Resume(TimeStamp::Now());
+    mEncoder->Resume();
     NS_DispatchToMainThread(
         new DispatchEventRunnable(this, NS_LITERAL_STRING("resume")));
     return NS_OK;
@@ -884,13 +898,14 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
           }
           gSessions.Clear();
           ShutdownPromise::All(GetCurrentThreadSerialEventTarget(), promises)
-              ->Then(GetCurrentThreadSerialEventTarget(), __func__,
-                     [ticket]() mutable {
-                       MOZ_ASSERT(gSessions.Count() == 0);
-                       // Unblock shutdown
-                       ticket = nullptr;
-                     },
-                     []() { MOZ_CRASH("Not reached"); });
+              ->Then(
+                  GetCurrentThreadSerialEventTarget(), __func__,
+                  [ticket]() mutable {
+                    MOZ_ASSERT(gSessions.Count() == 0);
+                    // Unblock shutdown
+                    ticket = nullptr;
+                  },
+                  []() { MOZ_CRASH("Not reached"); });
           return NS_OK;
         }
       };
@@ -936,9 +951,9 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     // At this stage, the API doesn't allow UA to choose the output mimeType
     // format.
 
-    mEncoder = MediaEncoder::CreateEncoder(
-        mEncoderThread, NS_LITERAL_STRING(""), audioBitrate, videoBitrate,
-        aTrackTypes, aTrackRate);
+    mEncoder =
+        MediaEncoder::CreateEncoder(mEncoderThread, mMimeType, audioBitrate,
+                                    videoBitrate, aTrackTypes, aTrackRate);
 
     if (!mEncoder) {
       LOG(LogLevel::Error, ("Session.InitEncoder !mEncoder %p", this));
@@ -1127,7 +1142,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
           });
     }
 
-    // Remove main thread state.
+    // Remove main thread state. This could be needed if Stop() wasn't called.
     if (mMediaStream) {
       mMediaStream->UnregisterTrackListener(this);
       mMediaStream = nullptr;
@@ -1209,10 +1224,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
   // Timestamp of the last fired dataavailable event.
   TimeStamp mLastBlobTimeStamp;
   // The interval of passing encoded data from MutableBlobStorage to
-  // onDataAvailable handler. "mTimeSlice < 0" means Session object does not
-  // push encoded data to onDataAvailable, instead, it passive wait the client
-  // side pull encoded data by calling requestData API.
-  const int32_t mTimeSlice;
+  // onDataAvailable handler.
+  const uint32_t mTimeSlice;
   // The session's current main thread state. The error type gets setwhen ending
   // a recording with an error. An NS_OK error is invalid.
   // Main thread only.
@@ -1278,7 +1291,7 @@ void MediaRecorder::SetMimeType(const nsString& aMimeType) {
 
 void MediaRecorder::GetMimeType(nsString& aMimeType) { aMimeType = mMimeType; }
 
-void MediaRecorder::Start(const Optional<int32_t>& aTimeSlice,
+void MediaRecorder::Start(const Optional<uint32_t>& aTimeSlice,
                           ErrorResult& aResult) {
   LOG(LogLevel::Debug, ("MediaRecorder.Start %p", this));
 
@@ -1308,15 +1321,7 @@ void MediaRecorder::Start(const Optional<int32_t>& aTimeSlice,
     }
   }
 
-  int32_t timeSlice = 0;
-  if (aTimeSlice.WasPassed()) {
-    if (aTimeSlice.Value() < 0) {
-      aResult.Throw(NS_ERROR_INVALID_ARG);
-      return;
-    }
-
-    timeSlice = aTimeSlice.Value();
-  }
+  uint32_t timeSlice = aTimeSlice.WasPassed() ? aTimeSlice.Value() : 0;
   MediaRecorderReporter::AddMediaRecorder(this);
   mState = RecordingState::Recording;
   // Start a session.
@@ -1586,7 +1591,7 @@ nsresult MediaRecorder::CreateAndDispatchBlobEvent(Blob* aBlob) {
 
 void MediaRecorder::DispatchSimpleEvent(const nsAString& aStr) {
   MOZ_ASSERT(NS_IsMainThread(), "Not running on main thread");
-  nsresult rv = CheckInnerWindowCorrectness();
+  nsresult rv = CheckCurrentGlobalCorrectness();
   if (NS_FAILED(rv)) {
     return;
   }
@@ -1602,7 +1607,7 @@ void MediaRecorder::DispatchSimpleEvent(const nsAString& aStr) {
 
 void MediaRecorder::NotifyError(nsresult aRv) {
   MOZ_ASSERT(NS_IsMainThread(), "Not running on main thread");
-  nsresult rv = CheckInnerWindowCorrectness();
+  nsresult rv = CheckCurrentGlobalCorrectness();
   if (NS_FAILED(rv)) {
     return;
   }
@@ -1714,15 +1719,16 @@ RefPtr<MediaRecorder::SizeOfPromise> MediaRecorder::SizeOfExcludingThis(
   }
 
   SizeOfPromise::All(GetCurrentThreadSerialEventTarget(), promises)
-      ->Then(GetCurrentThreadSerialEventTarget(), __func__,
-             [holder](const nsTArray<size_t>& sizes) {
-               size_t total = 0;
-               for (const size_t& size : sizes) {
-                 total += size;
-               }
-               holder->Resolve(total, __func__);
-             },
-             []() { MOZ_CRASH("Unexpected reject"); });
+      ->Then(
+          GetCurrentThreadSerialEventTarget(), __func__,
+          [holder](const nsTArray<size_t>& sizes) {
+            size_t total = 0;
+            for (const size_t& size : sizes) {
+              total += size;
+            }
+            holder->Resolve(total, __func__);
+          },
+          []() { MOZ_CRASH("Unexpected reject"); });
 
   return promise;
 }

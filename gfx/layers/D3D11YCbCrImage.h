@@ -22,7 +22,8 @@ class ImageContainer;
 class DXGIYCbCrTextureClient;
 class DXGIYCbCrTextureData;
 
-class DXGIYCbCrTextureAllocationHelper : public ITextureClientAllocationHelper {
+class MOZ_RAII DXGIYCbCrTextureAllocationHelper
+    : public ITextureClientAllocationHelper {
  public:
   DXGIYCbCrTextureAllocationHelper(const PlanarYCbCrData& aData,
                                    TextureFlags aTextureFlags,
@@ -67,7 +68,7 @@ class D3D11YCbCrImage : public Image {
 
   already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
 
-  TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
+  TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
   gfx::IntRect GetPictureRect() const override { return mPictureRect; }
 
@@ -78,7 +79,7 @@ class D3D11YCbCrImage : public Image {
   gfx::IntSize mCbCrSize;
   gfx::IntRect mPictureRect;
   gfx::ColorDepth mColorDepth;
-  YUVColorSpace mColorSpace;
+  gfx::YUVColorSpace mColorSpace;
   RefPtr<TextureClient> mTextureClient;
 };
 

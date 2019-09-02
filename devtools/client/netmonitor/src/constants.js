@@ -9,12 +9,15 @@ const actionTypes = {
   ADD_TIMING_MARKER: "ADD_TIMING_MARKER",
   BATCH_ACTIONS: "BATCH_ACTIONS",
   BATCH_ENABLE: "BATCH_ENABLE",
+  BATCH_FLUSH: "BATCH_FLUSH",
   CLEAR_REQUESTS: "CLEAR_REQUESTS",
   CLEAR_TIMING_MARKERS: "CLEAR_TIMING_MARKERS",
+  CLONE_REQUEST: "CLONE_REQUEST",
   CLONE_SELECTED_REQUEST: "CLONE_SELECTED_REQUEST",
   ENABLE_REQUEST_FILTER_TYPE_ONLY: "ENABLE_REQUEST_FILTER_TYPE_ONLY",
   OPEN_NETWORK_DETAILS: "OPEN_NETWORK_DETAILS",
   RESIZE_NETWORK_DETAILS: "RESIZE_NETWORK_DETAILS",
+  RIGHT_CLICK_REQUEST: "RIGHT_CLICK_REQUEST",
   ENABLE_PERSISTENT_LOGS: "ENABLE_PERSISTENT_LOGS",
   DISABLE_BROWSER_CACHE: "DISABLE_BROWSER_CACHE",
   OPEN_STATISTICS: "OPEN_STATISTICS",
@@ -31,6 +34,9 @@ const actionTypes = {
   UPDATE_REQUEST: "UPDATE_REQUEST",
   WATERFALL_RESIZE: "WATERFALL_RESIZE",
   SET_COLUMNS_WIDTH: "SET_COLUMNS_WIDTH",
+  WS_ADD_FRAME: "WS_ADD_FRAME",
+  WS_SELECT_FRAME: "WS_SELECT_FRAME",
+  WS_OPEN_FRAME_DETAILS: "WS_OPEN_FRAME_DETAILS",
 };
 
 // Descriptions for what this frontend is currently doing.
@@ -119,6 +125,7 @@ const UPDATE_PROPS = [
   "status",
   "statusText",
   "httpVersion",
+  "isRacing",
   "securityState",
   "securityInfo",
   "securityInfoAvailable",
@@ -149,11 +156,14 @@ const UPDATE_PROPS = [
   "stacktrace",
   "isThirdPartyTrackingResource",
   "referrerPolicy",
+  "blockedReason",
+  "channelId",
 ];
 
 const PANELS = {
   COOKIES: "cookies",
   HEADERS: "headers",
+  WEBSOCKETS: "webSockets",
   PARAMS: "params",
   RESPONSE: "response",
   CACHE: "cache",
@@ -186,12 +196,16 @@ const HEADERS = [
     canFilter: true,
   },
   {
-      name: "domain",
-      canFilter: true,
+    name: "domain",
+    canFilter: true,
   },
   {
     name: "file",
     canFilter: false,
+  },
+  {
+    name: "url",
+    canFilter: true,
   },
   {
     name: "protocol",
@@ -261,23 +275,22 @@ const HEADERS = [
     canFilter: false,
     subMenu: "timings",
   },
-  ...RESPONSE_HEADERS
-    .map(header => ({
-      name: header,
-      boxName: "response-header",
-      canFilter: false,
-      subMenu: "responseHeaders",
-      noLocalization: true,
-    })),
+  ...RESPONSE_HEADERS.map(header => ({
+    name: header,
+    boxName: "response-header",
+    canFilter: false,
+    subMenu: "responseHeaders",
+    noLocalization: true,
+  })),
   {
     name: "waterfall",
     canFilter: false,
   },
 ];
 
-const HEADER_FILTERS = HEADERS
-  .filter(h => h.canFilter)
-  .map(h => h.filterKey || h.name);
+const HEADER_FILTERS = HEADERS.filter(h => h.canFilter).map(
+  h => h.filterKey || h.name
+);
 
 const FILTER_FLAGS = [
   ...HEADER_FILTERS,
@@ -302,6 +315,30 @@ const FILTER_TAGS = [
   "media",
   "ws",
   "other",
+];
+
+const WS_FRAMES_HEADERS = [
+  {
+    name: "frameType",
+  },
+  {
+    name: "size",
+  },
+  {
+    name: "payload",
+  },
+  {
+    name: "opCode",
+  },
+  {
+    name: "maskBit",
+  },
+  {
+    name: "finBit",
+  },
+  {
+    name: "time",
+  },
 ];
 
 const REQUESTS_WATERFALL = {
@@ -337,6 +374,94 @@ const TIMING_KEYS = [
 // Default width of columns (which are not defined in DEFAULT_COLUMNS_DATA) is 8%
 const MIN_COLUMN_WIDTH = 30; // in px
 const DEFAULT_COLUMN_WIDTH = 8; // in %
+/**
+ * A mapping of HTTP status codes.
+ */
+const SUPPORTED_HTTP_CODES = [
+  "100",
+  "101",
+  "200",
+  "201",
+  "202",
+  "203",
+  "204",
+  "205",
+  "206",
+  "300",
+  "301",
+  "302",
+  "303",
+  "304",
+  "307",
+  "308",
+  "400",
+  "401",
+  "403",
+  "404",
+  "405",
+  "406",
+  "407",
+  "408",
+  "409",
+  "410",
+  "411",
+  "412",
+  "413",
+  "414",
+  "415",
+  "416",
+  "417",
+  "418",
+  "422",
+  "425",
+  "426",
+  "428",
+  "429",
+  "431",
+  "451",
+  "500",
+  "501",
+  "502",
+  "503",
+  "504",
+  "505",
+  "511",
+];
+
+// Keys are the codes provided by server, values are localization messages
+// prefixed by "netmonitor.blocked."
+const BLOCKED_REASON_MESSAGES = {
+  devtools: "Blocked by DevTools",
+  1001: "CORS disabled",
+  1002: "CORS Failed",
+  1003: "CORS Not HTTP",
+  1004: "CORS Multiple Origin Not Allowed",
+  1005: "CORS Missing Allow Origin",
+  1006: "CORS No Allow Credentials",
+  1007: "CORS Allow Origin Not Matching Origin",
+  1008: "CORS Missing Allow Credentials",
+  1009: "CORS Origin Header Missing",
+  1010: "CORS External Redirect Not Allowed",
+  1011: "CORS Preflight Did Not Succeed",
+  1012: "CORS Invalid Allow Method",
+  1013: "CORS Method Not Found",
+  1014: "CORS Invalid Allow Header",
+  1015: "CORS Missing Allow Header",
+  2001: "Malware",
+  2002: "Phishing",
+  2003: "Unwanted",
+  2004: "Tracking",
+  2005: "Blocked",
+  2006: "Harmful",
+  3001: "Mixed Block",
+  4000: "CSP",
+  4001: "CSP No Data Protocol",
+  4002: "CSP Web Extension",
+  4003: "CSP ContentBlocked",
+  4004: "CSP Data Document",
+  4005: "CSP Web Browser",
+  4006: "CSP Preload",
+};
 
 const general = {
   ACTIVITY_TYPE,
@@ -344,6 +469,7 @@ const general = {
   FILTER_SEARCH_DELAY: 200,
   UPDATE_PROPS,
   HEADERS,
+  WS_FRAMES_HEADERS,
   RESPONSE_HEADERS,
   FILTER_FLAGS,
   FILTER_TAGS,
@@ -352,6 +478,8 @@ const general = {
   TIMING_KEYS,
   MIN_COLUMN_WIDTH,
   DEFAULT_COLUMN_WIDTH,
+  SUPPORTED_HTTP_CODES,
+  BLOCKED_REASON_MESSAGES,
 };
 
 // flatten constants

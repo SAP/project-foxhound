@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 job-defaults:
     always-target: true
     attributes:
@@ -5,10 +9,18 @@ job-defaults:
     treeherder:
         kind: test
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-t-linux-xlarge
+    worker-type: t-linux-xlarge
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 1800
+        artifacts:
+            - type: file
+              name: public/code-review/mozlint.json
+              path: /builds/worker/mozlint.json
+        env:
+            RUSTFMT: /build/rust/bin/rustfmt
+            RUSTUP_HOME: /build/rust
+            CARGO_HOME: /build/rust
     run:
         using: mach
     when:
@@ -23,7 +35,7 @@ codespell:
     treeherder:
         symbol: spell
     run:
-        mach: lint -l codespell -f treeherder
+        mach: lint -l codespell -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.js'
@@ -39,6 +51,7 @@ codespell:
             - '**/*.py'
             - '**/*.properties'
             - '**/*.rst'
+            - '**/*.ftl'
 
 cpp-virtual-final:
     description: lint C++ virtual function declarations
@@ -46,7 +59,7 @@ cpp-virtual-final:
     treeherder:
         symbol: Cvf
     run:
-        mach: lint -l cpp-virtual-final -f treeherder
+        mach: lint -l cpp-virtual-final -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.cpp'
@@ -65,7 +78,7 @@ eslint:
             cp -r /build/node_modules_eslint node_modules &&
             ln -s ../tools/lint/eslint/eslint-plugin-mozilla node_modules &&
             ln -s ../tools/lint/eslint/eslint-plugin-spidermonkey-js node_modules &&
-            ./mach lint -l eslint -f treeherder --quiet
+            ./mach lint -l eslint -f treeherder --quiet -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             # Files that are likely audited.
@@ -88,7 +101,7 @@ mingw-cap:
     treeherder:
         symbol: mingw
     run:
-        mach: lint -l mingw-capitalization -f treeherder
+        mach: lint -l mingw-capitalization -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.cpp'
@@ -102,7 +115,7 @@ py-compat:
     treeherder:
         symbol: py-compat
     run:
-        mach: lint -l py2 -l py3 -f treeherder
+        mach: lint -l py2 -l py3 -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.py'
@@ -114,7 +127,7 @@ py-flake8:
     treeherder:
         symbol: f8
     run:
-        mach: lint -l flake8 -f treeherder
+        mach: lint -l flake8 -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.py'
@@ -128,7 +141,7 @@ test-manifest:
     treeherder:
         symbol: tm
     run:
-        mach: lint -l test-disable -f treeherder
+        mach: lint -l test-disable -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.ini'
@@ -141,7 +154,7 @@ wptlint-gecko:
     treeherder:
         symbol: W
     run:
-        mach: lint -l wpt -f treeherder
+        mach: lint -l wpt -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - 'testing/web-platform/tests/**'
@@ -153,7 +166,7 @@ yaml:
     treeherder:
         symbol: yaml
     run:
-        mach: lint -l yaml -f treeherder
+        mach: lint -l yaml -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.yml'
@@ -166,7 +179,34 @@ shellcheck:
     treeherder:
         symbol: shell
     run:
-        mach: lint -l shellcheck -f treeherder
+        mach: lint -l shellcheck -f treeherder -f json:/builds/worker/mozlint.json
     when:
         files-changed:
             - '**/*.sh'
+
+
+localization:
+    description: l10n tests for strings with errors and conflicts with cross-channel
+    platform: lint/opt
+    treeherder:
+        symbol: l1nt
+    run:
+        mach: lint -l l10n -f treeherder
+    when:
+        files-changed:
+            - '**/locales/en-US/**'
+            - '**/l10n.toml'
+            - 'third_party/python/compare-locales/**'
+            - 'third_party/python/fluent/**'
+
+
+rustfmt:
+    description: rustfmt on the Rust code
+    platform: lint/opt
+    treeherder:
+        symbol: rustfmt
+    run:
+        mach: lint -l rustfmt -f treeherder -f json:/builds/worker/mozlint.json
+    when:
+        files-changed:
+            - '**/*.rs'

@@ -143,15 +143,13 @@ ac_add_options --enable-artifact-builds
 '''
 
 # Upgrade Mercurial older than this.
-# This should match OLDEST_NON_LEGACY_VERSION from
-# the hg setup wizard in version-control-tools.
-MODERN_MERCURIAL_VERSION = LooseVersion('4.3.3')
+MODERN_MERCURIAL_VERSION = LooseVersion('4.8')
 
 # Upgrade Python older than this.
 MODERN_PYTHON_VERSION = LooseVersion('2.7.3')
 
 # Upgrade rust older than this.
-MODERN_RUST_VERSION = LooseVersion('1.32.0')
+MODERN_RUST_VERSION = LooseVersion('1.35.0')
 
 # Upgrade nasm older than this.
 MODERN_NASM_VERSION = LooseVersion('2.14')
@@ -280,6 +278,12 @@ class BaseBootstrapper(object):
             '%s does not yet implement ensure_nasm_packages()'
             % __name__)
 
+    def ensure_sccache_packages(self, state_dir, checkout_root):
+        '''
+        Install sccache.
+        '''
+        pass
+
     def ensure_node_packages(self, state_dir, checkout_root):
         '''
         Install any necessary packages needed to supply NodeJS'''
@@ -289,12 +293,8 @@ class BaseBootstrapper(object):
 
     def install_toolchain_static_analysis(self, state_dir, checkout_root, toolchain_job):
         clang_tools_path = os.path.join(state_dir, 'clang-tools')
-        import shutil
-        if os.path.exists(clang_tools_path):
-            shutil.rmtree(clang_tools_path)
-
-        # Re-create the directory for clang_tools
-        os.mkdir(clang_tools_path)
+        if not os.path.exists(clang_tools_path):
+            os.mkdir(clang_tools_path)
         self.install_toolchain_artifact(clang_tools_path, checkout_root, toolchain_job)
 
     def install_toolchain_artifact(self, state_dir, checkout_root, toolchain_job):
@@ -441,7 +441,7 @@ class BaseBootstrapper(object):
         ''' Prompts the user with prompt and requires a yes/no answer.'''
         valid = False
         while not valid:
-            choice = raw_input(prompt + ' [Y/n]: ').strip().lower()[:1]
+            choice = raw_input(prompt + ' (Yn): ').strip().lower()[:1]
             if choice == '':
                 choice = 'y'
             if choice not in ('y', 'n'):
@@ -673,7 +673,7 @@ class BaseBootstrapper(object):
             print('Your version of Rust (%s) is new enough.' % version)
             rustup = self.which('rustup', cargo_bin)
             if rustup:
-                self.ensure_rust_targets(rustup)
+                self.ensure_rust_targets(rustup, version)
             return
 
         if version:
@@ -697,7 +697,7 @@ class BaseBootstrapper(object):
             print('Will try to install Rust.')
             self.install_rust()
 
-    def ensure_rust_targets(self, rustup):
+    def ensure_rust_targets(self, rustup, rust_version):
         """Make sure appropriate cross target libraries are installed."""
         target_list = subprocess.check_output([rustup, 'target', 'list'])
         targets = [line.split()[0] for line in target_list.splitlines()
@@ -712,7 +712,11 @@ class BaseBootstrapper(object):
 
         if 'mobile_android' in self.application:
             # Let's add the most common targets.
-            android_targets = ('armv7-linux-androideabi',
+            if rust_version < LooseVersion('1.33'):
+                arm_target = 'armv7-linux-androideabi'
+            else:
+                arm_target = 'thumbv7neon-linux-androideabi'
+            android_targets = (arm_target,
                                'aarch64-linux-android',
                                'i686-linux-android',
                                'x86_64-linux-android', )

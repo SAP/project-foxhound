@@ -11,8 +11,6 @@
 % locale global @AB_CD@ %locale/@AB_CD@/global/
   locale/@AB_CD@/global/aboutReader.properties          (%chrome/global/aboutReader.properties)
   locale/@AB_CD@/global/aboutStudies.properties         (%chrome/global/aboutStudies.properties)
-  locale/@AB_CD@/global/aboutTelemetry.dtd              (%chrome/global/aboutTelemetry.dtd)
-  locale/@AB_CD@/global/aboutTelemetry.properties       (%chrome/global/aboutTelemetry.properties)
   locale/@AB_CD@/global/aboutWebrtc.properties          (%chrome/global/aboutWebrtc.properties)
   locale/@AB_CD@/global/autocomplete.properties         (%chrome/global/autocomplete.properties)
   locale/@AB_CD@/global/appPicker.dtd                   (%chrome/global/appPicker.dtd)
@@ -28,6 +26,7 @@
   locale/@AB_CD@/global/editMenuOverlay.dtd             (%chrome/global/editMenuOverlay.dtd)
 #endif
   locale/@AB_CD@/global/extensions.properties           (%chrome/global/extensions.properties)
+  locale/@AB_CD@/global/global-extension-fields.properties (%chrome/global/global-extension-fields.properties)
   locale/@AB_CD@/global/fallbackMenubar.properties      (%chrome/global/fallbackMenubar.properties)
   locale/@AB_CD@/global/filepicker.properties           (%chrome/global/filepicker.properties)
 #ifndef MOZ_FENNEC
@@ -42,8 +41,7 @@
   locale/@AB_CD@/global/narrate.properties              (%chrome/global/narrate.properties)
 #endif
   locale/@AB_CD@/global/notification.dtd                (%chrome/global/notification.dtd)
-#ifndef MOZ_FENNEC
-  locale/@AB_CD@/global/printPreview.dtd                (%chrome/global/printPreview.dtd)
+#if !defined(XP_WIN) && !defined(MOZ_FENNEC)
   locale/@AB_CD@/global/printdialog.properties          (%chrome/global/printdialog.properties)
 #endif
   locale/@AB_CD@/global/resetProfile.dtd                (%chrome/global/resetProfile.dtd)
@@ -93,7 +91,6 @@
   locale/@AB_CD@/alerts/alert.properties                         (%chrome/alerts/alert.properties)
 % locale passwordmgr @AB_CD@ %locale/@AB_CD@/passwordmgr/
   locale/@AB_CD@/passwordmgr/passwordmgr.properties (%chrome/passwordmgr/passwordmgr.properties)
-  locale/@AB_CD@/passwordmgr/passwordManager.dtd    (%chrome/passwordmgr/passwordManager.dtd)
 % locale autoconfig @AB_CD@ %locale/@AB_CD@/autoconfig/
   locale/@AB_CD@/autoconfig/autoconfig.properties   (%chrome/autoconfig/autoconfig.properties)
 % locale places @AB_CD@ %locale/@AB_CD@/places/

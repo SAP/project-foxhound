@@ -15,6 +15,7 @@
 #include "nsThreadUtils.h"
 #include "nsCOMPtr.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Mutex.h"
 
 class nsNotifyAddrListener : public nsINetworkLinkService,
                              public nsIRunnable,
@@ -36,14 +37,14 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
   class ChangeEvent : public mozilla::Runnable {
    public:
     NS_DECL_NSIRUNNABLE
-    ChangeEvent(nsINetworkLinkService *aService, const char *aEventID)
+    ChangeEvent(nsINetworkLinkService* aService, const char* aEventID)
         : Runnable("nsNotifyAddrListener::ChangeEvent"),
           mService(aService),
           mEventID(aEventID) {}
 
    private:
     nsCOMPtr<nsINetworkLinkService> mService;
-    const char *mEventID;
+    const char* mEventID;
   };
 
   bool mLinkUp;
@@ -51,7 +52,7 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
   bool mCheckAttempted;
 
   nsresult Shutdown(void);
-  nsresult SendEvent(const char *aEventID);
+  nsresult SendEvent(const char* aEventID);
 
   DWORD CheckAdaptersAddresses(void);
 
@@ -70,7 +71,9 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
 
   // Figure out the current network identification
   void calculateNetworkId(void);
-  bool findMac(char *gateway);
+  bool findMac(char* gateway);
+
+  mozilla::Mutex mMutex;
   nsCString mNetworkId;
 
   HANDLE mCheckEvent;

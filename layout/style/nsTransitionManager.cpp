@@ -433,7 +433,7 @@ bool nsTransitionManager::DoUpdateTransitions(
     if (property == eCSSPropertyExtra_all_properties) {
       for (nsCSSPropertyID p = nsCSSPropertyID(0);
            p < eCSSProperty_COUNT_no_shorthands; p = nsCSSPropertyID(p + 1)) {
-        if (!nsCSSProps::IsEnabled(p, CSSEnabledState::eForAllContent)) {
+        if (!nsCSSProps::IsEnabled(p, CSSEnabledState::ForAllContent)) {
           continue;
         }
         startedAny |= ConsiderInitiatingTransition(
@@ -442,7 +442,7 @@ bool nsTransitionManager::DoUpdateTransitions(
       }
     } else if (nsCSSProps::IsShorthand(property)) {
       CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subprop, property,
-                                           CSSEnabledState::eForAllContent) {
+                                           CSSEnabledState::ForAllContent) {
         startedAny |= ConsiderInitiatingTransition(
             *subprop, aDisp, i, aElement, aPseudoType, aElementTransitions,
             aOldStyle, aNewStyle, propertiesChecked);
@@ -484,8 +484,8 @@ bool nsTransitionManager::DoUpdateTransitions(
                 nsCSSProps::Physicalize(p, aNewStyle));
           }
         } else if (nsCSSProps::IsShorthand(property)) {
-          CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(
-              subprop, property, CSSEnabledState::eForAllContent) {
+          CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subprop, property,
+                                               CSSEnabledState::ForAllContent) {
             auto p = nsCSSProps::Physicalize(*subprop, aNewStyle);
             allTransitionProperties.AddProperty(p);
           }
@@ -521,7 +521,7 @@ bool nsTransitionManager::DoUpdateTransitions(
             effectSet->UpdateAnimationGeneration(mPresContext);
           }
         }
-        anim->CancelFromStyle();
+        anim->CancelFromStyle(PostRestyleMode::IfNeeded);
         animations.RemoveElementAt(i);
       }
     } while (i != 0);
@@ -668,7 +668,7 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
       // just got a style change to a value that can't be interpolated.
       OwningCSSTransitionPtrArray& animations =
           aElementTransitions->mAnimations;
-      animations[currentIndex]->CancelFromStyle();
+      animations[currentIndex]->CancelFromStyle(PostRestyleMode::IfNeeded);
       oldPT = nullptr;  // Clear pointer so it doesn't dangle
       animations.RemoveElementAt(currentIndex);
       EffectSet* effectSet = EffectSet::GetEffectSet(aElement, aPseudoType);
@@ -801,7 +801,7 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
                oldPT->GetAnimation()->PlaybackRate(), oldPT->SpecifiedTiming(),
                segment.mTimingFunction, segment.mFromValue, segment.mToValue}));
     }
-    animations[currentIndex]->CancelFromStyle();
+    animations[currentIndex]->CancelFromStyle(PostRestyleMode::IfNeeded);
     oldPT = nullptr;  // Clear pointer so it doesn't dangle
     animations[currentIndex] = animation;
   } else {

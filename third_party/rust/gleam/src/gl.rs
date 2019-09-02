@@ -126,6 +126,9 @@ declare_gl_apis! {
                                 offset: isize,
                                 size: GLsizeiptr,
                                 data: *const GLvoid);
+    fn map_buffer(&self,
+                  target: GLenum,
+                  access: GLbitfield) -> *mut c_void;
     fn map_buffer_range(&self,
                         target: GLenum,
                         offset: GLintptr,
@@ -151,6 +154,13 @@ declare_gl_apis! {
                     format: GLenum,
                     pixel_type: GLenum)
                     -> Vec<u8>;
+    unsafe fn read_pixels_into_pbo(&self,
+                                   x: GLint,
+                                   y: GLint,
+                                   width: GLsizei,
+                                   height: GLsizei,
+                                   format: GLenum,
+                                   pixel_type: GLenum);
     fn sample_coverage(&self, value: GLclampf, invert: bool);
     fn polygon_offset(&self, factor: GLfloat, units: GLfloat);
     fn pixel_store_i(&self, name: GLenum, param: GLint);
@@ -543,6 +553,9 @@ declare_gl_apis! {
     fn insert_event_marker_ext(&self, message: &str);
     fn push_group_marker_ext(&self, message: &str);
     fn pop_group_marker_ext(&self);
+    fn debug_message_insert_khr(&self, source: GLenum, type_: GLenum, id: GLuint, severity: GLenum, message: &str);
+    fn push_debug_group_khr(&self, source: GLenum, id: GLuint, message: &str);
+    fn pop_debug_group_khr(&self);
     fn fence_sync(&self, condition: GLenum, flags: GLbitfield) -> GLsync;
     fn client_wait_sync(&self, sync: GLsync, flags: GLbitfield, timeout: GLuint64);
     fn wait_sync(&self, sync: GLsync, flags: GLbitfield, timeout: GLuint64);
@@ -555,6 +568,8 @@ declare_gl_apis! {
     fn test_fence_apple(&self, fence: GLuint);
     fn test_object_apple(&self, object: GLenum, name: GLuint) -> GLboolean;
     fn finish_object_apple(&self, object: GLenum, name: GLuint);
+    // GL_KHR_blend_equation_advanced
+    fn blend_barrier_khr(&self);
 
     // GL_ARB_blend_func_extended
     fn bind_frag_data_location_indexed(
@@ -572,6 +587,9 @@ declare_gl_apis! {
 
     // GL_KHR_debug
     fn get_debug_messages(&self) -> Vec<DebugMessage>;
+
+    // GL_ANGLE_provoking_vertex.
+    fn provoking_vertex_angle(&self, mode: GLenum);
 }
 
 //#[deprecated(since = "0.6.11", note = "use ErrorReactingGl instead")]

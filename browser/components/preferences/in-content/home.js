@@ -2,23 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
- /* import-globals-from extensionControlled.js */
- /* import-globals-from preferences.js */
- /* import-globals-from main.js */
+/* import-globals-from extensionControlled.js */
+/* import-globals-from preferences.js */
+/* import-globals-from main.js */
 
- // HOME PAGE
+// HOME PAGE
 
- /*
-   * Preferences:
-   *
-   * browser.startup.homepage
-   * - the user's home page, as a string; if the home page is a set of tabs,
-   *   this will be those URLs separated by the pipe character "|"
-   * browser.newtabpage.enabled
-   * - determines that is shown on the user's new tab page.
-   *   true = Activity Stream is shown,
-   *   false = about:blank is shown
-   */
+/*
+ * Preferences:
+ *
+ * browser.startup.homepage
+ * - the user's home page, as a string; if the home page is a set of tabs,
+ *   this will be those URLs separated by the pipe character "|"
+ * browser.newtabpage.enabled
+ * - determines that is shown on the user's new tab page.
+ *   true = Activity Stream is shown,
+ *   false = about:blank is shown
+ */
 
 Preferences.addAll([
   { id: "browser.startup.homepage", type: "wstring" },
@@ -36,15 +36,21 @@ var gHomePane = {
   HOME_MODE_FIREFOX_HOME: "0",
   HOME_MODE_BLANK: "1",
   HOME_MODE_CUSTOM: "2",
+  HOMEPAGE_PREF: "browser.startup.homepage",
   NEWTAB_ENABLED_PREF: "browser.newtabpage.enabled",
   ACTIVITY_STREAM_PREF_BRANCH: "browser.newtabpage.activity-stream.",
 
   get homePanePrefs() {
-    return Preferences.getAll().filter(pref => pref.id.includes(this.ACTIVITY_STREAM_PREF_BRANCH));
+    return Preferences.getAll().filter(pref =>
+      pref.id.includes(this.ACTIVITY_STREAM_PREF_BRANCH)
+    );
   },
 
   get isPocketNewtabEnabled() {
-    const value = Services.prefs.getStringPref("browser.newtabpage.activity-stream.discoverystream.config", "");
+    const value = Services.prefs.getStringPref(
+      "browser.newtabpage.activity-stream.discoverystream.config",
+      ""
+    );
     if (value) {
       try {
         return JSON.parse(value).enabled;
@@ -62,7 +68,9 @@ var gHomePane = {
    */
   async _handleNewTabOverrides() {
     const isControlled = await handleControllingExtension(
-      URL_OVERRIDES_TYPE, NEW_TAB_KEY);
+      URL_OVERRIDES_TYPE,
+      NEW_TAB_KEY
+    );
     const el = document.getElementById("newTabMode");
     el.disabled = isControlled;
   },
@@ -89,12 +97,12 @@ var gHomePane = {
   watchHomeTabPrefChange() {
     const observer = () => this.toggleRestoreDefaultsBtn();
     Services.prefs.addObserver(this.ACTIVITY_STREAM_PREF_BRANCH, observer);
-    Services.prefs.addObserver("browser.startup.homepage", observer);
+    Services.prefs.addObserver(this.HOMEPAGE_PREF, observer);
     Services.prefs.addObserver(this.NEWTAB_ENABLED_PREF, observer);
 
     window.addEventListener("unload", () => {
       Services.prefs.removeObserver(this.ACTIVITY_STREAM_PREF_BRANCH, observer);
-      Services.prefs.removeObserver("browser.startup.homepage", observer);
+      Services.prefs.removeObserver(this.HOMEPAGE_PREF, observer);
       Services.prefs.removeObserver(this.NEWTAB_ENABLED_PREF, observer);
     });
   },
@@ -107,12 +115,14 @@ var gHomePane = {
    * @param {bool} options.isControlled Is an extension controlling the home page?
    */
   _renderCustomSettings(options = {}) {
-    let {shouldShow, isControlled} = options;
+    let { shouldShow, isControlled } = options;
     const customSettingsContainerEl = document.getElementById("customSettings");
     const customUrlEl = document.getElementById("homePageUrl");
-    const homePref = Preferences.get("browser.startup.homepage");
+    const homePage = HomePage.get();
 
-    const isHomePageCustom = isControlled || (!this._isHomePageDefaultValue() && !this.isHomePageBlank());
+    const isHomePageCustom =
+      isControlled ||
+      (!this._isHomePageDefaultValue() && !this.isHomePageBlank());
     if (typeof shouldShow === "undefined") {
       shouldShow = isHomePageCustom;
     }
@@ -120,11 +130,16 @@ var gHomePane = {
 
     // We can't use isHomePageDefaultValue and isHomePageBlank here because we want to disregard the blank
     // possibility triggered by the browser.startup.page being 0.
+    // We also skip when HomePage is locked because it might be locked to a default that isn't "about:home"
+    // (and it makes existing tests happy).
     let newValue;
-    if (homePref.value !== homePref.defaultValue && homePref.value !== "about:blank") {
-      newValue = homePref.value;
-    } else {
+    if (
+      homePage === "about:blank" ||
+      (HomePage.isDefault && !HomePage.locked)
+    ) {
       newValue = "";
+    } else {
+      newValue = homePage;
     }
     if (customUrlEl.value !== newValue) {
       customUrlEl.value = newValue;
@@ -133,13 +148,13 @@ var gHomePane = {
 
   /**
    * _isHomePageDefaultValue
-   * @param {bool} isControlled Is an extension controlling the home page?
    * @returns {bool} Is the homepage set to the default pref value?
    */
   _isHomePageDefaultValue() {
     const startupPref = Preferences.get("browser.startup.page");
-    const homePref = Preferences.get("browser.startup.homepage");
-    return startupPref.value !== gMainPane.STARTUP_PREF_BLANK && homePref.value === homePref.defaultValue;
+    return (
+      startupPref.value !== gMainPane.STARTUP_PREF_BLANK && HomePage.isDefault
+    );
   },
 
   /**
@@ -148,8 +163,10 @@ var gHomePane = {
    */
   isHomePageBlank() {
     const startupPref = Preferences.get("browser.startup.page");
-    const homePref = Preferences.get("browser.startup.homepage");
-    return homePref.value === "about:blank" || homePref.value === "" || startupPref.value === gMainPane.STARTUP_PREF_BLANK;
+    return (
+      ["about:blank", ""].includes(HomePage.get()) ||
+      startupPref.value === gMainPane.STARTUP_PREF_BLANK
+    );
   },
   /**
    * isHomePageControlled
@@ -157,8 +174,7 @@ var gHomePane = {
    * @returns {Promise}
    */
   isHomePageControlled() {
-    const homePref = Preferences.get("browser.startup.homepage");
-    if (homePref.locked) {
+    if (HomePage.locked) {
       return Promise.resolve(false);
     }
     return handleControllingExtension(PREF_SETTING_TYPE, HOMEPAGE_OVERRIDE_KEY);
@@ -182,7 +198,11 @@ var gHomePane = {
     let win = Services.wm.getMostRecentWindow("navigator:browser");
 
     // We should only include visible & non-pinned tabs
-    if (win && win.document.documentElement.getAttribute("windowtype") === "navigator:browser") {
+    if (
+      win &&
+      win.document.documentElement.getAttribute("windowtype") ===
+        "navigator:browser"
+    ) {
       tabs = win.gBrowser.visibleTabs.slice(win.gBrowser._numPinnedTabs);
       tabs = tabs.filter(tab => !this._isTabAboutPreferences(tab));
       // XXX: Bug 1441637 - Fix tabbrowser to report tab.closing before it blurs it
@@ -216,14 +236,26 @@ var gHomePane = {
     let tabCount = this._getTabsForHomePage().length;
 
     // Disable or enable the inputs based on if this is controlled by an extension.
-    document.querySelectorAll(".check-home-page-controlled")
-      .forEach((element) => {
+    document
+      .querySelectorAll(".check-home-page-controlled")
+      .forEach(element => {
         let isDisabled;
-        let pref = element.getAttribute("preference") || element.getAttribute("data-preference-related");
+        let pref =
+          element.getAttribute("preference") ||
+          element.getAttribute("data-preference-related");
         if (!pref) {
-          throw new Error(`Element with id ${element.id} did not have preference or data-preference-related attribute defined.`);
+          throw new Error(
+            `Element with id ${
+              element.id
+            } did not have preference or data-preference-related attribute defined.`
+          );
         }
-        isDisabled = Preferences.get(pref).locked || isControlled;
+
+        if (pref === this.HOMEPAGE_PREF) {
+          isDisabled = HomePage.locked || isControlled;
+        } else {
+          isDisabled = Preferences.get(pref).locked || isControlled;
+        }
 
         if (pref === "pref.browser.disable_button.current_page") {
           // Special case for current_page to disable it if tabCount is 0
@@ -235,15 +267,14 @@ var gHomePane = {
   },
 
   async _handleHomePageOverrides() {
-    const homePref = Preferences.get("browser.startup.homepage");
-    if (homePref.locked) {
+    if (HomePage.locked) {
       // An extension can't control these settings if they're locked.
       hideControllingExtension(HOMEPAGE_OVERRIDE_KEY);
       this._setInputDisabledStates(false);
     } else {
       const isControlled = await this.isHomePageControlled();
       this._setInputDisabledStates(isControlled);
-      this._renderCustomSettings({isControlled});
+      this._renderCustomSettings({ isControlled });
       this._renderHomepageMode(isControlled);
     }
   },
@@ -257,7 +288,9 @@ var gHomePane = {
 
   syncFromNewTabPref() {
     const newtabPref = Preferences.get(this.NEWTAB_ENABLED_PREF);
-    return newtabPref.value ? this.HOME_MODE_FIREFOX_HOME : this.HOME_MODE_BLANK;
+    return newtabPref.value
+      ? this.HOME_MODE_FIREFOX_HOME
+      : this.HOME_MODE_BLANK;
   },
 
   syncToNewTabPref(value) {
@@ -265,33 +298,33 @@ var gHomePane = {
   },
 
   onMenuChange(event) {
-    const {value} = event.target;
+    const { value } = event.target;
     const startupPref = Preferences.get("browser.startup.page");
-    const homePref = Preferences.get("browser.startup.homepage");
 
     switch (value) {
       case this.HOME_MODE_FIREFOX_HOME:
         if (startupPref.value === gMainPane.STARTUP_PREF_BLANK) {
           startupPref.value = gMainPane.STARTUP_PREF_HOMEPAGE;
         }
-        if (homePref.value !== homePref.defaultValue) {
-          Services.prefs.clearUserPref(homePref.id);
+        if (!HomePage.isDefault) {
+          HomePage.reset();
         } else {
-          this._renderCustomSettings({shouldShow: false});
+          this._renderCustomSettings({ shouldShow: false });
         }
         break;
       case this.HOME_MODE_BLANK:
-        if (homePref.value !== "about:blank") {
-          homePref.value = "about:blank";
+        if (HomePage.get() !== "about:blank") {
+          HomePage.set("about:blank");
         } else {
-          this._renderCustomSettings({shouldShow: false});
+          this._renderCustomSettings({ shouldShow: false });
         }
         break;
       case this.HOME_MODE_CUSTOM:
         if (startupPref.value === gMainPane.STARTUP_PREF_BLANK) {
           Services.prefs.clearUserPref(startupPref.id);
         }
-        this._renderCustomSettings({shouldShow: true});
+        HomePage.clear();
+        this._renderCustomSettings({ shouldShow: true });
         break;
     }
   },
@@ -307,7 +340,12 @@ var gHomePane = {
     document.l10n.setAttributes(useCurrent, "use-current-pages", { tabCount });
 
     // If the homepage is controlled by an extension then you can't use this.
-    if (await getControllingExtensionInfo(PREF_SETTING_TYPE, HOMEPAGE_OVERRIDE_KEY)) {
+    if (
+      await getControllingExtensionInfo(
+        PREF_SETTING_TYPE,
+        HOMEPAGE_OVERRIDE_KEY
+      )
+    ) {
       return;
     }
 
@@ -325,7 +363,6 @@ var gHomePane = {
    * updating about:preferences#home UI to reflect this.
    */
   setHomePageToCurrent() {
-    let homePage = Preferences.get("browser.startup.homepage");
     let tabs = this._getTabsForHomePage();
     function getTabURI(t) {
       return t.linkedBrowser.currentURI.spec;
@@ -333,38 +370,40 @@ var gHomePane = {
 
     // FIXME Bug 244192: using dangerous "|" joiner!
     if (tabs.length) {
-      homePage.value = tabs.map(getTabURI).join("|");
+      HomePage.set(tabs.map(getTabURI).join("|"));
     }
 
     Services.telemetry.scalarAdd("preferences.use_current_page", 1);
   },
 
   _setHomePageToBookmarkClosed(rv, aEvent) {
-    if (aEvent.detail.button != "accept")
+    if (aEvent.detail.button != "accept") {
       return;
+    }
     if (rv.urls && rv.names) {
-      let homePage = Preferences.get("browser.startup.homepage");
-
       // XXX still using dangerous "|" joiner!
-      homePage.value = rv.urls.join("|");
+      HomePage.set(rv.urls.join("|"));
     }
   },
 
-   /**
+  /**
    * Displays a dialog in which the user can select a bookmark to use as home
    * page.  If the user selects a bookmark, that bookmark's name is displayed in
    * UI and the bookmark's address is stored to the home page preference.
    */
   setHomePageToBookmark() {
     const rv = { urls: null, names: null };
-    gSubDialog.open("chrome://browser/content/preferences/selectBookmark.xul",
-      "resizable=yes, modal=yes", rv,
-      this._setHomePageToBookmarkClosed.bind(this, rv));
+    gSubDialog.open(
+      "chrome://browser/content/preferences/selectBookmark.xul",
+      "resizable=yes, modal=yes",
+      rv,
+      this._setHomePageToBookmarkClosed.bind(this, rv)
+    );
     Services.telemetry.scalarAdd("preferences.use_bookmark", 1);
   },
 
   restoreDefaultHomePage() {
-    Services.prefs.clearUserPref("browser.startup.homepage");
+    HomePage.reset();
     Services.prefs.clearUserPref(this.NEWTAB_ENABLED_PREF);
   },
 
@@ -379,15 +418,18 @@ var gHomePane = {
       this._telemetryHomePageTimer = setTimeout(() => {
         let homePageNumber = browserHomePage.split("|").length;
         Services.telemetry.scalarAdd("preferences.browser_home_page_change", 1);
-        Services.telemetry.keyedScalarAdd("preferences.browser_home_page_count", homePageNumber, 1);
+        Services.telemetry.keyedScalarAdd(
+          "preferences.browser_home_page_count",
+          homePageNumber,
+          1
+        );
       }, 3000);
     }
   },
 
   onCustomHomePageChange(event) {
-    const homePref = Preferences.get("browser.startup.homepage");
-    const value = event.target.value || homePref.defaultValue;
-    homePref.value = value;
+    const value = event.target.value || HomePage.getDefault();
+    HomePage.set(value);
   },
 
   /**
@@ -395,11 +437,12 @@ var gHomePane = {
    */
   _changedHomeTabDefaultPrefs() {
     // If Discovery Stream is enabled Firefox Home Content preference options are hidden
-    const homeContentChanged = !this.isPocketNewtabEnabled && this.homePanePrefs.some(pref => pref.hasUserValue);
-    const homePref = Preferences.get("browser.startup.homepage");
+    const homeContentChanged =
+      !this.isPocketNewtabEnabled &&
+      this.homePanePrefs.some(pref => pref.hasUserValue);
     const newtabPref = Preferences.get(this.NEWTAB_ENABLED_PREF);
 
-    return homeContentChanged || homePref.hasUserValue || newtabPref.hasUserValue;
+    return homeContentChanged || HomePage.overridden || newtabPref.hasUserValue;
   },
 
   /**
@@ -425,22 +468,45 @@ var gHomePane = {
 
   init() {
     // Event Listeners
-    document.getElementById("homeMode").addEventListener("command", this.onMenuChange.bind(this));
-    document.getElementById("homePageUrl").addEventListener("change", this.onCustomHomePageChange.bind(this));
-    document.getElementById("homePageUrl").addEventListener("input", this.onCustomHomePageInput.bind(this));
-    document.getElementById("useCurrentBtn").addEventListener("command", this.setHomePageToCurrent.bind(this));
-    document.getElementById("useBookmarkBtn").addEventListener("command", this.setHomePageToBookmark.bind(this));
-    document.getElementById("restoreDefaultHomePageBtn").addEventListener("command", this.restoreDefaultPrefsForHome.bind(this));
+    document
+      .getElementById("homeMode")
+      .addEventListener("command", this.onMenuChange.bind(this));
+    document
+      .getElementById("homePageUrl")
+      .addEventListener("change", this.onCustomHomePageChange.bind(this));
+    document
+      .getElementById("homePageUrl")
+      .addEventListener("input", this.onCustomHomePageInput.bind(this));
+    document
+      .getElementById("useCurrentBtn")
+      .addEventListener("command", this.setHomePageToCurrent.bind(this));
+    document
+      .getElementById("useBookmarkBtn")
+      .addEventListener("command", this.setHomePageToBookmark.bind(this));
+    document
+      .getElementById("restoreDefaultHomePageBtn")
+      .addEventListener("command", this.restoreDefaultPrefsForHome.bind(this));
 
     this._updateUseCurrentButton();
     window.addEventListener("focus", this._updateUseCurrentButton.bind(this));
 
     // Extension/override-related events
     this.watchNewTab();
-    document.getElementById("disableHomePageExtension").addEventListener("command",
-      makeDisableControllingExtension(PREF_SETTING_TYPE, HOMEPAGE_OVERRIDE_KEY));
-    document.getElementById("disableNewTabExtension").addEventListener("command",
-      makeDisableControllingExtension(URL_OVERRIDES_TYPE, NEW_TAB_KEY));
+    document
+      .getElementById("disableHomePageExtension")
+      .addEventListener(
+        "command",
+        makeDisableControllingExtension(
+          PREF_SETTING_TYPE,
+          HOMEPAGE_OVERRIDE_KEY
+        )
+      );
+    document
+      .getElementById("disableNewTabExtension")
+      .addEventListener(
+        "command",
+        makeDisableControllingExtension(URL_OVERRIDES_TYPE, NEW_TAB_KEY)
+      );
 
     this.watchHomeTabPrefChange();
     // Notify observers that the UI is now ready

@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_SVGComponentTransferFunctionElement_h
 #define mozilla_dom_SVGComponentTransferFunctionElement_h
 
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedNumber.h"
 #include "SVGAnimatedNumberList.h"
-#include "SVGEnum.h"
 #include "SVGFilters.h"
-#include "nsSVGNumber2.h"
 
 #define NS_SVG_FE_COMPONENT_TRANSFER_FUNCTION_ELEMENT_CID \
   {                                                       \
@@ -21,9 +21,9 @@
 
 namespace mozilla {
 
-class DOMSVGAnimatedNumberList;
-
 namespace dom {
+
+class DOMSVGAnimatedNumberList;
 
 typedef SVGFEUnstyledElement SVGComponentTransferFunctionElementBase;
 
@@ -34,7 +34,7 @@ class SVGComponentTransferFunctionElement
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : SVGComponentTransferFunctionElementBase(std::move(aNodeInfo)) {}
 
-  virtual ~SVGComponentTransferFunctionElement() {}
+  virtual ~SVGComponentTransferFunctionElement() = default;
 
  public:
   typedef gfx::ComponentTransferAttributes ComponentTransferAttributes;
@@ -56,13 +56,13 @@ class SVGComponentTransferFunctionElement
   // WebIDL
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override = 0;
-  already_AddRefed<SVGAnimatedEnumeration> Type();
+  already_AddRefed<DOMSVGAnimatedEnumeration> Type();
   already_AddRefed<DOMSVGAnimatedNumberList> TableValues();
-  already_AddRefed<SVGAnimatedNumber> Slope();
-  already_AddRefed<SVGAnimatedNumber> Intercept();
-  already_AddRefed<SVGAnimatedNumber> Amplitude();
-  already_AddRefed<SVGAnimatedNumber> Exponent();
-  already_AddRefed<SVGAnimatedNumber> Offset();
+  already_AddRefed<DOMSVGAnimatedNumber> Slope();
+  already_AddRefed<DOMSVGAnimatedNumber> Intercept();
+  already_AddRefed<DOMSVGAnimatedNumber> Amplitude();
+  already_AddRefed<DOMSVGAnimatedNumber> Exponent();
+  already_AddRefed<DOMSVGAnimatedNumber> Offset();
 
  protected:
   virtual NumberAttributesInfo GetNumberInfo() override;
@@ -74,11 +74,11 @@ class SVGComponentTransferFunctionElement
   static NumberListInfo sNumberListInfo[1];
 
   enum { SLOPE, INTERCEPT, AMPLITUDE, EXPONENT, OFFSET };
-  nsSVGNumber2 mNumberAttributes[5];
+  SVGAnimatedNumber mNumberAttributes[5];
   static NumberInfo sNumberInfo[5];
 
   enum { TYPE };
-  SVGEnum mEnumAttributes[1];
+  SVGAnimatedEnumeration mEnumAttributes[1];
   static SVGEnumMapping sTypeMap[];
   static EnumInfo sEnumInfo[1];
 };

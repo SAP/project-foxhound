@@ -10,20 +10,25 @@
 
 const { L10N } = require("devtools/client/performance/modules/global");
 const { extend } = require("devtools/shared/extend");
-const { AbstractTreeItem } = require("resource://devtools/client/shared/widgets/AbstractTreeItem.jsm");
+const {
+  AbstractTreeItem,
+} = require("resource://devtools/client/shared/widgets/AbstractTreeItem.jsm");
 
 const URL_LABEL_TOOLTIP = L10N.getStr("table.url.tooltiptext");
-const VIEW_OPTIMIZATIONS_TOOLTIP = L10N.getStr("table.view-optimizations.tooltiptext2");
+const VIEW_OPTIMIZATIONS_TOOLTIP = L10N.getStr(
+  "table.view-optimizations.tooltiptext2"
+);
 
 const CALL_TREE_INDENTATION = 16; // px
 
 // Used for rendering values in cells
 const FORMATTERS = {
-  TIME: (value) => L10N.getFormatStr("table.ms2", L10N.numberWithDecimals(value, 2)),
-  PERCENT: (value) => L10N.getFormatStr("table.percentage3",
-                                        L10N.numberWithDecimals(value, 2)),
-  NUMBER: (value) => value || 0,
-  BYTESIZE: (value) => L10N.getFormatStr("table.bytes", (value || 0)),
+  TIME: value =>
+    L10N.getFormatStr("table.ms2", L10N.numberWithDecimals(value, 2)),
+  PERCENT: value =>
+    L10N.getFormatStr("table.percentage3", L10N.numberWithDecimals(value, 2)),
+  NUMBER: value => value || 0,
+  BYTESIZE: value => L10N.getFormatStr("table.bytes", value || 0),
 };
 
 /**
@@ -38,14 +43,29 @@ const CELLS = {
   samples: ["samples", "samples", FORMATTERS.NUMBER],
 
   selfSize: ["self-size", "selfSize", FORMATTERS.BYTESIZE],
-  selfSizePercentage: ["self-size-percentage", "selfSizePercentage", FORMATTERS.PERCENT],
+  selfSizePercentage: [
+    "self-size-percentage",
+    "selfSizePercentage",
+    FORMATTERS.PERCENT,
+  ],
   selfCount: ["self-count", "selfCount", FORMATTERS.NUMBER],
-  selfCountPercentage: ["self-count-percentage", "selfCountPercentage",
-                        FORMATTERS.PERCENT],
+  selfCountPercentage: [
+    "self-count-percentage",
+    "selfCountPercentage",
+    FORMATTERS.PERCENT,
+  ],
   size: ["size", "totalSize", FORMATTERS.BYTESIZE],
-  sizePercentage: ["size-percentage", "totalSizePercentage", FORMATTERS.PERCENT],
+  sizePercentage: [
+    "size-percentage",
+    "totalSizePercentage",
+    FORMATTERS.PERCENT,
+  ],
   count: ["count", "totalCount", FORMATTERS.NUMBER],
-  countPercentage: ["count-percentage", "totalCountPercentage", FORMATTERS.PERCENT],
+  countPercentage: [
+    "count-percentage",
+    "totalCountPercentage",
+    FORMATTERS.PERCENT,
+  ],
 };
 const CELL_TYPES = Object.keys(CELLS);
 
@@ -132,13 +152,19 @@ const DEFAULT_VISIBLE_CELLS = {
  *        data.
  */
 function CallView({
-  caller, frame, level, hidden, inverted,
-  sortingPredicate, autoExpandDepth, visibleCells,
+  caller,
+  frame,
+  level,
+  hidden,
+  inverted,
+  sortingPredicate,
+  autoExpandDepth,
+  visibleCells,
   showOptimizationHint,
 }) {
   AbstractTreeItem.call(this, {
     parent: caller,
-    level: level | 0 - (hidden ? 1 : 0),
+    level: level | (0 - (hidden ? 1 : 0)),
   });
 
   if (sortingPredicate != null) {
@@ -189,19 +215,34 @@ CallView.prototype = extend(AbstractTreeItem.prototype, {
       if (this.visibleCells[type]) {
         // Inline for speed, but pass in the formatted value via
         // cell definition, as well as the element type.
-        cells.push(this._createCell(document, CELLS[type][2](frameInfo[CELLS[type][1]]),
-                                    CELLS[type][0]));
+        cells.push(
+          this._createCell(
+            document,
+            CELLS[type][2](frameInfo[CELLS[type][1]]),
+            CELLS[type][0]
+          )
+        );
       }
     }
 
     if (this.visibleCells.function) {
-      cells.push(this._createFunctionCell(document, arrowNode, frameInfo.name, frameInfo,
-                                          this.level));
+      cells.push(
+        this._createFunctionCell(
+          document,
+          arrowNode,
+          frameInfo.name,
+          frameInfo,
+          this.level
+        )
+      );
     }
 
-    const targetNode = document.createElement("hbox");
+    const targetNode = document.createXULElement("hbox");
     targetNode.className = "call-tree-item";
-    targetNode.setAttribute("origin", frameInfo.isContent ? "content" : "chrome");
+    targetNode.setAttribute(
+      "origin",
+      frameInfo.isContent ? "content" : "chrome"
+    );
     targetNode.setAttribute("category", frameInfo.categoryData.abbrev || "");
     targetNode.setAttribute("tooltiptext", frameInfo.tooltiptext);
 
@@ -225,12 +266,14 @@ CallView.prototype = extend(AbstractTreeItem.prototype, {
     const newLevel = this.level + 1;
 
     for (const newFrame of this.frame.calls) {
-      children.push(new CallView({
-        caller: this,
-        frame: newFrame,
-        level: newLevel,
-        inverted: this.inverted,
-      }));
+      children.push(
+        new CallView({
+          caller: this,
+          frame: newFrame,
+          level: newLevel,
+          inverted: this.inverted,
+        })
+      );
     }
 
     // Sort the "callees" asc. by samples, before inserting them in the tree,
@@ -243,7 +286,7 @@ CallView.prototype = extend(AbstractTreeItem.prototype, {
    * Invoked by `_displaySelf`.
    */
   _createCell: function(doc, value, type) {
-    const cell = doc.createElement("description");
+    const cell = doc.createXULElement("description");
     cell.className = "plain call-tree-cell";
     cell.setAttribute("type", type);
     cell.setAttribute("crop", "end");
@@ -252,17 +295,26 @@ CallView.prototype = extend(AbstractTreeItem.prototype, {
     return cell;
   },
 
-  _createFunctionCell: function(doc, arrowNode, frameName, frameInfo, frameLevel) {
-    const cell = doc.createElement("hbox");
+  _createFunctionCell: function(
+    doc,
+    arrowNode,
+    frameName,
+    frameInfo,
+    frameLevel
+  ) {
+    const cell = doc.createXULElement("hbox");
     cell.className = "call-tree-cell";
-    cell.style.marginInlineStart = (frameLevel * CALL_TREE_INDENTATION) + "px";
+    cell.style.marginInlineStart = frameLevel * CALL_TREE_INDENTATION + "px";
     cell.setAttribute("type", "function");
     cell.appendChild(arrowNode);
 
     // Render optimization hint if this frame has opt data.
-    if (this.root.showOptimizationHint && frameInfo.hasOptimizations &&
-        !frameInfo.isMetaCategory) {
-      const icon = doc.createElement("description");
+    if (
+      this.root.showOptimizationHint &&
+      frameInfo.hasOptimizations &&
+      !frameInfo.isMetaCategory
+    ) {
+      const icon = doc.createXULElement("description");
       icon.setAttribute("tooltiptext", VIEW_OPTIMIZATIONS_TOOLTIP);
       icon.className = "opt-icon";
       cell.appendChild(icon);
@@ -271,7 +323,7 @@ CallView.prototype = extend(AbstractTreeItem.prototype, {
     // Don't render a name label node if there's no function name. A different
     // location label node will be rendered instead.
     if (frameName) {
-      const nameNode = doc.createElement("description");
+      const nameNode = doc.createXULElement("description");
       nameNode.className = "plain call-tree-name";
       nameNode.textContent = frameName;
       cell.appendChild(nameNode);
@@ -297,44 +349,48 @@ CallView.prototype = extend(AbstractTreeItem.prototype, {
     // copied. These spaces won't be displayed in the cell content.
     const firstDescription = cell.querySelector("description:first-of-type");
     const levelIndicator = frameLevel > 0 ? " ".repeat(frameLevel) : "";
-    firstDescription.textContent = levelIndicator + firstDescription.textContent;
+    firstDescription.textContent =
+      levelIndicator + firstDescription.textContent;
 
     return cell;
   },
 
   _appendFunctionDetailsCells: function(doc, cell, frameInfo) {
     if (frameInfo.fileName) {
-      const urlNode = doc.createElement("description");
+      const urlNode = doc.createXULElement("description");
       urlNode.className = "plain call-tree-url";
       urlNode.textContent = frameInfo.fileName;
-      urlNode.setAttribute("tooltiptext", URL_LABEL_TOOLTIP + " → " + frameInfo.url);
+      urlNode.setAttribute(
+        "tooltiptext",
+        URL_LABEL_TOOLTIP + " → " + frameInfo.url
+      );
       urlNode.addEventListener("mousedown", this._onUrlClick);
       cell.appendChild(urlNode);
     }
 
     if (frameInfo.line) {
-      const lineNode = doc.createElement("description");
+      const lineNode = doc.createXULElement("description");
       lineNode.className = "plain call-tree-line";
       lineNode.textContent = ":" + frameInfo.line;
       cell.appendChild(lineNode);
     }
 
     if (frameInfo.column) {
-      const columnNode = doc.createElement("description");
+      const columnNode = doc.createXULElement("description");
       columnNode.className = "plain call-tree-column";
       columnNode.textContent = ":" + frameInfo.column;
       cell.appendChild(columnNode);
     }
 
     if (frameInfo.host) {
-      const hostNode = doc.createElement("description");
+      const hostNode = doc.createXULElement("description");
       hostNode.className = "plain call-tree-host";
       hostNode.textContent = frameInfo.host;
       cell.appendChild(hostNode);
     }
 
     if (frameInfo.categoryData.label) {
-      const categoryNode = doc.createElement("description");
+      const categoryNode = doc.createXULElement("description");
       categoryNode.className = "plain call-tree-category";
       categoryNode.style.color = frameInfo.categoryData.color;
       categoryNode.textContent = frameInfo.categoryData.label;
@@ -355,7 +411,7 @@ CallView.prototype = extend(AbstractTreeItem.prototype, {
 
     this._cachedDisplayedData = this.frame.getInfo({
       root: this.root.frame,
-      allocations: (this.visibleCells.count || this.visibleCells.selfCount),
+      allocations: this.visibleCells.count || this.visibleCells.selfCount,
     });
 
     return this._cachedDisplayedData;

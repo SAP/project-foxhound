@@ -10,9 +10,8 @@ from __future__ import absolute_import, print_function, unicode_literals
 from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
-from taskgraph.util.partners import check_if_partners_enabled
+from taskgraph.util.partners import check_if_partners_enabled, get_partner_config_by_kind
 from taskgraph.util.scriptworker import (
-    add_scope_prefix,
     get_signing_cert_scope_per_platform,
     get_worker_type_for_scope,
 )
@@ -41,7 +40,7 @@ def make_repackage_signing_description(config, jobs):
         repack_id = dep_job.task['extra']['repack_id']
         attributes = dep_job.attributes
         build_platform = dep_job.attributes.get('build_platform')
-        is_nightly = dep_job.attributes.get('nightly')
+        is_nightly = dep_job.attributes.get('nightly', dep_job.attributes.get('shippable'))
 
         # Mac & windows
         label = dep_job.label.replace("repackage-", "repackage-signing-")
@@ -72,7 +71,7 @@ def make_repackage_signing_description(config, jobs):
         signing_cert_scope = get_signing_cert_scope_per_platform(
             build_platform, is_nightly, config
         )
-        scopes = [signing_cert_scope, add_scope_prefix(config, 'signing:format:gpg')]
+        scopes = [signing_cert_scope]
 
         if 'win' in build_platform:
             upstream_artifacts = [{
@@ -81,9 +80,23 @@ def make_repackage_signing_description(config, jobs):
                 "paths": [
                     get_artifact_path(dep_job, "{}/target.installer.exe".format(repack_id)),
                 ],
-                "formats": ["sha2signcode", "gpg"]
+                "formats": ["sha2signcode", "autograph_gpg"]
             }]
-            scopes.append(add_scope_prefix(config, "signing:format:sha2signcode"))
+
+            partner_config = get_partner_config_by_kind(config, config.kind)
+            partner, subpartner, _ = repack_id.split('/')
+            repack_stub_installer = partner_config[partner][subpartner].get(
+                'repack_stub_installer')
+            if build_platform.startswith('win32') and repack_stub_installer:
+                upstream_artifacts.append({
+                    "taskId": {"task-reference": "<repackage>"},
+                    "taskType": "repackage",
+                    "paths": [
+                        get_artifact_path(dep_job, "{}/target.stub-installer.exe".format(
+                            repack_id)),
+                    ],
+                    "formats": ["sha2signcode", "autograph_gpg"]
+                })
         elif 'mac' in build_platform:
             upstream_artifacts = [{
                 "taskId": {"task-reference": "<repackage>"},
@@ -91,7 +104,7 @@ def make_repackage_signing_description(config, jobs):
                 "paths": [
                     get_artifact_path(dep_job, "{}/target.dmg".format(repack_id)),
                 ],
-                "formats": ["gpg"]
+                "formats": ["autograph_gpg"]
             }]
         elif 'linux' in build_platform:
             upstream_artifacts = [{
@@ -100,7 +113,7 @@ def make_repackage_signing_description(config, jobs):
                 "paths": [
                     get_artifact_path(dep_job, "{}/target.tar.bz2".format(repack_id)),
                 ],
-                "formats": ["gpg"]
+                "formats": ["autograph_gpg"]
             }]
 
         task = {

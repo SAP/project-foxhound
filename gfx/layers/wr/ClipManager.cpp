@@ -155,16 +155,10 @@ wr::WrSpaceAndClipChain ClipManager::SwitchItem(nsDisplayItem* aItem) {
   // some overhead further down the pipeline.
   bool separateLeaf = false;
   if (clip && clip->mASR == asr && clip->mClip.GetRoundedRectCount() == 0) {
-    if (type == DisplayItemType::TYPE_TEXT) {
-      // Text with shadows interprets the text display item clip rect and
-      // clips from the clip chain differently.
-      separateLeaf = !aItem->Frame()->StyleText()->HasTextShadow();
-    } else {
-      // Container display items are not currently supported because the clip
-      // rect of a stacking context is not handled the same as normal display
-      // items.
-      separateLeaf = aItem->GetChildren() == nullptr;
-    }
+    // Container display items are not currently supported because the clip
+    // rect of a stacking context is not handled the same as normal display
+    // items.
+    separateLeaf = aItem->GetChildren() == nullptr;
   }
 
   ItemClips clips(asr, clip, separateLeaf);
@@ -370,7 +364,7 @@ ClipManager::ItemClips::ItemClips(const ActiveScrolledRoot* aASR,
                                   const DisplayItemClipChain* aChain,
                                   bool aSeparateLeaf)
     : mASR(aASR), mChain(aChain), mSeparateLeaf(aSeparateLeaf) {
-  mScrollId.id = 0;
+  mScrollId = wr::wr_root_scroll_node_id();
 }
 
 void ClipManager::ItemClips::UpdateSeparateLeaf(

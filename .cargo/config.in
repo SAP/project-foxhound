@@ -9,7 +9,7 @@ replace-with = 'vendored-sources'
 
 [source."https://github.com/servo/serde"]
 git = "https://github.com/servo/serde"
-branch = "deserialize_from_enums9"
+branch = "deserialize_from_enums10"
 replace-with = "vendored-sources"
 
 [source."https://github.com/retep998/winapi-rs"]
@@ -17,12 +17,15 @@ git = "https://github.com/froydnj/winapi-rs"
 branch = "aarch64"
 replace-with = "vendored-sources"
 
-[source."https://github.com/alexcrichton/cc-rs"]
-git = "https://github.com/glandium/cc-rs"
-branch = "1.0.23-clang-cl-aarch64"
+[source."https://github.com/rust-lang-nursery/packed_simd"]
+git = "https://github.com/hsivonen/packed_simd"
+branch = "rust_1_32"
+replace-with = "vendored-sources"
+
+[source."https://github.com/CraneStation/Cranelift"]
+git = "https://github.com/CraneStation/Cranelift"
+rev = "312516a69da03dc06eace32f61412389a8dcadf3"
 replace-with = "vendored-sources"
 
 [source.vendored-sources]
 directory = '@top_srcdir@/third_party/rust'
-
-@WIN64_CARGO_LINKER_CONFIG@

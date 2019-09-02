@@ -14,6 +14,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #ifdef XP_WIN
 // This is needed for DoublePassRenderingEvent.
 #  include "mozilla/plugins/PluginMessageUtils.h"
@@ -22,7 +23,6 @@
 #include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsPresContext.h"
-#include "nsIPresShell.h"
 #include "nsWidgetsCID.h"
 #include "nsView.h"
 #include "nsViewManager.h"
@@ -80,7 +80,7 @@ using mozilla::DefaultXDisplay;
 #  include <winuser.h>
 #endif
 
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 
 #ifdef CreateEvent  // Thank you MS.
 #  undef CreateEvent
@@ -339,8 +339,9 @@ nsresult nsPluginFrame::PrepForDrawing(nsIWidget* aWidget) {
   }
 
 #ifdef ACCESSIBILITY
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
+  ;
+  if (nsAccessibilityService* accService =
+          PresShell::GetAccessibilityService()) {
     accService->RecreateAccessible(PresShell(), mContent);
   }
 #endif
@@ -741,7 +742,7 @@ mozilla::LayoutDeviceIntPoint nsPluginFrame::GetRemoteTabChromeOffset() {
   if (XRE_IsContentProcess()) {
     if (nsPIDOMWindowOuter* window = GetContent()->OwnerDoc()->GetWindow()) {
       if (nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetTop()) {
-        dom::TabChild* tc = dom::TabChild::GetFrom(topWindow);
+        dom::BrowserChild* tc = dom::BrowserChild::GetFrom(topWindow);
         if (tc) {
           offset += tc->GetChromeOffset();
         }
@@ -824,10 +825,10 @@ void nsPluginFrame::PaintPrintPlugin(nsIFrame* aFrame, gfxContext* aCtx,
  * the ReadbackLayer, which we then use as an opaque buffer for plugins to
  * asynchronously draw onto.
  */
-class nsDisplayPluginReadback : public nsDisplayItem {
+class nsDisplayPluginReadback : public nsPaintedDisplayItem {
  public:
   nsDisplayPluginReadback(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayPluginReadback);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -850,7 +851,7 @@ class nsDisplayPluginReadback : public nsDisplayItem {
   LayerState GetLayerState(
       nsDisplayListBuilder* aBuilder, LayerManager* aManager,
       const ContainerLayerParameters& aParameters) override {
-    return LAYER_ACTIVE;
+    return LayerState::LAYER_ACTIVE;
   }
 
   virtual nsDisplayItemGeometry* AllocateGeometry(
@@ -1099,22 +1100,21 @@ void nsPluginFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   // determine if we are printing
   if (type == nsPresContext::eContext_Print) {
-    aLists.Content()->AppendToTop(MakeDisplayItem<nsDisplayGeneric>(
+    aLists.Content()->AppendNewToTop<nsDisplayGeneric>(
         aBuilder, this, PaintPrintPlugin, "PrintPlugin",
-        DisplayItemType::TYPE_PRINT_PLUGIN));
+        DisplayItemType::TYPE_PRINT_PLUGIN);
   } else {
     LayerState state = GetLayerState(aBuilder, nullptr);
-    if (state == LAYER_INACTIVE && nsDisplayItem::ForceActiveLayers()) {
-      state = LAYER_ACTIVE;
+    if (state == LayerState::LAYER_INACTIVE &&
+        nsDisplayItem::ForceActiveLayers()) {
+      state = LayerState::LAYER_ACTIVE;
     }
-    if (aBuilder->IsPaintingToWindow() && state == LAYER_ACTIVE &&
+    if (aBuilder->IsPaintingToWindow() && state == LayerState::LAYER_ACTIVE &&
         IsTransparentMode()) {
-      aLists.Content()->AppendToTop(
-          MakeDisplayItem<nsDisplayPluginReadback>(aBuilder, this));
+      aLists.Content()->AppendNewToTop<nsDisplayPluginReadback>(aBuilder, this);
     }
 
-    aLists.Content()->AppendToTop(
-        MakeDisplayItem<nsDisplayPlugin>(aBuilder, this));
+    aLists.Content()->AppendNewToTop<nsDisplayPlugin>(aBuilder, this);
   }
 }
 
@@ -1233,17 +1233,17 @@ nsRect nsPluginFrame::GetPaintedRect(const nsDisplayPlugin* aItem) const {
 
 LayerState nsPluginFrame::GetLayerState(nsDisplayListBuilder* aBuilder,
                                         LayerManager* aManager) {
-  if (!mInstanceOwner) return LAYER_NONE;
+  if (!mInstanceOwner) return LayerState::LAYER_NONE;
 
   if (mInstanceOwner->NeedsScrollImageLayer()) {
-    return LAYER_ACTIVE;
+    return LayerState::LAYER_ACTIVE;
   }
 
   if (!mInstanceOwner->UseAsyncRendering()) {
-    return LAYER_NONE;
+    return LayerState::LAYER_NONE;
   }
 
-  return LAYER_ACTIVE_FORCE;
+  return LayerState::LAYER_ACTIVE_FORCE;
 }
 
 class PluginFrameDidCompositeObserver final : public DidCompositeObserver {
@@ -1516,12 +1516,13 @@ nsresult nsPluginFrame::HandleEvent(nsPresContext* aPresContext,
     return rv;
   }
 
-  // These two calls to nsIPresShell::SetCapturingContext() (on mouse-down
+  // These two calls to PresShell::SetCapturingContent() (on mouse-down
   // and mouse-up) are needed to make the routing of mouse events while
   // dragging conform to standard OS X practice, and to the Cocoa NPAPI spec.
   // See bug 525078 and bug 909678.
   if (anEvent->mMessage == eMouseDown) {
-    nsIPresShell::SetCapturingContent(GetContent(), CAPTURE_IGNOREALLOWED);
+    PresShell::SetCapturingContent(GetContent(),
+                                   CaptureFlags::IgnoreAllowedState);
   }
 #endif
 
@@ -1532,7 +1533,7 @@ nsresult nsPluginFrame::HandleEvent(nsPresContext* aPresContext,
 
 #ifdef XP_MACOSX
   if (anEvent->mMessage == eMouseUp) {
-    nsIPresShell::SetCapturingContent(nullptr, 0);
+    PresShell::ReleaseCapturingContent();
   }
 #endif
 
@@ -1683,7 +1684,7 @@ void nsPluginFrame::EndSwapDocShells(nsISupports* aSupports, void*) {
   }
 }
 
-nsIFrame* NS_NewObjectFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewObjectFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsPluginFrame(aStyle, aPresShell->GetPresContext());
 }
 

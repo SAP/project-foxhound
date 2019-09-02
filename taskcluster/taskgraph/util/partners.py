@@ -121,12 +121,12 @@ REPACK_CFG_QUERY = """query{
 
 # Map platforms in repack.cfg into their equivalents in taskcluster
 TC_PLATFORM_PER_FTP = {
-    'linux-i686': 'linux-nightly',
-    'linux-x86_64': 'linux64-nightly',
-    'mac': 'macosx64-nightly',
-    'win32': 'win32-nightly',
-    'win64': 'win64-nightly',
-    'win64-aarch64': 'win64-aarch64-nightly',
+    'linux-i686': 'linux-shippable',
+    'linux-x86_64': 'linux64-shippable',
+    'mac': 'macosx64-shippable',
+    'win32': 'win32-shippable',
+    'win64': 'win64-shippable',
+    'win64-aarch64': 'win64-aarch64-shippable',
 }
 
 TASKCLUSTER_PROXY_SECRET_ROOT = 'http://taskcluster/secrets/v1/secret'
@@ -234,12 +234,13 @@ def parse_config(data):
     data is contents of the file, in "foo=bar\nbaz=buzz" style. We do some translation on
     locales and platforms data, otherwise passthrough
     """
-    ALLOWED_KEYS = ('locales', 'upload_to_candidates', 'platforms')
+    ALLOWED_KEYS = ('locales', 'platforms', 'upload_to_candidates', 'repack_stub_installer',
+                    'publish_to_releases')
     config = {'platforms': []}
     for l in data.splitlines():
         if '=' in l:
             l = str(l)
-            key, value = l.split('=', 2)
+            key, value = l.split('=', 1)
             value = value.strip('\'"').rstrip('\'"')
             if key in TC_PLATFORM_PER_FTP.keys():
                 if value.lower() == 'true':
@@ -327,7 +328,7 @@ def get_partner_config_by_kind(config, kind):
     else:
         return {}
     # if we're only interested in a subset of partners we remove the rest
-    if isinstance(partner_subset, (list, tuple)):
+    if partner_subset:
         # TODO - should be fatal to have an unknown partner in partner_subset
         for partner in kind_config.keys():
             if partner not in partner_subset:
@@ -403,3 +404,14 @@ def get_partner_url_config(parameters, graph_config):
     resolve_keyed_by(partner_url_config, 'release-partner-repack', 'partner manifest url',
                      **substitutions)
     return partner_url_config
+
+
+def get_partners_to_be_published(config):
+    # hardcoded kind because release-bouncer-aliases doesn't match otherwise
+    partner_config = get_partner_config_by_kind(config, 'release-partner-repack')
+    partners = []
+    for partner, subconfigs in partner_config.items():
+        for sub_config_name, sub_config in subconfigs.items():
+            if sub_config.get("publish_to_releases"):
+                partners.append((partner, sub_config_name, sub_config['platforms']))
+    return partners

@@ -12,6 +12,7 @@
 #include "mozilla/ViewportFrame.h"
 
 #include "mozilla/ComputedStyleInlines.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "nsGkAtoms.h"
 #include "nsIScrollableFrame.h"
@@ -25,7 +26,7 @@
 using namespace mozilla;
 typedef nsAbsoluteContainingBlock::AbsPosReflowFlags AbsPosReflowFlags;
 
-ViewportFrame* NS_NewViewportFrame(nsIPresShell* aPresShell,
+ViewportFrame* NS_NewViewportFrame(PresShell* aPresShell,
                                    ComputedStyle* aStyle) {
   return new (aPresShell) ViewportFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -158,8 +159,7 @@ void ViewportFrame::BuildDisplayListForTopLayer(nsDisplayListBuilder* aBuilder,
     }
   }
 
-  nsIPresShell* shell = PresShell();
-  if (nsCanvasFrame* canvasFrame = shell->GetCanvasFrame()) {
+  if (nsCanvasFrame* canvasFrame = PresShell()->GetCanvasFrame()) {
     if (Element* container = canvasFrame->GetCustomContentContainer()) {
       if (nsIFrame* frame = container->GetPrimaryFrame()) {
         MOZ_ASSERT(frame->StyleDisplay()->mTopLayer != NS_STYLE_TOP_LAYER_NONE,
@@ -251,13 +251,13 @@ nsRect ViewportFrame::AdjustReflowInputAsContainingBlock(
   // computed size.
   nsRect rect(0, 0, aReflowInput->ComputedWidth(),
               aReflowInput->ComputedHeight());
-  nsIPresShell* ps = PresShell();
-  if (ps->IsVisualViewportSizeSet() &&
-      rect.Size() < ps->GetVisualViewportSize()) {
-    rect.SizeTo(ps->GetVisualViewportSize());
+  mozilla::PresShell* presShell = PresShell();
+  if (presShell->IsVisualViewportSizeSet() &&
+      rect.Size() < presShell->GetVisualViewportSize()) {
+    rect.SizeTo(presShell->GetVisualViewportSize());
   }
   // Expand the size to the layout viewport size if necessary.
-  const nsSize layoutViewportSize = ps->GetLayoutViewportSize();
+  const nsSize layoutViewportSize = presShell->GetLayoutViewportSize();
   if (rect.Size() < layoutViewportSize) {
     rect.SizeTo(layoutViewportSize);
   }
@@ -329,7 +329,7 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   if (HasAbsolutelyPositionedChildren()) {
-    // Make a copy of the reflow state and change the computed width and height
+    // Make a copy of the reflow input and change the computed width and height
     // to reflect the available space for the fixed items
     ReflowInput reflowInput(aReflowInput);
 
@@ -346,7 +346,7 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
 
     nsRect rect = AdjustReflowInputAsContainingBlock(&reflowInput);
     AbsPosReflowFlags flags =
-        AbsPosReflowFlags::eCBWidthAndHeightChanged;  // XXX could be optimized
+        AbsPosReflowFlags::CBWidthAndHeightChanged;  // XXX could be optimized
     GetAbsoluteContainingBlock()->Reflow(this, aPresContext, reflowInput,
                                          aStatus, rect, flags,
                                          /* aOverflowAreas = */ nullptr);

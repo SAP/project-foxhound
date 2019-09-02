@@ -10,7 +10,7 @@
 typedef (Request or USVString) RequestInfo;
 typedef unsigned long nsContentPolicyType;
 
-[Constructor(RequestInfo input, optional RequestInit init),
+[Constructor(RequestInfo input, optional RequestInit init = {}),
  Exposed=(Window,Worker)]
 interface Request {
   readonly attribute ByteString method;
@@ -60,7 +60,7 @@ dictionary RequestInit {
 
   AbortSignal? signal;
 
-  [Func="mozilla::dom::DOMPrefs::dom_fetchObserver_enabled"]
+  [Pref="dom.fetchObserver.enabled"]
   ObserverCallback observe;
 };
 

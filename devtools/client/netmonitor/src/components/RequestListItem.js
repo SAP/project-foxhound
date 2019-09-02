@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { Component, createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  Component,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
@@ -30,6 +33,7 @@ const { RESPONSE_HEADERS } = require("../constants");
   RequestListColumnTime,
   RequestListColumnTransferredSize,
   RequestListColumnType,
+  RequestListColumnUrl,
   RequestListColumnWaterfall
 */
 
@@ -47,6 +51,9 @@ loader.lazyGetter(this, "RequestListColumnDomain", function() {
 });
 loader.lazyGetter(this, "RequestListColumnFile", function() {
   return createFactory(require("./RequestListColumnFile"));
+});
+loader.lazyGetter(this, "RequestListColumnUrl", function() {
+  return createFactory(require("./RequestListColumnUrl"));
 });
 loader.lazyGetter(this, "RequestListColumnMethod", function() {
   return createFactory(require("./RequestListColumnMethod"));
@@ -95,6 +102,7 @@ const UPDATED_REQ_ITEM_PROPS = [
   "status",
   "statusText",
   "fromCache",
+  "isRacing",
   "fromServiceWorker",
   "method",
   "url",
@@ -119,11 +127,80 @@ const UPDATED_REQ_PROPS = [
 ];
 
 /**
+ * Used by render: renders the given ColumnComponent if the flag for this column
+ * is set in the columns prop. The list of props are used to determine which of
+ * RequestListItem's need to be passed to the ColumnComponent. Any objects contained
+ * in that list are passed as props verbatim.
+ */
+const COLUMN_COMPONENTS = [
+  { column: "status", ColumnComponent: RequestListColumnStatus },
+  { column: "method", ColumnComponent: RequestListColumnMethod },
+  {
+    column: "domain",
+    ColumnComponent: RequestListColumnDomain,
+    props: ["onSecurityIconMouseDown"],
+  },
+  { column: "file", ColumnComponent: RequestListColumnFile },
+  {
+    column: "url",
+    ColumnComponent: RequestListColumnUrl,
+    props: ["onSecurityIconMouseDown"],
+  },
+  { column: "protocol", ColumnComponent: RequestListColumnProtocol },
+  { column: "scheme", ColumnComponent: RequestListColumnScheme },
+  { column: "remoteip", ColumnComponent: RequestListColumnRemoteIP },
+  {
+    column: "cause",
+    ColumnComponent: RequestListColumnCause,
+    props: ["onCauseBadgeMouseDown"],
+  },
+  { column: "type", ColumnComponent: RequestListColumnType },
+  {
+    column: "cookies",
+    ColumnComponent: RequestListColumnCookies,
+    props: ["connector"],
+  },
+  {
+    column: "setCookies",
+    ColumnComponent: RequestListColumnSetCookies,
+    props: ["connector"],
+  },
+  { column: "transferred", ColumnComponent: RequestListColumnTransferredSize },
+  { column: "contentSize", ColumnComponent: RequestListColumnContentSize },
+  {
+    column: "startTime",
+    ColumnComponent: RequestListColumnTime,
+    props: ["connector", "firstRequestStartedMillis", { type: "start" }],
+  },
+  {
+    column: "endTime",
+    ColumnComponent: RequestListColumnTime,
+    props: ["connector", "firstRequestStartedMillis", { type: "end" }],
+  },
+  {
+    column: "responseTime",
+    ColumnComponent: RequestListColumnTime,
+    props: ["connector", "firstRequestStartedMillis", { type: "response" }],
+  },
+  {
+    column: "duration",
+    ColumnComponent: RequestListColumnTime,
+    props: ["connector", "firstRequestStartedMillis", { type: "duration" }],
+  },
+  {
+    column: "latency",
+    ColumnComponent: RequestListColumnTime,
+    props: ["connector", "firstRequestStartedMillis", { type: "latency" }],
+  },
+];
+
+/**
  * Render one row in the request list.
  */
 class RequestListItem extends Component {
   static get propTypes() {
     return {
+      blocked: PropTypes.bool,
       connector: PropTypes.object.isRequired,
       columns: PropTypes.object.isRequired,
       item: PropTypes.object.isRequired,
@@ -132,6 +209,7 @@ class RequestListItem extends Component {
       firstRequestStartedMillis: PropTypes.number.isRequired,
       fromCache: PropTypes.bool,
       onCauseBadgeMouseDown: PropTypes.func.isRequired,
+      onDoubleClick: PropTypes.func.isRequired,
       onContextMenu: PropTypes.func.isRequired,
       onFocusedNodeChange: PropTypes.func,
       onMouseDown: PropTypes.func.isRequired,
@@ -169,9 +247,15 @@ class RequestListItem extends Component {
   }
 
   shouldComponentUpdate(nextProps) {
-    return !propertiesEqual(UPDATED_REQ_ITEM_PROPS, this.props.item, nextProps.item) ||
+    return (
+      !propertiesEqual(
+        UPDATED_REQ_ITEM_PROPS,
+        this.props.item,
+        nextProps.item
+      ) ||
       !propertiesEqual(UPDATED_REQ_PROPS, this.props, nextProps) ||
-      this.props.columns !== nextProps.columns;
+      this.props.columns !== nextProps.columns
+    );
   }
 
   componentDidUpdate(prevProps) {
@@ -185,6 +269,7 @@ class RequestListItem extends Component {
 
   render() {
     const {
+      blocked,
       connector,
       columns,
       item,
@@ -192,89 +277,59 @@ class RequestListItem extends Component {
       isSelected,
       firstRequestStartedMillis,
       fromCache,
+      onDoubleClick,
       onContextMenu,
       onMouseDown,
-      onCauseBadgeMouseDown,
-      onSecurityIconMouseDown,
       onWaterfallMouseDown,
     } = this.props;
 
     const classList = ["request-list-item", index % 2 ? "odd" : "even"];
     isSelected && classList.push("selected");
     fromCache && classList.push("fromCache");
+    blocked && classList.push("blocked");
 
-    return (
-      dom.tr({
+    return dom.tr(
+      {
         ref: "listItem",
         className: classList.join(" "),
         "data-id": item.id,
         tabIndex: 0,
         onContextMenu,
         onMouseDown,
+        onDoubleClick,
       },
-        columns.status && RequestListColumnStatus({ item }),
-        columns.method && RequestListColumnMethod({ item }),
-        columns.domain && RequestListColumnDomain({
+      ...COLUMN_COMPONENTS.filter(({ column }) => columns[column]).map(
+        ({ column, ColumnComponent, props: columnProps }) =>
+          column &&
+          ColumnComponent({
             item,
-            onSecurityIconMouseDown,
-        }),
-        columns.file && RequestListColumnFile({ item }),
-        columns.protocol && RequestListColumnProtocol({ item }),
-        columns.scheme && RequestListColumnScheme({ item }),
-        columns.remoteip && RequestListColumnRemoteIP({ item }),
-        columns.cause && RequestListColumnCause({
-          item,
-          onCauseBadgeMouseDown,
-        }),
-        columns.type && RequestListColumnType({ item }),
-        columns.cookies && RequestListColumnCookies({ connector, item }),
-        columns.setCookies && RequestListColumnSetCookies({ connector, item }),
-        columns.transferred && RequestListColumnTransferredSize({ item }),
-        columns.contentSize && RequestListColumnContentSize({ item }),
-        columns.startTime && RequestListColumnTime({
+            ...(columnProps || []).reduce(
+              (acc, keyOrObject) => {
+                if (typeof keyOrObject == "string") {
+                  acc[keyOrObject] = this.props[keyOrObject];
+                } else {
+                  Object.assign(acc, keyOrObject);
+                }
+                return acc;
+              },
+              { item }
+            ),
+          })
+      ),
+      ...RESPONSE_HEADERS.filter(header => columns[header]).map(header =>
+        RequestListColumnResponseHeader({
           connector,
           item,
-          firstRequestStartedMillis,
-          type: "start",
-        }),
-        columns.endTime && RequestListColumnTime({
-          connector,
-          item,
-          firstRequestStartedMillis,
-          type: "end",
-        }),
-        columns.responseTime && RequestListColumnTime({
-          connector,
-          item,
-          firstRequestStartedMillis,
-          type: "response",
-        }),
-        columns.duration && RequestListColumnTime({
-          connector,
-          item,
-          firstRequestStartedMillis,
-          type: "duration",
-        }),
-        columns.latency && RequestListColumnTime({
-          connector,
-          item,
-          firstRequestStartedMillis,
-          type: "latency",
-        }),
-        ...RESPONSE_HEADERS.filter(header => columns[header]).map(
-          header => RequestListColumnResponseHeader({
-            connector,
-            item,
-            header,
-          }),
-        ),
-        columns.waterfall && RequestListColumnWaterfall({
+          header,
+        })
+      ),
+      columns.waterfall &&
+        RequestListColumnWaterfall({
           connector,
           firstRequestStartedMillis,
           item,
           onWaterfallMouseDown,
-        }),
-      )
+        })
     );
   }
 }

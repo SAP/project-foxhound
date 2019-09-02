@@ -4,11 +4,10 @@
 
 <!-- Privacy panel -->
 
-<script type="application/javascript"
-        src="chrome://browser/content/preferences/in-content/privacy.js"/>
+<script src="chrome://browser/content/preferences/in-content/privacy.js"/>
 <stringbundle id="bundlePreferences" src="chrome://browser/locale/preferences/preferences.properties"/>
 <stringbundle id="signonBundle" src="chrome://passwordmgr/locale/passwordmgr.properties"/>
-<box id="template-panePrivacy" hidden="true"><![CDATA[
+<html:template id="template-panePrivacy">
 <hbox id="browserPrivacyCategory"
       class="subcategory"
       hidden="true"
@@ -24,7 +23,7 @@
       <image id="trackingProtectionShield"/>
       <vbox flex="1">
         <description class="description-with-side-element">
-          <html:span id="contentBlockingDescription" class="tail-with-learn-more" data-l10n-id="content-blocking-description"></html:span>
+          <html:span id="contentBlockingDescription" class="tail-with-learn-more" data-l10n-id="content-blocking-section-description"></html:span>
           <label id="contentBlockingLearnMore" class="learnMore" data-l10n-id="content-blocking-learn-more" is="text-link"/>
         </description>
       </vbox>
@@ -32,6 +31,7 @@
         <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
         <hbox>
           <button id="trackingProtectionExceptions"
+                  is="highlightable-button"
                   class="accessory-button"
                   flex="1"
                   data-l10n-id="tracking-manage-exceptions"
@@ -58,6 +58,7 @@
                      data-l10n-id="content-blocking-setting-standard"
                      flex="1"/>
               <button id="standardArrow"
+                      is="highlightable-button"
                       class="arrowhead default-content-blocking-ui"
                       data-l10n-id="content-blocking-expand-section"
                       aria-expanded="false"/>
@@ -66,43 +67,39 @@
               <description data-l10n-id="content-blocking-standard-desc"></description>
               <vbox class="content-blocking-extra-information">
                 <vbox class="indent">
-                  <hbox class="extra-information-label">
+                  <hbox class="extra-information-label pb-trackers-option" hidden="true">
                     <image class="content-blocking-trackers-image"/>
                     <label data-l10n-id="content-blocking-private-trackers"/>
                   </hbox>
-                  <hbox class="extra-information-label">
+                  <hbox class="extra-information-label trackers-option" hidden="true">
+                    <image class="content-blocking-trackers-image"/>
+                    <label data-l10n-id="content-blocking-all-windows-trackers"/>
+                  </hbox>
+                  <hbox class="extra-information-label all-third-party-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-all-third-party-cookies"/>
+                  </hbox>
+                  <hbox class="extra-information-label all-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-all-cookies"/>
+                  </hbox>
+                  <hbox class="extra-information-label unvisited-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-unvisited-cookies"/>
+                  </hbox>
+                  <hbox class="extra-information-label third-party-tracking-cookies-option" hidden="true">
                     <image class="content-blocking-cookies-image"/>
                     <label data-l10n-id="content-blocking-third-party-cookies"/>
                   </hbox>
-                </vbox>
-                <vbox class="content-blocking-warning reload-tabs" hidden="true">
-                  <hbox class="indent">
-                    <vbox>
-                      <spacer flex="1"/>
-                      <hbox>
-                        <vbox>
-                          <image class="content-blocking-info-image"/>
-                          <spacer flex="1"/>
-                        </vbox>
-                        <description>
-                          <html:span data-l10n-id="content-blocking-reload-description"></html:span>
-                        </description>
-                      </hbox>
-                      <spacer flex="1"/>
-                    </vbox>
-                    <vbox>
-                      <spacer flex="1"/>
-                      <button class="accessory-button reload-tabs-button"
-                              data-l10n-id="content-blocking-reload-tabs-button"/>
-                      <spacer flex="1"/>
-                    </vbox>
+                  <hbox class="extra-information-label cryptominers-option" hidden="true">
+                    <image class="content-blocking-cryptominers-image"/>
+                    <label data-l10n-id="content-blocking-cryptominers"/>
+                  </hbox>
+                  <hbox class="extra-information-label fingerprinters-option" hidden="true">
+                    <image class="content-blocking-fingerprinters-image"/>
+                    <label data-l10n-id="content-blocking-fingerprinters"/>
                   </hbox>
                 </vbox>
-              </vbox>
-            </vbox>
-            <vbox class="indent fallback-content-blocking-ui">
-              <description data-l10n-id="content-blocking-standard-description"/>
-              <vbox class="content-blocking-extra-information">
                 <vbox class="content-blocking-warning reload-tabs" hidden="true">
                   <hbox class="indent">
                     <vbox>
@@ -121,6 +118,7 @@
                     <vbox>
                       <spacer flex="1"/>
                       <button class="accessory-button reload-tabs-button"
+                              is="highlightable-button"
                               data-l10n-id="content-blocking-reload-tabs-button"/>
                       <spacer flex="1"/>
                     </vbox>
@@ -136,21 +134,46 @@
                      data-l10n-id="content-blocking-setting-strict"
                      flex="1"/>
               <button id="strictArrow"
+                      is="highlightable-button"
                       class="arrowhead"
                       data-l10n-id="content-blocking-expand-section"
                       aria-expanded="false"/>
             </hbox>
             <vbox class="indent">
-              <label data-l10n-id="content-blocking-strict-desc"></label>
+              <label data-l10n-id="content-blocking-strict-description"></label>
               <vbox class="content-blocking-extra-information">
                 <vbox class="indent">
-                  <hbox class="extra-information-label">
+                  <hbox class="extra-information-label pb-trackers-option" hidden="true">
+                    <image class="content-blocking-trackers-image"/>
+                    <label data-l10n-id="content-blocking-private-trackers"/>
+                  </hbox>
+                  <hbox class="extra-information-label trackers-option" hidden="true">
                     <image class="content-blocking-trackers-image"/>
                     <label data-l10n-id="content-blocking-all-windows-trackers"/>
                   </hbox>
-                  <hbox class="extra-information-label">
+                  <hbox class="extra-information-label all-third-party-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-all-third-party-cookies"/>
+                  </hbox>
+                  <hbox class="extra-information-label all-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-all-cookies"/>
+                  </hbox>
+                  <hbox class="extra-information-label unvisited-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-unvisited-cookies"/>
+                  </hbox>
+                  <hbox class="extra-information-label third-party-tracking-cookies-option" hidden="true">
                     <image class="content-blocking-cookies-image"/>
                     <label data-l10n-id="content-blocking-third-party-cookies"/>
+                  </hbox>
+                  <hbox class="extra-information-label cryptominers-option" hidden="true">
+                    <image class="content-blocking-cryptominers-image"/>
+                    <label data-l10n-id="content-blocking-cryptominers"/>
+                  </hbox>
+                  <hbox class="extra-information-label fingerprinters-option" hidden="true">
+                    <image class="content-blocking-fingerprinters-image"/>
+                    <label data-l10n-id="content-blocking-fingerprinters"/>
                   </hbox>
                 </vbox>
                 <vbox class="content-blocking-warning reload-tabs" hidden="true">
@@ -171,6 +194,7 @@
                     <vbox>
                       <spacer flex="1"/>
                       <button class="accessory-button reload-tabs-button"
+                              is="highlightable-button"
                               data-l10n-id="content-blocking-reload-tabs-button"/>
                       <spacer flex="1"/>
                     </vbox>
@@ -198,6 +222,7 @@
                    data-l10n-id="content-blocking-setting-custom"
                    flex="1"/>
             <button id="customArrow"
+                    is="highlightable-button"
                     class="arrowhead"
                     data-l10n-id="content-blocking-expand-section"
                     aria-expanded="false"/>
@@ -209,6 +234,7 @@
                     align="center" hidden="true" class="extension-controlled">
                 <description control="contentBlockingDisableTrackingProtectionExtension" flex="1"/>
                 <button id="contentBlockingDisableTrackingProtectionExtension"
+                        is="highlightable-button"
                         class="extension-controlled-button accessory-button"
                         data-l10n-id="disable-extension" hidden="true"/>
               </hbox>
@@ -287,6 +313,7 @@
                   <vbox>
                     <spacer flex="1"/>
                     <button class="accessory-button reload-tabs-button"
+                            is="highlightable-button"
                             data-l10n-id="content-blocking-reload-tabs-button"/>
                     <spacer flex="1"/>
                   </vbox>
@@ -349,6 +376,7 @@
       <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
       <hbox>
         <button id="clearSiteDataButton"
+            is="highlightable-button"
             class="accessory-button"
             icon="clear"
             search-l10n-ids="clear-site-data-cookies-empty.label, clear-site-data-cache-empty.label"
@@ -356,6 +384,7 @@
       </hbox>
       <hbox>
         <button id="siteDataSettings"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="sitedata-settings"
                 search-l10n-ids="
@@ -369,6 +398,7 @@
       </hbox>
       <hbox>
         <button id="cookieExceptions"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="sitedata-cookies-permissions"
                 preference="pref.privacy.disable_button.cookie_exceptions"
@@ -388,38 +418,51 @@
 </groupbox>
 
 <!-- Passwords -->
-<groupbox id="passwordsGroup" orient="vertical" data-category="panePrivacy" hidden="true">
+<groupbox id="passwordsGroup" orient="vertical" data-category="panePrivacy" data-subcategory="logins" hidden="true">
   <label><html:h2 data-l10n-id="logins-header"/></label>
 
   <vbox id="passwordSettings">
-    <hbox id="savePasswordsBox">
-      <checkbox id="savePasswords"
-                data-l10n-id="forms-ask-to-save-logins"
-                preference="signon.rememberSignons"
-                onsyncfrompreference="return gPrivacyPane.readSavePasswords();"
-                flex="1" />
-      <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
-      <hbox>
-        <button id="passwordExceptions"
-                class="accessory-button"
-                data-l10n-id="forms-exceptions"
-                preference="pref.privacy.disable_button.view_passwords_exceptions"
-                search-l10n-ids="
-                  permissions-address,
-                  permissions-exceptions-saved-logins-window.title,
-                  permissions-exceptions-saved-logins-desc,
-                "/>
-      </hbox>
-    </hbox>
-    <hbox id="showPasswordBox" pack="end">
-      <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
-      <hbox>
-        <button id="showPasswords"
-                class="accessory-button"
-                data-l10n-id="forms-saved-logins"
-                search-l10n-ids="forms-saved-logins.label"
-                preference="pref.privacy.disable_button.view_passwords"/>
-      </hbox>
+    <hbox>
+      <vbox flex="1">
+        <hbox>
+          <checkbox id="savePasswords"
+                    data-l10n-id="forms-ask-to-save-logins"
+                    preference="signon.rememberSignons"
+                    onsyncfrompreference="return gPrivacyPane.readSavePasswords();"
+                    flex="1" />
+        </hbox>
+        <hbox class="indent" id="generatePasswordsBox" flex="1">
+          <checkbox id="generatePasswords"
+                    data-l10n-id="forms-generate-passwords"
+                    search-l10n-ids="forms-generate-passwords.label"
+                    preference="signon.generation.enabled"
+                    flex="1" />
+        </hbox>
+      </vbox>
+      <vbox>
+        <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
+        <hbox>
+          <button id="passwordExceptions"
+                  is="highlightable-button"
+                  class="accessory-button"
+                  data-l10n-id="forms-exceptions"
+                  preference="pref.privacy.disable_button.view_passwords_exceptions"
+                  search-l10n-ids="
+                    permissions-address,
+                    permissions-exceptions-saved-logins-window.title,
+                    permissions-exceptions-saved-logins-desc,
+                  "/>
+        </hbox>
+        <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
+        <hbox pack="end">
+          <button id="showPasswords"
+                  is="highlightable-button"
+                  class="accessory-button"
+                  data-l10n-id="forms-saved-logins"
+                  search-l10n-ids="forms-saved-logins.label"
+                  preference="pref.privacy.disable_button.view_passwords"/>
+        </hbox>
+      </vbox>
     </hbox>
   </vbox>
   <hbox id="masterPasswordRow">
@@ -429,6 +472,7 @@
     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
     <hbox>
       <button id="changeMasterPassword"
+              is="highlightable-button"
               class="accessory-button"
               data-l10n-id="forms-master-pw-change"/>
     </hbox>
@@ -518,12 +562,14 @@
     </deck>
     <vbox id="historyButtons" align="end">
       <button id="clearHistoryButton"
+              is="highlightable-button"
               class="accessory-button"
               icon="clear"
               data-l10n-id="history-clear-button"/>
       <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
       <hbox>
         <button id="clearDataSettings"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="history-clear-on-close-settings"
                 search-l10n-ids="
@@ -580,6 +626,7 @@
       </description>
       <hbox pack="end">
         <button id="locationSettingsButton"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="permissions-location-settings"
                 search-l10n-ids="
@@ -603,6 +650,7 @@
       </description>
       <hbox pack="end">
         <button id="cameraSettingsButton"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="permissions-camera-settings"
                 search-l10n-ids="
@@ -626,6 +674,7 @@
       </description>
       <hbox pack="end">
         <button id="microphoneSettingsButton"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="permissions-microphone-settings"
                 search-l10n-ids="
@@ -655,6 +704,7 @@
       </description>
       <hbox pack="end">
         <button id="notificationSettingsButton"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="permissions-notification-settings"
                 search-l10n-ids="
@@ -669,31 +719,36 @@
                 " />
       </hbox>
     </hbox>
-  </vbox>
 
-  <vbox id="notificationsDoNotDisturbBox" hidden="true">
-    <checkbox id="notificationsDoNotDisturb" class="indent"/>
+    <vbox id="notificationsDoNotDisturbBox" hidden="true">
+      <checkbox id="notificationsDoNotDisturb" class="indent"/>
+    </vbox>
+
+    <hbox id="autoplaySettingsRow" align="center" role="group" aria-labelledby="autoplayPermissionsLabel">
+      <description flex="1">
+        <image class="autoplay-icon permission-icon" />
+        <separator orient="vertical" class="thin"/>
+        <label id="autoplayPermissionsLabel"
+               data-l10n-id="permissions-autoplay"/>
+      </description>
+      <hbox pack="end">
+        <button id="autoplaySettingsButton"
+                is="highlightable-button"
+                class="accessory-button"
+                data-l10n-id="permissions-autoplay-settings"
+                search-l10n-ids="
+                  permissions-remove.label,
+                  permissions-remove-all.label,
+                  permissions-button-cancel.label,
+                  permissions-button-ok.label,
+                  permissions-site-autoplay-window.title,
+                  permissions-site-autoplay-desc,
+                " />
+      </hbox>
+    </hbox>
   </vbox>
 
   <separator flex="1"/>
-
-  <hbox align="start" id="autoplayMediaCheckboxWrapper">
-    <checkbox id="autoplayMediaCheckbox"
-              data-l10n-id="permissions-block-autoplay-media2"
-              flex="1" />
-    <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
-    <hbox>
-      <button id="autoplayMediaPolicyButton"
-              class="accessory-button"
-              data-l10n-id="permissions-block-autoplay-media-exceptions"
-              search-l10n-ids="permissions-address,
-                               permissions-button-cancel.label,
-                               permissions-button-ok.label,
-                               permissions-exceptions-autoplay-media-window2.title,
-                               permissions-exceptions-autoplay-media-desc2
-                               " />
-    </hbox>
-  </hbox>
 
   <hbox data-subcategory="permissions-block-popups">
     <checkbox id="popupPolicy" preference="dom.disable_open_during_load"
@@ -704,6 +759,7 @@
     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
     <hbox>
       <button id="popupPolicyButton"
+              is="highlightable-button"
               class="accessory-button"
               data-l10n-id="permissions-block-popups-exceptions"
               search-l10n-ids="
@@ -725,6 +781,7 @@
     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
     <hbox>
       <button id="addonExceptions"
+              is="highlightable-button"
               class="accessory-button"
               data-l10n-id="permissions-addon-exceptions"
               search-l10n-ids="
@@ -876,6 +933,7 @@
       <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
       <hbox pack="end">
         <button id="viewCertificatesButton"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="certs-view"
                 preference="security.disable_button.openCertManager"
@@ -898,6 +956,7 @@
       <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
       <hbox pack="end">
         <button id="viewSecurityDevicesButton"
+                is="highlightable-button"
                 class="accessory-button"
                 data-l10n-id="certs-devices"
                 preference="security.disable_button.openDeviceManager"
@@ -916,4 +975,4 @@
     </vbox>
   </hbox>
 </groupbox>
-]]></box>
+</html:template>

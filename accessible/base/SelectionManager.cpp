@@ -15,8 +15,8 @@
 #include "nsFrameSelection.h"
 
 #include "nsIAccessibleTypes.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
-#include "nsIPresShell.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Element.h"
 
@@ -79,7 +79,7 @@ void SelectionManager::SetControlSelectionListener(dom::Element* aFocusedElm) {
   mCurrCtrlSpellSel = spellSel;
 }
 
-void SelectionManager::AddDocSelectionListener(nsIPresShell* aPresShell) {
+void SelectionManager::AddDocSelectionListener(PresShell* aPresShell) {
   const nsFrameSelection* frameSel = aPresShell->ConstFrameSelection();
 
   // Register 'this' as selection listener for the normal selection.
@@ -91,7 +91,7 @@ void SelectionManager::AddDocSelectionListener(nsIPresShell* aPresShell) {
   spellSel->AddSelectionListener(this);
 }
 
-void SelectionManager::RemoveDocSelectionListener(nsIPresShell* aPresShell) {
+void SelectionManager::RemoveDocSelectionListener(PresShell* aPresShell) {
   const nsFrameSelection* frameSel = aPresShell->ConstFrameSelection();
 
   // Remove 'this' registered as selection listener for the normal selection.

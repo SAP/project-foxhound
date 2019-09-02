@@ -1,4 +1,7 @@
-AntiTracking.runTest("IndexedDB in workers",
+/* import-globals-from antitracking_head.js */
+
+AntiTracking.runTest(
+  "IndexedDB in workers",
   async _ => {
     function blockCode() {
       try {
@@ -63,11 +66,15 @@ AntiTracking.runTest("IndexedDB in workers",
   },
   async _ => {
     await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
     });
-  });
+  }
+);
 
-AntiTracking.runTest("IndexedDB in workers and Storage Access API",
+AntiTracking.runTest(
+  "IndexedDB in workers and Storage Access API",
   async _ => {
     function blockCode() {
       try {
@@ -111,7 +118,11 @@ AntiTracking.runTest("IndexedDB in workers and Storage Access API",
     /* import-globals-from storageAccessAPIHelpers.js */
     await callRequestStorageAccess();
 
-    if (SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior") == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT) {
+    if (
+      SpecialPowers.Services.prefs.getIntPref(
+        "network.cookie.cookieBehavior"
+      ) == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT
+    ) {
       blob = new Blob([blockCode.toString() + "; blockCode();"]);
     } else {
       blob = new Blob([nonBlockCode.toString() + "; nonBlockCode();"]);
@@ -198,7 +209,12 @@ AntiTracking.runTest("IndexedDB in workers and Storage Access API",
   },
   async _ => {
     await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
     });
   },
-  null, false, false);
+  null,
+  false,
+  false
+);

@@ -75,6 +75,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "js/Debug.h"
 #include "js/GCAPI.h"
+#include "js/Warnings.h"  // JS::SetWarningReporter
 #include "jsfriendapi.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
@@ -1205,7 +1206,10 @@ void CycleCollectedJSRuntime::DeferredFinalize(nsISupports* aSupports) {
 
 void CycleCollectedJSRuntime::DumpJSHeap(FILE* aFile) {
   JSContext* cx = CycleCollectedJSContext::Get()->Context();
-  js::DumpHeap(cx, aFile, js::CollectNurseryBeforeDump);
+
+  mozilla::MallocSizeOf mallocSizeOf =
+      PR_GetEnv("MOZ_GC_LOG_SIZE") ? moz_malloc_size_of : nullptr;
+  js::DumpHeap(cx, aFile, js::CollectNurseryBeforeDump, mallocSizeOf);
 }
 
 IncrementalFinalizeRunnable::IncrementalFinalizeRunnable(
@@ -1450,7 +1454,7 @@ void CycleCollectedJSRuntime::EnvironmentPreparer::invoke(
   nsIGlobalObject* nativeGlobal = xpc::NativeGlobal(global);
 
   // Not much we can do if we simply don't have a usable global here...
-  NS_ENSURE_TRUE_VOID(nativeGlobal && nativeGlobal->GetGlobalJSObject());
+  NS_ENSURE_TRUE_VOID(nativeGlobal && nativeGlobal->HasJSGlobal());
 
   AutoEntryScript aes(nativeGlobal, "JS-engine-initiated execution");
 

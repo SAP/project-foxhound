@@ -12,7 +12,7 @@
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/PNeckoParent.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "nsISocketTransportService.h"
 #include "nsISocketTransport.h"
@@ -43,8 +43,9 @@ using namespace net;
 
 namespace dom {
 
-static void FireInteralError(mozilla::net::PTCPSocketParent* aActor,
-                             uint32_t aLineNo) {
+static void FireInteralError(TCPSocketParent* aActor, uint32_t aLineNo) {
+  MOZ_ASSERT(aActor->IPCOpen());
+
   mozilla::Unused << aActor->SendCallback(
       NS_LITERAL_STRING("onerror"),
       TCPError(NS_LITERAL_STRING("InvalidStateError"),
@@ -109,13 +110,12 @@ mozilla::ipc::IPCResult TCPSocketParent::RecvOpenBind(
 
   nsCOMPtr<nsISocketTransport> socketTransport;
   if (aUseSSL) {
-    const char* socketTypes[1];
-    socketTypes[0] = "ssl";
-    rv = sts->CreateTransport(socketTypes, 1, aRemoteHost, aRemotePort, nullptr,
+    AutoTArray<nsCString, 1> socketTypes = {NS_LITERAL_CSTRING("ssl")};
+    rv = sts->CreateTransport(socketTypes, aRemoteHost, aRemotePort, nullptr,
                               getter_AddRefs(socketTransport));
   } else {
-    rv = sts->CreateTransport(nullptr, 0, aRemoteHost, aRemotePort, nullptr,
-                              getter_AddRefs(socketTransport));
+    rv = sts->CreateTransport(nsTArray<nsCString>(), aRemoteHost, aRemotePort,
+                              nullptr, getter_AddRefs(socketTransport));
   }
 
   if (NS_FAILED(rv)) {

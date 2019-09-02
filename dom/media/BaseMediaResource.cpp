@@ -1,3 +1,9 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "BaseMediaResource.h"
 
 #include "ChannelMediaResource.h"
@@ -114,7 +120,7 @@ void BaseMediaResource::SetLoadInBackground(bool aLoadInBackground) {
     NS_WARNING("Null owner in MediaResource::SetLoadInBackground()");
     return;
   }
-  dom::HTMLMediaElement* element = owner->GetMediaElement();
+  RefPtr<dom::HTMLMediaElement> element = owner->GetMediaElement();
   if (!element) {
     NS_WARNING("Null element in MediaResource::SetLoadInBackground()");
     return;

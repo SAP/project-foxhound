@@ -6,10 +6,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1107592
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1107592</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
-
+  /* global TestInterfaceJS, thereIsNoSuchContentFunction1, thereIsNoSuchContentFunction2, thereIsNoSuchContentFunction3 */
   /** Test for Bug 1107592 **/
 
   SimpleTest.waitForExplicitFinish();
@@ -37,12 +37,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1107592
 
   function doTest() {
     var t = new TestInterfaceJS();
-    /* Async parent frames from pushPrefEnv don't show up in e10s.  */
-    var isE10S = !SpecialPowers.isMainProcess();
+
+
     var asyncStack = SpecialPowers.getBoolPref("javascript.options.asyncstack");
     var ourFile = location.href;
     var unwrapError = "Promise rejection value is a non-unwrappable cross-compartment wrapper.";
-    var parentFrame = (asyncStack && !isE10S) ? `Async*@${ourFile}:130:17
+    var parentFrame = asyncStack ? `Async*@${ourFile}:130:17
 ` : "";
 
     Promise.all([
@@ -87,13 +87,13 @@ doTest@${ourFile}:56:9
 ` +
                         parentFrame) : "")),
       t.testPromiseWithThrowingContentThenable({
-            then: function() { thereIsNoSuchContentFunction3(); }
+            then() { thereIsNoSuchContentFunction3(); },
         }).then(
           ensurePromiseFail.bind(null, 6),
           checkExn.bind(null, 90, "ReferenceError",
                         "thereIsNoSuchContentFunction3 is not defined",
                         undefined, ourFile, 6,
-                        `then@${ourFile}:90:32
+                        `then@${ourFile}:90:22
 ` + (asyncStack ? `Async*doTest@${ourFile}:89:9\n` + parentFrame : ""))),
       t.testPromiseWithDOMExceptionThrowingPromiseInit().then(
           ensurePromiseFail.bind(null, 7),
@@ -122,12 +122,12 @@ doTest@${ourFile}:56:9
                          parentFrame : ""))),
     ]).then(SimpleTest.finish,
             function(err) {
-              ok(false, "One of our catch statements totally failed with err" + err + ', stack: ' + (err ? err.stack : ''));
+              ok(false, "One of our catch statements totally failed with err" + err + ", stack: " + (err ? err.stack : ""));
               SimpleTest.finish();
             });
   }
 
-  SpecialPowers.pushPrefEnv({set: [['dom.expose_test_interfaces', true]]},
+  SpecialPowers.pushPrefEnv({set: [["dom.expose_test_interfaces", true]]},
                             doTest);
   </script>
 </head>

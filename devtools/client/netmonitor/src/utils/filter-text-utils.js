@@ -30,7 +30,7 @@
 
 "use strict";
 
-const { FILTER_FLAGS } = require("../constants");
+const { FILTER_FLAGS, SUPPORTED_HTTP_CODES } = require("../constants");
 const { getFormattedIPAndPort } = require("./format-utils");
 const { getUnicodeUrl } = require("devtools/client/shared/unicode-url");
 
@@ -53,6 +53,23 @@ function parseFilters(query) {
     }
     const colonIndex = part.indexOf(":");
     if (colonIndex === -1) {
+      const isNegative = part.startsWith("-");
+      // Stores list of HTTP codes that starts with value of lastToken
+      const filteredStatusCodes = SUPPORTED_HTTP_CODES.filter(item => {
+        item = isNegative ? item.substr(1) : item;
+        return item.toLowerCase().startsWith(part.toLowerCase());
+      });
+
+      if (filteredStatusCodes.length > 0) {
+        flags.push({
+          type: "status-code", // a standard key before a colon
+          value: isNegative ? part.substring(1) : part,
+          isNegative,
+        });
+        continue;
+      }
+
+      // Value of lastToken is just text that does not correspond to status codes
       text.push(part);
       continue;
     }
@@ -103,6 +120,7 @@ function processFlagFilter(type, value) {
   }
 }
 
+/* eslint-disable complexity */
 function isFlagFilterMatch(item, { type, value, negative }) {
   if (value == null) {
     return false;
@@ -118,15 +136,17 @@ function isFlagFilterMatch(item, { type, value, negative }) {
   responseCookies = responseCookies.cookies || responseCookies;
   switch (type) {
     case "status-code":
-      match = item.status === value;
+      match = item.status && item.status.toString() === value;
       break;
     case "method":
       match = item.method.toLowerCase() === value;
       break;
     case "protocol":
       const protocol = item.httpVersion;
-      match = typeof protocol === "string" ?
-                protocol.toLowerCase().includes(value) : false;
+      match =
+        typeof protocol === "string"
+          ? protocol.toLowerCase().includes(value)
+          : false;
       break;
     case "domain":
       match = item.urlDetails.host.toLowerCase().includes(value);
@@ -145,8 +165,10 @@ function isFlagFilterMatch(item, { type, value, negative }) {
       break;
     case "cause":
       const causeType = item.cause.type;
-      match = typeof causeType === "string" ?
-                causeType.toLowerCase().includes(value) : false;
+      match =
+        typeof causeType === "string"
+          ? causeType.toLowerCase().includes(value)
+          : false;
       break;
     case "transferred":
       if (item.fromCache) {
@@ -172,8 +194,7 @@ function isFlagFilterMatch(item, { type, value, negative }) {
       match = item.mimeType.includes(value);
       break;
     case "is":
-      if (value === "from-cache" ||
-          value === "cached") {
+      if (value === "from-cache" || value === "cached") {
         match = item.fromCache || item.status === "304";
       } else if (value === "running") {
         match = !item.status;
@@ -203,12 +224,14 @@ function isFlagFilterMatch(item, { type, value, negative }) {
       }
       break;
     case "set-cookie-name":
-      match = responseCookies.findIndex(c =>
-        c.name.toLowerCase().includes(value)) > -1;
+      match =
+        responseCookies.findIndex(c => c.name.toLowerCase().includes(value)) >
+        -1;
       break;
     case "set-cookie-value":
-      match = responseCookies.findIndex(c =>
-        c.value.toLowerCase().includes(value)) > -1;
+      match =
+        responseCookies.findIndex(c => c.value.toLowerCase().includes(value)) >
+        -1;
       break;
   }
   if (negative) {
@@ -216,9 +239,10 @@ function isFlagFilterMatch(item, { type, value, negative }) {
   }
   return match;
 }
+/* eslint-enable complexity */
 
 function isSizeMatch(value, size) {
-  return value >= (size - size / 10) && value <= (size + size / 10);
+  return value >= size - size / 10 && value <= size + size / 10;
 }
 
 function isTextFilterMatch({ url }, text) {

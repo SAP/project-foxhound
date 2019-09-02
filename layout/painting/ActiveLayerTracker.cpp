@@ -192,7 +192,7 @@ void LayerActivityTracker::NotifyExpired(LayerActivity* aObject) {
     // The pres context might have been detached during the delay -
     // that's fine, just skip the paint.
     if (f->PresContext()->GetContainerWeak()) {
-      f->SchedulePaint();
+      f->SchedulePaint(nsIFrame::PAINT_DEFAULT, false);
     }
     f->RemoveStateBits(NS_FRAME_HAS_LAYER_ACTIVITY_PROPERTY);
     f->DeleteProperty(LayerActivityProperty());
@@ -264,8 +264,8 @@ void ActiveLayerTracker::TransferActivityToFrame(nsIContent* aContent,
 static void IncrementScaleRestyleCountIfNeeded(nsIFrame* aFrame,
                                                LayerActivity* aActivity) {
   const nsStyleDisplay* display = aFrame->StyleDisplay();
-  if (!display->mSpecifiedTransform && !display->HasIndividualTransform() &&
-      !(display->mMotion && display->mMotion->HasPath())) {
+  if (!display->HasTransformProperty() && !display->HasIndividualTransform() &&
+      display->mOffsetPath.IsNone()) {
     // The transform was removed.
     aActivity->mPreviousTransformScale = Nothing();
     IncrementMutationCount(
@@ -276,12 +276,9 @@ static void IncrementScaleRestyleCountIfNeeded(nsIFrame* aFrame,
   // Compute the new scale due to the CSS transform property.
   nsStyleTransformMatrix::TransformReferenceBox refBox(aFrame);
   Matrix4x4 transform = nsStyleTransformMatrix::ReadTransforms(
-      display->mIndividualTransform ? display->mIndividualTransform->mHead
-                                    : nullptr,
-      nsLayoutUtils::ResolveMotionPath(aFrame),
-      display->mSpecifiedTransform ? display->mSpecifiedTransform->mHead
-                                   : nullptr,
-      refBox, AppUnitsPerCSSPixel());
+      display->mTranslate, display->mRotate, display->mScale,
+      nsLayoutUtils::ResolveMotionPath(aFrame), display->mTransform, refBox,
+      AppUnitsPerCSSPixel());
   Matrix transform2D;
   if (!transform.Is2D(&transform2D)) {
     // We don't attempt to handle 3D transforms; just assume the scale changed.
@@ -449,9 +446,8 @@ bool ActiveLayerTracker::IsBackgroundPositionAnimated(
     }
   }
   return nsLayoutUtils::HasEffectiveAnimation(
-             aFrame, eCSSProperty_background_position_x) ||
-         nsLayoutUtils::HasEffectiveAnimation(
-             aFrame, eCSSProperty_background_position_y);
+      aFrame, nsCSSPropertyIDSet({eCSSProperty_background_position_x,
+                                  eCSSProperty_background_position_y}));
 }
 
 /* static */
@@ -476,17 +472,23 @@ bool ActiveLayerTracker::IsStyleAnimated(
           aPropertySet.IsSubsetOf(nsCSSPropertyIDSet::OpacityProperties()),
       "Only subset of opacity or transform-like properties set calls this");
 
+  // For display:table content, transforms are applied to the table wrapper
+  // (primary frame) but their will-change style will be specified on the style
+  // frame and, unlike other transform properties, not inherited.
+  // As a result, for transform properties only we need to be careful to look up
+  // the will-change style on the _style_ frame.
+  const nsIFrame* styleFrame = nsLayoutUtils::GetStyleFrame(aFrame);
   const nsCSSPropertyIDSet transformSet =
       nsCSSPropertyIDSet::TransformLikeProperties();
-  if ((aFrame->StyleDisplay()->mWillChangeBitField &
-       NS_STYLE_WILL_CHANGE_TRANSFORM) &&
+  if ((styleFrame && (styleFrame->StyleDisplay()->mWillChange.bits &
+                      StyleWillChangeBits_TRANSFORM)) &&
       aPropertySet.Intersects(transformSet) &&
       (!aBuilder ||
        aBuilder->IsInWillChangeBudget(aFrame, aFrame->GetSize()))) {
     return true;
   }
-  if ((aFrame->StyleDisplay()->mWillChangeBitField &
-       NS_STYLE_WILL_CHANGE_OPACITY) &&
+  if ((aFrame->StyleDisplay()->mWillChange.bits &
+       StyleWillChangeBits_OPACITY) &&
       aPropertySet.Intersects(nsCSSPropertyIDSet::OpacityProperties()) &&
       (!aBuilder ||
        aBuilder->IsInWillChangeBudget(aFrame, aFrame->GetSize()))) {
@@ -550,15 +552,7 @@ bool ActiveLayerTracker::IsScaleSubjectToAnimation(nsIFrame* aFrame) {
     return true;
   }
 
-  // Check if any animations, transitions, etc. associated with this frame may
-  // animate its scale.
-  EffectSet* effects = EffectSet::GetEffectSet(aFrame);
-  if (effects &&
-      AnimationUtils::EffectSetContainsAnimatedScale(*effects, aFrame)) {
-    return true;
-  }
-
-  return false;
+  return AnimationUtils::FrameHasAnimatedScale(aFrame);
 }
 
 /* static */

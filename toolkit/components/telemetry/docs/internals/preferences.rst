@@ -163,6 +163,11 @@ Preferences
   The maximum frequency at which an :doc:`../data/event-ping` will be sent.
   Default is 10 (minutes).
 
+``toolkit.telemetry.ecosystemtelemetry.enabled``
+
+  Whether :doc:`../data/ecosystem-telemetry` is enabled.
+  Default is false. Change requires restart.
+
 ``toolkit.telemetry.overrideUpdateChannel``
 
   Override the ``channel`` value that is reported via Telemetry.
@@ -173,6 +178,16 @@ Preferences
   How long, in milliseconds, we batch accumulations from child processes before
   sending them to the parent process.
   Default is 2000 (milliseconds).
+
+``toolkit.telemetry.prioping.enabled``
+
+  Whether the :doc:`../data/prio-ping` is enabled.
+  Defaults to true. Change requires restart.
+
+``toolkit.telemetry.prioping.dataLimit``
+
+  The number of encoded prio payloads which triggers an immediate :doc:`../data/prio-ping` with reason "max".
+  Default is 10 payloads.
 
 Data-choices notification
 -------------------------

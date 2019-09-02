@@ -11,7 +11,6 @@
 #include "PDMFactory.h"
 #include "VideoUtils.h"
 #include "WebMDemuxer.h"
-#include "gfxPrefs.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SharedThreadPool.h"
@@ -67,7 +66,7 @@ uint32_t VP9Benchmark::MediaBenchmarkVp9Fps() {
   if (!ShouldRun()) {
     return 0;
   }
-  return StaticPrefs::MediaBenchmarkVp9Fps();
+  return StaticPrefs::media_benchmark_vp9_fps();
 }
 
 // static
@@ -79,8 +78,8 @@ bool VP9Benchmark::IsVP9DecodeFast(bool aDefault) {
     return false;
   }
   static StaticMutex sMutex;
-  uint32_t decodeFps = StaticPrefs::MediaBenchmarkVp9Fps();
-  uint32_t hadRecentUpdate = StaticPrefs::MediaBenchmarkVp9Versioncheck();
+  uint32_t decodeFps = StaticPrefs::media_benchmark_vp9_fps();
+  uint32_t hadRecentUpdate = StaticPrefs::media_benchmark_vp9_versioncheck();
   bool needBenchmark;
   {
     StaticMutexAutoLock lock(sMutex);
@@ -94,10 +93,11 @@ bool VP9Benchmark::IsVP9DecodeFast(bool aDefault) {
         new BufferMediaResource(sWebMSample, sizeof(sWebMSample)));
     RefPtr<Benchmark> estimiser = new Benchmark(
         demuxer,
-        {StaticPrefs::MediaBenchmarkFrames(),  // frames to measure
+        {StaticPrefs::media_benchmark_frames(),  // frames to measure
          1,  // start benchmarking after decoding this frame.
          8,  // loop after decoding that many frames.
-         TimeDuration::FromMilliseconds(StaticPrefs::MediaBenchmarkTimeout())});
+         TimeDuration::FromMilliseconds(
+             StaticPrefs::media_benchmark_timeout())});
     estimiser->Run()->Then(
         AbstractThread::MainThread(), __func__,
         [](uint32_t aDecodeFps) {
@@ -122,7 +122,7 @@ bool VP9Benchmark::IsVP9DecodeFast(bool aDefault) {
     return aDefault;
   }
 
-  return decodeFps >= StaticPrefs::MediaBenchmarkVp9Threshold();
+  return decodeFps >= StaticPrefs::media_benchmark_vp9_threshold();
 #endif
 }
 
@@ -168,7 +168,6 @@ void Benchmark::Dispose() {
 void Benchmark::Init() {
   MOZ_ASSERT(NS_IsMainThread());
   gfxVars::Initialize();
-  gfxPrefs::GetSingleton();
 }
 
 BenchmarkPlayback::BenchmarkPlayback(Benchmark* aGlobalState,
@@ -219,7 +218,7 @@ void BenchmarkPlayback::DemuxNextSample() {
         mSamples.AppendElements(std::move(aHolder->mSamples));
         if (ref->mParameters.mStopAtFrame &&
             mSamples.Length() == ref->mParameters.mStopAtFrame.ref()) {
-          InitDecoder(std::move(*mTrackDemuxer->GetInfo()));
+          InitDecoder(mTrackDemuxer->GetInfo());
         } else {
           Dispatch(
               NS_NewRunnableFunction("BenchmarkPlayback::DemuxNextSample",
@@ -229,7 +228,7 @@ void BenchmarkPlayback::DemuxNextSample() {
       [this, ref](const MediaResult& aError) {
         switch (aError.Code()) {
           case NS_ERROR_DOM_MEDIA_END_OF_STREAM:
-            InitDecoder(std::move(*mTrackDemuxer->GetInfo()));
+            InitDecoder(mTrackDemuxer->GetInfo());
             break;
           default:
             Error(aError);
@@ -238,11 +237,12 @@ void BenchmarkPlayback::DemuxNextSample() {
       });
 }
 
-void BenchmarkPlayback::InitDecoder(TrackInfo&& aInfo) {
+void BenchmarkPlayback::InitDecoder(UniquePtr<TrackInfo>&& aInfo) {
   MOZ_ASSERT(OnThread());
 
   RefPtr<PDMFactory> platform = new PDMFactory();
-  mDecoder = platform->CreateDecoder({aInfo, mDecoderTaskQueue});
+  mInfo = std::move(aInfo);
+  mDecoder = platform->CreateDecoder({*mInfo, mDecoderTaskQueue});
   if (!mDecoder) {
     Error(MediaResult(NS_ERROR_FAILURE, "Failed to create decoder"));
     return;
@@ -282,15 +282,16 @@ void BenchmarkPlayback::GlobalShutdown() {
 
   if (mDecoder) {
     RefPtr<Benchmark> ref(mGlobalState);
-    mDecoder->Flush()->Then(Thread(), __func__,
-                            [ref, this]() {
-                              mDecoder->Shutdown()->Then(
-                                  Thread(), __func__,
-                                  [ref, this]() { FinalizeShutdown(); },
-                                  []() { MOZ_CRASH("not reached"); });
-                              mDecoder = nullptr;
-                            },
-                            []() { MOZ_CRASH("not reached"); });
+    mDecoder->Flush()->Then(
+        Thread(), __func__,
+        [ref, this]() {
+          mDecoder->Shutdown()->Then(
+              Thread(), __func__, [ref, this]() { FinalizeShutdown(); },
+              []() { MOZ_CRASH("not reached"); });
+          mDecoder = nullptr;
+          mInfo = nullptr;
+        },
+        []() { MOZ_CRASH("not reached"); });
   } else {
     FinalizeShutdown();
   }
@@ -345,34 +346,36 @@ void BenchmarkPlayback::InputExhausted() {
   mSampleIndex++;
   if (mSampleIndex == mSamples.Length() && !ref->mParameters.mStopAtFrame) {
     // Complete current frame decode then drain if still necessary.
-    p->Then(Thread(), __func__,
-            [ref, this](MediaDataDecoder::DecodedData&& aResults) {
-              Output(std::move(aResults));
-              if (!mFinished) {
-                mDecoder->Drain()->Then(
-                    Thread(), __func__,
-                    [ref, this](MediaDataDecoder::DecodedData&& aResults) {
-                      mDrained = true;
-                      Output(std::move(aResults));
-                      MOZ_ASSERT(mFinished, "We must be done now");
-                    },
-                    [ref, this](const MediaResult& aError) { Error(aError); });
-              }
-            },
-            [ref, this](const MediaResult& aError) { Error(aError); });
+    p->Then(
+        Thread(), __func__,
+        [ref, this](MediaDataDecoder::DecodedData&& aResults) {
+          Output(std::move(aResults));
+          if (!mFinished) {
+            mDecoder->Drain()->Then(
+                Thread(), __func__,
+                [ref, this](MediaDataDecoder::DecodedData&& aResults) {
+                  mDrained = true;
+                  Output(std::move(aResults));
+                  MOZ_ASSERT(mFinished, "We must be done now");
+                },
+                [ref, this](const MediaResult& aError) { Error(aError); });
+          }
+        },
+        [ref, this](const MediaResult& aError) { Error(aError); });
   } else {
     if (mSampleIndex == mSamples.Length() && ref->mParameters.mStopAtFrame) {
       mSampleIndex = 0;
     }
     // Continue decoding
-    p->Then(Thread(), __func__,
-            [ref, this](MediaDataDecoder::DecodedData&& aResults) {
-              Output(std::move(aResults));
-              if (!mFinished) {
-                InputExhausted();
-              }
-            },
-            [ref, this](const MediaResult& aError) { Error(aError); });
+    p->Then(
+        Thread(), __func__,
+        [ref, this](MediaDataDecoder::DecodedData&& aResults) {
+          Output(std::move(aResults));
+          if (!mFinished) {
+            InputExhausted();
+          }
+        },
+        [ref, this](const MediaResult& aError) { Error(aError); });
   }
 }
 

@@ -9,9 +9,10 @@
 #ifndef __sslt_h_
 #define __sslt_h_
 
+#include "certt.h"
+#include "keyhi.h"
 #include "prtypes.h"
 #include "secitem.h"
-#include "certt.h"
 
 typedef enum {
     ssl_hs_hello_request = 0,
@@ -267,6 +268,26 @@ typedef struct SSLExtraServerCertDataStr {
     /* A serialized sign_certificate_timestamp extension, used to answer
      * requests from clients for this data. */
     const SECItem* signedCertTimestamps;
+
+    /* Delegated credentials.
+     *
+     * A serialized delegated credential (DC) to use for authentication to peers
+     * who indicate support for this extension (ietf-drafts-tls-subcerts). DCs
+     * are used opportunistically if (1) the client indicates support, (2) TLS
+     * 1.3 or higher is negotiated, and (3) the selected certificate is
+     * configured with a DC.
+     *
+     * Note that it's the caller's responsibility to ensure that the DC is
+     * well-formed.
+     */
+    const SECItem* delegCred;
+
+    /* The secret key corresponding to the |delegCred|.
+     *
+     * Note that it's the caller's responsibility to ensure that this matches
+     * the DC public key.
+     */
+    const SECKEYPrivateKey* delegCredPrivKey;
 } SSLExtraServerCertData;
 
 typedef struct SSLChannelInfoStr {
@@ -326,6 +347,11 @@ typedef struct SSLChannelInfoStr {
      * otherwise. */
     PRBool resumed;
 
+    /* Indicates whether the peer used a delegated credential (DC) for
+     * authentication.
+     */
+    PRBool peerDelegCred;
+
     /* When adding new fields to this structure, please document the
      * NSS version in which they were added. */
 } SSLChannelInfo;
@@ -367,7 +393,7 @@ typedef struct SSLPreliminaryChannelInfoStr {
      * resume this session. */
     PRUint32 maxEarlyDataSize;
 
-    /* The following fields were added in NSS 3.39. */
+    /* The following fields were added in NSS 3.43. */
     /* This reports the cipher suite used for 0-RTT if it sent or accepted.  For
      * a client, this is set earlier than |cipherSuite|, and will match that
      * value if 0-RTT is accepted by the server.  The server only sets this
@@ -422,7 +448,7 @@ typedef struct SSLCipherSuiteInfoStr {
      * this instead of |authAlgorithm|. */
     SSLAuthType authType;
 
-    /* The following fields were added in NSS 3.39. */
+    /* The following fields were added in NSS 3.43. */
     /* This reports the hash function used in the TLS KDF, or HKDF for TLS 1.3.
      * For suites defined for versions of TLS earlier than TLS 1.2, this reports
      * ssl_hash_none. */
@@ -476,6 +502,7 @@ typedef enum {
     ssl_tls13_key_share_xtn = 51,
     ssl_next_proto_nego_xtn = 13172, /* Deprecated. */
     ssl_renegotiation_info_xtn = 0xff01,
+    ssl_delegated_credentials_xtn = 0xff02,
     ssl_tls13_short_header_xtn = 0xff03, /* Deprecated. */
     ssl_tls13_encrypted_sni_xtn = 0xffce,
 } SSLExtensionType;

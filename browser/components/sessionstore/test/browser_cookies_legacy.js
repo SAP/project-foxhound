@@ -11,16 +11,20 @@ function createTestState() {
   };
 
   let state = {
-    windows: [{
-      tabs: [{entries: [{url: "about:robots", triggeringPrincipal_base64}]}],
-      cookies: [cookie],
-    }],
+    windows: [
+      {
+        tabs: [
+          { entries: [{ url: "about:robots", triggeringPrincipal_base64 }] },
+        ],
+        cookies: [cookie],
+      },
+    ],
   };
 
   return [state, cookie];
 }
 
-function waitForNewCookie({host, name, value}) {
+function waitForNewCookie({ host, name, value }) {
   info(`waiting for cookie ${name}=${value} from ${host}...`);
 
   return new Promise(resolve => {
@@ -29,7 +33,7 @@ function waitForNewCookie({host, name, value}) {
         return;
       }
 
-      let cookie = subj.QueryInterface(Ci.nsICookie2);
+      let cookie = subj.QueryInterface(Ci.nsICookie);
       if (cookie.host == host && cookie.name == name && cookie.value == value) {
         ok(true, "cookie added by the cookie service");
         Services.obs.removeObserver(observer, topic);

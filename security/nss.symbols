@@ -13,7 +13,7 @@
 PR_*
 PL_*
 #endif
-#include ../db/sqlite3/src/sqlite.symbols
+#include ../third_party/sqlite3/src/sqlite.symbols
 ATOB_AsciiToData
 ATOB_AsciiToData_Util
 ATOB_ConvertAsciiToItem_Util
@@ -318,6 +318,7 @@ PK11_FindCertsFromNickname
 PK11_FindKeyByAnyCert
 PK11_FindKeyByDERCert
 PK11_FindKeyByKeyID
+PK11_FindRawCertsWithSubject
 PK11_FindSlotByName
 PK11_FindSlotsByNames
 PK11_FreeSlot
@@ -664,6 +665,7 @@ SSL_ImplementedCiphers @DATA@
 SSL_ImportFD
 SSL_NamedGroupConfig
 SSL_NumImplementedCiphers @DATA@
+SSL_OptionGet
 SSL_OptionSet
 SSL_OptionSetDefault
 SSL_PeerCertificate

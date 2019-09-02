@@ -94,7 +94,13 @@ endif
 MAKE_JSSHELL  = $(call py_action,zip,-C $(DIST)/bin --strip $(abspath $(PKG_JSSHELL)) $(JSSHELL_BINS))
 
 ifneq (,$(PGO_JARLOG_PATH))
-  JARLOG_FILE_AB_CD = $(PGO_JARLOG_PATH)
+  # The backslash subst is to work around an issue with our version of mozmake,
+  # where backslashes get slurped in command-line arguments if a command is run
+  # with a double-quote character. The command to packager.py happens to be one
+  # of these commands, where double-quotes appear in certain ACDEFINES values.
+  # This turns a jarlog path like "Z:\task..." into "Z:task", which fails.
+  # Switching the backslashes for forward slashes works around the issue.
+  JARLOG_FILE_AB_CD = $(subst \,/,$(PGO_JARLOG_PATH))
 else
   JARLOG_FILE_AB_CD = $(topobjdir)/jarlog/$(AB_CD).log
 endif
@@ -380,6 +386,7 @@ UPLOAD_FILES= \
   $(call QUOTED_WILDCARD,$(topobjdir)/$(MOZ_BUILD_APP)/installer/windows/instgen/setup.exe) \
   $(call QUOTED_WILDCARD,$(topobjdir)/$(MOZ_BUILD_APP)/installer/windows/instgen/setup-stub.exe) \
   $(call QUOTED_WILDCARD,$(topsrcdir)/toolchains.json) \
+  $(call QUOTED_WILDCARD,$(topobjdir)/config.status) \
   $(if $(UPLOAD_EXTRA_FILES), $(foreach f, $(UPLOAD_EXTRA_FILES), $(wildcard $(DIST)/$(f))))
 
 ifneq ($(filter-out en-US x-test,$(AB_CD)),)
@@ -400,6 +407,7 @@ endif
 ifdef ENABLE_MOZSEARCH_PLUGIN
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_ARCHIVE_BASENAME).zip)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_ANALYSIS_BASENAME).zip)
+  UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_RUST_STDLIB_BASENAME).zip)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_INCLUDEMAP_BASENAME).map)
 endif
 

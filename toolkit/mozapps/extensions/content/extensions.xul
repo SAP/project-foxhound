@@ -7,6 +7,10 @@
 <?xml-stylesheet href="chrome://mozapps/content/extensions/extensions.css"?>
 <?xml-stylesheet href="chrome://mozapps/skin/extensions/extensions.css"?>
 
+<!-- Used for the modals related to the inline options_page XUL browser -->
+<?xml-stylesheet href="chrome://global/content/tabprompts.css" type="text/css"?>
+<?xml-stylesheet href="chrome://global/skin/tabprompts.css" type="text/css"?>
+
 <!DOCTYPE page [
 <!ENTITY % brandDTD SYSTEM "chrome://branding/locale/brand.dtd" >
 %brandDTD;
@@ -25,11 +29,11 @@
     <xhtml:link rel="localization" href="branding/brand.ftl"/>
     <xhtml:link rel="localization" href="toolkit/about/aboutAddons.ftl"/>
   </linkset>
-
-  <script type="application/javascript"
-          src="chrome://global/content/contentAreaUtils.js"/>
-  <script type="application/javascript"
-          src="chrome://mozapps/content/extensions/extensions.js"/>
+  
+  <script src="chrome://global/content/contentAreaUtils.js"/>
+  <script src="chrome://mozapps/content/extensions/aboutaddonsCommon.js"/>
+  <script src="chrome://mozapps/content/extensions/extensions.js"/>
+  <script src="chrome://mozapps/content/extensions/abuse-report-frame.js"/>
 
   <popupset>
     <!-- menu for an addon item -->
@@ -131,13 +135,15 @@
     <key id="focusSearch" data-l10n-id="search-header-shortcut"
          modifiers="accel" command="cmd_focusSearch"/>
   </keyset>
-  <hbox flex="1">
+
+  <stack id="main-page-stack" flex="1">
+  <hbox id="main-page-content" flex="1">
     <vbox id="category-box">
       <!-- category list -->
       <richlistbox id="categories" flex="1">
         <richlistitem id="category-discover" value="addons://discover/"
                       class="category"
-                      data-l10n-id="extensions-view-discover"
+                      data-l10n-id="extensions-view-discopane"
                       data-l10n-attrs="name"
                       priority="1000"/>
         <richlistitem id="category-legacy" value="addons://legacy/"
@@ -224,7 +230,7 @@
                       class="warning" data-l10n-id="show-unsigned-extensions-button"
                       command="cmd_showUnsignedExtensions"/>
               <label id="search-label" control="header-search"/>
-              <textbox id="header-search" type="search" searchbutton="true"
+              <textbox id="header-search" is="search-textbox" searchbutton="true"
                        data-l10n-id="search-header"
                        data-l10n-attrs="searchbuttonlabel" maxlength="100"/>
             </hbox>
@@ -666,10 +672,55 @@
               </hbox>
             </scrollbox>
 
-            <browser id="html-view-browser" type="content" flex="1" disablehistory="true"/>
+            <vbox id="html-view" flex="1">
+              <vbox class="alert-container html-alert-container" align="start">
+                <hbox class="global-warning-safemode message-bar"
+                      data-l10n-id="extensions-warning-safe-mode-container"
+                      align="start">
+                  <image class="message-bar-icon"/>
+                  <vbox class="message-container">
+                    <description class="message-bar-description"
+                                 crop="end"
+                                 data-l10n-id="extensions-warning-safe-mode-label"/>
+                  </vbox>
+                </hbox>
+                <hbox class="global-warning-checkcompatibility message-bar"
+                      data-l10n-id="extensions-warning-check-compatibility-container"
+                      align="start">
+                  <image class="message-bar-icon"/>
+                  <vbox class="message-container">
+                    <description class="message-bar-description"
+                                 crop="end"
+                                 data-l10n-id="extensions-warning-check-compatibility-label"/>
+                    <hbox>
+                      <button class="html-global-warning-button"
+                              data-l10n-id="extensions-warning-check-compatibility-enable"
+                              command="cmd_enableCheckCompatibility"/>
+                    </hbox>
+                  </vbox>
+                </hbox>
+                <hbox class="global-warning-updatesecurity message-bar"
+                      data-l10n-id="extensions-warning-update-security-container">
+                  <image class="message-bar-icon"/>
+                  <vbox class="message-container">
+                    <description class="message-bar-description"
+                                 crop="end"
+                                 data-l10n-id="extensions-warning-update-security-label"/>
+                    <hbox>
+                      <button class="html-global-warning-button"
+                              data-l10n-id="extensions-warning-update-security-enable"
+                              command="cmd_enableUpdateSecurity"/>
+                    </hbox>
+                  </vbox>
+                </hbox>
+              </vbox>
+              <browser id="html-view-browser" type="content" flex="1" disablehistory="true"/>
+            </vbox>
           </deck>
         </vbox>
       </deck>
     </vbox>
   </hbox>
+  <addon-abuse-report-xulframe hidden="true"></addon-abuse-report-xulframe>
+  </stack>
 </page>

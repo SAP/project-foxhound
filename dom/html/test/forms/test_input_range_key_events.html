@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=843725
 -->
 <head>
   <title>Test key events for range</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <meta charset="UTF-8">
 </head>
@@ -67,23 +67,23 @@ function value(element) {
 }
 
 function step(element) {
-  var step = Number(element.step || defaultStep);
-  return step <= 0 ? defaultStep : step;
+  var stepSize = Number(element.step || defaultStep);
+  return stepSize <= 0 ? defaultStep : stepSize;
 }
 
-function clampToRange(value, element) {
+function clampToRange(val, element) {
   var min = minimum(element);
   var max = maximum(element);
   if (max < min) {
     return min;
   }
-  if (value < min) {
+  if (val < min) {
     return min;
   }
-  if (value > max) {
+  if (val > max) {
     return max;
   }
-  return value;
+  return val;
 }
 
 // Functions used to specify expected test results:

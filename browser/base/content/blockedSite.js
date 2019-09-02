@@ -21,14 +21,16 @@ function getURL() {
 
   // match == null if not found; if so, return an empty string
   // instead of what would turn out to be portions of the URI
-  if (!match)
+  if (!match) {
     return "";
+  }
 
   url = decodeURIComponent(match[1]);
 
   // If this is a view-source page, then get then real URI of the page
-  if (url.startsWith("view-source:"))
+  if (url.startsWith("view-source:")) {
     url = url.slice(12);
+  }
   return url;
 }
 
@@ -67,83 +69,78 @@ function onClickSeeDetails() {
 function initPage() {
   var error = "";
   switch (getErrorCode()) {
-    case "malwareBlocked" :
+    case "malwareBlocked":
       error = "malware";
       break;
-    case "deceptiveBlocked" :
+    case "deceptiveBlocked":
       error = "phishing";
       break;
-    case "unwantedBlocked" :
+    case "unwantedBlocked":
       error = "unwanted";
       break;
-    case "harmfulBlocked" :
+    case "harmfulBlocked":
       error = "harmful";
       break;
     default:
       return;
   }
 
-  var el;
+  // Set page contents depending on type of blocked page
+  // Prepare the title and short description text
+  let titleText = document.getElementById("errorTitleText");
+  document.l10n.setAttributes(
+    titleText,
+    "safeb-blocked-" + error + "-page-title"
+  );
+  let shortDesc = document.getElementById("errorShortDescText");
+  document.l10n.setAttributes(
+    shortDesc,
+    "safeb-blocked-" + error + "-page-short-desc"
+  );
 
-  if (error !== "malware") {
-    el = document.getElementById("errorTitleText_malware");
-    el.remove();
-    el = document.getElementById("errorShortDescText_malware");
-    el.remove();
-    el = document.getElementById("errorLongDesc_malware");
-    el.remove();
-  }
-
-  if (error !== "phishing") {
-    el = document.getElementById("errorTitleText_phishing");
-    el.remove();
-    el = document.getElementById("errorShortDescText_phishing");
-    el.remove();
-    el = document.getElementById("errorLongDesc_phishing");
-    el.remove();
-  }
-
-  if (error !== "unwanted") {
-    el = document.getElementById("errorTitleText_unwanted");
-    el.remove();
-    el = document.getElementById("errorShortDescText_unwanted");
-    el.remove();
-    el = document.getElementById("errorLongDesc_unwanted");
-    el.remove();
-  }
-
-  if (error !== "harmful") {
-    el = document.getElementById("errorTitleText_harmful");
-    el.remove();
-    el = document.getElementById("errorShortDescText_harmful");
-    el.remove();
-    el = document.getElementById("errorLongDesc_harmful");
-    el.remove();
-  }
-
-  // Decide which version of the string should be visible in the error description.
-  if (getOverride()) {
-    document.getElementById(error + "_error_desc_no_override").remove();
+  // Prepare the inner description, ensuring any redundant inner elements are removed.
+  let innerDesc = document.getElementById("errorInnerDescription");
+  let innerDescL10nID = "safeb-blocked-" + error + "-page-error-desc-";
+  if (!getOverride()) {
+    innerDescL10nID += "no-override";
+    document.getElementById("ignore_warning_link").remove();
   } else {
-    document.getElementById(error + "_error_desc_override").remove();
+    innerDescL10nID += "override";
+  }
+  if (error == "unwanted" || error == "harmful") {
+    document.getElementById("report_detection").remove();
   }
 
-  // Set sitename in error details.
-  let sitenameElem = document.getElementById(error + "_sitename");
-  sitenameElem.setAttribute("class", "sitename");
-  sitenameElem.textContent = getHostString();
+  document.l10n.setAttributes(innerDesc, innerDescL10nID, {
+    sitename: getHostString(),
+  });
 
-  document.title = document.getElementById("errorTitleText_" + error).textContent;
+  // Add the learn more content:
+  let learnMore = document.getElementById("learn_more");
+  document.l10n.setAttributes(
+    learnMore,
+    "safeb-blocked-" + error + "-page-learn-more"
+  );
+
+  // Set sitename to bold by adding class
+  let errorSitename = document.getElementById("error_desc_sitename");
+  errorSitename.setAttribute("class", "sitename");
+
+  let titleEl = document.createElement("title");
+  document.l10n.setAttributes(
+    titleEl,
+    "safeb-blocked-" + error + "-page-title"
+  );
+  document.head.appendChild(titleEl);
 
   // Inform the test harness that we're done loading the page.
-  var event = new CustomEvent("AboutBlockedLoaded",
-    {
-      bubbles: true,
-      detail: {
-        url: this.getURL(),
-        err: error,
-      },
-    });
+  var event = new CustomEvent("AboutBlockedLoaded", {
+    bubbles: true,
+    detail: {
+      url: this.getURL(),
+      err: error,
+    },
+  });
   document.dispatchEvent(event);
 }
 

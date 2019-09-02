@@ -19,7 +19,6 @@
   <link rel="stylesheet" href="chrome://devtools/skin/layout.css"/>
   <link rel="stylesheet" href="chrome://devtools/skin/animation.css"/>
   <link rel="stylesheet" href="resource://devtools/client/shared/components/tabs/Tabs.css"/>
-  <link rel="stylesheet" href="resource://devtools/client/shared/components/tabs/TabBar.css"/>
   <link rel="stylesheet" href="resource://devtools/client/shared/components/SidebarToggle.css"/>
   <link rel="stylesheet" href="resource://devtools/client/inspector/components/InspectorTabPanel.css"/>
   <link rel="stylesheet" href="resource://devtools/client/shared/components/splitter/SplitBox.css"/>
@@ -27,9 +26,8 @@
   <link rel="stylesheet" href="resource://devtools/client/shared/components/reps/reps.css"/>
   <link rel="stylesheet" href="resource://devtools/client/shared/components/tree/TreeView.css"/>
 
-  <script type="application/javascript"
-          src="chrome://devtools/content/shared/theme-switching.js"></script>
-  <script type="text/javascript">
+  <script src="chrome://devtools/content/shared/theme-switching.js"></script>
+  <script>
     /* eslint-disable */
     var isInChrome = window.location.href.includes("chrome:");
     if (isInChrome) {
@@ -39,7 +37,7 @@
     }
   </script>
 
-  <script type="application/javascript" src="resource://devtools/client/inspector/inspector.js" defer="true"></script>
+  <script src="resource://devtools/client/inspector/inspector.js" defer="true"></script>
 </head>
 <body class="theme-body" role="application">
   <div class="inspector-responsive-container theme-body inspector"
@@ -48,17 +46,20 @@
     <!-- Main Panel Content -->
     <div id="inspector-main-content" class="devtools-main-content" style="visibility: hidden;">
       <!-- Toolbar -->
-      <div id="inspector-toolbar" class="devtools-toolbar" nowindowdrag="true">
-        <button id="inspector-element-add-button" class="devtools-button"
-                data-localization="title=inspectorAddNode.label"></button>
-        <div class="devtools-toolbar-spacer"></div>
-        <span id="inspector-searchlabel"></span>
-        <div id="inspector-search" class="devtools-searchbox has-clear-btn">
+      <div id="inspector-toolbar" class="devtools-toolbar devtools-input-toolbar" nowindowdrag="true">
+        <div id="inspector-search" class="devtools-searchbox">
           <input id="inspector-searchbox" class="devtools-searchinput"
                  type="search"
                  data-localization="placeholder=inspectorSearchHTML.label3"/>
           <button id="inspector-searchinput-clear" class="devtools-searchinput-clear" hidden="true" tabindex="-1"></button>
         </div>
+        <div id="inspector-searchlabel-container" hidden="true">
+          <div class="devtools-separator"></div>
+          <span id="inspector-searchlabel"></span>
+        </div>
+        <div class="devtools-separator"></div>
+        <button id="inspector-element-add-button" class="devtools-button"
+                data-localization="title=inspectorAddNode.label"></button>
         <button id="inspector-eyedropper-toggle" class="devtools-button"></button>
       </div>
 
@@ -86,28 +87,27 @@
     <!-- Sidebar Panel Definitions -->
     <div id="tabpanels" style="visibility: collapse">
       <div id="sidebar-panel-ruleview" class="theme-sidebar inspector-tabpanel">
-        <div id="ruleview-toolbar-container" class="devtools-toolbar">
-          <div id="ruleview-toolbar">
-            <div class="devtools-searchbox has-clear-btn">
+        <div id="ruleview-toolbar-container">
+          <div id="ruleview-toolbar" class="devtools-toolbar devtools-input-toolbar">
+            <div class="devtools-searchbox">
               <input id="ruleview-searchbox"
-                     class="devtools-filterinput devtools-rule-searchbox"
+                     class="devtools-filterinput"
                      type="search"
                      data-localization="placeholder=inspector.filterStyles.placeholder"/>
               <button id="ruleview-searchinput-clear" class="devtools-searchinput-clear"></button>
             </div>
+            <div class="devtools-separator"></div>
             <div id="ruleview-command-toolbar">
-              <button id="ruleview-add-rule-button" data-localization="title=inspector.addRule.tooltip" class="devtools-button"></button>
               <button id="pseudo-class-panel-toggle" data-localization="title=inspector.togglePseudo.tooltip" class="devtools-button"></button>
               <button id="class-panel-toggle" data-localization="title=inspector.classPanel.toggleClass.tooltip" class="devtools-button"></button>
+              <button id="ruleview-add-rule-button" data-localization="title=inspector.addRule.tooltip" class="devtools-button"></button>
+              <button id="print-simulation-toggle" data-localization="title=inspector.printSimulation.tooltip" class="devtools-button" hidden="true"></button>
             </div>
           </div>
-          <div id="pseudo-class-panel" class="ruleview-reveal-panel" hidden="true">
-            <label><input id="pseudo-hover-toggle" type="checkbox" value=":hover" tabindex="-1" />:hover</label>
-            <label><input id="pseudo-active-toggle" type="checkbox" value=":active" tabindex="-1" />:active</label>
-            <label><input id="pseudo-focus-toggle" type="checkbox" value=":focus" tabindex="-1" />:focus</label>
-            <label><input id="pseudo-focus-within-toggle" type="checkbox" value=":focus-within" tabindex="-1" />:focus-within</label>
+          <div id="pseudo-class-panel" class="theme-toolbar ruleview-reveal-panel" hidden="true">
+            <!-- Populated with checkbox inputs once the Rules view is instantiated -->
           </div>
-          <div id="ruleview-class-panel" class="ruleview-reveal-panel" hidden="true"></div>
+          <div id="ruleview-class-panel" class="theme-toolbar ruleview-reveal-panel" hidden="true"></div>
         </div>
 
         <div id="ruleview-container" class="ruleview">
@@ -117,10 +117,10 @@
       </div>
 
       <div id="sidebar-panel-computedview" class="theme-sidebar inspector-tabpanel">
-        <div id="computed-toolbar" class="devtools-toolbar">
-          <div class="devtools-searchbox has-clear-btn">
+        <div id="computed-toolbar" class="devtools-toolbar devtools-input-toolbar">
+          <div class="devtools-searchbox">
             <input id="computed-searchbox"
-                   class="devtools-filterinput devtools-rule-searchbox"
+                   class="devtools-filterinput"
                    type="search"
                    data-localization="placeholder=inspector.filterStyles.placeholder"/>
             <button id="computed-searchinput-clear" class="devtools-searchinput-clear"></button>

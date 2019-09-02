@@ -22,6 +22,10 @@ class nsFloatCacheList;
 class nsFloatCacheFreeList;
 class nsWindowSizes;
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
 // State cached after reflowing a float. This state is used during
 // incremental reflow when we avoid reflowing a float.
 class nsFloatCache {
@@ -140,13 +144,13 @@ class nsFloatCacheFreeList : private nsFloatCacheList {
  * it's better to use the next function that does that for you in an
  * optimal way.
  */
-nsLineBox* NS_NewLineBox(nsIPresShell* aPresShell, nsIFrame* aFrame,
+nsLineBox* NS_NewLineBox(mozilla::PresShell* aPresShell, nsIFrame* aFrame,
                          bool aIsBlock);
 /**
  * Function to create a line box and initialize it with aCount frames
  * that are currently on aFromLine.  The allocation is infallible.
  */
-nsLineBox* NS_NewLineBox(nsIPresShell* aPresShell, nsLineBox* aFromLine,
+nsLineBox* NS_NewLineBox(mozilla::PresShell* aPresShell, nsLineBox* aFromLine,
                          nsIFrame* aFrame, int32_t aCount);
 
 class nsLineList;
@@ -191,17 +195,17 @@ class nsLineBox final : public nsLineLink {
 
   // Infallible overloaded new operator. Uses an arena (which comes from the
   // presShell) to perform the allocation.
-  void* operator new(size_t sz, nsIPresShell* aPresShell);
+  void* operator new(size_t sz, mozilla::PresShell* aPresShell);
   void operator delete(void* aPtr, size_t sz) = delete;
 
  public:
   // Use these functions to allocate and destroy line boxes
-  friend nsLineBox* NS_NewLineBox(nsIPresShell* aPresShell, nsIFrame* aFrame,
-                                  bool aIsBlock);
-  friend nsLineBox* NS_NewLineBox(nsIPresShell* aPresShell,
+  friend nsLineBox* NS_NewLineBox(mozilla::PresShell* aPresShell,
+                                  nsIFrame* aFrame, bool aIsBlock);
+  friend nsLineBox* NS_NewLineBox(mozilla::PresShell* aPresShell,
                                   nsLineBox* aFromLine, nsIFrame* aFrame,
                                   int32_t aCount);
-  void Destroy(nsIPresShell* aPresShell);
+  void Destroy(mozilla::PresShell* aPresShell);
 
   // mBlock bit
   bool IsBlock() const { return mFlags.mBlock; }
@@ -247,21 +251,26 @@ class nsLineBox final : public nsLineLink {
     return mFlags.mResizeReflowOptimizationDisabled;
   }
 
-  // mHasBullet bit
-  void SetHasBullet() {
-    mFlags.mHasBullet = true;
+  // mHasMarker bit
+  void SetHasMarker() {
+    mFlags.mHasMarker = true;
     InvalidateCachedIsEmpty();
   }
-  void ClearHasBullet() {
-    mFlags.mHasBullet = false;
+  void ClearHasMarker() {
+    mFlags.mHasMarker = false;
     InvalidateCachedIsEmpty();
   }
-  bool HasBullet() const { return mFlags.mHasBullet; }
+  bool HasMarker() const { return mFlags.mHasMarker; }
 
   // mHadFloatPushed bit
   void SetHadFloatPushed() { mFlags.mHadFloatPushed = true; }
   void ClearHadFloatPushed() { mFlags.mHadFloatPushed = false; }
   bool HadFloatPushed() const { return mFlags.mHadFloatPushed; }
+
+  // mHasLineClampEllipsis bit
+  void SetHasLineClampEllipsis() { mFlags.mHasLineClampEllipsis = true; }
+  void ClearHasLineClampEllipsis() { mFlags.mHasLineClampEllipsis = false; }
+  bool HasLineClampEllipsis() const { return mFlags.mHasLineClampEllipsis; }
 
  private:
   // Add a hash table for fast lookup when the line has more frames than this.
@@ -597,13 +606,20 @@ class nsLineBox final : public nsLineLink {
     bool mResizeReflowOptimizationDisabled : 1;
     bool mEmptyCacheValid : 1;
     bool mEmptyCacheState : 1;
-    // mHasBullet indicates that this is an inline line whose block's
-    // bullet is adjacent to this line and non-empty.
-    bool mHasBullet : 1;
+    // mHasMarker indicates that this is an inline line whose block's
+    // ::marker is adjacent to this line and non-empty.
+    bool mHasMarker : 1;
     // Indicates that this line *may* have a placeholder for a float
     // that was pushed to a later column or page.
     bool mHadFloatPushed : 1;
     bool mHasHashedFrames : 1;
+    // Indicates that this line is the one identified by an ancestor block
+    // with -webkit-line-clamp on its legacy flex container, and that subsequent
+    // lines under that block are "clamped" away, and therefore we need to
+    // render a 'text-overflow: ellipsis'-like marker in this line.  At most one
+    // line in the set of lines found by LineClampLineIterator for a given
+    // block will have this flag set.
+    bool mHasLineClampEllipsis : 1;
     StyleClear mBreakType;
   };
 

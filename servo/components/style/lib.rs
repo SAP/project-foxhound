@@ -99,6 +99,9 @@ extern crate style_traits;
 #[cfg(feature = "gecko")]
 extern crate thin_slice;
 extern crate time;
+extern crate to_shmem;
+#[macro_use]
+extern crate to_shmem_derive;
 extern crate uluru;
 extern crate unicode_bidi;
 #[allow(unused_extern_crates)]
@@ -184,6 +187,10 @@ pub use html5ever::Namespace;
 pub use html5ever::Prefix;
 #[cfg(feature = "servo")]
 pub use servo_atoms::Atom;
+
+pub use style_traits::arc_slice::ArcSlice;
+pub use style_traits::owned_slice::OwnedSlice;
+pub use style_traits::owned_str::OwnedStr;
 
 /// The CSS properties supported by the style system.
 /// Generated from the properties.mako.rs template by build.rs

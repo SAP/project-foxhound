@@ -32,7 +32,6 @@
 #include "vm/JSObject-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
-#include "vm/UnboxedObject-inl.h"
 
 using namespace js;
 
@@ -116,7 +115,7 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
 
   if (str->hasLatin1Chars()) {
     UniquePtr<Latin1Char[], JS::FreePolicy> copiedChars =
-        str->asRope().copyLatin1CharsZ(cx);
+        str->asRope().copyLatin1CharsZ(cx, js::StringBufferArena);
     if (!copiedChars) {
       return nullptr;
     }
@@ -126,7 +125,8 @@ static JSString* CopyStringPure(JSContext* cx, JSString* str) {
     return copy;
   }
 
-  UniqueTwoByteChars copiedChars = str->asRope().copyTwoByteCharsZ(cx);
+  UniqueTwoByteChars copiedChars =
+      str->asRope().copyTwoByteCharsZ(cx, js::StringBufferArena);
   if (!copiedChars) {
     return nullptr;
   }
@@ -223,13 +223,37 @@ bool Compartment::getNonWrapperObjectForCurrentCompartment(
   // Disallow creating new wrappers if we nuked the object's realm or the
   // current compartment.
   if (!AllowNewWrapper(this, obj)) {
-    JSObject* res = NewDeadProxyObject(cx, IsCallableFlag(obj->isCallable()),
-                                       IsConstructorFlag(obj->isConstructor()));
-    if (!res) {
-      return false;
+    obj.set(NewDeadProxyObject(cx, IsCallableFlag(obj->isCallable()),
+                               IsConstructorFlag(obj->isConstructor())));
+    return !!obj;
+  }
+
+  // Use the WindowProxy instead of the Window here, so that we don't have to
+  // deal with this in the rest of the wrapping code.
+  if (IsWindow(obj)) {
+    obj.set(ToWindowProxyIfWindow(obj));
+
+    // ToWindowProxyIfWindow can return a CCW if |obj| was a navigated-away-from
+    // Window. Strip any CCWs.
+    obj.set(UncheckedUnwrap(obj));
+
+    if (JS_IsDeadWrapper(obj)) {
+      obj.set(NewDeadProxyObject(cx, obj));
+      return !!obj;
     }
-    obj.set(res);
-    return true;
+
+    MOZ_ASSERT(IsWindowProxy(obj));
+
+    // We crossed a compartment boundary there, so may now have a gray object.
+    // This function is not allowed to return gray objects, so don't do that.
+    ExposeObjectToActiveJS(obj);
+  }
+
+  // If the object is a dead wrapper, return a new dead wrapper rather than
+  // trying to wrap it for a different compartment.
+  if (JS_IsDeadWrapper(obj)) {
+    obj.set(NewDeadProxyObject(cx, obj));
+    return !!obj;
   }
 
   // Invoke the prewrap callback. The prewrap callback is responsible for

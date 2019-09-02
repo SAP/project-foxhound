@@ -133,9 +133,9 @@ def support_vcs_checkout(config, job, taskdesc, sparse=False):
         'GECKO_BASE_REPOSITORY': config.params['base_repository'],
         'GECKO_HEAD_REPOSITORY': config.params['head_repository'],
         'GECKO_HEAD_REV': config.params['head_rev'],
-        'GECKO_PATH': geckodir,
         'HG_STORE_PATH': hgstore,
     })
+    taskdesc['worker']['env'].setdefault('GECKO_PATH', geckodir)
 
     if 'comm_base_repository' in config.params:
         taskdesc['worker']['env'].update({
@@ -149,6 +149,7 @@ def support_vcs_checkout(config, job, taskdesc, sparse=False):
     # Give task access to hgfingerprint secret so it can pin the certificate
     # for hg.mozilla.org.
     taskdesc['scopes'].append('secrets:get:project/taskcluster/gecko/hgfingerprint')
+    taskdesc['scopes'].append('secrets:get:project/taskcluster/gecko/hgmointernal')
 
     # only some worker platforms have taskcluster-proxy enabled
     if job['worker']['implementation'] in ('docker-worker',):
@@ -229,12 +230,12 @@ def docker_worker_add_tooltool(config, job, taskdesc, internal=False):
         'TOOLTOOL_CACHE': '{workdir}/tooltool-cache'.format(**job['run']),
     })
 
-    taskdesc['worker']['relengapi-proxy'] = True
+    taskdesc['worker']['taskcluster-proxy'] = True
     taskdesc['scopes'].extend([
-        'docker-worker:relengapi-proxy:tooltool.download.public',
+        'project:releng:services/tooltool/api/download/public',
     ])
 
     if internal:
         taskdesc['scopes'].extend([
-            'docker-worker:relengapi-proxy:tooltool.download.internal',
+            'project:releng:services/tooltool/api/download/internal',
         ])

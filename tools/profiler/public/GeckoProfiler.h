@@ -69,6 +69,8 @@
 
 #else  // !MOZ_GECKO_PROFILER
 
+#  include "js/AllocationRecording.h"
+#  include "js/ProfilingFrameIterator.h"
 #  include "js/ProfilingStack.h"
 #  include "js/RootingAPI.h"
 #  include "js/TypeDecls.h"
@@ -77,6 +79,7 @@
 #  include "mozilla/Attributes.h"
 #  include "mozilla/GuardObjects.h"
 #  include "mozilla/Maybe.h"
+#  include "mozilla/PowerOfTwo.h"
 #  include "mozilla/Sprintf.h"
 #  include "mozilla/ThreadLocal.h"
 #  include "mozilla/TimeStamp.h"
@@ -117,57 +120,61 @@ class Vector;
 // |MACRO| appropriately to extract the relevant parts. Note that the number
 // values are used internally only and so can be changed without consequence.
 // Any changes to this list should also be applied to the feature list in
-// browser/components/extensions/schemas/geckoProfiler.json.
-#  define PROFILER_FOR_EACH_FEATURE(MACRO)                         \
-    /* Profile Java code (Android only). */                        \
-    MACRO(0, "java", Java)                                         \
-                                                                   \
-    /* Get the JS engine to expose the JS stack to the profiler */ \
-    MACRO(1, "js", JS)                                             \
-                                                                   \
-    /* Include the C++ leaf node if not stackwalking. */           \
-    /* The DevTools profiler doesn't want the native addresses. */ \
-    MACRO(2, "leaf", Leaf)                                         \
-                                                                   \
-    /* Add main thread I/O to the profile. */                      \
-    MACRO(3, "mainthreadio", MainThreadIO)                         \
-                                                                   \
-    /* Add memory measurements (e.g. RSS). */                      \
-    MACRO(4, "memory", Memory)                                     \
-                                                                   \
-    /* Do not include user-identifiable information. */            \
-    MACRO(5, "privacy", Privacy)                                   \
-                                                                   \
-    /* Collect thread responsiveness information. */               \
-    MACRO(6, "responsiveness", Responsiveness)                     \
-                                                                   \
-    /* Take a snapshot of the window on every composition. */      \
-    MACRO(7, "screenshots", Screenshots)                           \
-                                                                   \
-    /* Disable parallel traversal in styling. */                   \
-    MACRO(8, "seqstyle", SequentialStyle)                          \
-                                                                   \
-    /* Walk the C++ stack. Not available on all platforms. */      \
-    MACRO(9, "stackwalk", StackWalk)                               \
-                                                                   \
-    /* Start profiling with feature TaskTracer. */                 \
-    MACRO(10, "tasktracer", TaskTracer)                            \
-                                                                   \
-    /* Profile the registered secondary threads. */                \
-    MACRO(11, "threads", Threads)                                  \
-                                                                   \
-    /* Have the JavaScript engine track JIT optimizations. */      \
-    MACRO(12, "trackopts", TrackOptimizations)                     \
-                                                                   \
-    /* Enable tracing of the JavaScript engine. */                 \
-    MACRO(13, "jstracer", JSTracer)
+// toolkit/components/extensions/schemas/geckoProfiler.json.
+#  define PROFILER_FOR_EACH_FEATURE(MACRO)                                     \
+    MACRO(0, "java", Java, "Profile Java code, Android only")                  \
+                                                                               \
+    MACRO(1, "js", JS,                                                         \
+          "Get the JS engine to expose the JS stack to the profiler")          \
+                                                                               \
+    /* The DevTools profiler doesn't want the native addresses. */             \
+    MACRO(2, "leaf", Leaf, "Include the C++ leaf node if not stackwalking")    \
+                                                                               \
+    MACRO(3, "mainthreadio", MainThreadIO,                                     \
+          "Add main thread I/O to the profile")                                \
+                                                                               \
+    MACRO(4, "memory", Memory, "Add memory measurements")                      \
+                                                                               \
+    MACRO(5, "privacy", Privacy,                                               \
+          "Do not include user-identifiable information")                      \
+                                                                               \
+    MACRO(6, "responsiveness", Responsiveness,                                 \
+          "Collect thread responsiveness information")                         \
+                                                                               \
+    MACRO(7, "screenshots", Screenshots,                                       \
+          "Take a snapshot of the window on every composition")                \
+                                                                               \
+    MACRO(8, "seqstyle", SequentialStyle,                                      \
+          "Disable parallel traversal in styling")                             \
+                                                                               \
+    MACRO(9, "stackwalk", StackWalk,                                           \
+          "Walk the C++ stack, not available on all platforms")                \
+                                                                               \
+    MACRO(10, "tasktracer", TaskTracer,                                        \
+          "Start profiling with feature TaskTracer")                           \
+                                                                               \
+    MACRO(11, "threads", Threads, "Profile the registered secondary threads")  \
+                                                                               \
+    MACRO(12, "trackopts", TrackOptimizations,                                 \
+          "Have the JavaScript engine track JIT optimizations")                \
+                                                                               \
+    MACRO(13, "jstracer", JSTracer, "Enable tracing of the JavaScript engine") \
+                                                                               \
+    MACRO(14, "jsallocations", JSAllocations,                                  \
+          "Have the JavaScript engine track allocations")
 
 struct ProfilerFeature {
-#  define DECLARE(n_, str_, Name_)                                           \
-    static const uint32_t Name_ = (1u << n_);                                \
-    static bool Has##Name_(uint32_t aFeatures) { return aFeatures & Name_; } \
-    static void Set##Name_(uint32_t& aFeatures) { aFeatures |= Name_; }      \
-    static void Clear##Name_(uint32_t& aFeatures) { aFeatures &= ~Name_; }
+#  define DECLARE(n_, str_, Name_, desc_)                     \
+    static constexpr uint32_t Name_ = (1u << n_);             \
+    static constexpr bool Has##Name_(uint32_t aFeatures) {    \
+      return aFeatures & Name_;                               \
+    }                                                         \
+    static constexpr void Set##Name_(uint32_t& aFeatures) {   \
+      aFeatures |= Name_;                                     \
+    }                                                         \
+    static constexpr void Clear##Name_(uint32_t& aFeatures) { \
+      aFeatures &= ~Name_;                                    \
+    }
 
   // Define a bitfield constant, a getter, and two setters for each feature.
   PROFILER_FOR_EACH_FEATURE(DECLARE)
@@ -211,7 +218,7 @@ class RacyFeatures {
   static const uint32_t Active = 1u << 31;
 
 // Ensure Active doesn't overlap with any of the feature bits.
-#  define NO_OVERLAP(n_, str_, Name_) \
+#  define NO_OVERLAP(n_, str_, Name_, desc_) \
     static_assert(ProfilerFeature::Name_ != Active, "bad Active value");
 
   PROFILER_FOR_EACH_FEATURE(NO_OVERLAP);
@@ -236,10 +243,20 @@ bool IsThreadBeingProfiled();
 // Start and stop the profiler
 //---------------------------------------------------------------------------
 
+static constexpr mozilla::PowerOfTwo32 PROFILER_DEFAULT_ENTRIES =
 #  if !defined(ARCH_ARMV6)
-#    define PROFILER_DEFAULT_ENTRIES 1000000
+    mozilla::MakePowerOfTwo32<1u << 20>();  // 1'048'576
 #  else
-#    define PROFILER_DEFAULT_ENTRIES 100000
+    mozilla::MakePowerOfTwo32<1u << 17>();  // 131'072
+#  endif
+
+// Startup profiling usually need to capture more data, especially on slow
+// systems.
+static constexpr mozilla::PowerOfTwo32 PROFILER_DEFAULT_STARTUP_ENTRIES =
+#  if !defined(ARCH_ARMV6)
+    mozilla::MakePowerOfTwo32<1u << 22>();  // 4'194'304
+#  else
+    mozilla::MakePowerOfTwo32<1u << 17>();  // 131'072
 #  endif
 
 #  define PROFILER_DEFAULT_DURATION 20
@@ -275,7 +292,7 @@ void profiler_shutdown();
 //                  id of the process that the thread is running in.
 //   "aDuration" is the duration of entries in the profiler's circular buffer.
 void profiler_start(
-    uint32_t aCapacity, double aInterval, uint32_t aFeatures,
+    mozilla::PowerOfTwo32 aCapacity, double aInterval, uint32_t aFeatures,
     const char** aFilters, uint32_t aFilterCount,
     const mozilla::Maybe<double>& aDuration = mozilla::Nothing());
 
@@ -289,7 +306,7 @@ void profiler_stop();
 // The only difference to profiler_start is that the current buffer contents are
 // not discarded if the profiler is already running with the requested settings.
 void profiler_ensure_started(
-    uint32_t aCapacity, double aInterval, uint32_t aFeatures,
+    mozilla::PowerOfTwo32 aCapacity, double aInterval, uint32_t aFeatures,
     const char** aFilters, uint32_t aFilterCount,
     const mozilla::Maybe<double>& aDuration = mozilla::Nothing());
 
@@ -332,6 +349,9 @@ void profiler_register_page(const nsID& aDocShellId, uint32_t aHistoryId,
 //
 // Take a docShellId and unregister all the page entries that have the given ID.
 void profiler_unregister_pages(const nsID& aRegisteredDocShellId);
+
+// Remove all registered and unregistered pages in the profiler.
+void profiler_clear_all_pages();
 
 class BaseProfilerCount;
 void profiler_add_sampled_counter(BaseProfilerCount* aCounter);
@@ -435,6 +455,9 @@ void profiler_get_start_params(
 // The number of milliseconds since the process started. Operates the same
 // whether the profiler is active or inactive.
 double profiler_time();
+
+// Get the current process's ID.
+int profiler_current_process_id();
 
 // Get the current thread's ID.
 int profiler_current_thread_id();
@@ -565,7 +588,7 @@ mozilla::Maybe<ProfilerBufferInfo> profiler_get_buffer_info();
 // doesn't push/pop a label when the profiler is inactive.
 #  define AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING(label, categoryPair, nsCStr) \
     mozilla::Maybe<nsAutoCString> autoCStr;                                  \
-    mozilla::Maybe<AutoProfilerLabel> raiiObjectNsCString;                   \
+    mozilla::Maybe<mozilla::AutoProfilerLabel> raiiObjectNsCString;          \
     if (profiler_is_active()) {                                              \
       autoCStr.emplace(nsCStr);                                              \
       raiiObjectNsCString.emplace(label, autoCStr->get(),                    \
@@ -583,7 +606,7 @@ mozilla::Maybe<ProfilerBufferInfo> profiler_get_buffer_info();
 #  define AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING(label, categoryPair,   \
                                                      nsStr)                 \
     mozilla::Maybe<NS_LossyConvertUTF16toASCII> asciiStr;                   \
-    mozilla::Maybe<AutoProfilerLabel> raiiObjectLossyNsString;              \
+    mozilla::Maybe<mozilla::AutoProfilerLabel> raiiObjectLossyNsString;     \
     if (profiler_is_active()) {                                             \
       asciiStr.emplace(nsStr);                                              \
       raiiObjectLossyNsString.emplace(                                      \
@@ -626,6 +649,7 @@ void profiler_add_marker(const char* aMarkerName,
                          JS::ProfilingCategoryPair aCategoryPair,
                          mozilla::UniquePtr<ProfilerMarkerPayload> aPayload);
 void profiler_add_js_marker(const char* aMarkerName);
+void profiler_add_js_allocation_marker(JS::RecordAllocationInfo&& info);
 
 // Insert a marker in the profile timeline for a specified thread.
 void profiler_add_marker_for_thread(
@@ -654,21 +678,21 @@ enum TracingKind {
 };
 
 // Helper macro to retrieve DocShellId and DocShellHistoryId from docShell
-#  define DECLARE_DOCSHELL_AND_HISTORY_ID(docShell) \
-    mozilla::Maybe<nsID> docShellId;                \
-    mozilla::Maybe<uint32_t> docShellHistoryId;     \
-    if (docShell) {                                 \
-      docShellId = Some(docShell->HistoryID());     \
-      uint32_t id;                                  \
-      nsresult rv = docShell->GetOSHEId(&id);       \
-      if (NS_SUCCEEDED(rv)) {                       \
-        docShellHistoryId = Some(id);               \
-      } else {                                      \
-        docShellHistoryId = Nothing();              \
-      }                                             \
-    } else {                                        \
-      docShellId = Nothing();                       \
-      docShellHistoryId = Nothing();                \
+#  define DECLARE_DOCSHELL_AND_HISTORY_ID(docShell)      \
+    mozilla::Maybe<nsID> docShellId;                     \
+    mozilla::Maybe<uint32_t> docShellHistoryId;          \
+    if (docShell) {                                      \
+      docShellId = mozilla::Some(docShell->HistoryID()); \
+      uint32_t id;                                       \
+      nsresult rv = docShell->GetOSHEId(&id);            \
+      if (NS_SUCCEEDED(rv)) {                            \
+        docShellHistoryId = mozilla::Some(id);           \
+      } else {                                           \
+        docShellHistoryId = mozilla::Nothing();          \
+      }                                                  \
+    } else {                                             \
+      docShellId = mozilla::Nothing();                   \
+      docShellHistoryId = mozilla::Nothing();            \
     }
 
 // Adds a tracing marker to the profile. A no-op if the profiler is inactive or
@@ -733,7 +757,7 @@ class MOZ_RAII AutoProfilerTextMarker {
       : mMarkerName(aMarkerName),
         mText(aText),
         mCategoryPair(aCategoryPair),
-        mStartTime(mozilla::TimeStamp::Now()),
+        mStartTime(mozilla::TimeStamp::NowUnfuzzed()),
         mCause(std::move(aCause)),
         mDocShellId(aDocShellId),
         mDocShellHistoryId(aDocShellHistoryId) {
@@ -742,7 +766,7 @@ class MOZ_RAII AutoProfilerTextMarker {
 
   ~AutoProfilerTextMarker() {
     profiler_add_text_marker(mMarkerName, mText, mCategoryPair, mStartTime,
-                             mozilla::TimeStamp::Now(), mDocShellId,
+                             mozilla::TimeStamp::NowUnfuzzed(), mDocShellId,
                              mDocShellHistoryId, std::move(mCause));
   }
 
@@ -757,11 +781,11 @@ class MOZ_RAII AutoProfilerTextMarker {
   const mozilla::Maybe<uint32_t> mDocShellHistoryId;
 };
 
-#  define AUTO_PROFILER_TEXT_MARKER_CAUSE(markerName, text, categoryPair,     \
-                                          cause)                              \
-    AutoProfilerTextMarker PROFILER_RAII(                                     \
-        markerName, text, JS::ProfilingCategoryPair::categoryPair, Nothing(), \
-        Nothing(), cause)
+#  define AUTO_PROFILER_TEXT_MARKER_CAUSE(markerName, text, categoryPair, \
+                                          cause)                          \
+    AutoProfilerTextMarker PROFILER_RAII(                                 \
+        markerName, text, JS::ProfilingCategoryPair::categoryPair,        \
+        mozilla::Nothing(), mozilla::Nothing(), cause)
 
 #  define AUTO_PROFILER_TEXT_MARKER_DOCSHELL(markerName, text, categoryPair,   \
                                              docShell)                         \

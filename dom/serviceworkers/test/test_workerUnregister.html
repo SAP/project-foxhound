@@ -6,7 +6,7 @@
 <html>
 <head>
   <title>Bug 982728 - Test ServiceWorkerGlobalScope.unregister</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -19,7 +19,7 @@
         return new Promise(function(resolve, reject) {
           swr.installing.onstatechange = function(e) {
             if (swr.waiting) {
-              swr.waiting.onstatechange = function(e) {
+              swr.waiting.onstatechange = function(event) {
                 if (swr.active) {
                   resolve();
                 } else if (swr.waiting && swr.waiting.state == "redundant") {
@@ -79,4 +79,3 @@
 </pre>
 </body>
 </html>
-

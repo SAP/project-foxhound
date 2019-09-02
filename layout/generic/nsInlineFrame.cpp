@@ -9,19 +9,21 @@
 #include "nsInlineFrame.h"
 
 #include "gfxContext.h"
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/Likely.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/RestyleManager.h"
+#include "mozilla/ServoStyleSet.h"
 #include "nsLineLayout.h"
 #include "nsBlockFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "nsGkAtoms.h"
 #include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "nsCSSAnonBoxes.h"
-#include "mozilla/RestyleManager.h"
 #include "nsDisplayList.h"
-#include "mozilla/Likely.h"
 #include "SVGTextFrame.h"
 #include "nsStyleChangeList.h"
-#include "mozilla/ComputedStyle.h"
-#include "mozilla/ServoStyleSet.h"
 
 #ifdef DEBUG
 #  undef NOISY_PUSHING
@@ -34,8 +36,7 @@ using namespace mozilla::layout;
 
 // Basic nsInlineFrame methods
 
-nsInlineFrame* NS_NewInlineFrame(nsIPresShell* aPresShell,
-                                 ComputedStyle* aStyle) {
+nsInlineFrame* NS_NewInlineFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsInlineFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -345,7 +346,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
     DrainSelfOverflowListInternal(aReflowInput.mLineLayout->GetInFirstLine());
   }
 
-  // Set our own reflow state (additional state above and beyond aReflowInput).
+  // Set our own reflow input (additional state above and beyond aReflowInput).
   InlineReflowInput irs;
   irs.mPrevFrame = nullptr;
   irs.mLineContainer = aReflowInput.mLineLayout->LineContainerFrame();
@@ -755,8 +756,7 @@ nsIFrame* nsInlineFrame::PullOneFrame(nsPresContext* aPresContext,
         // The blockChildren.ContainsFrame check performed by
         // ReparentFloatsForInlineChild will be fast because frame's ancestor
         // will be the first child of its containing block.
-        ReparentFloatsForInlineChild(irs.mLineContainer, frame, false,
-                                     ReparentingDirection::Backwards);
+        ReparentFloatsForInlineChild(irs.mLineContainer, frame, false);
       }
       nextInFlow->mFrames.RemoveFirstChild();
       // nsFirstLineFrame::PullOneFrame calls ReparentComputedStyle.
@@ -854,11 +854,8 @@ nscoord nsInlineFrame::GetLogicalBaseline(
 
 #ifdef ACCESSIBILITY
 a11y::AccType nsInlineFrame::AccessibleType() {
-  // Broken image accessibles are created here, because layout
-  // replaces the image or image control frame with an inline frame
-  if (mContent->IsHTMLElement(
-          nsGkAtoms::input))  // Broken <input type=image ... />
-    return a11y::eHTMLButtonType;
+  // FIXME(emilio): This is broken, if the image has its default `display` value
+  // overridden. Should be somewhere else.
   if (mContent->IsHTMLElement(
           nsGkAtoms::img))  // Create accessible for broken <img>
     return a11y::eHyperTextType;
@@ -934,7 +931,7 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
 
 // nsLineFrame implementation
 
-nsFirstLineFrame* NS_NewFirstLineFrame(nsIPresShell* aPresShell,
+nsFirstLineFrame* NS_NewFirstLineFrame(PresShell* aPresShell,
                                        ComputedStyle* aStyle) {
   return new (aPresShell)
       nsFirstLineFrame(aStyle, aPresShell->GetPresContext());
@@ -1016,7 +1013,7 @@ void nsFirstLineFrame::Reflow(nsPresContext* aPresContext,
   // It's also possible that we have an overflow list for ourselves.
   DrainSelfOverflowList();
 
-  // Set our own reflow state (additional state above and beyond aReflowInput).
+  // Set our own reflow input (additional state above and beyond aReflowInput).
   InlineReflowInput irs;
   irs.mPrevFrame = nullptr;
   irs.mLineContainer = aReflowInput.mLineLayout->LineContainerFrame();

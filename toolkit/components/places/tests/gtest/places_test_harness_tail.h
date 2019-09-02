@@ -24,7 +24,7 @@ class RunNextTest : public mozilla::Runnable {
     NS_ASSERTION(NS_IsMainThread(), "Not running on the main thread?");
     if (gTestsIndex < int(mozilla::ArrayLength(gTests))) {
       do_test_pending();
-      Test &test = gTests[gTestsIndex++];
+      Test& test = gTests[gTestsIndex++];
       (void)fprintf(stderr, TEST_INFO_STR "Running %s.\n", test.name);
       test.func();
     }
@@ -60,7 +60,8 @@ void disable_idle_service() {
   idle->SetDisabled(true);
 }
 
-TEST(IHistory, Test) {
+TEST(IHistory, Test)
+{
   RefPtr<WaitForConnectionClosed> spinClose = new WaitForConnectionClosed();
 
   // Tinderboxes are constantly on idle.  Since idle tasks can interact with

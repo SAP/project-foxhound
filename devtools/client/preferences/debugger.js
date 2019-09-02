@@ -18,8 +18,9 @@ pref("devtools.debugger.auto-pretty-print", false);
 pref("devtools.debugger.auto-black-box", true);
 pref("devtools.debugger.workers", false);
 
-// The default Debugger UI settings
-pref("devtools.debugger.prefs-schema-version", "1.0.0");
+// The debugger pref's schema defaults to 0 so that it can be managed
+// by utils/prefs.js in verifySchema. Bug 1565485
+pref("devtools.debugger.prefs-schema-version", 0);
 pref("devtools.debugger.ui.panes-workers-and-sources-width", 200);
 pref("devtools.debugger.ui.panes-instruments-width", 300);
 pref("devtools.debugger.ui.panes-visible-on-startup", false);
@@ -35,7 +36,7 @@ pref("devtools.debugger.workers-visible", true);
 pref("devtools.debugger.breakpoints-visible", true);
 pref("devtools.debugger.expressions-visible", true);
 pref("devtools.debugger.xhr-breakpoints-visible", true);
-pref("devtools.debugger.event-listeners-visible", false);
+pref("devtools.debugger.event-listeners-visible", true);
 pref("devtools.debugger.start-panel-collapsed", false);
 pref("devtools.debugger.end-panel-collapsed", false);
 pref("devtools.debugger.start-panel-size", 300);
@@ -45,7 +46,6 @@ pref("devtools.debugger.tabsBlackBoxed", "[]");
 pref("devtools.debugger.pending-selected-location", "{}");
 pref("devtools.debugger.pending-breakpoints", "{}");
 pref("devtools.debugger.expressions", "[]");
-pref("devtools.debugger.event-listener-breakpoints", "[]");
 pref("devtools.debugger.file-search-case-sensitive", false);
 pref("devtools.debugger.file-search-whole-word", false);
 pref("devtools.debugger.file-search-regex-match", false);
@@ -53,6 +53,7 @@ pref("devtools.debugger.project-directory-root", "");
 pref("devtools.debugger.skip-pausing", false);
 pref("devtools.debugger.logging", false);
 pref("devtools.debugger.map-scopes-enabled", false);
+pref("devtools.debugger.log-actions", false);
 
 pref("devtools.debugger.features.wasm", true);
 pref("devtools.debugger.features.shortcuts", true);
@@ -73,5 +74,5 @@ pref("devtools.debugger.features.map-expression-bindings", true);
 pref("devtools.debugger.features.xhr-breakpoints", true);
 pref("devtools.debugger.features.original-blackbox", true);
 pref("devtools.debugger.features.windowless-workers", true);
-pref("devtools.debugger.features.event-listeners-breakpoints", false);
+pref("devtools.debugger.features.event-listeners-breakpoints", true);
 pref("devtools.debugger.features.log-points", true);

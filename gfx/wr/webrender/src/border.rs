@@ -3,16 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{BorderRadius, BorderSide, BorderStyle, ColorF, ColorU};
-use api::{LayoutPrimitiveInfo, NormalBorder as ApiNormalBorder, RepeatMode};
+use api::{NormalBorder as ApiNormalBorder, RepeatMode};
 use api::units::*;
-use ellipse::Ellipse;
+use crate::ellipse::Ellipse;
 use euclid::vec2;
-use display_list_flattener::DisplayListFlattener;
-use gpu_types::{BorderInstance, BorderSegment, BrushFlags};
-use prim_store::{BorderSegmentInfo, BrushSegment, NinePatchDescriptor};
-use prim_store::{EdgeAaSegmentMask, ScrollNodeAndClipChain};
-use prim_store::borders::{NormalBorderPrim, NormalBorderData};
-use util::{lerp, RectHelpers};
+use crate::display_list_flattener::DisplayListFlattener;
+use crate::gpu_types::{BorderInstance, BorderSegment, BrushFlags};
+use crate::prim_store::{BorderSegmentInfo, BrushSegment, NinePatchDescriptor};
+use crate::prim_store::{EdgeAaSegmentMask, ScrollNodeAndClipChain};
+use crate::prim_store::borders::{NormalBorderPrim, NormalBorderData};
+use crate::util::{lerp, RectHelpers};
+use crate::internal_types::LayoutPrimitiveInfo;
 
 // Using 2048 as the maximum radius in device space before which we
 // start stretching is up for debate.
@@ -1064,7 +1065,7 @@ fn add_corner_segment(
     }
 
     let segment_rect = image_rect.intersection(&non_overlapping_rect)
-        .unwrap_or(LayoutRect::zero());
+        .unwrap_or_else(LayoutRect::zero);
 
     if segment_rect.size.width <= 0. || segment_rect.size.height <= 0. {
         return;

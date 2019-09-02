@@ -4,10 +4,13 @@
 
 "use strict";
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
   Downloads: "resource://gre/modules/Downloads.jsm",
   OfflineAppCacheHelper: "resource://gre/modules/offlineAppCache.jsm",
@@ -15,12 +18,18 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetter(this, "sas",
-                                   "@mozilla.org/storage/activity-service;1",
-                                   "nsIStorageActivityService");
-XPCOMUtils.defineLazyServiceGetter(this, "eTLDService",
-                                   "@mozilla.org/network/effective-tld-service;1",
-                                   "nsIEffectiveTLDService");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "sas",
+  "@mozilla.org/storage/activity-service;1",
+  "nsIStorageActivityService"
+);
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "TrackingDBService",
+  "@mozilla.org/tracking-db-service;1",
+  "nsITrackingDBService"
+);
 
 // A Cleaner is an object with 3 methods. These methods must return a Promise
 // object. Here a description of these methods:
@@ -40,15 +49,20 @@ XPCOMUtils.defineLazyServiceGetter(this, "eTLDService",
 const CookieCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
-      Services.cookies.removeCookiesWithOriginAttributes(JSON.stringify(aOriginAttributes),
-                                                         aHost);
+      Services.cookies.removeCookiesFromRootDomain(
+        aHost,
+        JSON.stringify(aOriginAttributes)
+      );
       aResolve();
     });
   },
 
   deleteByRange(aFrom, aTo) {
     let enumerator = Services.cookies.enumerator;
-    return this._deleteInternal(enumerator, aCookie => aCookie.creationTime > aFrom);
+    return this._deleteInternal(
+      enumerator,
+      aCookie => aCookie.creationTime > aFrom
+    );
   },
 
   deleteAll() {
@@ -66,8 +80,13 @@ const CookieCleaner = {
       let count = 0;
       for (let cookie of aEnumerator) {
         if (aCb(cookie)) {
-          Services.cookies.remove(cookie.host, cookie.name, cookie.path,
-                                  false, cookie.originAttributes);
+          Services.cookies.remove(
+            cookie.host,
+            cookie.name,
+            cookie.path,
+            false,
+            cookie.originAttributes
+          );
           // We don't want to block the main-thread.
           if (++count % YIELD_PERIOD == 0) {
             setTimeout(() => {
@@ -81,7 +100,28 @@ const CookieCleaner = {
       aResolve();
     });
   },
+};
 
+const CertCleaner = {
+  deleteByHost(aHost, aOriginAttributes) {
+    let overrideService = Cc["@mozilla.org/security/certoverride;1"].getService(
+      Ci.nsICertOverrideService
+    );
+    return new Promise(aResolve => {
+      overrideService.clearValidityOverride(aHost, -1);
+      aResolve();
+    });
+  },
+
+  deleteAll() {
+    let overrideService = Cc["@mozilla.org/security/certoverride;1"].getService(
+      Ci.nsICertOverrideService
+    );
+    return new Promise(aResolve => {
+      overrideService.clearAllOverrides();
+      aResolve();
+    });
+  },
 };
 
 const NetworkCacheCleaner = {
@@ -90,10 +130,14 @@ const NetworkCacheCleaner = {
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager
-                                   .createCodebasePrincipal(httpURI, aOriginAttributes);
-      let httpsPrincipal = Services.scriptSecurityManager
-                                   .createCodebasePrincipal(httpsURI, aOriginAttributes);
+      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        httpURI,
+        aOriginAttributes
+      );
+      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        httpsURI,
+        aOriginAttributes
+      );
 
       Services.cache2.clearOrigin(httpPrincipal);
       Services.cache2.clearOrigin(httpsPrincipal);
@@ -120,16 +164,20 @@ const ImageCacheCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
       let imageCache = Cc["@mozilla.org/image/tools;1"]
-                         .getService(Ci.imgITools)
-                         .getImgCacheForDocument(null);
+        .getService(Ci.imgITools)
+        .getImgCacheForDocument(null);
 
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager
-                                   .createCodebasePrincipal(httpURI, aOriginAttributes);
-      let httpsPrincipal = Services.scriptSecurityManager
-                                   .createCodebasePrincipal(httpsURI, aOriginAttributes);
+      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        httpURI,
+        aOriginAttributes
+      );
+      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        httpsURI,
+        aOriginAttributes
+      );
 
       imageCache.removeEntriesFromPrincipal(httpPrincipal);
       imageCache.removeEntriesFromPrincipal(httpsPrincipal);
@@ -140,8 +188,8 @@ const ImageCacheCleaner = {
   deleteByPrincipal(aPrincipal) {
     return new Promise(aResolve => {
       let imageCache = Cc["@mozilla.org/image/tools;1"]
-                         .getService(Ci.imgITools)
-                         .getImgCacheForDocument(null);
+        .getService(Ci.imgITools)
+        .getImgCacheForDocument(null);
       imageCache.removeEntriesFromPrincipal(aPrincipal);
       aResolve();
     });
@@ -150,8 +198,8 @@ const ImageCacheCleaner = {
   deleteAll() {
     return new Promise(aResolve => {
       let imageCache = Cc["@mozilla.org/image/tools;1"]
-                         .getService(Ci.imgITools)
-                         .getImgCacheForDocument(null);
+        .getService(Ci.imgITools)
+        .getImgCacheForDocument(null);
       imageCache.clearCache(false); // true=chrome, false=content
       aResolve();
     });
@@ -163,9 +211,13 @@ const PluginDataCleaner = {
     return this._deleteInternal((aPh, aTag) => {
       return new Promise(aResolve => {
         try {
-          aPh.clearSiteData(aTag, aHost,
-                            Ci.nsIPluginHost.FLAG_CLEAR_ALL,
-                            -1, aResolve);
+          aPh.clearSiteData(
+            aTag,
+            aHost,
+            Ci.nsIPluginHost.FLAG_CLEAR_ALL,
+            -1,
+            aResolve
+          );
         } catch (e) {
           // Ignore errors from the plugin, but resolve the promise
           // We cannot check if something is a bailout or an error
@@ -181,8 +233,13 @@ const PluginDataCleaner = {
     return this._deleteInternal((aPh, aTag) => {
       return new Promise(aResolve => {
         try {
-          aPh.clearSiteData(aTag, null, Ci.nsIPluginHost.FLAG_CLEAR_ALL,
-                            age, aResolve);
+          aPh.clearSiteData(
+            aTag,
+            null,
+            Ci.nsIPluginHost.FLAG_CLEAR_ALL,
+            age,
+            aResolve
+          );
         } catch (e) {
           aResolve(Cr.NS_ERROR_PLUGIN_TIME_RANGE_NOT_SUPPORTED);
         }
@@ -191,8 +248,13 @@ const PluginDataCleaner = {
         if (aRv == Cr.NS_ERROR_PLUGIN_TIME_RANGE_NOT_SUPPORTED) {
           return new Promise(aResolve => {
             try {
-              aPh.clearSiteData(aTag, null, Ci.nsIPluginHost.FLAG_CLEAR_ALL,
-                                -1, aResolve);
+              aPh.clearSiteData(
+                aTag,
+                null,
+                Ci.nsIPluginHost.FLAG_CLEAR_ALL,
+                -1,
+                aResolve
+              );
             } catch (e) {
               aResolve();
             }
@@ -208,8 +270,13 @@ const PluginDataCleaner = {
     return this._deleteInternal((aPh, aTag) => {
       return new Promise(aResolve => {
         try {
-          aPh.clearSiteData(aTag, null, Ci.nsIPluginHost.FLAG_CLEAR_ALL, -1,
-                            aResolve);
+          aPh.clearSiteData(
+            aTag,
+            null,
+            Ci.nsIPluginHost.FLAG_CLEAR_ALL,
+            -1,
+            aResolve
+          );
         } catch (e) {
           aResolve();
         }
@@ -223,7 +290,9 @@ const PluginDataCleaner = {
     let promises = [];
     let tags = ph.getPluginTags();
     for (let tag of tags) {
-      promises.push(aCb(ph, tag));
+      if (tag.loaded) {
+        promises.push(aCb(ph, tag));
+      }
     }
 
     // As evidenced in bug 1253204, clearing plugin data can sometimes be
@@ -243,8 +312,12 @@ const PluginDataCleaner = {
 const DownloadsCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return Downloads.getList(Downloads.ALL).then(aList => {
-      aList.removeFinished(aDownload => eTLDService.hasRootDomain(
-        Services.io.newURI(aDownload.source.url).host, aHost));
+      aList.removeFinished(aDownload =>
+        Services.eTLD.hasRootDomain(
+          Services.io.newURI(aDownload.source.url).host,
+          aHost
+        )
+      );
     });
   },
 
@@ -254,8 +327,11 @@ const DownloadsCleaner = {
     let rangeEndMs = aTo / 1000;
 
     return Downloads.getList(Downloads.ALL).then(aList => {
-      aList.removeFinished(aDownload => aDownload.startTime >= rangeBeginMs &&
-                                        aDownload.startTime <= rangeEndMs);
+      aList.removeFinished(
+        aDownload =>
+          aDownload.startTime >= rangeBeginMs &&
+          aDownload.startTime <= rangeEndMs
+      );
     });
   },
 
@@ -268,7 +344,9 @@ const DownloadsCleaner = {
 
 const PasswordsCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
-    return this._deleteInternal(aLogin => eTLDService.hasRootDomain(aLogin.hostname, aHost));
+    return this._deleteInternal(aLogin =>
+      Services.eTLD.hasRootDomain(aLogin.hostname, aHost)
+    );
   },
 
   deleteAll() {
@@ -300,8 +378,9 @@ const PasswordsCleaner = {
 const MediaDevicesCleaner = {
   deleteByRange(aFrom, aTo) {
     return new Promise(aResolve => {
-      let mediaMgr = Cc["@mozilla.org/mediaManagerService;1"]
-                       .getService(Ci.nsIMediaManagerService);
+      let mediaMgr = Cc["@mozilla.org/mediaManagerService;1"].getService(
+        Ci.nsIMediaManagerService
+      );
       mediaMgr.sanitizeDeviceIds(aFrom);
       aResolve();
     });
@@ -309,8 +388,9 @@ const MediaDevicesCleaner = {
 
   deleteAll() {
     return new Promise(aResolve => {
-      let mediaMgr = Cc["@mozilla.org/mediaManagerService;1"]
-                       .getService(Ci.nsIMediaManagerService);
+      let mediaMgr = Cc["@mozilla.org/mediaManagerService;1"].getService(
+        Ci.nsIMediaManagerService
+      );
       mediaMgr.sanitizeDeviceIds(null);
       aResolve();
     });
@@ -330,16 +410,25 @@ const QuotaCleaner = {
     // localStorage: The legacy LocalStorage implementation that will
     // eventually be removed depends on this observer notification to clear by
     // principal.
-    Services.obs.notifyObservers(null, "extension:purge-localStorage",
-                                 aPrincipal.URI.host);
+    Services.obs.notifyObservers(
+      null,
+      "extension:purge-localStorage",
+      aPrincipal.URI.host
+    );
 
     // Clear sessionStorage
-    Services.obs.notifyObservers(null, "browser:purge-sessionStorage",
-                                 aPrincipal.URI.host);
+    Services.obs.notifyObservers(
+      null,
+      "browser:purge-sessionStorage",
+      aPrincipal.URI.host
+    );
 
     // ServiceWorkers: they must be removed before cleaning QuotaManager.
     return ServiceWorkerCleanUp.removeFromPrincipal(aPrincipal)
-      .then(_ => /* exceptionThrown = */ false, _ => /* exceptionThrown = */ true)
+      .then(
+        _ => /* exceptionThrown = */ false,
+        _ => /* exceptionThrown = */ true
+      )
       .then(exceptionThrown => {
         // QuotaManager: In the event of a failure, we call reject to propagate
         // the error upwards.
@@ -347,7 +436,7 @@ const QuotaCleaner = {
           let req = Services.qms.clearStoragesForPrincipal(aPrincipal);
           req.callback = () => {
             if (exceptionThrown || req.resultCode != Cr.NS_OK) {
-              aReject({message: "Delete by principal failed"});
+              aReject({ message: "Delete by principal failed" });
             } else {
               aResolve();
             }
@@ -365,77 +454,110 @@ const QuotaCleaner = {
     // Clear sessionStorage
     Services.obs.notifyObservers(null, "browser:purge-sessionStorage", aHost);
 
-    let exceptionThrown = false;
-
     // ServiceWorkers: they must be removed before cleaning QuotaManager.
-    return Promise.all([
-      ServiceWorkerCleanUp.removeFromHost("http://" + aHost).catch(_ => { exceptionThrown = true; }),
-      ServiceWorkerCleanUp.removeFromHost("https://" + aHost).catch(_ => { exceptionThrown = true; }),
-    ]).then(() => {
+    return ServiceWorkerCleanUp.removeFromHost(aHost)
+      .then(
+        _ => /* exceptionThrown = */ false,
+        _ => /* exceptionThrown = */ true
+      )
+      .then(exceptionThrown => {
         // QuotaManager: In the event of a failure, we call reject to propagate
         // the error upwards.
 
         // delete data from both HTTP and HTTPS sites
         let httpURI = Services.io.newURI("http://" + aHost);
         let httpsURI = Services.io.newURI("https://" + aHost);
-        let httpPrincipal = Services.scriptSecurityManager
-                                     .createCodebasePrincipal(httpURI, aOriginAttributes);
-        let httpsPrincipal = Services.scriptSecurityManager
-                                     .createCodebasePrincipal(httpsURI, aOriginAttributes);
+        let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+          httpURI,
+          aOriginAttributes
+        );
+        let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+          httpsURI,
+          aOriginAttributes
+        );
         let promises = [];
-        promises.push(new Promise((aResolve, aReject) => {
-          let req = Services.qms.clearStoragesForPrincipal(httpPrincipal, null, null, true);
-          req.callback = () => {
-            if (req.resultCode == Cr.NS_OK) {
-              aResolve();
-            } else {
-              aReject({message: "Delete by host failed"});
-            }
-          };
-        }));
-        promises.push(new Promise((aResolve, aReject) => {
-          let req = Services.qms.clearStoragesForPrincipal(httpsPrincipal, null, null, true);
-          req.callback = () => {
-            if (req.resultCode == Cr.NS_OK) {
-              aResolve();
-            } else {
-              aReject({message: "Delete by host failed"});
-            }
-          };
-        }));
+        promises.push(
+          new Promise((aResolve, aReject) => {
+            let req = Services.qms.clearStoragesForPrincipal(
+              httpPrincipal,
+              null,
+              null,
+              true
+            );
+            req.callback = () => {
+              if (req.resultCode == Cr.NS_OK) {
+                aResolve();
+              } else {
+                aReject({ message: "Delete by host failed" });
+              }
+            };
+          })
+        );
+        promises.push(
+          new Promise((aResolve, aReject) => {
+            let req = Services.qms.clearStoragesForPrincipal(
+              httpsPrincipal,
+              null,
+              null,
+              true
+            );
+            req.callback = () => {
+              if (req.resultCode == Cr.NS_OK) {
+                aResolve();
+              } else {
+                aReject({ message: "Delete by host failed" });
+              }
+            };
+          })
+        );
         if (Services.lsm.nextGenLocalStorageEnabled) {
           // deleteByHost has the semantics that "foo.example.com" should be
-          // wiped if we are provided an aHost of "example.com".  QuotaManager
-          // doesn't have a way to directly do this, so we use getUsage() to
-          // get a list of all of the origins known to QuotaManager and then
-          // check whether the domain is a sub-domain of aHost.
-          promises.push(new Promise((aResolve, aReject) => {
-            Services.qms.getUsage(aRequest => {
-              if (aRequest.resultCode != Cr.NS_OK) {
-                aReject({message: "Delete by host failed"});
-                return;
-              }
-
-              let promises = [];
-              for (let item of aRequest.result) {
-                let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(item.origin);
-                if (eTLDService.hasRootDomain(principal.URI.host, aHost)) {
-                  promises.push(new Promise((aResolve, aReject) => {
-                    let clearRequest = Services.qms.clearStoragesForPrincipal(principal, null, "ls");
-                    clearRequest.callback = () => {
-                      if (clearRequest.resultCode == Cr.NS_OK) {
-                        aResolve();
-                      } else {
-                        aReject({message: "Delete by host failed"});
-                      }
-                    };
-                  }));
+          // wiped if we are provided an aHost of "example.com".
+          promises.push(
+            new Promise((aResolve, aReject) => {
+              Services.qms.listInitializedOrigins(aRequest => {
+                if (aRequest.resultCode != Cr.NS_OK) {
+                  aReject({ message: "Delete by host failed" });
+                  return;
                 }
-              }
 
-              Promise.all(promises).then(aResolve);
-            });
-          }));
+                let promises = [];
+                for (let item of aRequest.result) {
+                  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+                    item.origin
+                  );
+                  let host;
+                  try {
+                    host = principal.URI.host;
+                  } catch (e) {
+                    // There is no host for the given principal.
+                    continue;
+                  }
+
+                  if (Services.eTLD.hasRootDomain(host, aHost)) {
+                    promises.push(
+                      new Promise((aResolve, aReject) => {
+                        let clearRequest = Services.qms.clearStoragesForPrincipal(
+                          principal,
+                          null,
+                          "ls"
+                        );
+                        clearRequest.callback = () => {
+                          if (clearRequest.resultCode == Cr.NS_OK) {
+                            aResolve();
+                          } else {
+                            aReject({ message: "Delete by host failed" });
+                          }
+                        };
+                      })
+                    );
+                  }
+                }
+
+                Promise.all(promises).then(aResolve);
+              });
+            })
+          );
         }
         return Promise.all(promises).then(() => {
           return exceptionThrown ? Promise.reject() : Promise.resolve();
@@ -444,16 +566,19 @@ const QuotaCleaner = {
   },
 
   deleteByRange(aFrom, aTo) {
-    let principals = sas.getActiveOrigins(aFrom, aTo)
-                        .QueryInterface(Ci.nsIArray);
+    let principals = sas
+      .getActiveOrigins(aFrom, aTo)
+      .QueryInterface(Ci.nsIArray);
 
     let promises = [];
     for (let i = 0; i < principals.length; ++i) {
       let principal = principals.queryElementAt(i, Ci.nsIPrincipal);
 
-      if (principal.URI.scheme != "http" &&
-          principal.URI.scheme != "https" &&
-          principal.URI.scheme != "file") {
+      if (
+        principal.URI.scheme != "http" &&
+        principal.URI.scheme != "https" &&
+        principal.URI.scheme != "file"
+      ) {
         continue;
       }
 
@@ -472,33 +597,42 @@ const QuotaCleaner = {
 
     // ServiceWorkers
     return ServiceWorkerCleanUp.removeAll()
-      .then(_ => /* exceptionThrown = */ false, _ => /* exceptionThrown = */ true)
+      .then(
+        _ => /* exceptionThrown = */ false,
+        _ => /* exceptionThrown = */ true
+      )
       .then(exceptionThrown => {
         // QuotaManager: In the event of a failure, we call reject to propagate
         // the error upwards.
         return new Promise((aResolve, aReject) => {
           Services.qms.getUsage(aRequest => {
             if (aRequest.resultCode != Cr.NS_OK) {
-              aReject({message: "Delete all failed"});
+              aReject({ message: "Delete all failed" });
               return;
             }
 
             let promises = [];
             for (let item of aRequest.result) {
-              let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(item.origin);
-              if (principal.URI.scheme == "http" ||
-                  principal.URI.scheme == "https" ||
-                  principal.URI.scheme == "file") {
-                promises.push(new Promise((aResolve, aReject) => {
-                  let req = Services.qms.clearStoragesForPrincipal(principal);
-                  req.callback = () => {
-                    if (req.resultCode == Cr.NS_OK) {
-                      aResolve();
-                    } else {
-                      aReject({message: "Delete all failed"});
-                    }
-                  };
-                }));
+              let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+                item.origin
+              );
+              if (
+                principal.URI.scheme == "http" ||
+                principal.URI.scheme == "https" ||
+                principal.URI.scheme == "file"
+              ) {
+                promises.push(
+                  new Promise((aResolve, aReject) => {
+                    let req = Services.qms.clearStoragesForPrincipal(principal);
+                    req.callback = () => {
+                      if (req.resultCode == Cr.NS_OK) {
+                        aResolve();
+                      } else {
+                        aReject({ message: "Delete all failed" });
+                      }
+                    };
+                  })
+                );
               }
             }
 
@@ -513,8 +647,9 @@ const PredictorNetworkCleaner = {
   deleteAll() {
     // Predictive network data - like cache, no way to clear this per
     // domain, so just trash it all
-    let np = Cc["@mozilla.org/network/predictor;1"].
-             getService(Ci.nsINetworkPredictor);
+    let np = Cc["@mozilla.org/network/predictor;1"].getService(
+      Ci.nsINetworkPredictor
+    );
     np.reset();
     return Promise.resolve();
   },
@@ -527,8 +662,9 @@ const PushNotificationsCleaner = {
     }
 
     return new Promise((aResolve, aReject) => {
-      let push = Cc["@mozilla.org/push/Service;1"]
-                   .getService(Ci.nsIPushService);
+      let push = Cc["@mozilla.org/push/Service;1"].getService(
+        Ci.nsIPushService
+      );
       push.clearForDomain(aHost, aStatus => {
         if (!Components.isSuccessCode(aStatus)) {
           aReject();
@@ -545,8 +681,9 @@ const PushNotificationsCleaner = {
     }
 
     return new Promise((aResolve, aReject) => {
-      let push = Cc["@mozilla.org/push/Service;1"]
-                   .getService(Ci.nsIPushService);
+      let push = Cc["@mozilla.org/push/Service;1"].getService(
+        Ci.nsIPushService
+      );
       push.clearForDomain("*", aStatus => {
         if (!Components.isSuccessCode(aStatus)) {
           aReject();
@@ -558,12 +695,59 @@ const PushNotificationsCleaner = {
   },
 };
 
+const StorageAccessCleaner = {
+  deleteByHost(aHost, aOriginAttributes) {
+    return new Promise(aResolve => {
+      for (let perm of Services.perms.enumerator) {
+        if (perm.type == "storageAccessAPI") {
+          let toBeRemoved = false;
+          try {
+            toBeRemoved = Services.eTLD.hasRootDomain(
+              perm.principal.URI.host,
+              aHost
+            );
+          } catch (ex) {
+            continue;
+          }
+          if (!toBeRemoved) {
+            continue;
+          }
+
+          try {
+            Services.perms.removePermission(perm);
+          } catch (ex) {
+            Cu.reportError(ex);
+          }
+        }
+      }
+
+      aResolve();
+    });
+  },
+
+  deleteByRange(aFrom, aTo) {
+    Services.perms.removeByTypeSince("storageAccessAPI", aFrom / 1000);
+    return Promise.resolve();
+  },
+
+  deleteAll() {
+    Services.perms.removeByType("storageAccessAPI");
+    return Promise.resolve();
+  },
+};
+
 const HistoryCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
+    if (!AppConstants.MOZ_PLACES) {
+      return Promise.resolve();
+    }
     return PlacesUtils.history.removeByFilter({ host: "." + aHost });
   },
 
   deleteByRange(aFrom, aTo) {
+    if (!AppConstants.MOZ_PLACES) {
+      return Promise.resolve();
+    }
     return PlacesUtils.history.removeVisitsByFilter({
       beginDate: new Date(aFrom / 1000),
       endDate: new Date(aTo / 1000),
@@ -571,6 +755,9 @@ const HistoryCleaner = {
   },
 
   deleteAll() {
+    if (!AppConstants.MOZ_PLACES) {
+      return Promise.resolve();
+    }
     return PlacesUtils.history.clear();
   },
 };
@@ -579,14 +766,22 @@ const SessionHistoryCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
       Services.obs.notifyObservers(null, "browser:purge-sessionStorage", aHost);
-      Services.obs.notifyObservers(null, "browser:purge-session-history-for-domain", aHost);
+      Services.obs.notifyObservers(
+        null,
+        "browser:purge-session-history-for-domain",
+        aHost
+      );
       aResolve();
     });
   },
 
   deleteByRange(aFrom, aTo) {
     return new Promise(aResolve => {
-      Services.obs.notifyObservers(null, "browser:purge-session-history", String(aFrom));
+      Services.obs.notifyObservers(
+        null,
+        "browser:purge-session-history",
+        String(aFrom)
+      );
       aResolve();
     });
   },
@@ -602,8 +797,9 @@ const SessionHistoryCleaner = {
 const AuthTokensCleaner = {
   deleteAll() {
     return new Promise(aResolve => {
-      let sdr = Cc["@mozilla.org/security/sdr;1"]
-                  .getService(Ci.nsISecretDecoderRing);
+      let sdr = Cc["@mozilla.org/security/sdr;1"].getService(
+        Ci.nsISecretDecoderRing
+      );
       sdr.logoutAndTeardown();
       aResolve();
     });
@@ -625,8 +821,10 @@ const PermissionsCleaner = {
       for (let perm of Services.perms.enumerator) {
         let toBeRemoved;
         try {
-          toBeRemoved = eTLDService.hasRootDomain(perm.principal.URI.host,
-                                                  aHost);
+          toBeRemoved = Services.eTLD.hasRootDomain(
+            perm.principal.URI.host,
+            aHost
+          );
         } catch (ex) {
           continue;
         }
@@ -641,7 +839,7 @@ const PermissionsCleaner = {
               continue;
             }
 
-            toBeRemoved = eTLDService.hasRootDomain(uri.host, aHost);
+            toBeRemoved = Services.eTLD.hasRootDomain(uri.host, aHost);
             if (toBeRemoved) {
               break;
             }
@@ -677,8 +875,9 @@ const PermissionsCleaner = {
 const PreferencesCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise((aResolve, aReject) => {
-      let cps2 = Cc["@mozilla.org/content-pref/service;1"]
-                   .getService(Ci.nsIContentPrefService2);
+      let cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
+        Ci.nsIContentPrefService2
+      );
       cps2.removeBySubdomain(aHost, null, {
         handleCompletion: aReason => {
           if (aReason === cps2.COMPLETE_ERROR) {
@@ -694,8 +893,9 @@ const PreferencesCleaner = {
 
   deleteByRange(aFrom, aTo) {
     return new Promise(aResolve => {
-      let cps2 = Cc["@mozilla.org/content-pref/service;1"]
-                   .getService(Ci.nsIContentPrefService2);
+      let cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
+        Ci.nsIContentPrefService2
+      );
       cps2.removeAllDomainsSince(aFrom / 1000, null);
       aResolve();
     });
@@ -703,8 +903,9 @@ const PreferencesCleaner = {
 
   deleteAll() {
     return new Promise(aResolve => {
-      let cps2 = Cc["@mozilla.org/content-pref/service;1"]
-                   .getService(Ci.nsIContentPrefService2);
+      let cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
+        Ci.nsIContentPrefService2
+      );
       cps2.removeAllDomains(null);
       aResolve();
     });
@@ -714,18 +915,21 @@ const PreferencesCleaner = {
 const SecuritySettingsCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
-      let sss = Cc["@mozilla.org/ssservice;1"]
-                  .getService(Ci.nsISiteSecurityService);
-      for (let type of [Ci.nsISiteSecurityService.HEADER_HSTS,
-                        Ci.nsISiteSecurityService.HEADER_HPKP]) {
-        // Also remove HSTS/HPKP/OMS information for subdomains by enumerating
+      let sss = Cc["@mozilla.org/ssservice;1"].getService(
+        Ci.nsISiteSecurityService
+      );
+      for (let type of [
+        Ci.nsISiteSecurityService.HEADER_HSTS,
+        Ci.nsISiteSecurityService.HEADER_HPKP,
+      ]) {
+        // Also remove HSTS/HPKP information for subdomains by enumerating
         // the information in the site security service.
         for (let entry of sss.enumerate(type)) {
           let hostname = entry.hostname;
-          if (eTLDService.hasRootDomain(hostname, aHost)) {
-            // This uri is used as a key to remove the state.
+          if (Services.eTLD.hasRootDomain(hostname, aHost)) {
+            // This uri is used as a key to reset the state.
             let uri = Services.io.newURI("https://" + hostname);
-            sss.removeState(type, uri, 0, entry.originAttributes);
+            sss.resetState(type, uri, 0, entry.originAttributes);
           }
         }
       }
@@ -738,8 +942,9 @@ const SecuritySettingsCleaner = {
     return new Promise(aResolve => {
       // Clear site security settings - no support for ranges in this
       // interface either, so we clearAll().
-      let sss = Cc["@mozilla.org/ssservice;1"]
-                    .getService(Ci.nsISiteSecurityService);
+      let sss = Cc["@mozilla.org/ssservice;1"].getService(
+        Ci.nsISiteSecurityService
+      );
       sss.clearAll();
       aResolve();
     });
@@ -749,8 +954,9 @@ const SecuritySettingsCleaner = {
 const EMECleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
-      let mps = Cc["@mozilla.org/gecko-media-plugin-service;1"]
-                  .getService(Ci.mozIGeckoMediaPluginChromeService);
+      let mps = Cc["@mozilla.org/gecko-media-plugin-service;1"].getService(
+        Ci.mozIGeckoMediaPluginChromeService
+      );
       mps.forgetThisSite(aHost, JSON.stringify(aOriginAttributes));
       aResolve();
     });
@@ -778,75 +984,122 @@ const ReportsCleaner = {
   },
 };
 
+const ContentBlockingCleaner = {
+  deleteAll() {
+    return TrackingDBService.clearAll();
+  },
+
+  deleteByRange(aFrom, aTo) {
+    return TrackingDBService.clearSince(aFrom);
+  },
+};
+
 // Here the map of Flags-Cleaner.
 const FLAGS_MAP = [
- { flag: Ci.nsIClearDataService.CLEAR_COOKIES,
-   cleaner: CookieCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_CERT_EXCEPTIONS, cleaner: CertCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_NETWORK_CACHE,
-   cleaner: NetworkCacheCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_COOKIES, cleaner: CookieCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_IMAGE_CACHE,
-   cleaner: ImageCacheCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_NETWORK_CACHE,
+    cleaner: NetworkCacheCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_PLUGIN_DATA,
-   cleaner: PluginDataCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_IMAGE_CACHE,
+    cleaner: ImageCacheCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_DOWNLOADS,
-   cleaner: DownloadsCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_PLUGIN_DATA,
+    cleaner: PluginDataCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_PASSWORDS,
-   cleaner: PasswordsCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_DOWNLOADS, cleaner: DownloadsCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES,
-   cleaner: MediaDevicesCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_PASSWORDS, cleaner: PasswordsCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_APPCACHE,
-   cleaner: AppCacheCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES,
+    cleaner: MediaDevicesCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_DOM_QUOTA,
-   cleaner: QuotaCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_APPCACHE, cleaner: AppCacheCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_PREDICTOR_NETWORK_DATA,
-   cleaner: PredictorNetworkCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_DOM_QUOTA, cleaner: QuotaCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_DOM_PUSH_NOTIFICATIONS,
-   cleaner: PushNotificationsCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_PREDICTOR_NETWORK_DATA,
+    cleaner: PredictorNetworkCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_HISTORY,
-   cleaner: HistoryCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_DOM_PUSH_NOTIFICATIONS,
+    cleaner: PushNotificationsCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_SESSION_HISTORY,
-   cleaner: SessionHistoryCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_HISTORY, cleaner: HistoryCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_AUTH_TOKENS,
-   cleaner: AuthTokensCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_SESSION_HISTORY,
+    cleaner: SessionHistoryCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_AUTH_CACHE,
-   cleaner: AuthCacheCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_AUTH_TOKENS,
+    cleaner: AuthTokensCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_PERMISSIONS,
-   cleaner: PermissionsCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_AUTH_CACHE, cleaner: AuthCacheCleaner },
 
- { flag: Ci.nsIClearDataService.CLEAR_CONTENT_PREFERENCES,
-   cleaner: PreferencesCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_PERMISSIONS,
+    cleaner: PermissionsCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_SECURITY_SETTINGS,
-   cleaner: SecuritySettingsCleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_CONTENT_PREFERENCES,
+    cleaner: PreferencesCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_EME,
-   cleaner: EMECleaner },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_SECURITY_SETTINGS,
+    cleaner: SecuritySettingsCleaner,
+  },
 
- { flag: Ci.nsIClearDataService.CLEAR_REPORTS,
-   cleaner: ReportsCleaner },
+  { flag: Ci.nsIClearDataService.CLEAR_EME, cleaner: EMECleaner },
+
+  { flag: Ci.nsIClearDataService.CLEAR_REPORTS, cleaner: ReportsCleaner },
+
+  {
+    flag: Ci.nsIClearDataService.CLEAR_STORAGE_ACCESS,
+    cleaner: StorageAccessCleaner,
+  },
+
+  {
+    flag: Ci.nsIClearDataService.CLEAR_CONTENT_BLOCKING_RECORDS,
+    cleaner: ContentBlockingCleaner,
+  },
 ];
 
-this.ClearDataService = function() {};
+this.ClearDataService = function() {
+  this._initialize();
+};
 
 ClearDataService.prototype = Object.freeze({
   classID: Components.ID("{0c06583d-7dd8-4293-b1a5-912205f779aa}"),
   QueryInterface: ChromeUtils.generateQI([Ci.nsIClearDataService]),
   _xpcom_factory: XPCOMUtils.generateSingletonFactory(ClearDataService),
+
+  _initialize() {
+    // Let's start all the service we need to cleanup data.
+
+    // This is mainly needed for GeckoView that doesn't start QMS on startup
+    // time.
+    if (!Services.qms) {
+      Cu.reportError("Failed initializiation of QuotaManagerService.");
+    }
+  },
 
   deleteDataFromHost(aHost, aIsUserRequest, aFlags, aCallback) {
     if (!aHost || !aCallback) {
@@ -881,8 +1134,10 @@ ClearDataService.prototype = Object.freeze({
       // Some of the 'Cleaners' do not support to delete by principal. Fallback
       // is to delete by host.
       if (aCleaner.deleteByHost) {
-        return aCleaner.deleteByHost(aPrincipal.URI.host,
-                                     aPrincipal.originAttributes);
+        return aCleaner.deleteByHost(
+          aPrincipal.URI.host,
+          aPrincipal.originAttributes
+        );
       }
       // Next fallback is to use deleteAll(), but only if this was a user request.
       if (aIsUserRequest) {
@@ -924,8 +1179,11 @@ ClearDataService.prototype = Object.freeze({
   },
 
   deleteDataFromOriginAttributesPattern(aPattern) {
-    Services.obs.notifyObservers(null, "clear-origin-attributes-data",
-      JSON.stringify(aPattern));
+    Services.obs.notifyObservers(
+      null,
+      "clear-origin-attributes-data",
+      JSON.stringify(aPattern)
+    );
   },
 
   // This internal method uses aFlags against FLAGS_MAP in order to retrieve a
@@ -941,7 +1199,9 @@ ClearDataService.prototype = Object.freeze({
         resultFlags |= c.flag;
       });
     });
-    Promise.all(promises).then(() => { aCallback.onDataDeleted(resultFlags); });
+    Promise.all(promises).then(() => {
+      aCallback.onDataDeleted(resultFlags);
+    });
     return Cr.NS_OK;
   },
 });

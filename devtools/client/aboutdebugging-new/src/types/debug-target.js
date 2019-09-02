@@ -5,6 +5,7 @@
 "use strict";
 
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const { DEBUG_TARGETS } = require("../constants");
 
 const extensionTargetDetails = {
   // actor ID for this extention.
@@ -13,10 +14,19 @@ const extensionTargetDetails = {
   // manifestURL points to the manifest.json file. This URL is only valid when debugging
   // local extensions so it might be null.
   manifestURL: PropTypes.string,
+  // error message forwarded from the addon manager during reloading temporary extension.
+  reloadError: PropTypes.string,
   // unique extension id.
   uuid: PropTypes.string.isRequired,
   // warning messages forwarded from the addon manager.
   warnings: PropTypes.arrayOf(PropTypes.string).isRequired,
+};
+
+const processTargetDetails = {
+  // Description for the process.
+  description: PropTypes.string.isRequired,
+  // The id for the process. #0 is the main/parent process, #1++ are parent processes
+  processId: PropTypes.number.isRequired,
 };
 
 const tabTargetDetails = {
@@ -39,6 +49,7 @@ const debugTarget = {
   // details property will contain a type-specific object.
   details: PropTypes.oneOfType([
     PropTypes.shape(extensionTargetDetails),
+    PropTypes.shape(processTargetDetails),
     PropTypes.shape(tabTargetDetails),
     PropTypes.shape(workerTargetDetails),
   ]).isRequired,
@@ -51,8 +62,8 @@ const debugTarget = {
   id: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
   // display name for the debug target.
   name: PropTypes.string.isRequired,
-  // one of "EXTENSION", "TAB", "WORKER".
-  type: PropTypes.string.isRequired,
+  // one of "extension", "tab", "worker", "process".
+  type: PropTypes.oneOf(Object.values(DEBUG_TARGETS)).isRequired,
 };
 
 exports.debugTarget = PropTypes.shape(debugTarget);

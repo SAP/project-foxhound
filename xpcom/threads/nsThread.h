@@ -65,9 +65,8 @@ class nsThread : public nsIThreadInternal,
   nsThread();
 
  public:
-  // Initialize this as a wrapper for a new PRThread, and optionally give it a
-  // name.
-  nsresult Init(const nsACString& aName = NS_LITERAL_CSTRING(""));
+  // Initialize this as a named wrapper for a new PRThread.
+  nsresult Init(const nsACString& aName);
 
   // Initialize this as a wrapper for the current PRThread.
   nsresult InitCurrentThread();
@@ -228,11 +227,7 @@ class nsThread : public nsIThreadInternal,
 
   int8_t mPriority;
 
-  uint8_t mIsMainThread;
-
-  bool IsMainThread() const {
-    return MainThreadFlag(mIsMainThread) == MAIN_THREAD;
-  }
+  bool mIsMainThread;
 
   // Set to true if this thread creates a JSRuntime.
   bool mCanInvokeJS;
@@ -244,6 +239,12 @@ class nsThread : public nsIThreadInternal,
 
   mozilla::TimeStamp mCurrentEventStart;
   mozilla::TimeStamp mNextIdleDeadline;
+
+#ifdef EARLY_BETA_OR_EARLIER
+  nsCString mNameForWakeupTelemetry;
+  mozilla::TimeStamp mLastWakeupCheckTime;
+  uint32_t mWakeupCount = 0;
+#endif
 
   RefPtr<mozilla::PerformanceCounter> mCurrentPerformanceCounter;
 

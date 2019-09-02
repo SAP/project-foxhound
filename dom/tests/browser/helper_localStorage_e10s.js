@@ -43,9 +43,11 @@ async function openTestTabInOwnProcess(helperPageUrl, name, knownTabs) {
   let realUrl = helperPageUrl + "?" + encodeURIComponent(name);
   // Load and wait for about:blank.
   let tab = await BrowserTestUtils.openNewForegroundTab({
-    gBrowser, opening: "about:blank", forceNewProcess: true,
+    gBrowser,
+    opening: "about:blank",
+    forceNewProcess: true,
   });
-  let pid = tab.linkedBrowser.frameLoader.tabParent.osPid;
+  let pid = tab.linkedBrowser.frameLoader.remoteTab.osPid;
   ok(!knownTabs.byName.has(name), "tab needs its own name: " + name);
   ok(!knownTabs.byPid.has(pid), "tab needs to be in its own process: " + pid);
 
@@ -56,7 +58,7 @@ async function openTestTabInOwnProcess(helperPageUrl, name, knownTabs) {
   // Now trigger the actual load of our page.
   BrowserTestUtils.loadURI(tab.linkedBrowser, realUrl);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  is(tab.linkedBrowser.frameLoader.tabParent.osPid, pid, "still same pid");
+  is(tab.linkedBrowser.frameLoader.remoteTab.osPid, pid, "still same pid");
   return knownTab;
 }
 

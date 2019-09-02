@@ -24,8 +24,8 @@
  * Child and Parent variants, but only Child variants are currently implemented.
  * The parent and child variants live in separate JSMs, and have separate class
  * names, each of which have Child or Parent appended to their names, as
- * appropriate. For instance, the Browser actor has a child instance named
- * BrowserChild which lives in BrowserChild.jsm.
+ * appropriate. For instance, the AudioPlayback actor has a child instance named
+ * AudioPlaybackChild which lives in AudioPlaybackChild.jsm.
  *
  *
  * Actors are defined by calling ActorManagerParent.addActors, with an object
@@ -41,8 +41,8 @@
  * - "module": The URI from which the modules is loaded. This should be a
  *   resource: URI, ideally beginning with "resource://gre/actors/" or
  *   "resource:///actors/", with a filename matching the name of the actor for
- *   the given side. So, the child side of the Browser actor should live at
- *   "resource://gre/actors/BrowserChild.jsm".
+ *   the given side. So, the child side of the AudioPlayback actor should live at
+ *   "resource://gre/actors/AudioPlaybackChild.jsm".
  *
  * - "group": A group name which restricts the message managers to which this
  *   actor may be attached. This should match the "messagemanagergroup"
@@ -95,65 +95,123 @@
 
 var EXPORTED_SYMBOLS = ["ActorManagerParent"];
 
-const {ExtensionUtils} = ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const { ExtensionUtils } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const {DefaultMap} = ExtensionUtils;
+const { DefaultMap } = ExtensionUtils;
 
 let ACTORS = {
+  Autoplay: {
+    parent: {
+      moduleURI: "resource://gre/actors/AutoplayParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AutoplayChild.jsm",
+      events: {
+        GloballyAutoplayBlocked: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  BrowserElement: {
+    parent: {
+      moduleURI: "resource://gre/actors/BrowserElementParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/BrowserElementChild.jsm",
+      events: {
+        DOMWindowClose: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  DateTimePicker: {
+    parent: {
+      moduleURI: "resource://gre/actors/DateTimePickerParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/DateTimePickerChild.jsm",
+      events: {
+        MozOpenDateTimePicker: {},
+        MozUpdateDateTimePicker: {},
+        MozCloseDateTimePicker: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  InlineSpellChecker: {
+    parent: {
+      moduleURI: "resource://gre/actors/InlineSpellCheckerParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/InlineSpellCheckerChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  Select: {
+    parent: {
+      moduleURI: "resource://gre/actors/SelectParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/SelectChild.jsm",
+      events: {
+        mozshowdropdown: {},
+        "mozshowdropdown-sourcetouch": {},
+        mozhidedropdown: { mozSystemGroup: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  // UAWidgetsDateTimeBox is a _duplicate_ of UAWidgetsChild
+  // that handles only the datetime box widget. The original
+  // intention to port all all UAWidgets to JSWindowActor
+  // at once is blocked by some jUnit tests related to
+  // the video element failing in
+  // mobile/android/geckoview/src/androidTest/java/org/mozilla/geckoview/test/MediaElementTest.kt
+  // when running on android API 16 (debug & pgo) platforms.
+  UAWidgetsDateTimeBox: {
+    child: {
+      moduleURI: "resource://gre/actors/UAWidgetsDateTimeBoxChild.jsm",
+      events: {
+        UAWidgetSetupOrChange: {},
+        UAWidgetTeardown: {},
+      },
+    },
+
+    allFrames: true,
+  },
+};
+
+let LEGACY_ACTORS = {
   AudioPlayback: {
     child: {
       module: "resource://gre/actors/AudioPlaybackChild.jsm",
-      messages: [
-        "AudioPlayback",
-      ],
-      observers: [
-        "audio-playback",
-      ],
-    },
-  },
-
-  Autoplay: {
-    child: {
-      module: "resource://gre/actors/AutoplayChild.jsm",
-      events: {
-        "GloballyAutoplayBlocked": {},
-      },
-    },
-  },
-
-  Browser: {
-    child: {
-      module: "resource://gre/actors/BrowserChild.jsm",
-      events: {
-        "DOMWindowClose": {},
-      },
-
-      messages: [
-        "Browser:CreateAboutBlank",
-        "InPermitUnload",
-        "PermitUnload",
-      ],
+      messages: ["AudioPlayback"],
+      observers: ["audio-playback"],
     },
   },
 
   Controllers: {
     child: {
       module: "resource://gre/actors/ControllersChild.jsm",
-      messages: [
-        "ControllerCommands:Do",
-        "ControllerCommands:DoWithParams",
-      ],
-    },
-  },
-
-  DateTimePicker: {
-    child: {
-      module: "resource://gre/actors/DateTimePickerChild.jsm",
-      events: {
-        "MozOpenDateTimePicker": {},
-      },
+      messages: ["ControllerCommands:Do", "ControllerCommands:DoWithParams"],
     },
   },
 
@@ -172,7 +230,7 @@ let ACTORS = {
     child: {
       module: "resource://gre/actors/FindBarChild.jsm",
       events: {
-        "keypress": {mozSystemGroup: true},
+        keypress: { mozSystemGroup: true },
       },
     },
   },
@@ -180,9 +238,7 @@ let ACTORS = {
   Finder: {
     child: {
       module: "resource://gre/actors/FinderChild.jsm",
-      messages: [
-        "Finder:Initialize",
-      ],
+      messages: ["Finder:Initialize"],
     },
   },
 
@@ -191,7 +247,7 @@ let ACTORS = {
       module: "resource://gre/actors/FormSubmitChild.jsm",
       allFrames: true,
       events: {
-        "DOMFormBeforeSubmit": {},
+        DOMFormBeforeSubmit: {},
       },
     },
   },
@@ -200,7 +256,7 @@ let ACTORS = {
     child: {
       module: "resource://gre/actors/KeyPressEventModelCheckerChild.jsm",
       events: {
-        "CheckKeyPressEventModel": {capture: true, mozSystemGroup: true},
+        CheckKeyPressEventModel: { capture: true, mozSystemGroup: true },
       },
     },
   },
@@ -217,11 +273,37 @@ let ACTORS = {
     },
   },
 
+  PictureInPicture: {
+    child: {
+      module: "resource://gre/actors/PictureInPictureChild.jsm",
+      events: {
+        MozTogglePictureInPicture: { capture: true },
+      },
+
+      messages: [
+        "PictureInPicture:SetupPlayer",
+        "PictureInPicture:Play",
+        "PictureInPicture:Pause",
+      ],
+    },
+  },
+
+  PictureInPictureToggle: {
+    child: {
+      allFrames: true,
+      module: "resource://gre/actors/PictureInPictureChild.jsm",
+      events: {
+        canplay: { capture: true, mozSystemGroup: true },
+        pagehide: { capture: true },
+      },
+    },
+  },
+
   PopupBlocking: {
     child: {
       module: "resource://gre/actors/PopupBlockingChild.jsm",
       events: {
-        "DOMPopupBlocked": {capture: true},
+        DOMPopupBlocked: { capture: true },
       },
     },
   },
@@ -230,8 +312,8 @@ let ACTORS = {
     child: {
       module: "resource://gre/actors/PrintingChild.jsm",
       events: {
-        "PrintingError": {capture: true},
-        "printPreviewUpdate": {capture: true},
+        PrintingError: { capture: true },
+        printPreviewUpdate: { capture: true },
       },
       messages: [
         "Printing:Preview:Enter",
@@ -246,28 +328,14 @@ let ACTORS = {
   PurgeSessionHistory: {
     child: {
       module: "resource://gre/actors/PurgeSessionHistoryChild.jsm",
-      messages: [
-        "Browser:PurgeSessionHistory",
-      ],
-    },
-  },
-
-  Select: {
-    child: {
-      module: "resource://gre/actors/SelectChild.jsm",
-      events: {
-        "mozshowdropdown": {},
-        "mozshowdropdown-sourcetouch": {},
-      },
+      messages: ["Browser:PurgeSessionHistory"],
     },
   },
 
   SelectionSource: {
     child: {
       module: "resource://gre/actors/SelectionSourceChild.jsm",
-      messages: [
-        "ViewSource:GetSelection",
-      ],
+      messages: ["ViewSource:GetSelection"],
     },
   },
 
@@ -286,8 +354,8 @@ let ACTORS = {
     child: {
       module: "resource://gre/actors/UAWidgetsChild.jsm",
       events: {
-        "UAWidgetSetupOrChange": {},
-        "UAWidgetTeardown": {},
+        UAWidgetSetupOrChange: {},
+        UAWidgetTeardown: {},
       },
     },
   },
@@ -299,9 +367,7 @@ let ACTORS = {
         "UnselectedTabHover:Enable": {},
         "UnselectedTabHover:Disable": {},
       },
-      messages: [
-        "Browser:UnselectedTabHover",
-      ],
+      messages: ["Browser:UnselectedTabHover"],
     },
   },
 
@@ -309,11 +375,9 @@ let ACTORS = {
     child: {
       module: "resource://gre/actors/WebChannelChild.jsm",
       events: {
-        "WebChannelMessageToChrome": {capture: true, wantUntrusted: true},
+        WebChannelMessageToChrome: { capture: true, wantUntrusted: true },
       },
-      messages: [
-        "WebChannelMessageToContent",
-      ],
+      messages: ["WebChannelMessageToContent"],
     },
   },
 
@@ -336,32 +400,14 @@ let ACTORS = {
     child: {
       module: "resource://gre/actors/ZoomChild.jsm",
       events: {
-        "FullZoomChange": {},
-        "TextZoomChange": {},
-        "ZoomChangeUsingMouseWheel": {},
+        FullZoomChange: {},
+        TextZoomChange: {},
+        ZoomChangeUsingMouseWheel: {},
       },
-      messages: [
-        "FullZoom",
-        "TextZoom",
-      ],
+      messages: ["FullZoom", "TextZoom"],
     },
   },
 };
-
-if (AppConstants.NIGHTLY_BUILD) {
-  ACTORS.PictureInPicture = {
-    child: {
-      module: "resource://gre/actors/PictureInPictureChild.jsm",
-      events: {
-        "MozTogglePictureInPicture": {capture: true},
-      },
-
-      messages: [
-        "PictureInPicture:SetupPlayer",
-      ],
-    },
-  };
-}
 
 class ActorSet {
   constructor(group, actorSide) {
@@ -376,11 +422,11 @@ class ActorSet {
 
   addActor(actorName, actor) {
     actorName += this.actorSide;
-    this.actors.set(actorName, {module: actor.module});
+    this.actors.set(actorName, { module: actor.module });
 
     if (actor.events) {
       for (let [event, options] of Object.entries(actor.events)) {
-        this.events.push({actor: actorName, event, options});
+        this.events.push({ actor: actorName, event, options });
       }
     }
     for (let msg of actor.messages || []) {
@@ -392,7 +438,7 @@ class ActorSet {
   }
 }
 
-const {sharedData} = Services.ppmm;
+const { sharedData } = Services.ppmm;
 
 var ActorManagerParent = {
   // Actor sets which should be loaded in the child side, keyed by
@@ -409,13 +455,21 @@ var ActorManagerParent = {
 
   addActors(actors) {
     for (let [actorName, actor] of Object.entries(actors)) {
-      let {child} = actor;
+      ChromeUtils.registerWindowActor(actorName, actor);
+    }
+  },
+
+  addLegacyActors(actors) {
+    for (let [actorName, actor] of Object.entries(actors)) {
+      let { child } = actor;
       {
         let actorSet;
         if (child.matches || child.allFrames) {
-          actorSet = this.singletons.get({matches: child.matches || ["<all_urls>"],
-                                          allFrames: child.allFrames,
-                                          matchAboutBlank: child.matchAboutBlank});
+          actorSet = this.singletons.get({
+            matches: child.matches || ["<all_urls>"],
+            allFrames: child.allFrames,
+            matchAboutBlank: child.matchAboutBlank,
+          });
         } else {
           actorSet = this.childGroups.get(child.group || null);
         }
@@ -424,9 +478,8 @@ var ActorManagerParent = {
       }
 
       if (actor.parent) {
-        let {parent} = actor;
-        this.parentGroups.get(parent.group || null).addActor(
-          actorName, parent);
+        let { parent } = actor;
+        this.parentGroups.get(parent.group || null).addActor(actorName, parent);
       }
     }
   },
@@ -446,3 +499,4 @@ var ActorManagerParent = {
 };
 
 ActorManagerParent.addActors(ACTORS);
+ActorManagerParent.addLegacyActors(LEGACY_ACTORS);

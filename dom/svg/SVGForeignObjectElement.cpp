@@ -11,6 +11,7 @@
 #include "mozilla/dom/SVGDocument.h"
 #include "mozilla/dom/SVGForeignObjectElementBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "SVGGeometryProperty.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(ForeignObject)
 
@@ -40,6 +41,8 @@ SVGForeignObjectElement::SVGForeignObjectElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : SVGGraphicsElement(std::move(aNodeInfo)) {}
 
+namespace SVGT = SVGGeometryProperty::Tags;
+
 //----------------------------------------------------------------------
 // nsINode methods
 
@@ -47,19 +50,19 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGForeignObjectElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::X() {
+already_AddRefed<DOMSVGAnimatedLength> SVGForeignObjectElement::X() {
   return mLengthAttributes[ATTR_X].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::Y() {
+already_AddRefed<DOMSVGAnimatedLength> SVGForeignObjectElement::Y() {
   return mLengthAttributes[ATTR_Y].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::Width() {
+already_AddRefed<DOMSVGAnimatedLength> SVGForeignObjectElement::Width() {
   return mLengthAttributes[ATTR_WIDTH].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGForeignObjectElement::Height() {
+already_AddRefed<DOMSVGAnimatedLength> SVGForeignObjectElement::Height() {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);
 }
 
@@ -77,8 +80,16 @@ gfxMatrix SVGForeignObjectElement::PrependLocalTransformsTo(
   }
   // our 'x' and 'y' attributes:
   float x, y;
-  const_cast<SVGForeignObjectElement*>(this)->GetAnimatedLengthValues(&x, &y,
-                                                                      nullptr);
+
+  if (GetPrimaryFrame()) {
+    SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y>(this, &x, &y);
+  } else {
+    // This function might be called for element in display:none subtree
+    // (e.g. getScreenCTM), we fall back to use SVG attributes.
+    const_cast<SVGForeignObjectElement*>(this)->GetAnimatedLengthValues(
+        &x, &y, nullptr);
+  }
+
   gfxMatrix toUserSpace = gfxMatrix::Translation(x, y);
   if (aWhich == eChildToUserSpace) {
     return toUserSpace * aMatrix;
@@ -89,10 +100,12 @@ gfxMatrix SVGForeignObjectElement::PrependLocalTransformsTo(
 
 /* virtual */
 bool SVGForeignObjectElement::HasValidDimensions() const {
-  return mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() &&
-         mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0 &&
-         mLengthAttributes[ATTR_HEIGHT].IsExplicitlySet() &&
-         mLengthAttributes[ATTR_HEIGHT].GetAnimValInSpecifiedUnits() > 0;
+  float width, height;
+
+  MOZ_ASSERT(GetPrimaryFrame());
+  SVGGeometryProperty::ResolveAll<SVGT::Width, SVGT::Height>(
+      const_cast<SVGForeignObjectElement*>(this), &width, &height);
+  return width > 0 && height > 0;
 }
 
 //----------------------------------------------------------------------
@@ -109,7 +122,8 @@ SVGForeignObjectElement::IsAttributeMapped(const nsAtom* name) const {
                                                     sTextContentElementsMap,
                                                     sViewportsMap};
 
-  return FindAttributeDependence(name, map) ||
+  return IsInLengthInfo(name, sLengthInfo) ||
+         FindAttributeDependence(name, map) ||
          SVGGraphicsElement::IsAttributeMapped(name);
 }
 
@@ -119,6 +133,23 @@ SVGForeignObjectElement::IsAttributeMapped(const nsAtom* name) const {
 SVGElement::LengthAttributesInfo SVGForeignObjectElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
                               ArrayLength(sLengthInfo));
+}
+
+nsCSSPropertyID SVGForeignObjectElement::GetCSSPropertyIdForAttrEnum(
+    uint8_t aAttrEnum) {
+  switch (aAttrEnum) {
+    case ATTR_X:
+      return eCSSProperty_x;
+    case ATTR_Y:
+      return eCSSProperty_y;
+    case ATTR_WIDTH:
+      return eCSSProperty_width;
+    case ATTR_HEIGHT:
+      return eCSSProperty_height;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown attr enum");
+      return eCSSProperty_UNKNOWN;
+  }
 }
 
 }  // namespace dom

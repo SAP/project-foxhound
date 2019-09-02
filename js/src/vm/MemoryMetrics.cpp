@@ -76,7 +76,8 @@ static bool EqualStringsPure(JSString* s1, JSString* s2) {
   if (s1->isLinear()) {
     c1 = s1->asLinear().chars<Char1>(nogc);
   } else {
-    ownedChars1 = s1->asRope().copyChars<Char1>(/* tcx */ nullptr);
+    ownedChars1 =
+        s1->asRope().copyChars<Char1>(/* tcx */ nullptr, js::MallocArena);
     if (!ownedChars1) {
       MOZ_CRASH("oom");
     }
@@ -88,7 +89,8 @@ static bool EqualStringsPure(JSString* s1, JSString* s2) {
   if (s2->isLinear()) {
     c2 = s2->asLinear().chars<Char2>(nogc);
   } else {
-    ownedChars2 = s2->asRope().copyChars<Char2>(/* tcx */ nullptr);
+    ownedChars2 =
+        s2->asRope().copyChars<Char2>(/* tcx */ nullptr, js::MallocArena);
     if (!ownedChars2) {
       MOZ_CRASH("oom");
     }
@@ -126,7 +128,8 @@ static void StoreStringChars(char* buffer, size_t bufferSize, JSString* str) {
   if (str->isLinear()) {
     chars = str->asLinear().chars<CharT>(nogc);
   } else {
-    ownedChars = str->asRope().copyChars<CharT>(/* tcx */ nullptr);
+    ownedChars =
+        str->asRope().copyChars<CharT>(/* tcx */ nullptr, js::MallocArena);
     if (!ownedChars) {
       MOZ_CRASH("oom");
     }
@@ -442,11 +445,10 @@ static void StatsCellCallback(JSRuntime* rt, void* data, void* thing,
       realmStats.scriptsGCHeap += thingSize;
       realmStats.scriptsMallocHeapData +=
           script->sizeOfData(rtStats->mallocSizeOf_);
-      realmStats.typeInferenceTypeScripts +=
-          script->sizeOfTypeScript(rtStats->mallocSizeOf_);
-      jit::AddSizeOfBaselineData(script, rtStats->mallocSizeOf_,
-                                 &realmStats.baselineData,
+      script->addSizeOfJitScript(rtStats->mallocSizeOf_, &realmStats.jitScripts,
                                  &realmStats.baselineStubsFallback);
+      jit::AddSizeOfBaselineData(script, rtStats->mallocSizeOf_,
+                                 &realmStats.baselineData);
       realmStats.ionData += jit::SizeOfIonData(script, rtStats->mallocSizeOf_);
       CollectScriptSourceStats<granularity>(closure, script->scriptSource());
       break;
@@ -696,6 +698,11 @@ static bool FindNotableScriptSources(JS::RuntimeSizes& runtime) {
 static bool CollectRuntimeStatsHelper(JSContext* cx, RuntimeStats* rtStats,
                                       ObjectPrivateVisitor* opv, bool anonymize,
                                       IterateCellCallback statsCellCallback) {
+  // Finish any ongoing incremental GC that may change the data we're gathering
+  // and ensure that we don't do anything that could start another one.
+  gc::FinishGC(cx);
+  JS::AutoAssertNoGC nogc(cx);
+
   JSRuntime* rt = cx->runtime();
   if (!rtStats->realmStatsVector.reserve(rt->numRealms)) {
     return false;

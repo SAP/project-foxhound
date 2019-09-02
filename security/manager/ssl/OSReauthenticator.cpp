@@ -7,6 +7,7 @@
 #include "OSReauthenticator.h"
 
 #include "OSKeyStore.h"
+#include "nsNetCID.h"
 
 NS_IMPL_ISUPPORTS(OSReauthenticator, nsIOSReauthenticator)
 
@@ -84,8 +85,7 @@ static nsresult ReauthenticateUserWindows(const nsACString& aPrompt,
   credui.cbSize = sizeof(credui);
   // TODO: maybe set parent (Firefox) here.
   credui.hwndParent = nullptr;
-  const nsString& tmpPrompt = NS_ConvertUTF8toUTF16(aPrompt);
-  const nsString& prompt = PromiseFlatString(tmpPrompt);
+  const nsString& prompt = NS_ConvertUTF8toUTF16(aPrompt);
   credui.pszMessageText = prompt.get();
   credui.pszCaptionText = nullptr;
   credui.hbmBanner = nullptr;  // ignored
@@ -241,9 +241,12 @@ OSReauthenticator::AsyncReauthenticateUser(const nsACString& aPrompt,
         BackgroundReauthenticateUser(promiseHandle, aPrompt);
       }));
 
-  nsCOMPtr<nsIThread> thread;
-  rv = NS_NewNamedThread(NS_LITERAL_CSTRING("ReauthenticateUserThread"),
-                         getter_AddRefs(thread), runnable);
+  nsCOMPtr<nsIEventTarget> target(
+      do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID));
+  if (!target) {
+    return NS_ERROR_FAILURE;
+  }
+  rv = target->Dispatch(runnable, NS_DISPATCH_NORMAL);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

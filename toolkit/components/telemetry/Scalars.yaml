@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # This file contains a definition of the scalar probes that are recorded in Telemetry.
 # They are submitted with the "main" pings and can be inspected in about:telemetry.
 
@@ -30,6 +34,23 @@ a11y:
     kind: boolean
     notification_emails:
       - yzenevich@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  theme:
+    bug_numbers:
+      - 1022528
+    description: >
+      OS high contrast or other accessibility theme is enabled.
+      The result is split into keys which represent the values of
+      browser.display.document_color_use: "default", "always", or "never".
+    keyed: true
+    expires: "73"
+    kind: boolean
+    notification_emails:
+      - accessibility@mozilla.com
+      - eisaacson@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -95,9 +116,40 @@ browser.engagement:
     record_in_processes:
       - 'main'
 
+  max_concurrent_tab_pinned_count:
+    bug_numbers:
+      - 1505535
+    description: >
+      The count of maximum number of pinned tabs open during a subsession. This
+      includes private windows and the ones opened when starting the browser.
+    expires: never
+    kind: uint
+    notification_emails:
+      - bmiroglio@mozilla.com
+      - aoprea@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  tab_pinned_event_count:
+    bug_numbers:
+      - 1505535
+    description: >
+      The count of tab pinned events per subsession, across all windows, after the
+      session has been restored. This includes tab pinned events from private windows.
+    expires: never
+    kind: uint
+    notification_emails:
+      - bmiroglio@mozilla.com
+      - aoprea@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
   total_uri_count:
     bug_numbers:
       - 1271313
+      - 1529232
     description: >
       The count of the total non-unique http(s) URIs visited in a subsession, including
       page reloads, after the session has been restored. This does not include background
@@ -106,9 +158,13 @@ browser.engagement:
     kind: uint
     notification_emails:
       - rweiss@mozilla.com
+      - loines@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
+    record_into_store:
+      - 'main'
+      - 'pre-account'
 
   unfiltered_uri_count:
     bug_numbers:
@@ -161,6 +217,7 @@ browser.engagement:
   active_ticks:
     bug_numbers:
       - 1376942
+      - 1545172
     description: >
       The count of the number of five-second intervals ('ticks') the user
       was considered 'active' in a subsession. Session activity involves keyboard or mouse
@@ -170,9 +227,13 @@ browser.engagement:
     kind: uint
     notification_emails:
       - bcolloran@mozilla.com
+      - loines@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
+    record_into_store:
+      - 'main'
+      - 'pre-account'
 
 # The following section contains the browser engagement scalars.
 browser.engagement.navigation:
@@ -392,60 +453,21 @@ identity.fxaccounts:
       - main
 
 security:
-  pkcs11_modules_loaded:
-    bug_numbers:
-      - 1369911
-      - 1445961
-    description: >
-      A keyed boolean indicating the library names of the PKCS#11 modules that
-      have been loaded by the browser.
-    expires: "69"
-    kind: boolean
-    keyed: true
-    notification_emails:
-      - seceng-telemetry@mozilla.com
-      - dkeeler@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - main
   webauthn_used:
     bug_numbers:
       - 1265472
+      - 1558870
     description: >
       Counts of how often Web Authentication was used in this session, keyed
       by authenticator protocol, method and result. Currently: U2FRegisterFinish,
       U2FRegisterAbort, U2FSignFinish, U2FSignAbort.
-    expires: "70"
+    expires: "78"
     kind: uint
     keyed: true
     notification_emails:
       - seceng-telemetry@mozilla.com
       - jjones@mozilla.com
     release_channel_collection: opt-out
-    record_in_processes:
-      - main
-  intermediate_preloading_num_preloaded:
-    bug_numbers:
-      - 1519273
-    description: >
-      Number of intermediate certificates pre-loaded.
-    expires: "70"
-    kind: uint
-    notification_emails:
-      - seceng-telemetry@mozilla.com
-      - jjones@mozilla.com
-    record_in_processes:
-      - main
-  intermediate_preloading_num_pending:
-    bug_numbers:
-      - 1519273
-    description: >
-      Number of intermediate certificates pending pre-load.
-    expires: "70"
-    kind: uint
-    notification_emails:
-      - seceng-telemetry@mozilla.com
-      - jjones@mozilla.com
     record_in_processes:
       - main
   client_cert:
@@ -533,6 +555,43 @@ sandbox:
     notification_emails:
       - bowen@mozilla.com
     release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+pictureinpicture:
+  opened_method:
+    bug_numbers:
+      - 1560590
+    description: >
+      The number of times a Picture-in-Picture window was opened, per trigger
+      mechanism (e.g.: the video toggle, the context menu).
+    expires: "74"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - mconley@mozilla.com
+      - astevenson@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - content
+    operating_systems:
+      - "windows"
+  closed_method:
+    bug_numbers:
+      - 1560590
+    description: >
+      The number of times a Picture-in-Picture window was closed, per trigger
+      mechanism (e.g.: the close button, the unpip button, originating tab going away,
+      process shutdown, etc).
+    expires: "74"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - mconley@mozilla.com
+      - astevenson@mozilla.com
+    release_channel_collection: opt-in
     record_in_processes:
       - main
     operating_systems:
@@ -736,7 +795,73 @@ webrtc.peerconnection:
     record_in_processes:
       - 'main'
       - 'content'
-
+  datachannel_created:
+    bug_numbers:
+      - 1518609
+    description: >
+      The number of RTCPeerConnection objects in which a RTCDataChannel was
+      created. This is recorded once for each RTCPeerConnection after the first
+      RTCDataChannel is created.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+      - 'content'
+  datachannel_max_retx_used:
+    bug_numbers:
+      - 1518609
+    description: >
+      The number of RTCPeerConnection objects in which one or more
+      RTCDataChannels were created with the legacy maxRetransmitTime option
+      instead of the new, synonymous maxPacketLifeTime option. This is recorded
+      once for each RTCPeerConnection after a RTCDataChannel is created with
+      the maxRetransmitTime option.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+      - 'content'
+  datachannel_max_life_used:
+    bug_numbers:
+      - 1518609
+    description: >
+      The number of RTCPeerConnection objects in which one or more RTCDataChannels
+      were created with the maxPacketLifeTime option instead of the deprecated,
+      synonymous maxRetransmitTime option. This is recorded once for each
+      RTCPeerConnection after a RTCDataChannel is created with the
+      maxPacketLifeTime option.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+      - 'content'
+  datachannel_max_retx_and_life_used:
+    bug_numbers:
+      - 1518609
+    description: >
+      The number of RTCPeerConnection objects in which one or more RTCDataChannels
+      were created with both maxPacketLifeTime and the deprecated, synonymous
+      maxRetransmitTime option. This is recorded once for each
+      RTCPeerConnection after RTCDataChannels have been created with the
+      maxPacketLifeTime and the maxRetransmitTime options, either together
+      or in seperate invocations.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+      - 'content'
 # The following section contains WebRTC nICEr scalars
 # For more info on ICE, see https://tools.ietf.org/html/rfc5245
 # For more info on STUN, see https://tools.ietf.org/html/rfc5389
@@ -828,6 +953,37 @@ webrtc.nicer:
       - 'main'
       - 'content'
 
+webrtc.video:
+  recv_codec_used:
+    bug_numbers:
+      - 1556766
+    description: >
+      The video codec used for receiving video on a WebRTC call.
+    expires: "never"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - dminor@mozilla.com
+      - nohlmeier@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'content'
+
+  send_codec_used:
+    bug_numbers:
+      - 1556766
+    description: >
+      The video codec used for sending video on a WebRTC call.
+    expires: "never"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - dminor@mozilla.com
+      - nohlmeier@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'content'
+
 webrtc.sdp:
   parser_diff:
     bug_numbers:
@@ -854,13 +1010,16 @@ mathml:
   doc_count:
     bug_numbers:
       - 1362187
+      - 1538985
     description: >
       The number of documents that contained enabled MathML elements.
-    expires: "63"
+    expires: "73"
     kind: uint
     notification_emails:
-      - gsquelart@mozilla.com
-    release_channel_collection: opt-in
+      - emilio@mozilla.com
+      - fredw@igalia.com
+      - dev-tech-layout@lists.mozilla.org
+    release_channel_collection: opt-out
     record_in_processes:
       - 'content'
 
@@ -868,12 +1027,16 @@ mediarecorder:
   recording_count:
     bug_numbers:
       - 1400757
+      - 1429765
+      - 1480589
+      - 1532391
     description: >
       The number of times a MediaRecorder has been started. Recorded when a MediaRecorder starts
-    expires: "68"
+    expires: "72"
     kind: uint
     notification_emails:
       - bvandyk@mozilla.com
+      - nohlmeier@mozilla.com
     release_channel_collection: opt-in
     record_in_processes:
       - main
@@ -884,34 +1047,40 @@ media:
     bug_numbers:
       - 1476456
       - 1499803
+      - 1570634
     description: >
       The number of times a top level document is loaded.
-    expires: "68"
+    expires: "74"
     kind: uint
     notification_emails:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'geckoview'
     record_in_processes:
-      - main
       - content
 
   page_had_media_count:
     bug_numbers:
       - 1476456
       - 1499803
+      - 1570634
     description: >
       The number of times a document hierarchy contained at least one audible HTMLMediaElement that had play() called upon it.
-    expires: "68"
+    expires: "74"
     kind: uint
     notification_emails:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'geckoview'
     record_in_processes:
-      - main
       - content
 
   page_had_play_revoked_count:
@@ -935,17 +1104,20 @@ media:
     bug_numbers:
       - 1476456
       - 1499803
+      - 1570634
     description: >
       The number of HTMLMediaElement autoplays on audible HTMLMediaElements which would not be allowed to play if block autoplay was enabled; we'd either prompt for permission to play or block outright depending on user preferences.
-    expires: "68"
+    expires: "74"
     kind: uint
     notification_emails:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'geckoview'
     record_in_processes:
-      - main
       - content
 
   allowed_autoplay_no_audio_track_count:
@@ -969,17 +1141,20 @@ media:
     bug_numbers:
       - 1476456
       - 1499803
+      - 1570634
     description: >
       The number of HTMLMediaElement autoplays on audible HTMLMediaElements that would have been allowed (not blocked) by the autoplay policy if block autoplay was enabled.
-    expires: "68"
+    expires: "74"
     kind: uint
     notification_emails:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'geckoview'
     record_in_processes:
-      - main
       - content
 
   blocked_no_metadata:
@@ -1319,6 +1494,21 @@ devtools.inspector:
     record_in_processes:
       - 'main'
 
+  node_selection_count:
+    bug_numbers:
+      - 1550794
+    description: >
+      Number of times a different node is marked as selected in the Inspector regardless
+      of the cause: context menu, manual selection in markup view, etc.
+    expires: "never"
+    kind: uint
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
 devtools.shadowdom:
   shadow_root_displayed:
     bug_numbers:
@@ -1369,6 +1559,21 @@ devtools:
       - 1396811
     description: >
       Number of times DevTools was opened, keyed by theme.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+devtools.tooltip:
+  shown:
+    bug_numbers:
+      - 1553471
+    description: >
+      Number of times a tooltip was shown, keyed by tooltip type. Currently supported types are "image", "font-family", "inactive-css" and "variable."
     expires: never
     kind: uint
     keyed: true
@@ -1585,6 +1790,23 @@ devtools.accessibility:
       mouse or keyboard) from the context menu opened in the accessibility tree. Keyed by
       the id of the context menu item.
     expires: "70"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - yzenevich@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  audit_activated:
+    bug_numbers:
+      - 1548241
+    description: >
+      Number of times accessibility audit was activated (with mouse or keyboard)
+      from the accessibility panel's toolbar. Keyed by the audit filter type
+      (e.g. "CONTRAST").
+    expires: "73"
     kind: uint
     keyed: true
     notification_emails:
@@ -1820,6 +2042,23 @@ dom.event:
     record_in_processes:
       - 'content'
 
+  office_online_load_count:
+    bug_numbers:
+      - 1545410
+    description: >
+      Number of times Office Online Server instances are loaded, and whether
+      they are compatible with conflated keypress event model or not, using
+      "new"/"old".  I.e., collecting percentage of too old Confluence instance
+      use count in all Office Online Server instance use count.
+    expires: "71"
+    keyed: true
+    kind: uint
+    notification_emails:
+      - mnakano@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'content'
+
 navigator.storage:
   estimate_count:
     bug_numbers:
@@ -2017,6 +2256,36 @@ telemetry:
     record_in_processes:
       - 'main'
       - 'content'
+
+  ecosystem_old_send_time:
+    bug_numbers:
+      - 1545365
+    description: >
+      The timestamp im milliseconds of the last time we tried to send an Ecosystem ping
+    expires: "73"
+    kind: string
+    notification_emails:
+      - jrediger@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - 'pre-account'
+
+  ecosystem_new_send_time:
+    bug_numbers:
+      - 1545365
+    description: >
+      The timestamp im milliseconds of the last time we tried to send an Ecosystem ping
+    expires: "73"
+    kind: string
+    notification_emails:
+      - jrediger@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - 'pre-account'
 
 telemetry.discarded:
   accumulations:
@@ -2511,23 +2780,6 @@ memoryreporter:
     record_in_processes:
       - 'content'
 
-resistfingerprinting:
-  content_window_size:
-    bug_numbers:
-      - 1489493
-    description: >
-      The size (in pixels) of the content windows for innerWidth and innerHeight.
-    expires: "66"
-    kind: uint
-    keyed: true
-    notification_emails:
-      - tihuang@mozilla.com
-      - tom@mozilla.com
-      - ettseng@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
 update:
   binarytransparencyresult:
     bug_numbers:
@@ -2543,6 +2795,796 @@ update:
       - application-update-telemetry-alerts@mozilla.com
       - seceng-telemetry@mozilla.com
       - dkeeler@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  bitshresult:
+    bug_numbers:
+      - 1343669
+      - 1540193
+      - 1520321
+    description: >
+      If a BITS download fails on the Windows side (that is to say, BITS
+      ecounters an error rather than Firefox failing to interact with BITS),
+      it will likely give an hresult error indicating what happened. This probe
+      reports those error codes to allow us to see if BITS is commonly failing
+      on some systems. This probe is keyed on the type of update download,
+      either "PARTIAL" or "COMPLETE".
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - windows
+
+update.startup:
+  from_app_version:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the previous application version that the update was applied to
+      when the update makes it to the last phase where the application has
+      exited and started.
+    expires: "72"
+    kind: string
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  mar_partial_size_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes of a partial update MAR file when
+      the update makes it to the last phase where the application has exited and
+      started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  mar_complete_size_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes of a complete update MAR file when
+      the update makes it to the last phase where the application has exited and
+      started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+update.startup.intervals:
+  check:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the check phase of the update process
+      when an update makes it to the last phase where the application has exited
+      and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  download_bits_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the BITS downloader for a partial update MAR file when the
+      update makes it to the last phase where the application has exited and
+      and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  download_bits_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the BITS downloader for a complete update MAR file when the
+      update makes it to the last phase where the application has exited and
+      started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  download_internal_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the internal application downloader for a partial update MAR
+      file when the update makes it to the last phase where the application has
+      exited and and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  download_internal_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the internal application downloader for a complete update
+      MAR file when the update makes it to the last phase where the application
+      has exited and and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  stage_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the stage phase of the update process
+      for a partial update MAR file when the update makes it to the last phase
+      where the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  stage_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the stage phase of the update process
+      for a complete update MAR file when the update makes it to the last phase
+      where the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  apply_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the apply phase of the update process
+      for a partial update MAR file when the update makes it to the last phase
+      where the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  apply_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the apply phase of the update process
+      for a complete update MAR file when the update makes it to the last phase
+      where the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+update.startup.downloads:
+  bits_partial_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded using the BITS downloader for
+      a partial update MAR file when the update makes it to the last phase where
+      the application has exited and started. This value can be different than
+      the size of the update MAR file because the value is only monitored
+      during the initial download while the application is running and not if
+      the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  bits_partial_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the BITS downloader for a
+      partial update MAR file when the update makes it to the last phase where
+      the application has exited and started. This value can be used with the
+      value of update.startup.downloads.bits_partial_bytes to estimate the bytes
+      per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  bits_complete_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded using the BITS downloader for
+      a complete update MAR file when the update makes it to the last phase
+      where the application has exited and started. This value can be different
+      than the size of the update MAR file because the value is only monitored
+      during the initial download while the application is running and not if
+      the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  bits_complete_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the BITS downloader for a
+      complete update MAR file when the update makes it to the last phase where
+      the application has exited and started. This value can be used with the
+      value of update.startup.downloads.bits_complete_bytes to estimate the
+      bytes per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  internal_partial_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded using the internal application
+      downloader for a partial update MAR file when the update makes it to the
+      last phase where the application has exited and started. This value can be
+      different than the size of the update MAR file because the value is only
+      monitored during the initial download while the application is running and
+      not if the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  internal_partial_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the internal application
+      downloader for a partial update MAR file when the update makes it to the
+      last phase where the application has exited and started. This value can be
+      used with the value of update.startup.downloads.internal_partial_bytes to
+      estimate the bytes per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  internal_complete_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded by the internal
+      application downloader for a complete update MAR file when an update makes
+      it to the last phase where the application has exited and started. This
+      value can be different than the size of the update MAR file because the
+      value is only monitored during the initial download while the
+      application is running and not if the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  internal_complete_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the internal application
+      downloader for a complete update MAR file when the update makes it to the
+      last phase where the application has exited and started. This value can be
+      used with the value of update.startup.downloads.internal_complete_bytes to
+      estimate the bytes per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+update.session:
+  from_app_version:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the previous application version that the update was applied to
+      when the update has finished due to a failure before the application has
+      exited and started.
+    expires: "72"
+    kind: string
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+  mar_partial_size_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes of a partial update MAR file when
+      the update has finished due to a failure before the application has exited
+      and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  mar_complete_size_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes of a complete update MAR file when
+      the update has finished due to a failure before the application has exited
+      and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+update.session.intervals:
+  check:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the check phase of the update process
+      when an update has finished due to a failure before the application has
+      exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  download_bits_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the BITS downloader for a partial update MAR file when the
+      update has finished due to a failure before the application has exited
+      and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  download_bits_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the BITS downloader for a complete update MAR file when the
+      update has finished due to a failure before the application has exited and
+      started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  download_internal_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the internal application downloader for a partial update MAR
+      file when the update has finished due to a failure before the application
+      has exited and and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  download_internal_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the download phase of the update
+      process using the internal application downloader for a complete update
+      MAR file when the update has finished due to a failure before the
+      application has exited and and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  stage_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the stage phase of the update process
+      for a partial update MAR file when the update has finished due to a
+      failure before the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  stage_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the stage phase of the update process
+      for a complete update MAR file when the update has finished due to a
+      failure before the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  apply_partial:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the apply phase of the update process
+      for a partial update MAR file when the update has finished due to a
+      failure before the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  apply_complete:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the interval in seconds of the apply phase of the update process
+      for a complete update MAR file when the update has finished due to a
+      failure before the application has exited and started.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+update.session.downloads:
+  bits_partial_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded using the BITS downloader for
+      a partial update MAR file when the update has finished due to a failure
+      before the application has exited and started. This value can be
+      different than the size of the update MAR file because the value is only
+      monitored during the initial download while the application is running and
+      not if the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  bits_partial_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the BITS downloader for a
+      partial update MAR file when the update has finished due to a failure
+      before the application has exited and started. This value can be used with
+      the value of update.session.downloads.bits_partial_bytes to estimate the
+      bytes per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  bits_complete_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded using the BITS downloader for
+      a complete update MAR file when the update has finished due to a failure
+      before the application has exited and started. This value can be different
+      than the size of the update MAR file because the value is only monitored
+      during the initial download while the application is running and not if
+      the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  bits_complete_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the BITS downloader for a
+      complete update MAR file when the update has finished due to a failure
+      before the application has exited and started. This value can be used with
+      the value of update.session.downloads.bits_complete_bytes to estimate the
+      bytes per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+  internal_partial_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded using the internal
+      application downloader for a partial update MAR file when the update has
+      finished due to a failure before the application has exited and started.
+      This value can be different than the size of the update MAR file because
+      the value is only monitored during the initial download while the
+      application is running and not if the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  internal_partial_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the internal application
+      downloader for a partial update MAR file when the update has finished due
+      to a failure before the application has exited and started. This value can
+      be used with the value of update.session.downloads.internal_partial_bytes
+      to estimate the bytes per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  internal_complete_bytes:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of bytes downloaded by the internal
+      application downloader for a complete update MAR file when an update has
+      finished due to a failure before the application has exited and started.
+      This value can be different than the size of the update MAR file because
+      the value is only monitored during the initial download while the
+      application is running and not if the download is resumed.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  internal_complete_seconds:
+    bug_numbers:
+      - 1539154
+    description: >
+      Records the total number of seconds spent downloading during the initial
+      download without exiting the application using the internal application
+      downloader for a complete update MAR file when the update has finished due
+      to a failure before the application has exited and started. This value can
+      be used with the value of update.session.downloads.internal_complete_bytes
+      to estimate the bytes per second for the download.
+    expires: "72"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - rstrong@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - main
@@ -2586,9 +3628,10 @@ encoding:
     bug_numbers:
       - 840476
       - 1513473
+      - 1554592
     description: >-
       Whether the Text Encoding menu was used to override an encoding in this subsession.
-    expires: "69"
+    expires: "72"
     kind: boolean
     notification_emails:
       - hsivonen@mozilla.com
@@ -2601,6 +3644,7 @@ startup:
   profile_selection_reason:
     bug_numbers:
       - 1522934
+      - 1570652
     description: >
       How the profile was selected during startup. One of the following reasons:
         unknown:
@@ -2633,7 +3677,7 @@ startup:
           A first run of the application created a new profile to use.
         default:
           The default profile was selected as normal.
-    expires: "72"
+    expires: "77"
     keyed: false
     kind: string
     notification_emails:
@@ -2642,6 +3686,23 @@ startup:
     release_channel_collection: opt-out
     record_in_processes:
       - main
+    record_into_store:
+      - main
+      - new-profile
+
+  is_cold:
+    bug_numbers:
+      - 1542833
+    description: >
+      Whether or not this startup is the first startup since OS reboot (according to our
+      best guess.)
+    expires: never
+    kind: boolean
+    notification_emails:
+      - dothayer@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
 
 script.preloader:
   mainthread_recompile:
@@ -2659,6 +3720,112 @@ script.preloader:
     record_in_processes:
       - 'main'
       - 'content'
+
+networking:
+  data_transferred_v3_kb:
+    bug_numbers:
+      - 1533363
+      - 1546903
+      - 1546796
+      - 1546906
+      - 1550756
+      - 1572666
+    description: >
+      How many KB of HTTP data transferred by type, there are some categories
+      separated by keys based on 5 parameters:
+        1. normal browsing or private browsing
+        2. system principal or not
+        3. first party or third party
+        4. class of service (Leader/Background/Others)
+        5. tracking classification (Basic/Content/FingerprintingContent)
+
+      Available keys are:
+        "Y0_N1Sys",
+        "Y1_N1",
+        "Y2_N3Oth",
+        "Y3_N3BasicLead",
+        "Y4_N3BasicBg",
+        "Y5_N3BasicOth",
+        "Y6_N3ContentLead",
+        "Y7_N3ContentBg",
+        "Y8_N3ContentOth",
+        "Y9_N3FpLead",
+        "Y10_N3FpBg",
+        "Y11_N3FpOth",
+        "Y12_P1Sys",
+        "Y13_P1",
+        "Y14_P3Oth",
+        "Y15_P3BasicLead",
+        "Y16_P3BasicBg",
+        "Y17_P3BasicOth",
+        "Y18_P3ContentLead",
+        "Y19_P3ContentBg",
+        "Y20_P3ContentOth",
+        "Y21_P3FpLead",
+        "Y22_P3FpBg",
+        "Y23_P3FpOth"
+    expires: "73"
+    keyed: true
+    kind: uint
+    notification_emails:
+      - gachen@mozilla.com
+    record_in_processes:
+      - 'main'
+    release_channel_collection: opt-out
+
+  data_transferred_captive_portal:
+    bug_numbers:
+      - 1543005
+    description: >
+      Hom many KB has been transfer over a captive portal during a subsession.
+    expires: "73"
+    keyed: false
+    kind: uint
+    notification_emails:
+      - ddamjanovic@mozilla.com
+    record_in_processes:
+      - 'main'
+
+  http_transactions_captive_portal:
+    bug_numbers:
+      - 1543005
+    description: >
+      Number of http transactions transfer over a captive portal during a subsession.
+    expires: "73"
+    keyed: false
+    kind: uint
+    notification_emails:
+      - ddamjanovic@mozilla.com
+    record_in_processes:
+      - 'main'
+
+  http_connections_captive_portal:
+    bug_numbers:
+      - 1543005
+    description: >
+      Number of http connections transfer over a captive portal during a subsession.
+    expires: "73"
+    keyed: false
+    kind: uint
+    notification_emails:
+      - ddamjanovic@mozilla.com
+    record_in_processes:
+      - 'main'
+
+# The following section is for quotaManager
+qm:
+  origin_directory_unexpected_filename:
+    bug_numbers:
+      - 1529016
+    description: >
+      Keys are the filenames of unexpected files in the profile's origin directories.
+    expires: "70"
+    keyed: true
+    kind: uint
+    notification_emails:
+      - ttung@mozilla.com
+    record_in_processes:
+      - 'main'
 
 # The following section is for probes testing the Telemetry system. They will not be
 # submitted in pings and are only used for testing.
@@ -3046,6 +4213,34 @@ telemetry.test:
     record_into_store:
       - 'main'
       - 'sync'
+
+# The following section contains counters for corruption of internal JAR and XPI files.
+corroborate:
+  omnijar_corrupted:
+    bug_numbers:
+      - 1515712
+    description: >-
+          Whether the omni jar (omni.ja) was found to be missing or corrupt when checked during startup.
+    expires: "71"
+    kind: boolean
+    notification_emails:
+      - rhelmer@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+  system_addons_corrupted:
+    bug_numbers:
+      - 1515712
+    description: >-
+      Whether any system add-on (XPI files) were found to be missing or corrupt when checked during startup.
+    expires: "71"
+    kind: boolean
+    notification_emails:
+      - rhelmer@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
 
 # NOTE: Please don't add new definitions below this point. Consider adding
 # them earlier in the file and leave the telemetry.test category as the last

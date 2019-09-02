@@ -8,11 +8,23 @@
 #define mozilla_dom_BrowserBridgeParent_h
 
 #include "mozilla/dom/PBrowserBridgeParent.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/Tuple.h"
+#include "mozilla/dom/ipc/IdType.h"
 
 namespace mozilla {
+
+namespace a11y {
+class DocAccessibleParent;
+}
+
 namespace dom {
 
+class BrowserParent;
+
+/**
+ * BrowserBridgeParent implements the parent actor part of the PBrowserBridge
+ * protocol. See PBrowserBridge for more information.
+ */
 class BrowserBridgeParent : public PBrowserBridgeParent {
  public:
   NS_INLINE_DECL_REFCOUNTING(BrowserBridgeParent);
@@ -21,19 +33,30 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
 
   // Initialize this actor after performing startup.
   nsresult Init(const nsString& aPresentationURL, const nsString& aRemoteType,
-                CanonicalBrowsingContext* aBrowsingContext);
+                CanonicalBrowsingContext* aBrowsingContext,
+                const uint32_t& aChromeFlags, TabId aTabId);
 
-  TabParent* GetTabParent() { return mTabParent; }
+  BrowserParent* GetBrowserParent() { return mBrowserParent; }
 
-  CanonicalBrowsingContext* GetBrowsingContext() {
-    return mTabParent->GetBrowsingContext();
-  }
+  CanonicalBrowsingContext* GetBrowsingContext();
 
   // Get our manager actor.
-  TabParent* Manager() {
-    MOZ_ASSERT(mIPCOpen);
-    return static_cast<TabParent*>(PBrowserBridgeParent::Manager());
+  BrowserParent* Manager();
+
+#if defined(ACCESSIBILITY)
+  /**
+   * Get the accessible for this iframe's embedder OuterDocAccessible.
+   * This returns the actor for the containing document and the unique id of
+   * the embedder accessible within that document.
+   */
+  Tuple<a11y::DocAccessibleParent*, uint64_t> GetEmbedderAccessible() {
+    return Tuple<a11y::DocAccessibleParent*, uint64_t>(mEmbedderAccessibleDoc,
+                                                       mEmbedderAccessibleID);
   }
+#endif  // defined(ACCESSIBILITY)
+
+  // Tear down this BrowserBridgeParent.
+  void Destroy();
 
  protected:
   friend class PBrowserBridgeParent;
@@ -42,18 +65,42 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
                                    const bool& aParentIsActive,
                                    const nsSizeMode& aSizeMode);
   mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aUrl);
+  mozilla::ipc::IPCResult RecvResumeLoad(uint64_t aPendingSwitchID);
   mozilla::ipc::IPCResult RecvUpdateDimensions(
       const DimensionInfo& aDimensions);
+  mozilla::ipc::IPCResult RecvUpdateEffects(const EffectsInfo& aEffects);
   mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled,
                                            const bool& aForceRepaint,
                                            const LayersObserverEpoch& aEpoch);
+
+  mozilla::ipc::IPCResult RecvNavigateByKey(const bool& aForward,
+                                            const bool& aForDocumentNavigation);
+
+  mozilla::ipc::IPCResult RecvDispatchSynthesizedMouseEvent(
+      const WidgetMouseEvent& aEvent);
+
+  mozilla::ipc::IPCResult RecvSkipBrowsingContextDetach();
+
+  mozilla::ipc::IPCResult RecvActivate();
+
+  mozilla::ipc::IPCResult RecvDeactivate(const bool& aWindowLowering);
+
+  mozilla::ipc::IPCResult RecvSetIsUnderHiddenEmbedderElement(
+      const bool& aIsUnderHiddenEmbedderElement);
+
+  mozilla::ipc::IPCResult RecvSetEmbedderAccessible(PDocAccessibleParent* aDoc,
+                                                    uint64_t aID);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
   ~BrowserBridgeParent();
 
-  RefPtr<TabParent> mTabParent;
+  RefPtr<BrowserParent> mBrowserParent;
+#if defined(ACCESSIBILITY)
+  RefPtr<a11y::DocAccessibleParent> mEmbedderAccessibleDoc;
+  uint64_t mEmbedderAccessibleID;
+#endif  // defined(ACCESSIBILITY)
   bool mIPCOpen;
 };
 

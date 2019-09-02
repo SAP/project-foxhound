@@ -197,7 +197,7 @@ nsAppShellService::DestroyHiddenWindow() {
 NS_IMETHODIMP
 nsAppShellService::CreateTopLevelWindow(
     nsIXULWindow* aParent, nsIURI* aUrl, uint32_t aChromeMask,
-    int32_t aInitialWidth, int32_t aInitialHeight, nsITabParent* aOpeningTab,
+    int32_t aInitialWidth, int32_t aInitialHeight, nsIRemoteTab* aOpeningTab,
     mozIDOMWindowProxy* aOpenerWindow, nsIXULWindow** aResult)
 
 {
@@ -495,7 +495,8 @@ nsAppShellService::CreateWindowlessBrowser(bool aIsChrome,
    * an associated doc shell, which is what we're interested in.
    */
   nsCOMPtr<nsIWebBrowser> browser =
-      nsWebBrowser::Create(stub, widget, OriginAttributes(), browsingContext);
+      nsWebBrowser::Create(stub, widget, OriginAttributes(), browsingContext,
+                           true /* disable history */);
 
   if (NS_WARN_IF(!browser)) {
     NS_ERROR("Couldn't create instance of nsWebBrowser!");
@@ -586,7 +587,7 @@ static bool CheckForFullscreenWindow() {
 nsresult nsAppShellService::JustCreateTopWindow(
     nsIXULWindow* aParent, nsIURI* aUrl, uint32_t aChromeMask,
     int32_t aInitialWidth, int32_t aInitialHeight, bool aIsHiddenWindow,
-    nsITabParent* aOpeningTab, mozIDOMWindowProxy* aOpenerWindow,
+    nsIRemoteTab* aOpeningTab, mozIDOMWindowProxy* aOpenerWindow,
     nsWebShellWindow** aResult) {
   *aResult = nullptr;
   NS_ENSURE_STATE(!mXPCOMWillShutDown);
@@ -703,6 +704,7 @@ nsresult nsAppShellService::JustCreateTopWindow(
   bool isPrivateBrowsingWindow =
       Preferences::GetBool("browser.privatebrowsing.autostart");
   bool isUsingRemoteTabs = mozilla::BrowserTabsRemoteAutostart();
+  bool isUsingRemoteSubframes = Preferences::GetBool("fission.autostart");
 
   if (aChromeMask & nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW) {
     // Caller requested a private window
@@ -710,6 +712,9 @@ nsresult nsAppShellService::JustCreateTopWindow(
   }
   if (aChromeMask & nsIWebBrowserChrome::CHROME_REMOTE_WINDOW) {
     isUsingRemoteTabs = true;
+  }
+  if (aChromeMask & nsIWebBrowserChrome::CHROME_FISSION_WINDOW) {
+    isUsingRemoteSubframes = true;
   }
 
   nsCOMPtr<mozIDOMWindowProxy> domWin = do_GetInterface(aParent);
@@ -725,6 +730,7 @@ nsresult nsAppShellService::JustCreateTopWindow(
 
   if (parentContext) {
     isUsingRemoteTabs = parentContext->UseRemoteTabs();
+    isUsingRemoteSubframes = parentContext->UseRemoteSubframes();
   }
 
   nsCOMPtr<mozIDOMWindowProxy> newDomWin =
@@ -734,6 +740,7 @@ nsresult nsAppShellService::JustCreateTopWindow(
   if (thisContext) {
     thisContext->SetPrivateBrowsing(isPrivateBrowsingWindow);
     thisContext->SetRemoteTabs(isUsingRemoteTabs);
+    thisContext->SetRemoteSubframes(isUsingRemoteSubframes);
   }
 
   window.forget(aResult);
@@ -839,7 +846,7 @@ nsAppShellService::RegisterTopLevelWindow(nsIXULWindow* aWindow) {
 
   nsCOMPtr<nsPIDOMWindowOuter> domWindow(docShell->GetWindow());
   NS_ENSURE_TRUE(domWindow, NS_ERROR_FAILURE);
-  domWindow->SetInitialPrincipalToSubject();
+  domWindow->SetInitialPrincipalToSubject(nullptr);
 
   // tell the window mediator about the new window
   nsCOMPtr<nsIWindowMediator> mediator(

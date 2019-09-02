@@ -10,8 +10,8 @@
 #include "AsyncPanZoomController.h"  // for AsyncPanZoomController
 #include "InputBlockState.h"         // for TouchBlockState
 #include "base/task.h"               // for CancelableTask, etc
-#include "gfxPrefs.h"                // for gfxPrefs
 #include "InputBlockState.h"         // for TouchBlockState
+#include "mozilla/StaticPrefs.h"     // for StaticPrefs
 #include "nsDebug.h"                 // for NS_WARNING
 #include "nsMathUtils.h"             // for NS_hypot
 
@@ -291,13 +291,13 @@ nsEventStatus GestureEventListener::HandleInputTouchMove() {
 
     // The user has performed a double tap, but not lifted her finger.
     case GESTURE_SECOND_SINGLE_TOUCH_DOWN: {
-      // If touch has moved noticeably (within gfxPrefs::APZMaxTapTime()),
+      // If touch has moved noticeably (within StaticPrefs::apz_max_tap_time()),
       // change state.
       if (MoveDistanceIsLarge()) {
         CancelLongTapTimeoutTask();
         CancelMaxTapTimeoutTask();
         mSingleTapSent = Nothing();
-        if (!gfxPrefs::APZOneTouchPinchEnabled()) {
+        if (!StaticPrefs::apz_one_touch_pinch_enabled()) {
           // If the one-touch-pinch feature is disabled, bail out of the double-
           // tap gesture instead.
           SetState(GESTURE_NONE);
@@ -601,7 +601,7 @@ void GestureEventListener::CreateLongTapTimeoutTask() {
 
   mLongTapTimeoutTask = task;
   mAsyncPanZoomController->PostDelayedTask(
-      task.forget(), gfxPrefs::UiClickHoldContextMenusDelay());
+      task.forget(), StaticPrefs::ui_click_hold_context_menus_delay());
 }
 
 void GestureEventListener::CancelMaxTapTimeoutTask() {
@@ -629,7 +629,7 @@ void GestureEventListener::CreateMaxTapTimeoutTask() {
 
   mMaxTapTimeoutTask = task;
   mAsyncPanZoomController->PostDelayedTask(task.forget(),
-                                           gfxPrefs::APZMaxTapTime());
+                                           StaticPrefs::apz_max_tap_time());
 }
 
 }  // namespace layers

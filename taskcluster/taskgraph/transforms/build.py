@@ -27,7 +27,7 @@ def set_defaults(config, jobs):
     for job in jobs:
         job['treeherder'].setdefault('kind', 'build')
         job['treeherder'].setdefault('tier', 1)
-        _, worker_os = worker_type_implementation(job['worker-type'])
+        _, worker_os = worker_type_implementation(config.graph_config, job['worker-type'])
         worker = job.setdefault('worker', {})
         worker.setdefault('env', {})
         if worker_os == "linux":
@@ -43,7 +43,10 @@ def set_defaults(config, jobs):
 def stub_installer(config, jobs):
     for job in jobs:
         resolve_keyed_by(
-            job, 'stub-installer', item_name=job['name'], project=config.params['project']
+            job, 'stub-installer', item_name=job['name'], project=config.params['project'],
+            **{
+                'release-type': config.params['release_type'],
+            }
         )
         job.setdefault('attributes', {})
         if job.get('stub-installer'):
@@ -100,13 +103,23 @@ def mozconfig(config, jobs):
 @transforms.add
 def use_profile_data(config, jobs):
     for job in jobs:
-        if not job.pop('use-pgo', False):
+        use_pgo = job.pop('use-pgo', False)
+        disable_pgo = config.params['try_task_config'].get('disable-pgo', False)
+        if not use_pgo or disable_pgo:
             yield job
             continue
 
-        dependencies = 'generate-profile-{}'.format(job['name'])
+        # If use_pgo is True, the task uses the generate-profile task of the
+        # same name. Otherwise a task can specify a specific generate-profile
+        # task to use in the use_pgo field.
+        if use_pgo is True:
+            name = job['name']
+        else:
+            name = use_pgo
+        dependencies = 'generate-profile-{}'.format(name)
         job.setdefault('dependencies', {})['generate-profile'] = dependencies
         job.setdefault('fetches', {})['generate-profile'] = ['profdata.tar.xz']
+        job['worker']['env'].update({"MOZ_PGO_PROFILE_USE": "1"})
         yield job
 
 
@@ -135,6 +148,7 @@ def enable_full_crashsymbols(config, jobs):
         else:
             logger.debug("Disabling full symbol generation for %s", job['name'])
             job['worker']['env']['MOZ_DISABLE_FULL_SYMBOLS'] = '1'
+            job['attributes'].pop('enable-full-crashsymbols', None)
         yield job
 
 
@@ -148,8 +162,9 @@ def use_artifact(config, jobs):
     else:
         use_artifact = False
     for job in jobs:
-        if config.kind == 'build' and use_artifact and \
-                job.get('index', {}).get('job-name') in ARTIFACT_JOBS:
+        if (config.kind == 'build' and use_artifact and
+            not job.get('attributes', {}).get('nightly', False) and
+            job.get('index', {}).get('job-name') in ARTIFACT_JOBS):
             job['treeherder']['symbol'] += 'a'
             job['worker']['env']['USE_ARTIFACT'] = '1'
         yield job

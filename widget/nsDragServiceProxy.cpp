@@ -7,7 +7,7 @@
 #include "nsDragServiceProxy.h"
 #include "mozilla/dom/Document.h"
 #include "nsISupportsPrimitives.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
@@ -16,8 +16,7 @@
 using mozilla::CSSIntRegion;
 using mozilla::LayoutDeviceIntRect;
 using mozilla::Maybe;
-using mozilla::dom::OptionalShmem;
-using mozilla::dom::TabChild;
+using mozilla::dom::BrowserChild;
 using mozilla::gfx::DataSourceSurface;
 using mozilla::gfx::SourceSurface;
 using mozilla::gfx::SurfaceFormat;
@@ -31,7 +30,7 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
     nsIArray* aArrayTransferables, const Maybe<CSSIntRegion>& aRegion,
     uint32_t aActionType) {
   NS_ENSURE_STATE(mSourceDocument->GetDocShell());
-  TabChild* child = TabChild::GetFrom(mSourceDocument->GetDocShell());
+  BrowserChild* child = BrowserChild::GetFrom(mSourceDocument->GetDocShell());
   NS_ENSURE_STATE(child);
   nsTArray<mozilla::dom::IPCDataTransfer> dataTransfers;
   nsContentUtils::TransferablesToIPCTransferables(
@@ -68,7 +67,7 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
         }
 
         mozilla::Unused << child->SendInvokeDragSession(
-            dataTransfers, aActionType, std::move(surfaceData), stride,
+            dataTransfers, aActionType, Some(std::move(surfaceData)), stride,
             dataSurface->GetFormat(), dragRect, IPC::Principal(principal));
         StartDragSession();
         return NS_OK;
@@ -77,8 +76,8 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
   }
 
   mozilla::Unused << child->SendInvokeDragSession(
-      dataTransfers, aActionType, mozilla::void_t(), 0,
-      static_cast<SurfaceFormat>(0), dragRect, IPC::Principal(principal));
+      dataTransfers, aActionType, Nothing(), 0, static_cast<SurfaceFormat>(0),
+      dragRect, IPC::Principal(principal));
   StartDragSession();
   return NS_OK;
 }

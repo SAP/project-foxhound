@@ -5,13 +5,17 @@ var gContentAPI;
 var gContentWindow;
 var setDefaultBrowserCalled = false;
 
-Services.scriptloader
-  .loadSubScript("chrome://mochikit/content/tests/SimpleTest/MockObjects.js", this);
+Services.scriptloader.loadSubScript(
+  "chrome://mochikit/content/tests/SimpleTest/MockObjects.js",
+  this
+);
 
 function MockShellService() {}
 MockShellService.prototype = {
   QueryInterface: ChromeUtils.generateQI([Ci.nsIShellService]),
-  isDefaultBrowser(aStartupCheck, aForAllTypes) { return false; },
+  isDefaultBrowser(aStartupCheck, aForAllTypes) {
+    return false;
+  },
   setDefaultBrowser(aClaimAllTypes, aForAllUsers) {
     setDefaultBrowserCalled = true;
   },
@@ -22,6 +26,7 @@ MockShellService.prototype = {
   BACKGROUND_CENTER: 3,
   BACKGROUND_FILL: 4,
   BACKGROUND_FIT: 5,
+  BACKGROUND_SPAN: 6,
   setDesktopBackground(aElement, aPosition) {},
   APPLICATION_MAIL: 0,
   APPLICATION_NEWS: 1,
@@ -30,8 +35,10 @@ MockShellService.prototype = {
   openApplicationWithURI(aApplication, aURI) {},
 };
 
-var mockShellService = new MockObjectRegisterer("@mozilla.org/browser/shell-service;1",
-                                                MockShellService);
+var mockShellService = new MockObjectRegisterer(
+  "@mozilla.org/browser/shell-service;1",
+  MockShellService
+);
 
 // Temporarily disabled, see note at test_setDefaultBrowser.
 // mockShellService.register();
@@ -51,9 +58,14 @@ add_UITour_task(function* test_setDefaultBrowser() {
 */
 
 add_UITour_task(async function test_isDefaultBrowser() {
-  let shell = Cc["@mozilla.org/browser/shell-service;1"]
-        .getService(Ci.nsIShellService);
+  let shell = Cc["@mozilla.org/browser/shell-service;1"].getService(
+    Ci.nsIShellService
+  );
   let isDefault = shell.isDefaultBrowser(false);
   let data = await getConfigurationPromise("appinfo");
-  is(isDefault, data.defaultBrowser, "gContentAPI result should match shellService.isDefaultBrowser");
+  is(
+    isDefault,
+    data.defaultBrowser,
+    "gContentAPI result should match shellService.isDefaultBrowser"
+  );
 });

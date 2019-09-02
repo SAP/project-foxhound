@@ -178,10 +178,10 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void visitNewObjectVMCall(LNewObject* lir);
 
   void emitGetPropertyPolymorphic(LInstruction* lir, Register obj,
-                                  Register expandoScratch, Register scratch,
+                                  Register scratch,
                                   const TypedOrValueRegister& output);
   void emitSetPropertyPolymorphic(LInstruction* lir, Register obj,
-                                  Register expandoScratch, Register scratch,
+                                  Register scratch,
                                   const ConstantOrRegister& value);
   void emitCompareS(LInstruction* lir, JSOp op, Register left, Register right,
                     Register output);

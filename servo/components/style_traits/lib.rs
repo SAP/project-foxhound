@@ -16,6 +16,8 @@ extern crate bitflags;
 #[macro_use]
 extern crate cssparser;
 extern crate euclid;
+#[macro_use]
+extern crate lazy_static;
 extern crate malloc_size_of;
 #[macro_use]
 extern crate malloc_size_of_derive;
@@ -28,6 +30,9 @@ extern crate servo_arc;
 extern crate servo_atoms;
 #[cfg(feature = "servo")]
 extern crate servo_url;
+extern crate to_shmem;
+#[macro_use]
+extern crate to_shmem_derive;
 #[cfg(feature = "servo")]
 extern crate webrender_api;
 #[cfg(feature = "servo")]
@@ -81,11 +86,14 @@ pub enum CSSPixel {}
 //   / hidpi_ratio => DeviceIndependentPixel
 //     / desktop_zoom => CSSPixel
 
+pub mod arc_slice;
 pub mod specified_value_info;
 #[macro_use]
 pub mod values;
 #[macro_use]
 pub mod viewport;
+pub mod owned_slice;
+pub mod owned_str;
 
 pub use crate::specified_value_info::{CssType, KeywordsCollectFn, SpecifiedValueInfo};
 pub use crate::values::{
@@ -144,8 +152,6 @@ pub enum StyleParseErrorKind<'i> {
 
     /// The property declaration was for an unknown property.
     UnknownProperty(CowRcStr<'i>),
-    /// An unknown vendor-specific identifier was encountered.
-    UnknownVendorProperty,
     /// The property declaration was for a disabled experimental property.
     ExperimentalProperty,
     /// The property declaration contained an invalid color value.

@@ -76,14 +76,14 @@ interface AddonManager : EventTarget {
    *        Only one supported option: 'url', the URL of the addon to install.
    * @return A promise that resolves to an instance of AddonInstall.
    */
-  Promise<AddonInstall> createInstall(optional addonInstallOptions options);
+  Promise<AddonInstall> createInstall(optional addonInstallOptions options = {});
 
   // Indicator to content whether permissions prompts are enabled
   readonly attribute boolean permissionPromptsEnabled;
 };
 
 [ChromeOnly,Exposed=Window,HeaderFile="mozilla/AddonManagerWebAPI.h"]
-interface AddonManagerPermissions {
-  static boolean isHostPermitted(DOMString host);
+namespace AddonManagerPermissions {
+  boolean isHostPermitted(DOMString host);
 };
 

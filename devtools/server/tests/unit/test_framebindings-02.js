@@ -22,17 +22,20 @@ function run_test() {
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-stack",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_pause_frame();
-                           });
+    attachTestTabAndResume(gClient, "test-stack", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_pause_frame();
+    });
   });
   do_test_pending();
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     let parentEnv = packet.frame.environment.parent;
     const bindings = parentEnv.bindings;
     const args = bindings.arguments;
@@ -52,7 +55,7 @@ function test_pause_frame() {
       Assert.equal(response.ownProperties.Object.value.class, "Function");
       Assert.ok(!!response.ownProperties.Object.value.actor);
 
-      gThreadClient.resume(function() {
+      gThreadClient.resume().then(function() {
         finishClient(gClient);
       });
     });
@@ -64,6 +67,7 @@ function test_pause_frame() {
       var a = 1;
       var b = true;
       var c = { a: "a" };
+      eval("");
       debugger;
     }
     stopMe(42, true, "nasu", null, undefined, { foo: "bar" });

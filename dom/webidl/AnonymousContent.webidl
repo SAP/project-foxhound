@@ -66,7 +66,7 @@ interface AnonymousContent {
   Animation setAnimationForElement(DOMString elementId,
                                    object? keyframes,
                                    optional UnrestrictedDoubleOrKeyframeAnimationOptions
-                                     options);
+                                     options = {});
 
   /**
    * Accepts a list of (possibly overlapping) DOMRects which describe a shape
@@ -85,4 +85,10 @@ interface AnonymousContent {
   [Throws]
   DOMString? getComputedStylePropertyValue(DOMString elementId,
                                            DOMString propertyName);
+
+  /**
+   * If event's original target is in the anonymous content, this returns the id
+   * attribute value of the target.
+   */
+  DOMString? getTargetIdForEvent(Event event);
 };

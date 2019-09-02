@@ -663,6 +663,11 @@ void DataTransfer::GetExternalClipboardFormats(const int32_t& aWhichClipboard,
                                                const bool& aPlainTextOnly,
                                                nsTArray<nsCString>* aResult) {
   MOZ_ASSERT(aResult);
+
+  // NOTE: When you change this method, you may need to change
+  //       GetExternalTransferableFormats() too since those methods should
+  //       work similarly.
+
   nsCOMPtr<nsIClipboard> clipboard =
       do_GetService("@mozilla.org/widget/clipboard;1");
   if (!clipboard || aWhichClipboard < 0) {
@@ -671,10 +676,9 @@ void DataTransfer::GetExternalClipboardFormats(const int32_t& aWhichClipboard,
 
   if (aPlainTextOnly) {
     bool hasType;
-    static const char* unicodeMime[] = {kUnicodeMime};
-    nsresult rv = clipboard->HasDataMatchingFlavors(
-        unicodeMime,
-        /* number of flavors to check */ 1, aWhichClipboard, &hasType);
+    AutoTArray<nsCString, 1> unicodeMime = {nsDependentCString(kUnicodeMime)};
+    nsresult rv = clipboard->HasDataMatchingFlavors(unicodeMime,
+                                                    aWhichClipboard, &hasType);
     NS_SUCCEEDED(rv);
     if (hasType) {
       aResult->AppendElement(kUnicodeMime);
@@ -689,9 +693,9 @@ void DataTransfer::GetExternalClipboardFormats(const int32_t& aWhichClipboard,
 
   for (uint32_t f = 0; f < mozilla::ArrayLength(formats); ++f) {
     bool hasType;
-    nsresult rv = clipboard->HasDataMatchingFlavors(
-        &(formats[f]),
-        /* number of flavors to check */ 1, aWhichClipboard, &hasType);
+    AutoTArray<nsCString, 1> format = {nsDependentCString(formats[f])};
+    nsresult rv =
+        clipboard->HasDataMatchingFlavors(format, aWhichClipboard, &hasType);
     NS_SUCCEEDED(rv);
     if (hasType) {
       aResult->AppendElement(formats[f]);
@@ -707,6 +711,10 @@ void DataTransfer::GetExternalTransferableFormats(
   MOZ_ASSERT(aResult);
 
   aResult->Clear();
+
+  // NOTE: When you change this method, you may need to change
+  //       GetExternalClipboardFormats() too since those methods should
+  //       work similarly.
 
   AutoTArray<nsCString, 10> flavors;
   aTransferable->FlavorsTransferableCanExport(flavors);

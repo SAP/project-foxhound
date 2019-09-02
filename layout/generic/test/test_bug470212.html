@@ -4,7 +4,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=470212
 -->
 <head>
   <title>Test for Bug 470212 -  crash [@ nsContentUtils::ComparePoints]</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -25,6 +25,11 @@ function doShiftDrag(){
 
     // Drag canvas element starts with a mouse down event, combine with shift
     // key, follows by two mouse move events.
+
+    window.addEventListener("dragstart", e => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, { once: true });
 
     // Press on left-top corner of the canvas element.
     wu.sendMouseEvent('mousedown',  canvasRect.left, canvasRect.top, 0, 1, 4);

@@ -255,12 +255,14 @@ class nsParser final : public nsIParser,
   /**
    * No-op.
    */
-  virtual void PushDefinedInsertionPoint() override;
+  void IncrementScriptNestingLevel() final;
 
   /**
    * No-op.
    */
-  virtual void PopDefinedInsertionPoint() override;
+  void DecrementScriptNestingLevel() final;
+
+  bool HasNonzeroScriptNestingLevel() const final;
 
   /**
    * No-op.
@@ -384,5 +386,7 @@ class nsParser final : public nsIParser,
   bool mProcessingNetworkData;
   bool mIsAboutBlank;
 };
+
+nsresult nsParserInitialize();
 
 #endif

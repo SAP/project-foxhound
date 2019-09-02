@@ -81,7 +81,7 @@ const isParentProcess = appinfo.processType === appinfo.PROCESS_TYPE_DEFAULT;
  *
  * Notice: L10nRegistry is primarily an asynchronous API, but
  * it does provide a synchronous version of it's main method
- * for use by the `LocalizationSync` class.
+ * for use  by the `Localization` class when in `sync` state.
  * This API should be only used in very specialized cases and
  * the uses should be reviewed by the toolkit owner/peer.
  */
@@ -89,7 +89,21 @@ class L10nRegistryService {
   constructor() {
     this.sources = new Map();
 
-    if (!isParentProcess) {
+    if (isParentProcess) {
+      const locales = Services.locale.packagedLocales;
+      // Categories are sorted alphabetically, so we name our sources:
+      //   - 0-toolkit
+      //   - 5-browser
+      //   - langpack-{locale}
+      //
+      // This should ensure that they're returned in the correct order.
+      for (let {entry, value} of Services.catMan.enumerateCategory("l10n-registry")) {
+        if (!this.hasSource(entry)) {
+          const source = new FileSource(entry, locales, value);
+          this.registerSource(source);
+        }
+      }
+    } else {
       this._setSourcesFromSharedData();
       Services.cpmm.sharedData.addEventListener("change", this);
     }
@@ -237,11 +251,14 @@ class L10nRegistryService {
       });
     }
     Services.ppmm.sharedData.set("L10nRegistry:Sources", sources);
-    Services.ppmm.sharedData.flush();
   }
 
   _setSourcesFromSharedData() {
     let sources = Services.cpmm.sharedData.get("L10nRegistry:Sources");
+    if (!sources) {
+      console.warn(`[l10nregistry] Failed to fetch sources from shared data.`);
+      return;
+    }
     for (let [name, data] of sources.entries()) {
       if (!this.hasSource(name)) {
         const source = new FileSource(name, data.locales, data.prePath);
@@ -312,7 +329,8 @@ async function* generateResourceSetsForLocale(locale, sourcesOrder, resourceIds,
     // loop, but if it's somewhere in the middle, we can
     // safely bail from the whole branch.
     for (let [idx, sourceName] of order.entries()) {
-      if (L10nRegistry.sources.get(sourceName).hasFile(locale, resourceIds[idx]) === false) {
+      const source = L10nRegistry.sources.get(sourceName);
+      if (!source || source.hasFile(locale, resourceIds[idx]) === false) {
         if (idx === order.length - 1) {
           continue;
         } else {
@@ -371,7 +389,8 @@ function* generateResourceSetsForLocaleSync(locale, sourcesOrder, resourceIds, r
     // loop, but if it's somewhere in the middle, we can
     // safely bail from the whole branch.
     for (let [idx, sourceName] of order.entries()) {
-      if (L10nRegistry.sources.get(sourceName).hasFile(locale, resourceIds[idx]) === false) {
+      const source = L10nRegistry.sources.get(sourceName);
+      if (!source || source.hasFile(locale, resourceIds[idx]) === false) {
         if (idx === order.length - 1) {
           continue;
         } else {
@@ -526,9 +545,13 @@ const PSEUDO_STRATEGIES = {
  * @param {Array} resourceIds
  * @returns {Promise<FluentBundle>}
  */
-async function generateResourceSet(locale, sourcesOrder, resourceIds) {
+function generateResourceSet(locale, sourcesOrder, resourceIds) {
   return Promise.all(resourceIds.map((resourceId, i) => {
-    return L10nRegistry.sources.get(sourcesOrder[i]).fetchFile(locale, resourceId);
+    const source = L10nRegistry.sources.get(sourcesOrder[i]);
+    if (!source) {
+      return false;
+    }
+    return source.fetchFile(locale, resourceId);
   }));
 }
 
@@ -544,7 +567,11 @@ async function generateResourceSet(locale, sourcesOrder, resourceIds) {
  */
 function generateResourceSetSync(locale, sourcesOrder, resourceIds) {
   return resourceIds.map((resourceId, i) => {
-    return L10nRegistry.sources.get(sourcesOrder[i]).fetchFile(locale, resourceId, {sync: true});
+    const source = L10nRegistry.sources.get(sourcesOrder[i]);
+    if (!source) {
+      return false;
+    }
+    return source.fetchFile(locale, resourceId, {sync: true});
   });
 }
 

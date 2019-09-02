@@ -45,8 +45,8 @@ namespace mozilla {
 class MediaContainerType;
 
 // EME Key System String.
-extern const nsLiteralCString kEMEKeySystemClearkey;
-extern const nsLiteralCString kEMEKeySystemWidevine;
+#define EME_KEY_SYSTEM_CLEARKEY "org.w3.clearkey"
+#define EME_KEY_SYSTEM_WIDEVINE "com.widevine.alpha"
 
 /**
  * ReentrantMonitorConditionallyEnter
@@ -184,7 +184,8 @@ enum class MediaThreadType {
   PLAYBACK,          // MediaDecoderStateMachine and MediaFormatReader
   PLATFORM_DECODER,  // MediaDataDecoder
   MSG_CONTROL,
-  WEBRTC_DECODER
+  WEBRTC_DECODER,
+  MDSM,
 };
 // Returns the thread pool that is shared amongst all decoder state machines
 // for decoding streams.
@@ -544,6 +545,10 @@ inline void AppendStringIfNotEmpty(nsACString& aDest, nsACString&& aSrc) {
     aDest.Append(aSrc);
   }
 }
+
+// Returns true if we're running on a cellular connection; 2G, 3G, etc.
+// Main thread only.
+bool OnCellularConnection();
 
 }  // end namespace mozilla
 

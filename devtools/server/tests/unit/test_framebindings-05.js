@@ -23,17 +23,20 @@ function run_test() {
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-stack",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_pause_frame();
-                           });
+    attachTestTabAndResume(gClient, "test-stack", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_pause_frame();
+    });
   });
   do_test_pending();
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     const env = packet.frame.environment;
     Assert.notEqual(env, undefined);
 
@@ -56,16 +59,18 @@ function test_pause_frame() {
         Assert.equal(response.ownProperties.Object.value.class, "Function");
         Assert.ok(!!response.ownProperties.Object.value.actor);
 
-        gThreadClient.resume(function() {
+        gThreadClient.resume().then(function() {
           finishClient(gClient);
         });
       });
     });
   });
 
-  gDebuggee.eval("var a, r = 10;\n" +
-                 "with (Math) {\n" +
-                 "  a = PI * r * r;\n" +
-                 "  debugger;\n" +
-                 "}");
+  gDebuggee.eval(
+    "var a, r = 10;\n" +
+      "with (Math) {\n" +
+      "  a = PI * r * r;\n" +
+      "  debugger;\n" +
+      "}"
+  );
 }

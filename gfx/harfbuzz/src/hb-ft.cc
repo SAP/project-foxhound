@@ -29,6 +29,8 @@
 
 #include "hb.hh"
 
+#ifdef HAVE_FREETYPE
+
 #include "hb-ft.h"
 
 #include "hb-font.hh"
@@ -96,7 +98,7 @@ _hb_ft_font_create (FT_Face ft_face, bool symbol, bool unref)
 
   ft_font->load_flags = FT_LOAD_DEFAULT | FT_LOAD_NO_HINTING;
 
-  ft_font->cached_x_scale.set (0);
+  ft_font->cached_x_scale.set_relaxed (0);
   ft_font->advance_cache.init ();
 
   return ft_font;
@@ -346,6 +348,25 @@ hb_ft_get_glyph_v_origin (hb_font_t *font,
   return true;
 }
 
+#ifndef HB_NO_OT_SHAPE_FALLBACK
+static hb_position_t
+hb_ft_get_glyph_h_kerning (hb_font_t *font,
+			   void *font_data,
+			   hb_codepoint_t left_glyph,
+			   hb_codepoint_t right_glyph,
+			   void *user_data HB_UNUSED)
+{
+  const hb_ft_font_t *ft_font = (const hb_ft_font_t *) font_data;
+  FT_Vector kerningv;
+
+  FT_Kerning_Mode mode = font->x_ppem ? FT_KERNING_DEFAULT : FT_KERNING_UNFITTED;
+  if (FT_Get_Kerning (ft_font->ft_face, left_glyph, right_glyph, mode, &kerningv))
+    return 0;
+
+  return kerningv.x;
+}
+#endif
+
 static hb_bool_t
 hb_ft_get_glyph_extents (hb_font_t *font,
 			 void *font_data,
@@ -439,7 +460,7 @@ hb_ft_get_glyph_from_name (hb_font_t *font HB_UNUSED,
   else {
     /* Make a nul-terminated version. */
     char buf[128];
-    len = MIN (len, (int) sizeof (buf) - 1);
+    len = hb_min (len, (int) sizeof (buf) - 1);
     strncpy (buf, name, len);
     buf[len] = '\0';
     *glyph = FT_Get_Name_Index (ft_face, buf);
@@ -497,6 +518,10 @@ static struct hb_ft_font_funcs_lazy_loader_t : hb_font_funcs_lazy_loader_t<hb_ft
     hb_font_funcs_set_glyph_v_advance_func (funcs, hb_ft_get_glyph_v_advance, nullptr, nullptr);
     //hb_font_funcs_set_glyph_h_origin_func (funcs, hb_ft_get_glyph_h_origin, nullptr, nullptr);
     hb_font_funcs_set_glyph_v_origin_func (funcs, hb_ft_get_glyph_v_origin, nullptr, nullptr);
+#ifndef HB_NO_OT_SHAPE_FALLBACK
+    hb_font_funcs_set_glyph_h_kerning_func (funcs, hb_ft_get_glyph_h_kerning, nullptr, nullptr);
+#endif
+    //hb_font_funcs_set_glyph_v_kerning_func (funcs, hb_ft_get_glyph_v_kerning, nullptr, nullptr);
     hb_font_funcs_set_glyph_extents_func (funcs, hb_ft_get_glyph_extents, nullptr, nullptr);
     hb_font_funcs_set_glyph_contour_point_func (funcs, hb_ft_get_glyph_contour_point, nullptr, nullptr);
     hb_font_funcs_set_glyph_name_func (funcs, hb_ft_get_glyph_name, nullptr, nullptr);
@@ -748,7 +773,7 @@ hb_ft_font_create_referenced (FT_Face ft_face)
 static void free_static_ft_library ();
 #endif
 
-static struct hb_ft_library_lazy_loader_t : hb_lazy_loader_t<hb_remove_pointer (FT_Library),
+static struct hb_ft_library_lazy_loader_t : hb_lazy_loader_t<hb_remove_pointer<FT_Library>,
 							     hb_ft_library_lazy_loader_t>
 {
   static FT_Library create ()
@@ -854,3 +879,6 @@ hb_ft_font_set_funcs (hb_font_t *font)
   _hb_ft_font_set_funcs (font, ft_face, true);
   hb_ft_font_set_load_flags (font, FT_LOAD_DEFAULT | FT_LOAD_NO_HINTING);
 }
+
+
+#endif

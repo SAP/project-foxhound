@@ -49,8 +49,8 @@ class InputBlockState : public RefCounted<InputBlockState> {
     eConfirmed
   };
 
-  explicit InputBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
-                           TargetConfirmationFlags aFlags);
+  InputBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
+                  TargetConfirmationFlags aFlags);
   virtual ~InputBlockState() = default;
 
   virtual CancelableBlockState* AsCancelableBlock() { return nullptr; }
@@ -107,9 +107,9 @@ class InputBlockState : public RefCounted<InputBlockState> {
 
   // The APZC that was actually scrolled by events in this input block.
   // This is used in configurations where a single input block is only
-  // allowed to scroll a single APZC (configurations where gfxPrefs::
-  // APZAllowImmediateHandoff() is false).
-  // Set the first time an input event in this block scrolls an APZC.
+  // allowed to scroll a single APZC (configurations where
+  // StaticPrefs::apz_allow_immediate_handoff() is false). Set the first time an
+  // input event in this block scrolls an APZC.
   RefPtr<AsyncPanZoomController> mScrolledApzc;
 
  protected:
@@ -398,6 +398,12 @@ class TouchBlockState : public CancelableBlockState {
    */
   bool GetAllowedTouchBehaviors(
       nsTArray<TouchBehaviorFlags>& aOutBehaviors) const;
+
+  /**
+   * Returns true if the allowed touch behaviours have been set, or if touch
+   * action is disabled.
+   */
+  bool HasAllowedTouchBehaviors() const;
 
   /**
    * Copy various properties from another block.

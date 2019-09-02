@@ -8,7 +8,9 @@
 
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js", this);
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
+  this
+);
 
 // DOM panel actions.
 const constants = require("devtools/client/dom/content/constants");
@@ -92,6 +94,16 @@ function getRowByLabel(panel, text) {
 }
 
 /**
+ * Returns tree row with specified index.
+ */
+function getRowByIndex(panel, id) {
+  const doc = panel.panelWin.document;
+  const labels = [...doc.querySelectorAll(".treeLabel")];
+  const label = labels.find((node, i) => i == id);
+  return label ? label.closest(".treeRow") : null;
+}
+
+/**
  * Returns the children (tree row text) of the specified object name as an
  * array.
  */
@@ -126,7 +138,9 @@ function getAllRowsForLabel(panel, text) {
     if (level > rootObjectLevel) {
       result.push({
         name: normalizeTreeValue(node.textContent),
-        value: normalizeTreeValue(node.parentNode.nextElementSibling.textContent),
+        value: normalizeTreeValue(
+          node.parentNode.nextElementSibling.textContent
+        ),
       });
     } else {
       break;
@@ -200,9 +214,9 @@ function _afterDispatchDone(store, type) {
       type: "@@service/waitUntil",
       predicate: action => {
         if (action.type === type) {
-          return action.status ?
-            (action.status === "end" || action.status === "error") :
-            true;
+          return action.status
+            ? action.status === "end" || action.status === "error"
+            : true;
         }
         return false;
       },

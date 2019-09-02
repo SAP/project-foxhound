@@ -9,6 +9,8 @@ package org.mozilla.geckoview;
 import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
 
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.util.GeckoBundle;
 
@@ -16,14 +18,9 @@ import org.mozilla.gecko.util.GeckoBundle;
  * The telemetry API gives access to telemetry data of the Gecko runtime.
  */
 public final class RuntimeTelemetry {
-    private final static String LOGTAG = "GeckoViewTelemetry";
-    private final static boolean DEBUG = false;
-
-    private final GeckoRuntime mRuntime;
     private final EventDispatcher mEventDispatcher;
 
     /* package */ RuntimeTelemetry(final @NonNull GeckoRuntime runtime) {
-        mRuntime = runtime;
         mEventDispatcher = EventDispatcher.getInstance();
     }
 
@@ -41,17 +38,20 @@ public final class RuntimeTelemetry {
      * @return A {@link GeckoResult} with the GeckoBundle snapshot results.
      */
     @AnyThread
-    public @NonNull GeckoResult<GeckoBundle> getSnapshots(final boolean clear) {
+    public @NonNull GeckoResult<JSONObject> getSnapshots(final boolean clear) {
         final GeckoBundle msg = new GeckoBundle(1);
         msg.putBoolean("clear", clear);
 
-        final GeckoSession.CallbackResult<GeckoBundle> result =
-            new GeckoSession.CallbackResult<GeckoBundle>() {
-                @Override
-                public void sendSuccess(final Object value) {
-                    complete((GeckoBundle) value);
+        final CallbackResult<JSONObject> result = new CallbackResult<JSONObject>() {
+            @Override
+            public void sendSuccess(final Object value) {
+                try {
+                    complete(((GeckoBundle) value).toJSONObject());
+                } catch (JSONException ex) {
+                    completeExceptionally(ex);
                 }
-            };
+            }
+        };
 
         mEventDispatcher.dispatch("GeckoView:TelemetrySnapshots", msg, result);
 

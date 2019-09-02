@@ -1,25 +1,42 @@
 "use strict";
 
-ChromeUtils.defineModuleGetter(this, "Services",
-                               "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
 
 /* globals DEFAULT_STORE, PRIVATE_STORE */
 
-var {
-  ExtensionError,
-} = ExtensionUtils;
+var { ExtensionError } = ExtensionUtils;
 
 const SAME_SITE_STATUSES = [
-  "no_restriction", // Index 0 = Ci.nsICookie2.SAMESITE_UNSET
-  "lax",            // Index 1 = Ci.nsICookie2.SAMESITE_LAX
-  "strict",         // Index 2 = Ci.nsICookie2.SAMESITE_STRICT
+  "no_restriction", // Index 0 = Ci.nsICookie.SAMESITE_NONE
+  "lax", // Index 1 = Ci.nsICookie.SAMESITE_LAX
+  "strict", // Index 2 = Ci.nsICookie.SAMESITE_STRICT
 ];
 
-const convertCookie = ({cookie, isPrivate}) => {
+const isIPv4 = host => {
+  let match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+
+  if (match) {
+    return match[1] < 256 && match[2] < 256 && match[3] < 256 && match[4] < 256;
+  }
+  return false;
+};
+const isIPv6 = host => host.includes(":");
+const addBracketIfIPv6 = host =>
+  isIPv6(host) && !host.startsWith("[") ? `[${host}]` : host;
+const dropBracketIfIPv6 = host =>
+  isIPv6(host) && host.startsWith("[") && host.endsWith("]")
+    ? host.slice(1, -1)
+    : host;
+
+const convertCookie = ({ cookie, isPrivate }) => {
   let result = {
     name: cookie.name,
     value: cookie.value,
-    domain: cookie.host,
+    domain: addBracketIfIPv6(cookie.host),
     hostOnly: !cookie.isDomain,
     path: cookie.path,
     secure: cookie.isSecure,
@@ -34,7 +51,9 @@ const convertCookie = ({cookie, isPrivate}) => {
   }
 
   if (cookie.originAttributes.userContextId) {
-    result.storeId = getCookieStoreIdForContainer(cookie.originAttributes.userContextId);
+    result.storeId = getCookieStoreIdForContainer(
+      cookie.originAttributes.userContextId
+    );
   } else if (cookie.originAttributes.privateBrowsingId || isPrivate) {
     result.storeId = PRIVATE_STORE;
   } else {
@@ -96,6 +115,7 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
     cookie.host = cookie.host.replace(/^\./, "");
   }
   cookie.host = cookie.host.toLowerCase();
+  cookie.host = dropBracketIfIPv6(cookie.host);
 
   if (cookie.host != uri.host) {
     // Not an exact match, so check for a valid subdomain.
@@ -103,8 +123,10 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
     try {
       baseDomain = Services.eTLD.getBaseDomain(uri);
     } catch (e) {
-      if (e.result == Cr.NS_ERROR_HOST_IS_IP_ADDRESS ||
-          e.result == Cr.NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS) {
+      if (
+        e.result == Cr.NS_ERROR_HOST_IS_IP_ADDRESS ||
+        e.result == Cr.NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS
+      ) {
         // The cookie service uses these to determine whether the domain
         // requires an exact match. We already know we don't have an exact
         // match, so return false. In all other cases, re-raise the error.
@@ -118,13 +140,21 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
     // The domain of the requesting URL must likewise be a subdomain of the
     // cookie domain. This prevents us from setting cookies for entirely
     // unrelated domains.
-    if (!isSubdomain(cookie.host, baseDomain) ||
-        !isSubdomain(uri.host, cookie.host)) {
+    if (
+      !isSubdomain(cookie.host, baseDomain) ||
+      !isSubdomain(uri.host, cookie.host)
+    ) {
       return false;
     }
 
     // RFC2109 suggests that we may only add cookies for sub-domains 1-level
     // below us, but enforcing that would break the web, so we don't.
+  }
+
+  // If the host is an IP address, avoid adding a leading ".".
+  // An IP address is not a domain name, and only supports host-only cookies.
+  if (isIPv6(cookie.host) || isIPv4(cookie.host)) {
+    return true;
   }
 
   // An explicit domain was passed, so add a leading "." to make this a
@@ -144,7 +174,7 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
  * @param {Array} props          Properties the extension is interested in matching against.
  * @param {BaseContext} context  The context making the query.
  */
-const query = function* (detailsIn, props, context) {
+const query = function*(detailsIn, props, context) {
   let details = {};
   props.forEach(property => {
     if (detailsIn[property] !== null) {
@@ -154,6 +184,7 @@ const query = function* (detailsIn, props, context) {
 
   if ("domain" in details) {
     details.domain = details.domain.toLowerCase().replace(/^\./, "");
+    details.domain = dropBracketIfIPv6(details.domain);
   }
 
   let userContextId = 0;
@@ -183,7 +214,9 @@ const query = function* (detailsIn, props, context) {
     storeId = details.storeId;
   }
   if (storeId == PRIVATE_STORE && !context.privateBrowsingAllowed) {
-    throw new ExtensionError("Extension disallowed access to the private cookies storeId.");
+    throw new ExtensionError(
+      "Extension disallowed access to the private cookies storeId."
+    );
   }
 
   // We can use getCookiesFromHost for faster searching.
@@ -200,7 +233,7 @@ const query = function* (detailsIn, props, context) {
   if ("url" in details) {
     try {
       url = new URL(details.url);
-      host = url.hostname;
+      host = dropBracketIfIPv6(url.hostname);
     } catch (ex) {
       // This often happens for about: URLs
       return;
@@ -209,18 +242,24 @@ const query = function* (detailsIn, props, context) {
     host = details.domain;
   }
 
-  if (host && ("firstPartyDomain" in originAttributes)) {
+  if (host && "firstPartyDomain" in originAttributes) {
     // getCookiesFromHost is more efficient than getCookiesWithOriginAttributes
     // if the host and all origin attributes are known.
     enumerator = Services.cookies.getCookiesFromHost(host, originAttributes);
   } else {
-    enumerator = Services.cookies.getCookiesWithOriginAttributes(JSON.stringify(originAttributes), host);
+    enumerator = Services.cookies.getCookiesWithOriginAttributes(
+      JSON.stringify(originAttributes),
+      host
+    );
   }
 
   // Based on nsCookieService::GetCookieStringInternal
   function matches(cookie) {
     function domainMatches(host) {
-      return cookie.rawHost == host || (cookie.isDomain && host.endsWith(cookie.host));
+      return (
+        cookie.rawHost == host ||
+        (cookie.isDomain && host.endsWith(cookie.host))
+      );
     }
 
     function pathMatches(path) {
@@ -242,7 +281,7 @@ const query = function* (detailsIn, props, context) {
 
     // "Restricts the retrieved cookies to those that would match the given URL."
     if (url) {
-      if (!domainMatches(url.hostname)) {
+      if (!domainMatches(host)) {
         return false;
       }
 
@@ -287,17 +326,19 @@ const query = function* (detailsIn, props, context) {
 
   for (const cookie of enumerator) {
     if (matches(cookie)) {
-      yield {cookie, isPrivate, storeId};
+      yield { cookie, isPrivate, storeId };
     }
   }
 };
 
-const normalizeFirstPartyDomain = (details) => {
+const normalizeFirstPartyDomain = details => {
   if (details.firstPartyDomain != null) {
     return;
   }
   if (Services.prefs.getBoolPref("privacy.firstparty.isolate")) {
-    throw new ExtensionError("First-Party Isolation is enabled, but the required 'firstPartyDomain' attribute was not set.");
+    throw new ExtensionError(
+      "First-Party Isolation is enabled, but the required 'firstPartyDomain' attribute was not set."
+    );
   }
 
   // When FPI is disabled, the "firstPartyDomain" attribute is optional
@@ -307,7 +348,7 @@ const normalizeFirstPartyDomain = (details) => {
 
 this.cookies = class extends ExtensionAPI {
   getAPI(context) {
-    let {extension} = context;
+    let { extension } = context;
     let self = {
       cookies: {
         get: function(details) {
@@ -328,14 +369,25 @@ this.cookies = class extends ExtensionAPI {
             normalizeFirstPartyDomain(details);
           }
 
-          let allowed = ["url", "name", "domain", "path", "secure", "session", "storeId"];
+          let allowed = [
+            "url",
+            "name",
+            "domain",
+            "path",
+            "secure",
+            "session",
+            "storeId",
+          ];
 
           // firstPartyDomain may be set to null or undefined to not filter by FPD.
           if (details.firstPartyDomain != null) {
             allowed.push("firstPartyDomain");
           }
 
-          let result = Array.from(query(details, allowed, context), convertCookie);
+          let result = Array.from(
+            query(details, allowed, context),
+            convertCookie
+          );
 
           return Promise.resolve(result);
         },
@@ -361,30 +413,45 @@ this.cookies = class extends ExtensionAPI {
           let secure = details.secure !== null ? details.secure : false;
           let httpOnly = details.httpOnly !== null ? details.httpOnly : false;
           let isSession = details.expirationDate === null;
-          let expiry = isSession ? Number.MAX_SAFE_INTEGER : details.expirationDate;
+          let expiry = isSession
+            ? Number.MAX_SAFE_INTEGER
+            : details.expirationDate;
           let isPrivate = context.incognito;
           let userContextId = 0;
           if (isDefaultCookieStoreId(details.storeId)) {
             isPrivate = false;
           } else if (isPrivateCookieStoreId(details.storeId)) {
             if (!context.privateBrowsingAllowed) {
-              return Promise.reject({message: "Extension disallowed access to the private cookies storeId."});
+              return Promise.reject({
+                message:
+                  "Extension disallowed access to the private cookies storeId.",
+              });
             }
             isPrivate = true;
           } else if (isContainerCookieStoreId(details.storeId)) {
             let containerId = getContainerForCookieStoreId(details.storeId);
             if (containerId === null) {
-              return Promise.reject({message: `Illegal storeId: ${details.storeId}`});
+              return Promise.reject({
+                message: `Illegal storeId: ${details.storeId}`,
+              });
             }
             isPrivate = false;
             userContextId = containerId;
           } else if (details.storeId !== null) {
-            return Promise.reject({message: "Unknown storeId"});
+            return Promise.reject({ message: "Unknown storeId" });
           }
 
-          let cookieAttrs = {host: details.domain, path: path, isSecure: secure};
+          let cookieAttrs = {
+            host: details.domain,
+            path: path,
+            isSecure: secure,
+          };
           if (!checkSetCookiePermissions(extension, uri, cookieAttrs)) {
-            return Promise.reject({message: `Permission denied to set cookie ${JSON.stringify(details)}`});
+            return Promise.reject({
+              message: `Permission denied to set cookie ${JSON.stringify(
+                details
+              )}`,
+            });
           }
 
           let originAttributes = {
@@ -397,9 +464,18 @@ this.cookies = class extends ExtensionAPI {
 
           // The permission check may have modified the domain, so use
           // the new value instead.
-          Services.cookies.add(cookieAttrs.host, path, name, value,
-                               secure, httpOnly, isSession, expiry,
-                               originAttributes, sameSite);
+          Services.cookies.add(
+            cookieAttrs.host,
+            path,
+            name,
+            value,
+            secure,
+            httpOnly,
+            isSession,
+            expiry,
+            originAttributes,
+            sameSite
+          );
 
           return self.cookies.get(details);
         },
@@ -408,12 +484,20 @@ this.cookies = class extends ExtensionAPI {
           normalizeFirstPartyDomain(details);
 
           let allowed = ["url", "name", "storeId", "firstPartyDomain"];
-          for (let {cookie, storeId} of query(details, allowed, context)) {
-            if (isPrivateCookieStoreId(details.storeId) &&
-                !context.privateBrowsingAllowed) {
-              return Promise.reject({message: "Unknown storeId"});
+          for (let { cookie, storeId } of query(details, allowed, context)) {
+            if (
+              isPrivateCookieStoreId(details.storeId) &&
+              !context.privateBrowsingAllowed
+            ) {
+              return Promise.reject({ message: "Unknown storeId" });
             }
-            Services.cookies.remove(cookie.host, cookie.name, cookie.path, false, cookie.originAttributes);
+            Services.cookies.remove(
+              cookie.host,
+              cookie.name,
+              cookie.path,
+              false,
+              cookie.originAttributes
+            );
 
             // TODO Bug 1387957: could there be multiple per subdomain?
             return Promise.resolve({
@@ -438,7 +522,11 @@ this.cookies = class extends ExtensionAPI {
 
           let result = [];
           for (let key in data) {
-            result.push({id: key, tabIds: data[key], incognito: key == PRIVATE_STORE});
+            result.push({
+              id: key,
+              tabIds: data[key],
+              incognito: key == PRIVATE_STORE,
+            });
           }
           return Promise.resolve(result);
         },
@@ -449,10 +537,17 @@ this.cookies = class extends ExtensionAPI {
           register: fire => {
             let observer = (subject, topic, data) => {
               let notify = (removed, cookie, cause) => {
-                cookie.QueryInterface(Ci.nsICookie2);
+                cookie.QueryInterface(Ci.nsICookie);
 
                 if (extension.whiteListedHosts.matchesCookie(cookie)) {
-                  fire.async({removed, cookie: convertCookie({cookie, isPrivate: topic == "private-cookie-changed"}), cause});
+                  fire.async({
+                    removed,
+                    cookie: convertCookie({
+                      cookie,
+                      isPrivate: topic == "private-cookie-changed",
+                    }),
+                    cause,
+                  });
                 }
               };
 
@@ -471,8 +566,11 @@ this.cookies = class extends ExtensionAPI {
                 case "batch-deleted":
                   subject.QueryInterface(Ci.nsIArray);
                   for (let i = 0; i < subject.length; i++) {
-                    let cookie = subject.queryElementAt(i, Ci.nsICookie2);
-                    if (!cookie.isSession && cookie.expiry * 1000 <= Date.now()) {
+                    let cookie = subject.queryElementAt(i, Ci.nsICookie);
+                    if (
+                      !cookie.isSession &&
+                      cookie.expiry * 1000 <= Date.now()
+                    ) {
                       notify(true, cookie, "expired");
                     } else {
                       notify(true, cookie, "evicted");

@@ -11,15 +11,12 @@ XPIDL_SOURCES += [
     'nsIASN1PrintableItem.idl',
     'nsIASN1Sequence.idl',
     'nsIBadCertListener2.idl',
-    'nsICertBlocklist.idl',
     'nsICertificateDialogs.idl',
     'nsICertOverrideService.idl',
     'nsIClientAuthDialogs.idl',
     'nsIContentSignatureVerifier.idl',
     'nsICryptoHash.idl',
     'nsICryptoHMAC.idl',
-    'nsIGenKeypairInfoDlg.idl',
-    'nsIKeygenThread.idl',
     'nsIKeyModule.idl',
     'nsILocalCertService.idl',
     'nsINSSComponent.idl',
@@ -55,15 +52,10 @@ XPCOM_MANIFESTS += [
     'components.conf',
 ]
 
-# These aren't actually used in production code yet, so we don't want to
-# ship them with the browser.
-TESTING_JS_MODULES.psm += [
-    'DER.jsm',
-    'X509.jsm',
-]
-
 EXTRA_JS_MODULES.psm += [
+    'DER.jsm',
     'RemoteSecuritySettings.jsm',
+    'X509.jsm',
 ]
 
 EXPORTS += [
@@ -99,7 +91,6 @@ EXPORTS.ipc += [
 ]
 
 UNIFIED_SOURCES += [
-    'CertBlocklist.cpp',
     'ContentSignatureVerifier.cpp',
     'CryptoTask.cpp',
     'CSTrustDomain.cpp',
@@ -109,9 +100,6 @@ UNIFIED_SOURCES += [
     'nsCertOverrideService.cpp',
     'nsClientAuthRemember.cpp',
     'nsCryptoHash.cpp',
-    'nsKeygenHandler.cpp',
-    'nsKeygenHandlerContent.cpp',
-    'nsKeygenThread.cpp',
     'nsKeyModule.cpp',
     'nsNSSASN1Object.cpp',
     'nsNSSCallbacks.cpp',
@@ -187,6 +175,21 @@ if CONFIG['MOZ_XUL']:
 UNIFIED_SOURCES += [
     'md4.c',
 ]
+
+if CONFIG['MOZ_NEW_CERT_STORAGE']:
+    XPIDL_SOURCES += [
+        'nsICertStorage.idl',
+    ]
+    UNIFIED_SOURCES += [
+        'cert_storage/src/cert_storage.cpp',
+    ]
+else:
+    XPIDL_SOURCES += [
+        'nsICertBlocklist.idl',
+    ]
+    UNIFIED_SOURCES += [
+        'CertBlocklist.cpp',
+    ]
 
 FINAL_LIBRARY = 'xul'
 

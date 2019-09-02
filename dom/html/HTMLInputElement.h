@@ -144,7 +144,8 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   virtual int32_t TabIndexDefault() override;
   using nsGenericHTMLElement::Focus;
   virtual void Blur(ErrorResult& aError) override;
-  virtual void Focus(ErrorResult& aError) override;
+  virtual void Focus(const FocusOptions& aOptions,
+                     ErrorResult& aError) override;
 
   // nsINode
 #if !defined(ANDROID) && !defined(XP_MACOSX)
@@ -199,10 +200,8 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   MOZ_CAN_RUN_SCRIPT
   void SetValueOfRangeForUserEvent(Decimal aValue);
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual void DoneCreatingElement() override;
@@ -413,7 +412,9 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   void UpdateValidityUIBits(bool aIsFocused);
 
   /**
-   * Fires change event if mFocusedValue and current value held are unequal.
+   * Fires change event if mFocusedValue and current value held are unequal and
+   * if a change event may be fired on bluring.
+   * Sets mFocusedValue to value, if a change event is fired.
    */
   void FireChangeEventIfNeeded();
 
@@ -1014,7 +1015,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
    * MaybeSubmitForm looks for a submit input or a single text control
    * and submits the form if either is present.
    */
-  nsresult MaybeSubmitForm(nsPresContext* aPresContext);
+  MOZ_CAN_RUN_SCRIPT nsresult MaybeSubmitForm(nsPresContext* aPresContext);
 
   /**
    * Update mFileList with the currently selected file.
@@ -1466,7 +1467,8 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
    * when the element is either changed through a script, focused or dispatches
    * a change event. This is to ensure correct future change event firing.
    * NB: This is ONLY applicable where the element is a text control. ie,
-   * where type= "text", "email", "search", "tel", "url" or "password".
+   * where type= "date", "time", "text", "email", "search", "tel", "url" or
+   * "password".
    */
   nsString mFocusedValue;
 
@@ -1596,28 +1598,10 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   static bool IsDateTimeTypeSupported(uint8_t aDateTimeInputType);
 
   /**
-   * Checks preference "dom.webkitBlink.filesystem.enabled" to determine if
-   * webkitEntries should be supported.
-   */
-  static bool IsWebkitFileSystemEnabled();
-
-  /**
-   * Checks preference "dom.input.dirpicker" to determine if file and directory
-   * entries API should be supported.
-   */
-  static bool IsDirPickerEnabled();
-
-  /**
    * Checks preference "dom.experimental_forms" to determine if experimental
    * implementation of input element should be enabled.
    */
   static bool IsExperimentalFormsEnabled();
-
-  /**
-   * Checks preference "dom.forms.datetime" to determine if input date and time
-   * should be supported.
-   */
-  static bool IsInputDateTimeEnabled();
 
   /**
    * Checks preference "dom.forms.datetime.others" to determine if input week,

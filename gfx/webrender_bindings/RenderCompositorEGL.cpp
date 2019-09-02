@@ -10,11 +10,18 @@
 #include "GLContextEGL.h"
 #include "GLContextProvider.h"
 #include "GLLibraryEGL.h"
+#include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
-#include "mozilla/widget/GtkCompositorWidget.h"
 
-#include <gdk/gdk.h>
-#include <gdk/gdkx.h>
+#ifdef MOZ_WAYLAND
+#  include "mozilla/widget/GtkCompositorWidget.h"
+#  include <gdk/gdk.h>
+#  include <gdk/gdkx.h>
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "GeneratedJNIWrappers.h"
+#endif
 
 namespace mozilla {
 namespace wr {
@@ -22,31 +29,16 @@ namespace wr {
 /* static */
 UniquePtr<RenderCompositor> RenderCompositorEGL::Create(
     RefPtr<widget::CompositorWidget> aWidget) {
+#ifdef MOZ_WAYLAND
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
     return nullptr;
   }
-
-  RefPtr<gl::GLContext> gl;
-  gl = CreateGLContext();
-  if (!gl) {
+#endif
+  if (!RenderThread::Get()->SharedGL()) {
+    gfxCriticalNote << "Failed to get shared GL context";
     return nullptr;
   }
-  return MakeUnique<RenderCompositorEGL>(gl, aWidget);
-}
-
-/* static */ already_AddRefed<gl::GLContext>
-RenderCompositorEGL::CreateGLContext() {
-  // Create GLContext with dummy EGLSurface.
-  RefPtr<gl::GLContext> gl =
-      gl::GLContextProviderEGL::CreateForCompositorWidget(
-          nullptr, /* aWebRender */ true, /* aForceAccelerated */ true);
-  if (!gl || !gl->MakeCurrent()) {
-    gfxCriticalNote << "Failed GL context creation for WebRender: "
-                    << gfx::hexa(gl.get());
-    return nullptr;
-  }
-
-  return gl.forget();
+  return MakeUnique<RenderCompositorEGL>(aWidget);
 }
 
 EGLSurface RenderCompositorEGL::CreateEGLSurface() {
@@ -60,43 +52,83 @@ EGLSurface RenderCompositorEGL::CreateEGLSurface() {
 }
 
 RenderCompositorEGL::RenderCompositorEGL(
-    RefPtr<gl::GLContext> aGL, RefPtr<widget::CompositorWidget> aWidget)
-    : RenderCompositor(std::move(aWidget)),
-      mGL(aGL),
-      mEGLSurface(EGL_NO_SURFACE) {
-  MOZ_ASSERT(mGL);
+    RefPtr<widget::CompositorWidget> aWidget)
+    : RenderCompositor(std::move(aWidget)), mEGLSurface(EGL_NO_SURFACE) {}
+
+RenderCompositorEGL::~RenderCompositorEGL() {
+#ifdef MOZ_WIDGET_ANDROID
+  java::GeckoSurfaceTexture::DestroyUnused((int64_t)gl());
+  java::GeckoSurfaceTexture::DetachAllFromGLContext((int64_t)gl());
+#endif
+  DestroyEGLSurface();
 }
 
-RenderCompositorEGL::~RenderCompositorEGL() { DestroyEGLSurface(); }
-
 bool RenderCompositorEGL::BeginFrame() {
-  if (mWidget->AsX11() &&
-      mWidget->AsX11()->WaylandRequestsUpdatingEGLSurface()) {
-    // Destroy EGLSurface if it exists.
+#ifdef MOZ_WAYLAND
+  bool newSurface =
+      mWidget->AsX11() && mWidget->AsX11()->WaylandRequestsUpdatingEGLSurface();
+  if (newSurface) {
+    // Destroy EGLSurface if it exists and create a new one. We will set the
+    // swap interval after MakeCurrent() has been called.
     DestroyEGLSurface();
     mEGLSurface = CreateEGLSurface();
-    gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(mEGLSurface);
   }
-
-  if (!mGL->MakeCurrent()) {
+#endif
+  if (!MakeCurrent()) {
     gfxCriticalNote << "Failed to make render context current, can't draw.";
     return false;
   }
+
+#ifdef MOZ_WAYLAND
+  if (newSurface) {
+    // We have a new EGL surface, which on wayland needs to be configured for
+    // non-blocking buffer swaps. We need MakeCurrent() to set our current EGL
+    // context before we call eglSwapInterval, which is why we do it here rather
+    // than where the surface was created.
+    const auto& gle = gl::GLContextEGL::Cast(gl());
+    const auto& egl = gle->mEgl;
+    // Make eglSwapBuffers() non-blocking on wayland.
+    egl->fSwapInterval(egl->Display(), 0);
+  }
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+  java::GeckoSurfaceTexture::DestroyUnused((int64_t)gl());
+  gl()->MakeCurrent();  // DestroyUnused can change the current context!
+#endif
 
   return true;
 }
 
 void RenderCompositorEGL::EndFrame() {
   if (mEGLSurface != EGL_NO_SURFACE) {
-    mGL->SwapBuffers();
+    gl()->SwapBuffers();
   }
 }
 
 void RenderCompositorEGL::WaitForGPU() {}
 
-void RenderCompositorEGL::Pause() {}
+void RenderCompositorEGL::Pause() {
+#ifdef MOZ_WIDGET_ANDROID
+  java::GeckoSurfaceTexture::DestroyUnused((int64_t)gl());
+  java::GeckoSurfaceTexture::DetachAllFromGLContext((int64_t)gl());
+  DestroyEGLSurface();
+#endif
+}
 
-bool RenderCompositorEGL::Resume() { return true; }
+bool RenderCompositorEGL::Resume() {
+#ifdef MOZ_WIDGET_ANDROID
+  // Destroy EGLSurface if it exists.
+  DestroyEGLSurface();
+  mEGLSurface = CreateEGLSurface();
+  gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(mEGLSurface);
+#endif
+  return true;
+}
+
+gl::GLContext* RenderCompositorEGL::gl() const {
+  return RenderThread::Get()->SharedGL();
+}
 
 bool RenderCompositorEGL::MakeCurrent() {
   gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(mEGLSurface);
@@ -104,11 +136,12 @@ bool RenderCompositorEGL::MakeCurrent() {
 }
 
 void RenderCompositorEGL::DestroyEGLSurface() {
-  auto* egl = gl::GLLibraryEGL::Get();
+  const auto& gle = gl::GLContextEGL::Cast(gl());
+  const auto& egl = gle->mEgl;
 
   // Release EGLSurface of back buffer before calling ResizeBuffers().
   if (mEGLSurface) {
-    gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(EGL_NO_SURFACE);
+    gle->SetEGLSurfaceOverride(EGL_NO_SURFACE);
     egl->fDestroySurface(egl->Display(), mEGLSurface);
     mEGLSurface = nullptr;
   }

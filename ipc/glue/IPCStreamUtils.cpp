@@ -447,9 +447,9 @@ Maybe<IPCStream>& AutoIPCStream::TakeOptionalValue() {
   return *mOptionalValue;
 }
 
-void IPDLParamTraits<nsIInputStream>::Write(IPC::Message* aMsg,
-                                            IProtocol* aActor,
-                                            nsIInputStream* aParam) {
+void IPDLParamTraits<nsIInputStream*>::Write(IPC::Message* aMsg,
+                                             IProtocol* aActor,
+                                             nsIInputStream* aParam) {
   mozilla::ipc::AutoIPCStream autoStream;
   bool ok = false;
   bool found = false;
@@ -459,7 +459,7 @@ void IPDLParamTraits<nsIInputStream>::Write(IPC::Message* aMsg,
   // protocols we support.
   IProtocol* actor = aActor;
   while (!found && actor) {
-    switch (actor->GetProtocolTypeId()) {
+    switch (actor->GetProtocolId()) {
       case PContentMsgStart:
         if (actor->GetSide() == mozilla::ipc::ParentSide) {
           ok = autoStream.Serialize(
@@ -482,6 +482,8 @@ void IPDLParamTraits<nsIInputStream>::Write(IPC::Message* aMsg,
         }
         found = true;
         break;
+      default:
+        break;
     }
 
     // Try the actor's manager.
@@ -497,10 +499,10 @@ void IPDLParamTraits<nsIInputStream>::Write(IPC::Message* aMsg,
   WriteIPDLParam(aMsg, aActor, autoStream.TakeOptionalValue());
 }
 
-bool IPDLParamTraits<nsIInputStream>::Read(const IPC::Message* aMsg,
-                                           PickleIterator* aIter,
-                                           IProtocol* aActor,
-                                           RefPtr<nsIInputStream>* aResult) {
+bool IPDLParamTraits<nsIInputStream*>::Read(const IPC::Message* aMsg,
+                                            PickleIterator* aIter,
+                                            IProtocol* aActor,
+                                            RefPtr<nsIInputStream>* aResult) {
   mozilla::Maybe<mozilla::ipc::IPCStream> ipcStream;
   if (!ReadIPDLParam(aMsg, aIter, aActor, &ipcStream)) {
     return false;

@@ -19,8 +19,10 @@
 #include "gc/GC.h"
 #include "js/AllocPolicy.h"
 #include "js/CharacterEncoding.h"
-#include "js/Equality.h"  // JS::SameValue
+#include "js/Equality.h"     // JS::SameValue
+#include "js/RegExpFlags.h"  // JS::RegExpFlags
 #include "js/Vector.h"
+#include "js/Warnings.h"  // JS::SetWarningReporter
 #include "vm/JSContext.h"
 
 /* Note: Aborts on OOM. */
@@ -159,6 +161,26 @@ class JSAPITest {
     return JSAPITestString(v ? "true" : "false");
   }
 
+  JSAPITestString toSource(JS::RegExpFlags flags) {
+    JSAPITestString str;
+    if (flags.global()) {
+      str += "g";
+    }
+    if (flags.ignoreCase()) {
+      str += "i";
+    }
+    if (flags.multiline()) {
+      str += "m";
+    }
+    if (flags.unicode()) {
+      str += "u";
+    }
+    if (flags.sticky()) {
+      str += "y";
+    }
+    return str;
+  }
+
   JSAPITestString toSource(JSAtom* v) {
     JS::RootedValue val(cx, JS::StringValue((JSString*)v));
     return jsvalToSource(val);
@@ -267,18 +289,8 @@ class JSAPITest {
   JSAPITestString messages() const { return msgs; }
 
   static const JSClass* basicGlobalClass() {
-    static const JSClassOps cOps = {nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    nullptr,
-                                    JS_GlobalObjectTraceHook};
-    static const JSClass c = {"global", JSCLASS_GLOBAL_FLAGS, &cOps};
+    static const JSClass c = {"global", JSCLASS_GLOBAL_FLAGS,
+                              &JS::DefaultGlobalClassOps};
     return &c;
   }
 

@@ -11,6 +11,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "xpcprivate.h"
 #include "js/Class.h"
+#include "js/RegExp.h"
 #include "jsfriendapi.h"
 
 using namespace JS;
@@ -459,8 +460,8 @@ bool WrapperAnswer::RecvCallOrConstruct(const ObjectId& objId,
 
   *result = JSVariant(UndefinedVariant());
 
-  AutoValueVector vals(cx);
-  AutoValueVector outobjects(cx);
+  RootedValueVector vals(cx);
+  RootedValueVector outobjects(cx);
   for (size_t i = 0; i < argv.Length(); i++) {
     if (argv[i].type() == JSParam::Tvoid_t) {
       // This is an outparam.
@@ -761,7 +762,7 @@ bool WrapperAnswer::RecvRegExpToShared(const ObjectId& objId, ReturnStatus* rs,
     return deadCPOW(jsapi, rs);
   }
 
-  RootedString sourceJSStr(cx, JS_GetRegExpSource(cx, obj));
+  RootedString sourceJSStr(cx, JS::GetRegExpSource(cx, obj));
   if (!sourceJSStr) {
     return fail(jsapi, rs);
   }
@@ -771,7 +772,7 @@ bool WrapperAnswer::RecvRegExpToShared(const ObjectId& objId, ReturnStatus* rs,
   }
   source->Assign(sourceStr);
 
-  *flags = JS_GetRegExpFlags(cx, obj);
+  *flags = JS::GetRegExpFlags(cx, obj).value();
 
   return ok(rs);
 }
@@ -798,7 +799,7 @@ bool WrapperAnswer::RecvGetPropertyKeys(const ObjectId& objId,
 
   LOG("%s.getPropertyKeys()", ReceiverObj(objId));
 
-  AutoIdVector props(cx);
+  RootedIdVector props(cx);
   if (!js::GetPropertyKeys(cx, obj, flags, &props)) {
     return fail(jsapi, rs);
   }

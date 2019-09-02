@@ -16,6 +16,7 @@
 #include "jsfriendapi.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/MemoryFunctions.h"
+#include "js/Modules.h"  // JS::FinishDynamicModuleImport, JS::{G,S}etModuleResolveHook, JS::Get{ModulePrivate,ModuleScript,RequestedModule{s,Specifier,SourcePos}}, JS::SetModule{DynamicImport,Metadata}Hook
 #include "js/OffThreadScriptCompilation.h"
 #include "js/Realm.h"
 #include "js/SourceText.h"
@@ -26,9 +27,12 @@
 #include "nsJSUtils.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ScriptDecoding.h"  // mozilla::dom::ScriptDecoding
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/StaticPrefs.h"
+#include "nsAboutProtocolUtils.h"
 #include "nsGkAtoms.h"
 #include "nsNetUtil.h"
 #include "nsGlobalWindowInner.h"
@@ -63,12 +67,15 @@
 #include "nsMimeTypes.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/LoadInfo.h"
+#include "ReferrerInfo.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsIScriptError.h"
 #include "nsIAsyncOutputStream.h"
 
@@ -336,6 +343,50 @@ nsresult ScriptLoader::CheckContentPolicy(Document* aDocument,
   return NS_OK;
 }
 
+/* static */
+bool ScriptLoader::IsAboutPageLoadingChromeURI(ScriptLoadRequest* aRequest) {
+  // if we are not dealing with a codebasePrincipal it can not be a
+  // Principal with a scheme of about: and there is nothing left to do
+  if (!aRequest->TriggeringPrincipal()->GetIsCodebasePrincipal()) {
+    return false;
+  }
+
+  // if the triggering uri is not of scheme about:, there is nothing to do
+  nsCOMPtr<nsIURI> triggeringURI;
+  nsresult rv =
+      aRequest->TriggeringPrincipal()->GetURI(getter_AddRefs(triggeringURI));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  bool isAbout =
+      (NS_SUCCEEDED(triggeringURI->SchemeIs("about", &isAbout)) && isAbout);
+  if (!isAbout) {
+    return false;
+  }
+
+  // if the about: page is linkable from content, there is nothing to do
+  nsCOMPtr<nsIAboutModule> aboutMod;
+  rv = NS_GetAboutModule(triggeringURI, getter_AddRefs(aboutMod));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  uint32_t aboutModuleFlags = 0;
+  rv = aboutMod->GetURIFlags(triggeringURI, &aboutModuleFlags);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  if (aboutModuleFlags & nsIAboutModule::MAKE_LINKABLE) {
+    return false;
+  }
+
+  // if the uri to be loaded is not of scheme chrome:, there is nothing to do.
+  bool isChrome =
+      (NS_SUCCEEDED(aRequest->mURI->SchemeIs("chrome", &isChrome)) && isChrome);
+  if (!isChrome) {
+    return false;
+  }
+
+  // seems like an about page wants to load a chrome URI.
+  return true;
+}
+
 bool ScriptLoader::ModuleMapContainsURL(nsIURI* aURL) const {
   // Returns whether we have fetched, or are currently fetching, a module script
   // for a URL.
@@ -488,11 +539,16 @@ nsresult ScriptLoader::CreateModuleScript(ModuleLoadRequest* aRequest) {
       rv = FillCompileOptionsForRequest(aes, aRequest, global, &options);
 
       if (NS_SUCCEEDED(rv)) {
-        auto srcBuf = GetScriptSource(cx, aRequest);
-        if (srcBuf) {
-          rv = nsJSUtils::CompileModule(cx, *srcBuf, global, options, &module);
-        } else {
-          rv = NS_ERROR_OUT_OF_MEMORY;
+        MaybeSourceText maybeSource;
+        rv = GetScriptSource(cx, aRequest, &maybeSource);
+        if (NS_SUCCEEDED(rv)) {
+          rv = maybeSource.constructed<SourceText<char16_t>>()
+                   ? nsJSUtils::CompileModule(
+                         cx, maybeSource.ref<SourceText<char16_t>>(), global,
+                         options, &module)
+                   : nsJSUtils::CompileModule(
+                         cx, maybeSource.ref<SourceText<Utf8Unit>>(), global,
+                         options, &module);
         }
       }
     }
@@ -1238,14 +1294,19 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
   nsSecurityFlags securityFlags;
   if (aRequest->IsModuleRequest()) {
     // According to the spec, module scripts have different behaviour to classic
-    // scripts and always use CORS.
-    securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
-    if (aRequest->CORSMode() == CORS_NONE ||
-        aRequest->CORSMode() == CORS_ANONYMOUS) {
-      securityFlags |= nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;
+    // scripts and always use CORS. Only exception: Non linkable about: pages
+    // which load local module scripts.
+    if (IsAboutPageLoadingChromeURI(aRequest)) {
+      securityFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
     } else {
-      MOZ_ASSERT(aRequest->CORSMode() == CORS_USE_CREDENTIALS);
-      securityFlags |= nsILoadInfo::SEC_COOKIES_INCLUDE;
+      securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+      if (aRequest->CORSMode() == CORS_NONE ||
+          aRequest->CORSMode() == CORS_ANONYMOUS) {
+        securityFlags |= nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;
+      } else {
+        MOZ_ASSERT(aRequest->CORSMode() == CORS_USE_CREDENTIALS);
+        securityFlags |= nsILoadInfo::SEC_COOKIES_INCLUDE;
+      }
     }
   } else {
     securityFlags = aRequest->CORSMode() == CORS_NONE
@@ -1264,8 +1325,7 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
       getter_AddRefs(channel), aRequest->mURI, context,
       aRequest->TriggeringPrincipal(), securityFlags, contentPolicyType,
       nullptr,  // aPerformanceStorage
-      loadGroup, prompter,
-      nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_CLASSIFY_URI);
+      loadGroup, prompter);
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1285,7 +1345,7 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
   // constant.
   aRequest->mCacheInfo = nullptr;
   nsCOMPtr<nsICacheInfoChannel> cic(do_QueryInterface(channel));
-  if (cic && nsContentUtils::IsBytecodeCacheEnabled() &&
+  if (cic && StaticPrefs::dom_script_loader_bytecode_cache_enabled() &&
       // Bug 1436400: no bytecode cache support for modules yet.
       !aRequest->IsModuleRequest()) {
     if (!aRequest->IsLoadingSource()) {
@@ -1317,11 +1377,11 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
       // content such as images, Leader implicitely disallows tailing
       cos->AddClassFlags(nsIClassOfService::Leader);
     } else if (aRequest->IsDeferredScript() &&
-               !nsContentUtils::IsTailingEnabled()) {
-      // Bug 1395525 and the !nsContentUtils::IsTailingEnabled() bit:
-      // We want to make sure that turing tailing off by the pref makes
-      // the browser behave exactly the same way as before landing
-      // the tailing patch.
+               !StaticPrefs::network_http_tailing_enabled()) {
+      // Bug 1395525 and the !StaticPrefs::network_http_tailing_enabled() bit:
+      // We want to make sure that turing tailing off by the pref makes the
+      // browser behave exactly the same way as before landing the tailing
+      // patch.
 
       // head/body deferred scripts are blocked by leaders but are not
       // allowed tailing because they block DOMContentLoaded
@@ -1354,8 +1414,9 @@ nsresult ScriptLoader::StartLoad(ScriptLoadRequest* aRequest) {
                                        acceptTypes, false);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
-    rv = httpChannel->SetReferrerWithPolicy(aRequest->mReferrer,
-                                            aRequest->ReferrerPolicy());
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        new ReferrerInfo(aRequest->mReferrer, aRequest->ReferrerPolicy());
+    rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     nsCOMPtr<nsIHttpChannelInternal> internalChannel(
@@ -1416,11 +1477,8 @@ bool ScriptLoader::PreloadURIComparator::Equals(const PreloadInfo& aPi,
 
 static bool CSPAllowsInlineScript(nsIScriptElement* aElement,
                                   Document* aDocument) {
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  // Note: For imports NodePrincipal and the principal of the master are
-  // the same.
-  nsresult rv = aDocument->NodePrincipal()->GetCsp(getter_AddRefs(csp));
-  NS_ENSURE_SUCCESS(rv, false);
+  nsCOMPtr<nsIContentSecurityPolicy> csp = aDocument->GetCsp();
+  nsresult rv = NS_OK;
 
   if (!csp) {
     // no CSP --> allow
@@ -1440,7 +1498,7 @@ static bool CSPAllowsInlineScript(nsIScriptElement* aElement,
                             EmptyString(), aElement->GetScriptLineNumber(),
                             aElement->GetScriptColumnNumber(),
                             &allowInlineScript);
-  return allowInlineScript;
+  return NS_SUCCEEDED(rv) && allowInlineScript;
 }
 
 ScriptLoadRequest* ScriptLoader::CreateLoadRequest(
@@ -1448,7 +1506,7 @@ ScriptLoadRequest* ScriptLoader::CreateLoadRequest(
     nsIPrincipal* aTriggeringPrincipal, CORSMode aCORSMode,
     const SRIMetadata& aIntegrity,
     mozilla::net::ReferrerPolicy aReferrerPolicy) {
-  nsIURI* referrer = mDocument->GetDocumentURI();
+  nsIURI* referrer = mDocument->GetDocumentURIAsReferrer();
   ScriptFetchOptions* fetchOptions = new ScriptFetchOptions(
       aCORSMode, aReferrerPolicy, aElement, aTriggeringPrincipal);
 
@@ -2013,8 +2071,7 @@ nsresult ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
   }
 
   if (aRequest->IsTextSource()) {
-    if (!JS::CanCompileOffThread(cx, options,
-                                 aRequest->ScriptText().length())) {
+    if (!JS::CanCompileOffThread(cx, options, aRequest->ScriptTextLength())) {
       return NS_OK;
     }
 #ifdef JS_BUILD_BINAST
@@ -2038,10 +2095,18 @@ nsresult ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
 
   if (aRequest->IsModuleRequest()) {
     MOZ_ASSERT(aRequest->IsTextSource());
-    auto srcBuf = GetScriptSource(cx, aRequest);
-    if (!srcBuf || !JS::CompileOffThreadModule(cx, options, *srcBuf,
-                                               OffThreadScriptLoaderCallback,
-                                               static_cast<void*>(runnable))) {
+    MaybeSourceText maybeSource;
+    nsresult rv = GetScriptSource(cx, aRequest, &maybeSource);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (maybeSource.constructed<SourceText<char16_t>>()
+            ? !JS::CompileOffThreadModule(
+                  cx, options, maybeSource.ref<SourceText<char16_t>>(),
+                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable))
+            : !JS::CompileOffThreadModule(
+                  cx, options, maybeSource.ref<SourceText<Utf8Unit>>(),
+                  OffThreadScriptLoaderCallback,
+                  static_cast<void*>(runnable))) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   } else if (aRequest->IsBytecode()) {
@@ -2062,10 +2127,18 @@ nsresult ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
 #endif
   } else {
     MOZ_ASSERT(aRequest->IsTextSource());
-    auto srcBuf = GetScriptSource(cx, aRequest);
-    if (!srcBuf || !JS::CompileOffThread(cx, options, *srcBuf,
-                                         OffThreadScriptLoaderCallback,
-                                         static_cast<void*>(runnable))) {
+    MaybeSourceText maybeSource;
+    nsresult rv = GetScriptSource(cx, aRequest, &maybeSource);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (maybeSource.constructed<SourceText<char16_t>>()
+            ? !JS::CompileOffThread(
+                  cx, options, maybeSource.ref<SourceText<char16_t>>(),
+                  OffThreadScriptLoaderCallback, static_cast<void*>(runnable))
+            : !JS::CompileOffThread(cx, options,
+                                    maybeSource.ref<SourceText<Utf8Unit>>(),
+                                    OffThreadScriptLoaderCallback,
+                                    static_cast<void*>(runnable))) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
@@ -2105,11 +2178,9 @@ nsresult ScriptLoader::CompileOffThreadOrProcessRequest(
   return ProcessRequest(aRequest);
 }
 
-mozilla::Maybe<SourceText<char16_t>> ScriptLoader::GetScriptSource(
-    JSContext* aCx, ScriptLoadRequest* aRequest) {
-  // Return a SourceText<char16_t> object holding the script's source text.
-  // Ownership of the buffer is transferred to the resulting holder.
-
+nsresult ScriptLoader::GetScriptSource(JSContext* aCx,
+                                       ScriptLoadRequest* aRequest,
+                                       MaybeSourceText* aMaybeSource) {
   // If there's no script text, we try to get it from the element
   if (aRequest->mIsInline) {
     nsAutoString inlineData;
@@ -2119,32 +2190,53 @@ mozilla::Maybe<SourceText<char16_t>> ScriptLoader::GetScriptSource(
     JS::UniqueTwoByteChars chars(
         static_cast<char16_t*>(JS_malloc(aCx, nbytes)));
     if (!chars) {
-      return Nothing();
+      return NS_ERROR_OUT_OF_MEMORY;
     }
 
     memcpy(chars.get(), inlineData.get(), nbytes);
 
     SourceText<char16_t> srcBuf;
     if (!srcBuf.init(aCx, std::move(chars), inlineData.Length())) {
-      return Nothing();
+      return NS_ERROR_OUT_OF_MEMORY;
     }
 
-    return Some(SourceText<char16_t>(std::move(srcBuf)));
+    aMaybeSource->construct<SourceText<char16_t>>(std::move(srcBuf));
+    return NS_OK;
   }
 
-  size_t length = aRequest->ScriptText().length();
-  JS::UniqueTwoByteChars chars(aRequest->ScriptText().extractOrCopyRawBuffer());
+  size_t length = aRequest->ScriptTextLength();
+  if (aRequest->IsUTF16Text()) {
+    JS::UniqueTwoByteChars chars;
+    chars.reset(aRequest->ScriptText<char16_t>().extractOrCopyRawBuffer());
+    if (!chars) {
+      JS_ReportOutOfMemory(aCx);
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    SourceText<char16_t> srcBuf;
+    if (!srcBuf.init(aCx, std::move(chars), length)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    aMaybeSource->construct<SourceText<char16_t>>(std::move(srcBuf));
+    return NS_OK;
+  }
+
+  MOZ_ASSERT(aRequest->IsUTF8Text());
+  UniquePtr<Utf8Unit[], JS::FreePolicy> chars;
+  chars.reset(aRequest->ScriptText<Utf8Unit>().extractOrCopyRawBuffer());
   if (!chars) {
     JS_ReportOutOfMemory(aCx);
-    return Nothing();
+    return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  SourceText<char16_t> srcBuf;
+  SourceText<Utf8Unit> srcBuf;
   if (!srcBuf.init(aCx, std::move(chars), length)) {
-    return Nothing();
+    return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  return Some(SourceText<char16_t>(std::move(srcBuf)));
+  aMaybeSource->construct<SourceText<Utf8Unit>>(std::move(srcBuf));
+  return NS_OK;
 }
 
 nsresult ScriptLoader::ProcessRequest(ScriptLoadRequest* aRequest) {
@@ -2386,7 +2478,7 @@ bool ScriptLoader::ShouldCacheBytecode(ScriptLoadRequest* aRequest) {
 
   // Look at the preference to know which strategy (parameters) should be used
   // when the bytecode cache is enabled.
-  int32_t strategy = nsContentUtils::BytecodeCacheStrategy();
+  int32_t strategy = StaticPrefs::dom_script_loader_bytecode_cache_strategy();
 
   // List of parameters used by the strategies.
   bool hasSourceLengthMin = false;
@@ -2701,12 +2793,16 @@ nsresult ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest) {
                                        aRequest->ScriptBinASTData().length());
               } else {
                 MOZ_ASSERT(aRequest->IsTextSource());
-                auto srcBuf = GetScriptSource(cx, aRequest);
-
-                if (srcBuf) {
-                  rv = exec.Compile(options, *srcBuf);
-                } else {
-                  rv = NS_ERROR_OUT_OF_MEMORY;
+                MaybeSourceText maybeSource;
+                rv = GetScriptSource(cx, aRequest, &maybeSource);
+                if (NS_SUCCEEDED(rv)) {
+                  rv = maybeSource.constructed<SourceText<char16_t>>()
+                           ? exec.Compile(
+                                 options,
+                                 maybeSource.ref<SourceText<char16_t>>())
+                           : exec.Compile(
+                                 options,
+                                 maybeSource.ref<SourceText<Utf8Unit>>());
                 }
               }
             }
@@ -3054,12 +3150,12 @@ bool ScriptLoader::ReadyToExecuteParserBlockingScripts() {
   return true;
 }
 
-/* static */
-nsresult ScriptLoader::ConvertToUTF16(nsIChannel* aChannel,
-                                      const uint8_t* aData, uint32_t aLength,
-                                      const nsAString& aHintCharset,
-                                      Document* aDocument, char16_t*& aBufOut,
-                                      size_t& aLengthOut) {
+template <typename Unit>
+static nsresult ConvertToUnicode(nsIChannel* aChannel, const uint8_t* aData,
+                                 uint32_t aLength,
+                                 const nsAString& aHintCharset,
+                                 Document* aDocument, Unit*& aBufOut,
+                                 size_t& aLengthOut) {
   if (!aLength) {
     aBufOut = nullptr;
     aLengthOut = 0;
@@ -3107,42 +3203,52 @@ nsresult ScriptLoader::ConvertToUTF16(nsIChannel* aChannel,
     unicodeDecoder = WINDOWS_1252_ENCODING->NewDecoderWithoutBOMHandling();
   }
 
-  CheckedInt<size_t> maxLength = unicodeDecoder->MaxUTF16BufferLength(aLength);
-  if (!maxLength.isValid()) {
+  auto signalOOM = mozilla::MakeScopeExit([&aBufOut, &aLengthOut]() {
     aBufOut = nullptr;
     aLengthOut = 0;
+  });
+
+  CheckedInt<size_t> bufferLength =
+      ScriptDecoding<Unit>::MaxBufferLength(unicodeDecoder, aLength);
+  if (!bufferLength.isValid()) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  size_t unicodeLength = maxLength.value();
-
-  maxLength *= sizeof(char16_t);
-
-  if (!maxLength.isValid()) {
-    aBufOut = nullptr;
-    aLengthOut = 0;
+  CheckedInt<size_t> bufferByteSize = bufferLength * sizeof(Unit);
+  if (!bufferByteSize.isValid()) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  aBufOut = static_cast<char16_t*>(js_malloc(maxLength.value()));
+  aBufOut = static_cast<Unit*>(js_malloc(bufferByteSize.value()));
   if (!aBufOut) {
-    aLengthOut = 0;
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  uint32_t result;
-  size_t read;
-  size_t written;
-  bool hadErrors;
-  Tie(result, read, written, hadErrors) = unicodeDecoder->DecodeToUTF16(
-      data, MakeSpan(aBufOut, unicodeLength), true);
-  MOZ_ASSERT(result == kInputEmpty);
-  MOZ_ASSERT(read == aLength);
-  MOZ_ASSERT(written <= unicodeLength);
-  Unused << hadErrors;
-  aLengthOut = written;
-
+  signalOOM.release();
+  aLengthOut = ScriptDecoding<Unit>::DecodeInto(
+      unicodeDecoder, data, MakeSpan(aBufOut, bufferLength.value()),
+      /* aEndOfSource = */ true);
   return NS_OK;
+}
+
+/* static */
+nsresult ScriptLoader::ConvertToUTF16(nsIChannel* aChannel,
+                                      const uint8_t* aData, uint32_t aLength,
+                                      const nsAString& aHintCharset,
+                                      Document* aDocument, char16_t*& aBufOut,
+                                      size_t& aLengthOut) {
+  return ConvertToUnicode(aChannel, aData, aLength, aHintCharset, aDocument,
+                          aBufOut, aLengthOut);
+}
+
+/* static */
+nsresult ScriptLoader::ConvertToUTF8(nsIChannel* aChannel, const uint8_t* aData,
+                                     uint32_t aLength,
+                                     const nsAString& aHintCharset,
+                                     Document* aDocument, Utf8Unit*& aBufOut,
+                                     size_t& aLengthOut) {
+  return ConvertToUnicode(aChannel, aData, aLength, aHintCharset, aDocument,
+                          aBufOut, aLengthOut);
 }
 
 nsresult ScriptLoader::OnStreamComplete(
@@ -3216,29 +3322,6 @@ nsresult ScriptLoader::VerifySRI(ScriptLoadRequest* aRequest,
     if (NS_FAILED(rv)) {
       rv = NS_ERROR_SRI_CORRUPT;
     }
-  } else {
-    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-
-    if (loadInfo->GetEnforceSRI()) {
-      MOZ_LOG(SRILogHelper::GetSriLog(), mozilla::LogLevel::Debug,
-              ("ScriptLoader::OnStreamComplete, required SRI not found"));
-      nsCOMPtr<nsIContentSecurityPolicy> csp;
-      loadInfo->LoadingPrincipal()->GetCsp(getter_AddRefs(csp));
-      nsAutoCString violationURISpec;
-      mDocument->GetDocumentURI()->GetAsciiSpec(violationURISpec);
-      uint32_t lineNo =
-          aRequest->Element() ? aRequest->Element()->GetScriptLineNumber() : 0;
-      uint32_t columnNo = aRequest->Element()
-                              ? aRequest->Element()->GetScriptColumnNumber()
-                              : 0;
-      csp->LogViolationDetails(
-          nsIContentSecurityPolicy::VIOLATION_TYPE_REQUIRE_SRI_FOR_SCRIPT,
-          nullptr,  // triggering element
-          nullptr,  // nsICSPEventListener
-          NS_ConvertUTF8toUTF16(violationURISpec), EmptyString(), lineNo,
-          columnNo, EmptyString(), EmptyString());
-      rv = NS_ERROR_SRI_CORRUPT;
-    }
   }
 
   return rv;
@@ -3310,8 +3393,8 @@ void ScriptLoader::ReportErrorToConsole(ScriptLoadRequest* aRequest,
     message = isScript ? "ScriptSourceLoadFailed" : "ModuleSourceLoadFailed";
   }
 
-  NS_ConvertUTF8toUTF16 url(aRequest->mURI->GetSpecOrDefault());
-  const char16_t* params[] = {url.get()};
+  AutoTArray<nsString, 1> params;
+  CopyUTF8toUTF16(aRequest->mURI->GetSpecOrDefault(), *params.AppendElement());
 
   nsIScriptElement* element = aRequest->Element();
   uint32_t lineNo = element ? element->GetScriptLineNumber() : 0;
@@ -3319,8 +3402,8 @@ void ScriptLoader::ReportErrorToConsole(ScriptLoadRequest* aRequest,
 
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Script Loader"),
-      mDocument, nsContentUtils::eDOM_PROPERTIES, message, params,
-      ArrayLength(params), nullptr, EmptyString(), lineNo, columnNo);
+      mDocument, nsContentUtils::eDOM_PROPERTIES, message, params, nullptr,
+      EmptyString(), lineNo, columnNo);
 }
 
 void ScriptLoader::ReportPreloadErrorsToConsole(ScriptLoadRequest* aRequest) {
@@ -3451,6 +3534,11 @@ static bool IsInternalURIScheme(nsIURI* uri) {
 
   bool isResource;
   if (NS_SUCCEEDED(uri->SchemeIs("resource", &isResource)) && isResource) {
+    return true;
+  }
+
+  bool isChrome;
+  if (NS_SUCCEEDED(uri->SchemeIs("chrome", &isChrome)) && isChrome) {
     return true;
   }
 

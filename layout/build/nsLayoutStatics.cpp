@@ -81,6 +81,8 @@
 #  include "nsMenuBarListener.h"
 #endif
 
+#include "mozilla/dom/UIDirectionManager.h"
+
 #include "CubebUtils.h"
 #include "WebAudioUtils.h"
 
@@ -101,15 +103,19 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/dom/HTMLVideoElement.h"
+#include "ThirdPartyUtil.h"
 #include "TouchManager.h"
 #include "DecoderDoctorLogger.h"
 #include "MediaDecoder.h"
 #include "mozilla/ClearSiteData.h"
+#include "mozilla/EditorController.h"
 #include "mozilla/Fuzzyfox.h"
+#include "mozilla/HTMLEditorController.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPresData.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/IPCBlobInputStreamStorage.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
-#include "mozilla/dom/ipc/IPCBlobInputStreamStorage.h"
 #include "mozilla/dom/U2FTokenManager.h"
 #ifdef OS_WIN
 #  include "mozilla/dom/WinWebAuthnManager.h"
@@ -118,11 +124,13 @@
 #include "mozilla/dom/RemoteWorkerService.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ReportingHeader.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/quota/ActorsParent.h"
 #include "mozilla/dom/localstorage/ActorsParent.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsThreadManager.h"
 #include "mozilla/css/ImageLoader.h"
+#include "gfxUserFontSet.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -253,16 +261,18 @@ nsresult nsLayoutStatics::Initialize() {
 
   ProcessPriorityManager::Init();
 
-  nsPermissionManager::ClearOriginDataObserverInit();
+  nsPermissionManager::Startup();
+
   nsCookieService::AppClearDataObserverInit();
   nsApplicationCacheService::AppClearDataObserverInit();
 
   HTMLVideoElement::InitStatics();
-  nsGenericHTMLFrameElement::InitStatics();
 
 #ifdef MOZ_XUL
   nsMenuBarListener::InitializeStatics();
 #endif
+
+  UIDirectionManager::Initialize();
 
   CacheObserver::Init();
 
@@ -292,8 +302,9 @@ nsresult nsLayoutStatics::Initialize() {
   if (XRE_IsParentProcess()) {
     // On content process we initialize these components when PContentChild is
     // fully initialized.
-    mozilla::dom::DOMPrefs::Initialize();
     mozilla::dom::RemoteWorkerService::Initialize();
+    // This one should be initialized on the parent only
+    mozilla::dom::BrowserParent::InitializeStatics();
   }
 
   nsThreadManager::InitializeShutdownObserver();
@@ -324,16 +335,20 @@ void nsLayoutStatics::Shutdown() {
     URLExtraData::ReleaseDummy();
   }
 
+  Document::Shutdown();
   nsMessageManagerScriptExecutor::Shutdown();
   nsFocusManager::Shutdown();
 #ifdef MOZ_XUL
   nsXULPopupManager::Shutdown();
 #endif
+  UIDirectionManager::Shutdown();
   StorageObserver::Shutdown();
   txMozillaXSLTProcessor::Shutdown();
   Attr::Shutdown();
   PopupBlocker::Shutdown();
   IMEStateManager::Shutdown();
+  EditorController::Shutdown();
+  HTMLEditorController::Shutdown();
   nsMediaFeatures::Shutdown();
   nsHTMLDNSPrefetch::Shutdown();
   nsCSSRendering::Shutdown();
@@ -419,4 +434,6 @@ void nsLayoutStatics::Shutdown() {
   css::ImageLoader::Shutdown();
 
   mozilla::net::UrlClassifierFeatureFactory::Shutdown();
+
+  gfxUserFontEntry::Shutdown();
 }

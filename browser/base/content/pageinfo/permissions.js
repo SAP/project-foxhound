@@ -4,9 +4,10 @@
 
 /* import-globals-from pageInfo.js */
 
-const {SitePermissions} = ChromeUtils.import("resource:///modules/SitePermissions.jsm");
+const { SitePermissions } = ChromeUtils.import(
+  "resource:///modules/SitePermissions.jsm"
+);
 
-var gPermURI;
 var gPermPrincipal;
 var gUsageRequest;
 
@@ -23,8 +24,11 @@ var permissionObserver = {
   observe(aSubject, aTopic, aData) {
     if (aTopic == "perm-changed") {
       var permission = aSubject.QueryInterface(Ci.nsIPermission);
-      if (permission.matchesURI(gPermURI, true) && gPermissions.includes(permission.type)) {
-          initRow(permission.type);
+      if (
+        permission.matches(gPermPrincipal, true) &&
+        gPermissions.includes(permission.type)
+      ) {
+        initRow(permission.type);
       }
     }
   },
@@ -32,11 +36,10 @@ var permissionObserver = {
 
 function onLoadPermission(uri, principal) {
   var permTab = document.getElementById("permTab");
-  if (SitePermissions.isSupportedURI(uri)) {
-    gPermURI = uri;
+  if (SitePermissions.isSupportedPrincipal(principal)) {
     gPermPrincipal = principal;
     var hostText = document.getElementById("hostText");
-    hostText.value = gPermURI.displayPrePath;
+    hostText.value = uri.displayPrePath;
 
     for (var i of gPermissions) {
       initRow(i);
@@ -62,14 +65,20 @@ function initRow(aPartId) {
   createRow(aPartId);
 
   var checkbox = document.getElementById(aPartId + "Def");
-  var command  = document.getElementById("cmd_" + aPartId + "Toggle");
-  var {state, scope} = SitePermissions.get(gPermURI, aPartId);
+  var command = document.getElementById("cmd_" + aPartId + "Toggle");
+  var { state, scope } = SitePermissions.getForPrincipal(
+    gPermPrincipal,
+    aPartId
+  );
   let defaultState = SitePermissions.getDefault(aPartId);
 
   // Since cookies preferences have many different possible configuration states
   // we don't consider any permission except "no permission" to be default.
   if (aPartId == "cookie") {
-    state = Services.perms.testPermissionFromPrincipal(gPermPrincipal, "cookie");
+    state = Services.perms.testPermissionFromPrincipal(
+      gPermPrincipal,
+      "cookie"
+    );
 
     if (state == SitePermissions.UNKNOWN) {
       checkbox.checked = true;
@@ -87,11 +96,6 @@ function initRow(aPartId) {
     return;
   }
 
-  // When flash permission state is "Hide", we show it as "Always Ask" in page info.
-  if (aPartId.startsWith("plugin") && state == SitePermissions.PROMPT_HIDE) {
-    defaultState == SitePermissions.UNKNOWN ? state = defaultState : state = SitePermissions.PROMPT;
-  }
-
   if (state != defaultState) {
     checkbox.checked = false;
     command.removeAttribute("disabled");
@@ -100,7 +104,9 @@ function initRow(aPartId) {
     command.setAttribute("disabled", "true");
   }
 
-  if ([SitePermissions.SCOPE_POLICY, SitePermissions.SCOPE_GLOBAL].includes(scope)) {
+  if (
+    [SitePermissions.SCOPE_POLICY, SitePermissions.SCOPE_GLOBAL].includes(scope)
+  ) {
     checkbox.setAttribute("disabled", "true");
     command.setAttribute("disabled", "true");
   }
@@ -110,8 +116,9 @@ function initRow(aPartId) {
 
 function createRow(aPartId) {
   let rowId = "perm-" + aPartId + "-row";
-  if (document.getElementById(rowId))
+  if (document.getElementById(rowId)) {
     return;
+  }
 
   let commandId = "cmd_" + aPartId + "Toggle";
   let labelId = "perm-" + aPartId + "-label";
@@ -153,7 +160,10 @@ function createRow(aPartId) {
   for (let state of SitePermissions.getAvailableStates(aPartId)) {
     let radio = document.createXULElement("radio");
     radio.setAttribute("id", aPartId + "#" + state);
-    radio.setAttribute("label", SitePermissions.getMultichoiceStateLabel(state));
+    radio.setAttribute(
+      "label",
+      SitePermissions.getMultichoiceStateLabel(aPartId, state)
+    );
     radio.setAttribute("command", commandId);
     radiogroup.appendChild(radio);
   }
@@ -165,10 +175,10 @@ function createRow(aPartId) {
 }
 
 function onCheckboxClick(aPartId) {
-  var command  = document.getElementById("cmd_" + aPartId + "Toggle");
+  var command = document.getElementById("cmd_" + aPartId + "Toggle");
   var checkbox = document.getElementById(aPartId + "Def");
   if (checkbox.checked) {
-    SitePermissions.remove(gPermURI, aPartId);
+    SitePermissions.removeFromPrincipal(gPermPrincipal, aPartId);
     command.setAttribute("disabled", "true");
   } else {
     onRadioClick(aPartId);
@@ -180,7 +190,7 @@ function onRadioClick(aPartId) {
   var radioGroup = document.getElementById(aPartId + "RadioGroup");
   var id = radioGroup.selectedItem ? radioGroup.selectedItem.id : "#1";
   var permission = parseInt(id.split("#")[1]);
-  SitePermissions.set(gPermURI, aPartId, permission);
+  SitePermissions.setForPrincipal(gPermPrincipal, aPartId, permission);
 }
 
 function setRadioState(aPartId, aValue) {

@@ -12,13 +12,7 @@
 namespace mozilla {
 
 WebGLBuffer::WebGLBuffer(WebGLContext* webgl, GLuint buf)
-    : WebGLRefCountedObject(webgl),
-      mGLName(buf),
-      mContent(Kind::Undefined),
-      mUsage(LOCAL_GL_STATIC_DRAW),
-      mByteLength(0),
-      mTFBindCount(0),
-      mNonTFBindCount(0) {
+    : WebGLRefCountedObject(webgl), mGLName(buf) {
   mContext->mBuffers.insertBack(this);
 }
 
@@ -84,7 +78,7 @@ static bool ValidateBufferUsageEnum(WebGLContext* webgl, GLenum usage) {
   return false;
 }
 
-void WebGLBuffer::BufferData(GLenum target, size_t size, const void* data,
+void WebGLBuffer::BufferData(GLenum target, uint64_t size, const void* data,
                              GLenum usage) {
   // Careful: data.Length() could conceivably be any uint32_t, but GLsizeiptr
   // is like intptr_t.
@@ -106,7 +100,7 @@ void WebGLBuffer::BufferData(GLenum target, size_t size, const void* data,
   UniqueBuffer newIndexCache;
   if (target == LOCAL_GL_ELEMENT_ARRAY_BUFFER &&
       mContext->mNeedsIndexValidation) {
-    newIndexCache = malloc(size);
+    newIndexCache = malloc(AssertedCast<size_t>(size));
     if (!newIndexCache) {
       mContext->ErrorOutOfMemory("Failed to alloc index cache.");
       return;
@@ -127,6 +121,11 @@ void WebGLBuffer::BufferData(GLenum target, size_t size, const void* data,
     if (error) {
       MOZ_ASSERT(error == LOCAL_GL_OUT_OF_MEMORY);
       mContext->ErrorOutOfMemory("Error from driver: 0x%04x", error);
+
+      // Truncate
+      mByteLength = 0;
+      mFetchInvalidator.InvalidateCaches();
+      mIndexCache = nullptr;
       return;
     }
   } else {
@@ -151,12 +150,13 @@ void WebGLBuffer::BufferData(GLenum target, size_t size, const void* data,
   ResetLastUpdateFenceId();
 }
 
-void WebGLBuffer::BufferSubData(GLenum target, size_t dstByteOffset,
-                                size_t dataLen, const void* data) const {
+void WebGLBuffer::BufferSubData(GLenum target, uint64_t dstByteOffset,
+                                uint64_t dataLen, const void* data) const {
   if (!ValidateRange(dstByteOffset, dataLen)) return;
 
-  if (!CheckedInt<GLintptr>(dataLen).isValid())
-    return mContext->ErrorOutOfMemory("Size too large.");
+  if (!CheckedInt<GLintptr>(dstByteOffset).isValid() ||
+      !CheckedInt<GLsizeiptr>(dataLen).isValid())
+    return mContext->ErrorOutOfMemory("offset or size too large for platform.");
 
   ////
 

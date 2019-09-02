@@ -464,7 +464,7 @@ nsresult CertErrorRunnable::OverrideAllowedForHost(
   // to have Necko provide an nsIURI to PSM and to use that here (and
   // everywhere). However, that would be a wide-spanning change.
   const nsACString& hostname = mInfoObject->GetHostName();
-  if (net_IsValidIPv6Addr(hostname.BeginReading(), hostname.Length())) {
+  if (net_IsValidIPv6Addr(hostname)) {
     overrideAllowed = true;
     return NS_OK;
   }
@@ -958,8 +958,7 @@ void GatherBaselineRequirementsTelemetry(const UniqueCERTCertList& certList) {
       // Note that the net_IsValidHostName check will catch things like
       // "a.*.example.com".
       if (!net_IsValidHostName(altNameWithoutWildcard) ||
-          net_IsValidIPv4Addr(altName) ||
-          net_IsValidIPv6Addr(altName.get(), altName.Length())) {
+          net_IsValidIPv4Addr(altName) || net_IsValidIPv6Addr(altName)) {
         MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
                 ("BR telemetry: DNSName '%s' not valid (for '%s')\n",
                  altName.get(), commonName.get()));

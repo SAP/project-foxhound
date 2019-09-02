@@ -79,12 +79,14 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(CallbackObject)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIncumbentGlobal)
+  // If a new member is added here, don't forget to update IsBlackForCC.
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(CallbackObject)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mCallback)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mCallbackGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mCreationStack)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mIncumbentJSGlobal)
+  // If a new member is added here, don't forget to update IsBlackForCC.
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 void CallbackObject::Trace(JSTracer* aTracer) {
@@ -108,7 +110,10 @@ void CallbackObject::FinishSlowJSInitIfMoreThanOneOwner(JSContext* aCx) {
     }
     mIncumbentGlobal = GetIncumbentGlobal();
     if (mIncumbentGlobal) {
-      mIncumbentJSGlobal = mIncumbentGlobal->GetGlobalJSObject();
+      // We don't want to expose to JS here (change the color).  If someone ever
+      // reads mIncumbentJSGlobal, that will expose.  If not, no need to expose
+      // here.
+      mIncumbentJSGlobal = mIncumbentGlobal->GetGlobalJSObjectPreserveColor();
     }
   } else {
     // We can just forget all our stuff.
@@ -188,7 +193,7 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
     if (win) {
       // We don't want to run script in windows that have been navigated away
       // from.
-      if (!win->AsInner()->HasActiveDocument()) {
+      if (!win->HasActiveDocument()) {
         aRv.ThrowDOMException(
             NS_ERROR_DOM_NOT_SUPPORTED_ERR,
             NS_LITERAL_CSTRING("Refusing to execute function from window "
@@ -204,7 +209,7 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
   }
 
   // Bail out if there's no useful global.
-  if (!globalObject->GetGlobalJSObject()) {
+  if (!globalObject->HasJSGlobal()) {
     aRv.ThrowDOMException(
         NS_ERROR_DOM_NOT_SUPPORTED_ERR,
         NS_LITERAL_CSTRING("Refusing to execute function from global which is "
@@ -221,7 +226,7 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
     // of the same IPC global weirdness described above, wherein the
     // nsIGlobalObject has severed its reference to the JS global. Let's just
     // be safe here, so that nobody has to waste a day debugging gaia-ui tests.
-    if (!incumbent->GetGlobalJSObject()) {
+    if (!incumbent->HasJSGlobal()) {
       aRv.ThrowDOMException(
           NS_ERROR_DOM_NOT_SUPPORTED_ERR,
           NS_LITERAL_CSTRING("Refusing to execute function because our "

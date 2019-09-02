@@ -3,7 +3,7 @@
 <head>
   <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
   <title>Test for Cross Site XMLHttpRequest</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="initTest()">
@@ -11,7 +11,7 @@
 <iframe id=loader></iframe>
 </p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script class="testbody" type="application/javascript">
@@ -36,10 +36,11 @@ function initTestCallback() {
   });
 
   gen = runTest();
-  
+
   gen.next()
 }
 
+// eslint-disable-next-line complexity
 function* runTest() {
   var loader = document.getElementById('loader');
   var loaderWindow = loader.contentWindow;
@@ -760,15 +761,9 @@ function* runTest() {
       is(res.responseText, "",
          "wrong responseText in test for " + test.toSource());
       if (!res.sendThrew) {
-        if (test.username || test.password) {
-          is(res.events.join(","),
-             "opening,rs1,sending,loadstart,rs4,error,loadend",
-             "wrong events in test for " + test.toSource());
-        } else {
-          is(res.events.join(","),
-             "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
-             "wrong events in test for " + test.toSource());
-        }
+        is(res.events.join(","),
+           "opening,rs1,sending,loadstart,rs4,error,loadend",
+           "wrong events in test for " + test.toSource());
       }
       is(res.progressEvents, 0,
          "wrong events in test for " + test.toSource());
@@ -908,7 +903,7 @@ function* runTest() {
       is(res.responseText, "",
          "wrong responseText in test for " + test.toSource());
       is(res.events.join(","),
-         "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
+         "opening,rs1,sending,loadstart,rs4,error,loadend",
          "wrong events in test for " + test.toSource());
       is(res.progressEvents, 0,
          "wrong events in test for " + test.toSource());
@@ -1474,7 +1469,7 @@ function* runTest() {
       is(res.responseText, "",
          "wrong responseText in test for " + test.toSource());
       is(res.events.join(","),
-         "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
+         "opening,rs1,sending,loadstart,rs4,error,loadend",
          "wrong events in test for " + test.toSource());
       is(res.progressEvents, 0,
          "wrong progressevents in test for " + test.toSource());

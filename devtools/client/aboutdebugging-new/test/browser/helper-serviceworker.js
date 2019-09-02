@@ -43,7 +43,7 @@ function onTabMessage(tab, message) {
 async function _waitForServiceWorkerStatus(workerText, status, document) {
   await waitUntil(() => {
     const target = findDebugTargetByText(workerText, document);
-    const statusElement = target && target.querySelector(".js-worker-status");
+    const statusElement = target && target.querySelector(".qa-worker-status");
     return statusElement && statusElement.textContent === status;
   });
 
@@ -69,9 +69,11 @@ async function waitForServiceWorkerRegistering(workerText, document) {
 async function waitForRegistration(tab) {
   info("Wait until the registration appears on the window");
   const swBrowser = tab.linkedBrowser;
-  await asyncWaitUntil(async () => ContentTask.spawn(swBrowser, {}, function() {
-    return content.wrappedJSObject.getRegistration();
-  }));
+  await asyncWaitUntil(async () =>
+    ContentTask.spawn(swBrowser, {}, function() {
+      return content.wrappedJSObject.getRegistration();
+    })
+  );
 }
 /* exported waitForRegistration */
 
@@ -106,7 +108,11 @@ async function unregisterServiceWorker(tab) {
   return ContentTask.spawn(tab.linkedBrowser, {}, function() {
     const win = content.wrappedJSObject;
     // Check that the content page defines getRegistration.
-    is(typeof win.getRegistration, "function", "getRegistration is a valid function");
+    is(
+      typeof win.getRegistration,
+      "function",
+      "getRegistration is a valid function"
+    );
     win.getRegistration().unregister();
   });
 }

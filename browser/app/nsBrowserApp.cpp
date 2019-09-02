@@ -38,6 +38,7 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/WindowsDllBlocklist.h"
+#include "BaseProfiler.h"
 
 #ifdef LIBFUZZER
 #  include "FuzzerDefs.h"
@@ -196,12 +197,10 @@ static int do_main(int argc, char* argv[], char* envp[]) {
       sandboxing::GetInitializedBrokerServices();
   sandboxing::PermissionsService* permissionsService =
       sandboxing::GetPermissionsService();
-#  if defined(MOZ_CONTENT_SANDBOX)
   if (!brokerServices) {
     Output("Couldn't initialize the broker services.\n");
     return 255;
   }
-#  endif
   config.sandboxBrokerServices = brokerServices;
   config.sandboxPermissionsService = permissionsService;
 #endif
@@ -214,14 +213,14 @@ static int do_main(int argc, char* argv[], char* envp[]) {
   return gBootstrap->XRE_main(argc, argv, config);
 }
 
-static nsresult InitXPCOMGlue() {
+static nsresult InitXPCOMGlue(LibLoadingStrategy aLibLoadingStrategy) {
   UniqueFreePtr<char> exePath = BinaryPath::Get();
   if (!exePath) {
     Output("Couldn't find the application directory.\n");
     return NS_ERROR_FAILURE;
   }
 
-  gBootstrap = mozilla::GetBootstrap(exePath.get());
+  gBootstrap = mozilla::GetBootstrap(exePath.get(), aLibLoadingStrategy);
   if (!gBootstrap) {
     Output("Couldn't load XPCOM.\n");
     return NS_ERROR_FAILURE;
@@ -241,6 +240,9 @@ uint32_t gBlocklistInitFlags = eDllBlocklistInitFlagDefault;
 int main(int argc, char* argv[], char* envp[]) {
   mozilla::TimeStamp start = mozilla::TimeStamp::Now();
 
+  AUTO_BASE_PROFILER_INIT;
+  AUTO_BASE_PROFILER_LABEL("nsBrowserApp main", OTHER);
+
 #ifdef MOZ_BROWSER_CAN_BE_CONTENTPROC
   // We are launching as a content process, delegate to the appropriate
   // main
@@ -257,7 +259,7 @@ int main(int argc, char* argv[], char* envp[]) {
     }
 #  endif
 
-    nsresult rv = InitXPCOMGlue();
+    nsresult rv = InitXPCOMGlue(LibLoadingStrategy::NoReadAhead);
     if (NS_FAILED(rv)) {
       return 255;
     }
@@ -279,7 +281,7 @@ int main(int argc, char* argv[], char* envp[]) {
   DllBlocklist_Initialize(gBlocklistInitFlags);
 #endif
 
-  nsresult rv = InitXPCOMGlue();
+  nsresult rv = InitXPCOMGlue(LibLoadingStrategy::ReadAhead);
   if (NS_FAILED(rv)) {
     return 255;
   }

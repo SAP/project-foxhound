@@ -40,7 +40,9 @@ class U2FTransaction {
 
  public:
   explicit U2FTransaction(const U2FCallback&& aCallback)
-      : mCallback(std::move(aCallback)), mId(NextId()) {
+      : mCallback(std::move(aCallback)),
+        mId(NextId()),
+        mVisibilityChanged(false) {
     MOZ_ASSERT(mId > 0);
   }
 
@@ -65,6 +67,10 @@ class U2FTransaction {
 
   // Unique transaction id.
   uint64_t mId;
+
+  // Whether or not visibility has changed for the window during this
+  // transaction
+  bool mVisibilityChanged;
 
  private:
   // Generates a unique id for new transactions. This doesn't have to be unique
@@ -91,6 +97,7 @@ class U2F final : public WebAuthnManagerBase, public nsWrapperCache {
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
+  MOZ_CAN_RUN_SCRIPT
   void Register(const nsAString& aAppId,
                 const Sequence<RegisterRequest>& aRegisterRequests,
                 const Sequence<RegisteredKey>& aRegisteredKeys,
@@ -101,6 +108,7 @@ class U2F final : public WebAuthnManagerBase, public nsWrapperCache {
   void GetRegister(JSContext* aCx, JS::MutableHandle<JSObject*> aRegisterFunc,
                    ErrorResult& aRv);
 
+  MOZ_CAN_RUN_SCRIPT
   void Sign(const nsAString& aAppId, const nsAString& aChallenge,
             const Sequence<RegisteredKey>& aRegisteredKeys,
             U2FSignCallback& aCallback,
@@ -112,31 +120,38 @@ class U2F final : public WebAuthnManagerBase, public nsWrapperCache {
 
   // WebAuthnManagerBase
 
+  MOZ_CAN_RUN_SCRIPT
   void FinishMakeCredential(
       const uint64_t& aTransactionId,
       const WebAuthnMakeCredentialResult& aResult) override;
 
+  MOZ_CAN_RUN_SCRIPT
   void FinishGetAssertion(const uint64_t& aTransactionId,
                           const WebAuthnGetAssertionResult& aResult) override;
 
+  MOZ_CAN_RUN_SCRIPT
   void RequestAborted(const uint64_t& aTransactionId,
                       const nsresult& aError) override;
 
  protected:
   // Cancels the current transaction (by sending a Cancel message to the
   // parent) and rejects it by calling RejectTransaction().
-  void CancelTransaction(const nsresult& aError) override;
+  MOZ_CAN_RUN_SCRIPT void CancelTransaction(const nsresult& aError);
+  // Upon a visibility change, makes note of it in the current transaction.
+  MOZ_CAN_RUN_SCRIPT void HandleVisibilityChange() override;
 
  private:
-  ~U2F();
+  MOZ_CAN_RUN_SCRIPT ~U2F();
 
   template <typename T, typename C>
-  void ExecuteCallback(T& aResp, nsMainThreadPtrHandle<C>& aCb);
+  MOZ_CAN_RUN_SCRIPT void ExecuteCallback(T& aResp,
+                                          nsMainThreadPtrHandle<C>& aCb);
+
+  // Rejects the current transaction and clears it.
+  MOZ_CAN_RUN_SCRIPT void RejectTransaction(const nsresult& aError);
 
   // Clears all information we have about the current transaction.
   void ClearTransaction();
-  // Rejects the current transaction and clears it.
-  void RejectTransaction(const nsresult& aError);
 
   nsString mOrigin;
 

@@ -67,12 +67,10 @@ class ChromeConnector {
     switch (type) {
       case ACTIVITY_TYPE.RELOAD.WITH_CACHE_ENABLED:
       case ACTIVITY_TYPE.RELOAD.WITH_CACHE_DEFAULT:
-        return this.connector.reset().then(
-          () => this.connector.Page.reload().then(
-            () => {
-              this.currentActivity = ACTIVITY_TYPE.NONE;
-            }
-          )
+        return this.connector.reset().then(() =>
+          this.connector.Page.reload().then(() => {
+            this.currentActivity = ACTIVITY_TYPE.NONE;
+          })
         );
     }
     this.currentActivity = ACTIVITY_TYPE.NONE;
@@ -87,6 +85,24 @@ class ChromeConnector {
    */
   sendHTTPRequest(data, callback) {
     // TODO : not support. currently didn't provide this feature in CDP API.
+  }
+
+  /**
+   * Block future requests matching a filter.
+   *
+   * @param {object} filter request filter specifying what to block
+   */
+  blockRequest(filter) {
+    // TODO: Implement for Chrome as well.
+  }
+
+  /**
+   * Unblock future requests matching a filter.
+   *
+   * @param {object} filter request filter specifying what to unblock
+   */
+  unblockRequest(filter) {
+    // TODO: Implement for Chrome as well.
   }
 
   setPreferences() {

@@ -3,14 +3,16 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
+/* import-globals-from ../../debugger/test/mochitest/helpers/context.js */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers/context.js",
+  this
+);
+
 // Test that the highlighter works when the debugger is paused.
 
 function debuggerIsPaused(dbg) {
-  const {
-    selectors: { getIsPaused, getCurrentThread },
-    getState,
-  } = dbg;
-  return !!getIsPaused(getState(), getCurrentThread(getState()));
+  return !!dbg.selectors.getIsPaused(dbg.selectors.getCurrentThread());
 }
 
 function waitForPaused(dbg) {
@@ -29,44 +31,31 @@ function waitForPaused(dbg) {
   });
 }
 
-async function createDebuggerContext(toolbox) {
-  const panel = await toolbox.getPanelWhenReady("jsdebugger");
-  const win = panel.panelWin;
-  const { store, client, selectors, actions } = panel.getVarsForTests();
-
-  return {
-    actions: actions,
-    selectors: selectors,
-    getState: store.getState,
-    store: store,
-    client: client,
-    toolbox: toolbox,
-    win: win,
-    panel: panel,
-  };
-}
-
-const IFRAME_SRC = "<style>" +
-    "body {" +
-      "margin:0;" +
-      "height:100%;" +
-      "background-color:red" +
-    "}" +
+const IFRAME_SRC =
+  "<style>" +
+  "body {" +
+  "margin:0;" +
+  "height:100%;" +
+  "background-color:red" +
+  "}" +
   "</style><body>hello from iframe</body>";
 
-const DOCUMENT_SRC = "<style>" +
-    "iframe {" +
-      "height:200px;" +
-      "border: 11px solid black;" +
-      "padding: 13px;" +
-    "}" +
-    "body,iframe {" +
-      "margin:0" +
-    "}" +
+const DOCUMENT_SRC =
+  "<style>" +
+  "iframe {" +
+  "height:200px;" +
+  "border: 11px solid black;" +
+  "padding: 13px;" +
+  "}" +
+  "body,iframe {" +
+  "margin:0" +
+  "}" +
   "</style>" +
   "<body>" +
-   "<script>setInterval('debugger', 100)</script>" +
-   "<iframe src='data:text/html;charset=utf-8," + IFRAME_SRC + "'></iframe>" +
+  "<script>setInterval('debugger', 100)</script>" +
+  "<iframe src='data:text/html;charset=utf-8," +
+  IFRAME_SRC +
+  "'></iframe>" +
   "</body>";
 
 const TEST_URI = "data:text/html;charset=utf-8," + DOCUMENT_SRC;
@@ -100,7 +89,12 @@ add_task(async function() {
 
   function moveMouseOver(selector, x, y) {
     info("Waiting for element " + selector + " to be highlighted");
-    testActor.synthesizeMouse({selector, x, y, options: {type: "mousemove"}});
+    testActor.synthesizeMouse({
+      selector,
+      x,
+      y,
+      options: { type: "mousemove" },
+    });
     return inspector.inspector.nodePicker.once("picker-node-hovered");
   }
 });

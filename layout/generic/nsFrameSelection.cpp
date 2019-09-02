@@ -15,6 +15,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs.h"
 
 #include "nsCOMPtr.h"
 #include "nsString.h"
@@ -46,8 +47,8 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "nsThreadUtils.h"
 #include "mozilla/Preferences.h"
 
+#include "mozilla/PresShell.h"
 #include "nsPresContext.h"
-#include "nsIPresShell.h"
 #include "nsCaret.h"
 
 #include "mozilla/MouseEvents.h"
@@ -325,9 +326,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsFrameSelection)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mAncestorLimiter)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsFrameSelection)
-  if (tmp->mShell && tmp->mShell->GetDocument() &&
+  if (tmp->mPresShell && tmp->mPresShell->GetDocument() &&
       nsCCUncollectableMarker::InGeneration(
-          cb, tmp->mShell->GetDocument()->GetMarkedCCGeneration())) {
+          cb, tmp->mPresShell->GetDocument()->GetMarkedCCGeneration())) {
     return NS_SUCCESS_INTERRUPTED_TRAVERSE;
   }
   for (size_t i = 0; i < ArrayLength(tmp->mDomSelections); ++i) {
@@ -350,7 +351,7 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsFrameSelection, Release)
 // Get the x (or y, in vertical writing mode) position requested
 // by the Key Handling for line-up/down
 nsresult nsFrameSelection::FetchDesiredPos(nsPoint& aDesiredPos) {
-  if (!mShell) {
+  if (!mPresShell) {
     NS_ERROR("fetch desired position failed");
     return NS_ERROR_FAILURE;
   }
@@ -359,7 +360,7 @@ nsresult nsFrameSelection::FetchDesiredPos(nsPoint& aDesiredPos) {
     return NS_OK;
   }
 
-  RefPtr<nsCaret> caret = mShell->GetCaret();
+  RefPtr<nsCaret> caret = mPresShell->GetCaret();
   if (!caret) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -429,8 +430,8 @@ nsresult nsFrameSelection::ConstrainFrameAndPointToAnchorSubtree(
   // Now find the root of the subtree containing the anchor's content.
   //
 
-  NS_ENSURE_STATE(mShell);
-  nsIContent* anchorRoot = anchorContent->GetSelectionRootContent(mShell);
+  NS_ENSURE_STATE(mPresShell);
+  nsIContent* anchorRoot = anchorContent->GetSelectionRootContent(mPresShell);
   NS_ENSURE_TRUE(anchorRoot, NS_ERROR_UNEXPECTED);
 
   //
@@ -440,13 +441,13 @@ nsresult nsFrameSelection::ConstrainFrameAndPointToAnchorSubtree(
   nsIContent* content = aFrame->GetContent();
 
   if (content) {
-    nsIContent* contentRoot = content->GetSelectionRootContent(mShell);
+    nsIContent* contentRoot = content->GetSelectionRootContent(mPresShell);
     NS_ENSURE_TRUE(contentRoot, NS_ERROR_UNEXPECTED);
 
     if (anchorRoot == contentRoot) {
       // If the aFrame's content isn't the capturing content, it should be
       // a descendant.  At this time, we can return simply.
-      nsIContent* capturedContent = nsIPresShell::GetCapturingContent();
+      nsIContent* capturedContent = PresShell::GetCapturingContent();
       if (capturedContent != content) {
         return NS_OK;
       }
@@ -454,18 +455,18 @@ nsresult nsFrameSelection::ConstrainFrameAndPointToAnchorSubtree(
       // Find the frame under the mouse cursor with the root frame.
       // At this time, don't use the anchor's frame because it may not have
       // fixed positioned frames.
-      nsIFrame* rootFrame = mShell->GetRootFrame();
+      nsIFrame* rootFrame = mPresShell->GetRootFrame();
       nsPoint ptInRoot = aPoint + aFrame->GetOffsetTo(rootFrame);
       nsIFrame* cursorFrame =
           nsLayoutUtils::GetFrameForPoint(rootFrame, ptInRoot);
 
       // If the mouse cursor in on a frame which is descendant of same
       // selection root, we can expand the selection to the frame.
-      if (cursorFrame && cursorFrame->PresShell() == mShell) {
+      if (cursorFrame && cursorFrame->PresShell() == mPresShell) {
         nsIContent* cursorContent = cursorFrame->GetContent();
         NS_ENSURE_TRUE(cursorContent, NS_ERROR_FAILURE);
         nsIContent* cursorContentRoot =
-            cursorContent->GetSelectionRootContent(mShell);
+            cursorContent->GetSelectionRootContent(mPresShell);
         NS_ENSURE_TRUE(cursorContentRoot, NS_ERROR_UNEXPECTED);
         if (cursorContentRoot == anchorRoot) {
           *aRetFrame = cursorFrame;
@@ -505,7 +506,7 @@ void nsFrameSelection::SetCaretBidiLevel(nsBidiLevel aLevel) {
   mCaretBidiLevel = aLevel;
 
   RefPtr<nsCaret> caret;
-  if (mShell && (caret = mShell->GetCaret())) {
+  if (mPresShell && (caret = mPresShell->GetCaret())) {
     caret->SchedulePaint();
   }
 }
@@ -570,9 +571,10 @@ static nsINode* GetCellParent(nsINode* aDomNode) {
   return nullptr;
 }
 
-void nsFrameSelection::Init(nsIPresShell* aShell, nsIContent* aLimiter,
+void nsFrameSelection::Init(mozilla::PresShell* aPresShell,
+                            nsIContent* aLimiter,
                             bool aAccessibleCaretEnabled) {
-  mShell = aShell;
+  mPresShell = aPresShell;
   mDragState = false;
   mDesiredPosSet = false;
   mLimiter = aLimiter;
@@ -584,8 +586,6 @@ void nsFrameSelection::Init(nsIPresShell* aShell, nsIContent* aLimiter,
   if (!prefCachesInitialized) {
     prefCachesInitialized = true;
 
-    Preferences::AddBoolVarCache(&sSelectionEventsEnabled,
-                                 "dom.select_events.enabled", false);
     Preferences::AddBoolVarCache(&sSelectionEventsOnTextControlsEnabled,
                                  "dom.select_events.textcontrols.enabled",
                                  false);
@@ -594,15 +594,15 @@ void nsFrameSelection::Init(nsIPresShell* aShell, nsIContent* aLimiter,
   mAccessibleCaretEnabled = aAccessibleCaretEnabled;
   if (mAccessibleCaretEnabled) {
     int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
-    mDomSelections[index]->MaybeNotifyAccessibleCaretEventHub(aShell);
+    mDomSelections[index]->MaybeNotifyAccessibleCaretEventHub(aPresShell);
   }
 
   bool plaintextControl = (aLimiter != nullptr);
   bool initSelectEvents = plaintextControl
                               ? sSelectionEventsOnTextControlsEnabled
-                              : sSelectionEventsEnabled;
+                              : StaticPrefs::dom_select_events_enabled();
 
-  Document* doc = aShell->GetDocument();
+  Document* doc = aPresShell->GetDocument();
   if (initSelectEvents ||
       (doc && nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()))) {
     int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
@@ -612,7 +612,6 @@ void nsFrameSelection::Init(nsIPresShell* aShell, nsIContent* aLimiter,
   }
 }
 
-bool nsFrameSelection::sSelectionEventsEnabled = false;
 bool nsFrameSelection::sSelectionEventsOnTextControlsEnabled = false;
 
 nsresult nsFrameSelection::MoveCaret(nsDirection aDirection,
@@ -624,16 +623,17 @@ nsresult nsFrameSelection::MoveCaret(nsDirection aDirection,
                          (mCaretMovementStyle == 1 ||
                           (mCaretMovementStyle == 2 && !aContinueSelection)));
 
-  NS_ENSURE_STATE(mShell);
+  NS_ENSURE_STATE(mPresShell);
   // Flush out layout, since we need it to be up to date to do caret
   // positioning.
-  mShell->FlushPendingNotifications(FlushType::Layout);
+  OwningNonNull<PresShell> presShell(*mPresShell);
+  presShell->FlushPendingNotifications(FlushType::Layout);
 
-  if (!mShell) {
+  if (!mPresShell) {
     return NS_OK;
   }
 
-  nsPresContext* context = mShell->GetPresContext();
+  nsPresContext* context = mPresShell->GetPresContext();
   if (!context) return NS_ERROR_FAILURE;
 
   // we must keep this around and revalidate it when its just UP/DOWN
@@ -700,8 +700,7 @@ nsresult nsFrameSelection::MoveCaret(nsDirection aDirection,
       sel->Collapse(node, offset);
     }
     sel->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
-                        nsIPresShell::ScrollAxis(), nsIPresShell::ScrollAxis(),
-                        scrollFlags);
+                        ScrollAxis(), ScrollAxis(), scrollFlags);
     return NS_OK;
   }
 
@@ -805,8 +804,8 @@ nsresult nsFrameSelection::MoveCaret(nsDirection aDirection,
               eSelectLine == aAmount) {
             SetCaretBidiLevel(theFrame->GetEmbeddingLevel());
           } else {
-            BidiLevelFromMove(mShell, pos.mResultContent, pos.mContentOffset,
-                              aAmount, tHint);
+            BidiLevelFromMove(mPresShell, pos.mResultContent,
+                              pos.mContentOffset, aAmount, tHint);
           }
       }
     }
@@ -830,8 +829,8 @@ nsresult nsFrameSelection::MoveCaret(nsDirection aDirection,
   }
   if (NS_SUCCEEDED(result)) {
     result = mDomSelections[index]->ScrollIntoView(
-        nsISelectionController::SELECTION_FOCUS_REGION,
-        nsIPresShell::ScrollAxis(), nsIPresShell::ScrollAxis(), scrollFlags);
+        nsISelectionController::SELECTION_FOCUS_REGION, ScrollAxis(),
+        ScrollAxis(), scrollFlags);
   }
 
   return result;
@@ -913,7 +912,7 @@ nsresult nsFrameSelection::GetFrameFromLevel(nsIFrame* aFrameIn,
                                              nsDirection aDirection,
                                              nsBidiLevel aBidiLevel,
                                              nsIFrame** aFrameOut) const {
-  NS_ENSURE_STATE(mShell);
+  NS_ENSURE_STATE(mPresShell);
   nsBidiLevel foundLevel = 0;
   nsIFrame* foundFrame = aFrameIn;
 
@@ -923,13 +922,14 @@ nsresult nsFrameSelection::GetFrameFromLevel(nsIFrame* aFrameIn,
       do_CreateInstance(kFrameTraversalCID, &result));
   if (NS_FAILED(result)) return result;
 
-  result = trav->NewFrameTraversal(getter_AddRefs(frameTraversal),
-                                   mShell->GetPresContext(), aFrameIn, eLeaf,
-                                   false,  // aVisual
-                                   false,  // aLockInScrollView
-                                   false,  // aFollowOOFs
-                                   false   // aSkipPopupChecks
-  );
+  result =
+      trav->NewFrameTraversal(getter_AddRefs(frameTraversal),
+                              mPresShell->GetPresContext(), aFrameIn, eLeaf,
+                              false,  // aVisual
+                              false,  // aLockInScrollView
+                              false,  // aFollowOOFs
+                              false   // aSkipPopupChecks
+      );
   if (NS_FAILED(result)) return result;
 
   do {
@@ -985,7 +985,7 @@ nsresult nsFrameSelection::MaintainSelection(nsSelectionAmount aAmount) {
  * @param aAmount is the amount of the move that gave the caret its new position
  * @param aHint is the hint indicating in what logical direction the caret moved
  */
-void nsFrameSelection::BidiLevelFromMove(nsIPresShell* aPresShell,
+void nsFrameSelection::BidiLevelFromMove(PresShell* aPresShell,
                                          nsIContent* aNode,
                                          uint32_t aContentOffset,
                                          nsSelectionAmount aAmount,
@@ -1117,7 +1117,9 @@ nsresult nsFrameSelection::HandleClick(nsIContent* aNewFocus,
 }
 
 void nsFrameSelection::HandleDrag(nsIFrame* aFrame, const nsPoint& aPoint) {
-  if (!aFrame || !mShell) return;
+  if (!aFrame || !mPresShell) {
+    return;
+  }
 
   nsresult result;
   nsIFrame* newFrame = 0;
@@ -1185,7 +1187,8 @@ nsresult nsFrameSelection::StartAutoScrollTimer(nsIFrame* aFrame,
     return NS_ERROR_NULL_POINTER;
   }
 
-  return mDomSelections[index]->StartAutoScrollTimer(aFrame, aPoint, aDelay);
+  RefPtr<Selection> selection = mDomSelections[index];
+  return selection->StartAutoScrollTimer(aFrame, aPoint, aDelay);
 }
 
 void nsFrameSelection::StopAutoScrollTimer() {
@@ -1208,7 +1211,7 @@ nsresult nsFrameSelection::TakeFocus(nsIContent* aNewFocus,
                                      bool aMultipleSelection) {
   if (!aNewFocus) return NS_ERROR_NULL_POINTER;
 
-  NS_ENSURE_STATE(mShell);
+  NS_ENSURE_STATE(mPresShell);
 
   if (!IsValidSelectionPoint(this, aNewFocus)) return NS_ERROR_FAILURE;
 
@@ -1242,7 +1245,8 @@ nsresult nsFrameSelection::TakeFocus(nsIContent* aNewFocus,
       RefPtr<nsRange> newRange = new nsRange(aNewFocus);
 
       newRange->CollapseTo(aNewFocus, aContentOffset);
-      mDomSelections[index]->AddRange(*newRange, IgnoreErrors());
+      mDomSelections[index]->AddRangeAndSelectFramesAndNotifyListeners(
+          *newRange, IgnoreErrors());
       mBatching = batching;
       mChangesDuringBatching = changes;
     } else {
@@ -1263,10 +1267,10 @@ nsresult nsFrameSelection::TakeFocus(nsIContent* aNewFocus,
     // selection mode.
     // BUT only do this in an editor
 
-    NS_ENSURE_STATE(mShell);
+    NS_ENSURE_STATE(mPresShell);
     bool editableCell = false;
     mCellParent = nullptr;
-    RefPtr<nsPresContext> context = mShell->GetPresContext();
+    RefPtr<nsPresContext> context = mPresShell->GetPresContext();
     if (context) {
       RefPtr<HTMLEditor> htmlEditor = nsContentUtils::GetHTMLEditor(context);
       if (htmlEditor) {
@@ -1338,7 +1342,9 @@ nsresult nsFrameSelection::TakeFocus(nsIContent* aNewFocus,
 UniquePtr<SelectionDetails> nsFrameSelection::LookUpSelection(
     nsIContent* aContent, int32_t aContentOffset, int32_t aContentLength,
     bool aSlowCheck) const {
-  if (!aContent || !mShell) return nullptr;
+  if (!aContent || !mPresShell) {
+    return nullptr;
+  }
 
   UniquePtr<SelectionDetails> details;
 
@@ -1382,7 +1388,7 @@ nsresult nsFrameSelection::ScrollSelectionIntoView(SelectionType aSelectionType,
 
   if (!mDomSelections[index]) return NS_ERROR_NULL_POINTER;
 
-  nsIPresShell::ScrollAxis verticalScroll = nsIPresShell::ScrollAxis();
+  ScrollAxis verticalScroll = ScrollAxis();
   int32_t flags = Selection::SCROLL_DO_FLUSH;
   if (aFlags & nsISelectionController::SCROLL_SYNCHRONOUS) {
     flags |= Selection::SCROLL_SYNCHRONOUS;
@@ -1393,8 +1399,8 @@ nsresult nsFrameSelection::ScrollSelectionIntoView(SelectionType aSelectionType,
     flags |= Selection::SCROLL_OVERFLOW_HIDDEN;
   }
   if (aFlags & nsISelectionController::SCROLL_CENTER_VERTICALLY) {
-    verticalScroll = nsIPresShell::ScrollAxis(
-        nsIPresShell::SCROLL_CENTER, nsIPresShell::SCROLL_IF_NOT_FULLY_VISIBLE);
+    verticalScroll =
+        ScrollAxis(kScrollToCenter, WhenToScroll::IfNotFullyVisible);
   }
   if (aFlags & nsISelectionController::SCROLL_FOR_CARET_MOVE) {
     flags |= Selection::SCROLL_FOR_CARET_MOVE;
@@ -1403,15 +1409,14 @@ nsresult nsFrameSelection::ScrollSelectionIntoView(SelectionType aSelectionType,
   // After ScrollSelectionIntoView(), the pending notifications might be
   // flushed and PresShell/PresContext/Frames may be dead. See bug 418470.
   RefPtr<Selection> sel = mDomSelections[index];
-  return sel->ScrollIntoView(aRegion, verticalScroll,
-                             nsIPresShell::ScrollAxis(), flags);
+  return sel->ScrollIntoView(aRegion, verticalScroll, ScrollAxis(), flags);
 }
 
 nsresult nsFrameSelection::RepaintSelection(SelectionType aSelectionType) {
   int8_t index = GetIndexFromSelectionType(aSelectionType);
   if (index < 0) return NS_ERROR_INVALID_ARG;
   if (!mDomSelections[index]) return NS_ERROR_NULL_POINTER;
-  NS_ENSURE_STATE(mShell);
+  NS_ENSURE_STATE(mPresShell);
 
 // On macOS, update the selection cache to the new active selection
 // aka the current selection.
@@ -1423,7 +1428,7 @@ nsresult nsFrameSelection::RepaintSelection(SelectionType aSelectionType) {
     UpdateSelectionCacheOnRepaintSelection(mDomSelections[index]);
   }
 #endif
-  return mDomSelections[index]->Repaint(mShell->GetPresContext());
+  return mDomSelections[index]->Repaint(mPresShell->GetPresContext());
 }
 
 static bool IsDisplayContents(const nsIContent* aContent) {
@@ -1433,7 +1438,7 @@ static bool IsDisplayContents(const nsIContent* aContent) {
 nsIFrame* nsFrameSelection::GetFrameForNodeOffset(
     nsIContent* aNode, int32_t aOffset, CaretAssociateHint aHint,
     int32_t* aReturnOffset) const {
-  if (!aNode || !aReturnOffset || !mShell) return nullptr;
+  if (!aNode || !aReturnOffset || !mPresShell) return nullptr;
 
   if (aOffset < 0) return nullptr;
 
@@ -1582,7 +1587,7 @@ nsIFrame* nsFrameSelection::GetFrameForNodeOffset(
 }
 
 nsIFrame* nsFrameSelection::GetFrameToPageSelect() const {
-  if (NS_WARN_IF(!mShell)) {
+  if (NS_WARN_IF(!mPresShell)) {
     return nullptr;
   }
 
@@ -1598,13 +1603,13 @@ nsIFrame* nsFrameSelection::GetFrameToPageSelect() const {
       return nullptr;
     }
   } else {
-    rootFrameToSelect = mShell->GetRootScrollFrame();
+    rootFrameToSelect = mPresShell->GetRootScrollFrame();
     if (NS_WARN_IF(!rootFrameToSelect)) {
       return nullptr;
     }
   }
 
-  nsCOMPtr<nsIContent> contentToSelect = mShell->GetContentForScrolling();
+  nsCOMPtr<nsIContent> contentToSelect = mPresShell->GetContentForScrolling();
   if (contentToSelect) {
     // If there is selected content, look for nearest and vertical scrollable
     // parent under the root frame.
@@ -1706,8 +1711,7 @@ void nsFrameSelection::CommonPageMove(bool aForward, bool aExtend,
   // Scroll one page if necessary.
   if (scrollableFrame) {
     scrollableFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1),
-                              nsIScrollableFrame::PAGES,
-                              nsIScrollableFrame::SMOOTH);
+                              nsIScrollableFrame::PAGES, ScrollMode::Smooth);
   }
 
   // place the caret
@@ -1717,12 +1721,13 @@ void nsFrameSelection::CommonPageMove(bool aForward, bool aExtend,
 
 nsresult nsFrameSelection::PhysicalMove(int16_t aDirection, int16_t aAmount,
                                         bool aExtend) {
-  NS_ENSURE_STATE(mShell);
+  NS_ENSURE_STATE(mPresShell);
   // Flush out layout, since we need it to be up to date to do caret
   // positioning.
-  mShell->FlushPendingNotifications(FlushType::Layout);
+  OwningNonNull<PresShell> presShell(*mPresShell);
+  presShell->FlushPendingNotifications(FlushType::Layout);
 
-  if (!mShell) {
+  if (!mPresShell) {
     return NS_OK;
   }
 
@@ -1731,7 +1736,7 @@ nsresult nsFrameSelection::PhysicalMove(int16_t aDirection, int16_t aAmount,
     return NS_ERROR_FAILURE;
   }
 
-  nsPresContext* context = mShell->GetPresContext();
+  nsPresContext* context = mPresShell->GetPresContext();
   if (!context) {
     return NS_ERROR_FAILURE;
   }
@@ -1861,8 +1866,8 @@ nsresult nsFrameSelection::SelectAll() {
   } else if (mAncestorLimiter) {
     rootContent = mAncestorLimiter;
   } else {
-    NS_ENSURE_STATE(mShell);
-    Document* doc = mShell->GetDocument();
+    NS_ENSURE_STATE(mPresShell);
+    Document* doc = mPresShell->GetDocument();
     if (!doc) return NS_ERROR_FAILURE;
     rootContent = doc->GetRootElement();
     if (!rootContent) return NS_ERROR_FAILURE;
@@ -1910,7 +1915,7 @@ static bool IsCell(nsIContent* aContent) {
 
 nsITableCellLayout* nsFrameSelection::GetCellLayout(
     nsIContent* aCellContent) const {
-  NS_ENSURE_TRUE(mShell, nullptr);
+  NS_ENSURE_TRUE(mPresShell, nullptr);
   nsITableCellLayout* cellLayoutObject =
       do_QueryFrame(aCellContent->GetPrimaryFrame());
   return cellLayoutObject;
@@ -2239,7 +2244,8 @@ nsresult nsFrameSelection::HandleTableSelection(nsINode* aParentContent,
 
             // Deselect cell by removing its range from selection
             ErrorResult err;
-            mDomSelections[index]->RemoveRange(*range, err);
+            mDomSelections[index]
+                ->RemoveRangeAndUnselectFramesAndNotifyListeners(*range, err);
             return err.StealNSResult();
           }
         }
@@ -2319,7 +2325,8 @@ nsresult nsFrameSelection::UnselectCells(nsIContent* aTableContent,
       if (aRemoveOutsideOfCellRange) {
         if (curRowIndex < minRowIndex || curRowIndex > maxRowIndex ||
             curColIndex < minColIndex || curColIndex > maxColIndex) {
-          mDomSelections[index]->RemoveRange(*range, IgnoreErrors());
+          mDomSelections[index]->RemoveRangeAndUnselectFramesAndNotifyListeners(
+              *range, IgnoreErrors());
           // Since we've removed the range, decrement pointer to next range
           mSelectedCellIndex--;
         }
@@ -2344,7 +2351,8 @@ nsresult nsFrameSelection::UnselectCells(nsIContent* aTableContent,
             maxColIndex >= 0 &&
             origColIndex + actualColSpan - 1 >=
                 static_cast<uint32_t>(minColIndex)) {
-          mDomSelections[index]->RemoveRange(*range, IgnoreErrors());
+          mDomSelections[index]->RemoveRangeAndUnselectFramesAndNotifyListeners(
+              *range, IgnoreErrors());
           // Since we've removed the range, decrement pointer to next range
           mSelectedCellIndex--;
         }
@@ -2634,7 +2642,7 @@ nsresult nsFrameSelection::CreateAndAddRange(nsINode* aContainer,
   if (!mDomSelections[index]) return NS_ERROR_NULL_POINTER;
 
   ErrorResult err;
-  mDomSelections[index]->AddRange(*range, err);
+  mDomSelections[index]->AddRangeAndSelectFramesAndNotifyListeners(*range, err);
   return err.StealNSResult();
 }
 
@@ -2710,7 +2718,7 @@ void nsFrameSelection::DisconnectFromPresShell() {
   for (size_t i = 0; i < ArrayLength(mDomSelections); i++) {
     mDomSelections[i]->Clear(nullptr);
   }
-  mShell = nullptr;
+  mPresShell = nullptr;
 }
 
 /**
@@ -2734,15 +2742,15 @@ void nsFrameSelection::DisconnectFromPresShell() {
  */
 nsresult nsFrameSelection::UpdateSelectionCacheOnRepaintSelection(
     Selection* aSel) {
-  nsIPresShell* ps = aSel->GetPresShell();
-  if (!ps) {
+  PresShell* presShell = aSel->GetPresShell();
+  if (!presShell) {
     return NS_OK;
   }
-  nsCOMPtr<Document> aDoc = ps->GetDocument();
+  nsCOMPtr<Document> aDoc = presShell->GetDocument();
 
   if (aDoc && aSel && !aSel->IsCollapsed()) {
-    return nsCopySupport::HTMLCopy(aSel, aDoc, nsIClipboard::kSelectionCache,
-                                   false);
+    return nsCopySupport::EncodeDocumentWithContextAndPutToClipboard(
+        aSel, aDoc, nsIClipboard::kSelectionCache, false);
   }
 
   return NS_OK;
@@ -2756,8 +2764,9 @@ int16_t AutoCopyListener::sClipboardID = -1;
  * What we do now:
  * On every selection change, we copy to the clipboard anew, creating a
  * HTML buffer, a transferable, an nsISupportsString and
- * a huge mess every time.  This is basically what nsPresShell::DoCopy does
- * to move the selection into the clipboard for Edit->Copy.
+ * a huge mess every time.  This is basically what
+ * nsCopySupport::EncodeDocumentWithContextAndPutToClipboard() does to move the
+ * selection into the clipboard for Edit->Copy.
  *
  * What we should do, to make our end of the deal faster:
  * Create a singleton transferable with our own magic converter.  When selection
@@ -2824,8 +2833,10 @@ void AutoCopyListener::OnSelectionChange(Document* aDocument,
     return;
   }
 
-  // Call the copy code.
   DebugOnly<nsresult> rv =
-      nsCopySupport::HTMLCopy(&aSelection, aDocument, sClipboardID, false);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "nsCopySupport::HTMLCopy() failed");
+      nsCopySupport::EncodeDocumentWithContextAndPutToClipboard(
+          &aSelection, aDocument, sClipboardID, false);
+  NS_WARNING_ASSERTION(
+      NS_SUCCEEDED(rv),
+      "nsCopySupport::EncodeDocumentWithContextAndPutToClipboard() failed");
 }

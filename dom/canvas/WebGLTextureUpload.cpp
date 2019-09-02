@@ -8,9 +8,9 @@
 #include <algorithm>
 
 #include "CanvasUtils.h"
-#include "gfxPrefs.h"
 #include "GLBlitHelper.h"
 #include "GLContext.h"
+#include "mozilla/Casting.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/HTMLVideoElement.h"
@@ -18,6 +18,7 @@
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Scoped.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/Unused.h"
 #include "ScopedGLHelpers.h"
 #include "TexUnpackBlob.h"
@@ -327,7 +328,7 @@ UniquePtr<webgl::TexUnpackBlob> WebGLContext::FromDomElem(
   uint32_t elemWidth = 0;
   uint32_t elemHeight = 0;
   layers::Image* layersImage = nullptr;
-  if (!gfxPrefs::WebGLDisableDOMBlitUploads() && sfer.mLayersImage) {
+  if (!StaticPrefs::webgl_disable_DOM_blit_uploads() && sfer.mLayersImage) {
     layersImage = sfer.mLayersImage;
     elemWidth = layersImage->GetSize().width;
     elemHeight = layersImage->GetSize().height;
@@ -1094,6 +1095,7 @@ void WebGLTexture::TexStorage(TexTarget target, GLsizei levels,
 
   if (error == LOCAL_GL_OUT_OF_MEMORY) {
     mContext->ErrorOutOfMemory("Ran out of memory during texture allocation.");
+    Truncate();
     return;
   }
   if (error) {
@@ -1124,7 +1126,7 @@ void WebGLTexture::TexStorage(TexTarget target, GLsizei levels,
   }
 
   mImmutable = true;
-  mImmutableLevelCount = levels;
+  mImmutableLevelCount = AutoAssertCast(levels);
   ClampLevelBaseAndMax();
 }
 
@@ -1231,6 +1233,7 @@ void WebGLTexture::TexImage(TexImageTarget target, GLint level,
 
   if (glError == LOCAL_GL_OUT_OF_MEMORY) {
     mContext->ErrorOutOfMemory("Driver ran out of memory during upload.");
+    Truncate();
     return;
   }
 
@@ -1311,6 +1314,7 @@ void WebGLTexture::TexSubImage(TexImageTarget target, GLint level,
 
   if (glError == LOCAL_GL_OUT_OF_MEMORY) {
     mContext->ErrorOutOfMemory("Driver ran out of memory during upload.");
+    Truncate();
     return;
   }
 
@@ -1417,6 +1421,7 @@ void WebGLTexture::CompressedTexImage(TexImageTarget target, GLint level,
   mContext->OnDataAllocCall();
   if (error == LOCAL_GL_OUT_OF_MEMORY) {
     mContext->ErrorOutOfMemory("Ran out of memory during upload.");
+    Truncate();
     return;
   }
   if (error) {
@@ -1563,6 +1568,7 @@ void WebGLTexture::CompressedTexSubImage(
       blob->mPtr);
   if (error == LOCAL_GL_OUT_OF_MEMORY) {
     mContext->ErrorOutOfMemory("Ran out of memory during upload.");
+    Truncate();
     return;
   }
   if (error) {
@@ -1721,24 +1727,24 @@ ScopedCopyTexImageSource::ScopedCopyTexImageSource(
   // Now create the swizzled FB we'll be exposing.
 
   GLuint rgbaRB = 0;
-  gl->fGenRenderbuffers(1, &rgbaRB);
-  gl::ScopedBindRenderbuffer scopedRB(gl, rgbaRB);
-  gl->fRenderbufferStorage(LOCAL_GL_RENDERBUFFER, sizedFormat, srcWidth,
-                           srcHeight);
-
   GLuint rgbaFB = 0;
-  gl->fGenFramebuffers(1, &rgbaFB);
-  gl->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, rgbaFB);
-  gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0,
-                               LOCAL_GL_RENDERBUFFER, rgbaRB);
+  {
+    gl->fGenRenderbuffers(1, &rgbaRB);
+    gl::ScopedBindRenderbuffer scopedRB(gl, rgbaRB);
+    gl->fRenderbufferStorage(LOCAL_GL_RENDERBUFFER, sizedFormat, srcWidth,
+                             srcHeight);
 
-  const GLenum status = gl->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
-  if (status != LOCAL_GL_FRAMEBUFFER_COMPLETE) {
-    MOZ_CRASH("GFX: Temp framebuffer is not complete.");
+    gl->fGenFramebuffers(1, &rgbaFB);
+    gl->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, rgbaFB);
+    gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER,
+                                 LOCAL_GL_COLOR_ATTACHMENT0,
+                                 LOCAL_GL_RENDERBUFFER, rgbaRB);
+
+    const GLenum status = gl->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
+    if (status != LOCAL_GL_FRAMEBUFFER_COMPLETE) {
+      MOZ_CRASH("GFX: Temp framebuffer is not complete.");
+    }
   }
-
-  // Restore RB binding.
-  scopedRB.Unwrap();  // This function should really have a better name.
 
   // Draw-blit rgbaTex into rgbaFB.
   const gfx::IntSize srcSize(srcWidth, srcHeight);
@@ -1747,10 +1753,6 @@ ScopedCopyTexImageSource::ScopedCopyTexImageSource(
     gl->BlitHelper()->DrawBlitTextureToFramebuffer(scopedTex.Texture(), srcSize,
                                                    srcSize);
   }
-
-  // Restore Tex2D binding and destroy the temp tex.
-  scopedBindTex.Unwrap();
-  scopedTex.Unwrap();
 
   // Leave RB and FB alive, and FB bound.
   mRB = rgbaRB;
@@ -1892,22 +1894,26 @@ static const webgl::FormatUsageInfo* ValidateCopyDestUsage(
   return dstUsage;
 }
 
-bool WebGLTexture::ValidateCopyTexImageForFeedback(uint32_t level,
-                                                   GLint layer) const {
-  const auto& fb = mContext->mBoundReadFramebuffer;
+static bool ValidateCopyTexImageForFeedback(const WebGLContext& webgl,
+                                            const WebGLTexture& tex,
+                                            const uint8_t mipLevel,
+                                            const uint32_t zLayer) {
+  const auto& fb = webgl.BoundReadFb();
   if (fb) {
-    const auto& attach = fb->ColorReadBuffer();
-    MOZ_ASSERT(attach);
+    MOZ_ASSERT(fb->ColorReadBuffer());
+    const auto& attach = *fb->ColorReadBuffer();
+    MOZ_ASSERT(attach.ZLayerCount() ==
+               1);  // Multiview invalid for copyTexImage.
 
-    if (attach->Texture() == this && attach->Layer() == layer &&
-        uint32_t(attach->MipLevel()) == level) {
+    if (attach.Texture() == &tex && attach.Layer() == zLayer &&
+        attach.MipLevel() == mipLevel) {
       // Note that the TexImageTargets *don't* have to match for this to be
       // undefined per GLES 3.0.4 p211, thus an INVALID_OP in WebGL.
-      mContext->ErrorInvalidOperation(
+      webgl.ErrorInvalidOperation(
           "Feedback loop detected, as this texture"
           " is already attached to READ_FRAMEBUFFER's"
           " READ_BUFFER-selected COLOR_ATTACHMENT%u.",
-          attach->mAttachmentPoint);
+          attach.mAttachmentPoint);
       return false;
     }
   }
@@ -1915,8 +1921,9 @@ bool WebGLTexture::ValidateCopyTexImageForFeedback(uint32_t level,
 }
 
 static bool DoCopyTexOrSubImage(WebGLContext* webgl, bool isSubImage,
-                                const WebGLTexture* tex, TexImageTarget target,
-                                GLint level, GLint xWithinSrc, GLint yWithinSrc,
+                                WebGLTexture* const tex,
+                                const TexImageTarget target, GLint level,
+                                GLint xWithinSrc, GLint yWithinSrc,
                                 uint32_t srcTotalWidth, uint32_t srcTotalHeight,
                                 const webgl::FormatUsageInfo* srcUsage,
                                 GLint xOffset, GLint yOffset, GLint zOffset,
@@ -1951,12 +1958,12 @@ static bool DoCopyTexOrSubImage(WebGLContext* webgl, bool isSubImage,
 
       if (uint32_t(rwWidth) != dstWidth || uint32_t(rwHeight) != dstHeight) {
         const auto& pi = idealUnpack->ToPacking();
-        CheckedUint32 byteCount = BytesPerPixel(pi);
+        CheckedInt<size_t> byteCount = BytesPerPixel(pi);
         byteCount *= dstWidth;
         byteCount *= dstHeight;
 
         if (byteCount.isValid()) {
-          buffer = calloc(1, byteCount.value());
+          buffer = calloc(1u, byteCount.value());
         }
 
         if (!buffer.get()) {
@@ -2004,6 +2011,7 @@ static bool DoCopyTexOrSubImage(WebGLContext* webgl, bool isSubImage,
 
   if (error == LOCAL_GL_OUT_OF_MEMORY) {
     webgl->ErrorOutOfMemory("Ran out of memory during texture copy.");
+    tex->Truncate();
     return false;
   }
 
@@ -2051,7 +2059,10 @@ void WebGLTexture::CopyTexImage2D(TexImageTarget target, GLint level,
     return;
   }
 
-  if (!ValidateCopyTexImageForFeedback(level)) return;
+  const uint32_t zOffset = 0;
+  if (!ValidateCopyTexImageForFeedback(*mContext, *this,
+                                       AssertedCast<uint8_t>(level), zOffset))
+    return;
 
   ////////////////////////////////////
   // Check that source and dest info are compatible
@@ -2137,7 +2148,10 @@ void WebGLTexture::CopyTexSubImage(TexImageTarget target, GLint level,
     return;
   }
 
-  if (!ValidateCopyTexImageForFeedback(level, zOffset)) return;
+  if (!ValidateCopyTexImageForFeedback(*mContext, *this,
+                                       AssertedCast<uint8_t>(level),
+                                       AssertedCast<uint32_t>(zOffset)))
+    return;
 
   ////////////////////////////////////
   // Check that source and dest info are compatible

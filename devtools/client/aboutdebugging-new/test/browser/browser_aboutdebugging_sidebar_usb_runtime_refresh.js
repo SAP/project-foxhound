@@ -31,16 +31,20 @@ add_task(async function() {
     deviceName: OTHER_RUNTIME_APP_NAME,
   });
 
-  // Mock the refreshUSBRuntimes to emit an update.
-  mocks.usbRuntimesMock.refreshUSBRuntimes = () => mocks.emitUSBUpdate();
-  document.querySelector(".js-refresh-devices-button").click();
+  // adb.updateRuntimes should ultimately fire the "runtime-list-updated" event.
+  mocks.adbMock.adb.updateRuntimes = () => mocks.emitUSBUpdate();
+  document.querySelector(".qa-refresh-devices-button").click();
 
   info(`Wait until the sidebar item for ${OTHER_RUNTIME_APP_NAME} appears`);
-  await waitUntil(() => findSidebarItemByText(OTHER_RUNTIME_APP_NAME, document));
+  await waitUntil(() =>
+    findSidebarItemByText(OTHER_RUNTIME_APP_NAME, document)
+  );
 
   const sidebarItem = findSidebarItemByText(RUNTIME_DEVICE_NAME, document);
-  ok(!sidebarItem.querySelector(".js-connect-button"),
-    "Original USB runtime is still connected");
+  ok(
+    !sidebarItem.querySelector(".qa-connect-button"),
+    "Original USB runtime is still connected"
+  );
 
   await removeTab(tab);
 });

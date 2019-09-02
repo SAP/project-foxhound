@@ -57,7 +57,7 @@
 #include "gfx2DGlue.h"
 #include "gfxEnv.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
+
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MathAlgorithms.h"
@@ -164,6 +164,7 @@
 #  include "oleidl.h"
 #  include <winuser.h>
 #  include "nsAccessibilityService.h"
+#  include "mozilla/PresShell.h"
 #  include "mozilla/a11y/DocAccessible.h"
 #  include "mozilla/a11y/LazyInstantiator.h"
 #  include "mozilla/a11y/Platform.h"
@@ -593,6 +594,7 @@ nsWindow::nsWindow(bool aIsChildWindow)
   mHideChrome = false;
   mFullscreenMode = false;
   mMousePresent = false;
+  mMouseInDraggableArea = false;
   mDestroyCalled = false;
   mIsEarlyBlankWindow = false;
   mHasTaskbarIconBeenCreated = false;
@@ -622,6 +624,7 @@ nsWindow::nsWindow(bool aIsChildWindow)
   mBrush = ::CreateSolidBrush(NSRGB_2_COLOREF(background));
   mSendingSetText = false;
   mDefaultScale = -1.0;  // not yet set, will be calculated on first use
+  mAspectRatio = 0.0;    // not yet set, will be calculated on first use
 
   mTaskbarPreview = nullptr;
 
@@ -1666,6 +1669,14 @@ BOOL CALLBACK nsWindow::RegisterTouchForDescendants(HWND aWnd, LPARAM aMsg) {
   return TRUE;
 }
 
+void nsWindow::LockAspectRatio(bool aShouldLock) {
+  if (aShouldLock) {
+    mAspectRatio = (float)mBounds.Height() / (float)mBounds.Width();
+  } else {
+    mAspectRatio = 0.0;
+  }
+}
+
 /**************************************************************
  *
  * SECTION: nsIWidget::Move, nsIWidget::Resize,
@@ -1915,7 +1926,7 @@ nsresult nsWindow::BeginResizeDrag(WidgetGUIEvent* aEvent, int32_t aHorizontal,
     return NS_ERROR_INVALID_ARG;
   }
 
-  if (aEvent->AsMouseEvent()->button != WidgetMouseEvent::eLeftButton) {
+  if (aEvent->AsMouseEvent()->mButton != MouseButton::eLeft) {
     // you can only begin a resize drag with the left mouse button
     return NS_ERROR_INVALID_ARG;
   }
@@ -2154,25 +2165,24 @@ bool nsWindow::IsEnabled() const {
  *
  **************************************************************/
 
-nsresult nsWindow::SetFocus(bool aRaise) {
+void nsWindow::SetFocus(Raise aRaise) {
   if (mWnd) {
 #ifdef WINSTATE_DEBUG_OUTPUT
     if (mWnd == WinUtils::GetTopLevelHWND(mWnd)) {
       MOZ_LOG(gWindowsLog, LogLevel::Info,
-              ("*** SetFocus: [  top] raise=%d\n", aRaise));
+              ("*** SetFocus: [  top] raise=%d\n", aRaise == Raise::Yes));
     } else {
       MOZ_LOG(gWindowsLog, LogLevel::Info,
-              ("*** SetFocus: [child] raise=%d\n", aRaise));
+              ("*** SetFocus: [child] raise=%d\n", aRaise == Raise::Yes));
     }
 #endif
     // Uniconify, if necessary
     HWND toplevelWnd = WinUtils::GetTopLevelHWND(mWnd);
-    if (aRaise && ::IsIconic(toplevelWnd)) {
+    if (aRaise == Raise::Yes && ::IsIconic(toplevelWnd)) {
       ::ShowWindow(toplevelWnd, SW_RESTORE);
     }
     ::SetFocus(mWnd);
   }
-  return NS_OK;
 }
 
 /**************************************************************
@@ -2807,8 +2817,8 @@ static HCURSOR CursorFor(nsCursor aCursor) {
 }
 
 static HCURSOR CursorForImage(imgIContainer* aImageContainer,
-                              uint32_t aHotspotX, uint32_t aHotspotY,
-                              double aScale) {
+                              CSSIntPoint aHotspot,
+                              CSSToLayoutDeviceScale aScale) {
   if (!aImageContainer) {
     return nullptr;
   }
@@ -2829,10 +2839,11 @@ static HCURSOR CursorForImage(imgIContainer* aImageContainer,
     return nullptr;
   }
 
-  IntSize size = RoundedToInt(Size(width * aScale, height * aScale));
+  LayoutDeviceIntSize size = RoundedToInt(CSSIntSize(width, height) * aScale);
+  LayoutDeviceIntPoint hotspot = RoundedToInt(aHotspot * aScale);
   HCURSOR cursor;
-  nsresult rv = nsWindowGfx::CreateIcon(aImageContainer, true, aHotspotX,
-                                        aHotspotY, size, &cursor);
+  nsresult rv =
+      nsWindowGfx::CreateIcon(aImageContainer, true, hotspot, size, &cursor);
   if (NS_FAILED(rv)) {
     return nullptr;
   }
@@ -2848,8 +2859,8 @@ void nsWindow::SetCursor(nsCursor aDefaultCursor, imgIContainer* aImageCursor,
     return;
   }
 
-  double scale = GetDefaultScale().scale;
-  HCURSOR cursor = CursorForImage(aImageCursor, aHotspotX, aHotspotY, scale);
+  HCURSOR cursor = CursorForImage(
+      aImageCursor, CSSIntPoint(aHotspotX, aHotspotY), GetDefaultScale());
   if (cursor) {
     mCursor = eCursorInvalid;
     ::SetCursor(cursor);
@@ -3708,8 +3719,9 @@ LayerManager* nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
   if (!mLayerManager && ShouldUseOffMainThreadCompositing()) {
     gfxWindowsPlatform::GetPlatform()->UpdateRenderMode();
 
-    // e10s uses the parameter to pass in the shadow manager from the TabChild
-    // so we don't expect to see it there since this doesn't support e10s.
+    // e10s uses the parameter to pass in the shadow manager from the
+    // BrowserChild so we don't expect to see it there since this doesn't
+    // support e10s.
     NS_ASSERTION(aShadowManager == nullptr,
                  "Async Compositor not supported with e10s");
     CreateCompositor();
@@ -4080,7 +4092,7 @@ bool nsWindow::TouchEventShouldStartDrag(EventMessage aEventMessage,
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEventPoint;
     hittest.mIgnoreRootScrollFrame = true;
-    hittest.inputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
+    hittest.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
     DispatchInputEvent(&hittest);
 
     EventTarget* target = hittest.GetDOMEventTarget();
@@ -4183,7 +4195,8 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
       // Messages should be only at topLevel window.
       && nsWindowType::eWindowType_toplevel == mWindowType
       // Currently this scheme is used only when pointer events is enabled.
-      && gfxPrefs::PointerEventsEnabled() && InkCollector::sInkCollector) {
+      && StaticPrefs::dom_w3c_pointer_events_enabled() &&
+      InkCollector::sInkCollector) {
     InkCollector::sInkCollector->SetTarget(mWnd);
     InkCollector::sInkCollector->SetPointerId(pointerId);
   }
@@ -4235,14 +4248,14 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
     event.mModifiers &= ~MODIFIER_SHIFT;
   }
 
-  event.button = aButton;
-  event.inputSource = aInputSource;
+  event.mButton = aButton;
+  event.mInputSource = aInputSource;
   if (aPointerInfo) {
     // Mouse events from Windows WM_POINTER*. Fill more information in
     // WidgetMouseEvent.
     event.AssignPointerHelperData(*aPointerInfo);
-    event.pressure = aPointerInfo->mPressure;
-    event.buttons = aPointerInfo->mButtons;
+    event.mPressure = aPointerInfo->mPressure;
+    event.mButtons = aPointerInfo->mButtons;
   } else {
     // If we get here the mouse events must be from non-touch sources, so
     // convert it to pointer events as well
@@ -4258,13 +4271,13 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
 
   BYTE eventButton;
   switch (aButton) {
-    case WidgetMouseEvent::eLeftButton:
+    case MouseButton::eLeft:
       eventButton = VK_LBUTTON;
       break;
-    case WidgetMouseEvent::eMiddleButton:
+    case MouseButton::eMiddle:
       eventButton = VK_MBUTTON;
       break;
-    case WidgetMouseEvent::eRightButton:
+    case MouseButton::eRight:
       eventButton = VK_RBUTTON;
       break;
     default:
@@ -4279,7 +4292,7 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
   switch (aEventMessage) {
     case eMouseDoubleClick:
       event.mMessage = eMouseDown;
-      event.button = aButton;
+      event.mButton = aButton;
       sLastClickCount = 2;
       sLastMouseDownTime = curMsgTime;
       break;
@@ -4325,13 +4338,13 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
   switch (aEventMessage) {
     case eMouseDown:
       switch (aButton) {
-        case WidgetMouseEvent::eLeftButton:
+        case MouseButton::eLeft:
           pluginEvent.event = WM_LBUTTONDOWN;
           break;
-        case WidgetMouseEvent::eMiddleButton:
+        case MouseButton::eMiddle:
           pluginEvent.event = WM_MBUTTONDOWN;
           break;
-        case WidgetMouseEvent::eRightButton:
+        case MouseButton::eRight:
           pluginEvent.event = WM_RBUTTONDOWN;
           break;
         default:
@@ -4340,13 +4353,13 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
       break;
     case eMouseUp:
       switch (aButton) {
-        case WidgetMouseEvent::eLeftButton:
+        case MouseButton::eLeft:
           pluginEvent.event = WM_LBUTTONUP;
           break;
-        case WidgetMouseEvent::eMiddleButton:
+        case MouseButton::eMiddle:
           pluginEvent.event = WM_MBUTTONUP;
           break;
-        case WidgetMouseEvent::eRightButton:
+        case MouseButton::eRight:
           pluginEvent.event = WM_RBUTTONUP;
           break;
         default:
@@ -4355,13 +4368,13 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
       break;
     case eMouseDoubleClick:
       switch (aButton) {
-        case WidgetMouseEvent::eLeftButton:
+        case MouseButton::eLeft:
           pluginEvent.event = WM_LBUTTONDBLCLK;
           break;
-        case WidgetMouseEvent::eMiddleButton:
+        case MouseButton::eMiddle:
           pluginEvent.event = WM_MBUTTONDBLCLK;
           break;
-        case WidgetMouseEvent::eRightButton:
+        case MouseButton::eRight:
           pluginEvent.event = WM_RBUTTONDBLCLK;
           break;
         default:
@@ -4394,16 +4407,16 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
         if (sCurrentWindow == nullptr || sCurrentWindow != this) {
           if ((nullptr != sCurrentWindow) && (!sCurrentWindow->mInDtor)) {
             LPARAM pos = sCurrentWindow->lParamToClient(lParamToScreen(lParam));
-            sCurrentWindow->DispatchMouseEvent(
-                eMouseExitFromWidget, wParam, pos, false,
-                WidgetMouseEvent::eLeftButton, aInputSource, aPointerInfo);
+            sCurrentWindow->DispatchMouseEvent(eMouseExitFromWidget, wParam,
+                                               pos, false, MouseButton::eLeft,
+                                               aInputSource, aPointerInfo);
           }
           sCurrentWindow = this;
           if (!mInDtor) {
             LPARAM pos = sCurrentWindow->lParamToClient(lParamToScreen(lParam));
-            sCurrentWindow->DispatchMouseEvent(
-                eMouseEnterIntoWidget, wParam, pos, false,
-                WidgetMouseEvent::eLeftButton, aInputSource, aPointerInfo);
+            sCurrentWindow->DispatchMouseEvent(eMouseEnterIntoWidget, wParam,
+                                               pos, false, MouseButton::eLeft,
+                                               aInputSource, aPointerInfo);
           }
         }
       }
@@ -5300,6 +5313,10 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       break;
 
     case WM_MOUSEMOVE: {
+      LPARAM lParamScreen = lParamToScreen(lParam);
+      mMouseInDraggableArea = WithinDraggableRegion(GET_X_LPARAM(lParamScreen),
+                                                    GET_Y_LPARAM(lParamScreen));
+
       if (!mMousePresent && !sIsInMouseCapture) {
         // First MOUSEMOVE over the client area. Ask for MOUSELEAVE
         TRACKMOUSEEVENT mTrack;
@@ -5314,7 +5331,6 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       // Suppress dispatch of pending events
       // when mouse moves are generated by widget
       // creation instead of user input.
-      LPARAM lParamScreen = lParamToScreen(lParam);
       POINT mp;
       mp.x = GET_X_LPARAM(lParamScreen);
       mp.y = GET_Y_LPARAM(lParamScreen);
@@ -5323,40 +5339,84 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         userMovedMouse = true;
       }
 
-      result = DispatchMouseEvent(
-          eMouseMove, wParam, lParam, false, WidgetMouseEvent::eLeftButton,
-          MOUSE_INPUT_SOURCE(),
-          mPointerEvents.GetCachedPointerInfo(msg, wParam));
+      result =
+          DispatchMouseEvent(eMouseMove, wParam, lParam, false,
+                             MouseButton::eLeft, MOUSE_INPUT_SOURCE(),
+                             mPointerEvents.GetCachedPointerInfo(msg, wParam));
       if (userMovedMouse) {
         DispatchPendingEvents();
       }
     } break;
 
-    case WM_NCMOUSEMOVE:
-      // If we receive a mouse move event on non-client chrome, make sure and
-      // send an eMouseExitFromWidget event as well.
-      if (mMousePresent && !sIsInMouseCapture)
+    case WM_NCMOUSEMOVE: {
+      LPARAM lParamClient = lParamToClient(lParam);
+      if (WithinDraggableRegion(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam))) {
+        if (!sIsInMouseCapture) {
+          TRACKMOUSEEVENT mTrack;
+          mTrack.cbSize = sizeof(TRACKMOUSEEVENT);
+          mTrack.dwFlags = TME_LEAVE | TME_NONCLIENT;
+          mTrack.dwHoverTime = 0;
+          mTrack.hwndTrack = mWnd;
+          TrackMouseEvent(&mTrack);
+        }
+        // If we noticed the mouse moving in our draggable region, forward the
+        // message as a normal WM_MOUSEMOVE.
+        SendMessage(mWnd, WM_MOUSEMOVE, 0, lParamClient);
+      } else {
+        // We've transitioned from a draggable area to somewhere else within
+        // the non-client area - perhaps one of the edges of the window for
+        // resizing.
+        mMouseInDraggableArea = false;
+      }
+
+      if (mMousePresent && !sIsInMouseCapture && !mMouseInDraggableArea) {
         SendMessage(mWnd, WM_MOUSELEAVE, 0, 0);
-      break;
+      }
+    } break;
 
     case WM_LBUTTONDOWN: {
-      result = DispatchMouseEvent(
-          eMouseDown, wParam, lParam, false, WidgetMouseEvent::eLeftButton,
-          MOUSE_INPUT_SOURCE(),
-          mPointerEvents.GetCachedPointerInfo(msg, wParam));
+      result =
+          DispatchMouseEvent(eMouseDown, wParam, lParam, false,
+                             MouseButton::eLeft, MOUSE_INPUT_SOURCE(),
+                             mPointerEvents.GetCachedPointerInfo(msg, wParam));
       DispatchPendingEvents();
     } break;
 
     case WM_LBUTTONUP: {
-      result = DispatchMouseEvent(
-          eMouseUp, wParam, lParam, false, WidgetMouseEvent::eLeftButton,
-          MOUSE_INPUT_SOURCE(),
-          mPointerEvents.GetCachedPointerInfo(msg, wParam));
+      result =
+          DispatchMouseEvent(eMouseUp, wParam, lParam, false,
+                             MouseButton::eLeft, MOUSE_INPUT_SOURCE(),
+                             mPointerEvents.GetCachedPointerInfo(msg, wParam));
       DispatchPendingEvents();
     } break;
 
+    case WM_NCMOUSELEAVE: {
+      mMouseInDraggableArea = false;
+
+      if (EventIsInsideWindow(this)) {
+        // If we're handling WM_NCMOUSELEAVE and the mouse is still over the
+        // window, then by process of elimination, the mouse has moved from the
+        // non-client to client area, so no need to fall-through to the
+        // WM_MOUSELEAVE handler. We also need to re-register for the
+        // WM_MOUSELEAVE message, since according to the documentation at [1],
+        // all tracking requested via TrackMouseEvent is cleared once
+        // WM_NCMOUSELEAVE or WM_MOUSELEAVE fires.
+        // [1]:
+        // https://docs.microsoft.com/en-us/windows/desktop/api/winuser/nf-winuser-trackmouseevent
+        TRACKMOUSEEVENT mTrack;
+        mTrack.cbSize = sizeof(TRACKMOUSEEVENT);
+        mTrack.dwFlags = TME_LEAVE;
+        mTrack.dwHoverTime = 0;
+        mTrack.hwndTrack = mWnd;
+        TrackMouseEvent(&mTrack);
+        break;
+      }
+      // We've transitioned from non-client to outside of the window, so
+      // fall-through to the WM_MOUSELEAVE handler.
+    }
     case WM_MOUSELEAVE: {
       if (!mMousePresent) break;
+      if (mMouseInDraggableArea) break;
       mMousePresent = false;
 
       // Check if the mouse is over the fullscreen transition window, if so
@@ -5376,7 +5436,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       // WM_MOUSELEAVE.
       LPARAM pos = lParamToClient(::GetMessagePos());
       DispatchMouseEvent(eMouseExitFromWidget, mouseState, pos, false,
-                         WidgetMouseEvent::eLeftButton, MOUSE_INPUT_SOURCE());
+                         MouseButton::eLeft, MOUSE_INPUT_SOURCE());
     } break;
 
     case MOZ_WM_PEN_LEAVES_HOVER_OF_DIGITIZER: {
@@ -5387,7 +5447,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         WinPointerInfo pointerInfo;
         pointerInfo.pointerId = pointerId;
         DispatchMouseEvent(eMouseExitFromWidget, wParam, pos, false,
-                           WidgetMouseEvent::eLeftButton,
+                           MouseButton::eLeft,
                            MouseEvent_Binding::MOZ_SOURCE_PEN, &pointerInfo);
         InkCollector::sInkCollector->ClearTarget();
         InkCollector::sInkCollector->ClearPointerId();
@@ -5416,11 +5476,10 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         pos = lParamToClient(lParam);
       }
 
-      result =
-          DispatchMouseEvent(eContextMenu, wParam, pos, contextMenukey,
-                             contextMenukey ? WidgetMouseEvent::eLeftButton
-                                            : WidgetMouseEvent::eRightButton,
-                             MOUSE_INPUT_SOURCE());
+      result = DispatchMouseEvent(
+          eContextMenu, wParam, pos, contextMenukey,
+          contextMenukey ? MouseButton::eLeft : MouseButton::eRight,
+          MOUSE_INPUT_SOURCE());
       if (lParam != -1 && !result && mCustomNonClient &&
           mDraggableRegion.Contains(GET_X_LPARAM(pos), GET_Y_LPARAM(pos))) {
         // Blank area hit, throw up the system menu.
@@ -5442,94 +5501,85 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
     case WM_LBUTTONDBLCLK:
       result = DispatchMouseEvent(eMouseDoubleClick, wParam, lParam, false,
-                                  WidgetMouseEvent::eLeftButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eLeft, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_MBUTTONDOWN:
       result = DispatchMouseEvent(eMouseDown, wParam, lParam, false,
-                                  WidgetMouseEvent::eMiddleButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eMiddle, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_MBUTTONUP:
       result = DispatchMouseEvent(eMouseUp, wParam, lParam, false,
-                                  WidgetMouseEvent::eMiddleButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eMiddle, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_MBUTTONDBLCLK:
       result = DispatchMouseEvent(eMouseDoubleClick, wParam, lParam, false,
-                                  WidgetMouseEvent::eMiddleButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eMiddle, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_NCMBUTTONDOWN:
       result = DispatchMouseEvent(eMouseDown, 0, lParamToClient(lParam), false,
-                                  WidgetMouseEvent::eMiddleButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eMiddle, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_NCMBUTTONUP:
       result = DispatchMouseEvent(eMouseUp, 0, lParamToClient(lParam), false,
-                                  WidgetMouseEvent::eMiddleButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eMiddle, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_NCMBUTTONDBLCLK:
-      result = DispatchMouseEvent(eMouseDoubleClick, 0, lParamToClient(lParam),
-                                  false, WidgetMouseEvent::eMiddleButton,
-                                  MOUSE_INPUT_SOURCE());
+      result =
+          DispatchMouseEvent(eMouseDoubleClick, 0, lParamToClient(lParam),
+                             false, MouseButton::eMiddle, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_RBUTTONDOWN:
-      result = DispatchMouseEvent(
-          eMouseDown, wParam, lParam, false, WidgetMouseEvent::eRightButton,
-          MOUSE_INPUT_SOURCE(),
-          mPointerEvents.GetCachedPointerInfo(msg, wParam));
+      result =
+          DispatchMouseEvent(eMouseDown, wParam, lParam, false,
+                             MouseButton::eRight, MOUSE_INPUT_SOURCE(),
+                             mPointerEvents.GetCachedPointerInfo(msg, wParam));
       DispatchPendingEvents();
       break;
 
     case WM_RBUTTONUP:
-      result = DispatchMouseEvent(
-          eMouseUp, wParam, lParam, false, WidgetMouseEvent::eRightButton,
-          MOUSE_INPUT_SOURCE(),
-          mPointerEvents.GetCachedPointerInfo(msg, wParam));
+      result =
+          DispatchMouseEvent(eMouseUp, wParam, lParam, false,
+                             MouseButton::eRight, MOUSE_INPUT_SOURCE(),
+                             mPointerEvents.GetCachedPointerInfo(msg, wParam));
       DispatchPendingEvents();
       break;
 
     case WM_RBUTTONDBLCLK:
       result = DispatchMouseEvent(eMouseDoubleClick, wParam, lParam, false,
-                                  WidgetMouseEvent::eRightButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eRight, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_NCRBUTTONDOWN:
       result = DispatchMouseEvent(eMouseDown, 0, lParamToClient(lParam), false,
-                                  WidgetMouseEvent::eRightButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eRight, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_NCRBUTTONUP:
       result = DispatchMouseEvent(eMouseUp, 0, lParamToClient(lParam), false,
-                                  WidgetMouseEvent::eRightButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eRight, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
     case WM_NCRBUTTONDBLCLK:
-      result = DispatchMouseEvent(eMouseDoubleClick, 0, lParamToClient(lParam),
-                                  false, WidgetMouseEvent::eRightButton,
-                                  MOUSE_INPUT_SOURCE());
+      result =
+          DispatchMouseEvent(eMouseDoubleClick, 0, lParamToClient(lParam),
+                             false, MouseButton::eRight, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
@@ -5557,6 +5607,52 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       break;
 
     case WM_SIZING: {
+      if (mAspectRatio > 0) {
+        LPRECT rect = (LPRECT)lParam;
+        int32_t newWidth, newHeight;
+
+        // The following conditions and switch statement borrow heavily from the
+        // Chromium source code from
+        // https://chromium.googlesource.com/chromium/src/+/456d6e533cfb4531995e0ef52c279d4b5aa8a352/ui/views/window/window_resize_utils.cc#45
+        if (wParam == WMSZ_LEFT || wParam == WMSZ_RIGHT ||
+            wParam == WMSZ_TOPLEFT || wParam == WMSZ_BOTTOMLEFT) {
+          newWidth = rect->right - rect->left;
+          newHeight = newWidth * mAspectRatio;
+        } else {
+          newHeight = rect->bottom - rect->top;
+          newWidth = newHeight / mAspectRatio;
+        }
+
+        switch (wParam) {
+          case WMSZ_RIGHT:
+          case WMSZ_BOTTOM:
+            rect->right = newWidth + rect->left;
+            rect->bottom = rect->top + newHeight;
+            break;
+          case WMSZ_TOP:
+            rect->right = newWidth + rect->left;
+            rect->top = rect->bottom - newHeight;
+            break;
+          case WMSZ_LEFT:
+          case WMSZ_TOPLEFT:
+            rect->left = rect->right - newWidth;
+            rect->top = rect->bottom - newHeight;
+            break;
+          case WMSZ_TOPRIGHT:
+            rect->right = rect->left + newWidth;
+            rect->top = rect->bottom - newHeight;
+            break;
+          case WMSZ_BOTTOMLEFT:
+            rect->left = rect->right - newWidth;
+            rect->bottom = rect->top + newHeight;
+            break;
+          case WMSZ_BOTTOMRIGHT:
+            rect->right = rect->left + newWidth;
+            rect->bottom = rect->top + newHeight;
+            break;
+        }
+      }
+
       // When we get WM_ENTERSIZEMOVE we don't know yet if we're in a live
       // resize or move event. Instead we wait for first VM_SIZING message
       // within a ENTERSIZEMOVE to consider this a live resize event.
@@ -5614,10 +5710,9 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
     case WM_NCLBUTTONDBLCLK:
       DispatchMouseEvent(eMouseDoubleClick, 0, lParamToClient(lParam), false,
-                         WidgetMouseEvent::eLeftButton, MOUSE_INPUT_SOURCE());
+                         MouseButton::eLeft, MOUSE_INPUT_SOURCE());
       result = DispatchMouseEvent(eMouseUp, 0, lParamToClient(lParam), false,
-                                  WidgetMouseEvent::eLeftButton,
-                                  MOUSE_INPUT_SOURCE());
+                                  MouseButton::eLeft, MOUSE_INPUT_SOURCE());
       DispatchPendingEvents();
       break;
 
@@ -5809,16 +5904,11 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         int32_t action = LOWORD(wParam);
         if (action == UIS_SET || action == UIS_CLEAR) {
           int32_t flags = HIWORD(wParam);
-          UIStateChangeType showAccelerators = UIStateChangeType_NoChange;
           UIStateChangeType showFocusRings = UIStateChangeType_NoChange;
-          if (flags & UISF_HIDEACCEL)
-            showAccelerators = (action == UIS_SET) ? UIStateChangeType_Clear
-                                                   : UIStateChangeType_Set;
           if (flags & UISF_HIDEFOCUS)
             showFocusRings = (action == UIS_SET) ? UIStateChangeType_Clear
                                                  : UIStateChangeType_Set;
-
-          NotifyUIStateChanged(showAccelerators, showFocusRings);
+          NotifyUIStateChanged(showFocusRings);
         }
       }
 
@@ -6106,22 +6196,29 @@ int32_t nsWindow::ClientMarginHitTestPoint(int32_t mx, int32_t my) {
   if (!sIsInMouseCapture && allowContentOverride) {
     POINT pt = {mx, my};
     ::ScreenToClient(mWnd, &pt);
+
     if (pt.x == mCachedHitTestPoint.x && pt.y == mCachedHitTestPoint.y &&
         TimeStamp::Now() - mCachedHitTestTime <
             TimeDuration::FromMilliseconds(HITTEST_CACHE_LIFETIME_MS)) {
       return mCachedHitTestResult;
     }
+
+    mCachedHitTestPoint = {pt.x, pt.y};
+    mCachedHitTestTime = TimeStamp::Now();
+
     if (mDraggableRegion.Contains(pt.x, pt.y)) {
       testResult = HTCAPTION;
     } else {
       testResult = HTCLIENT;
     }
-    mCachedHitTestPoint = pt;
-    mCachedHitTestTime = TimeStamp::Now();
     mCachedHitTestResult = testResult;
   }
 
   return testResult;
+}
+
+bool nsWindow::WithinDraggableRegion(int32_t screenX, int32_t screenY) {
+  return ClientMarginHitTestPoint(screenX, screenY) == HTCAPTION;
 }
 
 TimeStamp nsWindow::GetMessageTimeStamp(LONG aEventTime) const {
@@ -6691,10 +6788,10 @@ bool nsWindow::OnGesture(WPARAM wParam, LPARAM lParam) {
     ModifierKeyState modifierKeyState;
     modifierKeyState.InitInputEvent(wheelEvent);
 
-    wheelEvent.button = 0;
+    wheelEvent.mButton = 0;
     wheelEvent.mTime = ::GetMessageTime();
     wheelEvent.mTimeStamp = GetMessageTimeStamp(wheelEvent.mTime);
-    wheelEvent.inputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
+    wheelEvent.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
 
     bool endFeedback = true;
 
@@ -6726,10 +6823,10 @@ bool nsWindow::OnGesture(WPARAM wParam, LPARAM lParam) {
   // Polish up and send off the new event
   ModifierKeyState modifierKeyState;
   modifierKeyState.InitInputEvent(event);
-  event.button = 0;
+  event.mButton = 0;
   event.mTime = ::GetMessageTime();
   event.mTimeStamp = GetMessageTimeStamp(event.mTime);
-  event.inputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
+  event.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
 
   nsEventStatus status;
   DispatchEvent(&event, status);
@@ -8034,12 +8131,11 @@ bool nsWindow::OnPointerEvents(UINT msg, WPARAM aWParam, LPARAM aLParam) {
 
   // We don't support chorded buttons for pen. Keep the button at
   // WM_POINTERDOWN.
-  static WidgetMouseEvent::buttonType sLastPenDownButton =
-      WidgetMouseEvent::eLeftButton;
+  static mozilla::MouseButton sLastPenDownButton = MouseButton::eLeft;
   static bool sPointerDown = false;
 
   EventMessage message;
-  WidgetMouseEvent::buttonType button = WidgetMouseEvent::eLeftButton;
+  mozilla::MouseButton button = MouseButton::eLeft;
   switch (msg) {
     case WM_POINTERDOWN: {
       LayoutDeviceIntPoint eventPoint(GET_X_LPARAM(aLParam),
@@ -8047,17 +8143,15 @@ bool nsWindow::OnPointerEvents(UINT msg, WPARAM aWParam, LPARAM aLParam) {
       sLastPointerDownPoint.x = eventPoint.x;
       sLastPointerDownPoint.y = eventPoint.y;
       message = eMouseDown;
-      button = IS_POINTER_SECONDBUTTON_WPARAM(aWParam)
-                   ? WidgetMouseEvent::eRightButton
-                   : WidgetMouseEvent::eLeftButton;
+      button = IS_POINTER_SECONDBUTTON_WPARAM(aWParam) ? MouseButton::eRight
+                                                       : MouseButton::eLeft;
       sLastPenDownButton = button;
       sPointerDown = true;
     } break;
     case WM_POINTERUP:
       message = eMouseUp;
       MOZ_ASSERT(sPointerDown, "receive WM_POINTERUP w/o WM_POINTERDOWN");
-      button =
-          sPointerDown ? sLastPenDownButton : WidgetMouseEvent::eLeftButton;
+      button = sPointerDown ? sLastPenDownButton : MouseButton::eLeft;
       sPointerDown = false;
       break;
     case WM_POINTERUPDATE:
@@ -8096,10 +8190,10 @@ bool nsWindow::OnPointerEvents(UINT msg, WPARAM aWParam, LPARAM aLParam) {
   // Windows defines the pen pressure is normalized to a range between 0 and
   // 1024. Convert it to float.
   float pressure = penInfo.pressure ? (float)penInfo.pressure / 1024 : 0;
-  int16_t buttons = sPointerDown ? button == WidgetMouseEvent::eLeftButton
-                                       ? WidgetMouseEvent::eLeftButtonFlag
-                                       : WidgetMouseEvent::eRightButtonFlag
-                                 : WidgetMouseEvent::eNoButtonFlag;
+  int16_t buttons = sPointerDown ? button == MouseButton::eLeft
+                                       ? MouseButtonsFlag::eLeftFlag
+                                       : MouseButtonsFlag::eRightFlag
+                                 : MouseButtonsFlag::eNoButtons;
   WinPointerInfo pointerInfo(pointerId, penInfo.tiltX, penInfo.tiltY, pressure,
                              buttons);
 

@@ -13,23 +13,31 @@ UNIFIED_SOURCES += [
     'TestBSPTree.cpp',
     'TestBufferRotation.cpp',
     'TestColorNames.cpp',
-    'TestCompositor.cpp',
-    'TestGfxPrefs.cpp',
     'TestGfxWidgets.cpp',
     'TestJobScheduler.cpp',
     'TestLayers.cpp',
     'TestMoz2D.cpp',
     'TestPolygon.cpp',
     'TestQcms.cpp',
-    'TestRect.cpp',
     'TestRegion.cpp',
     'TestSkipChars.cpp',
     'TestSwizzle.cpp',
-    'TestTextureCompatibility.cpp',
     'TestTextures.cpp',
     'TestTreeTraversal.cpp',
-    'TestVsync.cpp',
 ]
+
+# skip the test on windows10-aarch64 due to perma-crash - bug 1544961
+if not(CONFIG['OS_TARGET'] == 'WINNT' and CONFIG['CPU_ARCH'] == 'aarch64'):
+    UNIFIED_SOURCES += [
+        'TestVsync.cpp',
+    ]
+
+if CONFIG['OS_TARGET'] != 'Android':
+    UNIFIED_SOURCES += [
+        'TestCompositor.cpp',
+        'TestRect.cpp',
+        'TestTextureCompatibility.cpp',
+    ]
 
 UNIFIED_SOURCES += [ '/gfx/2d/unittest/%s' % p for p in [
     'TestBase.cpp',
@@ -48,6 +56,14 @@ SOURCES += [ '/gfx/ots/tests/%s' % p for p in [
     'cff_type2_charstring_test.cc',
     'layout_common_table_test.cc',
 ]]
+
+# ICC profiles used for verifying QCMS transformations. The copyright
+# notice embedded in the profiles should be reviewed to ensure there are
+# no known restrictions on distribution.
+TEST_HARNESS_FILES.gtest += [
+    'icc_profiles/lcms_samsung_syncmaster.icc',
+    'icc_profiles/lcms_thinkpad_w540.icc',
+]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

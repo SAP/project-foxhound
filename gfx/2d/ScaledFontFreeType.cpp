@@ -33,7 +33,7 @@ ScaledFontFreeType::ScaledFontFreeType(
 
 #ifdef USE_SKIA
 SkTypeface* ScaledFontFreeType::CreateSkTypeface() {
-  return SkCreateTypefaceFromCairoFTFont(mScaledFont);
+  return SkCreateTypefaceFromCairoFTFont(mScaledFont, mFace);
 }
 #endif
 
@@ -75,6 +75,23 @@ bool ScaledFontFreeType::GetWRFontInstanceOptions(
   return true;
 }
 
+FT_Face UnscaledFontFreeType::InitFace() {
+  if (mFace) {
+    return mFace;
+  }
+  if (mFile.empty()) {
+    return nullptr;
+  }
+  FT_Face face = Factory::NewFTFace(nullptr, mFile.c_str(), mIndex);
+  if (!face) {
+    gfxWarning() << "Failed initializing FreeType face from filename";
+    return nullptr;
+  }
+  mOwnsFace = true;
+  mFace = face;
+  return mFace;
+}
+
 static cairo_user_data_key_t sNativeFontResourceKey;
 
 static void ReleaseNativeFontResource(void* aData) {
@@ -91,7 +108,7 @@ already_AddRefed<ScaledFont> UnscaledFontFreeType::CreateScaledFont(
     Float aGlyphSize, const uint8_t* aInstanceData,
     uint32_t aInstanceDataLength, const FontVariation* aVariations,
     uint32_t aNumVariations) {
-  FT_Face face = GetFace();
+  FT_Face face = InitFace();
   if (!face) {
     gfxWarning() << "Attempted to deserialize FreeType scaled font without "
                     "FreeType face";
@@ -116,6 +133,9 @@ already_AddRefed<ScaledFont> UnscaledFontFreeType::CreateScaledFont(
   }
 
   int flags = FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING;
+  if (face->face_flags & FT_FACE_FLAG_TRICKY) {
+    flags &= ~FT_LOAD_NO_AUTOHINT;
+  }
   cairo_font_face_t* font = cairo_ft_font_face_create_for_ft_face(
       face, flags, coords.data(), aNumVariations);
   if (cairo_font_face_status(font) != CAIRO_STATUS_SUCCESS) {

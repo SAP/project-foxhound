@@ -2,8 +2,10 @@
 
 PromiseTestUtils.whitelistRejectionsGlobally(/Message manager disconnected/);
 
-const {ExtensionCommon} = ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
-const {ExtensionAPI} = ExtensionCommon;
+const { ExtensionCommon } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionCommon.jsm"
+);
+const { ExtensionAPI } = ExtensionCommon;
 
 const SCHEMA = [
   {
@@ -12,12 +14,12 @@ const SCHEMA = [
       {
         name: "onEvent1",
         type: "function",
-        extraParameters: [{type: "any"}],
+        extraParameters: [{ type: "any" }],
       },
       {
         name: "onEvent2",
         type: "function",
-        extraParameters: [{type: "any"}],
+        extraParameters: [{ type: "any" }],
       },
     ],
   },
@@ -32,27 +34,35 @@ const SCHEMA = [
 /* global EventManager */
 const API = class extends ExtensionAPI {
   primeListener(extension, event, fire, params) {
-    let data = {wrappedJSObject: {event, params}};
-    Services.obs.notifyObservers(data, "prime-event-listener");
+    Services.obs.notifyObservers({ event, params }, "prime-event-listener");
 
     const FIRE_TOPIC = `fire-${event}`;
 
-    async function listener(subject, topic, _data) {
+    async function listener(subject, topic, data) {
       try {
-        await fire.async(subject.wrappedJSObject);
+        if (subject.wrappedJSObject.waitForBackground) {
+          await fire.wakeup();
+        }
+        await fire.async(subject.wrappedJSObject.listenerArgs);
       } catch (err) {
-        Services.obs.notifyObservers(data, "listener-callback-exception");
+        Services.obs.notifyObservers({ event }, "listener-callback-exception");
       }
     }
     Services.obs.addObserver(listener, FIRE_TOPIC);
 
     return {
       unregister() {
-        Services.obs.notifyObservers(data, "unregister-primed-listener");
+        Services.obs.notifyObservers(
+          { event, params },
+          "unregister-primed-listener"
+        );
         Services.obs.removeObserver(listener, FIRE_TOPIC);
       },
       convert(_fire) {
-        Services.obs.notifyObservers(data, "convert-event-listener");
+        Services.obs.notifyObservers(
+          { event, params },
+          "convert-event-listener"
+        );
         fire = _fire;
       },
     };
@@ -69,7 +79,7 @@ const API = class extends ExtensionAPI {
             event: "onEvent1",
           },
           register: (fire, ...params) => {
-            let data = {wrappedJSObject: {event: "onEvent1", params}};
+            let data = { event: "onEvent1", params };
             Services.obs.notifyObservers(data, "register-event-listener");
             return () => {
               Services.obs.notifyObservers(data, "unregister-event-listener");
@@ -85,7 +95,7 @@ const API = class extends ExtensionAPI {
             event: "onEvent2",
           },
           register: (fire, ...params) => {
-            let data = {wrappedJSObject: {event: "onEvent2", params}};
+            let data = { event: "onEvent2", params };
             Services.obs.notifyObservers(data, "register-event-listener");
             return () => {
               Services.obs.notifyObservers(data, "unregister-event-listener");
@@ -132,7 +142,9 @@ async function promiseObservable(topic, count, fn = null) {
 
   try {
     await Promise.all([
-      new Promise(resolve => { _countResolve = resolve; }),
+      new Promise(resolve => {
+        _countResolve = resolve;
+      }),
       fn && fn(),
     ]);
   } finally {
@@ -143,11 +155,19 @@ async function promiseObservable(topic, count, fn = null) {
 }
 
 add_task(async function() {
-  Services.prefs.setBoolPref("extensions.webextensions.background-delayed-startup", true);
+  Services.prefs.setBoolPref(
+    "extensions.webextensions.background-delayed-startup",
+    true
+  );
 
   AddonTestUtils.init(global);
   AddonTestUtils.overrideCertDB();
-  AddonTestUtils.createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "43");
+  AddonTestUtils.createAppInfo(
+    "xpcshell@tests.mozilla.org",
+    "XPCShell",
+    "1",
+    "43"
+  );
 
   await AddonTestUtils.promiseStartupManager();
 
@@ -156,7 +176,8 @@ add_task(async function() {
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "permanent",
     background() {
-      let register1 = true, register2 = true;
+      let register1 = true,
+        register2 = true;
       if (localStorage.getItem("skip1")) {
         register1 = false;
       }
@@ -190,26 +211,42 @@ add_task(async function() {
     },
   });
 
-  function check(info, what, {listener1 = true, listener2 = true, listener3 = true} = {}) {
+  function check(
+    info,
+    what,
+    { listener1 = true, listener2 = true, listener3 = true } = {}
+  ) {
     let count = (listener1 ? 1 : 0) + (listener2 ? 1 : 0) + (listener3 ? 1 : 0);
     equal(info.length, count, `Got ${count} ${what} events`);
 
     let i = 0;
     if (listener1) {
       equal(info[i].event, "onEvent1", `Got ${what} on event1 for listener 1`);
-      deepEqual(info[i].params, ["listener1"], `Got event1 ${what} args for listener 1`);
+      deepEqual(
+        info[i].params,
+        ["listener1"],
+        `Got event1 ${what} args for listener 1`
+      );
       ++i;
     }
 
     if (listener2) {
       equal(info[i].event, "onEvent1", `Got ${what} on event1 for listener 2`);
-      deepEqual(info[i].params, ["listener2"], `Got event1 ${what} args for listener 2`);
+      deepEqual(
+        info[i].params,
+        ["listener2"],
+        `Got event1 ${what} args for listener 2`
+      );
       ++i;
     }
 
     if (listener3) {
       equal(info[i].event, "onEvent2", `Got ${what} on event2 for listener 3`);
-      deepEqual(info[i].params, ["listener3"], `Got event2 ${what} args for listener 3`);
+      deepEqual(
+        info[i].params,
+        ["listener3"],
+        `Got event2 ${what} args for listener 3`
+      );
       ++i;
     }
   }
@@ -252,14 +289,13 @@ add_task(async function() {
 
   // Check that when the event is triggered, all the plumbing worked
   // correctly for the primed-then-converted listener.
-  let eventDetails = {test: "kaboom"};
-  let eventSubject = {wrappedJSObject: eventDetails};
-  Services.obs.notifyObservers(eventSubject, "fire-onEvent1");
+  let listenerArgs = { test: "kaboom" };
+  Services.obs.notifyObservers({ listenerArgs }, "fire-onEvent1");
 
   let details = await extension.awaitMessage("listener1");
-  deepEqual(details, eventDetails, "Listener 1 fired");
+  deepEqual(details, listenerArgs, "Listener 1 fired");
   details = await extension.awaitMessage("listener2");
-  deepEqual(details, eventDetails, "Listener 2 fired");
+  deepEqual(details, listenerArgs, "Listener 2 fired");
 
   // Check that the converted listener is properly unregistered at
   // browser shutdown.
@@ -280,14 +316,14 @@ add_task(async function() {
   // causes the background page to be loaded and the listener to be converted,
   // and the listener is invoked.
   p = promiseObservable("convert-event-listener", 3);
-  eventDetails.test = "startup event";
-  Services.obs.notifyObservers(eventSubject, "fire-onEvent2");
+  listenerArgs.test = "startup event";
+  Services.obs.notifyObservers({ listenerArgs }, "fire-onEvent2");
   info = await p;
 
   check(info, "convert");
 
   details = await extension.awaitMessage("listener3");
-  deepEqual(details, eventDetails, "Listener 3 fired for event during startup");
+  deepEqual(details, listenerArgs, "Listener 3 fired for event during startup");
 
   await extension.awaitMessage("ready");
 
@@ -296,54 +332,65 @@ add_task(async function() {
   p = promiseObservable("unregister-primed-listener", 1);
   extension.sendMessage("unregister2");
   info = await p;
-  check(info, "unregister", {listener1: false, listener2: false});
+  check(info, "unregister", { listener1: false, listener2: false });
 
   // Check that we only get unregisters for the remaining events after
   // one listener has been removed.
-  info = await promiseObservable("unregister-primed-listener", 2,
-                                 () => AddonTestUtils.promiseShutdownManager());
-  check(info, "unregister", {listener3: false});
+  info = await promiseObservable("unregister-primed-listener", 2, () =>
+    AddonTestUtils.promiseShutdownManager()
+  );
+  check(info, "unregister", { listener3: false });
 
   // Check that after restart, only listeners that were present at
   // the end of the last session are primed.
-  info = await promiseObservable("prime-event-listener", 2,
-                                 () => AddonTestUtils.promiseStartupManager());
-  check(info, "prime", {listener3: false});
+  info = await promiseObservable("prime-event-listener", 2, () =>
+    AddonTestUtils.promiseStartupManager()
+  );
+  check(info, "prime", { listener3: false });
 
   // Check that if the background script does not re-register listeners,
   // the primed listeners are unregistered after the background page
   // starts up.
-  p = promiseObservable("unregister-primed-listener", 1,
-                        () => extension.awaitMessage("ready"));
+  p = promiseObservable("unregister-primed-listener", 1, () =>
+    extension.awaitMessage("ready")
+  );
   Services.obs.notifyObservers(null, "sessionstore-windows-restored");
   info = await p;
-  check(info, "unregister", {listener1: false, listener3: false});
+  check(info, "unregister", { listener1: false, listener3: false });
 
   // Just listener1 should be registered now, fire event1 to confirm.
-  eventDetails.test = "third time";
-  Services.obs.notifyObservers(eventSubject, "fire-onEvent1");
+  listenerArgs.test = "third time";
+  Services.obs.notifyObservers({ listenerArgs }, "fire-onEvent1");
   details = await extension.awaitMessage("listener1");
-  deepEqual(details, eventDetails, "Listener 1 fired");
+  deepEqual(details, listenerArgs, "Listener 1 fired");
 
   // Tell the extension not to re-register listener1 on the next startup
   extension.sendMessage("unregister1");
   await extension.awaitMessage("unregistered");
 
   // Shut down, start up
-  info = await promiseObservable("unregister-primed-listener", 1,
-                                 () => AddonTestUtils.promiseShutdownManager());
-  check(info, "unregister", {listener2: false, listener3: false});
+  info = await promiseObservable("unregister-primed-listener", 1, () =>
+    AddonTestUtils.promiseShutdownManager()
+  );
+  check(info, "unregister", { listener2: false, listener3: false });
 
-  info = await promiseObservable("prime-event-listener", 1,
-                                 () => AddonTestUtils.promiseStartupManager());
-  check(info, "register", {listener2: false, listener3: false});
+  info = await promiseObservable("prime-event-listener", 1, () =>
+    AddonTestUtils.promiseStartupManager()
+  );
+  check(info, "register", { listener2: false, listener3: false });
 
   // Check that firing event1 causes the listener fire callback to
   // reject.
   p = promiseObservable("listener-callback-exception", 1);
-  Services.obs.notifyObservers(eventSubject, "fire-onEvent1");
+  Services.obs.notifyObservers(
+    { listenerArgs, waitForBackground: true },
+    "fire-onEvent1"
+  );
   await p;
-  ok(true, "Primed listener that was not re-registered received an error when event was triggered during startup");
+  ok(
+    true,
+    "Primed listener that was not re-registered received an error when event was triggered during startup"
+  );
 
   await extension.awaitMessage("ready");
 

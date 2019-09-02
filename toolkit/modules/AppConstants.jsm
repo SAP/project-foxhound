@@ -22,6 +22,13 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  FENNEC_NIGHTLY:
+#ifdef FENNEC_NIGHTLY
+  true,
+#else
+  false,
+#endif
+
   RELEASE_OR_BETA:
 #ifdef RELEASE_OR_BETA
   true,
@@ -90,13 +97,6 @@ this.AppConstants = Object.freeze({
 
   MOZ_SANDBOX:
 #ifdef MOZ_SANDBOX
-  true,
-#else
-  false,
-#endif
-
-  MOZ_CONTENT_SANDBOX:
-#ifdef MOZ_CONTENT_SANDBOX
   true,
 #else
   false,
@@ -194,6 +194,13 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  MOZ_BITS_DOWNLOAD:
+#ifdef MOZ_BITS_DOWNLOAD
+  true,
+#else
+  false,
+#endif
+
   DEBUG:
 #ifdef DEBUG
   true,
@@ -275,13 +282,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_TOOLKIT_SEARCH:
-#ifdef MOZ_TOOLKIT_SEARCH
-  true,
-#else
-  false,
-#endif
-
   MOZ_GECKO_PROFILER:
 #ifdef MOZ_GECKO_PROFILER
   true,
@@ -312,7 +312,6 @@ this.AppConstants = Object.freeze({
   MOZ_BUILD_APP: "@MOZ_BUILD_APP@",
   MOZ_MACBUNDLE_NAME: "@MOZ_MACBUNDLE_NAME@",
   MOZ_UPDATE_CHANNEL: "@MOZ_UPDATE_CHANNEL@",
-  INSTALL_LOCALE: "@AB_CD@",
   MOZ_WIDGET_TOOLKIT: "@MOZ_WIDGET_TOOLKIT@",
   ANDROID_PACKAGE_NAME: "@ANDROID_PACKAGE_NAME@",
 
@@ -325,6 +324,8 @@ this.AppConstants = Object.freeze({
   MOZ_MOZILLA_API_KEY: "@MOZ_MOZILLA_API_KEY@",
 
   BROWSER_CHROME_URL: "@BROWSER_CHROME_URL@",
+
+  OMNIJAR_NAME: "@OMNIJAR_NAME@",
 
   // URL to the hg revision this was built from (e.g.
   // "https://hg.mozilla.org/mozilla-central/rev/6256ec9113c1")
@@ -356,4 +357,25 @@ this.AppConstants = Object.freeze({
 #endif
 
   TELEMETRY_PING_FORMAT_VERSION: @TELEMETRY_PING_FORMAT_VERSION@,
+
+  MOZ_NEW_XULSTORE:
+#ifdef MOZ_NEW_XULSTORE
+    true,
+#else
+    false,
+#endif
+
+  MOZ_NEW_NOTIFICATION_STORE:
+#ifdef MOZ_NEW_NOTIFICATION_STORE
+    true,
+#else
+    false,
+#endif
+
+  MOZ_NEW_CERT_STORAGE:
+#ifdef MOZ_NEW_CERT_STORAGE
+    true,
+#else
+    false,
+#endif
 });

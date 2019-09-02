@@ -14,7 +14,6 @@
 #include "js/Conversions.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/JSObject.h"
-#include "vm/ShapedObject.h"
 
 /*
  * -------------
@@ -185,17 +184,18 @@ class TypeDescr : public NativeObject {
   // InlineTypedObject, and (b) the descriptor contains at least one
   // reference. Otherwise its value is undefined.
   //
-  // The list is three consecutive arrays of int32_t offsets, with each array
-  // terminated by -1. The arrays store offsets of string, object/anyref, and
-  // value references in the descriptor, in that order.
+  // The list is three consecutive arrays of uint32_t offsets, preceded by a
+  // header consisting of the length of each array. The arrays store offsets of
+  // string, object/anyref, and value references in the descriptor, in that
+  // order.
   // TODO/AnyRef-boxing: once anyref has a more complicated structure, we must
   // revisit this.
   MOZ_MUST_USE bool hasTraceList() const {
     return !getFixedSlot(JS_DESCR_SLOT_TRACE_LIST).isUndefined();
   }
-  const int32_t* traceList() const {
+  const uint32_t* traceList() const {
     MOZ_ASSERT(hasTraceList());
-    return reinterpret_cast<int32_t*>(
+    return reinterpret_cast<uint32_t*>(
         getFixedSlot(JS_DESCR_SLOT_TRACE_LIST).toPrivate());
   }
 
@@ -250,6 +250,12 @@ class ScalarTypeDescr : public SimpleTypeDescr {
         Scalar::Uint32 == JS_SCALARTYPEREPR_UINT32,
         "TypedObjectConstants.h must be consistent with Scalar::Type");
     static_assert(
+        Scalar::BigInt64 == JS_SCALARTYPEREPR_BIGINT64,
+        "TypedObjectConstants.h must be consistent with Scalar::Type");
+    static_assert(
+        Scalar::BigUint64 == JS_SCALARTYPEREPR_BIGUINT64,
+        "TypedObjectConstants.h must be consistent with Scalar::Type");
+    static_assert(
         Scalar::Float32 == JS_SCALARTYPEREPR_FLOAT32,
         "TypedObjectConstants.h must be consistent with Scalar::Type");
     static_assert(
@@ -276,7 +282,9 @@ class ScalarTypeDescr : public SimpleTypeDescr {
   MACRO_(Scalar::Int32, int32_t, int32)                   \
   MACRO_(Scalar::Uint32, uint32_t, uint32)                \
   MACRO_(Scalar::Float32, float, float32)                 \
-  MACRO_(Scalar::Float64, double, float64)
+  MACRO_(Scalar::Float64, double, float64)                \
+  MACRO_(Scalar::BigInt64, int64_t, bigint64)             \
+  MACRO_(Scalar::BigUint64, uint64_t, biguint64)
 
 // Must be in same order as the enum ScalarTypeDescr::Type:
 #define JS_FOR_EACH_SCALAR_TYPE_REPR(MACRO_)        \
@@ -429,7 +437,7 @@ class StructMetaTypeDescr : public NativeObject {
   // The type objects in `fieldTypeObjs` must all be TypeDescr objects.
   static StructTypeDescr* createFromArrays(
       JSContext* cx, HandleObject structTypePrototype, bool opaque,
-      bool allowConstruct, AutoIdVector& ids, AutoValueVector& fieldTypeObjs,
+      bool allowConstruct, HandleIdVector ids, HandleValueVector fieldTypeObjs,
       Vector<StructFieldProps>& fieldProps);
 
   // Properties and methods to be installed on StructType.prototype,
@@ -523,7 +531,7 @@ class TypedObjectModuleObject : public NativeObject {
 };
 
 /* Base type for transparent and opaque typed objects. */
-class TypedObject : public ShapedObject {
+class TypedObject : public JSObject {
   static const bool IsTypedObjectClass = true;
 
   static MOZ_MUST_USE bool obj_getArrayElement(JSContext* cx,
@@ -573,7 +581,7 @@ class TypedObject : public ShapedObject {
 
  public:
   static MOZ_MUST_USE bool obj_newEnumerate(JSContext* cx, HandleObject obj,
-                                            AutoIdVector& properties,
+                                            MutableHandleIdVector properties,
                                             bool enumerableOnly);
 
   TypedProto& typedProto() const {
@@ -623,7 +631,7 @@ class TypedObject : public ShapedObject {
                                          Value* vp);
 
   Shape** addressOfShapeFromGC() {
-    return shapeRef().unsafeUnbarrieredForTracing();
+    return shape_.unsafeUnbarrieredForTracing();
   }
 };
 

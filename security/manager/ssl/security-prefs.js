@@ -7,6 +7,10 @@ pref("security.tls.version.max", 4);
 pref("security.tls.version.fallback-limit", 4);
 pref("security.tls.insecure_fallback_hosts", "");
 pref("security.tls.enable_0rtt_data", false);
+// Turn off post-handshake authentication for TLS 1.3 by default,
+// until the incompatibility with HTTP/2 is resolved:
+// https://tools.ietf.org/html/draft-davidben-http2-tls13-00
+pref("security.tls.enable_post_handshake_auth", false);
 #ifdef RELEASE_OR_BETA
 pref("security.tls.hello_downgrade_check", false);
 #else
@@ -114,13 +118,18 @@ pref("security.pki.netscape_step_up_policy", 2);
 // 1: Only collect telemetry. CT qualification checks are not performed.
 pref("security.pki.certificate_transparency.mode", 0);
 
-// Hardware Origin-bound Second Factor Support
-pref("security.webauth.u2f", true);
-pref("security.webauth.webauthn", true);
-// Only one of "enable_softtoken" and "enable_usbtoken" can be true
-// at a time.
+// Only one of ["enable_softtoken", "enable_usbtoken",
+// "webauthn_enable_android_fido2"] should be true at a time, as the
+// softtoken will override the other two. Note android's pref is set in
+// mobile.js / geckoview-prefs.js
 pref("security.webauth.webauthn_enable_softtoken", false);
+
+#ifdef MOZ_WIDGET_ANDROID
+// the Rust usbtoken support does not function on Android
+pref("security.webauth.webauthn_enable_usbtoken", false);
+#else
 pref("security.webauth.webauthn_enable_usbtoken", true);
+#endif
 
 pref("security.ssl.errorReporting.enabled", true);
 pref("security.ssl.errorReporting.url", "https://incoming.telemetry.mozilla.org/submit/sslreports/");
@@ -164,4 +173,5 @@ pref("security.remote_settings.intermediates.bucket", "security-state");
 pref("security.remote_settings.intermediates.collection", "intermediates");
 pref("security.remote_settings.intermediates.checked", 0);
 pref("security.remote_settings.intermediates.downloads_per_poll", 100);
+pref("security.remote_settings.intermediates.parallel_downloads", 8);
 pref("security.remote_settings.intermediates.signer", "onecrl.content-signature.mozilla.org");

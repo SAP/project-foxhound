@@ -11,6 +11,9 @@
 
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/TimeStamp.h"
+#include "nsCOMPtr.h"
+#include "nsTArray.h"
 
 #include "mozilla/gfx/Point.h"
 
@@ -34,9 +37,10 @@ namespace layers {
  * This class manages that thread and recycles memory buffers.
  */
 class ProfilerScreenshots final {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ProfilerScreenshots)
+
  public:
   ProfilerScreenshots();
-  ~ProfilerScreenshots();
 
   /**
    * Returns whether the profiler is currently active and is running with the
@@ -75,25 +79,27 @@ class ProfilerScreenshots final {
       const std::function<bool(gfx::DataSourceSurface*)>& aPopulateSurface);
 
  private:
+  ~ProfilerScreenshots();
+
   /**
    * Recycle a surface from mAvailableSurfaces or create a new one if all
    * surfaces are currently in use, up to some maximum limit.
    * Returns null if the limit is reached.
    * Can be called on any thread.
    */
-  already_AddRefed<DataSourceSurface> TakeNextSurface();
+  already_AddRefed<gfx::DataSourceSurface> TakeNextSurface();
 
   /**
    * Return aSurface back into the mAvailableSurfaces pool. Can be called on
    * any thread.
    */
-  void ReturnSurface(DataSourceSurface* aSurface);
+  void ReturnSurface(gfx::DataSourceSurface* aSurface);
 
   // The thread on which encoding happens.
   nsCOMPtr<nsIThread> mThread;
   // An array of surfaces ready to be recycled. Can be accessed from multiple
   // threads, protected by mMutex.
-  nsTArray<RefPtr<DataSourceSurface>> mAvailableSurfaces;
+  nsTArray<RefPtr<gfx::DataSourceSurface>> mAvailableSurfaces;
   // Protects mAvailableSurfaces.
   Mutex mMutex;
   // The total number of surfaces created. If encoding is fast enough to happen

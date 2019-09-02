@@ -6,6 +6,8 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/mozalloc.h"
@@ -72,8 +74,8 @@ static int32_t GetCSSFloatValue(nsComputedDOMStyle* aComputedStyle,
 class ElementDeletionObserver final : public nsStubMutationObserver {
  public:
   ElementDeletionObserver(nsIContent* aNativeAnonNode,
-                          nsIContent* aObservedNode)
-      : mNativeAnonNode(aNativeAnonNode), mObservedNode(aObservedNode) {}
+                          Element* aObservedElement)
+      : mNativeAnonNode(aNativeAnonNode), mObservedElement(aObservedElement) {}
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED
@@ -82,7 +84,7 @@ class ElementDeletionObserver final : public nsStubMutationObserver {
  protected:
   ~ElementDeletionObserver() {}
   nsIContent* mNativeAnonNode;
-  nsIContent* mObservedNode;
+  Element* mObservedElement;
 };
 
 NS_IMPL_ISUPPORTS(ElementDeletionObserver, nsIMutationObserver)
@@ -90,35 +92,26 @@ NS_IMPL_ISUPPORTS(ElementDeletionObserver, nsIMutationObserver)
 void ElementDeletionObserver::ParentChainChanged(nsIContent* aContent) {
   // If the native anonymous content has been unbound already in
   // DeleteRefToAnonymousNode, mNativeAnonNode's parentNode is null.
-  if (aContent == mObservedNode && mNativeAnonNode &&
-      mNativeAnonNode->GetParentNode() == aContent) {
-    // If the observed node has been moved to another document, there isn't much
-    // we can do easily. But at least be safe and unbind the native anonymous
-    // content and stop observing changes.
-    if (mNativeAnonNode->OwnerDoc() != mObservedNode->OwnerDoc()) {
-      mObservedNode->RemoveMutationObserver(this);
-      mObservedNode = nullptr;
-      mNativeAnonNode->RemoveMutationObserver(this);
-      mNativeAnonNode->UnbindFromTree();
-      mNativeAnonNode = nullptr;
-      NS_RELEASE_THIS();
-      return;
-    }
-
-    // We're staying in the same document, just rebind the native anonymous
-    // node so that the subtree root points to the right object etc.
-    mNativeAnonNode->UnbindFromTree();
-    mNativeAnonNode->BindToTree(mObservedNode->GetUncomposedDoc(),
-                                mObservedNode, mObservedNode);
+  if (aContent != mObservedElement || !mNativeAnonNode ||
+      mNativeAnonNode->GetParent() != aContent) {
+    return;
   }
+
+  ManualNACPtr::RemoveContentFromNACArray(mNativeAnonNode);
+
+  mObservedElement->RemoveMutationObserver(this);
+  mObservedElement = nullptr;
+  mNativeAnonNode->RemoveMutationObserver(this);
+  mNativeAnonNode = nullptr;
+  NS_RELEASE_THIS();
 }
 
 void ElementDeletionObserver::NodeWillBeDestroyed(const nsINode* aNode) {
-  NS_ASSERTION(aNode == mNativeAnonNode || aNode == mObservedNode,
+  NS_ASSERTION(aNode == mNativeAnonNode || aNode == mObservedElement,
                "Wrong aNode!");
   if (aNode == mNativeAnonNode) {
-    mObservedNode->RemoveMutationObserver(this);
-    mObservedNode = nullptr;
+    mObservedElement->RemoveMutationObserver(this);
+    mObservedElement = nullptr;
   } else {
     mNativeAnonNode->RemoveMutationObserver(this);
     mNativeAnonNode->UnbindFromTree();
@@ -180,8 +173,9 @@ ManualNACPtr HTMLEditor::CreateAnonymousElement(nsAtom* aTag,
 
     // establish parenthood of the element
     newContentRaw->SetIsNativeAnonymousRoot();
-    nsresult rv =
-        newContentRaw->BindToTree(doc, &aParentContent, &aParentContent);
+    BindContext context(*aParentContent.AsElement(),
+                        BindContext::ForNativeAnonymous);
+    nsresult rv = newContentRaw->BindToTree(context, aParentContent);
     if (NS_FAILED(rv)) {
       newContentRaw->UnbindFromTree();
       return nullptr;
@@ -200,7 +194,7 @@ ManualNACPtr HTMLEditor::CreateAnonymousElement(nsAtom* aTag,
   }
 
   ElementDeletionObserver* observer =
-      new ElementDeletionObserver(newContent, &aParentContent);
+      new ElementDeletionObserver(newContent, aParentContent.AsElement());
   NS_ADDREF(observer);  // NodeWillBeDestroyed releases.
   aParentContent.AddMutationObserver(observer);
   newContent->AddMutationObserver(observer);
@@ -313,14 +307,14 @@ HTMLEditor::CheckSelectionStateForAnonymousButtons() {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  nsresult rv = RefereshEditingUI();
+  nsresult rv = RefreshEditingUI();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return EditorBase::ToGenericNSResult(rv);
   }
   return NS_OK;
 }
 
-nsresult HTMLEditor::RefereshEditingUI() {
+nsresult HTMLEditor::RefreshEditingUI() {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   // First, we need to remove unnecessary editing UI now since some of them

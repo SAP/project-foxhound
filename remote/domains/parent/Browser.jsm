@@ -6,16 +6,24 @@
 
 var EXPORTED_SYMBOLS = ["Browser"];
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {Domain} = ChromeUtils.import("chrome://remote/content/domains/Domain.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Domain } = ChromeUtils.import(
+  "chrome://remote/content/domains/Domain.jsm"
+);
 
 class Browser extends Domain {
   getVersion() {
+    const { isHeadless } = Cc["@mozilla.org/gfx/info;1"].getService(
+      Ci.nsIGfxInfo
+    );
+    const { userAgent } = Cc[
+      "@mozilla.org/network/protocol;1?name=http"
+    ].getService(Ci.nsIHttpProtocolHandler);
     return {
       protocolVersion: "1",
-      product: "Firefox",
+      product: (isHeadless ? "Headless " : "") + "Firefox",
       revision: "1",
-      userAgent: "Firefox",
+      userAgent,
       jsVersion: "1.8.5",
     };
   }

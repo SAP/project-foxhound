@@ -16,7 +16,6 @@
 #include "BlockReflowInput.h"
 #include "nsLineBox.h"
 
-class nsBulletFrame;
 class nsFloatManager;
 struct nsStyleText;
 
@@ -93,9 +92,9 @@ class nsLineLayout {
   void ReflowFrame(nsIFrame* aFrame, nsReflowStatus& aReflowStatus,
                    ReflowOutput* aMetrics, bool& aPushedFrame);
 
-  void AddBulletFrame(nsBulletFrame* aFrame, const ReflowOutput& aMetrics);
+  void AddMarkerFrame(nsIFrame* aFrame, const ReflowOutput& aMetrics);
 
-  void RemoveBulletFrame(nsBulletFrame* aFrame);
+  void RemoveMarkerFrame(nsIFrame* aFrame);
 
   /**
    * Place frames in the block direction (CSS property vertical-align)
@@ -147,12 +146,12 @@ class nsLineLayout {
   // Inform the line-layout about the presence of a floating frame
   // XXX get rid of this: use get-frame-type?
   bool AddFloat(nsIFrame* aFloat, nscoord aAvailableISize) {
-    // When reflowing ruby text frames, no block reflow state is
+    // When reflowing ruby text frames, no block reflow input is
     // provided to the line layout. However, floats should never be
     // associated with ruby text containers, hence this method should
     // not be called in that case.
     MOZ_ASSERT(mBlockRI,
-               "Should not call this method if there is no block reflow state "
+               "Should not call this method if there is no block reflow input "
                "available");
     return mBlockRI->AddFloat(this, aFloat, aAvailableISize);
   }
@@ -424,7 +423,7 @@ class nsLineLayout {
     bool mIsNonWhitespaceTextFrame : 1;
     bool mIsLetterFrame : 1;
     bool mRecomputeOverflow : 1;
-    bool mIsBullet : 1;
+    bool mIsMarker : 1;
     bool mSkipWhenTrimmingWhitespace : 1;
     bool mIsEmpty : 1;
     bool mIsPlaceholder : 1;
@@ -570,7 +569,7 @@ class nsLineLayout {
   bool mInFirstLine : 1;
   bool mGotLineBox : 1;
   bool mInFirstLetter : 1;
-  bool mHasBullet : 1;
+  bool mHasMarker : 1;
   bool mDirtyNextLine : 1;
   bool mLineAtStart : 1;
   bool mHasRuby : 1;

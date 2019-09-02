@@ -17,6 +17,7 @@ from taskgraph.util.scriptworker import (get_beetmover_bucket_scope,
                                          generate_beetmover_upstream_artifacts,
                                          generate_beetmover_artifact_map,
                                          should_use_artifact_map)
+from taskgraph.util.treeherder import inherit_treeherder_from_dep
 from taskgraph.transforms.task import task_description_schema
 from taskgraph.transforms.release_sign_and_push_langpacks import get_upstream_task_ref
 from voluptuous import Required, Optional
@@ -89,14 +90,8 @@ def make_task_description(config, jobs):
         dep_job = job['primary-dependency']
         attributes = dep_job.attributes
 
-        treeherder = job.get('treeherder', {})
+        treeherder = inherit_treeherder_from_dep(job, dep_job)
         treeherder.setdefault('symbol', 'langpack(BM{})'.format(attributes.get('l10n_chunk', '')))
-        dep_th_platform = dep_job.task.get('extra', {}).get(
-            'treeherder', {}).get('machine', {}).get('platform', '')
-        treeherder.setdefault('platform',
-                              "{}/opt".format(dep_th_platform))
-        treeherder.setdefault('tier', 1)
-        treeherder.setdefault('kind', 'build')
 
         job['attributes'].update(copy_attributes_from_dependent_job(dep_job))
         job['attributes']['chunk_locales'] = dep_job.attributes['chunk_locales']
@@ -130,7 +125,7 @@ def make_task_worker(config, jobs):
 
         platform = job["attributes"]["build_platform"]
         locale = job["attributes"]["chunk_locales"]
-        if should_use_artifact_map(platform, config.params['project']):
+        if should_use_artifact_map(platform):
             upstream_artifacts = generate_beetmover_upstream_artifacts(
                 config, job, platform, locale,
             )
@@ -144,7 +139,7 @@ def make_task_worker(config, jobs):
             'upstream-artifacts': upstream_artifacts,
         }
 
-        if should_use_artifact_map(platform, config.params['project']):
+        if should_use_artifact_map(platform):
             job['worker']['artifact-map'] = generate_beetmover_artifact_map(
                 config, job, platform=platform, locale=locale)
 
@@ -237,7 +232,7 @@ def _change_platform_data(config, platform_job, platform):
     platform_job['worker']['release-properties']['platform'] = platform
 
     # amend artifactMap entries as well
-    if should_use_artifact_map(backup_platform, config.params['project']):
+    if should_use_artifact_map(backup_platform):
         platform_mapping = {
             'linux64': 'linux-x86_64',
             'linux': 'linux-i686',

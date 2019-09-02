@@ -8,6 +8,7 @@
 #define mozilla_PrioritizedEventQueue_h
 
 #include "mozilla/AbstractEventQueue.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/UniquePtr.h"
@@ -35,18 +36,20 @@ namespace mozilla {
 //   normal and high queues.
 // - We do not select events from the idle queue if the current idle period
 //   is almost over.
-template <class InnerQueueT>
 class PrioritizedEventQueue final : public AbstractEventQueue {
  public:
   static const bool SupportsPrioritization = true;
 
-  PrioritizedEventQueue(UniquePtr<InnerQueueT> aHighQueue,
-                        UniquePtr<InnerQueueT> aInputQueue,
-                        UniquePtr<InnerQueueT> aMediumHighQueue,
-                        UniquePtr<InnerQueueT> aNormalQueue,
-                        UniquePtr<InnerQueueT> aDeferredTimersQueue,
-                        UniquePtr<InnerQueueT> aIdleQueue,
-                        already_AddRefed<nsIIdlePeriod> aIdlePeriod);
+  explicit PrioritizedEventQueue(already_AddRefed<nsIIdlePeriod> aIdlePeriod)
+      : mHighQueue(MakeUnique<EventQueue>(EventQueuePriority::High)),
+        mInputQueue(MakeUnique<EventQueue>(EventQueuePriority::Input)),
+        mMediumHighQueue(
+            MakeUnique<EventQueue>(EventQueuePriority::MediumHigh)),
+        mNormalQueue(MakeUnique<EventQueue>(EventQueuePriority::Normal)),
+        mDeferredTimersQueue(
+            MakeUnique<EventQueue>(EventQueuePriority::DeferredTimers)),
+        mIdleQueue(MakeUnique<EventQueue>(EventQueuePriority::Idle)),
+        mIdlePeriod(aIdlePeriod) {}
 
   void PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
                 EventQueuePriority aPriority,
@@ -104,12 +107,12 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   // Returns a null TimeStamp if we're not in the idle period.
   mozilla::TimeStamp GetIdleDeadline();
 
-  UniquePtr<InnerQueueT> mHighQueue;
-  UniquePtr<InnerQueueT> mInputQueue;
-  UniquePtr<InnerQueueT> mMediumHighQueue;
-  UniquePtr<InnerQueueT> mNormalQueue;
-  UniquePtr<InnerQueueT> mDeferredTimersQueue;
-  UniquePtr<InnerQueueT> mIdleQueue;
+  UniquePtr<EventQueue> mHighQueue;
+  UniquePtr<EventQueue> mInputQueue;
+  UniquePtr<EventQueue> mMediumHighQueue;
+  UniquePtr<EventQueue> mNormalQueue;
+  UniquePtr<EventQueue> mDeferredTimersQueue;
+  UniquePtr<EventQueue> mIdleQueue;
 
   // We need to drop the queue mutex when checking the idle deadline, so we keep
   // a pointer to it here.
@@ -148,9 +151,6 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   };
   InputEventQueueState mInputQueueState = STATE_DISABLED;
 };
-
-class EventQueue;
-extern template class PrioritizedEventQueue<EventQueue>;
 
 }  // namespace mozilla
 

@@ -10,6 +10,7 @@
 #include "gfxContext.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Likely.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Maybe.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsCSSRendering.h"
@@ -24,7 +25,7 @@ using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::layout;
 
-nsContainerFrame* NS_NewFieldSetFrame(nsIPresShell* aPresShell,
+nsContainerFrame* NS_NewFieldSetFrame(PresShell* aPresShell,
                                       ComputedStyle* aStyle) {
   return new (aPresShell) nsFieldSetFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -89,11 +90,11 @@ nsIFrame* nsFieldSetFrame::GetLegend() const {
   return mFrames.FirstChild();
 }
 
-class nsDisplayFieldSetBorder final : public nsDisplayItem {
+class nsDisplayFieldSetBorder final : public nsPaintedDisplayItem {
  public:
   nsDisplayFieldSetBorder(nsDisplayListBuilder* aBuilder,
                           nsFieldSetFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayFieldSetBorder);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -167,15 +168,37 @@ bool nsDisplayFieldSetBorder::CreateWebRenderCommands(
   auto frame = static_cast<nsFieldSetFrame*>(mFrame);
   auto offset = ToReferenceFrame();
   nsRect rect;
+  Maybe<wr::SpaceAndClipChainHelper> clipOut;
 
   if (nsIFrame* legend = frame->GetLegend()) {
     rect = frame->VisualBorderRectRelativeToSelf() + offset;
 
-    // Legends require a "negative" clip around the text, which WR doesn't
-    // support yet.
     nsRect legendRect = legend->GetNormalRect() + offset;
+
+    // Make sure we clip all of the border in case the legend is smaller.
+    nscoord borderTopWidth = frame->GetUsedBorder().top;
+    if (legendRect.height < borderTopWidth) {
+      legendRect.height = borderTopWidth;
+      legendRect.y = offset.y;
+    }
+
     if (!legendRect.IsEmpty()) {
-      return false;
+      // We need to clip out the part of the border where the legend would go
+      auto appUnitsPerDevPixel = frame->PresContext()->AppUnitsPerDevPixel();
+      auto layoutRect = wr::ToRoundedLayoutRect(LayoutDeviceRect::FromAppUnits(
+          frame->GetVisualOverflowRectRelativeToSelf() + offset,
+          appUnitsPerDevPixel));
+
+      wr::ComplexClipRegion region;
+      region.rect = wr::ToRoundedLayoutRect(
+          LayoutDeviceRect::FromAppUnits(legendRect, appUnitsPerDevPixel));
+      region.mode = wr::ClipMode::ClipOut;
+      region.radii = wr::EmptyBorderRadius();
+      nsTArray<mozilla::wr::ComplexClipRegion> array{region};
+
+      auto clip = aBuilder.DefineClip(Nothing(), layoutRect, &array, nullptr);
+      auto clipChain = aBuilder.DefineClipChain({clip}, true);
+      clipOut.emplace(aBuilder, clipChain);
     }
   } else {
     rect = nsRect(offset, frame->GetRect().Size());
@@ -200,18 +223,17 @@ void nsFieldSetFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // empty, we need to paint the outline
   if (!(GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER) &&
       IsVisibleForPainting()) {
-    if (StyleEffects()->mBoxShadow) {
-      aLists.BorderBackground()->AppendToTop(
-          MakeDisplayItem<nsDisplayBoxShadowOuter>(aBuilder, this));
-    }
+    DisplayOutsetBoxShadowUnconditional(aBuilder, aLists.BorderBackground());
+
+    const nsRect rect =
+        VisualBorderRectRelativeToSelf() + aBuilder->ToReferenceFrame(this);
 
     nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
-        aBuilder, this, VisualBorderRectRelativeToSelf(),
-        aLists.BorderBackground(),
+        aBuilder, this, rect, aLists.BorderBackground(),
         /* aAllowWillPaintBorderOptimization = */ false);
 
-    aLists.BorderBackground()->AppendToTop(
-        MakeDisplayItem<nsDisplayFieldSetBorder>(aBuilder, this));
+    aLists.BorderBackground()->AppendNewToTop<nsDisplayFieldSetBorder>(aBuilder,
+                                                                       this);
 
     DisplayOutlineUnconditional(aBuilder, aLists);
 
@@ -257,7 +279,7 @@ image::ImgDrawResult nsFieldSetFrame::PaintBorder(
   nsPresContext* presContext = PresContext();
 
   PaintBorderFlags borderFlags = aBuilder->ShouldSyncDecodeImages()
-                                     ? PaintBorderFlags::SYNC_DECODE_IMAGES
+                                     ? PaintBorderFlags::SyncDecodeImages
                                      : PaintBorderFlags();
 
   ImgDrawResult result = ImgDrawResult::SUCCESS;
@@ -366,7 +388,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsFieldSetFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
-  NS_WARNING_ASSERTION(aReflowInput.ComputedISize() != NS_INTRINSICSIZE,
+  NS_WARNING_ASSERTION(aReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE,
                        "Should have a precomputed inline-size!");
 
   nsOverflowAreas ocBounds;
@@ -478,10 +500,10 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
   // reflow the content frame only if needed
   if (reflowInner) {
     ReflowInput kidReflowInput(aPresContext, aReflowInput, inner,
-                               innerAvailSize, nullptr,
+                               innerAvailSize, Nothing(),
                                ReflowInput::CALLER_WILL_INIT);
     // Override computed padding, in case it's percentage padding
-    kidReflowInput.Init(aPresContext, nullptr, nullptr,
+    kidReflowInput.Init(aPresContext, Nothing(), nullptr,
                         &aReflowInput.ComputedPhysicalPadding());
     // Our child is "height:100%" but we actually want its height to be reduced
     // by the amount of content-height the legend is eating up, unless our
@@ -549,7 +571,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     // If the inner content rect is larger than the legend, we can align the
     // legend.
     if (innerContentRect.ISize(wm) > mLegendRect.ISize(wm)) {
-      // NOTE legend @align values are: left/right/center/top/bottom.
+      // NOTE legend @align values are: left/right/center
       // GetLogicalAlign converts left/right to start/end for the given WM.
       // @see HTMLLegendElement::ParseAttribute, nsLegendFrame::GetLogicalAlign
       int32_t align =
@@ -567,8 +589,6 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
               (innerContentRect.ISize(wm) - mLegendRect.ISize(wm)) / 2;
           break;
         case NS_STYLE_TEXT_ALIGN_START:
-        case NS_STYLE_VERTICAL_ALIGN_TOP:
-        case NS_STYLE_VERTICAL_ALIGN_BOTTOM:
           mLegendRect.IStart(wm) = innerContentRect.IStart(wm);
           break;
         default:
@@ -673,11 +693,11 @@ nscoord nsFieldSetFrame::GetLogicalBaseline(WritingMode aWM) const {
     case mozilla::StyleDisplay::InlineGrid:
     case mozilla::StyleDisplay::Flex:
     case mozilla::StyleDisplay::InlineFlex:
-      return BaselineBOffset(aWM, BaselineSharingGroup::eFirst,
-                             AlignmentContext::eInline);
+      return BaselineBOffset(aWM, BaselineSharingGroup::First,
+                             AlignmentContext::Inline);
     default:
-      return BSize(aWM) - BaselineBOffset(aWM, BaselineSharingGroup::eLast,
-                                          AlignmentContext::eInline);
+      return BSize(aWM) - BaselineBOffset(aWM, BaselineSharingGroup::Last,
+                                          AlignmentContext::Inline);
   }
 }
 
@@ -712,7 +732,7 @@ bool nsFieldSetFrame::GetNaturalBaselineBOffset(
     return false;
   }
   nscoord innerBStart = inner->BStart(aWM, GetSize());
-  if (aBaselineGroup == BaselineSharingGroup::eFirst) {
+  if (aBaselineGroup == BaselineSharingGroup::First) {
     *aBaseline += innerBStart;
   } else {
     *aBaseline += BSize(aWM) - (innerBStart + inner->BSize(aWM));

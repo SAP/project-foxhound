@@ -11,6 +11,12 @@
 namespace mozilla {
 namespace dom {
 
+BrowsingContextGroup::BrowsingContextGroup() {
+  if (XRE_IsContentProcess()) {
+    ContentChild::GetSingleton()->HoldBrowsingContextGroup(this);
+  }
+}
+
 bool BrowsingContextGroup::Contains(BrowsingContext* aBrowsingContext) {
   return aBrowsingContext->Group() == this;
 }
@@ -43,32 +49,55 @@ void BrowsingContextGroup::EnsureSubscribed(ContentParent* aProcess) {
     return;
   }
 
-  // Subscribe to the BrowsingContext, and send down initial state!
   Subscribe(aProcess);
 
-  // Iterate over each of our browsing contexts, locating those which are not in
-  // their parent's children list. We can then use those as starting points to
-  // get a pre-order walk of each tree.
   nsTArray<BrowsingContext::IPCInitializer> inits(mContexts.Count());
-  for (auto iter = mContexts.Iter(); !iter.Done(); iter.Next()) {
-    auto* context = iter.Get()->GetKey();
 
-    // If we have a parent, and are in our parent's `Children` list, skip
-    // ourselves as we'll be found in the pre-order traversal of our parent.
-    if (context->GetParent() &&
-        context->GetParent()->GetChildren().IndexOf(context) !=
-            BrowsingContext::Children::NoIndex) {
-      continue;
-    }
+  // First, perform a pre-order walk of our BrowsingContext objects from our
+  // toplevels. This should visit every active BrowsingContext.
+  for (auto& context : mToplevels) {
+    MOZ_DIAGNOSTIC_ASSERT(!IsContextCached(context),
+                          "cached contexts must have a parent");
 
-    // Add all elements to the list in pre-order.
     context->PreOrderWalk([&](BrowsingContext* aContext) {
       inits.AppendElement(aContext->GetIPCInitializer());
     });
   }
 
+  // Ensure that cached BrowsingContext objects are also visited, by visiting
+  // them after mToplevels.
+  for (auto iter = mCachedContexts.Iter(); !iter.Done(); iter.Next()) {
+    iter.Get()->GetKey()->PreOrderWalk([&](BrowsingContext* aContext) {
+      inits.AppendElement(aContext->GetIPCInitializer());
+    });
+  }
+
+  // We should have visited every browsing context.
+  MOZ_DIAGNOSTIC_ASSERT(inits.Length() == mContexts.Count(),
+                        "Visited the wrong number of contexts!");
+
   // Send all of our contexts to the target content process.
   Unused << aProcess->SendRegisterBrowsingContextGroup(inits);
+}
+
+bool BrowsingContextGroup::IsContextCached(BrowsingContext* aContext) const {
+  MOZ_DIAGNOSTIC_ASSERT(aContext);
+  return mCachedContexts.Contains(aContext);
+}
+
+void BrowsingContextGroup::CacheContext(BrowsingContext* aContext) {
+  mCachedContexts.PutEntry(aContext);
+}
+
+void BrowsingContextGroup::CacheContexts(
+    const BrowsingContext::Children& aContexts) {
+  for (BrowsingContext* child : aContexts) {
+    mCachedContexts.PutEntry(child);
+  }
+}
+
+bool BrowsingContextGroup::EvictCachedContext(BrowsingContext* aContext) {
+  return mCachedContexts.EnsureRemoved(aContext);
 }
 
 BrowsingContextGroup::~BrowsingContextGroup() {
@@ -88,7 +117,7 @@ JSObject* BrowsingContextGroup::WrapObject(JSContext* aCx,
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(BrowsingContextGroup, mContexts,
-                                      mToplevels, mSubscribers)
+                                      mToplevels, mSubscribers, mCachedContexts)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(BrowsingContextGroup, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(BrowsingContextGroup, Release)

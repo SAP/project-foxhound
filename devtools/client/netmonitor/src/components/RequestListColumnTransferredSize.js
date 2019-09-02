@@ -10,6 +10,7 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { getFormattedSize } = require("../utils/format-utils");
 const { L10N } = require("../utils/l10n");
 const { propertiesEqual } = require("../utils/request-utils");
+const { BLOCKED_REASON_MESSAGES } = require("../constants");
 
 const SIZE_CACHED = L10N.getStr("networkMenu.sizeCached");
 const SIZE_SERVICE_WORKER = L10N.getStr("networkMenu.sizeServiceWorker");
@@ -18,6 +19,7 @@ const SIZE_UNAVAILABLE_TITLE = L10N.getStr("networkMenu.sizeUnavailable.title");
 const UPDATED_TRANSFERRED_PROPS = [
   "transferredSize",
   "fromCache",
+  "isRacing",
   "fromServiceWorker",
 ];
 
@@ -29,32 +31,49 @@ class RequestListColumnTransferredSize extends Component {
   }
 
   shouldComponentUpdate(nextProps) {
-    return !propertiesEqual(UPDATED_TRANSFERRED_PROPS, this.props.item, nextProps.item);
+    return !propertiesEqual(
+      UPDATED_TRANSFERRED_PROPS,
+      this.props.item,
+      nextProps.item
+    );
   }
 
   render() {
-    const { fromCache, fromServiceWorker, status, transferredSize } = this.props.item;
+    const {
+      blockedReason,
+      fromCache,
+      fromServiceWorker,
+      status,
+      transferredSize,
+      isRacing,
+    } = this.props.item;
     let text;
 
-    if (fromCache || status === "304") {
+    if (blockedReason) {
+      text =
+        BLOCKED_REASON_MESSAGES[blockedReason] ||
+        L10N.getStr("networkMenu.blocked");
+    } else if (fromCache || status === "304") {
       text = SIZE_CACHED;
     } else if (fromServiceWorker) {
       text = SIZE_SERVICE_WORKER;
     } else if (typeof transferredSize == "number") {
       text = getFormattedSize(transferredSize);
+      if (isRacing && typeof isRacing == "boolean") {
+        text = L10N.getFormatStr("networkMenu.raced", text);
+      }
     } else if (transferredSize === null) {
       text = SIZE_UNAVAILABLE;
     }
 
     const title = text == SIZE_UNAVAILABLE ? SIZE_UNAVAILABLE_TITLE : text;
 
-    return (
-      dom.td({
+    return dom.td(
+      {
         className: "requests-list-column requests-list-transferred",
         title: title,
       },
-        text
-      )
+      text
     );
   }
 }

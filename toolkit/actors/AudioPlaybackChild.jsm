@@ -6,7 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["AudioPlaybackChild"];
 
-const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const { ActorChild } = ChromeUtils.import(
+  "resource://gre/modules/ActorChild.jsm"
+);
 
 class AudioPlaybackChild extends ActorChild {
   handleMediaControlMessage(msg) {
@@ -34,14 +36,6 @@ class AudioPlaybackChild extends ActorChild {
       case "mediaControlStopped":
         utils.mediaSuspend = suspendTypes.SUSPENDED_STOP_DISPOSABLE;
         break;
-      case "resumeMedia":
-        // User has clicked the tab audio indicator to play a delayed
-        // media. That's clear user intent to play, so gesture activate
-        // the content document tree so that the block-autoplay logic
-        // allows the media to autoplay.
-        this.content.document.notifyUserGestureActivation();
-        utils.mediaSuspend = suspendTypes.NONE_SUSPENDED;
-        break;
       default:
         dump("Error : wrong media control msg!\n");
         break;
@@ -57,14 +51,14 @@ class AudioPlaybackChild extends ActorChild {
         } else if (data === "activeMediaBlockStop") {
           name += "ActiveMediaBlockStop";
         } else {
-          name += (data === "active") ? "Start" : "Stop";
+          name += data === "active" ? "Start" : "Stop";
         }
         this.mm.sendAsyncMessage(name);
       }
     }
   }
 
-  receiveMessage({name, data}) {
+  receiveMessage({ name, data }) {
     switch (name) {
       case "AudioPlayback":
         this.handleMediaControlMessage(data.type);

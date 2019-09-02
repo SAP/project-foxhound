@@ -21,28 +21,27 @@ function run_test() {
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-stack",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             gTargetFront = targetFront;
-                             test_simple_new_source();
-                           });
+    attachTestTabAndResume(gClient, "test-stack", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      gTargetFront = targetFront;
+      test_simple_new_source();
+    });
   });
   do_test_pending();
 }
 
 function test_simple_new_source() {
-  gThreadClient.addOneTimeListener("paused", function() {
-    gThreadClient.addOneTimeListener("newSource", async function(event2, packet2) {
+  gThreadClient.once("paused", function() {
+    gThreadClient.once("newSource", async function(packet2) {
       // The "stopMe" eval source is emitted first.
-      Assert.equal(event2, "newSource");
-      Assert.equal(packet2.type, "newSource");
       Assert.ok(!!packet2.source);
       Assert.ok(packet2.source.introductionType, "eval");
 
-      gThreadClient.addOneTimeListener("newSource", function(event, packet) {
-        Assert.equal(event, "newSource");
-        Assert.equal(packet.type, "newSource");
+      gThreadClient.once("newSource", function(packet) {
         dump(JSON.stringify(packet, null, 2));
         Assert.ok(!!packet.source);
         Assert.ok(!!packet.source.url.match(/example\.com/));
@@ -51,7 +50,9 @@ function test_simple_new_source() {
       });
 
       const consoleFront = await gTargetFront.getFront("console");
-      consoleFront.evaluateJSAsync("function f() { }\n//# sourceURL=http://example.com/code.js");
+      consoleFront.evaluateJSAsync(
+        "function f() { }\n//# sourceURL=http://example.com/code.js"
+      );
     });
   });
 

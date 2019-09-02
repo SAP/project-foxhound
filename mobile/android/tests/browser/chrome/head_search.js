@@ -1,7 +1,7 @@
 // Bits and pieces copied from toolkit/components/search/tests/xpcshell/head_search.js
 
-var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var {Task} = ChromeUtils.import("resource://testing-common/Task.jsm");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { Task } = ChromeUtils.import("resource://testing-common/Task.jsm");
 
 /**
  * Adds test engines and returns a promise resolved when they are installed.
@@ -12,11 +12,11 @@ var {Task} = ChromeUtils.import("resource://testing-common/Task.jsm");
  *        Array of objects with the following properties:
  *        {
  *          name: Engine name, used to wait for it to be loaded.
- *          details: Array containing the parameters of addEngineWithDetails,
+ *          details: Object containing the parameters of addEngineWithDetails,
  *                   except for the engine name.  Alternative to xmlFileName.
  *        }
  */
-var addTestEngines = Task.async(function* (aItems) {
+var addTestEngines = Task.async(function*(aItems) {
   let engines = [];
 
   for (let item of aItems) {
@@ -36,7 +36,7 @@ var addTestEngines = Task.async(function* (aItems) {
         }
       }, "browser-search-engine-modified");
 
-      Services.search.addEngineWithDetails(item.name, ...item.details);
+      Services.search.addEngineWithDetails(item.name, item.details);
     });
   }
 

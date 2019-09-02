@@ -8,6 +8,7 @@
 
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "nsPresContext.h"
@@ -39,7 +40,7 @@ static const uint8_t kArrowHeadSize = 10;
 // phasorangle
 static const uint8_t kPhasorangleWidth = 8;
 
-nsIFrame* NS_NewMathMLmencloseFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewMathMLmencloseFrame(PresShell* aPresShell,
                                     ComputedStyle* aStyle) {
   return new (aPresShell)
       nsMathMLmencloseFrame(aStyle, aPresShell->GetPresContext());
@@ -700,12 +701,12 @@ void nsMathMLmencloseFrame::SetAdditionalComputedStyle(
     mMathMLChar[aIndex].SetComputedStyle(aComputedStyle);
 }
 
-class nsDisplayNotation final : public nsDisplayItem {
+class nsDisplayNotation final : public nsPaintedDisplayItem {
  public:
   nsDisplayNotation(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                     const nsRect& aRect, nscoord aThickness,
                     nsMencloseNotation aType)
-      : nsDisplayItem(aBuilder, aFrame),
+      : nsPaintedDisplayItem(aBuilder, aFrame),
         mRect(aRect),
         mThickness(aThickness),
         mType(aType) {
@@ -715,9 +716,7 @@ class nsDisplayNotation final : public nsDisplayItem {
   virtual ~nsDisplayNotation() { MOZ_COUNT_DTOR(nsDisplayNotation); }
 #endif
 
-  virtual uint32_t GetPerFrameKey() const override {
-    return (mType << TYPE_BITS) | nsDisplayItem::GetPerFrameKey();
-  }
+  virtual uint16_t CalculatePerFrameKey() const override { return mType; }
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLMencloseNotation", TYPE_MATHML_MENCLOSE_NOTATION)
@@ -829,6 +828,6 @@ void nsMathMLmencloseFrame::DisplayNotation(nsDisplayListBuilder* aBuilder,
       aThickness <= 0)
     return;
 
-  aLists.Content()->AppendToTop(MakeDisplayItem<nsDisplayNotation>(
-      aBuilder, aFrame, aRect, aThickness, aType));
+  aLists.Content()->AppendNewToTop<nsDisplayNotation>(aBuilder, aFrame, aRect,
+                                                      aThickness, aType);
 }

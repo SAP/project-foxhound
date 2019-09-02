@@ -118,6 +118,10 @@ GfxInfo::GetDWriteVersion(nsAString& aDwriteVersion) { return NS_ERROR_FAILURE; 
 NS_IMETHODIMP
 GfxInfo::GetCleartypeParameters(nsAString& aCleartypeParams) { return NS_ERROR_FAILURE; }
 
+/* readonly attribute DOMString windowProtocol; */
+NS_IMETHODIMP
+GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) { return NS_ERROR_FAILURE; }
+
 /* readonly attribute DOMString adapterDescription; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDescription(nsAString& aAdapterDescription) {
@@ -150,6 +154,17 @@ GfxInfo::GetAdapterDriver(nsAString& aAdapterDriver) {
 /* readonly attribute DOMString adapterDriver2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriver2(nsAString& aAdapterDriver) { return NS_ERROR_FAILURE; }
+
+/* readonly attribute DOMString adapterDriverVendor; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterDriverVendor(nsAString& aAdapterDriverVendor) {
+  aAdapterDriverVendor.AssignLiteral("");
+  return NS_OK;
+}
+
+/* readonly attribute DOMString adapterDriverVendor2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterDriverVendor2(nsAString& aAdapterDriverVendor) { return NS_ERROR_FAILURE; }
 
 /* readonly attribute DOMString adapterDriverVersion; */
 NS_IMETHODIMP
@@ -225,23 +240,22 @@ void GfxInfo::AddCrashReportAnnotations() {
 }
 
 // We don't support checking driver versions on Mac.
-#define IMPLEMENT_MAC_DRIVER_BLOCKLIST(os, vendor, device, features, blockOn, ruleId)          \
-  APPEND_TO_DRIVER_BLOCKLIST(os, vendor, device, features, blockOn, DRIVER_COMPARISON_IGNORED, \
-                             V(0, 0, 0, 0), ruleId, "")
+#define IMPLEMENT_MAC_DRIVER_BLOCKLIST(os, vendor, driverVendor, device, features, blockOn, \
+                                       ruleId)                                              \
+  APPEND_TO_DRIVER_BLOCKLIST(os, vendor, driverVendor, device, features, blockOn,           \
+                             DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), ruleId, "")
 
 const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
   if (!sDriverInfo->Length()) {
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
         OperatingSystem::OSX, (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
-        GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_WEBGL_MSAA,
-        nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION, "FEATURE_FAILURE_MAC_ATI_NO_MSAA");
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
+        (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(RadeonX1000),
         nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_MAC_RADEONX1000_NO_TEXTURE2D");
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
         OperatingSystem::OSX, (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorNVIDIA),
+        (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(Geforce7300GT),
         nsIGfxInfo::FEATURE_WEBGL_OPENGL, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_MAC_7300_NO_WEBGL");
@@ -266,17 +280,7 @@ nsresult GfxInfo::GetFeatureStatusImpl(int32_t aFeature, int32_t* aStatus,
 
   // Don't evaluate special cases when we're evaluating the downloaded blocklist.
   if (!aDriverInfo.Length()) {
-    if (aFeature == nsIGfxInfo::FEATURE_WEBGL_MSAA) {
-      // Blacklist all ATI cards on OSX, except for
-      // 0x6760 and 0x9488
-      if (mAdapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorATI),
-                                  nsCaseInsensitiveStringComparator()) &&
-          (mAdapterDeviceID.LowerCaseEqualsLiteral("0x6760") ||
-           mAdapterDeviceID.LowerCaseEqualsLiteral("0x9488"))) {
-        *aStatus = nsIGfxInfo::FEATURE_STATUS_OK;
-        return NS_OK;
-      }
-    } else if (aFeature == nsIGfxInfo::FEATURE_CANVAS2D_ACCELERATION) {
+    if (aFeature == nsIGfxInfo::FEATURE_CANVAS2D_ACCELERATION) {
       // See bug 1249659
       switch (os) {
         case OperatingSystem::OSX10_5:
@@ -353,5 +357,8 @@ NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion) {
   mOSXVersion = aVersion;
   return NS_OK;
 }
+
+/* void fireTestProcess (); */
+NS_IMETHODIMP GfxInfo::FireTestProcess() { return NS_OK; }
 
 #endif

@@ -5,13 +5,54 @@
 "use strict";
 
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const { getCurrentZoom, getViewportDimensions } = require("devtools/shared/layout/utils");
+const {
+  getCurrentZoom,
+  getViewportDimensions,
+} = require("devtools/shared/layout/utils");
 const { moveInfobar, createNode } = require("./markup");
 const { truncateString } = require("devtools/shared/inspector/utils");
 
 const STRINGS_URI = "devtools/shared/locales/accessibility.properties";
-loader.lazyRequireGetter(this, "LocalizationHelper", "devtools/shared/l10n", true);
-DevToolsUtils.defineLazyGetter(this, "L10N", () => new LocalizationHelper(STRINGS_URI));
+loader.lazyRequireGetter(
+  this,
+  "LocalizationHelper",
+  "devtools/shared/l10n",
+  true
+);
+DevToolsUtils.defineLazyGetter(
+  this,
+  "L10N",
+  () => new LocalizationHelper(STRINGS_URI)
+);
+
+const {
+  accessibility: {
+    AUDIT_TYPE,
+    ISSUE_TYPE: {
+      [AUDIT_TYPE.TEXT_LABEL]: {
+        AREA_NO_NAME_FROM_ALT,
+        DIALOG_NO_NAME,
+        DOCUMENT_NO_TITLE,
+        EMBED_NO_NAME,
+        FIGURE_NO_NAME,
+        FORM_FIELDSET_NO_NAME,
+        FORM_FIELDSET_NO_NAME_FROM_LEGEND,
+        FORM_NO_NAME,
+        FORM_NO_VISIBLE_NAME,
+        FORM_OPTGROUP_NO_NAME_FROM_LABEL,
+        FRAME_NO_NAME,
+        HEADING_NO_CONTENT,
+        HEADING_NO_NAME,
+        IFRAME_NO_NAME_FROM_TITLE,
+        IMAGE_NO_NAME,
+        INTERACTIVE_NO_NAME,
+        MATHML_GLYPH_NO_NAME,
+        TOOLBAR_NO_NAME,
+      },
+    },
+    SCORES,
+  },
+} = require("devtools/shared/constants");
 
 // Max string length for truncating accessible name values.
 const MAX_STRING_LENGTH = 50;
@@ -71,10 +112,10 @@ class Infobar {
     const container = createNode(this.win, {
       parent: root,
       attributes: {
-        "class": "infobar-container",
-        "id": "infobar-container",
+        class: "infobar-container",
+        id: "infobar-container",
         "aria-hidden": "true",
-        "hidden": "true",
+        hidden: "true",
       },
       prefix: this.prefix,
     });
@@ -82,8 +123,8 @@ class Infobar {
     const infobar = createNode(this.win, {
       parent: container,
       attributes: {
-        "class": "infobar",
-        "id": "infobar",
+        class: "infobar",
+        id: "infobar",
       },
       prefix: this.prefix,
     });
@@ -91,8 +132,8 @@ class Infobar {
     const infobarText = createNode(this.win, {
       parent: infobar,
       attributes: {
-        "class": "infobar-text",
-        "id": "infobar-text",
+        class: "infobar-text",
+        id: "infobar-text",
       },
       prefix: this.prefix,
     });
@@ -101,8 +142,8 @@ class Infobar {
       nodeType: "span",
       parent: infobarText,
       attributes: {
-        "class": "infobar-role",
-        "id": "infobar-role",
+        class: "infobar-role",
+        id: "infobar-role",
       },
       prefix: this.prefix,
     });
@@ -111,8 +152,8 @@ class Infobar {
       nodeType: "span",
       parent: infobarText,
       attributes: {
-        "class": "infobar-name",
-        "id": "infobar-name",
+        class: "infobar-name",
+        id: "infobar-name",
       },
       prefix: this.prefix,
     });
@@ -288,7 +329,9 @@ class XULWindowInfobar extends Infobar {
       arrow.setAttribute("hidden", "true");
     } else if (isOffScreenOnRight) {
       const leftOffset = rightBoundary - boundsRight;
-      container.style.left = `${rightBoundary - leftOffset - containerHalfWidth}px`;
+      container.style.left = `${rightBoundary -
+        leftOffset -
+        containerHalfWidth}px`;
       arrow.setAttribute("hidden", "true");
     }
 
@@ -324,8 +367,8 @@ class XULWindowInfobar extends Infobar {
     createNode(this.win, {
       parent: this.getElement("infobar"),
       attributes: {
-        "class": "arrow",
-        "id": "arrow",
+        class: "arrow",
+        id: "arrow",
       },
       prefix: this.prefix,
     });
@@ -377,9 +420,7 @@ class Audit {
 
     // A list of audit reports to be shown on the fly when highlighting an accessible
     // object.
-    this.reports = [
-      new ContrastRatio(this),
-    ];
+    this.reports = [new ContrastRatio(this), new TextLabel(this)];
   }
 
   get prefix() {
@@ -395,8 +436,8 @@ class Audit {
       nodeType: "span",
       parent: root,
       attributes: {
-        "class": "infobar-audit",
-        "id": "infobar-audit",
+        class: "infobar-audit",
+        id: "infobar-audit",
       },
       prefix: this.prefix,
     });
@@ -475,8 +516,8 @@ class ContrastRatio extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        "class": "contrast-ratio-label",
-        "id": "contrast-ratio-label",
+        class: "contrast-ratio-label",
+        id: "contrast-ratio-label",
       },
       prefix: this.prefix,
     });
@@ -485,8 +526,8 @@ class ContrastRatio extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        "class": "contrast-ratio-error",
-        "id": "contrast-ratio-error",
+        class: "contrast-ratio-error",
+        id: "contrast-ratio-error",
       },
       prefix: this.prefix,
       text: L10N.getStr("accessibility.contrast.ratio.error"),
@@ -496,8 +537,8 @@ class ContrastRatio extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        "class": "contrast-ratio",
-        "id": "contrast-ratio-min",
+        class: "contrast-ratio",
+        id: "contrast-ratio-min",
       },
       prefix: this.prefix,
     });
@@ -506,8 +547,8 @@ class ContrastRatio extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        "class": "contrast-ratio-separator",
-        "id": "contrast-ratio-separator",
+        class: "contrast-ratio-separator",
+        id: "contrast-ratio-separator",
       },
       prefix: this.prefix,
     });
@@ -516,38 +557,41 @@ class ContrastRatio extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        "class": "contrast-ratio",
-        "id": "contrast-ratio-max",
+        class: "contrast-ratio",
+        id: "contrast-ratio-max",
       },
       prefix: this.prefix,
     });
   }
 
-  _fillAndStyleContrastValue(el, { value, isLargeText, color, backgroundColor }) {
+  _fillAndStyleContrastValue(el, { value, className, color, backgroundColor }) {
     value = value.toFixed(2);
-    const style = getContrastRatioScoreStyle(value, isLargeText);
     this.setTextContent(el, value);
-    el.classList.add(style);
-    el.setAttribute("style",
+    el.classList.add(className);
+    el.setAttribute(
+      "style",
       `--accessibility-highlighter-contrast-ratio-color: rgba(${color});` +
-      `--accessibility-highlighter-contrast-ratio-bg: rgba(${backgroundColor});`);
+        `--accessibility-highlighter-contrast-ratio-bg: rgba(${backgroundColor});`
+    );
     el.removeAttribute("hidden");
   }
 
   /**
    * Update contrast ratio score infobar markup.
-   * @param  {Number}
-   *         Contrast ratio for an accessible object being highlighted.
+   * @param  {Object}
+   *         Audit report for a given highlighted accessible.
    * @return {Boolean}
    *         True if the contrast ratio markup was updated correctly and infobar audit
    *         block should be visible.
    */
-  update({ contrastRatio }) {
+  update(audit) {
     const els = {};
     for (const key of ["label", "min", "max", "error", "separator"]) {
-      const el = els[key] = this.getElement(`contrast-ratio-${key}`);
+      const el = (els[key] = this.getElement(`contrast-ratio-${key}`));
       if (["min", "max"].includes(key)) {
-        ["fail", "AA", "AAA"].forEach(className => el.classList.remove(className));
+        Object.values(SCORES).forEach(className =>
+          el.classList.remove(className)
+        );
         this.setTextContent(el, "");
       }
 
@@ -555,13 +599,22 @@ class ContrastRatio extends AuditReport {
       el.removeAttribute("style");
     }
 
+    if (!audit) {
+      return false;
+    }
+
+    const contrastRatio = audit[AUDIT_TYPE.CONTRAST];
     if (!contrastRatio) {
       return false;
     }
 
     const { isLargeText, error } = contrastRatio;
-    this.setTextContent(els.label,
-      L10N.getStr(`accessibility.contrast.ratio.label${isLargeText ? ".large" : ""}`));
+    this.setTextContent(
+      els.label,
+      L10N.getStr(
+        `accessibility.contrast.ratio.label${isLargeText ? ".large" : ""}`
+      )
+    );
     els.label.removeAttribute("hidden");
     if (error) {
       els.error.removeAttribute("hidden");
@@ -569,18 +622,117 @@ class ContrastRatio extends AuditReport {
     }
 
     if (contrastRatio.value) {
-      const { value, color, backgroundColor } = contrastRatio;
-      this._fillAndStyleContrastValue(els.min,
-        { value, isLargeText, color, backgroundColor });
+      const { value, color, score, backgroundColor } = contrastRatio;
+      this._fillAndStyleContrastValue(els.min, {
+        value,
+        className: score,
+        color,
+        backgroundColor,
+      });
       return true;
     }
 
-    const { min, max, color, backgroundColorMin, backgroundColorMax } = contrastRatio;
-    this._fillAndStyleContrastValue(els.min,
-      { value: min, isLargeText, color, backgroundColor: backgroundColorMin });
+    const {
+      min,
+      max,
+      color,
+      backgroundColorMin,
+      backgroundColorMax,
+      scoreMin,
+      scoreMax,
+    } = contrastRatio;
+    this._fillAndStyleContrastValue(els.min, {
+      value: min,
+      className: scoreMin,
+      color,
+      backgroundColor: backgroundColorMin,
+    });
     els.separator.removeAttribute("hidden");
-    this._fillAndStyleContrastValue(els.max,
-      { value: max, isLargeText, color, backgroundColor: backgroundColorMax });
+    this._fillAndStyleContrastValue(els.max, {
+      value: max,
+      className: scoreMax,
+      color,
+      backgroundColor: backgroundColorMax,
+    });
+
+    return true;
+  }
+}
+
+/**
+ * Text label audit report that is used to display a problem with text alternatives
+ * as part of the inforbar.
+ */
+class TextLabel extends AuditReport {
+  /**
+   * A map from text label issues to annotation component properties.
+   */
+  static get ISSUE_TO_INFOBAR_LABEL_MAP() {
+    return {
+      [AREA_NO_NAME_FROM_ALT]: "accessibility.text.label.issue.area",
+      [DIALOG_NO_NAME]: "accessibility.text.label.issue.dialog",
+      [DOCUMENT_NO_TITLE]: "accessibility.text.label.issue.document.title",
+      [EMBED_NO_NAME]: "accessibility.text.label.issue.embed",
+      [FIGURE_NO_NAME]: "accessibility.text.label.issue.figure",
+      [FORM_FIELDSET_NO_NAME]: "accessibility.text.label.issue.fieldset",
+      [FORM_FIELDSET_NO_NAME_FROM_LEGEND]:
+        "accessibility.text.label.issue.fieldset.legend",
+      [FORM_NO_NAME]: "accessibility.text.label.issue.form",
+      [FORM_NO_VISIBLE_NAME]: "accessibility.text.label.issue.form.visible",
+      [FORM_OPTGROUP_NO_NAME_FROM_LABEL]:
+        "accessibility.text.label.issue.optgroup.label",
+      [FRAME_NO_NAME]: "accessibility.text.label.issue.frame",
+      [HEADING_NO_CONTENT]: "accessibility.text.label.issue.heading.content",
+      [HEADING_NO_NAME]: "accessibility.text.label.issue.heading",
+      [IFRAME_NO_NAME_FROM_TITLE]: "accessibility.text.label.issue.iframe",
+      [IMAGE_NO_NAME]: "accessibility.text.label.issue.image",
+      [INTERACTIVE_NO_NAME]: "accessibility.text.label.issue.interactive",
+      [MATHML_GLYPH_NO_NAME]: "accessibility.text.label.issue.glyph",
+      [TOOLBAR_NO_NAME]: "accessibility.text.label.issue.toolbar",
+    };
+  }
+
+  buildMarkup(root) {
+    createNode(this.win, {
+      nodeType: "span",
+      parent: root,
+      attributes: {
+        class: "text-label",
+        id: "text-label",
+      },
+      prefix: this.prefix,
+    });
+  }
+
+  /**
+   * Update text label audit infobar markup.
+   * @param  {Object}
+   *         Audit report for a given highlighted accessible.
+   * @return {Boolean}
+   *         True if the text label markup was updated correctly and infobar
+   *         audit block should be visible.
+   */
+  update(audit) {
+    const el = this.getElement("text-label");
+    el.setAttribute("hidden", true);
+    Object.values(SCORES).forEach(className => el.classList.remove(className));
+
+    if (!audit) {
+      return false;
+    }
+
+    const textLabelAudit = audit[AUDIT_TYPE.TEXT_LABEL];
+    if (!textLabelAudit) {
+      return false;
+    }
+
+    const { issue, score } = textLabelAudit;
+    this.setTextContent(
+      el,
+      L10N.getStr(TextLabel.ISSUE_TO_INFOBAR_LABEL_MAP[issue])
+    );
+    el.classList.add(score);
+    el.removeAttribute("hidden");
 
     return true;
   }
@@ -639,29 +791,6 @@ function getBounds(win, { x, y, w, h, zoom }) {
   const height = bottom - top;
 
   return { left, right, top, bottom, width, height };
-}
-
-/**
- * Get contrast ratio score styling to be applied on the element that renders the contrast
- * ratio.
- * @param  {Number} ratio
- *         Value of the contrast ratio for a given accessible object.
- * @param  {Boolean} isLargeText
- *         True if the accessible object contains large text.
- * @return {String}
- *         CSS class that represents the appropriate contrast ratio score styling.
- */
-function getContrastRatioScoreStyle(ratio, isLargeText) {
-  const levels = isLargeText ? { AA: 3, AAA: 4.5 } : { AA: 4.5, AAA: 7 };
-
-  let style = "fail";
-  if (ratio >= levels.AAA) {
-    style = "AAA";
-  } else if (ratio >= levels.AA) {
-    style = "AA";
-  }
-
-  return style;
 }
 
 exports.MAX_STRING_LENGTH = MAX_STRING_LENGTH;

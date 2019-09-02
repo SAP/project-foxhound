@@ -46,7 +46,7 @@ bool nsCSSPseudoElements::IsCSS2PseudoElement(nsAtom* aAtom) {
                 aAtom == nsCSSPseudoElements::firstLine();
   NS_ASSERTION(
       result == PseudoElementHasFlags(
-                    GetPseudoType(aAtom, EnabledState::eIgnoreEnabledState),
+                    GetPseudoType(aAtom, EnabledState::IgnoreEnabledState),
                     CSS_PSEUDO_ELEMENT_IS_CSS2),
       "result doesn't match flags");
   return result;
@@ -119,6 +119,8 @@ nsString nsCSSPseudoElements::PseudoTypeAsString(Type aPseudoType) {
       return NS_LITERAL_STRING("::before");
     case PseudoStyleType::after:
       return NS_LITERAL_STRING("::after");
+    case PseudoStyleType::marker:
+      return NS_LITERAL_STRING("::marker");
     default:
       MOZ_ASSERT(aPseudoType == PseudoStyleType::NotPseudo,
                  "Unexpected pseudo type");

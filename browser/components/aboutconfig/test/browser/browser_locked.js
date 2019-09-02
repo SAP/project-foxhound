@@ -1,13 +1,20 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/**
+ * This is a temporary workaround to
+ * be resolved in bug 1539000.
+ */
+ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", this);
+PromiseTestUtils.whitelistRejectionsGlobally(
+  /Too many characters in placeable/
+);
+
 const PREF_STRING_NO_DEFAULT = "test.aboutconfig.a";
 
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      [PREF_STRING_NO_DEFAULT, "some value"],
-    ],
+    set: [[PREF_STRING_NO_DEFAULT, "some value"]],
   });
 });
 
@@ -48,7 +55,9 @@ add_task(async function test_locked() {
     let unlockedPref = this.getRow(PREF_BOOLEAN_USERVALUE_TRUE);
     Assert.ok(!unlockedPref.hasClass("locked"));
     Assert.equal(unlockedPref.value, "true");
-    Assert.ok(unlockedPref.editColumnButton.classList.contains("button-toggle"));
+    Assert.ok(
+      unlockedPref.editColumnButton.classList.contains("button-toggle")
+    );
     Assert.ok(!unlockedPref.editColumnButton.disabled);
   });
 });

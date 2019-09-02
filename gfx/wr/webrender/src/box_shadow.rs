@@ -2,16 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{BorderRadius, BoxShadowClipMode, ClipMode, ColorF, LayoutPrimitiveInfo, PrimitiveKeyKind};
+use api::{BorderRadius, BoxShadowClipMode, ClipMode, ColorF, PrimitiveKeyKind};
 use api::MAX_BLUR_RADIUS;
 use api::units::*;
-use clip::ClipItemKey;
-use display_list_flattener::DisplayListFlattener;
-use gpu_cache::GpuCacheHandle;
-use gpu_types::BoxShadowStretchMode;
-use prim_store::ScrollNodeAndClipChain;
-use render_task::RenderTaskCacheEntryHandle;
-use util::RectHelpers;
+use crate::clip::ClipItemKey;
+use crate::display_list_flattener::DisplayListFlattener;
+use crate::gpu_cache::GpuCacheHandle;
+use crate::gpu_types::BoxShadowStretchMode;
+use crate::prim_store::ScrollNodeAndClipChain;
+use crate::render_task::RenderTaskCacheEntryHandle;
+use crate::util::RectHelpers;
+use crate::internal_types::LayoutPrimitiveInfo;
 
 #[derive(Debug, Clone, MallocSizeOf)]
 #[cfg_attr(feature = "capture", derive(Serialize))]

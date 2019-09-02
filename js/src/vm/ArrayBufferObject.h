@@ -439,6 +439,8 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   void setDataPointer(BufferContents contents);
   void setByteLength(uint32_t length);
 
+  size_t associatedBytes() const;
+
   uint32_t flags() const;
   void setFlags(uint32_t flags);
 
@@ -507,9 +509,11 @@ struct uint8_clamped {
   explicit uint8_clamped(uint8_t x) { *this = x; }
   explicit uint8_clamped(uint16_t x) { *this = x; }
   explicit uint8_clamped(uint32_t x) { *this = x; }
+  explicit uint8_clamped(uint64_t x) { *this = x; }
   explicit uint8_clamped(int8_t x) { *this = x; }
   explicit uint8_clamped(int16_t x) { *this = x; }
   explicit uint8_clamped(int32_t x) { *this = x; }
+  explicit uint8_clamped(int64_t x) { *this = x; }
   explicit uint8_clamped(double x) { *this = x; }
 
   uint8_clamped& operator=(const uint8_clamped& x) = default;
@@ -529,6 +533,11 @@ struct uint8_clamped {
     return *this;
   }
 
+  uint8_clamped& operator=(uint64_t x) {
+    val = (x > 255) ? 255 : uint8_t(x);
+    return *this;
+  }
+
   uint8_clamped& operator=(int8_t x) {
     val = (x >= 0) ? uint8_t(x) : 0;
     return *this;
@@ -540,6 +549,11 @@ struct uint8_clamped {
   }
 
   uint8_clamped& operator=(int32_t x) {
+    val = (x >= 0) ? ((x < 255) ? uint8_t(x) : 255) : 0;
+    return *this;
+  }
+
+  uint8_clamped& operator=(int64_t x) {
     val = (x >= 0) ? ((x < 255) ? uint8_t(x) : 255) : 0;
     return *this;
   }
@@ -603,14 +617,14 @@ class InnerViewTable {
     }
   };
 
-  // This key is a raw pointer and not a ReadBarriered because the post-
-  // barrier would hold nursery-allocated entries live unconditionally. It is
-  // a very common pattern in low-level and performance-oriented JavaScript
-  // to create hundreds or thousands of very short lived temporary views on a
-  // larger buffer; having to tenured all of these would be a catastrophic
-  // performance regression. Thus, it is vital that nursery pointers in this
-  // map not be held live. Special support is required in the minor GC,
-  // implemented in sweepAfterMinorGC.
+  // This key is a raw pointer and not a WeakHeapPtr because the post-barrier
+  // would hold nursery-allocated entries live unconditionally. It is a very
+  // common pattern in low-level and performance-oriented JavaScript to create
+  // hundreds or thousands of very short lived temporary views on a larger
+  // buffer; having to tenured all of these would be a catastrophic performance
+  // regression. Thus, it is vital that nursery pointers in this map not be held
+  // live. Special support is required in the minor GC, implemented in
+  // sweepAfterMinorGC.
   typedef GCHashMap<JSObject*, ViewVector, MovableCellHasher<JSObject*>,
                     SystemAllocPolicy, MapGCPolicy>
       Map;

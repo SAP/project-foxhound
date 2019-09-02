@@ -42,10 +42,8 @@ class nsAttributeTextNode final : public nsTextNode,
     NS_ASSERTION(mAttrName, "Must have attr name");
   }
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
   NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED
@@ -115,9 +113,8 @@ nsresult nsTextNode::AppendTextForNormalize(const char16_t* aBuffer,
                          &details);
 }
 
-nsresult nsTextNode::BindToTree(Document* aDocument, nsIContent* aParent,
-                                nsIContent* aBindingParent) {
-  nsresult rv = CharacterData::BindToTree(aDocument, aParent, aBindingParent);
+nsresult nsTextNode::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = CharacterData::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   SetDirectionFromNewTextNode(this);
@@ -125,10 +122,10 @@ nsresult nsTextNode::BindToTree(Document* aDocument, nsIContent* aParent,
   return NS_OK;
 }
 
-void nsTextNode::UnbindFromTree(bool aDeep, bool aNullParent) {
+void nsTextNode::UnbindFromTree(bool aNullParent) {
   ResetDirectionSetByTextNode(this);
 
-  CharacterData::UnbindFromTree(aDeep, aNullParent);
+  CharacterData::UnbindFromTree(aNullParent);
 }
 
 #ifdef DEBUG
@@ -196,18 +193,17 @@ nsresult NS_NewAttributeContent(nsNodeInfoManager* aNodeInfoManager,
 NS_IMPL_ISUPPORTS_INHERITED(nsAttributeTextNode, nsTextNode,
                             nsIMutationObserver)
 
-nsresult nsAttributeTextNode::BindToTree(Document* aDocument,
-                                         nsIContent* aParent,
-                                         nsIContent* aBindingParent) {
-  MOZ_ASSERT(
-      aParent && aParent->GetParent(),
-      "This node can't be a child of the document or of the document root");
+nsresult nsAttributeTextNode::BindToTree(BindContext& aContext,
+                                         nsINode& aParent) {
+  MOZ_ASSERT(aParent.IsContent() && aParent.GetParent(),
+             "This node can't be a child of the document or of "
+             "the document root");
 
-  nsresult rv = nsTextNode::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = nsTextNode::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   NS_ASSERTION(!mGrandparent, "We were already bound!");
-  mGrandparent = aParent->GetParent()->AsElement();
+  mGrandparent = aParent.GetParent()->AsElement();
   mGrandparent->AddMutationObserver(this);
 
   // Note that there is no need to notify here, since we have no
@@ -217,7 +213,7 @@ nsresult nsAttributeTextNode::BindToTree(Document* aDocument,
   return NS_OK;
 }
 
-void nsAttributeTextNode::UnbindFromTree(bool aDeep, bool aNullParent) {
+void nsAttributeTextNode::UnbindFromTree(bool aNullParent) {
   // UnbindFromTree can be called anytime so we have to be safe.
   if (mGrandparent) {
     // aNullParent might not be true here, but we want to remove the
@@ -226,7 +222,7 @@ void nsAttributeTextNode::UnbindFromTree(bool aDeep, bool aNullParent) {
     mGrandparent->RemoveMutationObserver(this);
     mGrandparent = nullptr;
   }
-  nsTextNode::UnbindFromTree(aDeep, aNullParent);
+  nsTextNode::UnbindFromTree(aNullParent);
 }
 
 void nsAttributeTextNode::AttributeChanged(Element* aElement,

@@ -389,8 +389,7 @@ Context::QuotaInitRunnable::Run() {
       MOZ_DIAGNOSTIC_ASSERT(qm);
       nsresult rv = qm->EnsureOriginIsInitialized(
           PERSISTENCE_TYPE_DEFAULT, mQuotaInfo.mSuffix, mQuotaInfo.mGroup,
-          mQuotaInfo.mOrigin,
-          /* aCreateIfNotExists */ true, getter_AddRefs(mQuotaInfo.mDir));
+          mQuotaInfo.mOrigin, getter_AddRefs(mQuotaInfo.mDir));
       if (NS_FAILED(rv)) {
         resolver->Resolve(rv);
         break;
@@ -437,7 +436,9 @@ Context::QuotaInitRunnable::Run() {
     }
     // -----
     case STATE_WAIT_FOR_DIRECTORY_LOCK:
-    default: { MOZ_CRASH("unexpected state in QuotaInitRunnable"); }
+    default: {
+      MOZ_CRASH("unexpected state in QuotaInitRunnable");
+    }
   }
 
   if (resolver->Resolved()) {

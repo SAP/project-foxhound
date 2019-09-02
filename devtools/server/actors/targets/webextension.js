@@ -22,11 +22,18 @@ const {
 } = require("devtools/server/actors/targets/parent-process");
 const makeDebugger = require("devtools/server/actors/utils/make-debugger");
 const { ActorClassWithSpec } = require("devtools/shared/protocol");
-const { webExtensionTargetSpec } = require("devtools/shared/specs/targets/webextension");
+const {
+  webExtensionTargetSpec,
+} = require("devtools/shared/specs/targets/webextension");
 
-loader.lazyRequireGetter(this, "unwrapDebuggerObjectGlobal", "devtools/server/actors/thread", true);
-loader.lazyRequireGetter(this, "ChromeUtils");
-const FALLBACK_DOC_MESSAGE = "Your addon does not have any document opened yet.";
+loader.lazyRequireGetter(
+  this,
+  "unwrapDebuggerObjectGlobal",
+  "devtools/server/actors/thread",
+  true
+);
+const FALLBACK_DOC_URL =
+  "chrome://devtools/content/shared/webextension-fallback.html";
 
 /**
  * Protocol.js expects only the prototype object, and does not maintain the prototype
@@ -74,7 +81,12 @@ const webExtensionTargetPrototype = extend({}, parentProcessTargetPrototype);
  * @param {string} addonId
  *        the addonId of the target WebExtension.
  */
-webExtensionTargetPrototype.initialize = function(conn, chromeGlobal, prefix, addonId) {
+webExtensionTargetPrototype.initialize = function(
+  conn,
+  chromeGlobal,
+  prefix,
+  addonId
+) {
   this.addonId = addonId;
   this.chromeGlobal = chromeGlobal;
 
@@ -103,7 +115,10 @@ webExtensionTargetPrototype.initialize = function(conn, chromeGlobal, prefix, ad
   this._allowSource = this._allowSource.bind(this);
   this._onParentExit = this._onParentExit.bind(this);
 
-  this._chromeGlobal.addMessageListener("debug:webext_parent_exit", this._onParentExit);
+  this._chromeGlobal.addMessageListener(
+    "debug:webext_parent_exit",
+    this._onParentExit
+  );
 
   // Set the consoleAPIListener filtering options
   // (retrieved and used in the related webconsole child actor).
@@ -111,8 +126,9 @@ webExtensionTargetPrototype.initialize = function(conn, chromeGlobal, prefix, ad
     addonId: this.addonId,
   };
 
-  this.aps = Cc["@mozilla.org/addons/policy-service;1"]
-               .getService(Ci.nsIAddonPolicyService);
+  this.aps = Cc["@mozilla.org/addons/policy-service;1"].getService(
+    Ci.nsIAddonPolicyService
+  );
 
   // This creates a Debugger instance for debugging all the add-on globals.
   this.makeDebugger = makeDebugger.bind(null, {
@@ -136,7 +152,10 @@ webExtensionTargetPrototype.exit = function() {
     const chromeGlobal = this._chromeGlobal;
     this._chromeGlobal = null;
 
-    chromeGlobal.removeMessageListener("debug:webext_parent_exit", this._onParentExit);
+    chromeGlobal.removeMessageListener(
+      "debug:webext_parent_exit",
+      this._onParentExit
+    );
 
     chromeGlobal.sendAsyncMessage("debug:webext_child_exit", {
       actor: this.actorID,
@@ -157,12 +176,12 @@ webExtensionTargetPrototype._searchFallbackWindow = function() {
     return this.fallbackWindow;
   }
 
-  // Set and initialized the fallbackWindow (which initially is a empty
+  // Set and initialize the fallbackWindow (which initially is a empty
   // about:blank browser), this window is related to a XUL browser element
   // specifically created for the devtools server and it is never used
   // or navigated anywhere else.
   this.fallbackWindow = this.chromeGlobal.content;
-  this.fallbackWindow.location = "data:text/html,<h1>" + FALLBACK_DOC_MESSAGE;
+  this.fallbackWindow.document.location.href = FALLBACK_DOC_URL;
 
   return this.fallbackWindow;
 };
@@ -195,8 +214,9 @@ webExtensionTargetPrototype._onDocShellDestroy = function(docShell) {
   this._unwatchDocShell(docShell);
 
   // Let the _onDocShellDestroy notify that the docShell has been destroyed.
-  const webProgress = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIWebProgress);
+  const webProgress = docShell
+    .QueryInterface(Ci.nsIInterfaceRequestor)
+    .getInterface(Ci.nsIWebProgress);
   this._notifyDocShellDestroy(webProgress);
 
   // If the destroyed docShell was the current docShell and the actor is
@@ -217,7 +237,10 @@ webExtensionTargetPrototype._attach = function() {
   // ParentProcessTargetActor.onAttach, or the BrowsingContextTargetActor will not be
   // subscribed to the child doc shell updates.
 
-  if (!this.window || this.window.document.nodePrincipal.addonId !== this.addonId) {
+  if (
+    !this.window ||
+    this.window.document.nodePrincipal.addonId !== this.addonId
+  ) {
     // Discovery an existent extension page (or fallback window) to attach.
     this._setWindow(this._searchForExtensionWindow());
   }
@@ -240,18 +263,21 @@ webExtensionTargetPrototype._detach = function() {
  * Return the json details related to a docShell.
  */
 webExtensionTargetPrototype._docShellToWindow = function(docShell) {
-  const baseWindowDetails =
-    ParentProcessTargetActor.prototype._docShellToWindow.call(this, docShell);
+  const baseWindowDetails = ParentProcessTargetActor.prototype._docShellToWindow.call(
+    this,
+    docShell
+  );
 
-  const webProgress = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                            .getInterface(Ci.nsIWebProgress);
+  const webProgress = docShell
+    .QueryInterface(Ci.nsIInterfaceRequestor)
+    .getInterface(Ci.nsIWebProgress);
   const window = webProgress.DOMWindow;
 
   // Collect the addonID from the document origin attributes and its sameType top level
   // frame.
   const addonID = window.document.nodePrincipal.addonId;
-  const sameTypeRootAddonID = docShell.sameTypeRootTreeItem.domWindow
-                                      .document.nodePrincipal.addonId;
+  const sameTypeRootAddonID =
+    docShell.sameTypeRootTreeItem.domWindow.document.nodePrincipal.addonId;
 
   return Object.assign(baseWindowDetails, {
     addonID,
@@ -263,13 +289,16 @@ webExtensionTargetPrototype._docShellToWindow = function(docShell) {
  * Return an array of the json details related to an array/iterator of docShells.
  */
 webExtensionTargetPrototype._docShellsToWindows = function(docshells) {
-  return ParentProcessTargetActor.prototype._docShellsToWindows.call(this, docshells)
-                    .filter(windowDetails => {
-                      // Filter the docShells based on the addon id of the window or
-                      // its sameType top level frame.
-                      return windowDetails.addonID === this.addonId ||
-                             windowDetails.sameTypeRootAddonID === this.addonId;
-                    });
+  return ParentProcessTargetActor.prototype._docShellsToWindows
+    .call(this, docshells)
+    .filter(windowDetails => {
+      // Filter the docShells based on the addon id of the window or
+      // its sameType top level frame.
+      return (
+        windowDetails.addonID === this.addonId ||
+        windowDetails.sameTypeRootAddonID === this.addonId
+      );
+    });
 };
 
 webExtensionTargetPrototype.isExtensionWindow = function(window) {
@@ -290,8 +319,10 @@ webExtensionTargetPrototype._allowSource = function(source) {
   // Use the source.element to detect the allowed source, if any.
   if (source.element) {
     const domEl = unwrapDebuggerObjectGlobal(source.element);
-    return (this.isExtensionWindow(domEl.ownerGlobal) ||
-            this.isExtensionWindowDescendent(domEl.ownerGlobal));
+    return (
+      this.isExtensionWindow(domEl.ownerGlobal) ||
+      this.isExtensionWindowDescendent(domEl.ownerGlobal)
+    );
   }
 
   // Fallback to check the uri if there is no source.element associated to the source.
@@ -333,7 +364,9 @@ webExtensionTargetPrototype._allowSource = function(source) {
  * Return true if the given global is associated with this addon and should be
  * added as a debuggee, false otherwise.
  */
-webExtensionTargetPrototype._shouldAddNewGlobalAsDebuggee = function(newGlobal) {
+webExtensionTargetPrototype._shouldAddNewGlobalAsDebuggee = function(
+  newGlobal
+) {
   const global = unwrapDebuggerObjectGlobal(newGlobal);
 
   if (global instanceof Ci.nsIDOMWindow) {
@@ -347,18 +380,15 @@ webExtensionTargetPrototype._shouldAddNewGlobalAsDebuggee = function(newGlobal) 
       return false;
     }
 
-    // Filter out any global which contains a XUL document.
-    if (ChromeUtils.getClassName(global.document) == "XULDocument") {
-      return false;
-    }
-
     // Change top level document as a simulated frame switching.
     if (global.document.ownerGlobal && this.isExtensionWindow(global)) {
       this._onNewExtensionWindow(global.document.ownerGlobal);
     }
 
-    return global.document.ownerGlobal &&
-           this.isExtensionWindowDescendent(global.document.ownerGlobal);
+    return (
+      global.document.ownerGlobal &&
+      this.isExtensionWindowDescendent(global.document.ownerGlobal)
+    );
   }
 
   try {
@@ -384,5 +414,7 @@ webExtensionTargetPrototype._onParentExit = function(msg) {
   this.exit();
 };
 
-exports.WebExtensionTargetActor =
-  ActorClassWithSpec(webExtensionTargetSpec, webExtensionTargetPrototype);
+exports.WebExtensionTargetActor = ActorClassWithSpec(
+  webExtensionTargetSpec,
+  webExtensionTargetPrototype
+);

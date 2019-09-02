@@ -17,13 +17,13 @@ using namespace std;
 DrawEventRecorderPrivate::DrawEventRecorderPrivate() : mExternalFonts(false) {}
 
 void DrawEventRecorderPrivate::StoreExternalSurfaceRecording(
-    SourceSurface *aSurface, uint64_t aKey) {
+    SourceSurface* aSurface, uint64_t aKey) {
   RecordEvent(RecordedExternalSurfaceCreation(aSurface, aKey));
   mExternalSurfaces.push_back(aSurface);
 }
 
 void DrawEventRecorderPrivate::StoreSourceSurfaceRecording(
-    SourceSurface *aSurface, const char *aReason) {
+    SourceSurface* aSurface, const char* aReason) {
   RefPtr<DataSourceSurface> dataSurf = aSurface->GetDataSurface();
   if (dataSurf) {
     DataSourceSurface::ScopedMap map(dataSurf, DataSourceSurface::READ);
@@ -44,17 +44,13 @@ void DrawEventRecorderPrivate::StoreSourceSurfaceRecording(
                                             aSurface->GetFormat()));
 }
 
-void DrawEventRecorderFile::RecordEvent(const RecordedEvent &aEvent) {
-  WriteElement(mOutputStream, aEvent.mType);
-
+void DrawEventRecorderFile::RecordEvent(const RecordedEvent& aEvent) {
   aEvent.RecordToStream(mOutputStream);
 
   Flush();
 }
 
-void DrawEventRecorderMemory::RecordEvent(const RecordedEvent &aEvent) {
-  WriteElement(mOutputStream, aEvent.mType);
-
+void DrawEventRecorderMemory::RecordEvent(const RecordedEvent& aEvent) {
   aEvent.RecordToStream(mOutputStream);
 }
 
@@ -62,12 +58,12 @@ void DrawEventRecorderMemory::AddDependentSurface(uint64_t aDependencyId) {
   mDependentSurfaces.PutEntry(aDependencyId);
 }
 
-nsTHashtable<nsUint64HashKey>
-    &&DrawEventRecorderMemory::TakeDependentSurfaces() {
+nsTHashtable<nsUint64HashKey>&&
+DrawEventRecorderMemory::TakeDependentSurfaces() {
   return std::move(mDependentSurfaces);
 }
 
-DrawEventRecorderFile::DrawEventRecorderFile(const char_type *aFilename)
+DrawEventRecorderFile::DrawEventRecorderFile(const char_type* aFilename)
     : mOutputStream(aFilename, ofstream::binary) {
   WriteHeader(mOutputStream);
 }
@@ -78,7 +74,7 @@ void DrawEventRecorderFile::Flush() { mOutputStream.flush(); }
 
 bool DrawEventRecorderFile::IsOpen() { return mOutputStream.is_open(); }
 
-void DrawEventRecorderFile::OpenNew(const char_type *aFilename) {
+void DrawEventRecorderFile::OpenNew(const char_type* aFilename) {
   MOZ_ASSERT(!mOutputStream.is_open());
 
   mOutputStream.open(aFilename, ofstream::binary);
@@ -96,7 +92,7 @@ DrawEventRecorderMemory::DrawEventRecorderMemory() {
 }
 
 DrawEventRecorderMemory::DrawEventRecorderMemory(
-    const SerializeResourcesFn &aFn)
+    const SerializeResourcesFn& aFn)
     : mSerializeCallback(aFn) {
   mExternalFonts = !!mSerializeCallback;
   WriteHeader(mOutputStream);

@@ -232,16 +232,15 @@ Beetmover, takes source specific artifact checksums and pushes it to a location 
 of Taskcluster's task artifacts (archive.mozilla.org as one place) and in the
 process determines the final location and "pretty" names it (version product name)
 
-google-play-strings
--------------------
-Download strings to display on Google Play from https://l10n.mozilla-community.org/stores_l10n/.
-Artifact is then used by push-apk.
-
 push-apk
 --------
 PushApk publishes Android packages onto Google Play Store. Jobs of this kind take
 all the signed multi-locales (aka "multi") APKs for a given release and upload them
 all at once.
+
+push-apk-checks
+---------------
+Runs the checks done in push-apk to ensure APKs are sane before submitting them
 
 release-balrog-submit-toplevel
 ------------------------------
@@ -308,6 +307,10 @@ release-bouncer-sub
 -------------------
 Submits bouncer updates for releases.
 
+release-bouncer-sub-nazgul
+--------------------------
+Submits bouncer updates for releases, using new implementation of bouncer-admin (Nazgul).
+
 release-mark-as-shipped
 -----------------------
 Marks releases as shipped in Ship-It v1
@@ -363,10 +366,13 @@ Publishes signed langpacks to archive.mozilla.org
 release-update-verify
 ---------------------
 Verifies the contents and package of release update MARs.
-
 release-secondary-update-verify
 -------------------------------
 Verifies the contents and package of release update MARs.
+
+release-update-verify-next
+--------------------------
+Verifies the contents and package of release and updare MARs from the previous ESR release.
 
 release-update-verify-config
 ----------------------------
@@ -375,6 +381,10 @@ Creates configs for release-update-verify tasks
 release-secondary-update-verify-config
 --------------------------------------
 Creates configs for release-secondary-update-verify tasks
+
+release-update-verify-config-next
+---------------------------------
+Creates configs for release-update-verify-next tasks
 
 release-updates-builder
 -----------------------
@@ -415,6 +425,11 @@ External signing of partner repacks.
 release-partner-repack-beetmover
 --------------------------------
 Moves the partner repacks to S3 buckets.
+
+release-partner-repack-bouncer-sub
+----------------------------------
+Sets up bouncer products for partners.
+
 
 release-early-tagging
 ---------------------
@@ -541,7 +556,7 @@ addon
 Tasks used to build/package add-ons.
 
 openh264-plugin
------
+---------------
 Tasks used to build the openh264 plugin.
 
 openh264-signing
@@ -569,3 +584,7 @@ geckodriver-repack
 ------------------
 Tasks to repackage the geckodriver binary from a build tasks's common
 test archive into it's own archive.
+
+geckodriver-signing
+-------------------
+Signing for geckodriver binary.

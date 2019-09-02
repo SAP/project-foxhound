@@ -18,7 +18,7 @@ http://eslint.org/docs/user-guide/configuring#specifying-environments
 browser-window
 --------------
 
-Defines the environment for scripts that are in the main browser.xul scope.
+Defines the environment for scripts that are in the main browser.xhtml scope.
 
 chrome-worker
 -------------
@@ -247,7 +247,7 @@ rather than ``Components.utils.import`` and
 ``XPCOMUtils.defineLazyModuleGetter``.
 
 use-default-preference-values
----------------
+-----------------------------
 
 Require providing a second parameter to get*Pref methods instead of
 using a try/catch block.

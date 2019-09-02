@@ -4,20 +4,17 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const {
+  Component,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
+const { td } = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { getFormattedIPAndPort } = require("../utils/format-utils");
-const { L10N } = require("../utils/l10n");
 const { propertiesEqual } = require("../utils/request-utils");
+const SecurityState = createFactory(require("./SecurityState"));
 
-const { div } = dom;
-
-const UPDATED_DOMAIN_PROPS = [
-  "remoteAddress",
-  "securityState",
-  "urlDetails",
-];
+const UPDATED_DOMAIN_PROPS = ["remoteAddress", "securityState", "urlDetails"];
 
 class RequestListColumnDomain extends Component {
   static get propTypes() {
@@ -28,39 +25,32 @@ class RequestListColumnDomain extends Component {
   }
 
   shouldComponentUpdate(nextProps) {
-    return !propertiesEqual(UPDATED_DOMAIN_PROPS, this.props.item, nextProps.item);
+    return !propertiesEqual(
+      UPDATED_DOMAIN_PROPS,
+      this.props.item,
+      nextProps.item
+    );
   }
 
   render() {
     const { item, onSecurityIconMouseDown } = this.props;
-    const { remoteAddress, remotePort, securityState,
-      urlDetails: { host, isLocal } } = item;
-    const iconClassList = ["requests-security-state-icon"];
-    let iconTitle;
-    const title = host + (remoteAddress ?
-      ` (${getFormattedIPAndPort(remoteAddress, remotePort)})` : "");
 
-    if (isLocal) {
-      iconClassList.push("security-state-local");
-      iconTitle = L10N.getStr("netmonitor.security.state.secure");
-    } else if (securityState) {
-      iconClassList.push(`security-state-${securityState}`);
-      iconTitle = L10N.getStr(`netmonitor.security.state.${securityState}`);
-    }
+    const {
+      remoteAddress,
+      remotePort,
+      urlDetails: { host, isLocal },
+    } = item;
 
-    return (
-      dom.td({ className: "requests-list-column requests-list-domain", title },
-        div({
-          className: iconClassList.join(" "),
-          onMouseDown: onSecurityIconMouseDown,
-          title: iconTitle,
-        }),
-        item.isThirdPartyTrackingResource && div({
-          className: "tracking-resource",
-          title: L10N.getStr("netmonitor.trackingResource.tooltip"),
-        }),
-        host,
-      )
+    const title =
+      host +
+      (remoteAddress
+        ? ` (${getFormattedIPAndPort(remoteAddress, remotePort)})`
+        : "");
+
+    return td(
+      { className: "requests-list-column requests-list-domain", title },
+      SecurityState({ item, onSecurityIconMouseDown, isLocal }),
+      host
     );
   }
 }

@@ -6,6 +6,7 @@
 
 /* rendering object for HTML <br> elements */
 
+#include "mozilla/PresShell.h"
 #include "gfxContext.h"
 #include "nsCOMPtr.h"
 #include "nsContainerFrame.h"
@@ -29,7 +30,7 @@ class BRFrame final : public nsFrame {
  public:
   NS_DECL_FRAMEARENA_HELPERS(BRFrame)
 
-  friend nsIFrame* ::NS_NewBRFrame(nsIPresShell* aPresShell,
+  friend nsIFrame* ::NS_NewBRFrame(mozilla::PresShell* aPresShell,
                                    ComputedStyle* aStyle);
 
   ContentOffsets CalcContentOffsetsFromFramePoint(
@@ -69,7 +70,7 @@ class BRFrame final : public nsFrame {
  protected:
   explicit BRFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
       : nsFrame(aStyle, aPresContext, kClassID),
-        mAscent(NS_INTRINSIC_WIDTH_UNKNOWN) {}
+        mAscent(NS_INTRINSIC_ISIZE_UNKNOWN) {}
 
   virtual ~BRFrame();
 
@@ -78,7 +79,7 @@ class BRFrame final : public nsFrame {
 
 }  // namespace mozilla
 
-nsIFrame* NS_NewBRFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewBRFrame(mozilla::PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) BRFrame(aStyle, aPresShell->GetPresContext());
 }
 

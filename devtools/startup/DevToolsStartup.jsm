@@ -13,6 +13,7 @@
  * - Inject the wrench icon in toolbar customization, which is used
  *   by the "Web Developer" list displayed in the hamburger menu,
  * - Register the JSON Viewer protocol handler.
+ * - Inject the profiler recording button in toolbar customization.
  *
  * Only once any of these entry point is fired, this module ensures starting
  * core modules like 'devtools-browser.js' that hooks the browser windows
@@ -29,24 +30,49 @@ const kDebuggerPrefs = [
 const DEVTOOLS_ENABLED_PREF = "devtools.enabled";
 
 const DEVTOOLS_POLICY_DISABLED_PREF = "devtools.policy.disabled";
+const PROFILER_POPUP_ENABLED_PREF = "devtools.performance.popup.enabled";
 
-const { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "Services",
-                               "resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(this, "AppConstants",
-                               "resource://gre/modules/AppConstants.jsm");
-ChromeUtils.defineModuleGetter(this, "CustomizableUI",
-                               "resource:///modules/CustomizableUI.jsm");
-ChromeUtils.defineModuleGetter(this, "CustomizableWidgets",
-                               "resource:///modules/CustomizableWidgets.jsm");
-ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
-                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "AppConstants",
+  "resource://gre/modules/AppConstants.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "CustomizableUI",
+  "resource:///modules/CustomizableUI.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "CustomizableWidgets",
+  "resource:///modules/CustomizableWidgets.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ProfilerMenuButton",
+  "resource://devtools/client/performance-new/popup/menu-button.jsm"
+);
 
 // We don't want to spend time initializing the full loader here so we create
 // our own lazy require.
 XPCOMUtils.defineLazyGetter(this, "Telemetry", function() {
-  const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+  const { require } = ChromeUtils.import(
+    "resource://devtools/shared/Loader.jsm"
+  );
   // eslint-disable-next-line no-shadow
   const Telemetry = require("devtools/client/shared/telemetry");
 
@@ -79,13 +105,17 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     // or the default one.
     {
       id: "toggleToolbox",
-      shortcut: KeyShortcutsBundle.GetStringFromName("toggleToolbox.commandkey"),
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "toggleToolbox.commandkey"
+      ),
       modifiers,
     },
     // All locales are using F12
     {
       id: "toggleToolboxF12",
-      shortcut: KeyShortcutsBundle.GetStringFromName("toggleToolboxF12.commandkey"),
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "toggleToolboxF12.commandkey"
+      ),
       modifiers: "", // F12 is the only one without modifiers
     },
     // Open WebIDE window
@@ -97,19 +127,25 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     // Open the Browser Toolbox
     {
       id: "browserToolbox",
-      shortcut: KeyShortcutsBundle.GetStringFromName("browserToolbox.commandkey"),
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "browserToolbox.commandkey"
+      ),
       modifiers: "accel,alt,shift",
     },
     // Open the Browser Console
     {
       id: "browserConsole",
-      shortcut: KeyShortcutsBundle.GetStringFromName("browserConsole.commandkey"),
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "browserConsole.commandkey"
+      ),
       modifiers: "accel,shift",
     },
     // Toggle the Responsive Design Mode
     {
       id: "responsiveDesignMode",
-      shortcut: KeyShortcutsBundle.GetStringFromName("responsiveDesignMode.commandkey"),
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "responsiveDesignMode.commandkey"
+      ),
       modifiers,
     },
     // Open ScratchPad window
@@ -167,7 +203,9 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     // Key for opening the Accessibility Panel
     {
       toolId: "accessibility",
-      shortcut: KeyShortcutsBundle.GetStringFromName("accessibilityF12.commandkey"),
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "accessibilityF12.commandkey"
+      ),
       modifiers: "shift",
     },
   ];
@@ -182,12 +220,52 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     });
   }
 
+  if (isProfilerButtonEnabled()) {
+    shortcuts.push(...getProfilerKeyShortcuts());
+  }
+
   return shortcuts;
+});
+
+function getProfilerKeyShortcuts() {
+  return [
+    // Start/stop the profiler
+    {
+      id: "profilerStartStop",
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "profilerStartStop.commandkey"
+      ),
+      modifiers: "control,shift",
+    },
+    // Capture a profile
+    {
+      id: "profilerCapture",
+      shortcut: KeyShortcutsBundle.GetStringFromName(
+        "profilerCapture.commandkey"
+      ),
+      modifiers: "control,shift",
+    },
+  ];
+}
+
+/**
+ * Instead of loading the ProfilerMenuButton.jsm file, provide an independent check
+ * to see if it is turned on.
+ */
+function isProfilerButtonEnabled() {
+  return Services.prefs.getBoolPref(PROFILER_POPUP_ENABLED_PREF, false);
+}
+
+XPCOMUtils.defineLazyGetter(this, "ProfilerPopupBackground", function() {
+  return ChromeUtils.import(
+    "resource://devtools/client/performance-new/popup/background.jsm"
+  );
 });
 
 function DevToolsStartup() {
   this.onEnabledPrefChanged = this.onEnabledPrefChanged.bind(this);
   this.onWindowReady = this.onWindowReady.bind(this);
+  this.toggleProfilerKeyShortcuts = this.toggleProfilerKeyShortcuts.bind(this);
 }
 
 DevToolsStartup.prototype = {
@@ -217,6 +295,12 @@ DevToolsStartup.prototype = {
    */
   developerToggleCreated: false,
 
+  /**
+   * Flag that indicates if the profiler recording popup was already added to
+   * customizableUI.
+   */
+  profilerRecordingButtonCreated: false,
+
   isDisabledByPolicy: function() {
     return Services.prefs.getBoolPref(DEVTOOLS_POLICY_DISABLED_PREF, false);
   },
@@ -225,7 +309,8 @@ DevToolsStartup.prototype = {
     const flags = this.readCommandLineFlags(cmdLine);
 
     // handle() can be called after browser startup (e.g. opening links from other apps).
-    const isInitialLaunch = cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
+    const isInitialLaunch =
+      cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
     if (isInitialLaunch) {
       // Execute only on first launch of this browser instance.
       const hasDevToolsFlag = flags.console || flags.devtools || flags.debugger;
@@ -234,16 +319,26 @@ DevToolsStartup.prototype = {
       // Store devtoolsFlag to check it later in onWindowReady.
       this.devtoolsFlag = flags.devtools;
       // Only top level Firefox Windows fire a browser-delayed-startup-finished event
-      Services.obs.addObserver(this.onWindowReady, "browser-delayed-startup-finished");
+      Services.obs.addObserver(
+        this.onWindowReady,
+        "browser-delayed-startup-finished"
+      );
 
-      if (AppConstants.MOZ_DEV_EDITION && !this.isDisabledByPolicy()) {
-        // On DevEdition, the developer toggle is displayed by default in the navbar area
-        // and should be created before the first paint.
-        this.hookDeveloperToggle();
+      if (!this.isDisabledByPolicy()) {
+        if (AppConstants.MOZ_DEV_EDITION) {
+          // On DevEdition, the developer toggle is displayed by default in the navbar
+          // area and should be created before the first paint.
+          this.hookDeveloperToggle();
+        }
+
+        this.hookProfilerRecordingButton();
       }
 
       // Update menu items when devtools.enabled changes.
-      Services.prefs.addObserver(DEVTOOLS_ENABLED_PREF, this.onEnabledPrefChanged);
+      Services.prefs.addObserver(
+        DEVTOOLS_ENABLED_PREF,
+        this.onEnabledPrefChanged
+      );
     }
 
     if (flags.console) {
@@ -263,7 +358,12 @@ DevToolsStartup.prototype = {
   readCommandLineFlags(cmdLine) {
     // All command line flags are disabled if DevTools are disabled by policy.
     if (this.isDisabledByPolicy()) {
-      return { console: false, debugger: false, devtools: false, debuggerServer: false };
+      return {
+        console: false,
+        debugger: false,
+        devtools: false,
+        debuggerServer: false,
+      };
     }
 
     const console = cmdLine.handleFlag("jsconsole", false);
@@ -272,8 +372,10 @@ DevToolsStartup.prototype = {
 
     let debuggerServer;
     try {
-      debuggerServer =
-        cmdLine.handleFlagWithParam("start-debugger-server", false);
+      debuggerServer = cmdLine.handleFlagWithParam(
+        "start-debugger-server",
+        false
+      );
     } catch (e) {
       // We get an error if the option is given but not followed by a value.
       // By catching and trying again, the value is effectively optional.
@@ -307,10 +409,13 @@ DevToolsStartup.prototype = {
 
   removeDevToolsMenus(window) {
     // This will hide the "Tools > Web Developer" menu.
-    window.document.getElementById("webDeveloperMenu").setAttribute("hidden", "true");
+    window.document
+      .getElementById("webDeveloperMenu")
+      .setAttribute("hidden", "true");
     // This will hide the "Web Developer" item in the hamburger menu.
-    window.document.getElementById("appMenu-developer-button").setAttribute("hidden",
-      "true");
+    window.document
+      .getElementById("appMenu-developer-button")
+      .setAttribute("hidden", "true");
   },
 
   onFirstWindowReady(window) {
@@ -360,6 +465,7 @@ DevToolsStartup.prototype = {
     // initialized before the first browser-delayed-startup-finished event is received.
     // We use a dedicated flag because we still need to hook the developer toggle.
     this.hookDeveloperToggle();
+    this.hookProfilerRecordingButton();
 
     // The developer menu hook only needs to be added if devtools have not been
     // initialized yet.
@@ -403,7 +509,7 @@ DevToolsStartup.prototype = {
       viewId: "PanelUI-developer",
       shortcutId: "key_toggleToolbox",
       tooltiptext: "developer-button.tooltiptext2",
-      onViewShowing: (event) => {
+      onViewShowing: event => {
         if (Services.prefs.getBoolPref(DEVTOOLS_ENABLED_PREF)) {
           // If DevTools are enabled, initialize DevTools to create all menuitems in the
           // system menu before trying to copy them.
@@ -419,7 +525,10 @@ DevToolsStartup.prototype = {
 
         const itemsToDisplay = [...menu.children];
         // Hardcode the addition of the "work offline" menuitem at the bottom:
-        itemsToDisplay.push({localName: "menuseparator", getAttribute: () => {}});
+        itemsToDisplay.push({
+          localName: "menuseparator",
+          getAttribute: () => {},
+        });
         itemsToDisplay.push(doc.getElementById("goOfflineMenuitem"));
 
         const developerItems = doc.getElementById("PanelUI-developerItems");
@@ -431,7 +540,7 @@ DevToolsStartup.prototype = {
         // it right away.
         this.onBeforeCreated(anchor.ownerDocument);
       },
-      onBeforeCreated: (doc) => {
+      onBeforeCreated: doc => {
         // The developer toggle needs the "key_toggleToolbox" <key> element.
         // In DEV EDITION, the toggle is added before 1st paint and hookKeyShortcuts() is
         // not called yet when CustomizableUI creates the widget.
@@ -453,6 +562,22 @@ DevToolsStartup.prototype = {
     CustomizableWidgets.push(item);
 
     this.developerToggleCreated = true;
+  },
+
+  /**
+   * Dynamically register a profiler recording button in the
+   * customization menu. You can use this button by right clicking
+   * on Firefox toolbar and dragging it from the customization panel
+   * to the toolbar. (i.e. this isn't displayed by default to users.)
+   */
+  hookProfilerRecordingButton() {
+    if (this.profilerRecordingButtonCreated) {
+      return;
+    }
+    this.profilerRecordingButtonCreated = true;
+    if (isProfilerButtonEnabled()) {
+      ProfilerMenuButton.initialize();
+    }
   },
 
   /*
@@ -477,14 +602,19 @@ DevToolsStartup.prototype = {
    * System Menu.
    */
   createDevToolsEnableMenuItem(window) {
-    const {document} = window;
+    const { document } = window;
 
     // Create the menu item.
     const item = document.createXULElement("menuitem");
     item.id = "enableDeveloperTools";
-    item.setAttribute("label", StartupBundle.GetStringFromName("enableDevTools.label"));
-    item.setAttribute("accesskey",
-      StartupBundle.GetStringFromName("enableDevTools.accesskey"));
+    item.setAttribute(
+      "label",
+      StartupBundle.GetStringFromName("enableDevTools.label")
+    );
+    item.setAttribute(
+      "accesskey",
+      StartupBundle.GetStringFromName("enableDevTools.accesskey")
+    );
 
     // The menu item should open the install page for DevTools.
     item.addEventListener("command", () => {
@@ -536,7 +666,9 @@ DevToolsStartup.prototype = {
    */
   setupEnabledPref(hasDevToolsFlag) {
     // Read the current experiment state.
-    const experimentState = Services.prefs.getCharPref("devtools.onboarding.experiment");
+    const experimentState = Services.prefs.getCharPref(
+      "devtools.onboarding.experiment"
+    );
     const isRegularExperiment = experimentState == "on";
     const isForcedExperiment = experimentState == "force";
     const isInExperiment = isRegularExperiment || isForcedExperiment;
@@ -550,7 +682,10 @@ DevToolsStartup.prototype = {
     // Force devtools.enabled to false once for each experiment user.
     if (!Services.prefs.getBoolPref("devtools.onboarding.experiment.flipped")) {
       Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, false);
-      Services.prefs.setBoolPref("devtools.onboarding.experiment.flipped", true);
+      Services.prefs.setBoolPref(
+        "devtools.onboarding.experiment.flipped",
+        true
+      );
     }
 
     if (Services.prefs.getBoolPref(DEVTOOLS_ENABLED_PREF)) {
@@ -579,20 +714,92 @@ DevToolsStartup.prototype = {
     const keyset = doc.createXULElement("keyset");
     keyset.setAttribute("id", "devtoolsKeyset");
 
-    for (const key of KeyShortcuts) {
-      const xulKey = this.createKey(doc, key, () => this.onKey(window, key));
-      keyset.appendChild(xulKey);
-    }
+    this.attachKeys(doc, KeyShortcuts, keyset);
 
     // Appending a <key> element is not always enough. The <keyset> needs
     // to be detached and reattached to make sure the <key> is taken into
     // account (see bug 832984).
     const mainKeyset = doc.getElementById("mainKeyset");
     mainKeyset.parentNode.insertBefore(keyset, mainKeyset);
+
+    // Watch for the profiler to enable or disable the profiler popup, then toggle
+    // the keyboard shortcuts on and off.
+    Services.prefs.addObserver(
+      PROFILER_POPUP_ENABLED_PREF,
+      this.toggleProfilerKeyShortcuts
+    );
+  },
+
+  /**
+   * This method attaches on the key elements to the devtools keyset.
+   */
+  attachKeys(doc, keyShortcuts, keyset = doc.getElementById("devtoolsKeyset")) {
+    const window = doc.defaultView;
+    for (const key of keyShortcuts) {
+      const xulKey = this.createKey(doc, key, () => this.onKey(window, key));
+      keyset.appendChild(xulKey);
+    }
+  },
+
+  /**
+   * This method removes keys from the devtools keyset.
+   */
+  removeKeys(doc, keyShortcuts) {
+    for (const key of keyShortcuts) {
+      const keyElement = doc.getElementById(this.getKeyElementId(key));
+      if (keyElement) {
+        keyElement.remove();
+      }
+    }
+  },
+
+  /**
+   * We only want to have the keyboard shortcuts active when the menu button is on.
+   * This function either adds or removes the elements.
+   */
+  toggleProfilerKeyShortcuts() {
+    const isEnabled = isProfilerButtonEnabled();
+    const profilerKeyShortcuts = getProfilerKeyShortcuts();
+    for (const { document } of Services.wm.getEnumerator(null)) {
+      const devtoolsKeyset = document.getElementById("devtoolsKeyset");
+      const mainKeyset = document.getElementById("mainKeyset");
+
+      if (!devtoolsKeyset || !mainKeyset) {
+        // There may not be devtools keyset on this window.
+        continue;
+      }
+
+      if (isEnabled) {
+        this.attachKeys(document, profilerKeyShortcuts);
+      } else {
+        this.removeKeys(document, profilerKeyShortcuts);
+      }
+      // Appending a <key> element is not always enough. The <keyset> needs
+      // to be detached and reattached to make sure the <key> is taken into
+      // account (see bug 832984).
+      mainKeyset.parentNode.insertBefore(devtoolsKeyset, mainKeyset);
+    }
+
+    if (!isEnabled) {
+      // Ensure the profiler isn't left profiling in the background.
+      ProfilerPopupBackground.stopProfiler();
+    }
   },
 
   async onKey(window, key) {
     try {
+      // The profiler doesn't care if DevTools is loaded, so provide a quick check
+      // first to bail out of checking if DevTools is available.
+      switch (key.id) {
+        case "profilerStartStop": {
+          ProfilerPopupBackground.toggleProfiler();
+          return;
+        }
+        case "profilerCapture": {
+          ProfilerPopupBackground.captureProfile();
+          return;
+        }
+      }
       if (!Services.prefs.getBoolPref(DEVTOOLS_ENABLED_PREF)) {
         const id = key.toolId || key.id;
         this.openInstallPage("KeyShortcut", id);
@@ -602,7 +809,9 @@ DevToolsStartup.prototype = {
         // i.e. especially take `initDevTools` into account.
         const startTime = Cu.now();
         const require = this.initDevTools("KeyShortcut", key);
-        const { gDevToolsBrowser } = require("devtools/client/framework/devtools-browser");
+        const {
+          gDevToolsBrowser,
+        } = require("devtools/client/framework/devtools-browser");
         await gDevToolsBrowser.onKeyShortcut(window, key, startTime);
       }
     } catch (e) {
@@ -610,13 +819,23 @@ DevToolsStartup.prototype = {
     }
   },
 
+  getKeyElementId({ id, toolId }) {
+    return "key_" + (id || toolId);
+  },
+
   // Create a <xul:key> DOM Element
-  createKey(doc, { id, toolId, shortcut, modifiers: mod }, oncommand) {
+  createKey(doc, key, oncommand) {
+    const { shortcut, modifiers: mod } = key;
     const k = doc.createXULElement("key");
-    k.id = "key_" + (id || toolId);
+    k.id = this.getKeyElementId(key);
 
     if (shortcut.startsWith("VK_")) {
       k.setAttribute("keycode", shortcut);
+      if (shortcut.match(/^VK_\d$/)) {
+        // Add the event keydown attribute to ensure that shortcuts work for combinations
+        // such as ctrl shift 1.
+        k.setAttribute("event", "keydown");
+      }
     } else {
       k.setAttribute("key", shortcut);
     }
@@ -646,7 +865,9 @@ DevToolsStartup.prototype = {
     }
 
     this.initialized = true;
-    const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+    const { require } = ChromeUtils.import(
+      "resource://devtools/shared/Loader.jsm"
+    );
     // Ensure loading main devtools module that hooks up into browser UI
     // and initialize all devtools machinery.
     require("devtools/client/framework/devtools-browser");
@@ -677,8 +898,10 @@ DevToolsStartup.prototype = {
       const browser = tab.linkedBrowser;
       // browser.documentURI might be undefined if the browser tab is still loading.
       const location = browser.documentURI ? browser.documentURI.spec : "";
-      if (location.startsWith("about:devtools") &&
-          !location.startsWith("about:devtools-toolbox")) {
+      if (
+        location.startsWith("about:devtools") &&
+        !location.startsWith("about:devtools-toolbox")
+      ) {
         // Focus the existing about:devtools tab and bail out.
         gBrowser.selectedTab = tab;
         return;
@@ -706,7 +929,9 @@ DevToolsStartup.prototype = {
     }
 
     // Set relatedToCurrent: true to open the tab next to the current one.
-    gBrowser.selectedTab = gBrowser.addTrustedTab(url, {relatedToCurrent: true});
+    gBrowser.selectedTab = gBrowser.addTrustedTab(url, {
+      relatedToCurrent: true,
+    });
   },
 
   handleConsoleFlag: function(cmdLine) {
@@ -728,8 +953,8 @@ DevToolsStartup.prototype = {
   // Open the toolbox on the selected tab once the browser starts up.
   handleDevToolsFlag: async function(window) {
     const require = this.initDevTools("CommandLine");
-    const {gDevTools} = require("devtools/client/framework/devtools");
-    const {TargetFactory} = require("devtools/client/framework/target");
+    const { gDevTools } = require("devtools/client/framework/devtools");
+    const { TargetFactory } = require("devtools/client/framework/target");
     const target = await TargetFactory.forTab(window.gBrowser.selectedTab);
     gDevTools.showToolbox(target);
   },
@@ -745,8 +970,10 @@ DevToolsStartup.prototype = {
       return false;
     }
     if (!remoteDebuggingEnabled) {
-      const errorMsg = "Could not run chrome debugger! You need the following " +
-                     "prefs to be set to true: " + kDebuggerPrefs.join(", ");
+      const errorMsg =
+        "Could not run chrome debugger! You need the following " +
+        "prefs to be set to true: " +
+        kDebuggerPrefs.join(", ");
       console.error(new Error(errorMsg));
       // Dump as well, as we're doing this from a commandline, make sure people
       // don't miss it:
@@ -770,7 +997,9 @@ DevToolsStartup.prototype = {
       Services.obs.addObserver(observe, "devtools-thread-resumed");
     }
 
-    const { BrowserToolboxProcess } = ChromeUtils.import("resource://devtools/client/framework/ToolboxProcess.jsm");
+    const { BrowserToolboxProcess } = ChromeUtils.import(
+      "resource://devtools/client/framework/ToolboxProcess.jsm"
+    );
     BrowserToolboxProcess.init();
 
     if (pauseOnStartup) {
@@ -811,10 +1040,14 @@ DevToolsStartup.prototype = {
     }
 
     let webSocket = false;
-    const defaultPort = Services.prefs.getIntPref("devtools.debugger.remote-port");
+    const defaultPort = Services.prefs.getIntPref(
+      "devtools.debugger.remote-port"
+    );
     if (portOrPath === true) {
       // Default to pref values if no values given on command line
-      webSocket = Services.prefs.getBoolPref("devtools.debugger.remote-websocket");
+      webSocket = Services.prefs.getBoolPref(
+        "devtools.debugger.remote-websocket"
+      );
       portOrPath = defaultPort;
     } else if (portOrPath.startsWith("ws:")) {
       webSocket = true;
@@ -822,8 +1055,9 @@ DevToolsStartup.prototype = {
       portOrPath = Number(port) ? port : defaultPort;
     }
 
-    const { DevToolsLoader } =
-      ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+    const { DevToolsLoader } = ChromeUtils.import(
+      "resource://devtools/shared/Loader.jsm"
+    );
 
     try {
       // Create a separate loader instance, so that we can be sure to receive
@@ -834,9 +1068,12 @@ DevToolsStartup.prototype = {
       // settings).
       const serverLoader = new DevToolsLoader();
       serverLoader.invisibleToDebugger = true;
-      const { DebuggerServer: debuggerServer } =
-        serverLoader.require("devtools/server/main");
-      const { SocketListener } = serverLoader.require("devtools/shared/security/socket");
+      const { DebuggerServer: debuggerServer } = serverLoader.require(
+        "devtools/server/main"
+      );
+      const { SocketListener } = serverLoader.require(
+        "devtools/shared/security/socket"
+      );
       debuggerServer.init();
       debuggerServer.registerAllActors();
       debuggerServer.allowChromeProcess = true;
@@ -887,8 +1124,22 @@ DevToolsStartup.prototype = {
 
     const window = Services.wm.getMostRecentWindow("navigator:browser");
 
-    this.telemetry.addEventProperty(window, "open", "tools", null, "shortcut", keys);
-    this.telemetry.addEventProperty(window, "open", "tools", null, "entrypoint", reason);
+    this.telemetry.addEventProperty(
+      window,
+      "open",
+      "tools",
+      null,
+      "shortcut",
+      keys
+    );
+    this.telemetry.addEventProperty(
+      window,
+      "open",
+      "tools",
+      null,
+      "entrypoint",
+      reason
+    );
 
     if (this.recorded) {
       return;
@@ -915,15 +1166,16 @@ DevToolsStartup.prototype = {
   },
 
   /* eslint-disable max-len */
-  helpInfo: "  --jsconsole        Open the Browser Console.\n" +
-            "  --jsdebugger       Open the Browser Toolbox.\n" +
-            "  --wait-for-jsdebugger Spin event loop until JS debugger connects.\n" +
-            "                     Enables debugging (some) application startup code paths.\n" +
-            "                     Only has an effect when `--jsdebugger` is also supplied.\n" +
-            "  --devtools         Open DevTools on initial load.\n" +
-            "  --start-debugger-server [ws:][ <port> | <path> ] Start the debugger server on\n" +
-            "                     a TCP port or Unix domain socket path. Defaults to TCP port\n" +
-            "                     6000. Use WebSocket protocol if ws: prefix is specified.\n",
+  helpInfo:
+    "  --jsconsole        Open the Browser Console.\n" +
+    "  --jsdebugger       Open the Browser Toolbox.\n" +
+    "  --wait-for-jsdebugger Spin event loop until JS debugger connects.\n" +
+    "                     Enables debugging (some) application startup code paths.\n" +
+    "                     Only has an effect when `--jsdebugger` is also supplied.\n" +
+    "  --devtools         Open DevTools on initial load.\n" +
+    "  --start-debugger-server [ws:][ <port> | <path> ] Start the debugger server on\n" +
+    "                     a TCP port or Unix domain socket path. Defaults to TCP port\n" +
+    "                     6000. Use WebSocket protocol if ws: prefix is specified.\n",
   /* eslint-disable max-len */
 
   classID: Components.ID("{9e9a9283-0ce9-4e4a-8f1c-ba129a032c32}"),
@@ -950,13 +1202,13 @@ const JsonView = {
     // of the JSON data.
     Services.ppmm.loadProcessScript(
       "resource://devtools/client/jsonview/converter-observer.js",
-      true);
+      true
+    );
 
     // Register for messages coming from the child process.
     // This is never removed as there is no particular need to unregister
     // it during shutdown.
-    Services.ppmm.addMessageListener(
-      "devtools:jsonview:save", this.onSave);
+    Services.ppmm.addMessageListener("devtools:jsonview:save", this.onSave);
   },
 
   // Message handlers for events from child processes
@@ -972,7 +1224,10 @@ const JsonView = {
       // Save original contents
       chrome.saveBrowser(browser);
     } else {
-      if (!message.data.startsWith("blob:null") || !browser.contentPrincipal.isNullPrincipal) {
+      if (
+        !message.data.startsWith("blob:null") ||
+        !browser.contentPrincipal.isNullPrincipal
+      ) {
         Cu.reportError("Got invalid request to save JSON data");
         return;
       }
@@ -988,16 +1243,24 @@ const JsonView = {
         onDocumentReady(doc) {
           const uri = chrome.makeURI(doc.documentURI, doc.characterSet);
           const filename = chrome.getDefaultFileName(undefined, uri, doc, null);
-          chrome.internalSave(message.data, null, filename, null, doc.contentType,
+          chrome.internalSave(
+            message.data,
+            null,
+            filename,
+            null,
+            doc.contentType,
             false /* bypass cache */,
-            null, /* filepicker title key */
-            null, /* file chosen */
-            null, /* referrer */
-            null, /* initiating document */
-            false, /* don't skip prompt for a location */
-            null, /* cache key */
-            PrivateBrowsingUtils.isBrowserPrivate(browser), /* private browsing ? */
-            Services.scriptSecurityManager.getSystemPrincipal());
+            null /* filepicker title key */,
+            null /* file chosen */,
+            null /* referrer */,
+            null /* initiating document */,
+            false /* don't skip prompt for a location */,
+            null /* cache key */,
+            PrivateBrowsingUtils.isBrowserPrivate(
+              browser
+            ) /* private browsing ? */,
+            Services.scriptSecurityManager.getSystemPrincipal()
+          );
         },
         onError(status) {
           throw new Error("JSON Viewer's onSave failed in startPersistence");

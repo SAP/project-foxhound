@@ -605,7 +605,7 @@ category used in plural forms. For these reasons, it’s not possible to use
                               selector=VARIABLE_REFERENCE("tabCount"),
                               variants=[
                                   FTL.Variant(
-                                      key=FTL.NumberExpression("1"),
+                                      key=FTL.NumberLiteral("1"),
                                       default=False,
                                       value=COPY(
                                           "browser/chrome/browser/preferences/main.dtd",
@@ -691,7 +691,7 @@ folders `en-US` and `test`.
 
 
 3. Add new FTL strings to the local en-US repository
-------------------------------------------------
+----------------------------------------------------
 
 The changed (or brand new) FTL files from the patch need to be copied into the
 `en-US` repository. Remember that paths are slightly different, with

@@ -16,7 +16,7 @@
 #  include "mozilla/webrender/RenderCompositorANGLE.h"
 #endif
 
-#ifdef MOZ_WAYLAND
+#if defined(MOZ_WAYLAND) || defined(MOZ_WIDGET_ANDROID)
 #  include "mozilla/webrender/RenderCompositorEGL.h"
 #endif
 
@@ -32,7 +32,7 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
   }
 #endif
 
-#ifdef MOZ_WAYLAND
+#if defined(MOZ_WAYLAND) || defined(MOZ_WIDGET_ANDROID)
   UniquePtr<RenderCompositor> eglCompositor =
       RenderCompositorEGL::Create(aWidget);
   if (eglCompositor) {
@@ -40,7 +40,12 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
   }
 #endif
 
+#if defined(MOZ_WIDGET_ANDROID)
+  // RenderCompositorOGL is not used on android
+  return nullptr;
+#else
   return RenderCompositorOGL::Create(std::move(aWidget));
+#endif
 }
 
 RenderCompositor::RenderCompositor(RefPtr<widget::CompositorWidget>&& aWidget)

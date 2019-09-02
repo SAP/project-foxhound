@@ -35,6 +35,9 @@ interface WindowOrWorkerGlobalScope {
   long setInterval(DOMString handler, optional long timeout = 0, any... unused);
   void clearInterval(optional long handle = 0);
 
+  // microtask queuing
+  void queueMicrotask(VoidFunction callback);
+
   // ImageBitmap
   [Throws]
   Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage);
@@ -45,7 +48,7 @@ interface WindowOrWorkerGlobalScope {
 // https://fetch.spec.whatwg.org/#fetch-method
 partial interface WindowOrWorkerGlobalScope {
   [NewObject, NeedsCallerType]
-  Promise<Response> fetch(RequestInfo input, optional RequestInit init);
+  Promise<Response> fetch(RequestInfo input, optional RequestInit init = {});
 };
 
 // https://w3c.github.io/webappsec-secure-contexts/#monkey-patching-global-object
@@ -62,6 +65,6 @@ partial interface WindowOrWorkerGlobalScope {
 
 // https://w3c.github.io/ServiceWorker/#self-caches
 partial interface WindowOrWorkerGlobalScope {
-  [Throws, Func="mozilla::dom::DOMPrefs::dom_caches_enabled", SameObject]
+  [Throws, Pref="dom.caches.enabled", SameObject]
   readonly attribute CacheStorage caches;
 };

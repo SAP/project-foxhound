@@ -18,6 +18,7 @@ TESTING_JS_MODULES += [
 ]
 
 XPIDL_SOURCES += [
+    'nsILoginAutoCompleteSearch.idl',
     'nsILoginInfo.idl',
     'nsILoginManager.idl',
     'nsILoginManagerCrypto.idl',
@@ -51,6 +52,7 @@ else:
     EXTRA_JS_MODULES += [
         'LoginImport.jsm',
         'LoginStore.jsm',
+        'PasswordGenerator.jsm',
         'storage-json.js',
     ]
 

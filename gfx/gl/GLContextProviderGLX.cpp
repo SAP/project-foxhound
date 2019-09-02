@@ -19,6 +19,7 @@
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/Range.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/GtkCompositorWidget.h"
 #include "mozilla/Unused.h"
@@ -37,7 +38,6 @@
 #include "gfxUtils.h"
 #include "gfx2DGlue.h"
 #include "GLScreenBuffer.h"
-#include "gfxPrefs.h"
 
 #include "gfxCrashReporterUtils.h"
 
@@ -80,7 +80,7 @@ bool GLXLibrary::EnsureInitialized() {
     // which trigger glibc bug
     // http://sourceware.org/bugzilla/show_bug.cgi?id=12225
     const char* libGLfilename = "libGL.so.1";
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__) || defined(__NetBSD__)
     libGLfilename = "libGL.so";
 #endif
 
@@ -185,7 +185,7 @@ bool GLXLibrary::EnsureInitialized() {
 
   if (HasExtension(extensionsStr, "GLX_EXT_texture_from_pixmap") &&
       fnLoadSymbols(symbols_texturefrompixmap)) {
-    mUseTextureFromPixmap = gfxPrefs::UseGLXTextureFromPixmap();
+    mUseTextureFromPixmap = StaticPrefs::gfx_use_glx_texture_from_pixmap();
   } else {
     mUseTextureFromPixmap = false;
     NS_WARNING("Texture from pixmap disabled");
@@ -263,14 +263,14 @@ GLXPixmap GLXLibrary::CreatePixmap(gfxASurface* aSurface) {
                "Unexpected render format with non-adjacent alpha bits");
 
   int attribs[] = {LOCAL_GLX_DOUBLEBUFFER,
-                   False,
+                   X11False,
                    LOCAL_GLX_DRAWABLE_TYPE,
                    LOCAL_GLX_PIXMAP_BIT,
                    LOCAL_GLX_ALPHA_SIZE,
                    alphaSize,
                    (alphaSize ? LOCAL_GLX_BIND_TO_TEXTURE_RGBA_EXT
                               : LOCAL_GLX_BIND_TO_TEXTURE_RGB_EXT),
-                   True,
+                   X11True,
                    LOCAL_GLX_RENDER_TYPE,
                    LOCAL_GLX_RGBA_BIT,
                    X11None};
@@ -517,11 +517,11 @@ already_AddRefed<GLContextGLX> GLContextGLX::CreateGLContext(
       };
       attrib_list.AppendElement(0);
 
-      context = glx.fCreateContextAttribs(display, cfg, nullptr, True,
+      context = glx.fCreateContextAttribs(display, cfg, nullptr, X11True,
                                           attrib_list.Elements());
     } else {
       context = glx.fCreateNewContext(display, cfg, LOCAL_GLX_RGBA_TYPE,
-                                      nullptr, True);
+                                      nullptr, X11True);
     }
 
     if (context) {
@@ -597,7 +597,7 @@ bool GLContextGLX::MakeCurrentImpl() const {
     // Many GLX implementations default to blocking until the next
     // VBlank when calling glXSwapBuffers. We want to run unthrottled
     // in ASAP mode. See bug 1280744.
-    const bool isASAP = (gfxPrefs::LayoutFrameRate() == 0);
+    const bool isASAP = (StaticPrefs::layout_frame_rate() == 0);
     mGLX->fSwapInterval(mDisplay, mDrawable, isASAP ? 0 : 1);
   }
   return succeeded;
@@ -773,12 +773,10 @@ static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
                          GLXFBConfig* const out_config, int* const out_visid) {
   ScopedXFree<GLXFBConfig>& scopedConfigArr = *out_scopedConfigArr;
 
-  if (minCaps.antialias) return false;
-
   int attribs[] = {LOCAL_GLX_DRAWABLE_TYPE,
                    LOCAL_GLX_PIXMAP_BIT,
                    LOCAL_GLX_X_RENDERABLE,
-                   True,
+                   X11True,
                    LOCAL_GLX_RED_SIZE,
                    8,
                    LOCAL_GLX_GREEN_SIZE,
@@ -918,7 +916,7 @@ bool GLContextGLX::FindFBConfigForWindow(
                                   LOCAL_GLX_DEPTH_SIZE,
                                   24,
                                   LOCAL_GLX_DOUBLEBUFFER,
-                                  True,
+                                  X11True,
                                   0};
 
   if (aWebRender) {
@@ -1041,16 +1039,8 @@ already_AddRefed<GLContext> GLContextProviderGLX::CreateHeadless(
 already_AddRefed<GLContext> GLContextProviderGLX::CreateOffscreen(
     const IntSize& size, const SurfaceCaps& minCaps, CreateContextFlags flags,
     nsACString* const out_failureId) {
-  SurfaceCaps minBackbufferCaps = minCaps;
-  if (minCaps.antialias) {
-    minBackbufferCaps.antialias = false;
-    minBackbufferCaps.depth = false;
-    minBackbufferCaps.stencil = false;
-  }
-
   RefPtr<GLContext> gl;
-  gl = CreateOffscreenPixmapContext(flags, size, minBackbufferCaps,
-                                    out_failureId);
+  gl = CreateOffscreenPixmapContext(flags, size, minCaps, out_failureId);
   if (!gl) return nullptr;
 
   if (!gl->InitOffscreen(size, minCaps)) {

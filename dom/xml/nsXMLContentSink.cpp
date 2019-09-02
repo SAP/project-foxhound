@@ -45,7 +45,6 @@
 #include "nsError.h"
 #include "nsNodeUtils.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIHTMLDocument.h"
 #include "mozAutoDocUpdate.h"
 #include "nsMimeTypes.h"
 #include "nsHtml5SVGLoadDispatcher.h"
@@ -322,10 +321,7 @@ NS_IMETHODIMP
 nsXMLContentSink::OnDocumentCreated(Document* aResultDocument) {
   NS_ENSURE_ARG(aResultDocument);
 
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(aResultDocument);
-  if (htmlDoc) {
-    htmlDoc->SetDocWriteDisabled(true);
-  }
+  aResultDocument->SetDocWriteDisabled(true);
 
   nsCOMPtr<nsIContentViewer> contentViewer;
   mDocShell->GetContentViewer(getter_AddRefs(contentViewer));
@@ -362,10 +358,7 @@ nsXMLContentSink::OnTransformDone(nsresult aResult, Document* aResultDocument) {
   }
   // Transform succeeded, or it failed and we have an error document to display.
   mDocument = aResultDocument;
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(mDocument);
-  if (htmlDoc) {
-    htmlDoc->SetDocWriteDisabled(false);
-  }
+  aResultDocument->SetDocWriteDisabled(false);
 
   // Notify document observers that all the content has been stuck
   // into the document.
@@ -1448,7 +1441,6 @@ void nsXMLContentSink::FlushPendingNotifications(FlushType aType) {
  */
 nsresult nsXMLContentSink::FlushTags() {
   mDeferredFlushTags = false;
-  bool oldBeganUpdate = mBeganUpdate;
   uint32_t oldUpdates = mUpdatesInNotification;
 
   mUpdatesInNotification = 0;
@@ -1456,7 +1448,6 @@ nsresult nsXMLContentSink::FlushTags() {
   {
     // Scope so we call EndUpdate before we decrease mInNotification
     mozAutoDocUpdate updateBatch(mDocument, true);
-    mBeganUpdate = true;
 
     // Don't release last text node in case we need to add to it again
     FlushText(false);
@@ -1491,8 +1482,6 @@ nsresult nsXMLContentSink::FlushTags() {
   }
 
   mUpdatesInNotification = oldUpdates;
-  mBeganUpdate = oldBeganUpdate;
-
   return NS_OK;
 }
 

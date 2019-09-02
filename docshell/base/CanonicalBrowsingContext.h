@@ -36,7 +36,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   uint64_t OwnerProcessId() const { return mProcessId; }
   ContentParent* GetContentParent() const;
 
-  void SetOwnerProcessId(uint64_t aProcessId) { mProcessId = aProcessId; }
+  void GetCurrentRemoteType(nsAString& aRemoteType, ErrorResult& aRv) const;
+
+  void SetOwnerProcessId(uint64_t aProcessId);
 
   void GetWindowGlobals(nsTArray<RefPtr<WindowGlobalParent>>& aWindows);
 
@@ -50,6 +52,11 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   }
   void SetCurrentWindowGlobal(WindowGlobalParent* aGlobal);
 
+  WindowGlobalParent* GetEmbedderWindowGlobal() const {
+    return mEmbedderWindowGlobal;
+  }
+  void SetEmbedderWindowGlobal(WindowGlobalParent* aGlobal);
+
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
@@ -60,10 +67,25 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // function)
   void NotifySetUserGestureActivationFromIPC(bool aIsUserGestureActivation);
 
+  // This function is used to start the autoplay media which are delayed to
+  // start. If needed, it would also notify the content browsing context which
+  // are related with the canonical browsing content tree to start delayed
+  // autoplay media.
+  void NotifyStartDelayedAutoplayMedia();
+
+  // This function is used to mute or unmute all media within a tab. It would
+  // set the media mute property for the top level window and propagate it to
+  // other top level windows in other processes.
+  void NotifyMediaMutedChanged(bool aMuted);
+
   // Validate that the given process is allowed to perform the given
   // transaction. aSource is |nullptr| if set in the parent process.
   bool ValidateTransaction(const Transaction& aTransaction,
                            ContentParent* aSource);
+
+  void SetFieldEpochsForChild(ContentParent* aChild,
+                              const FieldEpochs& aEpochs);
+  const FieldEpochs& GetFieldEpochsForChild(ContentParent* aChild);
 
  protected:
   void Traverse(nsCycleCollectionTraversalCallback& cb);
@@ -85,6 +107,11 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // All live window globals within this browsing context.
   nsTHashtable<nsRefPtrHashKey<WindowGlobalParent>> mWindowGlobals;
   RefPtr<WindowGlobalParent> mCurrentWindowGlobal;
+  RefPtr<WindowGlobalParent> mEmbedderWindowGlobal;
+
+  // Generation information for each content process which has interacted with
+  // this CanonicalBrowsingContext, by ChildID.
+  nsDataHashtable<nsUint64HashKey, FieldEpochs> mChildFieldEpochs;
 };
 
 }  // namespace dom

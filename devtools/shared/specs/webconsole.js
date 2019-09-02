@@ -4,7 +4,13 @@
 
 "use strict";
 
-const {types, generateActorSpec, RetVal, Option, Arg} = require("devtools/shared/protocol");
+const {
+  types,
+  generateActorSpec,
+  RetVal,
+  Option,
+  Arg,
+} = require("devtools/shared/protocol");
 
 types.addDictType("console.traits", {
   evaluateJSAsync: "boolean",
@@ -49,6 +55,7 @@ const webconsoleSpecPrototype = {
       exception: Option(0, "nullable:json"),
       exceptionMessage: Option(0, "nullable:string"),
       exceptionDocURL: Option(0, "nullable:string"),
+      exceptionStack: Option(0, "nullable:json"),
       frame: Option(0, "nullable:json"),
       helperResult: Option(0, "nullable:json"),
       input: Option(0, "nullable:string"),
@@ -87,8 +94,7 @@ const webconsoleSpecPrototype = {
     inspectObject: {
       objectActor: Option(0, "json"),
     },
-    lastPrivateContextExited: {
-    },
+    lastPrivateContextExited: {},
     documentEvent: {
       name: Option(0, "string"),
       time: Option(0, "string"),
@@ -193,8 +199,8 @@ const webconsoleSpecPrototype = {
       response: RetVal("console.autocomplete"),
     },
     /**
-    * Clear the cache of messages (page errors and console API calls) expects no response.
-    */
+     * Clear the cache of messages (page errors and console API calls) expects no response.
+     */
     clearMessagesCache: {
       oneway: true,
     },
@@ -233,6 +239,18 @@ const webconsoleSpecPrototype = {
         request: Arg(0, "json"),
       },
       response: RetVal("json"),
+    },
+
+    blockRequest: {
+      request: {
+        filter: Arg(0, "json"),
+      },
+    },
+
+    unblockRequest: {
+      request: {
+        filter: Arg(0, "json"),
+      },
     },
   },
 };

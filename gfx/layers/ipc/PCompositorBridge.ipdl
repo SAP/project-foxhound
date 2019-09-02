@@ -11,6 +11,7 @@ include PlatformWidgetTypes;
 include protocol PAPZ;
 include protocol PAPZCTreeManager;
 include protocol PBrowser;
+include protocol PCanvas;
 include protocol PCompositorManager;
 include protocol PCompositorWidget;
 include protocol PLayerTransaction;
@@ -41,7 +42,6 @@ using mozilla::wr::PipelineId from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::wr::IdNamespace from "mozilla/webrender/WebRenderTypes.h";
 using base::ProcessId from "base/process.h";
 using mozilla::wr::MaybeExternalImageId from "mozilla/webrender/WebRenderTypes.h";
-using mozilla::wr::WebRenderError from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::TransactionId from "mozilla/layers/LayersTypes.h";
 
@@ -79,7 +79,7 @@ struct FrameStats {
  *   lives in the GPU process (if there is one) or the UI process otherwise. The
  *   CompositorBridgeChild is a singleton in the content process. Note that
  *   a given content process may have multiple browser instances (represented
- *   by TabChild instances), that are attached to different windows, and therefore
+ *   by BrowserChild instances), that are attached to different windows, and therefore
  *   rendered by different compositors. This means that when a browser instance
  *   sends messages via its CompositorBridgeChild, the corresponding
  *   ContentCompositorBridgeParent has to use the layers id in the message
@@ -256,6 +256,8 @@ parent:
 
   async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, LayersId id, uint64_t aSerial, MaybeExternalImageId aExternalImageId);
 
+  async InitPCanvasParent(Endpoint<PCanvasParent> aEndpoint);
+
   sync SyncWithCompositor();
 
   // The pipelineId is the same as the layersId
@@ -264,12 +266,14 @@ parent:
   sync CheckContentOnlyTDR(uint32_t sequenceNum)
     returns (bool isContentOnlyTDR);
 
+  async BeginRecording(TimeStamp aRecordingStart);
+  sync EndRecording();
+
 child:
   // Send back Compositor Frame Metrics from APZCs so tiled layers can
   // update progressively.
   async SharedCompositorFrameMetrics(Handle metrics, CrossProcessMutexHandle mutex, LayersId aLayersId, uint32_t aAPZCId);
   async ReleaseSharedCompositorFrameMetrics(ViewID aId, uint32_t aAPZCId);
-  async NotifyWebRenderError(WebRenderError error);
 };
 
 } // layers

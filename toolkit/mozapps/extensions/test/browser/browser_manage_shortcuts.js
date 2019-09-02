@@ -1,6 +1,8 @@
 "use strict";
 
-const {PromiseTestUtils} = ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm");
+const { PromiseTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromiseTestUtils.jsm"
+);
 PromiseTestUtils.whitelistRejectionsGlobally(/Message manager disconnected/);
 
 let gManagerWindow;
@@ -30,20 +32,20 @@ add_task(async function testUpdatingCommands() {
   let commands = {
     commandZero: {},
     commandOne: {
-      suggested_key: {default: "Shift+Alt+4"},
+      suggested_key: { default: "Shift+Alt+7" },
     },
     commandTwo: {
       description: "Command Two!",
-      suggested_key: {default: "Alt+4"},
+      suggested_key: { default: "Alt+4" },
     },
     _execute_browser_action: {
-      suggested_key: {default: "Shift+Alt+5"},
+      suggested_key: { default: "Shift+Alt+9" },
     },
   };
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       commands,
-      browser_action: {default_popup: "popup.html"},
+      browser_action: { default_popup: "popup.html" },
     },
     background() {
       browser.commands.onCommand.addListener(commandName => {
@@ -57,33 +59,19 @@ add_task(async function testUpdatingCommands() {
   await extension.startup();
   await extension.awaitMessage("ready");
 
-  let extension2 = ExtensionTestUtils.loadExtension({
-    manifest: {
-      browser_specific_settings: {
-        gecko: {
-          id: "addons@noShorcut",
-        },
-      },
-      name: "no shortcut addon",
-    },
-    background() {
-      browser.test.sendMessage("ready");
-    },
-    useAddonManager: "temporary",
-  });
-
-  await extension2.startup();
-  await extension2.awaitMessage("ready");
-
   async function checkShortcut(name, key, modifiers) {
     EventUtils.synthesizeKey(key, modifiers);
     let message = await extension.awaitMessage("oncommand");
-    is(message, name, `Expected onCommand listener to fire with the correct name: ${name}`);
+    is(
+      message,
+      name,
+      `Expected onCommand listener to fire with the correct name: ${name}`
+    );
   }
 
   // Check that the original shortcuts work.
-  await checkShortcut("commandOne", "4", {shiftKey: true, altKey: true});
-  await checkShortcut("commandTwo", "4", {altKey: true});
+  await checkShortcut("commandOne", "7", { shiftKey: true, altKey: true });
+  await checkShortcut("commandTwo", "4", { altKey: true });
 
   let doc = await loadShortcutsView();
 
@@ -91,33 +79,48 @@ add_task(async function testUpdatingCommands() {
   ok(card, `There is a card for the extension`);
 
   let inputs = card.querySelectorAll(".shortcut-input");
-  is(inputs.length, Object.keys(commands).length, "There is an input for each command");
+  is(
+    inputs.length,
+    Object.keys(commands).length,
+    "There is an input for each command"
+  );
 
   let nameOrder = Array.from(inputs).map(input => input.getAttribute("name"));
   Assert.deepEqual(
     nameOrder,
     ["commandOne", "commandTwo", "_execute_browser_action", "commandZero"],
-    "commandZero should be last since it is unset");
+    "commandZero should be last since it is unset"
+  );
 
+  let count = 1;
   for (let input of inputs) {
     // Change the shortcut.
     input.focus();
-    EventUtils.synthesizeKey("7", {shiftKey: true, altKey: true});
+    EventUtils.synthesizeKey("8", { shiftKey: true, altKey: true });
+    count++;
 
     // Wait for the shortcut attribute to change.
     await BrowserTestUtils.waitForCondition(
-      () => input.getAttribute("shortcut") == "Alt+Shift+7");
+      () => input.getAttribute("shortcut") == "Alt+Shift+8"
+    );
 
     // Check that the change worked (but skip if browserAction).
     if (input.getAttribute("name") != "_execute_browser_action") {
-      await checkShortcut(input.getAttribute("name"), "7", {shiftKey: true, altKey: true});
+      await checkShortcut(input.getAttribute("name"), "8", {
+        shiftKey: true,
+        altKey: true,
+      });
     }
 
     // Change it again so it doesn't conflict with the next command.
     input.focus();
-    EventUtils.synthesizeKey("9", {shiftKey: true, altKey: true});
+    EventUtils.synthesizeKey(count.toString(), {
+      shiftKey: true,
+      altKey: true,
+    });
     await BrowserTestUtils.waitForCondition(
-      () => input.getAttribute("shortcut") == "Alt+Shift+9");
+      () => input.getAttribute("shortcut") == `Alt+Shift+${count}`
+    );
   }
 
   // Check that errors can be shown.
@@ -128,7 +131,7 @@ add_task(async function testUpdatingCommands() {
 
   // Try a shortcut with only shift for a modifier.
   input.focus();
-  EventUtils.synthesizeKey("J", {shiftKey: true});
+  EventUtils.synthesizeKey("J", { shiftKey: true });
   let possibleErrors = ["shortcuts-modifier-mac", "shortcuts-modifier-other"];
   ok(possibleErrors.includes(label.dataset.l10nId), `The message is set`);
   is(error.style.visibility, "visible", "The error is shown");
@@ -138,6 +141,12 @@ add_task(async function testUpdatingCommands() {
   EventUtils.synthesizeKey("Escape", {});
   ok(doc.activeElement != input, "The input is no longer focused");
   is(error.style.visibility, "hidden", "The error is hidden");
+
+  // Check if assigning already assigned shortcut is prevented.
+  input.focus();
+  EventUtils.synthesizeKey("2", { shiftKey: true, altKey: true });
+  is(label.dataset.l10nId, "shortcuts-exists", `The message is set`);
+  is(error.style.visibility, "visible", "The error is shown");
 
   // Check the label uses the description first, and has a default for the special cases.
   function checkLabel(name, value) {
@@ -153,22 +162,8 @@ add_task(async function testUpdatingCommands() {
   checkLabel("commandTwo", "Command Two!");
   checkLabel("_execute_browser_action", "shortcuts-browserAction");
 
-  // Check there is only 1 shortcut card.
-  let shortcutAddonsList = doc.querySelectorAll(".shortcut");
-  is(shortcutAddonsList.length, 1, "There is only 1 addon card with shortcut");
-
-  // Check there is unordered list of shortcut-less addons.
-  let noShortcutAddonsList = doc.querySelector(".shortcuts-no-commands-list");
-  ok(noShortcutAddonsList, "There is an unordered list of addons without shortcuts");
-
-  // Check there is shortcut-less addon in the list.
-  let addon = noShortcutAddonsList.querySelector(`[addon-id="addons@noShorcut"]`);
-  ok(addon, "There is addon without shortcut in unordered list");
-  is(addon.textContent, "no shortcut addon", "The add-on's name is set in the list");
-
   await closeView();
   await extension.unload();
-  await extension2.unload();
 });
 
 async function startExtensionWithCommands(numCommands) {
@@ -212,8 +207,10 @@ add_task(async function testExpanding() {
     for (let i = 0; i < shortcutRows.length; i++) {
       let row = shortcutRows[i];
       if (i < visibleCommands) {
-        ok(getComputedStyle(row).display != "none",
-          `The first ${visibleCommands} rows are visible`);
+        ok(
+          getComputedStyle(row).display != "none",
+          `The first ${visibleCommands} rows are visible`
+        );
       } else {
         is(getComputedStyle(row).display, "none", "The other rows are hidden");
       }
@@ -227,8 +224,11 @@ add_task(async function testExpanding() {
   ok(expandButton, "There is an expand button");
   let l10nAttrs = doc.l10n.getAttributes(expandButton);
   is(l10nAttrs.id, "shortcuts-card-expand-button", "The expand text is shown");
-  is(l10nAttrs.args.numberToShow, numCommands - visibleCommands,
-    "The number to be shown is set on the expand button");
+  is(
+    l10nAttrs.args.numberToShow,
+    numCommands - visibleCommands,
+    "The number to be shown is set on the expand button"
+  );
 
   // Expand the card.
   expandButton.click();
@@ -241,14 +241,18 @@ add_task(async function testExpanding() {
 
   // The collapse text is now shown.
   l10nAttrs = doc.l10n.getAttributes(expandButton);
-  is(l10nAttrs.id, "shortcuts-card-collapse-button", "The colapse text is shown");
+  is(
+    l10nAttrs.id,
+    "shortcuts-card-collapse-button",
+    "The colapse text is shown"
+  );
 
   // Collapse the card.
   expandButton.click();
 
   ok(!card.hasAttribute("expanded"), "The card is now collapsed again");
 
-  assertCollapsedVisibility({collapsed: true});
+  assertCollapsedVisibility({ collapsed: true });
 
   await closeView();
   await extension.unload();

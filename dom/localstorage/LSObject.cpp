@@ -18,6 +18,18 @@
 #include "nsIScriptObjectPrincipal.h"
 #include "nsThread.h"
 
+/**
+ * Automatically cancel and abort synchronous LocalStorage requests (for example
+ * datastore preparation) if they take this long.  We've chosen a value that is
+ * long enough that it is unlikely for the problem to be falsely triggered by
+ * slow system I/O.  We've also chosen a value long enough so that automated
+ * tests should time out and fail if LocalStorage hangs.  Also, this value is
+ * long enough so that testers can notice the (content process) hang; we want to
+ * know about the hangs, not hide them.  On the other hand this value is less
+ * than 60 seconds which is used by nsTerminator to crash a hung main process.
+ */
+#define FAILSAFE_CANCEL_SYNC_OP_MS 50000
+
 namespace mozilla {
 namespace dom {
 
@@ -137,6 +149,7 @@ class RequestHelper final : public Runnable, public LSRequestChildCallback {
   State mState;
   // Control flag for the nested event loop; once set to false, the loop ends.
   bool mWaiting;
+  bool mCancelled;
 
  public:
   RequestHelper(LSObject* aObject, const LSRequestParams& aParams)
@@ -147,7 +160,8 @@ class RequestHelper final : public Runnable, public LSRequestChildCallback {
         mParams(aParams),
         mResultCode(NS_OK),
         mState(State::Initial),
-        mWaiting(true) {}
+        mWaiting(true),
+        mCancelled(false) {}
 
   bool IsOnOwningThread() const {
     MOZ_ASSERT(mOwningEventTarget);
@@ -181,8 +195,9 @@ class RequestHelper final : public Runnable, public LSRequestChildCallback {
 
 }  // namespace
 
-LSObject::LSObject(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
-    : Storage(aWindow, aPrincipal),
+LSObject::LSObject(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal,
+                   nsIPrincipal* aStoragePrincipal)
+    : Storage(aWindow, aPrincipal, aStoragePrincipal),
       mPrivateBrowsingId(0),
       mInExplicitSnapshot(false) {
   AssertIsOnOwningThread();
@@ -230,14 +245,18 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT(aStorage);
   MOZ_ASSERT(NextGenLocalStorageEnabled());
-  MOZ_ASSERT(nsContentUtils::StorageAllowedForWindow(aWindow) >
-             nsContentUtils::StorageAccess::eDeny);
+  MOZ_ASSERT(StorageAllowedForWindow(aWindow) != StorageAccess::eDeny);
 
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aWindow);
   MOZ_ASSERT(sop);
 
   nsCOMPtr<nsIPrincipal> principal = sop->GetPrincipal();
   if (NS_WARN_IF(!principal)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIPrincipal> storagePrincipal = sop->GetEffectiveStoragePrincipal();
+  if (NS_WARN_IF(!storagePrincipal)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -250,7 +269,8 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
   // for the check.
   nsCString originAttrSuffix;
   nsCString originKey;
-  nsresult rv = GenerateOriginKey(principal, originAttrSuffix, originKey);
+  nsresult rv =
+      GenerateOriginKey(storagePrincipal, originAttrSuffix, originKey);
   if (NS_FAILED(rv)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -263,13 +283,23 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
 
   MOZ_ASSERT(principalInfo->type() == PrincipalInfo::TContentPrincipalInfo);
 
-  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(*principalInfo))) {
+  nsAutoPtr<PrincipalInfo> storagePrincipalInfo(new PrincipalInfo());
+  rv = PrincipalToPrincipalInfo(storagePrincipal, storagePrincipalInfo);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  MOZ_ASSERT(storagePrincipalInfo->type() ==
+             PrincipalInfo::TContentPrincipalInfo);
+
+  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(*storagePrincipalInfo))) {
     return NS_ERROR_FAILURE;
   }
 
   nsCString suffix;
   nsCString origin;
-  rv = QuotaManager::GetInfoFromPrincipal(principal, &suffix, nullptr, &origin);
+  rv = QuotaManager::GetInfoFromPrincipal(storagePrincipal, &suffix, nullptr,
+                                          &origin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -277,7 +307,7 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(originAttrSuffix == suffix);
 
   uint32_t privateBrowsingId;
-  rv = principal->GetPrivateBrowsingId(&privateBrowsingId);
+  rv = storagePrincipal->GetPrivateBrowsingId(&privateBrowsingId);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -297,8 +327,9 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
     }
   }
 
-  RefPtr<LSObject> object = new LSObject(aWindow, principal);
+  RefPtr<LSObject> object = new LSObject(aWindow, principal, storagePrincipal);
   object->mPrincipalInfo = std::move(principalInfo);
+  object->mStoragePrincipalInfo = std::move(storagePrincipalInfo);
   object->mPrivateBrowsingId = privateBrowsingId;
   object->mClientId = clientId;
   object->mOrigin = origin;
@@ -312,15 +343,18 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
 // static
 nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
                                       nsIPrincipal* aPrincipal,
+                                      nsIPrincipal* aStoragePrincipal,
                                       const nsAString& aDocumentURI,
                                       bool aPrivate, LSObject** aObject) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(aStoragePrincipal);
   MOZ_ASSERT(aObject);
 
   nsCString originAttrSuffix;
   nsCString originKey;
-  nsresult rv = GenerateOriginKey(aPrincipal, originAttrSuffix, originKey);
+  nsresult rv =
+      GenerateOriginKey(aStoragePrincipal, originAttrSuffix, originKey);
   if (NS_FAILED(rv)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -334,14 +368,24 @@ nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(principalInfo->type() == PrincipalInfo::TContentPrincipalInfo ||
              principalInfo->type() == PrincipalInfo::TSystemPrincipalInfo);
 
-  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(*principalInfo))) {
+  nsAutoPtr<PrincipalInfo> storagePrincipalInfo(new PrincipalInfo());
+  rv = PrincipalToPrincipalInfo(aStoragePrincipal, storagePrincipalInfo);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  MOZ_ASSERT(
+      storagePrincipalInfo->type() == PrincipalInfo::TContentPrincipalInfo ||
+      storagePrincipalInfo->type() == PrincipalInfo::TSystemPrincipalInfo);
+
+  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(*storagePrincipalInfo))) {
     return NS_ERROR_FAILURE;
   }
 
   nsCString suffix;
   nsCString origin;
 
-  if (principalInfo->type() == PrincipalInfo::TSystemPrincipalInfo) {
+  if (storagePrincipalInfo->type() == PrincipalInfo::TSystemPrincipalInfo) {
     QuotaManager::GetInfoForChrome(&suffix, nullptr, &origin);
   } else {
     rv = QuotaManager::GetInfoFromPrincipal(aPrincipal, &suffix, nullptr,
@@ -361,10 +405,14 @@ nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
     }
 
     clientId = Some(clientInfo.ref().Id());
+  } else if (Preferences::GetBool("dom.storage.client_validation")) {
+    return NS_ERROR_FAILURE;
   }
 
-  RefPtr<LSObject> object = new LSObject(aWindow, aPrincipal);
+  RefPtr<LSObject> object =
+      new LSObject(aWindow, aPrincipal, aStoragePrincipal);
   object->mPrincipalInfo = std::move(principalInfo);
+  object->mStoragePrincipalInfo = std::move(storagePrincipalInfo);
   object->mPrivateBrowsingId = aPrivate ? 1 : 0;
   object->mClientId = clientId;
   object->mOrigin = origin;
@@ -727,6 +775,24 @@ void LSObject::EndExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
   }
 }
 
+bool LSObject::GetHasActiveSnapshot(nsIPrincipal& aSubjectPrincipal,
+                                    ErrorResult& aError) {
+  AssertIsOnOwningThread();
+
+  if (!CanUseStorage(aSubjectPrincipal)) {
+    aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    return 0;
+  }
+
+  if (mDatabase && mDatabase->HasActiveSnapshot()) {
+    MOZ_ASSERT(!mDatabase->IsAllowedToClose());
+
+    return true;
+  }
+
+  return false;
+}
+
 NS_IMPL_ADDREF_INHERITED(LSObject, Storage)
 NS_IMPL_RELEASE_INHERITED(LSObject, Storage)
 
@@ -804,6 +870,7 @@ nsresult LSObject::EnsureDatabase() {
 
   LSRequestCommonParams commonParams;
   commonParams.principalInfo() = *mPrincipalInfo;
+  commonParams.storagePrincipalInfo() = *mStoragePrincipalInfo;
   commonParams.originKey() = mOriginKey;
 
   LSRequestPrepareDatastoreParams params;
@@ -837,7 +904,7 @@ nsresult LSObject::EnsureDatabase() {
   LSDatabaseChild* actor = new LSDatabaseChild(database);
 
   MOZ_ALWAYS_TRUE(backgroundActor->SendPBackgroundLSDatabaseConstructor(
-      actor, *mPrincipalInfo, mPrivateBrowsingId, datastoreId));
+      actor, *mStoragePrincipalInfo, mPrivateBrowsingId, datastoreId));
 
   database->SetActor(actor);
 
@@ -872,6 +939,7 @@ nsresult LSObject::EnsureObserver() {
 
   LSRequestPrepareObserverParams params;
   params.principalInfo() = *mPrincipalInfo;
+  params.storagePrincipalInfo() = *mStoragePrincipalInfo;
   params.clientId() = mClientId;
 
   LSRequestResponse response;
@@ -925,8 +993,8 @@ void LSObject::OnChange(const nsAString& aKey, const nsAString& aOldValue,
                         const nsAString& aNewValue) {
   AssertIsOnOwningThread();
 
-  NotifyChange(/* aStorage */ this, Principal(), aKey, aOldValue, aNewValue,
-               /* aStorageType */ kLocalStorageType, mDocumentURI,
+  NotifyChange(/* aStorage */ this, StoragePrincipal(), aKey, aOldValue,
+               aNewValue, /* aStorageType */ kLocalStorageType, mDocumentURI,
                /* aIsPrivate */ !!mPrivateBrowsingId,
                /* aImmediateDispatch */ false);
 }
@@ -1085,8 +1153,25 @@ nsresult RequestHelper::StartAndReturnResponse(LSRequestResponse& aResponse) {
         return rv;
       }
 
+      nsCOMPtr<nsITimer> timer = NS_NewTimer();
+
+      MOZ_ALWAYS_SUCCEEDS(timer->SetTarget(mNestedEventTarget));
+
+      MOZ_ALWAYS_SUCCEEDS(timer->InitWithNamedFuncCallback(
+          [](nsITimer* aTimer, void* aClosure) {
+            auto helper = static_cast<RequestHelper*>(aClosure);
+
+            helper->mCancelled = true;
+          },
+          this, FAILSAFE_CANCEL_SYNC_OP_MS, nsITimer::TYPE_ONE_SHOT,
+          "RequestHelper::StartAndReturnResponse::SpinEventLoopTimer"));
+
       MOZ_ALWAYS_TRUE(SpinEventLoopUntil(
           [&]() {
+            if (mCancelled) {
+              return true;
+            }
+
             if (!mWaiting) {
               return true;
             }
@@ -1101,6 +1186,8 @@ nsresult RequestHelper::StartAndReturnResponse(LSRequestResponse& aResponse) {
             return false;
           },
           thread));
+
+      MOZ_ALWAYS_SUCCEEDS(timer->Cancel());
     }
 
     // If mWaiting is still set to true, it means that the event loop spinning

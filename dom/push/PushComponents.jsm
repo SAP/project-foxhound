@@ -9,15 +9,20 @@
  * interact with the Push service.
  */
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-var isParent = Services.appinfo.processType === Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+var isParent =
+  Services.appinfo.processType === Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
 
 // The default Push service implementation.
 XPCOMUtils.defineLazyGetter(this, "PushService", function() {
   if (Services.prefs.getBoolPref("dom.push.enabled")) {
-    const {PushService} = ChromeUtils.import("resource://gre/modules/PushService.jsm");
+    const { PushService } = ChromeUtils.import(
+      "resource://gre/modules/PushService.jsm"
+    );
     PushService.init();
     return PushService;
   }
@@ -89,7 +94,6 @@ PushServiceBase.prototype = {
     if (topic === "android-push-service") {
       // Load PushService immediately.
       this._handleReady();
-      return;
     }
   },
 
@@ -102,8 +106,8 @@ PushServiceBase.prototype = {
   },
 
   _deliverSubscriptionError(request, error) {
-    let result = typeof error.result == "number" ?
-                 error.result : Cr.NS_ERROR_FAILURE;
+    let result =
+      typeof error.result == "number" ? error.result : Cr.NS_ERROR_FAILURE;
     request.onPushSubscription(result, null);
   },
 };
@@ -125,8 +129,12 @@ function PushServiceParent() {
 
 PushServiceParent.prototype = Object.create(PushServiceBase.prototype);
 
-XPCOMUtils.defineLazyServiceGetter(PushServiceParent.prototype, "_mm",
-  "@mozilla.org/parentprocessmessagemanager;1", "nsISupports");
+XPCOMUtils.defineLazyServiceGetter(
+  PushServiceParent.prototype,
+  "_mm",
+  "@mozilla.org/parentprocessmessagemanager;1",
+  "nsISupports"
+);
 
 Object.assign(PushServiceParent.prototype, {
   _messages: [
@@ -142,48 +150,68 @@ Object.assign(PushServiceParent.prototype, {
   // nsIPushService methods
 
   subscribe(scope, principal, callback) {
-    this.subscribeWithKey(scope, principal, 0, null, callback);
+    this.subscribeWithKey(scope, principal, [], callback);
   },
 
-  subscribeWithKey(scope, principal, keyLen, key, callback) {
+  subscribeWithKey(scope, principal, key, callback) {
     this._handleRequest("Push:Register", principal, {
-      scope: scope,
+      scope,
       appServerKey: key,
-    }).then(result => {
-      this._deliverSubscription(callback, result);
-    }, error => {
-      this._deliverSubscriptionError(callback, error);
-    }).catch(Cu.reportError);
+    })
+      .then(
+        result => {
+          this._deliverSubscription(callback, result);
+        },
+        error => {
+          this._deliverSubscriptionError(callback, error);
+        }
+      )
+      .catch(Cu.reportError);
   },
 
   unsubscribe(scope, principal, callback) {
     this._handleRequest("Push:Unregister", principal, {
-      scope: scope,
-    }).then(result => {
-      callback.onUnsubscribe(Cr.NS_OK, result);
-    }, error => {
-      callback.onUnsubscribe(Cr.NS_ERROR_FAILURE, false);
-    }).catch(Cu.reportError);
+      scope,
+    })
+      .then(
+        result => {
+          callback.onUnsubscribe(Cr.NS_OK, result);
+        },
+        error => {
+          callback.onUnsubscribe(Cr.NS_ERROR_FAILURE, false);
+        }
+      )
+      .catch(Cu.reportError);
   },
 
   getSubscription(scope, principal, callback) {
     return this._handleRequest("Push:Registration", principal, {
-      scope: scope,
-    }).then(result => {
-      this._deliverSubscription(callback, result);
-    }, error => {
-      this._deliverSubscriptionError(callback, error);
-    }).catch(Cu.reportError);
+      scope,
+    })
+      .then(
+        result => {
+          this._deliverSubscription(callback, result);
+        },
+        error => {
+          this._deliverSubscriptionError(callback, error);
+        }
+      )
+      .catch(Cu.reportError);
   },
 
   clearForDomain(domain, callback) {
     return this._handleRequest("Push:Clear", null, {
-      domain: domain,
-    }).then(result => {
-      callback.onClear(Cr.NS_OK);
-    }, error => {
-      callback.onClear(Cr.NS_ERROR_FAILURE);
-    }).catch(Cu.reportError);
+      domain,
+    })
+      .then(
+        result => {
+          callback.onClear(Cr.NS_OK);
+        },
+        error => {
+          callback.onClear(Cr.NS_ERROR_FAILURE);
+        }
+      )
+      .catch(Cu.reportError);
   },
 
   // nsIPushQuotaManager methods
@@ -206,7 +234,7 @@ Object.assign(PushServiceParent.prototype, {
     if (!this._isValidMessage(message)) {
       return;
     }
-    let {name, principal, target, data} = message;
+    let { name, principal, target, data } = message;
     if (name === "Push:NotificationForOriginShown") {
       this.notificationForOriginShown(data);
       return;
@@ -219,17 +247,22 @@ Object.assign(PushServiceParent.prototype, {
       this.reportDeliveryError(data.messageId, data.reason);
       return;
     }
-    return this._handleRequest(name, principal, data).then(result => {
-      target.sendAsyncMessage(this._getResponseName(name, "OK"), {
-        requestID: data.requestID,
-        result: result
-      });
-    }, error => {
-      target.sendAsyncMessage(this._getResponseName(name, "KO"), {
-        requestID: data.requestID,
-        result: error.result,
-      });
-    }).catch(Cu.reportError);
+    this._handleRequest(name, principal, data)
+      .then(
+        result => {
+          target.sendAsyncMessage(this._getResponseName(name, "OK"), {
+            requestID: data.requestID,
+            result,
+          });
+        },
+        error => {
+          target.sendAsyncMessage(this._getResponseName(name, "KO"), {
+            requestID: data.requestID,
+            result: error.result,
+          });
+        }
+      )
+      .catch(Cu.reportError);
   },
 
   _handleReady() {
@@ -252,8 +285,9 @@ Object.assign(PushServiceParent.prototype, {
     // also do not fire service worker events.
     data.systemRecord = principal.isSystemPrincipal;
 
-    data.originAttributes =
-      ChromeUtils.originAttributesToSuffix(principal.originAttributes);
+    data.originAttributes = ChromeUtils.originAttributesToSuffix(
+      principal.originAttributes
+    );
 
     return data;
   },
@@ -330,9 +364,12 @@ function PushServiceContent() {
 
 PushServiceContent.prototype = Object.create(PushServiceBase.prototype);
 
-XPCOMUtils.defineLazyServiceGetter(PushServiceContent.prototype,
-  "_mm", "@mozilla.org/childprocessmessagemanager;1",
-  "nsISupports");
+XPCOMUtils.defineLazyServiceGetter(
+  PushServiceContent.prototype,
+  "_mm",
+  "@mozilla.org/childprocessmessagemanager;1",
+  "nsISupports"
+);
 
 Object.assign(PushServiceContent.prototype, {
   _messages: [
@@ -349,39 +386,54 @@ Object.assign(PushServiceContent.prototype, {
   // nsIPushService methods
 
   subscribe(scope, principal, callback) {
-    this.subscribeWithKey(scope, principal, 0, null, callback);
+    this.subscribeWithKey(scope, principal, [], callback);
   },
 
-  subscribeWithKey(scope, principal, keyLen, key, callback) {
-    let requestId = this._addRequest(callback);
-    this._mm.sendAsyncMessage("Push:Register", {
-      scope: scope,
-      appServerKey: key,
-      requestID: requestId,
-    }, null, principal);
+  subscribeWithKey(scope, principal, key, callback) {
+    let requestID = this._addRequest(callback);
+    this._mm.sendAsyncMessage(
+      "Push:Register",
+      {
+        scope,
+        appServerKey: key,
+        requestID,
+      },
+      null,
+      principal
+    );
   },
 
   unsubscribe(scope, principal, callback) {
-    let requestId = this._addRequest(callback);
-    this._mm.sendAsyncMessage("Push:Unregister", {
-      scope: scope,
-      requestID: requestId,
-    }, null, principal);
+    let requestID = this._addRequest(callback);
+    this._mm.sendAsyncMessage(
+      "Push:Unregister",
+      {
+        scope,
+        requestID,
+      },
+      null,
+      principal
+    );
   },
 
   getSubscription(scope, principal, callback) {
-    let requestId = this._addRequest(callback);
-    this._mm.sendAsyncMessage("Push:Registration", {
-      scope: scope,
-      requestID: requestId,
-    }, null, principal);
+    let requestID = this._addRequest(callback);
+    this._mm.sendAsyncMessage(
+      "Push:Registration",
+      {
+        scope,
+        requestID,
+      },
+      null,
+      principal
+    );
   },
 
   clearForDomain(domain, callback) {
-    let requestId = this._addRequest(callback);
+    let requestID = this._addRequest(callback);
     this._mm.sendAsyncMessage("Push:Clear", {
-      domain: domain,
-      requestID: requestId,
+      domain,
+      requestID,
     });
   },
 
@@ -399,8 +451,8 @@ Object.assign(PushServiceContent.prototype, {
 
   reportDeliveryError(messageId, reason) {
     this._mm.sendAsyncMessage("Push:ReportError", {
-      messageId: messageId,
-      reason: reason,
+      messageId,
+      reason,
     });
   },
 
@@ -420,7 +472,7 @@ Object.assign(PushServiceContent.prototype, {
     if (!this._isValidMessage(message)) {
       return;
     }
-    let {name, data} = message;
+    let { name, data } = message;
     let request = this._takeRequest(data.requestID);
 
     if (!request) {
@@ -530,29 +582,25 @@ PushSubscription.prototype = {
    * callers receive the key buffer as a return value, while C++ callers
    * receive the key size and buffer as out parameters.
    */
-  getKey(name, outKeyLen) {
+  getKey(name) {
     switch (name) {
       case "p256dh":
-        return this._getRawKey(this._props.p256dhKey, outKeyLen);
+        return this._getRawKey(this._props.p256dhKey);
 
       case "auth":
-        return this._getRawKey(this._props.authenticationSecret, outKeyLen);
+        return this._getRawKey(this._props.authenticationSecret);
 
       case "appServer":
-        return this._getRawKey(this._props.appServerKey, outKeyLen);
+        return this._getRawKey(this._props.appServerKey);
     }
-    return null;
+    return [];
   },
 
-  _getRawKey(key, outKeyLen) {
+  _getRawKey(key) {
     if (!key) {
-      return null;
+      return [];
     }
-    let rawKey = new Uint8Array(key);
-    if (outKeyLen) {
-      outKeyLen.value = rawKey.length;
-    }
-    return rawKey;
+    return new Uint8Array(key);
   },
 };
 
@@ -560,4 +608,4 @@ PushSubscription.prototype = {
 // the parent or content process.
 let Service = isParent ? PushServiceParent : PushServiceContent;
 
-var EXPORTED_SYMBOLS = ["Service"];
+const EXPORTED_SYMBOLS = ["Service"];

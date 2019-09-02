@@ -31,13 +31,13 @@
   <linkset>
     <html:link rel="localization" href="browser/pageInfo.ftl"/>
   </linkset>
-  <script type="application/javascript" src="chrome://global/content/globalOverlay.js"/>
-  <script type="application/javascript" src="chrome://global/content/contentAreaUtils.js"/>
-  <script type="application/javascript" src="chrome://global/content/treeUtils.js"/>
-  <script type="application/javascript" src="chrome://browser/content/pageinfo/pageInfo.js"/>
-  <script type="application/javascript" src="chrome://browser/content/pageinfo/permissions.js"/>
-  <script type="application/javascript" src="chrome://browser/content/pageinfo/security.js"/>
-  <script type="application/javascript" src="chrome://browser/content/utilityOverlay.js"/>
+  <script src="chrome://global/content/globalOverlay.js"/>
+  <script src="chrome://global/content/contentAreaUtils.js"/>
+  <script src="chrome://global/content/treeUtils.js"/>
+  <script src="chrome://browser/content/pageinfo/pageInfo.js"/>
+  <script src="chrome://browser/content/pageinfo/permissions.js"/>
+  <script src="chrome://browser/content/pageinfo/security.js"/>
+  <script src="chrome://browser/content/utilityOverlay.js"/>
 
   <stringbundleset id="pageinfobundleset">
     <stringbundle id="pkiBundle" src="chrome://pippki/locale/pippki.properties"/>
@@ -52,16 +52,16 @@
   </commandset>
 
   <keyset id="pageInfoKeySet">
-    <key data-l10n-id="close-window" modifiers="accel" command="cmd_close"/>
-    <key keycode="VK_ESCAPE"                       command="cmd_close"/>
+    <key data-l10n-id="close-dialog" data-l10n-attrs="key" modifiers="accel" command="cmd_close"/>
+    <key keycode="VK_ESCAPE" command="cmd_close"/>
 #ifdef XP_MACOSX
-    <key key="."                 modifiers="meta"  command="cmd_close"/>
+    <key key="." modifiers="meta"  command="cmd_close"/>
 #else
-    <key keycode="VK_F1"                           command="cmd_help"/>
+    <key keycode="VK_F1" command="cmd_help"/>
 #endif
-    <key data-l10n-id="copy"        modifiers="accel" command="cmd_copy"/>
-    <key data-l10n-id="select-all"  modifiers="accel" command="cmd_selectall"/>
-    <key data-l10n-id="select-all"  modifiers="alt"   command="cmd_selectall"/>
+    <key data-l10n-id="copy"       data-l10n-attrs="key" modifiers="accel" command="cmd_copy"/>
+    <key data-l10n-id="select-all" data-l10n-attrs="key" modifiers="accel" command="cmd_selectall"/>
+    <key data-l10n-id="select-all" data-l10n-attrs="key" modifiers="alt"   command="cmd_selectall"/>
   </keyset>
 
   <menupopup id="picontext">
@@ -164,7 +164,7 @@
     <!-- Media information -->
     <vbox id="mediaPanel">
       <tree id="imagetree" onselect="onImageSelect();" contextmenu="picontext"
-            ondragstart="onBeginLinkDrag(event,'image-address','image-alt')">
+            ondragstart="onBeginLinkDrag(event, 'image-address', 'image-alt')">
         <treecols>
           <treecol primary="true" persist="width" flex="10"
                         width="10" id="image-address" data-l10n-id="media-address"
@@ -232,7 +232,7 @@
         <hbox id="imageSaveBox" align="end">
           <vbox id="blockImageBox">
             <checkbox id="blockImage" hidden="true" oncommand="onBlockImage()"
-                      data-l10n-id="media-block-image"/>
+                      data-l10n-id="media-block-image" data-l10n-args='{"website":""}'/>
             <label control="thepreviewimage" data-l10n-id="media-preview" class="header"/>
           </vbox>
           <spacer id="imageSaveBoxSpacer" flex="1"/>

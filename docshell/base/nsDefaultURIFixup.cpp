@@ -11,12 +11,10 @@
 #include "nsIFile.h"
 #include <algorithm>
 
-#ifdef MOZ_TOOLKIT_SEARCH
-#  include "nsISearchService.h"
-#endif
-
+#include "nsISearchService.h"
 #include "nsIURIFixup.h"
 #include "nsIURIMutator.h"
+#include "nsIWebNavigation.h"
 #include "nsDefaultURIFixup.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/ContentChild.h"
@@ -385,6 +383,27 @@ nsDefaultURIFixup::GetFixupURIInfo(const nsACString& aStringURI,
 }
 
 NS_IMETHODIMP
+nsDefaultURIFixup::WebNavigationFlagsToFixupFlags(const nsACString& aStringURI,
+                                                  uint32_t aDocShellFlags,
+                                                  uint32_t* aFixupFlags) {
+  nsCOMPtr<nsIURI> uri;
+  NS_NewURI(getter_AddRefs(uri), aStringURI);
+  if (uri) {
+    aDocShellFlags &= ~nsIWebNavigation::LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
+  }
+
+  *aFixupFlags = 0;
+  if (aDocShellFlags & nsIWebNavigation::LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP) {
+    *aFixupFlags |= FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+  }
+  if (aDocShellFlags & nsIWebNavigation::LOAD_FLAGS_FIXUP_SCHEME_TYPOS) {
+    *aFixupFlags |= FIXUP_FLAG_FIX_SCHEME_TYPOS;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDefaultURIFixup::KeywordToURI(const nsACString& aKeyword,
                                 nsIInputStream** aPostData,
                                 nsIURIFixupInfo** aInfo) {
@@ -429,7 +448,6 @@ nsDefaultURIFixup::KeywordToURI(const nsACString& aKeyword,
     return NS_OK;
   }
 
-#ifdef MOZ_TOOLKIT_SEARCH
   // Try falling back to the search service's default search engine
   nsCOMPtr<nsISearchService> searchSvc =
       do_GetService("@mozilla.org/browser/search-service;1");
@@ -474,7 +492,6 @@ nsDefaultURIFixup::KeywordToURI(const nsACString& aKeyword,
       }
     }
   }
-#endif
 
   // out of options
   return NS_ERROR_NOT_AVAILABLE;

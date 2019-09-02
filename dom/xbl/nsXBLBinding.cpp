@@ -16,6 +16,7 @@
 #include "nsReadableUtils.h"
 #include "plstr.h"
 #include "nsIContent.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "ChildIterator.h"
@@ -165,13 +166,15 @@ void nsXBLBinding::BindAnonymousContent(nsIContent* aAnonParent,
   // (2) The children's parent back pointer should not be to this synthetic root
   // but should instead point to the enclosing parent element.
   Document* doc = aElement->GetUncomposedDoc();
+  Element* element = aElement->AsElement();
 
   nsAutoScriptBlocker scriptBlocker;
+  BindContext context(*this, *element);
   for (nsIContent* child = aAnonParent->GetFirstChild(); child;
        child = child->GetNextSibling()) {
     child->UnbindFromTree();
     child->SetFlags(NODE_IS_ANONYMOUS_ROOT);
-    nsresult rv = child->BindToTree(doc, aElement, mBoundElement);
+    nsresult rv = child->BindToTree(context, *element);
     if (NS_FAILED(rv)) {
       // Oh, well... Just give up.
       // XXXbz This really shouldn't be a void method!
@@ -201,21 +204,13 @@ void nsXBLBinding::UnbindAnonymousContent(Document* aDocument,
   nsCOMPtr<nsIContent> anonParent = aAnonParent;
   for (nsIContent* child = aAnonParent->GetFirstChild(); child;
        child = child->GetNextSibling()) {
-    child->UnbindFromTree(true, aNullParent);
+    child->UnbindFromTree(aNullParent);
   }
 }
 
 void nsXBLBinding::SetBoundElement(Element* aElement) {
   mBoundElement = aElement;
   if (mNextBinding) mNextBinding->SetBoundElement(aElement);
-}
-
-bool nsXBLBinding::HasStyleSheets() const {
-  // Find out if we need to re-resolve style.  We'll need to do this
-  // if we have additional stylesheets in our binding document.
-  if (mPrototypeBinding->HasStyleSheets()) return true;
-
-  return mNextBinding ? mNextBinding->HasStyleSheets() : false;
 }
 
 void nsXBLBinding::GenerateAnonymousContent() {
@@ -689,24 +684,6 @@ void nsXBLBinding::ChangeDocument(Document* aOldDocument,
 
     ClearInsertionPoints();
   }
-}
-
-bool nsXBLBinding::InheritsStyle() const {
-  // XXX Will have to change if we ever allow multiple bindings to contribute
-  // anonymous content. Most derived binding with anonymous content determines
-  // style inheritance for now.
-
-  // XXX What about bindings with <content> but no kids, e.g., my treecell-text
-  // binding?
-  if (mContent) return mPrototypeBinding->InheritsStyle();
-
-  if (mNextBinding) return mNextBinding->InheritsStyle();
-
-  return true;
-}
-
-const RawServoAuthorStyles* nsXBLBinding::GetServoStyles() const {
-  return mPrototypeBinding->GetServoStyles();
 }
 
 // Internal helper methods /////////////////////////////////////////////////////

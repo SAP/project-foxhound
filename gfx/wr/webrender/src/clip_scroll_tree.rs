@@ -6,13 +6,13 @@ use api::{ExternalScrollId, PropertyBinding, ReferenceFrameKind, TransformStyle}
 use api::{PipelineId, ScrollClamping, ScrollNodeState, ScrollLocation, ScrollSensitivity};
 use api::units::*;
 use euclid::TypedTransform3D;
-use gpu_types::TransformPalette;
-use internal_types::{FastHashMap, FastHashSet};
-use print_tree::{PrintableTree, PrintTree, PrintTreePrinter};
-use scene::SceneProperties;
-use spatial_node::{ScrollFrameInfo, SpatialNode, SpatialNodeType, StickyFrameInfo, ScrollFrameKind};
+use crate::gpu_types::TransformPalette;
+use crate::internal_types::{FastHashMap, FastHashSet};
+use crate::print_tree::{PrintableTree, PrintTree, PrintTreePrinter};
+use crate::scene::SceneProperties;
+use crate::spatial_node::{ScrollFrameInfo, SpatialNode, SpatialNodeType, StickyFrameInfo, ScrollFrameKind};
 use std::{ops, u32};
-use util::{LayoutToWorldFastTransform, MatrixHelpers, ScaleOffset};
+use crate::util::{FastTransform, LayoutToWorldFastTransform, MatrixHelpers, ScaleOffset, scale_factors};
 
 pub type ScrollStates = FastHashMap<ExternalScrollId, ScrollFrameInfo>;
 
@@ -30,9 +30,8 @@ pub struct CoordinateSystemId(pub u32);
 #[derive(Debug)]
 pub struct CoordinateSystem {
     pub transform: LayoutTransform,
-    /// True if the Z component of the resulting transform, when ascending
-    /// from children to a parent, needs to be flattened upon passing this system.
-    pub is_flatten_root: bool,
+    pub world_transform: LayoutToWorldTransform,
+    pub should_flatten: bool,
     pub parent: Option<CoordinateSystemId>,
 }
 
@@ -40,7 +39,8 @@ impl CoordinateSystem {
     fn root() -> Self {
         CoordinateSystem {
             transform: LayoutTransform::identity(),
-            is_flatten_root: true,
+            world_transform: LayoutToWorldTransform::identity(),
+            should_flatten: false,
             parent: None,
         }
     }
@@ -72,7 +72,7 @@ impl CoordinateSystemId {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum VisibleFace {
     Front,
     Back,
@@ -139,15 +139,75 @@ pub struct TransformUpdateState {
     pub preserves_3d: bool,
 }
 
-/// A processed relative transform between two nodes in the clip-scroll tree.
-#[derive(Debug, Default)]
-pub struct RelativeTransform<U> {
-    /// The flattened transform, produces Z = 0 at all times.
-    pub flattened: TypedTransform3D<f32, LayoutPixel, U>,
-    /// Visible face of the original transform.
-    pub visible_face: VisibleFace,
-    /// True if the original transform had perspective.
-    pub is_perspective: bool,
+
+/// Transformation between two nodes in the clip-scroll tree that can sometimes be
+/// encoded more efficiently than with a full matrix.
+#[derive(Debug, Clone)]
+pub enum CoordinateSpaceMapping<Src, Dst> {
+    Local,
+    ScaleOffset(ScaleOffset),
+    Transform(TypedTransform3D<f32, Src, Dst>),
+}
+
+impl<Src, Dst> CoordinateSpaceMapping<Src, Dst> {
+    pub fn into_transform(self) -> TypedTransform3D<f32, Src, Dst> {
+        match self {
+            CoordinateSpaceMapping::Local => TypedTransform3D::identity(),
+            CoordinateSpaceMapping::ScaleOffset(scale_offset) => scale_offset.to_transform(),
+            CoordinateSpaceMapping::Transform(transform) => transform,
+        }
+    }
+
+    pub fn into_fast_transform(self) -> FastTransform<Src, Dst> {
+        match self {
+            CoordinateSpaceMapping::Local => FastTransform::identity(),
+            CoordinateSpaceMapping::ScaleOffset(scale_offset) => FastTransform::with_scale_offset(scale_offset),
+            CoordinateSpaceMapping::Transform(transform) => FastTransform::with_transform(transform),
+        }
+    }
+
+    pub fn visible_face(&self) -> VisibleFace {
+        match *self {
+            CoordinateSpaceMapping::Transform(ref transform) if transform.is_backface_visible() => VisibleFace::Back,
+            CoordinateSpaceMapping::Local |
+            CoordinateSpaceMapping::Transform(_) |
+            CoordinateSpaceMapping::ScaleOffset(_) => VisibleFace::Front,
+
+        }
+    }
+
+    pub fn is_perspective(&self) -> bool {
+        match *self {
+            CoordinateSpaceMapping::Local |
+            CoordinateSpaceMapping::ScaleOffset(_) => false,
+            CoordinateSpaceMapping::Transform(ref transform) => transform.has_perspective_component(),
+        }
+    }
+
+    pub fn scale_factors(&self) -> (f32, f32) {
+        match *self {
+            CoordinateSpaceMapping::Local => (1.0, 1.0),
+            CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => (scale_offset.scale.x, scale_offset.scale.y),
+            CoordinateSpaceMapping::Transform(ref transform) => scale_factors(transform),
+        }
+    }
+
+    pub fn inverse(&self) -> Option<CoordinateSpaceMapping<Dst, Src>> {
+        match *self {
+            CoordinateSpaceMapping::Local => Some(CoordinateSpaceMapping::Local),
+            CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => {
+                Some(CoordinateSpaceMapping::ScaleOffset(scale_offset.inverse()))
+            }
+            CoordinateSpaceMapping::Transform(ref transform) => {
+                transform.inverse().map(CoordinateSpaceMapping::Transform)
+            }
+        }
+    }
+}
+
+enum TransformScroll {
+    Scrolled,
+    Unscrolled,
 }
 
 impl ClipScrollTree {
@@ -161,93 +221,126 @@ impl ClipScrollTree {
         }
     }
 
+    /// Calculate the accumulated external scroll offset for
+    /// a given spatial node.
+    pub fn external_scroll_offset(&self, node_index: SpatialNodeIndex) -> LayoutVector2D {
+        let mut offset = LayoutVector2D::zero();
+        let mut current_node = Some(node_index);
+
+        while let Some(node_index) = current_node {
+            let node = &self.spatial_nodes[node_index.0 as usize];
+
+            match node.node_type {
+                SpatialNodeType::ScrollFrame(ref scrolling) => {
+                    offset += scrolling.external_scroll_offset;
+                }
+                SpatialNodeType::StickyFrame(..) => {
+                    // Doesn't provide any external scroll offset
+                }
+                SpatialNodeType::ReferenceFrame(..) => {
+                    // External scroll offsets are not propagated across
+                    // reference frames.
+                    break;
+                }
+            }
+
+            current_node = node.parent;
+        }
+
+        offset
+    }
+
     /// Calculate the relative transform from `child_index` to `parent_index`.
     /// This method will panic if the nodes are not connected!
     pub fn get_relative_transform(
         &self,
         child_index: SpatialNodeIndex,
         parent_index: SpatialNodeIndex,
-    ) -> RelativeTransform<LayoutPixel> {
+    ) -> CoordinateSpaceMapping<LayoutPixel, LayoutPixel> {
         assert!(child_index.0 >= parent_index.0);
+        if child_index == parent_index {
+            return CoordinateSpaceMapping::Local;
+        }
+
         let child = &self.spatial_nodes[child_index.0 as usize];
         let parent = &self.spatial_nodes[parent_index.0 as usize];
 
+        if child.coordinate_system_id == parent.coordinate_system_id {
+            let scale_offset = parent.content_transform
+                .inverse()
+                .accumulate(&child.content_transform);
+            return CoordinateSpaceMapping::ScaleOffset(scale_offset);
+        }
+
         let mut coordinate_system_id = child.coordinate_system_id;
-        let mut transform = child.coordinate_system_relative_scale_offset.to_transform();
-        let mut visible_face = VisibleFace::Front;
-        let mut is_perspective = false;
+        let mut transform = child.content_transform.to_transform();
+
+        // we need to update the associated parameters of a transform in two cases:
+        // 1) when the flattening happens, so that we don't lose that original 3D aspects
+        // 2) when we reach the end of iteration, so that our result is up to date
 
         while coordinate_system_id != parent.coordinate_system_id {
             let coord_system = &self.coord_systems[coordinate_system_id.0 as usize];
+
+            if coord_system.should_flatten {
+                transform.flatten_z_output();
+            }
+
             coordinate_system_id = coord_system.parent.expect("invalid parent!");
             transform = transform.post_mul(&coord_system.transform);
-            // we need to update the associated parameters of a transform in two cases:
-            // 1) when the flattening happens, so that we don't lose that original 3D aspects
-            // 2) when we reach the end of iteration, so that our result is up to date
-            if coord_system.is_flatten_root || coordinate_system_id == parent.coordinate_system_id {
-                visible_face = if transform.is_backface_visible() {
-                    VisibleFace::Back
-                } else {
-                    VisibleFace::Front
-                };
-                is_perspective = transform.has_perspective_component();
-            }
-            if coord_system.is_flatten_root {
-                //Note: this function makes the transform to ignore the Z coordinate of inputs
-                // *even* for computing the X and Y coordinates of the output.
-                //transform = transform.project_to_2d();
-                transform.m13 = 0.0;
-                transform.m23 = 0.0;
-                transform.m33 = 0.0;
-                transform.m43 = 0.0;
-            }
         }
 
         transform = transform.post_mul(
-            &parent.coordinate_system_relative_scale_offset
+            &parent.content_transform
                 .inverse()
-                .to_transform()
+                .to_transform(),
         );
 
-        RelativeTransform {
-            flattened: transform,
-            visible_face,
-            is_perspective,
+        CoordinateSpaceMapping::Transform(transform)
+    }
+
+    fn get_world_transform_impl(
+        &self,
+        index: SpatialNodeIndex,
+        scroll: TransformScroll,
+    ) -> CoordinateSpaceMapping<LayoutPixel, WorldPixel> {
+        let child = &self.spatial_nodes[index.0 as usize];
+
+        if child.coordinate_system_id.0 == 0 {
+            if index == ROOT_SPATIAL_NODE_INDEX {
+                CoordinateSpaceMapping::Local
+            } else {
+                CoordinateSpaceMapping::ScaleOffset(child.content_transform)
+            }
+        } else {
+            let system = &self.coord_systems[child.coordinate_system_id.0 as usize];
+            let scale_offset = match scroll {
+                TransformScroll::Scrolled => &child.content_transform,
+                TransformScroll::Unscrolled => &child.viewport_transform,
+            };
+            let transform = scale_offset
+                .to_transform()
+                .post_mul(&system.world_transform);
+
+            CoordinateSpaceMapping::Transform(transform)
         }
     }
 
-    /// Calculate the relative transform from `child_index` to the scene root.
+    /// Calculate the relative transform from `index` to the root.
     pub fn get_world_transform(
         &self,
         index: SpatialNodeIndex,
-    ) -> RelativeTransform<WorldPixel> {
-        let relative = self.get_relative_transform(index, ROOT_SPATIAL_NODE_INDEX);
-        RelativeTransform {
-            flattened: relative.flattened.with_destination::<WorldPixel>(),
-            visible_face: relative.visible_face,
-            is_perspective: relative.is_perspective,
-        }
+    ) -> CoordinateSpaceMapping<LayoutPixel, WorldPixel> {
+        self.get_world_transform_impl(index, TransformScroll::Scrolled)
     }
 
-    /// Returns true if the spatial node is the same as the parent, or is
-    /// a child of the parent.
-    pub fn is_same_or_child_of(
+    /// Calculate the relative transform from `index` to the root.
+    /// Unlike `get_world_transform`, this variant doesn't account for the local scroll offset.
+    pub fn get_world_viewport_transform(
         &self,
-        spatial_node_index: SpatialNodeIndex,
-        parent_spatial_node_index: SpatialNodeIndex,
-    ) -> bool {
-        let mut index = spatial_node_index;
-
-        loop {
-            if index == parent_spatial_node_index {
-                return true;
-            }
-
-            index = match self.spatial_nodes[index.0 as usize].parent {
-                Some(parent) => parent,
-                None => return false,
-            }
-        }
+        index: SpatialNodeIndex,
+    ) -> CoordinateSpaceMapping<LayoutPixel, WorldPixel> {
+        self.get_world_transform_impl(index, TransformScroll::Unscrolled)
     }
 
     /// The root reference frame, which is the true root of the ClipScrollTree. Initially
@@ -271,7 +364,10 @@ impl ClipScrollTree {
         for node in &self.spatial_nodes {
             if let SpatialNodeType::ScrollFrame(info) = node.node_type {
                 if let Some(id) = info.external_id {
-                    result.push(ScrollNodeState { id, scroll_offset: info.offset })
+                    result.push(ScrollNodeState {
+                        id,
+                        scroll_offset: info.offset - info.external_scroll_offset,
+                    })
                 }
             }
         }
@@ -346,14 +442,9 @@ impl ClipScrollTree {
         &mut self,
         pan: WorldPoint,
         scene_properties: &SceneProperties,
-        mut transform_palette: Option<&mut TransformPalette>,
     ) {
         if self.spatial_nodes.is_empty() {
             return;
-        }
-
-        if let Some(ref mut palette) = transform_palette {
-            palette.allocate(self.spatial_nodes.len());
         }
 
         self.coord_systems.clear();
@@ -381,9 +472,6 @@ impl ClipScrollTree {
             };
 
             node.update(&mut state, &mut self.coord_systems, scene_properties, &*previous);
-            if let Some(ref mut palette) = transform_palette {
-                node.push_gpu_data(palette, node_index);
-            }
 
             if !node.children.is_empty() {
                 node.prepare_state_for_children(&mut state);
@@ -394,6 +482,17 @@ impl ClipScrollTree {
                 );
             }
         }
+    }
+
+    pub fn build_transform_palette(&self) -> TransformPalette {
+        let mut palette = TransformPalette::new(self.spatial_nodes.len());
+        //Note: getting the world transform of a node is O(1) operation
+        for i in 0 .. self.spatial_nodes.len() {
+            let index = SpatialNodeIndex(i as u32);
+            let world_transform = self.get_world_transform(index).into_transform();
+            palette.set_world_transform(index, world_transform);
+        }
+        palette
     }
 
     pub fn finalize_and_apply_pending_scroll_offsets(&mut self, old_states: ScrollStates) {
@@ -487,6 +586,37 @@ impl ClipScrollTree {
         self.pipelines_to_discard.insert(pipeline_id);
     }
 
+    /// Find the spatial node that is the scroll root for a given spatial node.
+    /// A scroll root is the first spatial node when found travelling up the
+    /// spatial node tree that is an explicit scroll frame.
+    pub fn find_scroll_root(
+        &self,
+        spatial_node_index: SpatialNodeIndex,
+    ) -> SpatialNodeIndex {
+        let mut scroll_root = ROOT_SPATIAL_NODE_INDEX;
+        let mut node_index = spatial_node_index;
+
+        while node_index != ROOT_SPATIAL_NODE_INDEX {
+            let node = &self.spatial_nodes[node_index.0 as usize];
+            match node.node_type {
+                SpatialNodeType::ReferenceFrame(..) |
+                SpatialNodeType::StickyFrame(..) => {
+                    // TODO(gw): In future, we may need to consider sticky frames.
+                }
+                SpatialNodeType::ScrollFrame(ref info) => {
+                    // If we found an explicit scroll root, store that
+                    // and keep looking up the tree.
+                    if let ScrollFrameKind::Explicit = info.frame_kind {
+                        scroll_root = node_index;
+                    }
+                }
+            }
+            node_index = node.parent.expect("unable to find parent node");
+        }
+
+        scroll_root
+    }
+
     fn print_node<T: PrintTreePrinter>(
         &self,
         index: SpatialNodeIndex,
@@ -496,24 +626,26 @@ impl ClipScrollTree {
         match node.node_type {
             SpatialNodeType::StickyFrame(ref sticky_frame_info) => {
                 pt.new_level(format!("StickyFrame"));
-                pt.add_item(format!("index: {:?}", index));
                 pt.add_item(format!("sticky info: {:?}", sticky_frame_info));
             }
             SpatialNodeType::ScrollFrame(scrolling_info) => {
                 pt.new_level(format!("ScrollFrame"));
-                pt.add_item(format!("index: {:?}", index));
                 pt.add_item(format!("viewport: {:?}", scrolling_info.viewport_rect));
                 pt.add_item(format!("scrollable_size: {:?}", scrolling_info.scrollable_size));
                 pt.add_item(format!("scroll offset: {:?}", scrolling_info.offset));
+                pt.add_item(format!("external_scroll_offset: {:?}", scrolling_info.external_scroll_offset));
+                pt.add_item(format!("kind: {:?}", scrolling_info.frame_kind));
             }
-            SpatialNodeType::ReferenceFrame(ref _info) => {
+            SpatialNodeType::ReferenceFrame(ref info) => {
                 pt.new_level(format!("ReferenceFrame"));
-                pt.add_item(format!("index: {:?}", index));
+                pt.add_item(format!("kind: {:?}", info.kind));
+                pt.add_item(format!("transform_style: {:?}", info.transform_style));
             }
         }
 
-        pt.add_item(format!("world_viewport_transform: {:?}", node.world_viewport_transform));
-        pt.add_item(format!("world_content_transform: {:?}", node.world_content_transform));
+        pt.add_item(format!("index: {:?}", index));
+        pt.add_item(format!("content_transform: {:?}", node.content_transform));
+        pt.add_item(format!("viewport_transform: {:?}", node.viewport_transform));
         pt.add_item(format!("coordinate_system_id: {:?}", node.coordinate_system_id));
 
         for child_index in &node.children {
@@ -521,6 +653,17 @@ impl ClipScrollTree {
         }
 
         pt.end_level();
+    }
+
+    /// Get the visible face of the transfrom from the specified node to its parent.
+    pub fn get_local_visible_face(&self, node_index: SpatialNodeIndex) -> VisibleFace {
+        let node = &self.spatial_nodes[node_index.0 as usize];
+        let parent_index = match node.parent {
+            Some(index) => index,
+            None => return VisibleFace::Front
+        };
+        self.get_relative_transform(node_index, parent_index)
+            .visible_face()
     }
 
     #[allow(dead_code)]
@@ -571,7 +714,7 @@ fn test_pt(
     const EPSILON: f32 = 0.0001;
 
     let p = LayoutPoint::new(px, py);
-    let m = cst.get_relative_transform(child, parent).flattened;
+    let m = cst.get_relative_transform(child, parent).into_transform();
     let pt = m.transform_point2d(&p).unwrap();
     assert!(pt.x.approx_eq_eps(&expected_x, &EPSILON) &&
             pt.y.approx_eq_eps(&expected_y, &EPSILON),
@@ -614,7 +757,7 @@ fn test_cst_simple_translation() {
         LayoutVector2D::zero(),
     );
 
-    cst.update_tree(WorldPoint::zero(), &SceneProperties::new(), None);
+    cst.update_tree(WorldPoint::zero(), &SceneProperties::new());
 
     test_pt(100.0, 100.0, &cst, child1, root, 200.0, 100.0);
     test_pt(100.0, 100.0, &cst, child2, root, 200.0, 150.0);
@@ -656,7 +799,7 @@ fn test_cst_simple_scale() {
         LayoutVector2D::zero(),
     );
 
-    cst.update_tree(WorldPoint::zero(), &SceneProperties::new(), None);
+    cst.update_tree(WorldPoint::zero(), &SceneProperties::new());
 
     test_pt(100.0, 100.0, &cst, child1, root, 400.0, 100.0);
     test_pt(100.0, 100.0, &cst, child2, root, 400.0, 200.0);
@@ -706,7 +849,7 @@ fn test_cst_scale_translation() {
         LayoutVector2D::zero(),
     );
 
-    cst.update_tree(WorldPoint::zero(), &SceneProperties::new(), None);
+    cst.update_tree(WorldPoint::zero(), &SceneProperties::new());
 
     test_pt(100.0, 100.0, &cst, child1, root, 200.0, 150.0);
     test_pt(100.0, 100.0, &cst, child2, root, 300.0, 450.0);
@@ -740,7 +883,7 @@ fn test_cst_translation_rotate() {
         LayoutVector2D::zero(),
     );
 
-    cst.update_tree(WorldPoint::zero(), &SceneProperties::new(), None);
+    cst.update_tree(WorldPoint::zero(), &SceneProperties::new());
 
     test_pt(100.0, 0.0, &cst, child1, root, 0.0, -100.0);
 }

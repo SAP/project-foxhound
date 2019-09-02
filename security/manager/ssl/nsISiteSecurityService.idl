@@ -160,10 +160,13 @@ interface nsISiteSecurityService : nsISupports
                        [optional] out uint32_t aFailureResult);
 
     /**
-     * Given a header type, removes state relating to that header of a host,
+     * Given a header type, resets state relating to that header of a host,
      * including the includeSubdomains state that would affect subdomains.
      * This essentially removes the state for the domain tree rooted at this
-     * host.
+     * host. If any preloaded information is present for that host, that
+     * information will then be used instead of any other previously existing
+     * state.
+     *
      * @param aType   the type of security state in question
      * @param aURI    the URI of the target host
      * @param aFlags  options for this request as defined in nsISocketProvider:
@@ -175,10 +178,10 @@ interface nsISiteSecurityService : nsISupports
      *                          happens).
      */
     [implicit_jscontext, optional_argc, must_use]
-    void removeState(in uint32_t aType,
-                     in nsIURI aURI,
-                     in uint32_t aFlags,
-                     [optional] in jsval aOriginAttributes);
+    void resetState(in uint32_t aType,
+                    in nsIURI aURI,
+                    in uint32_t aFlags,
+                    [optional] in jsval aOriginAttributes);
 
     /**
      * Checks whether or not the URI's hostname has a given security state set.
@@ -264,7 +267,6 @@ interface nsISiteSecurityService : nsISupports
      * @param aHost the hostname (punycode) that pins will apply to
      * @param aIncludeSubdomains whether these pins also apply to subdomains
      * @param aExpires the time this pin should expire (millis since epoch)
-     * @param aPinCount number of keys being pinnned
      * @param aSha256Pins array of hashed key fingerprints (SHA-256, base64)
      * @param aIsPreload are these key pins for a preload entry? (false by
      *        default)
@@ -276,8 +278,7 @@ interface nsISiteSecurityService : nsISupports
      */
     [implicit_jscontext, optional_argc, must_use]
     boolean setKeyPins(in ACString aHost, in boolean aIncludeSubdomains,
-                       in int64_t aExpires, in unsigned long aPinCount,
-                       [array, size_is(aPinCount)] in string aSha256Pins,
+                       in int64_t aExpires, in Array<ACString> aSha256Pins,
                        [optional] in boolean aIsPreload,
                        [optional] in jsval aOriginAttributes);
 

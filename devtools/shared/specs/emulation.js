@@ -123,6 +123,41 @@ const emulationSpec = generateActorSpec({
         valueChanged: RetVal("boolean"),
       },
     },
+
+    setElementPickerState: {
+      request: {
+        state: Arg(0, "boolean"),
+      },
+      response: {},
+    },
+
+    getIsPrintSimulationEnabled: {
+      request: {},
+      response: {
+        enabled: RetVal("boolean"),
+      },
+    },
+
+    startPrintMediaSimulation: {
+      request: {},
+      response: {},
+    },
+
+    stopPrintMediaSimulation: {
+      request: {
+        state: Arg(0, "boolean"),
+      },
+      response: {},
+    },
+
+    simulateScreenOrientationChange: {
+      request: {
+        orientation: Arg(0, "string"),
+        angle: Arg(1, "number"),
+        deviceChange: Arg(2, "boolean"),
+      },
+      response: {},
+    },
   },
 });
 

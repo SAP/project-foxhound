@@ -6,7 +6,6 @@
 
 #include "mozilla/layers/APZInputBridge.h"
 
-#include "gfxPrefs.h"                       // for gfxPrefs
 #include "InputData.h"                      // for MouseInput, etc
 #include "mozilla/dom/WheelEventBinding.h"  // for WheelEvent constants
 #include "mozilla/EventStateManager.h"      // for EventStateManager
@@ -23,7 +22,7 @@ namespace layers {
 static bool WillHandleMouseEvent(const WidgetMouseEventBase& aEvent) {
   return aEvent.mMessage == eMouseMove || aEvent.mMessage == eMouseDown ||
          aEvent.mMessage == eMouseUp || aEvent.mMessage == eDragEnd ||
-         (gfxPrefs::TestEventsAsyncEnabled() &&
+         (StaticPrefs::test_events_async_enabled() &&
           aEvent.mMessage == eMouseHitTest);
 }
 
@@ -64,7 +63,9 @@ nsEventStatus APZInputBridge::ReceiveInputEvent(
       // mouse event undergoes (in PositionedEventTargeting.cpp) uses
       // the IGNORE_ROOT_SCROLL_FRAME flag, which is needed for correct
       // hit testing in a zoomed-in or zoomed-out state.
-      if (gfxPrefs::APZAllowZooming()) {
+      // FIXME: bug 1525793 -- this may need to handle zooming or not on a
+      // per-document basis.
+      if (StaticPrefs::apz_allow_zooming()) {
         mouseEvent.mIgnoreRootScrollFrame = true;
       }
 
@@ -114,13 +115,13 @@ nsEventStatus APZInputBridge::ReceiveInputEvent(
       if (Maybe<APZWheelAction> action = ActionForWheelEvent(&wheelEvent)) {
         ScrollWheelInput::ScrollMode scrollMode =
             ScrollWheelInput::SCROLLMODE_INSTANT;
-        if (gfxPrefs::SmoothScrollEnabled() &&
+        if (StaticPrefs::general_smoothScroll() &&
             ((wheelEvent.mDeltaMode ==
                   dom::WheelEvent_Binding::DOM_DELTA_LINE &&
-              gfxPrefs::WheelSmoothScrollEnabled()) ||
+              StaticPrefs::general_smoothScroll_mouseWheel()) ||
              (wheelEvent.mDeltaMode ==
                   dom::WheelEvent_Binding::DOM_DELTA_PAGE &&
-              gfxPrefs::PageSmoothScrollEnabled()))) {
+              StaticPrefs::general_smoothScroll_pages()))) {
           scrollMode = ScrollWheelInput::SCROLLMODE_SMOOTH;
         }
 
@@ -185,7 +186,6 @@ nsEventStatus APZInputBridge::ReceiveInputEvent(
 
       keyboardEvent.mFlags.mHandledByAPZ = input.mHandledByAPZ;
       keyboardEvent.mFocusSequenceNumber = input.mFocusSequenceNumber;
-      aEvent.mLayersId = input.mLayersId;
       return status;
     }
     default: {

@@ -105,12 +105,8 @@ class MochitestRunner(MozbuildObject):
         tests = list(resolver.resolve_tests(paths=test_paths, cwd=cwd))
         return tests
 
-    def run_desktop_test(self, context, tests=None, suite=None, **kwargs):
-        """Runs a mochitest.
-
-        suite is the type of mochitest to run. It can be one of ('plain',
-        'chrome', 'browser', 'a11y').
-        """
+    def run_desktop_test(self, context, tests=None, **kwargs):
+        """Runs a mochitest."""
         # runtests.py is ambiguous, so we load the file/module manually.
         if 'mochitest' not in sys.modules:
             import imp
@@ -144,7 +140,10 @@ class MochitestRunner(MozbuildObject):
             # refresh the page to pick up modifications. Therefore leave the browser
             # open if only running a single mochitest-plain test. This behaviour can
             # be overridden by passing in --keep-open=false.
-            if len(tests) == 1 and options.keep_open is None and suite == 'plain':
+            if (len(tests) == 1
+                    and options.keep_open is None
+                    and not options.headless
+                    and getattr(options, 'flavor', 'plain') == 'plain'):
                 options.keep_open = True
 
         # We need this to enable colorization of output.
@@ -153,7 +152,7 @@ class MochitestRunner(MozbuildObject):
         self.log_manager.disable_unstructured()
         return result
 
-    def run_android_test(self, context, tests, suite=None, **kwargs):
+    def run_android_test(self, context, tests, **kwargs):
         host_ret = verify_host_bin()
         if host_ret != 0:
             return host_ret
@@ -193,7 +192,7 @@ class MochitestRunner(MozbuildObject):
         options = Namespace(**kwargs)
         return runjunit.run_test_harness(parser, options)
 
-    def run_robocop_test(self, context, tests, suite=None, **kwargs):
+    def run_robocop_test(self, context, tests, **kwargs):
         host_ret = verify_host_bin()
         if host_ret != 0:
             return host_ret
@@ -332,6 +331,7 @@ class MachCommands(MachCommandBase):
         from mochitest_options import ALL_FLAVORS
         from mozlog.commandline import setup_logging
         from mozlog.handlers import StreamHandler
+        from moztest.resolve import get_suite_definition
 
         buildapp = None
         for app in SUPPORTED_APPS:
@@ -452,7 +452,7 @@ class MachCommands(MachCommandBase):
             from mozrunner.devices.android_device import verify_android_device
             app = kwargs.get('app')
             if not app:
-                app = self.substs["ANDROID_PACKAGE_NAME"]
+                app = "org.mozilla.geckoview.test"
             device_serial = kwargs.get('deviceSerial')
 
             # verify installation
@@ -465,16 +465,16 @@ class MachCommands(MachCommandBase):
 
         overall = None
         for (flavor, subsuite), tests in sorted(suites.items()):
-            fobj = ALL_FLAVORS[flavor]
+            _, suite = get_suite_definition(flavor, subsuite)
+            if 'test_paths' in suite['kwargs']:
+                del suite['kwargs']['test_paths']
 
             harness_args = kwargs.copy()
-            harness_args['subsuite'] = subsuite
-            harness_args.update(fobj.get('extra_args', {}))
+            harness_args.update(suite['kwargs'])
 
             result = run_mochitest(
                 self._mach_context,
                 tests=tests,
-                suite=fobj['suite'],
                 **harness_args)
 
             if result:
@@ -566,7 +566,7 @@ class RobocopCommands(MachCommandBase):
         # verify installation
         app = kwargs.get('app')
         if not app:
-            app = self.substs["ANDROID_PACKAGE_NAME"]
+            kwargs['app'] = app = self.substs["ANDROID_PACKAGE_NAME"]
         device_serial = kwargs.get('deviceSerial')
         verify_android_device(self, install=True, xre=False, network=True,
                               app=app, device_serial=device_serial)
@@ -576,7 +576,7 @@ class RobocopCommands(MachCommandBase):
             kwargs['adbPath'] = get_adb_path(self)
 
         mochitest = self._spawn(MochitestRunner)
-        return mochitest.run_robocop_test(self._mach_context, tests, 'robocop', **kwargs)
+        return mochitest.run_robocop_test(self._mach_context, tests, **kwargs)
 
 
 # NOTE python/mach/mach/commands/commandinfo.py references this function

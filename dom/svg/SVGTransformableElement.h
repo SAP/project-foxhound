@@ -20,14 +20,14 @@ namespace dom {
 class DOMSVGAnimatedTransformList;
 class SVGGraphicsElement;
 class SVGMatrix;
-class SVGIRect;
+class SVGRect;
 struct SVGBoundingBoxOptions;
 
 class SVGTransformableElement : public SVGElement {
  public:
   explicit SVGTransformableElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
       : SVGElement(std::move(aNodeInfo)) {}
-  virtual ~SVGTransformableElement() {}
+  virtual ~SVGTransformableElement() = default;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override = 0;
 
@@ -36,8 +36,8 @@ class SVGTransformableElement : public SVGElement {
   SVGElement* GetNearestViewportElement();
   SVGElement* GetFarthestViewportElement();
   MOZ_CAN_RUN_SCRIPT
-  already_AddRefed<SVGIRect> GetBBox(const SVGBoundingBoxOptions& aOptions,
-                                     ErrorResult& rv);
+  already_AddRefed<SVGRect> GetBBox(const SVGBoundingBoxOptions& aOptions,
+                                    ErrorResult& rv);
   already_AddRefed<SVGMatrix> GetCTM();
   already_AddRefed<SVGMatrix> GetScreenCTM();
   already_AddRefed<SVGMatrix> GetTransformToElement(

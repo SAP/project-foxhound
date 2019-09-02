@@ -67,6 +67,14 @@ void HTMLLIElement::MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
                              value->GetEnumValue());
   }
 
+  // Map <li value=INTEGER> to 'counter-set: list-item INTEGER'.
+  const nsAttrValue* attrVal = aAttributes->GetAttr(nsGkAtoms::value);
+  if (attrVal && attrVal->Type() == nsAttrValue::eInteger) {
+    if (!aDecls.PropertyIsSet(eCSSProperty_counter_set)) {
+      aDecls.SetCounterSetListItem(attrVal->GetIntegerValue());
+    }
+  }
+
   nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
 }
 
@@ -74,6 +82,7 @@ NS_IMETHODIMP_(bool)
 HTMLLIElement::IsAttributeMapped(const nsAtom* aAttribute) const {
   static const MappedAttributeEntry attributes[] = {
       {nsGkAtoms::type},
+      {nsGkAtoms::value},
       {nullptr},
   };
 

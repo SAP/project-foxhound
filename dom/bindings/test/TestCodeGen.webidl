@@ -11,7 +11,8 @@ typedef CustomEventInit TestDictionaryTypedef;
 
 interface TestExternalInterface;
 
-[Pref="xyz"]
+// We need a pref name that's in StaticPrefList.h here.
+[Pref="abc.def"]
 interface TestRenamedInterface {
 };
 
@@ -117,6 +118,22 @@ callback TestOptionalArguments = void(optional DOMString aString,
                                       optional TestInterface? anInterface,
                                       optional TestInterface anotherInterface,
                                       optional long aLong);
+// Callback constructor return value tests
+callback constructor TestVoidConstruction = void(TestDictionaryTypedef arg);
+callback constructor TestIntegerConstruction = unsigned long();
+callback constructor TestBooleanConstruction = boolean(any arg1,
+                                                       optional any arg2);
+callback constructor TestFloatConstruction = unrestricted float(optional object arg1,
+                                                                optional TestDictionaryTypedef arg2);
+callback constructor TestStringConstruction = DOMString(long? arg);
+callback constructor TestEnumConstruction = TestEnum(any... arg);
+callback constructor TestInterfaceConstruction = TestInterface();
+callback constructor TestExternalInterfaceConstruction = TestExternalInterface();
+callback constructor TestCallbackInterfaceConstruction = TestCallbackInterface();
+callback constructor TestCallbackConstruction = TestCallback();
+callback constructor TestObjectConstruction = object();
+callback constructor TestTypedArrayConstruction = ArrayBuffer();
+callback constructor TestSequenceConstruction = sequence<boolean>();
 // If you add a new test callback, add it to the forceCallbackGeneration
 // method on TestInterface so it actually gets tested.
 
@@ -546,7 +563,20 @@ interface TestInterface {
                                TestInterfaceArguments arg22,
                                TestStringEnumArguments arg23,
                                TestObjectArguments arg24,
-                               TestOptionalArguments arg25);
+                               TestOptionalArguments arg25,
+                               TestVoidConstruction arg26,
+                               TestIntegerConstruction arg27,
+                               TestBooleanConstruction arg28,
+                               TestFloatConstruction arg29,
+                               TestStringConstruction arg30,
+                               TestEnumConstruction arg31,
+                               TestInterfaceConstruction arg32,
+                               TestExternalInterfaceConstruction arg33,
+                               TestCallbackInterfaceConstruction arg34,
+                               TestCallbackConstruction arg35,
+                               TestObjectConstruction arg36,
+                               TestTypedArrayConstruction arg37,
+                               TestSequenceConstruction arg38);
 
   // Any types
   void passAny(any arg);
@@ -605,8 +635,8 @@ interface TestInterface {
   void passUnion7((object or DOMString or long) arg);
   void passUnion8((object or DOMString or boolean) arg);
   void passUnion9((object or DOMString or long or boolean) arg);
-  void passUnion10(optional (EventInit or long) arg);
-  void passUnion11(optional (CustomEventInit or long) arg);
+  void passUnion10(optional (EventInit or long) arg = {});
+  void passUnion11(optional (CustomEventInit or long) arg = {});
   void passUnion12(optional (EventInit or long) arg = 5);
   void passUnion13(optional (object or long?) arg = null);
   void passUnion14(optional (object or long?) arg = 5);
@@ -622,8 +652,8 @@ interface TestInterface {
   void passUnion24((sequence<ImageData?> or long) arg);
   void passUnion25((sequence<sequence<ImageData>> or long) arg);
   void passUnion26((sequence<sequence<ImageData?>> or long) arg);
-  void passUnion27(optional (sequence<DOMString> or EventInit) arg);
-  void passUnion28(optional (EventInit or sequence<DOMString>) arg);
+  void passUnion27(optional (sequence<DOMString> or EventInit) arg = {});
+  void passUnion28(optional (EventInit or sequence<DOMString>) arg = {});
   void passUnionWithCallback((EventHandler or long) arg);
   void passUnionWithByteString((ByteString or long) arg);
   void passUnionWithRecord((record<DOMString, DOMString> or DOMString) arg);
@@ -750,7 +780,7 @@ interface TestInterface {
   [BinaryName="otherAttributeRenamedTo"]
   attribute byte otherAttributeRenamedFrom;
 
-  void passDictionary(optional Dict x);
+  void passDictionary(optional Dict x = {});
   void passDictionary2(Dict x);
   [Cached, Pure]
   readonly attribute Dict readonlyDictionary;
@@ -766,16 +796,16 @@ interface TestInterface {
   attribute Dict writableFrozenDictionary;
   Dict receiveDictionary();
   Dict? receiveNullableDictionary();
-  void passOtherDictionary(optional GrandparentDict x);
+  void passOtherDictionary(optional GrandparentDict x = {});
   void passSequenceOfDictionaries(sequence<Dict> x);
   void passRecordOfDictionaries(record<DOMString, GrandparentDict> x);
   // No support for nullable dictionaries inside a sequence (nor should there be)
   //  void passSequenceOfNullableDictionaries(sequence<Dict?> x);
-  void passDictionaryOrLong(optional Dict x);
+  void passDictionaryOrLong(optional Dict x = {});
   void passDictionaryOrLong(long x);
 
-  void passDictContainingDict(optional DictContainingDict arg);
-  void passDictContainingSequence(optional DictContainingSequence arg);
+  void passDictContainingDict(optional DictContainingDict arg = {});
+  void passDictContainingSequence(optional DictContainingSequence arg = {});
   DictContainingSequence receiveDictContainingSequence();
   void passVariadicDictionary(Dict... arg);
 
@@ -821,7 +851,7 @@ interface TestInterface {
   boolean overload1(TestInterface arg);
   TestInterface overload1(DOMString strs, TestInterface arg);
   void overload2(TestInterface arg);
-  void overload2(optional Dict arg);
+  void overload2(optional Dict arg = {});
   void overload2(boolean arg);
   void overload2(DOMString arg);
   void overload2(Date arg);
@@ -861,8 +891,8 @@ interface TestInterface {
   void overload18(record<DOMString, DOMString> arg);
   void overload18(sequence<DOMString> arg);
   void overload19(sequence<long> arg);
-  void overload19(optional Dict arg);
-  void overload20(optional Dict arg);
+  void overload19(optional Dict arg = {});
+  void overload20(optional Dict arg = {});
   void overload20(sequence<long> arg);
 
   // Variadic handling
@@ -960,7 +990,7 @@ interface TestInterface {
   legacycaller short(unsigned long arg1, TestInterface arg2);
   void passArgsWithDefaults(optional long arg1,
                             optional TestInterface? arg2 = null,
-                            optional Dict arg3, optional double arg4 = 5.0,
+                            optional Dict arg3 = {}, optional double arg4 = 5.0,
                             optional float arg5);
 
   attribute any toJSONShouldSkipThis;
@@ -1094,8 +1124,8 @@ dictionary Dict : ParentDict {
   // CustomEventInit is useful to test because it needs rooting.
   (CustomEventInit or long) eventInitOrLong2;
   (CustomEventInit or long)? nullableEventInitOrLong2;
-  (EventInit or long) eventInitOrLongWithDefaultValue = null;
-  (CustomEventInit or long) eventInitOrLongWithDefaultValue2 = null;
+  (EventInit or long) eventInitOrLongWithDefaultValue = {};
+  (CustomEventInit or long) eventInitOrLongWithDefaultValue2 = {};
   (EventInit or long) eventInitOrLongWithDefaultValue3 = 5;
   (CustomEventInit or long) eventInitOrLongWithDefaultValue4 = 5;
   (EventInit or long)? nullableEventInitOrLongWithDefaultValue = null;
@@ -1190,6 +1220,11 @@ dictionary DictWithConditionalMembers {
   long funcControlledMember;
   [ChromeOnly, Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   long chromeOnlyFuncControlledMember;
+  // We need a pref name that's in StaticPrefList.h here.
+  [Pref="abc.def"]
+  long prefControlledMember;
+  [Pref="abc.def", ChromeOnly, Func="TestFuncControlledMember"]
+  long chromeOnlyFuncAndPrefControlledMember;
 };
 
 interface TestIndexedGetterInterface {

@@ -10,7 +10,7 @@
 
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
-#include "gfxPrefs.h"
+
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
@@ -20,13 +20,14 @@
 #include "mozilla/layers/WebRenderMessages.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Move.h"
+#include "mozilla/PresShell.h"
 #include "nsCOMPtr.h"
+#include "nsCSSFrameConstructor.h"
 #include "nsFontMetrics.h"
 #include "nsGkAtoms.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsPresContext.h"
-#include "nsIPresShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsDisplayList.h"
 #include "nsCounterManager.h"
@@ -53,6 +54,10 @@ using namespace mozilla::gfx;
 using namespace mozilla::image;
 using namespace mozilla::layout;
 using mozilla::dom::Document;
+
+nsIFrame* NS_NewBulletFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
+  return new (aPresShell) nsBulletFrame(aStyle, aPresShell->GetPresContext());
+}
 
 NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(FontSizeInflationProperty, float)
 
@@ -138,6 +143,10 @@ void nsBulletFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
       // Register the new request.
       mImageRequest = std::move(newRequestClone);
       RegisterImageRequest(/* aKnownToBeAnimated = */ false);
+
+      // Image bullets can affect the layout of the page, so boost the image
+      // load priority.
+      mImageRequest->BoostPriority(imgIRequest::CATEGORY_SIZE_QUERY);
     }
   } else {
     // No image request on the new ComputedStyle.
@@ -148,8 +157,8 @@ void nsBulletFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   // Update the list bullet accessible. If old style list isn't available then
   // no need to update the accessible tree because it's not created yet.
   if (aOldComputedStyle) {
-    nsAccessibilityService* accService = nsIPresShell::AccService();
-    if (accService) {
+    if (nsAccessibilityService* accService =
+            PresShell::GetAccessibilityService()) {
       const nsStyleList* oldStyleList = aOldComputedStyle->StyleList();
       bool hadBullet = oldStyleList->GetListStyleImage() ||
                        !oldStyleList->mCounterStyle.IsNone();
@@ -159,12 +168,13 @@ void nsBulletFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
                        !newStyleList->mCounterStyle.IsNone();
 
       if (hadBullet != hasBullet) {
-        accService->UpdateListBullet(PresContext()->GetPresShell(), mContent,
+        nsIContent* listItem = mContent->GetParent();
+        accService->UpdateListBullet(PresContext()->GetPresShell(), listItem,
                                      hasBullet);
       }
     }
   }
-#endif
+#endif  // #ifdef ACCESSIBILITY
 }
 
 class nsDisplayBulletGeometry
@@ -175,7 +185,7 @@ class nsDisplayBulletGeometry
       : nsDisplayItemGenericGeometry(aItem, aBuilder),
         nsImageGeometryMixin(aItem, aBuilder) {
     nsBulletFrame* f = static_cast<nsBulletFrame*>(aItem->Frame());
-    mOrdinal = f->GetOrdinal();
+    mOrdinal = f->Ordinal();
   }
 
   virtual bool InvalidateForSyncDecodeImages() const override {
@@ -533,10 +543,10 @@ bool BulletRenderer::CreateWebRenderCommandsForText(
   return textDrawer->Finish();
 }
 
-class nsDisplayBullet final : public nsDisplayItem {
+class nsDisplayBullet final : public nsPaintedDisplayItem {
  public:
   nsDisplayBullet(nsDisplayListBuilder* aBuilder, nsBulletFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayBullet);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -581,7 +591,7 @@ class nsDisplayBullet final : public nsDisplayItem {
         static_cast<const nsDisplayBulletGeometry*>(aGeometry);
     nsBulletFrame* f = static_cast<nsBulletFrame*>(mFrame);
 
-    if (f->GetOrdinal() != geometry->mOrdinal) {
+    if (f->Ordinal() != geometry->mOrdinal) {
       bool snap;
       aInvalidRegion->Or(geometry->mBounds, GetBounds(aBuilder, &snap));
       return;
@@ -594,8 +604,8 @@ class nsDisplayBullet final : public nsDisplayItem {
       aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
     }
 
-    return nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
-                                                    aInvalidRegion);
+    return nsPaintedDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
+                                                           aInvalidRegion);
   }
 
  protected:
@@ -636,7 +646,7 @@ void nsDisplayBullet::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   }
 
   ImgDrawResult result = static_cast<nsBulletFrame*>(mFrame)->PaintBullet(
-      *aCtx, ToReferenceFrame(), GetPaintRect(), flags, mDisableSubpixelAA);
+      *aCtx, ToReferenceFrame(), GetPaintRect(), flags, IsSubpixelAADisabled());
 
   nsDisplayBulletGeometry::UpdateDrawResult(this, result);
 }
@@ -647,8 +657,7 @@ void nsBulletFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   DO_GLOBAL_REFLOW_COUNT_DSP("nsBulletFrame");
 
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplayBullet>(aBuilder, this));
+  aLists.Content()->AppendNewToTop<nsDisplayBullet>(aBuilder, this);
 }
 
 Maybe<BulletRenderer> nsBulletFrame::CreateBulletRenderer(
@@ -660,21 +669,26 @@ Maybe<BulletRenderer> nsBulletFrame::CreateBulletRenderer(
   if (myList->GetListStyleImage() && mImageRequest) {
     uint32_t status;
     mImageRequest->GetImageStatus(&status);
-    if (status & imgIRequest::STATUS_LOAD_COMPLETE &&
-        !(status & imgIRequest::STATUS_ERROR)) {
-      nsCOMPtr<imgIContainer> imageCon;
-      mImageRequest->GetImage(getter_AddRefs(imageCon));
-      if (imageCon) {
-        nsRect dest(padding.left, padding.top,
-                    mRect.width - (padding.left + padding.right),
-                    mRect.height - (padding.top + padding.bottom));
-        BulletRenderer br(imageCon, dest + aPt);
-        return Some(br);
+    if (!(status & imgIRequest::STATUS_ERROR)) {
+      if (status & imgIRequest::STATUS_LOAD_COMPLETE) {
+        nsCOMPtr<imgIContainer> imageCon;
+        mImageRequest->GetImage(getter_AddRefs(imageCon));
+        if (imageCon) {
+          nsRect dest(padding.left, padding.top,
+                      mRect.width - (padding.left + padding.right),
+                      mRect.height - (padding.top + padding.bottom));
+          BulletRenderer br(imageCon, dest + aPt);
+          return Some(br);
+        }
+      } else {
+        // Boost the load priority further now that we know we want to display
+        // the bullet image.
+        mImageRequest->BoostPriority(imgIRequest::CATEGORY_DISPLAY);
       }
     }
   }
 
-  nscolor color = nsLayoutUtils::GetColor(this, &nsStyleColor::mColor);
+  nscolor color = nsLayoutUtils::GetColor(this, &nsStyleText::mColor);
 
   DrawTarget* drawTarget = aRenderingContext.GetDrawTarget();
   int32_t appUnitsPerDevPixel = PresContext()->AppUnitsPerDevPixel();
@@ -770,8 +784,8 @@ Maybe<BulletRenderer> nsBulletFrame::CreateBulletRenderer(
       RefPtr<nsFontMetrics> fm =
           nsLayoutUtils::GetFontMetricsForFrame(this, GetFontSizeInflation());
       nsAutoString text;
-      GetListItemText(listStyleType, GetWritingMode(), GetOrdinal(), text);
       WritingMode wm = GetWritingMode();
+      GetListItemText(listStyleType, wm, Ordinal(), text);
       nscoord ascent = wm.IsLineInverted() ? fm->MaxDescent() : fm->MaxAscent();
       aPt.MoveBy(padding.left, padding.top);
       if (wm.IsVertical()) {
@@ -808,35 +822,6 @@ ImgDrawResult nsBulletFrame::PaintBullet(gfxContext& aRenderingContext,
 
   return br->Paint(aRenderingContext, aPt, aDirtyRect, aFlags,
                    aDisableSubpixelAA, this);
-}
-
-int32_t nsBulletFrame::SetListItemOrdinal(int32_t aNextOrdinal, bool* aChanged,
-                                          int32_t aIncrement) {
-  MOZ_ASSERT(aIncrement == 1 || aIncrement == -1,
-             "We shouldn't have weird increments here");
-
-  // Assume that the ordinal comes from the caller
-  int32_t oldOrdinal = mOrdinal;
-  mOrdinal = aNextOrdinal;
-
-  // Try to get value directly from the list-item, if it specifies a
-  // value attribute. Note: we do this with our parent's content
-  // because our parent is the list-item.
-  nsIContent* parentContent = GetParent()->GetContent();
-  if (parentContent) {
-    nsGenericHTMLElement* hc = nsGenericHTMLElement::FromNode(parentContent);
-    if (hc) {
-      const nsAttrValue* attr = hc->GetParsedAttr(nsGkAtoms::value);
-      if (attr && attr->Type() == nsAttrValue::eInteger) {
-        // Use ordinal specified by the value attribute
-        mOrdinal = attr->GetIntegerValue();
-      }
-    }
-  }
-
-  *aChanged = oldOrdinal != mOrdinal;
-
-  return nsCounterManager::IncrementCounter(mOrdinal, aIncrement);
 }
 
 void nsBulletFrame::GetListItemText(CounterStyle* aStyle,
@@ -959,7 +944,7 @@ void nsBulletFrame::GetDesiredSize(nsPresContext* aCX,
       break;
 
     default:
-      GetListItemText(style, GetWritingMode(), GetOrdinal(), text);
+      GetListItemText(style, wm, Ordinal(), text);
       finalSize.BSize(wm) = fm->MaxHeight();
       finalSize.ISize(wm) = nsLayoutUtils::AppUnitWidthOfStringBidi(
           text, this, *fm, *aRenderingContext);
@@ -1155,10 +1140,10 @@ nsresult nsBulletFrame::OnSizeAvailable(imgIRequest* aRequest,
 
     // Now that the size is available (or an error occurred), trigger
     // a reflow of the bullet frame.
-    nsIPresShell* shell = presContext->GetPresShell();
-    if (shell) {
-      shell->FrameNeedsReflow(this, nsIPresShell::eStyleChange,
-                              NS_FRAME_IS_DIRTY);
+    mozilla::PresShell* presShell = presContext->GetPresShell();
+    if (presShell) {
+      presShell->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
+                                  NS_FRAME_IS_DIRTY);
     }
   }
 
@@ -1178,11 +1163,12 @@ void nsBulletFrame::GetLoadGroup(nsPresContext* aPresContext,
 
   MOZ_ASSERT(nullptr != aLoadGroup, "null OUT parameter pointer");
 
-  nsIPresShell* shell = aPresContext->GetPresShell();
+  mozilla::PresShell* presShell = aPresContext->GetPresShell();
+  if (!presShell) {
+    return;
+  }
 
-  if (!shell) return;
-
-  Document* doc = shell->GetDocument();
+  Document* doc = presShell->GetDocument();
   if (!doc) return;
 
   *aLoadGroup = doc->GetDocumentLoadGroup().take();
@@ -1262,12 +1248,26 @@ nscoord nsBulletFrame::GetLogicalBaseline(WritingMode aWritingMode) const {
   return ascent + GetLogicalUsedMargin(aWritingMode).BStart(aWritingMode);
 }
 
+bool nsBulletFrame::GetNaturalBaselineBOffset(WritingMode aWM,
+                                              BaselineSharingGroup,
+                                              nscoord* aBaseline) const {
+  nscoord ascent = 0;
+  if (GetStateBits() & BULLET_FRAME_IMAGE_LOADING) {
+    ascent = BSize(aWM);
+  } else {
+    ascent = GetListStyleAscent();
+  }
+  *aBaseline = ascent;
+  return true;
+}
+
+#ifdef ACCESSIBILITY
 void nsBulletFrame::GetSpokenText(nsAString& aText) {
   CounterStyle* style =
       PresContext()->CounterStyleManager()->ResolveCounterStyle(
           StyleList()->mCounterStyle);
   bool isBullet;
-  style->GetSpokenCounterText(mOrdinal, GetWritingMode(), aText, isBullet);
+  style->GetSpokenCounterText(Ordinal(), GetWritingMode(), aText, isBullet);
   if (isBullet) {
     if (!style->IsNone()) {
       aText.Append(' ');
@@ -1279,6 +1279,7 @@ void nsBulletFrame::GetSpokenText(nsAString& aText) {
     aText = prefix + aText + suffix;
   }
 }
+#endif
 
 void nsBulletFrame::RegisterImageRequest(bool aKnownToBeAnimated) {
   if (mImageRequest) {
@@ -1313,6 +1314,17 @@ void nsBulletFrame::DeregisterAndCancelImageRequest() {
     // Cancel the image request and forget about it.
     mImageRequest->CancelAndForgetObserver(NS_ERROR_FAILURE);
     mImageRequest = nullptr;
+  }
+}
+
+void nsBulletFrame::SetOrdinal(int32_t aOrdinal, bool aNotify) {
+  if (mOrdinal == aOrdinal) {
+    return;
+  }
+  mOrdinal = aOrdinal;
+  if (aNotify) {
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
+                                  NS_FRAME_IS_DIRTY);
   }
 }
 

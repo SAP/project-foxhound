@@ -4,13 +4,6 @@
 
 -keepattributes *Annotation*
 
-# Preserve all public classes, and their public and protected fields and
-# methods.
-
--keep public class * {
-    static public protected *;
-}
-
 # Preserve all .class method names.
 
 -keepclassmembernames class * {
@@ -169,3 +162,11 @@
 -keepclasseswithmembers class * {
     @org.mozilla.gecko.annotation.ReflectionTarget <fields>;
 }
+
+# Avoid "Warning: org.yaml.snakeyaml.scanner.ScannerImpl: can't find
+# referenced method 'java.nio.ByteBuffer flip()' in library class
+# java.nio.ByteBuffer".
+# Between Java 1.8 and 1.9, the signature of `flip()` changed, which
+# trips up proguard.
+
+-dontwarn org.yaml.snakeyaml.scanner.ScannerImpl

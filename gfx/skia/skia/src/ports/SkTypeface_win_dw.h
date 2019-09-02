@@ -57,7 +57,7 @@ private:
         , fDWriteFontFamily(SkSafeRefComPtr(fontFamily))
         , fDWriteFont(SkSafeRefComPtr(font))
         , fDWriteFontFace(SkRefComPtr(fontFace))
-        , fForceGDI(false)
+        , fRenderingMode(DWRITE_RENDERING_MODE_DEFAULT)
         , fGamma(2.2f)
         , fContrast(1.0f)
     {
@@ -89,33 +89,37 @@ public:
     SkTScopedComPtr<IDWriteFontFace2> fDWriteFontFace2;
     SkTScopedComPtr<IDWriteFontFace4> fDWriteFontFace4;
 
+    static sk_sp<DWriteFontTypeface> Make(
+        IDWriteFactory* factory,
+        IDWriteFontFace* fontFace,
+        IDWriteFont* font,
+        IDWriteFontFamily* fontFamily,
+        IDWriteFontFileLoader* fontFileLoader = nullptr,
+        IDWriteFontCollectionLoader* fontCollectionLoader = nullptr)
+    {
+        return sk_sp<DWriteFontTypeface>(
+            new DWriteFontTypeface(get_style(font), factory, fontFace, font, fontFamily,
+                                   fontFileLoader, fontCollectionLoader));
+    }
+
     static DWriteFontTypeface* Create(IDWriteFactory* factory,
                                       IDWriteFontFace* fontFace,
                                       SkFontStyle aStyle,
-                                      bool aForceGDI,
+                                      DWRITE_RENDERING_MODE aRenderingMode,
                                       float aGamma,
                                       float aContrast) {
         DWriteFontTypeface* typeface =
                 new DWriteFontTypeface(aStyle, factory, fontFace,
                                        nullptr, nullptr,
                                        nullptr, nullptr);
-        typeface->fForceGDI = aForceGDI;
+        typeface->fRenderingMode = aRenderingMode;
         typeface->fGamma = aGamma;
         typeface->fContrast = aContrast;
         return typeface;
     }
 
-    static DWriteFontTypeface* Create(IDWriteFactory* factory,
-                                      IDWriteFontFace* fontFace,
-                                      IDWriteFont* font,
-                                      IDWriteFontFamily* fontFamily,
-                                      IDWriteFontFileLoader* fontFileLoader = nullptr,
-                                      IDWriteFontCollectionLoader* fontCollectionLoader = nullptr) {
-        return new DWriteFontTypeface(get_style(font), factory, fontFace, font, fontFamily,
-                                      fontFileLoader, fontCollectionLoader);
-    }
-
-    bool ForceGDI() const { return fForceGDI; }
+    bool ForceGDI() const { return fRenderingMode == DWRITE_RENDERING_MODE_GDI_CLASSIC; }
+    DWRITE_RENDERING_MODE GetRenderingMode() const { return fRenderingMode; }
 
 protected:
     void weak_dispose() const override {
@@ -131,7 +135,7 @@ protected:
     }
 
     sk_sp<SkTypeface> onMakeClone(const SkFontArguments&) const override;
-    SkStreamAsset* onOpenStream(int* ttcIndex) const override;
+    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
     SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
                                            const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
@@ -153,7 +157,7 @@ protected:
 
 private:
     typedef SkTypeface INHERITED;
-    bool fForceGDI;
+    DWRITE_RENDERING_MODE fRenderingMode;
     float fGamma;
     float fContrast;
 };

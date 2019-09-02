@@ -5,7 +5,7 @@
 //! Gecko-specific bits for selector-parsing.
 
 use crate::element_state::{DocumentState, ElementState};
-use crate::gecko_bindings::structs::RawServoSelectorList;
+use crate::gecko_bindings::structs::{self, RawServoSelectorList};
 use crate::gecko_bindings::sugar::ownership::{HasBoxFFI, HasFFI, HasSimpleFFI};
 use crate::invalidation::element::document_state::InvalidationMatchingData;
 use crate::selector_parser::{Direction, SelectorParser};
@@ -44,7 +44,7 @@ pub type Lang = Atom;
 macro_rules! pseudo_class_name {
     ([$(($css:expr, $name:ident, $gecko_type:tt, $state:tt, $flags:tt),)*]) => {
         /// Our representation of a non tree-structural pseudo-class.
-        #[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq)]
+        #[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, ToShmem)]
         pub enum NonTSPseudoClass {
             $(
                 #[doc = $css]
@@ -175,23 +175,13 @@ impl NonTSPseudoClass {
             // For pseudo-classes with pref, the availability in content
             // depends on the pref.
             NonTSPseudoClass::Fullscreen => unsafe {
-                mozilla::StaticPrefs_sVarCache_full_screen_api_unprefix_enabled
+                mozilla::StaticPrefs::sVarCache_full_screen_api_unprefix_enabled
             },
             // Otherwise, a pseudo-class is enabled in content when it
             // doesn't have any enabled flag.
             _ => !self
                 .has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME),
         }
-    }
-
-    /// <https://drafts.csswg.org/selectors-4/#useraction-pseudos>
-    ///
-    /// We intentionally skip the link-related ones.
-    pub fn is_safe_user_action_state(&self) -> bool {
-        matches!(
-            *self,
-            NonTSPseudoClass::Hover | NonTSPseudoClass::Active | NonTSPseudoClass::Focus
-        )
     }
 
     /// Get the state flag associated with a pseudo-class, if any.
@@ -279,6 +269,15 @@ impl ::selectors::parser::NonTSPseudoClass for NonTSPseudoClass {
     fn is_active_or_hover(&self) -> bool {
         matches!(*self, NonTSPseudoClass::Active | NonTSPseudoClass::Hover)
     }
+
+    /// We intentionally skip the link-related ones.
+    #[inline]
+    fn is_user_action_state(&self) -> bool {
+        matches!(
+            *self,
+            NonTSPseudoClass::Hover | NonTSPseudoClass::Active | NonTSPseudoClass::Focus
+        )
+    }
 }
 
 /// The dummy struct we use to implement our selector parsing.
@@ -290,6 +289,7 @@ impl ::selectors::SelectorImpl for SelectorImpl {
     type AttrValue = Atom;
     type Identifier = Atom;
     type ClassName = Atom;
+    type PartName = Atom;
     type LocalName = Atom;
     type NamespacePrefix = Atom;
     type NamespaceUrl = Namespace;
@@ -349,12 +349,13 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
 
     #[inline]
     fn parse_host(&self) -> bool {
-        self.parse_slotted()
+        true
     }
 
-    fn pseudo_element_allows_single_colon(name: &str) -> bool {
-        // FIXME: -moz-tree check should probably be ascii-case-insensitive.
-        ::selectors::parser::is_css2_pseudo_element(name) || name.starts_with("-moz-tree-")
+    #[inline]
+    fn parse_part(&self) -> bool {
+        self.chrome_rules_enabled() ||
+            unsafe { structs::StaticPrefs::sVarCache_layout_css_shadow_parts_enabled }
     }
 
     fn parse_non_ts_pseudo_class(

@@ -43,10 +43,23 @@ static void AssertInnerizedEnvironmentChain(JSContext* cx, JSObject& env) {
 }
 
 static bool IsEvalCacheCandidate(JSScript* script) {
+  if (!script->isDirectEvalInFunction()) {
+    return false;
+  }
+
   // Make sure there are no inner objects which might use the wrong parent
   // and/or call scope by reusing the previous eval's script.
-  return script->isDirectEvalInFunction() && !script->hasSingletons() &&
-         !script->hasObjects();
+  if (script->hasSingletons()) {
+    return false;
+  }
+
+  for (JS::GCCellPtr gcThing : script->gcthings()) {
+    if (gcThing.is<JSObject>()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /* static */
@@ -480,7 +493,7 @@ JS_FRIEND_API bool js::ExecuteInFrameScriptEnvironment(
     return false;
   }
 
-  AutoObjectVector envChain(cx);
+  RootedObjectVector envChain(cx);
   if (!envChain.append(objArg)) {
     return false;
   }
@@ -529,14 +542,14 @@ JS_FRIEND_API JSObject* js::NewJSMEnvironment(JSContext* cx) {
 JS_FRIEND_API bool js::ExecuteInJSMEnvironment(JSContext* cx,
                                                HandleScript scriptArg,
                                                HandleObject varEnv) {
-  AutoObjectVector emptyChain(cx);
+  RootedObjectVector emptyChain(cx);
   return ExecuteInJSMEnvironment(cx, scriptArg, varEnv, emptyChain);
 }
 
 JS_FRIEND_API bool js::ExecuteInJSMEnvironment(JSContext* cx,
                                                HandleScript scriptArg,
                                                HandleObject varEnv,
-                                               AutoObjectVector& targetObj) {
+                                               HandleObjectVector targetObj) {
   cx->check(varEnv);
   MOZ_ASSERT(
       ObjectRealm::get(varEnv).getNonSyntacticLexicalEnvironment(varEnv));

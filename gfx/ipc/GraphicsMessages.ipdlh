@@ -17,19 +17,6 @@ using mozilla::gfx::D3D11Checks::VideoFormatOptionSet from "mozilla/gfx/D3D11Che
 namespace mozilla {
 namespace gfx {
 
-union GfxPrefValue {
-  bool;
-  int32_t;
-  uint32_t;
-  float;
-  nsCString;
-};
-
-struct GfxPrefSetting {
-  int32_t index;
-  GfxPrefValue value;
-};
-
 struct D3D11DeviceStatus
 {
   bool isWARP;
@@ -63,26 +50,14 @@ struct FeatureFailure
   nsCString failureId;
 };
 
-// If a feature state has changed from Enabled -> Failure, this will be non-
-// null.
-union FeatureChange
-{
-  null_t;
-  FeatureFailure;
-};
-
-union GPUDeviceStatus
-{
-  null_t;
-  D3D11DeviceStatus;
-};
-
 struct GPUDeviceData
 {
-  FeatureChange d3d11Compositing;
-  FeatureChange oglCompositing;
-  FeatureChange advancedLayers;
-  GPUDeviceStatus gpuDevice;
+  // If a feature state has changed from Enabled -> Failure, these will be non-
+  // null.
+  FeatureFailure? d3d11Compositing;
+  FeatureFailure? oglCompositing;
+  FeatureFailure? advancedLayers;
+  D3D11DeviceStatus? gpuDevice;
 };
 
 union GfxVarValue

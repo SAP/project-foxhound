@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_workers_WorkerLoadInfo_h
 #define mozilla_dom_workers_WorkerLoadInfo_h
 
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/ChannelInfo.h"
 #include "mozilla/dom/ServiceWorkerRegistrationDescriptor.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -24,7 +25,7 @@ class nsILoadGroup;
 class nsIPrincipal;
 class nsIRunnable;
 class nsIScriptContext;
-class nsITabChild;
+class nsIBrowserChild;
 class nsIURI;
 class nsPIDOMWindowInner;
 
@@ -32,6 +33,7 @@ namespace mozilla {
 
 namespace ipc {
 class PrincipalInfo;
+class CSPInfo;
 }  // namespace ipc
 
 namespace dom {
@@ -50,6 +52,7 @@ struct WorkerLoadInfoData {
   // If we load a data: URL, mPrincipal will be a null principal.
   nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
   nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsCOMPtr<nsIPrincipal> mStoragePrincipal;
 
   // Taken from the parent context.
   nsCOMPtr<nsICookieSettings> mCookieSettings;
@@ -57,6 +60,13 @@ struct WorkerLoadInfoData {
   nsCOMPtr<nsIScriptContext> mScriptContext;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   nsCOMPtr<nsIContentSecurityPolicy> mCSP;
+  // Thread boundaries require us to not only store a CSP object, but also a
+  // serialized version of the CSP. Reason being: Serializing a CSP to a CSPInfo
+  // needs to happen on the main thread, but storing the CSPInfo needs to happen
+  // on the worker thread. We move the CSPInfo into the Client within
+  // ScriptLoader::PreRun().
+  nsAutoPtr<mozilla::ipc::CSPInfo> mCSPInfo;
+
   nsCOMPtr<nsIChannel> mChannel;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
 
@@ -65,7 +75,7 @@ struct WorkerLoadInfoData {
 
    public:
     InterfaceRequestor(nsIPrincipal* aPrincipal, nsILoadGroup* aLoadGroup);
-    void MaybeAddTabChild(nsILoadGroup* aLoadGroup);
+    void MaybeAddBrowserChild(nsILoadGroup* aLoadGroup);
     NS_IMETHOD GetInterface(const nsIID& aIID, void** aSink) override;
 
     void SetOuterRequestor(nsIInterfaceRequestor* aOuterRequestor) {
@@ -77,20 +87,22 @@ struct WorkerLoadInfoData {
    private:
     ~InterfaceRequestor() {}
 
-    already_AddRefed<nsITabChild> GetAnyLiveTabChild();
+    already_AddRefed<nsIBrowserChild> GetAnyLiveBrowserChild();
 
     nsCOMPtr<nsILoadContext> mLoadContext;
     nsCOMPtr<nsIInterfaceRequestor> mOuterRequestor;
 
-    // Array of weak references to nsITabChild.  We do not want to keep TabChild
-    // actors alive for long after their ActorDestroy() methods are called.
-    nsTArray<nsWeakPtr> mTabChildList;
+    // Array of weak references to nsIBrowserChild.  We do not want to keep
+    // BrowserChild actors alive for long after their ActorDestroy() methods are
+    // called.
+    nsTArray<nsWeakPtr> mBrowserChildList;
   };
 
   // Only set if we have a custom overriden load group
   RefPtr<InterfaceRequestor> mInterfaceRequestor;
 
   nsAutoPtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
+  nsAutoPtr<mozilla::ipc::PrincipalInfo> mStoragePrincipalInfo;
   nsCString mDomain;
   nsString mOrigin;  // Derived from mPrincipal; can be used on worker thread.
 
@@ -106,13 +118,14 @@ struct WorkerLoadInfoData {
 
   uint64_t mWindowID;
 
-  net::ReferrerPolicy mReferrerPolicy;
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   bool mFromWindow;
   bool mEvalAllowed;
   bool mReportCSPViolations;
   bool mXHRParamsAllowed;
   bool mPrincipalIsSystem;
-  bool mStorageAllowed;
+  bool mWatchedByDevtools;
+  StorageAccess mStorageAccess;
   bool mFirstPartyStorageAccessGranted;
   bool mServiceWorkersTestingInWindow;
   OriginAttributes mOriginAttributes;
@@ -136,14 +149,16 @@ struct WorkerLoadInfo : WorkerLoadInfoData {
 
   WorkerLoadInfo& operator=(WorkerLoadInfo&& aOther) = default;
 
-  nsresult SetPrincipalOnMainThread(nsIPrincipal* aPrincipal,
-                                    nsILoadGroup* aLoadGroup);
+  nsresult SetPrincipalsAndCSPOnMainThread(nsIPrincipal* aPrincipal,
+                                           nsIPrincipal* aStoragePrincipal,
+                                           nsILoadGroup* aLoadGroup,
+                                           nsIContentSecurityPolicy* aCSP);
 
-  nsresult GetPrincipalAndLoadGroupFromChannel(nsIChannel* aChannel,
-                                               nsIPrincipal** aPrincipalOut,
-                                               nsILoadGroup** aLoadGroupOut);
+  nsresult GetPrincipalsAndLoadGroupFromChannel(
+      nsIChannel* aChannel, nsIPrincipal** aPrincipalOut,
+      nsIPrincipal** aStoragePrincipalOut, nsILoadGroup** aLoadGroupOut);
 
-  nsresult SetPrincipalFromChannel(nsIChannel* aChannel);
+  nsresult SetPrincipalsAndCSPFromChannel(nsIChannel* aChannel);
 
   bool FinalChannelPrincipalIsValid(nsIChannel* aChannel);
 

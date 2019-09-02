@@ -1,4 +1,4 @@
-# mozharness configuration for Android x86 7.0 unit tests
+# mozharness configuration for Android x86/x86_64 7.0 unit tests
 #
 # This configuration should be combined with suite definitions and other
 # mozharness configuration from android_common.py, or similar.
@@ -10,15 +10,15 @@ config = {
         {
             "algorithm": "sha512",
             "visibility": "internal",
-            "filename": "android-sdk_r27.3.10-linux-x86emu.tar.gz",
+            "filename": "android-sdk_r29.0.11.0-linux-x86emu.tar.gz",
             "unpack": true,
-            "digest": "1e226ec63fbfd9e33b2522da0f35960773cbfd6ab310167c49a5d5caf8333ac44a692cf2b20e00acceda02a3dca731883d65c4401a0d3eb79fdf11007ec04e8e",
-            "size": 131714575
+            "digest": "954d6c7ecf3e10468ae0ca8d97f930eb1e1665ddf5d9317dd4bb8fbc13271cf12c4e343170aee782c33f1b6e15e5915f62c9e4a2a66eb32cc0b919cd6fb9659b",
+            "size": 330652164
         }
         ] """,
     "emulator_avd_name": "test-1",
-    "emulator_process_name": "emulator64-x86",
-    "emulator_extra_args": "-gpu swiftshader_indirect -skip-adb-auth -verbose -show-kernel -use-system-libs -ranchu -selinux permissive -memory 3072 -cores 4",
+    "emulator_process_name": "qemu-system-x86_64",
+    "emulator_extra_args": "-gpu on -skip-adb-auth -verbose -show-kernel -ranchu -selinux permissive -memory 3072 -cores 4",
     "exes": {
         'adb': '%(abs_work_dir)s/android-sdk-linux/platform-tools/adb',
     },
@@ -29,4 +29,9 @@ config = {
         # "LIBGL_DEBUG": "verbose"
     },
     "marionette_extra": "--emulator",
+    "bogomips_minimum": 3000,
+    # in support of test-verify
+    "android_version": 24,
+    "is_fennec": False,
+    "is_emulator": True,
 }

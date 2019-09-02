@@ -16,7 +16,7 @@
 #define BUFSIZE 2048  // What Xlib uses with XGetErrorDatabaseText
 
 extern "C" {
-int X11Error(Display *display, XErrorEvent *event) {
+int X11Error(Display* display, XErrorEvent* event) {
   // Get an indication of how long ago the request that caused the error was
   // made.
   unsigned long age = NextRequest(display) - event->serial;
@@ -35,10 +35,10 @@ int X11Error(Display *display, XErrorEvent *event) {
     // temporary Display to request extension information.  This assumes on
     // the DISPLAY environment variable has been set and matches what was used
     // to open |display|.
-    Display *tmpDisplay = XOpenDisplay(nullptr);
+    Display* tmpDisplay = XOpenDisplay(nullptr);
     if (tmpDisplay) {
       int nExts;
-      char **extNames = XListExtensions(tmpDisplay, &nExts);
+      char** extNames = XListExtensions(tmpDisplay, &nExts);
       int first_error;
       if (extNames) {
         for (int i = 0; i < nExts; ++i) {
@@ -96,7 +96,7 @@ int X11Error(Display *display, XErrorEvent *event) {
     // XSynchronize returns the previous "after function".  If a second
     // XSynchronize call returns the same function after an enable call then
     // synchronization must have already been enabled.
-    if (XSynchronize(display, True) == XSynchronize(display, False)) {
+    if (XSynchronize(display, X11True) == XSynchronize(display, X11False)) {
       notes.AppendLiteral("; sync");
     } else {
       notes.AppendLiteral("; ");
@@ -138,9 +138,9 @@ int X11Error(Display *display, XErrorEvent *event) {
 void InstallX11ErrorHandler() {
   XSetErrorHandler(X11Error);
 
-  Display *display = mozilla::DefaultXDisplay();
+  Display* display = mozilla::DefaultXDisplay();
   NS_ASSERTION(display, "No X display");
   if (PR_GetEnv("MOZ_X_SYNC")) {
-    XSynchronize(display, True);
+    XSynchronize(display, X11True);
   }
 }

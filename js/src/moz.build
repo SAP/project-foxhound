@@ -112,10 +112,10 @@ EXPORTS += [
     'jsfriendapi.h',
     'jspubtd.h',
     'jstypes.h',
-    'perf/jsperf.h',
 ]
 
 EXPORTS.js += [
+    '../public/AllocationRecording.h',
     '../public/AllocPolicy.h',
     '../public/ArrayBuffer.h',
     '../public/BuildId.h',
@@ -131,6 +131,7 @@ EXPORTS.js += [
     '../public/Debug.h',
     '../public/Equality.h',
     '../public/ErrorReport.h',
+    '../public/ForOfIterator.h',
     '../public/GCAnnotations.h',
     '../public/GCAPI.h',
     '../public/GCHashTable.h',
@@ -145,6 +146,7 @@ EXPORTS.js += [
     '../public/LocaleSensitive.h',
     '../public/MemoryFunctions.h',
     '../public/MemoryMetrics.h',
+    '../public/Modules.h',
     '../public/OffThreadScriptCompilation.h',
     '../public/Principals.h',
     '../public/Printf.h',
@@ -157,7 +159,10 @@ EXPORTS.js += [
     '../public/ProtoKey.h',
     '../public/Proxy.h',
     '../public/Realm.h',
+    '../public/RealmOptions.h',
     '../public/RefCounted.h',
+    '../public/RegExp.h',
+    '../public/RegExpFlags.h',
     '../public/RequiredDefines.h',
     '../public/Result.h',
     '../public/RootingAPI.h',
@@ -187,8 +192,13 @@ EXPORTS.js += [
     '../public/Utility.h',
     '../public/Value.h',
     '../public/Vector.h',
+    '../public/Warnings.h',
     '../public/WeakMapPtr.h',
     '../public/Wrapper.h',
+]
+
+EXPORTS.js.experimental += [
+    '../public/experimental/SourceHook.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -238,7 +248,6 @@ UNIFIED_SOURCES += [
     'jsfriendapi.cpp',
     'jsnum.cpp',
     'jstaint.cpp',
-    'perf/jsperf.cpp',
     'proxy/BaseProxyHandler.cpp',
     'proxy/CrossCompartmentWrapper.cpp',
     'proxy/DeadObjectProxy.cpp',
@@ -296,6 +305,7 @@ UNIFIED_SOURCES += [
     'vm/JSScript.cpp',
     'vm/List.cpp',
     'vm/MemoryMetrics.cpp',
+    'vm/Modules.cpp',
     'vm/NativeObject.cpp',
     'vm/ObjectGroup.cpp',
     'vm/OffThreadScriptCompilation.cpp',
@@ -314,6 +324,7 @@ UNIFIED_SOURCES += [
     'vm/Shape.cpp',
     'vm/SharedArrayObject.cpp',
     'vm/SharedImmutableStringsCache.cpp',
+    'vm/SourceHook.cpp',
     'vm/Stack.cpp',
     'vm/StringType.cpp',
     'vm/SymbolType.cpp',
@@ -324,8 +335,8 @@ UNIFIED_SOURCES += [
     'vm/UbiNode.cpp',
     'vm/UbiNodeCensus.cpp',
     'vm/UbiNodeShortestPaths.cpp',
-    'vm/UnboxedObject.cpp',
     'vm/Value.cpp',
+    'vm/Warnings.cpp',
     'vm/Xdr.cpp',
 ]
 
@@ -335,9 +346,6 @@ UNIFIED_SOURCES += [
 #   RtlGenRandom declaration's calling convention in <ntsecapi.h> on Windows.
 # jsutil.cpp cannot be built in unified mode because it is needed for
 #   check-vanilla-allocations.
-# perf/ProfilingStack.cpp cannot be built in unified mode because we want to
-#   suppress warnings due to usage of the system allocator, and this allows it
-#   to have a deterministic object name.
 # util/DoubleToString.cpp cannot be built in unified mode because we want to
 #   suppress compiler warnings in third-party dtoa.c.
 # vm/Interpreter.cpp is gigantic and destroys incremental build times for any
@@ -350,11 +358,6 @@ SOURCES += [
     'vm/Interpreter.cpp',
     'vm/ProfilingStack.cpp',
 ]
-
-if CONFIG['JS_POSIX_NSPR']:
-    UNIFIED_SOURCES += [
-        'vm/PosixNSPR.cpp',
-    ]
 
 if CONFIG['MOZ_INSTRUMENTS']:
     SOURCES += [
@@ -398,23 +401,13 @@ if CONFIG['MOZ_VTUNE']:
     ]
     SOURCES['vtune/ittnotify_static.c'].flags += ['-Wno-varargs', '-Wno-unknown-pragmas']
 
-if CONFIG['HAVE_LINUX_PERF_EVENT_H']:
-    SOURCES += [
-        'perf/pm_linux.cpp'
-    ]
-    if CONFIG['LINUX_HEADERS_INCLUDES']:
-        SOURCES['perf/pm_linux.cpp'].flags += [CONFIG['LINUX_HEADERS_INCLUDES']]
-else:
-    SOURCES += [
-        'perf/pm_stub.cpp'
-    ]
-
 DIRS += [
     'build',
     'frontend',
     'gc',
     'jit',
     'wasm',
+    'zydis',
 ]
 
 FINAL_LIBRARY = 'js'

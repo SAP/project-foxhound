@@ -73,9 +73,8 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent) override;
 
   virtual EventStates IntrinsicState() const override;
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -101,11 +100,15 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   uint32_t NaturalWidth();
   uint32_t NaturalHeight();
   bool Complete();
-  uint32_t Hspace() { return GetUnsignedIntAttr(nsGkAtoms::hspace, 0); }
+  uint32_t Hspace() {
+    return GetDimensionAttrAsUnsignedInt(nsGkAtoms::hspace, 0);
+  }
   void SetHspace(uint32_t aHspace, ErrorResult& aError) {
     SetUnsignedIntAttr(nsGkAtoms::hspace, aHspace, 0, aError);
   }
-  uint32_t Vspace() { return GetUnsignedIntAttr(nsGkAtoms::vspace, 0); }
+  uint32_t Vspace() {
+    return GetDimensionAttrAsUnsignedInt(nsGkAtoms::vspace, 0);
+  }
   void SetVspace(uint32_t aVspace, ErrorResult& aError) {
     SetUnsignedIntAttr(nsGkAtoms::vspace, aVspace, 0, aError);
   }
@@ -179,6 +182,8 @@ class HTMLImageElement final : public nsGenericHTMLElement,
     SetHTMLAttr(nsGkAtoms::decoding, aDecoding, aError);
   }
   void GetDecoding(nsAString& aValue);
+
+  already_AddRefed<Promise> Decode(ErrorResult& aRv);
 
   net::ReferrerPolicy GetImageReferrerPolicy() override {
     return GetReferrerPolicyAsEnum();

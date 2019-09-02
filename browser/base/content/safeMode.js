@@ -3,11 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const appStartup = Services.startup;
 
-const {ResetProfile} = ChromeUtils.import("resource://gre/modules/ResetProfile.jsm");
+const { ResetProfile } = ChromeUtils.import(
+  "resource://gre/modules/ResetProfile.jsm"
+);
 
 var defaultToReset = false;
 
@@ -17,8 +19,9 @@ function restartApp() {
 
 function resetProfile() {
   // Set the reset profile environment variable.
-  let env = Cc["@mozilla.org/process/environment;1"]
-              .getService(Ci.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
   env.set("MOZ_RESET_PROFILE_RESTART", "1");
 }
 
@@ -27,24 +30,29 @@ function showResetDialog() {
   let retVals = {
     reset: false,
   };
-  window.openDialog("chrome://global/content/resetProfile.xul", null,
-                    "chrome,modal,centerscreen,titlebar,dialog=yes", retVals);
-  if (!retVals.reset)
+  window.openDialog(
+    "chrome://global/content/resetProfile.xul",
+    null,
+    "chrome,modal,centerscreen,titlebar,dialog=yes",
+    retVals
+  );
+  if (!retVals.reset) {
     return;
+  }
   resetProfile();
   restartApp();
 }
 
-function onDefaultButton() {
+function onDefaultButton(event) {
   if (defaultToReset) {
+    // Prevent starting into safe mode while restarting.
+    event.preventDefault();
     // Restart to reset the profile.
     resetProfile();
     restartApp();
-    // Return false to prevent starting into safe mode while restarting.
-    return false;
   }
+  // Dialog will be closed by default Event handler.
   // Continue in safe mode. No restart needed.
-  return true;
 }
 
 function onCancel() {
@@ -75,5 +83,7 @@ function onLoad() {
     document.documentElement.getButton("extra1").hidden = true;
     document.getElementById("resetProfileInstead").hidden = true;
   }
+  document.addEventListener("dialogaccept", onDefaultButton);
+  document.addEventListener("dialogcancel", onCancel);
   document.addEventListener("dialogextra1", onExtra1);
 }

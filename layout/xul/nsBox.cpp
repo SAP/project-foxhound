@@ -35,7 +35,7 @@ nsresult nsBox::BeginXULLayout(nsBoxLayoutState& aState) {
     // does this too).
     nsIFrame* box;
     for (box = GetChildXULBox(this); box; box = GetNextXULBox(box))
-      box->AddStateBits(NS_FRAME_IS_DIRTY);
+      box->MarkSubtreeDirty();
   }
 
   // Another copy-over from ReflowInput.
@@ -243,7 +243,7 @@ nsSize nsBox::GetXULMinSizeForScrollArea(nsBoxLayoutState& aBoxLayoutState) {
 nsSize nsBox::GetXULMaxSize(nsBoxLayoutState& aState) {
   NS_ASSERTION(aState.GetRenderingContext(), "must have rendering context");
 
-  nsSize maxSize(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
+  nsSize maxSize(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
   DISPLAY_MAX_SIZE(this, maxSize);
 
   if (IsXULCollapsed()) return maxSize;
@@ -654,10 +654,10 @@ void nsBox::AddMargin(nsIFrame* aChild, nsSize& aSize) {
 }
 
 void nsBox::AddMargin(nsSize& aSize, const nsMargin& aMargin) {
-  if (aSize.width != NS_INTRINSICSIZE)
+  if (aSize.width != NS_UNCONSTRAINEDSIZE)
     aSize.width += aMargin.left + aMargin.right;
 
-  if (aSize.height != NS_INTRINSICSIZE)
+  if (aSize.height != NS_UNCONSTRAINEDSIZE)
     aSize.height += aMargin.top + aMargin.bottom;
 }
 

@@ -87,16 +87,13 @@ struct nsStyleSizes {
 #define NS_ARENA_SIZES_FIELD(classname) mArena##classname
 
 struct nsArenaSizes {
-#define FOR_EACH_SIZE(MACRO) \
-  MACRO(Other, mLineBoxes)   \
-  MACRO(Style, mRuleNodes)   \
-  MACRO(Style, mComputedStyles)
+#define FOR_EACH_SIZE(MACRO) MACRO(Other, mLineBoxes)
 
   nsArenaSizes()
       : FOR_EACH_SIZE(ZERO_SIZE)
 #define FRAME_ID(classname, ...) NS_ARENA_SIZES_FIELD(classname)(0),
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 
@@ -109,7 +106,7 @@ struct nsArenaSizes {
 #define FRAME_ID(classname, ...) \
   aSizes->add(nsTabSizes::Other, NS_ARENA_SIZES_FIELD(classname));
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
   }
@@ -121,7 +118,7 @@ struct nsArenaSizes {
 
 #define FRAME_ID(classname, ...) total += NS_ARENA_SIZES_FIELD(classname);
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 
@@ -132,7 +129,7 @@ struct nsArenaSizes {
 
 #define FRAME_ID(classname, ...) size_t NS_ARENA_SIZES_FIELD(classname);
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 
@@ -157,6 +154,7 @@ class nsWindowSizes {
   MACRO(Style, mLayoutShadowDomStyleSheetsSize)              \
   MACRO(Style, mLayoutShadowDomAuthorStyles)                 \
   MACRO(Other, mLayoutPresShellSize)                         \
+  MACRO(Other, mLayoutRetainedDisplayListSize)               \
   MACRO(Style, mLayoutStyleSetsStylistRuleTree)              \
   MACRO(Style, mLayoutStyleSetsStylistElementAndPseudosMaps) \
   MACRO(Style, mLayoutStyleSetsStylistInvalidationMap)       \
@@ -170,6 +168,7 @@ class nsWindowSizes {
   MACRO(Style, mLayoutComputedValuesDom)                     \
   MACRO(Style, mLayoutComputedValuesNonDom)                  \
   MACRO(Style, mLayoutComputedValuesVisited)                 \
+  MACRO(Style, mLayoutSvgMappedDeclarations)                 \
   MACRO(Other, mPropertyTablesSize)                          \
   MACRO(Other, mBindingsSize)
 

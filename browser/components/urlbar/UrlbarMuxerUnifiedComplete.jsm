@@ -10,7 +10,9 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarMuxerUnifiedComplete"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "resource://gre/modules/Log.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
@@ -19,15 +21,16 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.repository.getLogger("Urlbar.Muxer.UnifiedComplete"));
+  Log.repository.getLogger("Urlbar.Muxer.UnifiedComplete")
+);
 
 const RESULT_TYPE_TO_GROUP = new Map([
-  [ UrlbarUtils.RESULT_TYPE.TAB_SWITCH, UrlbarUtils.RESULT_GROUP.GENERAL ],
-  [ UrlbarUtils.RESULT_TYPE.SEARCH, UrlbarUtils.RESULT_GROUP.SUGGESTION ],
-  [ UrlbarUtils.RESULT_TYPE.URL, UrlbarUtils.RESULT_GROUP.GENERAL ],
-  [ UrlbarUtils.RESULT_TYPE.KEYWORD, UrlbarUtils.RESULT_GROUP.GENERAL ],
-  [ UrlbarUtils.RESULT_TYPE.OMNIBOX, UrlbarUtils.RESULT_GROUP.EXTENSION ],
-  [ UrlbarUtils.RESULT_TYPE.REMOTE_TAB, UrlbarUtils.RESULT_GROUP.GENERAL ],
+  [UrlbarUtils.RESULT_TYPE.TAB_SWITCH, UrlbarUtils.RESULT_GROUP.GENERAL],
+  [UrlbarUtils.RESULT_TYPE.SEARCH, UrlbarUtils.RESULT_GROUP.SUGGESTION],
+  [UrlbarUtils.RESULT_TYPE.URL, UrlbarUtils.RESULT_GROUP.GENERAL],
+  [UrlbarUtils.RESULT_TYPE.KEYWORD, UrlbarUtils.RESULT_GROUP.GENERAL],
+  [UrlbarUtils.RESULT_TYPE.OMNIBOX, UrlbarUtils.RESULT_GROUP.EXTENSION],
+  [UrlbarUtils.RESULT_TYPE.REMOTE_TAB, UrlbarUtils.RESULT_GROUP.GENERAL],
 ]);
 
 /**
@@ -51,12 +54,15 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
     if (!context.results.length) {
       return;
     }
-    // Check the first match, if it's a preselected search match, use search buckets.
-    let firstMatch = context.results[0];
-    let buckets = context.preselected &&
-                  firstMatch.type == UrlbarUtils.RESULT_TYPE.SEARCH ?
-                    UrlbarPrefs.get("matchBucketsSearch") :
-                    UrlbarPrefs.get("matchBuckets");
+    // Check the heuristic match.  If it's a preselected search match, use
+    // search buckets.
+    let heuristicMatch = context.results.find(r => r.heuristic);
+    let buckets =
+      context.preselected &&
+      heuristicMatch &&
+      heuristicMatch.type == UrlbarUtils.RESULT_TYPE.SEARCH
+        ? UrlbarPrefs.get("matchBucketsSearch")
+        : UrlbarPrefs.get("matchBuckets");
     logger.debug(`Buckets: ${buckets}`);
     let sortedMatches = [];
     let handled = new Set();
@@ -73,9 +79,12 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
         }
 
         // Handle the heuristic result.
-        if (group == UrlbarUtils.RESULT_GROUP.HEURISTIC &&
-            match == firstMatch && context.preselected) {
-          sortedMatches.push(match);
+        if (
+          group == UrlbarUtils.RESULT_GROUP.HEURISTIC &&
+          match == heuristicMatch &&
+          context.preselected
+        ) {
+          sortedMatches.unshift(match);
           handled.add(match);
           count--;
         } else if (group == RESULT_TYPE_TO_GROUP.get(match.type)) {
@@ -83,7 +92,9 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
           handled.add(match);
           count--;
         } else if (!RESULT_TYPE_TO_GROUP.has(match.type)) {
-          let errorMsg = `Result type ${match.type} is not mapped to a match group.`;
+          let errorMsg = `Result type ${
+            match.type
+          } is not mapped to a match group.`;
           logger.error(errorMsg);
           Cu.reportError(errorMsg);
         }

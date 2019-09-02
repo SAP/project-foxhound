@@ -13,7 +13,6 @@ from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
 from taskgraph.util.scriptworker import (
-    add_scope_prefix,
     get_signing_cert_scope_per_platform,
     get_worker_type_for_scope,
 )
@@ -89,7 +88,7 @@ def make_repackage_signing_description(config, jobs):
         )
 
         build_platform = dep_job.attributes.get('build_platform')
-        is_nightly = dep_job.attributes.get('nightly')
+        is_nightly = dep_job.attributes.get('nightly', dep_job.attributes.get('shippable'))
         signing_cert_scope = get_signing_cert_scope_per_platform(
             build_platform, is_nightly, config
         )
@@ -105,12 +104,6 @@ def make_repackage_signing_description(config, jobs):
                     "paths": [artifact],
                     "formats": SIGNING_FORMATS[os.path.basename(artifact)],
                 })
-
-        scopes += list({
-            add_scope_prefix(config, 'signing:format:{}'.format(format))
-            for artifact in upstream_artifacts
-            for format in artifact['formats']
-        })
 
         task = {
             'label': label,

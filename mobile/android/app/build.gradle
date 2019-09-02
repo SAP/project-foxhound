@@ -32,7 +32,7 @@ android {
         testApplicationId 'org.mozilla.roboexample.test'
         testInstrumentationRunner 'org.mozilla.gecko.FennecInstrumentationTestRunner'
         // Used by Robolectric based tests; see TestRunner.
-        buildConfigField 'String', 'BUILD_DIR', "\"${project.buildDir}\""
+        buildConfigField 'String', 'BUILD_DIR', "\"${project.buildDir}\"".tr(File.separator, "/")
 
         vectorDrawables.useSupportLibrary = true
         multiDexEnabled true
@@ -147,6 +147,11 @@ android {
                 if (!mozconfig.substs.MOZ_ANDROID_GCM) {
                     exclude 'org/mozilla/gecko/gcm/**/*.java'
                     exclude 'org/mozilla/gecko/push/**/*.java'
+                    exclude 'org/mozilla/gecko/advertising/**'
+                }
+
+                if (!mozconfig.substs.MOZ_ANDROID_GOOGLE_PLAY_SERVICES) {
+                    exclude 'org/mozilla/gecko/util/WebAuthnUtils.java'
                 }
             }
 
@@ -173,6 +178,7 @@ android {
                 if (!mozconfig.substs.MOZ_ANDROID_GCM) {
                     exclude 'org/mozilla/gecko/gcm/**/*.java'
                     exclude 'org/mozilla/gecko/push/**/*.java'
+                    exclude 'org/mozilla/gecko/advertising/**'
                 }
             }
             resources {
@@ -240,6 +246,12 @@ dependencies {
         implementation "com.google.android.gms:play-services-basement:$google_play_services_version"
         implementation "com.google.android.gms:play-services-base:$google_play_services_version"
         implementation "com.google.android.gms:play-services-gcm:$google_play_services_version"
+        implementation "com.google.android.gms:play-services-ads-identifier:$google_play_services_version"
+        implementation "org.mindrot:jbcrypt:0.4"
+    }
+
+    if (mozconfig.substs.MOZ_ANDROID_GOOGLE_PLAY_SERVICES) {
+        implementation "com.google.android.gms:play-services-fido:$google_play_services_fido_version"
     }
 
     // Include LeakCanary in local builds, but not in official builds.
@@ -382,7 +394,9 @@ android.applicationVariants.all { variant ->
 }
 
 android.applicationVariants.all { variant ->
-    configureApplicationVariantWithJNIWrappers(variant, "Fennec")
+    if (variant.name == mozconfig.substs.GRADLE_ANDROID_APP_VARIANT_NAME) {
+        configureApplicationVariantWithJNIWrappers(variant, "Fennec")
+    }
 }
 
 if (gradle.startParameter.taskNames.any { it.endsWith('UnitTest') }) {
@@ -469,7 +483,8 @@ configurations.all {
     resolutionStrategy {
         eachDependency { DependencyResolveDetails details ->
             if (details.requested.group == 'com.google.android.gms'
-                    && details.requested.name != 'play-services-cast') {
+                    && details.requested.name != 'play-services-cast'
+                    && details.requested.name != 'play-services-fido') {
                 details.useVersion "$google_play_services_version"
             }
         }
@@ -514,51 +529,3 @@ android.applicationVariants.all { variant ->
     tasks["compile${productFlavor}${buildType}UnitTestSources"].dependsOn(tasks["merge${productFlavor}${buildType}Assets"])
 }
 
-apply from: "${topsrcdir}/mobile/android/gradle/jacoco_dependencies.gradle"
-if (project.hasProperty('enable_code_coverage')) {
-    apply from: "${topsrcdir}/mobile/android/gradle/jacoco_for_junit.gradle"
-}
-
-
-// Set up code coverage for tests on emulators.
-if (mozconfig.substs.MOZ_JAVA_CODE_COVERAGE) {
-    android {
-        jacoco {
-            version = "$jacoco_version"
-        }
-        buildTypes {
-            debug {
-                testCoverageEnabled true
-            }
-        }
-    }
-
-    dependencies {
-        // This is required both in the instrumented application classes and the test classes,
-        // so `api` has to be used instead of `androidTestImplementation`.
-        api "org.jacoco:org.jacoco.agent:$jacoco_version:runtime"
-    }
-
-    // Generate tasks to archive compiled classfiles for later use with JaCoCo report generation.
-    // One of these tasks is used by `mach android archive-coverage-artifacts`.
-    android.applicationVariants.all { variant ->
-        def name = variant.name
-        def compileTask = tasks.getByName("compile${name.capitalize()}JavaWithJavac")
-        task "archiveClassfiles${name.capitalize()}"(type: Zip, dependsOn: compileTask) {
-            description = "Archive compiled classfiles for $name in order to export them as code coverage artifacts."
-            def fileFilter = ['**/androidTest/**',
-                              '**/test/**',
-                              '**/R.class',
-                              '**/R$*.class',
-                              '**/BuildConfig.*',
-                              '**/Manifest*.*',
-                              '**/*Test*.*',
-                              'android/**/*.*']
-            from fileTree(dir: compileTask.destinationDir, excludes: fileFilter)
-            destinationDir = file("${buildDir}/coverage")
-            // Note: This task assumes only one variant of archiveClassfiles* will be used.
-            // Running multiple variants of this task will overwrite the output archive.
-            archiveName = 'target.app_classfiles.zip'
-        }
-    }
-}

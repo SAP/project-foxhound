@@ -7,6 +7,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MathAlgorithms.h"
 #include "nestegg/nestegg.h"
+#include "DriftCompensation.h"
 #include "OpusTrackEncoder.h"
 #include "VP8TrackEncoder.h"
 #include "WebMWriter.h"
@@ -28,7 +29,7 @@ class WebMOpusTrackEncoder : public OpusTrackEncoder {
 class WebMVP8TrackEncoder : public VP8TrackEncoder {
  public:
   explicit WebMVP8TrackEncoder(TrackRate aTrackRate = 90000)
-      : VP8TrackEncoder(aTrackRate, FrameDroppingMode::DISALLOW) {}
+      : VP8TrackEncoder(nullptr, aTrackRate, FrameDroppingMode::DISALLOW) {}
 
   bool TestVP8Creation(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
                        int32_t aDisplayHeight) {
@@ -93,7 +94,8 @@ class TestWebMWriter : public WebMWriter {
   uint64_t mTimestamp;
 };
 
-TEST(WebMWriter, Metadata) {
+TEST(WebMWriter, Metadata)
+{
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
 
@@ -128,7 +130,8 @@ TEST(WebMWriter, Metadata) {
   EXPECT_TRUE(encodedBuf.Length() > 0);
 }
 
-TEST(WebMWriter, Cluster) {
+TEST(WebMWriter, Cluster)
+{
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
   // Set opus metadata.
@@ -169,7 +172,8 @@ TEST(WebMWriter, Cluster) {
   EXPECT_TRUE(writer.HaveValidCluster());
 }
 
-TEST(WebMWriter, FLUSH_NEEDED) {
+TEST(WebMWriter, FLUSH_NEEDED)
+{
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
   // Set opus metadata.
@@ -288,7 +292,8 @@ static int64_t webm_tell(void* aUserData) {
   return ioData->offset.isValid() ? ioData->offset.value() : -1;
 }
 
-TEST(WebMWriter, bug970774_aspect_ratio) {
+TEST(WebMWriter, bug970774_aspect_ratio)
+{
   TestWebMWriter writer(ContainerWriter::CREATE_AUDIO_TRACK |
                         ContainerWriter::CREATE_VIDEO_TRACK);
   // Set opus metadata.

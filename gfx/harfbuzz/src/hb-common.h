@@ -357,6 +357,14 @@ typedef enum
   /*11.0*/HB_SCRIPT_OLD_SOGDIAN			= HB_TAG ('S','o','g','o'),
   /*11.0*/HB_SCRIPT_SOGDIAN			= HB_TAG ('S','o','g','d'),
 
+  /*
+   * Since 2.4.0
+   */
+  /*12.0*/HB_SCRIPT_ELYMAIC			= HB_TAG ('E','l','y','m'),
+  /*12.0*/HB_SCRIPT_NANDINAGARI			= HB_TAG ('N','a','n','d'),
+  /*12.0*/HB_SCRIPT_NYIAKENG_PUACHUE_HMONG	= HB_TAG ('H','m','n','p'),
+  /*12.0*/HB_SCRIPT_WANCHO			= HB_TAG ('W','c','h','o'),
+
   /* No script set. */
   HB_SCRIPT_INVALID				= HB_TAG_NONE,
 
@@ -459,39 +467,21 @@ typedef uint32_t hb_color_t;
 
 #define HB_COLOR(b,g,r,a) ((hb_color_t) HB_TAG ((b),(g),(r),(a)))
 
-/**
- * hb_color_get_alpha:
- *
- *
- *
- * Since: 2.1.0
- */
+HB_EXTERN uint8_t
+hb_color_get_alpha (hb_color_t color);
 #define hb_color_get_alpha(color)	((color) & 0xFF)
-/**
- * hb_color_get_red:
- *
- *
- *
- * Since: 2.1.0
- */
-#define hb_color_get_red(color)		(((color) >> 8) & 0xFF)
-/**
- * hb_color_get_green:
- *
- *
- *
- * Since: 2.1.0
- */
-#define hb_color_get_green(color)	(((color) >> 16) & 0xFF)
-/**
- * hb_color_get_blue:
- *
- *
- *
- * Since: 2.1.0
- */
-#define hb_color_get_blue(color)	(((color) >> 24) & 0xFF)
 
+HB_EXTERN uint8_t
+hb_color_get_red (hb_color_t color);
+#define hb_color_get_red(color)		(((color) >> 8) & 0xFF)
+
+HB_EXTERN uint8_t
+hb_color_get_green (hb_color_t color);
+#define hb_color_get_green(color)	(((color) >> 16) & 0xFF)
+
+HB_EXTERN uint8_t
+hb_color_get_blue (hb_color_t color);
+#define hb_color_get_blue(color)	(((color) >> 24) & 0xFF)
 
 HB_END_DECLS
 

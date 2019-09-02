@@ -10,7 +10,6 @@ with Files('**'):
 # export required interfaces, even if --disable-cookies has been given
 XPIDL_SOURCES += [
     'nsICookie.idl',
-    'nsICookie2.idl',
     'nsICookieManager.idl',
     'nsICookiePermission.idl',
     'nsICookieService.idl',
@@ -20,6 +19,10 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'necko_cookie'
 
 if CONFIG['NECKO_COOKIES']:
+    EXPORTS += [
+        'nsCookiePermission.h',
+    ]
+
     EXPORTS.mozilla.net = [
         'CookieServiceChild.h',
         'CookieServiceParent.h',
@@ -31,6 +34,7 @@ if CONFIG['NECKO_COOKIES']:
         'CookieServiceParent.cpp',
         'CookieSettings.cpp',
         'nsCookie.cpp',
+        'nsCookiePermission.cpp',
     ]
     # nsCookieService.cpp can't be unified because of symbol conflicts
     SOURCES += [
@@ -38,7 +42,7 @@ if CONFIG['NECKO_COOKIES']:
     ]
     LOCAL_INCLUDES += [
         '/dom/base',
-        '/extensions/cookie',
+        '/extensions/permissions',
         '/intl/uconv',
     ]
 

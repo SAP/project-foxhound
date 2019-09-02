@@ -126,14 +126,14 @@ static inline DWRITE_FONT_STRETCH DWriteFontStretchFromStretch(
 ScaledFontDWrite::ScaledFontDWrite(IDWriteFontFace* aFontFace,
                                    const RefPtr<UnscaledFont>& aUnscaledFont,
                                    Float aSize, bool aUseEmbeddedBitmap,
-                                   bool aForceGDIMode,
+                                   DWRITE_RENDERING_MODE aRenderingMode,
                                    IDWriteRenderingParams* aParams,
                                    Float aGamma, Float aContrast,
                                    const gfxFontStyle* aStyle)
     : ScaledFontBase(aUnscaledFont, aSize),
       mFontFace(aFontFace),
       mUseEmbeddedBitmap(aUseEmbeddedBitmap),
-      mForceGDIMode(aForceGDIMode),
+      mRenderingMode(aRenderingMode),
       mParams(aParams),
       mGamma(aGamma),
       mContrast(aContrast) {
@@ -149,12 +149,13 @@ ScaledFontDWrite::ScaledFontDWrite(IDWriteFontFace* aFontFace,
 
 already_AddRefed<Path> ScaledFontDWrite::GetPathForGlyphs(
     const GlyphBuffer& aBuffer, const DrawTarget* aTarget) {
-  if (aTarget->GetBackendType() != BackendType::DIRECT2D &&
-      aTarget->GetBackendType() != BackendType::DIRECT2D1_1) {
-    return ScaledFontBase::GetPathForGlyphs(aBuffer, aTarget);
-  }
 
   RefPtr<PathBuilder> pathBuilder = aTarget->CreatePathBuilder();
+
+  if (pathBuilder->GetBackendType() != BackendType::DIRECT2D &&
+      pathBuilder->GetBackendType() != BackendType::DIRECT2D1_1) {
+    return ScaledFontBase::GetPathForGlyphs(aBuffer, aTarget);
+  }
 
   PathBuilderD2D* pathBuilderD2D =
       static_cast<PathBuilderD2D*>(pathBuilder.get());
@@ -184,7 +185,7 @@ SkTypeface* ScaledFontDWrite::CreateSkTypeface() {
   }
 
   return SkCreateTypefaceFromDWriteFont(factory, mFontFace, mStyle,
-                                        mForceGDIMode, gamma, contrast);
+                                        mRenderingMode, gamma, contrast);
 }
 #endif
 
@@ -270,9 +271,9 @@ void ScaledFontDWrite::CopyGlyphsToSink(const GlyphBuffer& aBuffer,
 bool UnscaledFontDWrite::GetFontFileData(FontFileDataOutput aDataCallback,
                                          void* aBaton) {
   UINT32 fileCount = 0;
-  mFontFace->GetFiles(&fileCount, nullptr);
+  HRESULT hr = mFontFace->GetFiles(&fileCount, nullptr);
 
-  if (fileCount > 1) {
+  if (FAILED(hr) || fileCount > 1) {
     MOZ_ASSERT(false);
     return false;
   }
@@ -282,7 +283,10 @@ bool UnscaledFontDWrite::GetFontFileData(FontFileDataOutput aDataCallback,
   }
 
   RefPtr<IDWriteFontFile> file;
-  mFontFace->GetFiles(&fileCount, getter_AddRefs(file));
+  hr = mFontFace->GetFiles(&fileCount, getter_AddRefs(file));
+  if (FAILED(hr)) {
+    return false;
+  }
 
   const void* referenceKey;
   UINT32 refKeySize;
@@ -290,17 +294,27 @@ bool UnscaledFontDWrite::GetFontFileData(FontFileDataOutput aDataCallback,
   // key out of the file, that can be an invalid reference key for the loader
   // we use it with. The fix to this is not obvious but it will probably
   // have to happen inside thebes.
-  file->GetReferenceKey(&referenceKey, &refKeySize);
+  hr = file->GetReferenceKey(&referenceKey, &refKeySize);
+  if (FAILED(hr)) {
+    return false;
+  }
 
   RefPtr<IDWriteFontFileLoader> loader;
-  file->GetLoader(getter_AddRefs(loader));
+  hr = file->GetLoader(getter_AddRefs(loader));
+  if (FAILED(hr)) {
+    return false;
+  }
 
   RefPtr<IDWriteFontFileStream> stream;
-  loader->CreateStreamFromKey(referenceKey, refKeySize, getter_AddRefs(stream));
+  hr = loader->CreateStreamFromKey(referenceKey, refKeySize,
+                                   getter_AddRefs(stream));
+  if (FAILED(hr)) {
+    return false;
+  }
 
   UINT64 fileSize64;
-  stream->GetFileSize(&fileSize64);
-  if (fileSize64 > UINT32_MAX) {
+  hr = stream->GetFileSize(&fileSize64);
+  if (FAILED(hr) || fileSize64 > UINT32_MAX) {
     MOZ_ASSERT(false);
     return false;
   }
@@ -308,7 +322,10 @@ bool UnscaledFontDWrite::GetFontFileData(FontFileDataOutput aDataCallback,
   uint32_t fileSize = static_cast<uint32_t>(fileSize64);
   const void* fragmentStart;
   void* context;
-  stream->ReadFileFragment(&fragmentStart, 0, fileSize, &context);
+  hr = stream->ReadFileFragment(&fragmentStart, 0, fileSize, &context);
+  if (FAILED(hr)) {
+    return false;
+  }
 
   aDataCallback((uint8_t*)fragmentStart, fileSize, mFontFace->GetIndex(),
                 aBaton);
@@ -400,7 +417,7 @@ ScaledFontDWrite::InstanceData::InstanceData(
     const wr::FontInstanceOptions* aOptions,
     const wr::FontInstancePlatformOptions* aPlatformOptions)
     : mUseEmbeddedBitmap(false),
-      mForceGDIMode(false),
+      mRenderingMode(DWRITE_RENDERING_MODE_DEFAULT),
       mGamma(2.2f),
       mContrast(1.0f) {
   if (aOptions) {
@@ -408,7 +425,11 @@ ScaledFontDWrite::InstanceData::InstanceData(
       mUseEmbeddedBitmap = true;
     }
     if (aOptions->flags & wr::FontInstanceFlags_FORCE_GDI) {
-      mForceGDIMode = true;
+      mRenderingMode = DWRITE_RENDERING_MODE_GDI_CLASSIC;
+    } else if (aOptions->flags & wr::FontInstanceFlags_FORCE_SYMMETRIC) {
+      mRenderingMode = DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC;
+    } else if (aOptions->flags & wr::FontInstanceFlags_NO_SYMMETRIC) {
+      mRenderingMode = DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL;
     }
   }
   if (aPlatformOptions) {
@@ -488,6 +509,19 @@ bool ScaledFontDWrite::GetWRFontInstanceOptions(
     options.flags |= wr::FontInstanceFlags_FORCE_GDI;
   } else {
     options.flags |= wr::FontInstanceFlags_SUBPIXEL_POSITION;
+  }
+  switch (GetRenderingMode()) {
+    case DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC:
+      options.flags |= wr::FontInstanceFlags_FORCE_SYMMETRIC;
+      break;
+    case DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL:
+      options.flags |= wr::FontInstanceFlags_NO_SYMMETRIC;
+      break;
+    default:
+      break;
+  }
+  if (Factory::GetBGRSubpixelOrder()) {
+    options.flags |= wr::FontInstanceFlags_SUBPIXEL_BGR;
   }
   options.bg_color = wr::ToColorU(Color());
   options.synthetic_italics =
@@ -575,7 +609,7 @@ already_AddRefed<ScaledFont> UnscaledFontDWrite::CreateScaledFont(
 
   RefPtr<ScaledFontBase> scaledFont = new ScaledFontDWrite(
       face, this, aGlyphSize, instanceData.mUseEmbeddedBitmap,
-      instanceData.mForceGDIMode, nullptr, instanceData.mGamma,
+      instanceData.mRenderingMode, nullptr, instanceData.mGamma,
       instanceData.mContrast);
 
   if (mNeedsCairo && !scaledFont->PopulateCairoScaledFont()) {

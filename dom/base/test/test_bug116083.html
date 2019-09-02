@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=116083
 -->
 <head>
   <title>Test for Bug 116083</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -16,6 +16,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=116083
 <div style="white-space: pre-wrap">foo  bar</div>
 <div style="white-space: pre-line">foo  bar</div>
 <div style="white-space: -moz-pre-space">foo  bar</div>
+<div style="white-space: pre" data-collapse-selection-to-child-and-extend>foo  bar</div>
+<div style="white-space: pre-wrap" data-collapse-selection-to-child-and-extend>foo  bar</div>
+<div style="white-space: pre-line" data-collapse-selection-to-child-and-extend>foo  bar</div>
+<div style="white-space: -moz-pre-space" data-collapse-selection-to-child-and-extend>foo  bar</div>
 <div data-result="bar  baz"><span style="white-space: pre">bar  </span>baz</div>
 <div data-result="bar  baz"><span style="white-space: pre-wrap">bar  </span>baz</div>
 <div data-result="bar  baz"><span style="white-space: pre-line">bar  </span>baz</div>
@@ -55,18 +59,34 @@ function hasExpectedFlavors() {
   var cb = Cc["@mozilla.org/widget/clipboard;1"].
            getService(Ci.nsIClipboard);
 
-  ok(cb.hasDataMatchingFlavors(["text/unicode"], 1, cb.kGlobalClipboard),
+  ok(cb.hasDataMatchingFlavors(["text/unicode"], cb.kGlobalClipboard),
      "The clipboard has text/unicode");
 
   // Android only supports plain text
   if (!navigator.appVersion.includes("Android")) {
-    ok(cb.hasDataMatchingFlavors(["text/html"], 1, cb.kGlobalClipboard),
+    ok(cb.hasDataMatchingFlavors(["text/html"], cb.kGlobalClipboard),
        "The clipboard has text/html");
   }
 
   if (navigator.appVersion.includes("Win")) {
-    ok(cb.hasDataMatchingFlavors(["application/x-moz-nativehtml"], 1, cb.kGlobalClipboard),
+    ok(cb.hasDataMatchingFlavors(["application/x-moz-nativehtml"], cb.kGlobalClipboard),
        "The clipboard has application/x-moz-nativehtml");
+  }
+}
+
+function collapseSelectionToChildAndExtend(divElement) {
+  is(divElement.childNodes.length, 1, "Expected exactly one child node.");
+  var textChildNode = divElement.childNodes[0];
+  getSelection().collapse(textChildNode);
+  getSelection().extend(textChildNode, divElement.textContent.length);
+}
+
+function selectDependingOnAttributes(divElement) {
+  if (divElement.hasAttribute("data-collapse-selection-to-child-and-extend")) {
+    // Selecting text as follow comes closest to user behaviour.
+    collapseSelectionToChildAndExtend(divElement);
+  } else {
+    getSelection().selectAllChildren(divElement);
   }
 }
 
@@ -76,10 +96,13 @@ function nextTest() {
     SimpleTest.finish();
     return;
   }
-  getSelection().selectAllChildren(div);
+
+  selectDependingOnAttributes(div);
+
   var expected = div.hasAttribute("data-result") ?
                  div.getAttribute("data-result") :
                  div.textContent;
+
   SimpleTest.waitForClipboard(expected, function() {
     synthesizeKey("C", {accelKey: true});
   }, function() {

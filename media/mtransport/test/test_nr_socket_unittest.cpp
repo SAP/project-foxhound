@@ -69,8 +69,8 @@ class TestNrSocketTest : public MtransportTest {
     sts_ = nullptr;
   }
 
-  RefPtr<TestNrSocket> CreateTestNrSocket_s(const char *ip_str, int proto,
-                                            TestNat *nat) {
+  RefPtr<TestNrSocket> CreateTestNrSocket_s(const char* ip_str, int proto,
+                                            TestNat* nat) {
     // If no nat is supplied, we create a default NAT which is disabled. This
     // is how we simulate a non-natted socket.
     RefPtr<TestNrSocket> sock(new TestNrSocket(nat ? nat : new TestNat));
@@ -83,23 +83,24 @@ class TestNrSocketTest : public MtransportTest {
     return sock;
   }
 
-  void CreatePublicAddrs(size_t count, const char *ip_str = "127.0.0.1",
+  void CreatePublicAddrs(size_t count, const char* ip_str = "127.0.0.1",
                          int proto = IPPROTO_UDP) {
     sts_->Dispatch(WrapRunnable(this, &TestNrSocketTest::CreatePublicAddrs_s,
                                 count, ip_str, proto),
                    NS_DISPATCH_SYNC);
   }
 
-  void CreatePublicAddrs_s(size_t count, const char *ip_str, int proto) {
+  void CreatePublicAddrs_s(size_t count, const char* ip_str, int proto) {
     while (count--) {
       auto sock = CreateTestNrSocket_s(ip_str, proto, nullptr);
-      ASSERT_TRUE(sock) << "Failed to create socket";
+      ASSERT_TRUE(sock)
+      << "Failed to create socket";
       public_addrs_.push_back(sock);
     }
   }
 
   RefPtr<TestNat> CreatePrivateAddrs(size_t size,
-                                     const char *ip_str = "127.0.0.1",
+                                     const char* ip_str = "127.0.0.1",
                                      int proto = IPPROTO_UDP) {
     RefPtr<TestNat> result;
     sts_->Dispatch(
@@ -109,7 +110,7 @@ class TestNrSocketTest : public MtransportTest {
     return result;
   }
 
-  RefPtr<TestNat> CreatePrivateAddrs_s(size_t count, const char *ip_str,
+  RefPtr<TestNat> CreatePrivateAddrs_s(size_t count, const char* ip_str,
                                        int proto) {
     RefPtr<TestNat> nat(new TestNat);
     while (count--) {
@@ -126,8 +127,8 @@ class TestNrSocketTest : public MtransportTest {
   }
 
   bool CheckConnectivityVia(
-      TestNrSocket *from, TestNrSocket *to, const nr_transport_addr &via,
-      nr_transport_addr *sender_external_address = nullptr) {
+      TestNrSocket* from, TestNrSocket* to, const nr_transport_addr& via,
+      nr_transport_addr* sender_external_address = nullptr) {
     MOZ_ASSERT(from);
 
     if (!WaitForWriteable(from)) {
@@ -159,8 +160,8 @@ class TestNrSocketTest : public MtransportTest {
     return !result;
   }
 
-  bool CheckConnectivity(TestNrSocket *from, TestNrSocket *to,
-                         nr_transport_addr *sender_external_address = nullptr) {
+  bool CheckConnectivity(TestNrSocket* from, TestNrSocket* to,
+                         nr_transport_addr* sender_external_address = nullptr) {
     nr_transport_addr destination_address;
     int r = GetAddress(to, &destination_address);
     if (r) {
@@ -171,8 +172,8 @@ class TestNrSocketTest : public MtransportTest {
                                 sender_external_address);
   }
 
-  bool CheckTcpConnectivity(TestNrSocket *from, TestNrSocket *to) {
-    NrSocketBase *accepted_sock;
+  bool CheckTcpConnectivity(TestNrSocket* from, TestNrSocket* to) {
+    NrSocketBase* accepted_sock;
     if (!Connect(from, to, &accepted_sock)) {
       std::cerr << "Connect failed" << std::endl;
       return false;
@@ -235,7 +236,7 @@ class TestNrSocketTest : public MtransportTest {
     return true;
   }
 
-  int GetAddress(TestNrSocket *sock, nr_transport_addr_ *address) {
+  int GetAddress(TestNrSocket* sock, nr_transport_addr_* address) {
     MOZ_ASSERT(sock);
     MOZ_ASSERT(address);
     int r;
@@ -245,27 +246,27 @@ class TestNrSocketTest : public MtransportTest {
     return r;
   }
 
-  int GetAddress_s(TestNrSocket *sock, nr_transport_addr *address) {
+  int GetAddress_s(TestNrSocket* sock, nr_transport_addr* address) {
     return sock->getaddr(address);
   }
 
-  int SendData_s(TestNrSocket *from, const nr_transport_addr &to) {
+  int SendData_s(TestNrSocket* from, const nr_transport_addr& to) {
     // It is up to caller to ensure that |from| is writeable.
     const char buf[] = "foobajooba";
     return from->sendto(
         buf, sizeof(buf), 0,
         // TODO(bug 1170299): Remove const_cast when no longer necessary
-        const_cast<nr_transport_addr *>(&to));
+        const_cast<nr_transport_addr*>(&to));
   }
 
-  int SendDataTcp_s(NrSocketBase *from) {
+  int SendDataTcp_s(NrSocketBase* from) {
     // It is up to caller to ensure that |from| is writeable.
     const char buf[] = "foobajooba";
     size_t written;
     return from->write(buf, sizeof(buf), &written);
   }
 
-  int RecvData_s(TestNrSocket *to, nr_transport_addr *from) {
+  int RecvData_s(TestNrSocket* to, nr_transport_addr* from) {
     // It is up to caller to ensure that |to| is readable
     char buf[DATA_BUF_SIZE];
     size_t len;
@@ -277,7 +278,7 @@ class TestNrSocketTest : public MtransportTest {
     return r;
   }
 
-  int RecvDataTcp_s(NrSocketBase *to) {
+  int RecvDataTcp_s(NrSocketBase* to) {
     // It is up to caller to ensure that |to| is readable
     char buf[DATA_BUF_SIZE];
     size_t len;
@@ -289,7 +290,7 @@ class TestNrSocketTest : public MtransportTest {
     return r;
   }
 
-  int Listen_s(TestNrSocket *to) {
+  int Listen_s(TestNrSocket* to) {
     // listen on |to|
     int r = to->listen(1);
     if (r) {
@@ -298,7 +299,7 @@ class TestNrSocketTest : public MtransportTest {
     return 0;
   }
 
-  int Connect_s(TestNrSocket *from, TestNrSocket *to) {
+  int Connect_s(TestNrSocket* from, TestNrSocket* to) {
     // connect on |from|
     nr_transport_addr destination_address;
     int r = to->getaddr(&destination_address);
@@ -314,20 +315,20 @@ class TestNrSocketTest : public MtransportTest {
     return 0;
   }
 
-  int Accept_s(TestNrSocket *to, NrSocketBase **accepted_sock) {
-    nr_socket *sock;
+  int Accept_s(TestNrSocket* to, NrSocketBase** accepted_sock) {
+    nr_socket* sock;
     nr_transport_addr source_address;
     int r = to->accept(&source_address, &sock);
     if (r) {
       return r;
     }
 
-    *accepted_sock = reinterpret_cast<NrSocketBase *>(sock->obj);
+    *accepted_sock = reinterpret_cast<NrSocketBase*>(sock->obj);
     return 0;
   }
 
-  bool Connect(TestNrSocket *from, TestNrSocket *to,
-               NrSocketBase **accepted_sock) {
+  bool Connect(TestNrSocket* from, TestNrSocket* to,
+               NrSocketBase** accepted_sock) {
     int r;
     sts_->Dispatch(WrapRunnableRet(&r, this, &TestNrSocketTest::Listen_s, to),
                    NS_DISPATCH_SYNC);
@@ -360,7 +361,7 @@ class TestNrSocketTest : public MtransportTest {
     return true;
   }
 
-  bool WaitForSocketState(NrSocketBase *sock, int state) {
+  bool WaitForSocketState(NrSocketBase* sock, int state) {
     MOZ_ASSERT(sock);
     sts_->Dispatch(WrapRunnable(this, &TestNrSocketTest::WaitForSocketState_s,
                                 sock, state),
@@ -379,22 +380,22 @@ class TestNrSocketTest : public MtransportTest {
     return res;
   }
 
-  void WaitForSocketState_s(NrSocketBase *sock, int state) {
+  void WaitForSocketState_s(NrSocketBase* sock, int state) {
     NR_ASYNC_WAIT(sock, state, &WaitDone, this);
   }
 
-  void CancelWait_s(NrSocketBase *sock, int state) { sock->cancel(state); }
+  void CancelWait_s(NrSocketBase* sock, int state) { sock->cancel(state); }
 
-  bool WaitForReadable(NrSocketBase *sock) {
+  bool WaitForReadable(NrSocketBase* sock) {
     return WaitForSocketState(sock, NR_ASYNC_WAIT_READ);
   }
 
-  bool WaitForWriteable(NrSocketBase *sock) {
+  bool WaitForWriteable(NrSocketBase* sock) {
     return WaitForSocketState(sock, NR_ASYNC_WAIT_WRITE);
   }
 
-  static void WaitDone(void *sock, int how, void *test_fixture) {
-    TestNrSocketTest *test = static_cast<TestNrSocketTest *>(test_fixture);
+  static void WaitDone(void* sock, int how, void* test_fixture) {
+    TestNrSocketTest* test = static_cast<TestNrSocketTest*>(test_fixture);
     test->wait_done_for_main_ = true;
   }
 
@@ -530,8 +531,8 @@ TEST_F(TestNrSocketTest, FullConeOnePinhole) {
   ASSERT_FALSE(nr_transport_addr_cmp(&sender_external_address,
                                      &sender_external_address2,
                                      NR_TRANSPORT_ADDR_CMP_MODE_ALL))
-      << "addr1: " << sender_external_address.as_string
-      << " addr2: " << sender_external_address2.as_string;
+  << "addr1: " << sender_external_address.as_string
+  << " addr2: " << sender_external_address2.as_string;
 }
 
 // OS 10.6 doesn't seem to allow us to open ports on 127.0.0.2, and while linux
@@ -575,8 +576,8 @@ TEST_F(TestNrSocketTest, DISABLED_AddressRestrictedCone) {
   ASSERT_FALSE(nr_transport_addr_cmp(&sender_external_address,
                                      &sender_external_address2,
                                      NR_TRANSPORT_ADDR_CMP_MODE_ALL))
-      << "addr1: " << sender_external_address.as_string
-      << " addr2: " << sender_external_address2.as_string;
+  << "addr1: " << sender_external_address.as_string
+  << " addr2: " << sender_external_address2.as_string;
 
   // Verify that the other public IP can now use the pinhole
   ASSERT_TRUE(CheckConnectivityVia(public_addrs_[1], private_addrs_[0],
@@ -589,8 +590,8 @@ TEST_F(TestNrSocketTest, DISABLED_AddressRestrictedCone) {
   ASSERT_FALSE(nr_transport_addr_cmp(&sender_external_address,
                                      &sender_external_address3,
                                      NR_TRANSPORT_ADDR_CMP_MODE_ALL))
-      << "addr1: " << sender_external_address.as_string
-      << " addr2: " << sender_external_address3.as_string;
+  << "addr1: " << sender_external_address.as_string
+  << " addr2: " << sender_external_address3.as_string;
 
   // Verify that the other public IP can now use the pinhole
   ASSERT_TRUE(CheckConnectivityVia(public_addrs_[2], private_addrs_[0],
@@ -623,8 +624,8 @@ TEST_F(TestNrSocketTest, RestrictedCone) {
   ASSERT_FALSE(nr_transport_addr_cmp(&sender_external_address,
                                      &sender_external_address2,
                                      NR_TRANSPORT_ADDR_CMP_MODE_ALL))
-      << "addr1: " << sender_external_address.as_string
-      << " addr2: " << sender_external_address2.as_string;
+  << "addr1: " << sender_external_address.as_string
+  << " addr2: " << sender_external_address2.as_string;
 
   // Verify that the other public IP can now use the pinhole
   ASSERT_TRUE(CheckConnectivityVia(public_addrs_[1], private_addrs_[0],
@@ -657,8 +658,8 @@ TEST_F(TestNrSocketTest, PortDependentMappingFullCone) {
   ASSERT_TRUE(nr_transport_addr_cmp(&sender_external_address0,
                                     &sender_external_address1,
                                     NR_TRANSPORT_ADDR_CMP_MODE_ALL))
-      << "addr1: " << sender_external_address0.as_string
-      << " addr2: " << sender_external_address1.as_string;
+  << "addr1: " << sender_external_address0.as_string
+  << " addr2: " << sender_external_address1.as_string;
 
   // Verify that return traffic works
   ASSERT_TRUE(CheckConnectivityVia(public_addrs_[1], private_addrs_[0],

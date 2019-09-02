@@ -3,7 +3,7 @@
 <head>
   <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
   <title>Test for Cross Site XMLHttpRequest</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="gen.next()">
@@ -573,7 +573,7 @@ function* runTest() {
       is(res.responseText, "",
          "wrong responseText in test for " + testName);
       is(res.events.join(","),
-         "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
+         "opening,rs1,sending,loadstart,rs4,error,loadend",
          "wrong events in test for " + testName);
       is(res.progressEvents, 0,
          "wrong events in test for " + testName);

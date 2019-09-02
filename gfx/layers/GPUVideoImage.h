@@ -15,7 +15,7 @@
 
 namespace mozilla {
 namespace dom {
-class VideoDecoderManagerChild;
+class RemoteDecoderManagerChild;
 }
 namespace gl {
 class GLBlitHelper;
@@ -28,7 +28,7 @@ class GPUVideoImage final : public Image {
   friend class gl::GLBlitHelper;
 
  public:
-  GPUVideoImage(VideoDecoderManagerChild* aManager,
+  GPUVideoImage(RemoteDecoderManagerChild* aManager,
                 const SurfaceDescriptorGPUVideo& aSD, const gfx::IntSize& aSize)
       : Image(nullptr, ImageFormat::GPU_VIDEO), mSize(aSize) {
     // Create the TextureClient immediately since the GPUVideoTextureData
@@ -43,7 +43,7 @@ class GPUVideoImage final : public Image {
         ImageBridgeChild::GetSingleton().get());
   }
 
-  virtual ~GPUVideoImage() {}
+  virtual ~GPUVideoImage() = default;
 
   gfx::IntSize GetSize() const override { return mSize; }
 
@@ -68,8 +68,8 @@ class GPUVideoImage final : public Image {
     return data->GetAsSourceSurface();
   }
 
-  TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override {
-    MOZ_ASSERT(aForwarder == ImageBridgeChild::GetSingleton(),
+  TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override {
+    MOZ_ASSERT(aKnowsCompositor == ImageBridgeChild::GetSingleton(),
                "Must only use GPUVideo on ImageBridge");
     return mTextureClient;
   }

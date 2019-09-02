@@ -27,6 +27,7 @@
 #include "nsNetUtil.h"  // for NS_NewURI, NS_NewChannel, NS_NewStreamLoader
 
 #include "InetAddress.h"  // for java::sdk::InetAddress and java::sdk::UnknownHostException
+#include "ReferrerInfo.h"
 
 namespace mozilla {
 using namespace net;
@@ -87,7 +88,7 @@ class ByteBufferStream final : public nsIInputStream {
         std::min(uint64_t(mBuffer->Capacity() - mPosition), uint64_t(aCount)));
 
     if (*aCountRead > 0) {
-      memcpy(aBuf, (char*)mBuffer->Address(), *aCountRead);
+      memcpy(aBuf, (char*)mBuffer->Address() + mPosition, *aCountRead);
       mPosition += *aCountRead;
     }
 
@@ -292,9 +293,7 @@ class LoaderListener final : public nsIStreamListener,
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Redirected
-    nsCOMPtr<nsILoadInfo> loadInfo;
-    rv = channel->GetLoadInfo(getter_AddRefs(loadInfo));
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
 
     builder->Redirected(!loadInfo->RedirectChain().IsEmpty());
 
@@ -495,7 +494,8 @@ nsresult WebExecutorSupport::CreateStreamLoader(
     NS_ENSURE_SUCCESS(rv, NS_ERROR_MALFORMED_URI);
   }
 
-  rv = httpChannel->SetReferrer(referrerUri);
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new dom::ReferrerInfo(referrerUri);
+  rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Cache mode

@@ -15,7 +15,7 @@
 #include "mozilla/Scoped.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 
 #include "cairo.h"
 #include "cairo-tee.h"
@@ -387,7 +387,7 @@ static cairo_surface_t* GetCairoSurfaceForSourceSurface(
 // An RAII class to temporarily clear any device offset set
 // on a surface. Note that this does not take a reference to the
 // surface.
-class AutoClearDeviceOffset {
+class AutoClearDeviceOffset final {
  public:
   explicit AutoClearDeviceOffset(SourceSurface* aSurface)
       : mSurface(nullptr), mX(0), mY(0) {
@@ -1309,7 +1309,7 @@ void DrawTargetCairo::FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
   }
 
   if (!SupportsVariationSettings(mSurface) && aFont->HasVariationSettings() &&
-      gfxPrefs::PrintFontVariationsAsPaths()) {
+      StaticPrefs::print_font_variations_as_paths()) {
     cairo_set_fill_rule(mContext, CAIRO_FILL_RULE_WINDING);
     cairo_new_path(mContext);
     cairo_glyph_path(mContext, &glyphs[0], aBuffer.mNumGlyphs);
@@ -1417,7 +1417,8 @@ void DrawTargetCairo::MaskSurface(const Pattern& aSource, SourceSurface* aMask,
   cairo_pattern_t* mask = cairo_pattern_create_for_surface(surf);
   cairo_matrix_t matrix;
 
-  cairo_matrix_init_translate(&matrix, -aOffset.x, -aOffset.y);
+  cairo_matrix_init_translate(&matrix, -aOffset.x - aMask->GetRect().x,
+                              -aOffset.y - aMask->GetRect().y);
   cairo_pattern_set_matrix(mask, &matrix);
 
   cairo_set_operator(mContext, GfxOpToCairoOp(aOptions.mCompositionOp));
@@ -1507,8 +1508,10 @@ void DrawTargetCairo::PushLayer(bool aOpaque, Float aOpacity,
     cairo_surface_t* surf = GetCairoSurfaceForSourceSurface(aMask);
     if (surf) {
       layer.mMaskPattern = cairo_pattern_create_for_surface(surf);
+      Matrix maskTransform = aMaskTransform;
+      maskTransform.PreTranslate(aMask->GetRect().X(), aMask->GetRect().Y());
       cairo_matrix_t mat;
-      GfxMatrixToCairoMatrix(aMaskTransform, mat);
+      GfxMatrixToCairoMatrix(maskTransform, mat);
       cairo_matrix_invert(&mat);
       cairo_pattern_set_matrix(layer.mMaskPattern, &mat);
       cairo_surface_destroy(surf);
@@ -1772,6 +1775,34 @@ already_AddRefed<DrawTarget> DrawTargetCairo::CreateSimilarDrawTarget(
   return nullptr;
 }
 
+RefPtr<DrawTarget> DrawTargetCairo::CreateClippedDrawTarget(
+    const Rect& aBounds, SurfaceFormat aFormat) {
+  RefPtr<DrawTarget> result;
+  // Doing this save()/restore() dance is wasteful
+  cairo_save(mContext);
+
+  if (!aBounds.IsEmpty()) {
+    cairo_new_path(mContext);
+    cairo_rectangle(mContext, aBounds.X(), aBounds.Y(), aBounds.Width(),
+                    aBounds.Height());
+    cairo_clip(mContext);
+  }
+  cairo_identity_matrix(mContext);
+  IntRect clipBounds = IntRect::RoundOut(GetUserSpaceClip());
+  if (!clipBounds.IsEmpty()) {
+    RefPtr<DrawTarget> dt = CreateSimilarDrawTarget(
+        IntSize(clipBounds.width, clipBounds.height), aFormat);
+    result = gfx::Factory::CreateOffsetDrawTarget(
+        dt, IntPoint(clipBounds.x, clipBounds.y));
+    result->SetTransform(mTransform);
+  } else {
+    // Everything is clipped but we still want some kind of surface
+    result = CreateSimilarDrawTarget(IntSize(1, 1), aFormat);
+  }
+
+  cairo_restore(mContext);
+  return result;
+}
 bool DrawTargetCairo::InitAlreadyReferenced(cairo_surface_t* aSurface,
                                             const IntSize& aSize,
                                             SurfaceFormat* aFormat) {
@@ -2136,7 +2167,7 @@ void DrawTargetCairo::SetTransform(const Matrix& aTransform) {
   }
 }
 
-Rect DrawTargetCairo::GetUserSpaceClip() {
+Rect DrawTargetCairo::GetUserSpaceClip() const {
   double clipX1, clipY1, clipX2, clipY2;
   cairo_clip_extents(mContext, &clipX1, &clipY1, &clipX2, &clipY2);
   return Rect(clipX1, clipY1, clipX2 - clipX1,

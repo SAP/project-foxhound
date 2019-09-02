@@ -9,9 +9,6 @@ include('../components/telemetry/telemetry-constants.mozbuild')
 with Files('**'):
     BUG_COMPONENT = ('Toolkit', 'General')
 
-with Files('addons/**'):
-    BUG_COMPONENT = ('WebExtensions', 'General')
-
 with Files('docs/**'):
     BUG_COMPONENT = ('Toolkit', 'Async Tooling')
 
@@ -48,9 +45,6 @@ with Files('tests/xpcshell/test_NewTabUtils.js'):
 with Files('tests/xpcshell/test_UpdateUtils*.js'):
     BUG_COMPONENT = ('Toolkit', 'Application Update')
 
-with Files('tests/xpcshell/test_client_id.js'):
-    BUG_COMPONENT = ('Toolkit', 'Telemetry')
-
 with Files('AsyncPrefs.jsm'):
     BUG_COMPONENT = ('Core', 'Security: Process Sandboxing')
 
@@ -59,9 +53,6 @@ with Files('AutoScrollController.jsm'):
 
 with Files('CharsetMenu.jsm'):
     BUG_COMPONENT = ('Firefox', 'Toolbars and Customization')
-
-with Files('ClientID.jsm'):
-    BUG_COMPONENT = ('Toolkit', 'Telemetry')
 
 with Files('Color.jsm'):
     BUG_COMPONENT = ('Toolkit', 'Find Toolbar')
@@ -85,7 +76,7 @@ with Files('FormLikeFactory.jsm'):
     BUG_COMPONENT = ('Toolkit', 'Password Manager')
 
 with Files('IndexedDB.jsm'):
-    BUG_COMPONENT = ('WebExtensions', 'General')
+    BUG_COMPONENT = ('Toolkit', 'Async Tooling')
 
 with Files('InlineSpellChecker*.jsm'):
     BUG_COMPONENT = ('Core', 'Spell Checker')
@@ -156,7 +147,6 @@ BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
 MOCHITEST_CHROME_MANIFESTS += ['tests/chrome/chrome.ini']
 
 TESTING_JS_MODULES += [
-    'HiddenFrame.jsm',
     'tests/modules/MockDocument.jsm',
     'tests/modules/PromiseTestUtils.jsm',
     'tests/modules/Task.jsm',
@@ -173,15 +163,6 @@ EXTRA_JS_MODULES += [
     'ActorChild.jsm',
     'ActorManagerChild.jsm',
     'ActorManagerParent.jsm',
-    'addons/MatchURLFilters.jsm',
-    'addons/SecurityInfo.jsm',
-    'addons/WebNavigation.jsm',
-    'addons/WebNavigationContent.js',
-    'addons/WebNavigationFrames.jsm',
-    'addons/WebRequest.jsm',
-    'addons/WebRequestCommon.jsm',
-    'addons/WebRequestContent.js',
-    'addons/WebRequestUpload.jsm',
     'AppMenuNotifications.jsm',
     'AsyncPrefs.jsm',
     'AutoCompletePopupContent.jsm',
@@ -191,13 +172,12 @@ EXTRA_JS_MODULES += [
     'CanonicalJSON.jsm',
     'CertUtils.jsm',
     'CharsetMenu.jsm',
-    'ClientID.jsm',
     'Color.jsm',
     'Console.jsm',
+    'ContentDOMReference.jsm',
     'CreditCard.jsm',
     'css-selector.js',
     'DateTimePickerPanel.jsm',
-    'DateTimePickerParent.jsm',
     'DeferredTask.jsm',
     'Deprecated.jsm',
     'E10SUtils.jsm',
@@ -213,6 +193,7 @@ EXTRA_JS_MODULES += [
     'GMPExtractorWorker.js',
     'GMPInstallManager.jsm',
     'GMPUtils.jsm',
+    'HiddenFrame.jsm',
     'Http.jsm',
     'IndexedDB.jsm',
     'InlineSpellChecker.jsm',
@@ -239,7 +220,6 @@ EXTRA_JS_MODULES += [
     'RemoteWebProgress.jsm',
     'ResetProfile.jsm',
     'ResponsivenessMonitor.jsm',
-    'SelectParentHelper.jsm',
     'ServiceRequest.jsm',
     'Services.jsm',
     'ShortcutUtils.jsm',
@@ -309,11 +289,11 @@ for var in ('ANDROID_PACKAGE_NAME',
             'MOZ_WIDGET_TOOLKIT',
             'DLL_PREFIX',
             'DLL_SUFFIX',
-            'DEBUG_JS_MODULES'):
+            'DEBUG_JS_MODULES',
+            'OMNIJAR_NAME'):
             DEFINES[var] = CONFIG[var]
 
-for var in ('MOZ_TOOLKIT_SEARCH',
-            'MOZ_SYSTEM_NSS',
+for var in ('MOZ_SYSTEM_NSS',
             'MOZ_UNSIGNED_APP_SCOPE',
             'MOZ_UNSIGNED_SYSTEM_SCOPE',
             'MOZ_UPDATER',

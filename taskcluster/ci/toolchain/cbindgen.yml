@@ -1,10 +1,10 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+---
 job-defaults:
     description: "cbindgen toolchain build"
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
+    worker-type: b-linux
     worker:
         max-run-time: 3600
     run:
@@ -37,14 +37,14 @@ macosx64-cbindgen:
         tooltool-downloads: internal
     toolchains:
         - linux64-cctools-port
-        - linux64-clang-7
+        - linux64-clang-8
         - linux64-llvm-dsymutil
         - linux64-rust-macos-1.32
 
 win64-cbindgen:
     treeherder:
         symbol: TW64(cbindgen)
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/sccache-build.manifest"
@@ -52,4 +52,4 @@ win64-cbindgen:
         arguments: ['x86_64-pc-windows-msvc']
         toolchain-artifact: public/build/cbindgen.tar.bz2
     toolchains:
-        - win64-rust-1.32
+        - win64-rust-1.34

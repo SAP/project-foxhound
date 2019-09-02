@@ -6,8 +6,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=420499
 -->
 <window title="Mozilla Bug 420499" onload="setTimeout(focusInput, 500);"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
   
 
@@ -28,11 +28,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=420499
     </menu>
 
     <popupset>
-      <popup id="contextmenu">
+      <menupopup id="contextmenu">
         <menuitem label="Cut"/>
         <menuitem label="Copy"/>
         <menuitem label="Paste"/>
-      </popup>
+      </menupopup>
       <tooltip id="tooltip" orient="vertical">
         <description value="This is a tooltip"/>
       </tooltip>

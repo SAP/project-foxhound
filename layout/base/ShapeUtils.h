@@ -16,8 +16,6 @@ struct nsPoint;
 struct nsRect;
 
 namespace mozilla {
-class StyleBasicShape;
-
 // ShapeUtils is a namespace class containing utility functions related to
 // processing basic shapes in the CSS Shapes Module.
 // https://drafts.csswg.org/css-shapes/#basic-shape-functions
@@ -28,7 +26,7 @@ struct ShapeUtils final {
   // caller needs to call for both dimensions and combine the result.
   // https://drafts.csswg.org/css-shapes/#typedef-shape-radius.
   // @return The length of the radius in app units.
-  static nscoord ComputeShapeRadius(const StyleShapeRadius aType,
+  static nscoord ComputeShapeRadius(const StyleShapeRadius& aType,
                                     const nscoord aCenter,
                                     const nscoord aPosMin,
                                     const nscoord aPosMax);

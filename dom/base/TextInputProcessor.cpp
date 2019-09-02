@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gfxPrefs.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
@@ -390,7 +389,7 @@ nsresult TextInputProcessor::BeginInputTransactionInternal(
 
   nsresult rv = NS_OK;
   if (aForTests) {
-    bool isAPZAware = gfxPrefs::TestEventsAsyncEnabled();
+    bool isAPZAware = StaticPrefs::test_events_async_enabled();
     rv = dispatcher->BeginTestInputTransaction(this, isAPZAware);
   } else {
     rv = dispatcher->BeginInputTransaction(this);
@@ -989,7 +988,7 @@ nsresult TextInputProcessor::PrepareKeyboardEventToDispatch(
 
   // When this emulates real input only in content process, we need to
   // initialize edit commands with the main process's widget via PuppetWidget
-  // because they are initialized by TabParent before content process treats
+  // because they are initialized by BrowserParent before content process treats
   // them.
   if (aKeyboardEvent.mIsSynthesizedByTIP && !XRE_IsParentProcess()) {
     // Note that retrieving edit commands from content process is expensive.

@@ -7,20 +7,53 @@
 with Files('**'):
     BUG_COMPONENT = ('Core', 'DOM: Security')
 
+XPIDL_SOURCES += [
+    'nsITrackingDBService.idl',
+    'nsIURLDecorationAnnotationsService.idl',
+]
+
+XPIDL_MODULE = 'toolkit_antitracking'
+
+EXTRA_COMPONENTS += [
+    'antitracking.manifest',
+]
+
+EXTRA_JS_MODULES += [
+    'TrackingDBService.jsm',
+    'URLDecorationAnnotationsService.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 EXPORTS.mozilla = [
     'AntiTrackingCommon.h',
+    'StorageAccess.h',
+    'StoragePrincipalHelper.h',
+    'URLDecorationStripper.h',
 ]
 
 UNIFIED_SOURCES += [
     'AntiTrackingCommon.cpp',
+    'StorageAccess.cpp',
+    'StoragePrincipalHelper.cpp',
+    'URLDecorationStripper.cpp',
+]
+
+EXTRA_JS_MODULES += [
+    'ContentBlockingAllowList.jsm',
 ]
 
 LOCAL_INCLUDES += [
-    '/extensions/cookie',
+    '/extensions/permissions',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-BROWSER_CHROME_MANIFESTS += ['test/browser/browser.ini']
+if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
+    BROWSER_CHROME_MANIFESTS += ['test/browser/browser.ini']
+
+XPCSHELL_TESTS_MANIFESTS += ['test/xpcshell/xpcshell.ini']

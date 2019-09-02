@@ -9,16 +9,17 @@
 /* eslint-env mozilla/frame-script */
 /* eslint no-unused-vars: ["error", {args: "none"}] */
 
-var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-// TabChildGlobal
+// BrowserChildGlobal
 var global = this;
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ContentMetaHandler: "resource:///modules/ContentMetaHandler.jsm",
   LoginFormFactory: "resource://gre/modules/LoginFormFactory.jsm",
   InsecurePasswordUtils: "resource://gre/modules/InsecurePasswordUtils.jsm",
-  ContextMenuChild: "resource:///actors/ContextMenuChild.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "LoginManagerContent", () => {
@@ -31,7 +32,10 @@ XPCOMUtils.defineLazyGetter(this, "LoginManagerContent", () => {
 // NOTE: Much of this logic is duplicated in BrowserCLH.js for Android.
 addMessageListener("PasswordManager:fillForm", function(message) {
   // intercept if ContextMenu.jsm had sent a plain object for remote targets
-  message.objects.inputElement = ContextMenuChild.getTarget(global, message, "inputElement");
+  LoginManagerContent.receiveMessage(message, content);
+});
+addMessageListener("PasswordManager:fillGeneratedPassword", function(message) {
+  // forward message to LMC
   LoginManagerContent.receiveMessage(message, content);
 });
 
@@ -63,18 +67,8 @@ addEventListener("DOMInputPasswordAdded", function(event) {
   let formLike = LoginFormFactory.createFromField(event.originalTarget);
   InsecurePasswordUtils.reportInsecurePasswords(formLike);
 });
-addEventListener("DOMAutoComplete", function(event) {
-  if (shouldIgnoreLoginManagerEvent(event)) {
-    return;
-  }
-  LoginManagerContent.onDOMAutoComplete(event);
-});
 
 ContentMetaHandler.init(this);
 
 // This is a temporary hack to prevent regressions (bug 1471327).
 void content;
-
-addEventListener("DOMWindowFocus", function(event) {
-  sendAsyncMessage("DOMWindowFocus", {});
-}, false);

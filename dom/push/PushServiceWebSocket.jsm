@@ -5,13 +5,32 @@
 
 "use strict";
 
-const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-const {PushDB} = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
-const {PushRecord} = ChromeUtils.import("resource://gre/modules/PushRecord.jsm");
-const {PushCrypto} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm");
+const { PushDB } = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
+const { PushRecord } = ChromeUtils.import(
+  "resource://gre/modules/PushRecord.jsm"
+);
+const { PushCrypto } = ChromeUtils.import(
+  "resource://gre/modules/PushCrypto.jsm"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
+  "pushBroadcastService",
+  "resource://gre/modules/PushBroadcastService.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ObjectUtils",
+  "resource://gre/modules/ObjectUtils.jsm"
+);
 
 const kPUSHWSDB_DB_NAME = "pushapi";
 const kPUSHWSDB_DB_VERSION = 5; // Change this if the IndexedDB format changes
@@ -43,10 +62,10 @@ const kDELIVERY_REASON_TO_CODE = {
 
 const prefs = new Preferences("dom.push.");
 
-var EXPORTED_SYMBOLS = ["PushServiceWebSocket"];
+const EXPORTED_SYMBOLS = ["PushServiceWebSocket"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushServiceWebSocket",
@@ -66,41 +85,41 @@ var PushWebSocketListener = function(pushService) {
 };
 
 PushWebSocketListener.prototype = {
-  onStart: function(context) {
+  onStart(context) {
     if (!this._pushService) {
-        return;
+      return;
     }
     this._pushService._wsOnStart(context);
   },
 
-  onStop: function(context, statusCode) {
+  onStop(context, statusCode) {
     if (!this._pushService) {
-        return;
+      return;
     }
     this._pushService._wsOnStop(context, statusCode);
   },
 
-  onAcknowledge: function(context, size) {
+  onAcknowledge(context, size) {
     // EMPTY
   },
 
-  onBinaryMessageAvailable: function(context, message) {
+  onBinaryMessageAvailable(context, message) {
     // EMPTY
   },
 
-  onMessageAvailable: function(context, message) {
+  onMessageAvailable(context, message) {
     if (!this._pushService) {
-        return;
+      return;
     }
     this._pushService._wsOnMessageAvailable(context, message);
   },
 
-  onServerClose: function(context, aStatusCode, aReason) {
+  onServerClose(context, aStatusCode, aReason) {
     if (!this._pushService) {
-        return;
+      return;
     }
     this._pushService._wsOnServerClose(context, aStatusCode, aReason);
-  }
+  },
 };
 
 // websocket states
@@ -117,20 +136,23 @@ const STATE_READY = 3;
 var PushServiceWebSocket = {
   _mainPushService: null,
   _serverURI: null,
+  _currentlyRegistering: new Set(),
 
-  newPushDB: function() {
-    return new PushDB(kPUSHWSDB_DB_NAME,
-                      kPUSHWSDB_DB_VERSION,
-                      kPUSHWSDB_STORE_NAME,
-                      "channelID",
-                      PushRecordWebSocket);
+  newPushDB() {
+    return new PushDB(
+      kPUSHWSDB_DB_NAME,
+      kPUSHWSDB_DB_VERSION,
+      kPUSHWSDB_STORE_NAME,
+      "channelID",
+      PushRecordWebSocket
+    );
   },
 
-  disconnect: function() {
+  disconnect() {
     this._shutdownWS();
   },
 
-  observe: function(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic, aData) {
     if (aTopic == "nsPref:changed" && aData == "dom.push.userAgentID") {
       this._onUAIDChanged();
     } else if (aTopic == "timer-callback") {
@@ -167,7 +189,6 @@ var PushServiceWebSocket = {
 
     if (timer == this._requestTimeoutTimer) {
       this._timeOutRequests();
-      return;
     }
   },
 
@@ -206,12 +227,12 @@ var PushServiceWebSocket = {
     // for a pong after the request timeout.
     let requestTimedOut = false;
 
-    if (this._lastPingTime > 0 &&
-        now - this._lastPingTime > this._requestTimeout) {
-
+    if (
+      this._lastPingTime > 0 &&
+      now - this._lastPingTime > this._requestTimeout
+    ) {
       console.debug("timeOutRequests: Did not receive pong in time");
       requestTimedOut = true;
-
     } else {
       for (let [key, request] of this._pendingRequests) {
         let duration = now - request.ctime;
@@ -233,7 +254,7 @@ var PushServiceWebSocket = {
     }
   },
 
-  validServerURI: function(serverURI) {
+  validServerURI(serverURI) {
     if (serverURI.scheme == "ws") {
       return !!prefs.get("testing.allowInsecureServerURL");
     }
@@ -245,9 +266,12 @@ var PushServiceWebSocket = {
   },
 
   set _UAID(newID) {
-    if (typeof(newID) !== "string") {
-      console.warn("Got invalid, non-string UAID", newID,
-        "Not updating userAgentID");
+    if (typeof newID !== "string") {
+      console.warn(
+        "Got invalid, non-string UAID",
+        newID,
+        "Not updating userAgentID"
+      );
       return;
     }
     console.debug("New _UAID", newID);
@@ -296,10 +320,12 @@ var PushServiceWebSocket = {
    * Sends a message to the Push Server through an open websocket.
    * typeof(msg) shall be an object
    */
-  _wsSendMessage: function(msg) {
+  _wsSendMessage(msg) {
     if (!this._ws) {
-      console.warn("wsSendMessage: No WebSocket initialized.",
-        "Cannot send a message");
+      console.warn(
+        "wsSendMessage: No WebSocket initialized.",
+        "Cannot send a message"
+      );
       return;
     }
     msg = JSON.stringify(msg);
@@ -307,7 +333,7 @@ var PushServiceWebSocket = {
     this._ws.sendMsg(msg);
   },
 
-  init: function(options, mainPushService, serverURI) {
+  init(options, mainPushService, serverURI) {
     console.debug("init()");
 
     this._mainPushService = mainPushService;
@@ -327,13 +353,13 @@ var PushServiceWebSocket = {
     return Promise.resolve();
   },
 
-  _reconnect: function () {
+  _reconnect() {
     console.debug("reconnect()");
     this._shutdownWS(false);
     this._startBackoffTimer();
   },
 
-  _shutdownWS: function(shouldCancelPending = true) {
+  _shutdownWS(shouldCancelPending = true) {
     console.debug("shutdownWS()");
 
     if (this._currentState == STATE_READY) {
@@ -347,7 +373,7 @@ var PushServiceWebSocket = {
       this._wsListener._pushService = null;
     }
     try {
-        this._ws.close(0, null);
+      this._ws.close(0, null);
     } catch (e) {}
     this._ws = null;
 
@@ -367,7 +393,7 @@ var PushServiceWebSocket = {
     }
   },
 
-  uninit: function() {
+  uninit() {
     // All pending requests (ideally none) are dropped at this point. We
     // shouldn't have any applications performing registration/unregistration
     // or receiving notifications.
@@ -401,18 +427,23 @@ var PushServiceWebSocket = {
     console.debug("startBackoffTimer()");
 
     // Calculate new timeout, but cap it to pingInterval.
-    let retryTimeout = prefs.get("retryBaseInterval") *
-                       Math.pow(2, this._retryFailCount);
+    let retryTimeout =
+      prefs.get("retryBaseInterval") * Math.pow(2, this._retryFailCount);
     retryTimeout = Math.min(retryTimeout, prefs.get("pingInterval"));
 
     this._retryFailCount++;
 
-    console.debug("startBackoffTimer: Retry in", retryTimeout,
-      "Try number", this._retryFailCount);
+    console.debug(
+      "startBackoffTimer: Retry in",
+      retryTimeout,
+      "Try number",
+      this._retryFailCount
+    );
 
     if (!this._backoffTimer) {
-      this._backoffTimer = Cc["@mozilla.org/timer;1"]
-                               .createInstance(Ci.nsITimer);
+      this._backoffTimer = Cc["@mozilla.org/timer;1"].createInstance(
+        Ci.nsITimer
+      );
     }
     this._backoffTimer.init(this, retryTimeout, Ci.nsITimer.TYPE_ONE_SHOT);
   },
@@ -431,53 +462,65 @@ var PushServiceWebSocket = {
       return;
     }
     if (!this._requestTimeoutTimer) {
-      this._requestTimeoutTimer = Cc["@mozilla.org/timer;1"]
-                                    .createInstance(Ci.nsITimer);
+      this._requestTimeoutTimer = Cc["@mozilla.org/timer;1"].createInstance(
+        Ci.nsITimer
+      );
     }
-    this._requestTimeoutTimer.init(this,
-                                   this._requestTimeout,
-                                   Ci.nsITimer.TYPE_REPEATING_SLACK);
+    this._requestTimeoutTimer.init(
+      this,
+      this._requestTimeout,
+      Ci.nsITimer.TYPE_REPEATING_SLACK
+    );
   },
 
   /** Starts or resets the ping timer. */
   _startPingTimer() {
     if (!this._pingTimer) {
-      this._pingTimer = Cc["@mozilla.org/timer;1"]
-                          .createInstance(Ci.nsITimer);
+      this._pingTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     }
-    this._pingTimer.init(this, prefs.get("pingInterval"),
-                         Ci.nsITimer.TYPE_ONE_SHOT);
+    this._pingTimer.init(
+      this,
+      prefs.get("pingInterval"),
+      Ci.nsITimer.TYPE_ONE_SHOT
+    );
   },
 
-  _makeWebSocket: function(uri) {
+  _makeWebSocket(uri) {
     if (!prefs.get("connection.enabled")) {
-      console.warn("makeWebSocket: connection.enabled is not set to true.",
-        "Aborting.");
+      console.warn(
+        "makeWebSocket: connection.enabled is not set to true.",
+        "Aborting."
+      );
       return null;
     }
     if (Services.io.offline) {
       console.warn("makeWebSocket: Network is offline.");
       return null;
     }
-    let contractId = uri.scheme == "ws" ?
-                     "@mozilla.org/network/protocol;1?name=ws" :
-                     "@mozilla.org/network/protocol;1?name=wss";
+    let contractId =
+      uri.scheme == "ws"
+        ? "@mozilla.org/network/protocol;1?name=ws"
+        : "@mozilla.org/network/protocol;1?name=wss";
     let socket = Cc[contractId].createInstance(Ci.nsIWebSocketChannel);
 
-    socket.initLoadInfo(null, // aLoadingNode
-                        Services.scriptSecurityManager.getSystemPrincipal(),
-                        null, // aTriggeringPrincipal
-                        Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                        Ci.nsIContentPolicy.TYPE_WEBSOCKET);
+    socket.initLoadInfo(
+      null, // aLoadingNode
+      Services.scriptSecurityManager.getSystemPrincipal(),
+      null, // aTriggeringPrincipal
+      Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+      Ci.nsIContentPolicy.TYPE_WEBSOCKET
+    );
 
     return socket;
   },
 
-  _beginWSSetup: function() {
+  _beginWSSetup() {
     console.debug("beginWSSetup()");
     if (this._currentState != STATE_SHUT_DOWN) {
-      console.error("_beginWSSetup: Not in shutdown state! Current state",
-        this._currentState);
+      console.error(
+        "_beginWSSetup: Not in shutdown state! Current state",
+        this._currentState
+      );
       return;
     }
 
@@ -505,31 +548,37 @@ var PushServiceWebSocket = {
       // sleep before connection the is opened.
       this._ws.asyncOpen(uri, uri.spec, 0, this._wsListener, null);
       this._currentState = STATE_WAITING_FOR_WS_START;
-    } catch(e) {
-      console.error("beginWSSetup: Error opening websocket.",
-        "asyncOpen failed", e);
+    } catch (e) {
+      console.error(
+        "beginWSSetup: Error opening websocket.",
+        "asyncOpen failed",
+        e
+      );
       this._reconnect();
     }
   },
 
-  connect: function(broadcastListeners) {
+  connect(broadcastListeners) {
     console.debug("connect()", broadcastListeners);
     this._broadcastListeners = broadcastListeners;
     this._beginWSSetup();
   },
 
-  isConnected: function() {
+  isConnected() {
     return !!this._ws;
   },
 
   /**
    * Protocol handler invoked by server message.
    */
-  _handleHelloReply: function(reply) {
+  _handleHelloReply(reply) {
     console.debug("handleHelloReply()");
     if (this._currentState != STATE_WAITING_FOR_HELLO) {
-      console.error("handleHelloReply: Unexpected state", this._currentState,
-        "(expected STATE_WAITING_FOR_HELLO)");
+      console.error(
+        "handleHelloReply: Unexpected state",
+        this._currentState,
+        "(expected STATE_WAITING_FOR_HELLO)"
+      );
       this._shutdownWS();
       return;
     }
@@ -548,8 +597,10 @@ var PushServiceWebSocket = {
 
     // To avoid sticking extra large values sent by an evil server into prefs.
     if (reply.uaid.length > 128) {
-      console.error("handleHelloReply: UAID received from server was too long",
-        reply.uaid);
+      console.error(
+        "handleHelloReply: UAID received from server was too long",
+        reply.uaid
+      );
       this._shutdownWS();
       return;
     }
@@ -568,22 +619,31 @@ var PushServiceWebSocket = {
       prefs.observe("userAgentID", this);
 
       // Handle broadcasts received in response to the "hello" message.
-      if (reply.broadcasts) {
+      if (!ObjectUtils.isEmpty(reply.broadcasts)) {
         // The reply isn't technically a broadcast message, but it has
         // the shape of a broadcast message (it has a broadcasts field).
-        this._mainPushService.receivedBroadcastMessage(reply);
+        const context = { phase: pushBroadcastService.PHASES.HELLO };
+        this._mainPushService.receivedBroadcastMessage(reply, context);
       }
 
       this._dataEnabled = !!reply.use_webpush;
       if (this._dataEnabled) {
-        this._mainPushService.getAllUnexpired().then(records =>
-          Promise.all(records.map(record =>
-            this._mainPushService.ensureCrypto(record).catch(error => {
-              console.error("finishHandshake: Error updating record",
-                record.keyID, error);
-            })
-          ))
-        ).then(sendRequests);
+        this._mainPushService
+          .getAllUnexpired()
+          .then(records =>
+            Promise.all(
+              records.map(record =>
+                this._mainPushService.ensureCrypto(record).catch(error => {
+                  console.error(
+                    "finishHandshake: Error updating record",
+                    record.keyID,
+                    error
+                  );
+                })
+              )
+            )
+          )
+          .then(sendRequests);
       } else {
         sendRequests();
       }
@@ -598,8 +658,9 @@ var PushServiceWebSocket = {
     if (this._UAID != reply.uaid) {
       console.debug("handleHelloReply: Received new UAID");
 
-      this._mainPushService.dropUnexpiredRegistrations()
-          .then(finishHandshake.bind(this));
+      this._mainPushService
+        .dropUnexpiredRegistrations()
+        .then(finishHandshake.bind(this));
 
       return;
     }
@@ -611,7 +672,7 @@ var PushServiceWebSocket = {
   /**
    * Protocol handler invoked by server message.
    */
-  _handleRegisterReply: function(reply) {
+  _handleRegisterReply(reply) {
     console.debug("handleRegisterReply()");
 
     let tmp = this._takeRequestForReply(reply);
@@ -622,8 +683,7 @@ var PushServiceWebSocket = {
     if (reply.status == 200) {
       try {
         Services.io.newURI(reply.pushEndpoint);
-      }
-      catch (e) {
+      } catch (e) {
         tmp.reject(new Error("Invalid push endpoint: " + reply.pushEndpoint));
         return;
       }
@@ -641,8 +701,9 @@ var PushServiceWebSocket = {
       tmp.resolve(record);
     } else {
       console.error("handleRegisterReply: Unexpected server response", reply);
-      tmp.reject(new Error("Wrong status code for register reply: " +
-        reply.status));
+      tmp.reject(
+        new Error("Wrong status code for register reply: " + reply.status)
+      );
     }
   },
 
@@ -658,11 +719,13 @@ var PushServiceWebSocket = {
     request.resolve(success);
   },
 
-  _handleDataUpdate: function(update) {
+  _handleDataUpdate(update) {
     let promise;
     if (typeof update.channelID != "string") {
-      console.warn("handleDataUpdate: Discarding update without channel ID",
-        update);
+      console.warn(
+        "handleDataUpdate: Discarding update without channel ID",
+        update
+      );
       return;
     }
     function updateRecord(record) {
@@ -671,8 +734,10 @@ var PushServiceWebSocket = {
       // the message. In that case, the server will re-send the message on
       // reconnect.
       if (record.hasRecentMessageID(update.version)) {
-        console.warn("handleDataUpdate: Ignoring duplicate message",
-          update.version);
+        console.warn(
+          "handleDataUpdate: Ignoring duplicate message",
+          update.version
+        );
         return null;
       }
       record.noteRecentMessageID(update.version);
@@ -699,29 +764,44 @@ var PushServiceWebSocket = {
         updateRecord
       );
     }
-    promise.then(status => {
-      this._sendAck(update.channelID, update.version, status);
-    }, err => {
-      console.error("handleDataUpdate: Error delivering message", update, err);
-      this._sendAck(update.channelID, update.version,
-        Ci.nsIPushErrorReporter.ACK_DECRYPTION_ERROR);
-    }).catch(err => {
-      console.error("handleDataUpdate: Error acknowledging message", update,
-        err);
-    });
+    promise
+      .then(
+        status => {
+          this._sendAck(update.channelID, update.version, status);
+        },
+        err => {
+          console.error(
+            "handleDataUpdate: Error delivering message",
+            update,
+            err
+          );
+          this._sendAck(
+            update.channelID,
+            update.version,
+            Ci.nsIPushErrorReporter.ACK_DECRYPTION_ERROR
+          );
+        }
+      )
+      .catch(err => {
+        console.error(
+          "handleDataUpdate: Error acknowledging message",
+          update,
+          err
+        );
+      });
   },
 
   /**
    * Protocol handler invoked by server message.
    */
-  _handleNotificationReply: function(reply) {
+  _handleNotificationReply(reply) {
     console.debug("handleNotificationReply()");
     if (this._dataEnabled) {
       this._handleDataUpdate(reply);
       return;
     }
 
-    if (typeof reply.updates !== 'object') {
+    if (typeof reply.updates !== "object") {
       console.warn("handleNotificationReply: Missing updates", reply.updates);
       return;
     }
@@ -731,8 +811,11 @@ var PushServiceWebSocket = {
       let update = reply.updates[i];
       console.debug("handleNotificationReply: Handling update", update);
       if (typeof update.channelID !== "string") {
-        console.debug("handleNotificationReply: Invalid update at index",
-          i, update);
+        console.debug(
+          "handleNotificationReply: Invalid update at index",
+          i,
+          update
+        );
         continue;
       }
 
@@ -755,19 +838,30 @@ var PushServiceWebSocket = {
     }
   },
 
-  _handleBroadcastReply: function(reply) {
-    this._mainPushService.receivedBroadcastMessage(reply);
+  _handleBroadcastReply(reply) {
+    let phase = pushBroadcastService.PHASES.BROADCAST;
+    // Check if this reply is the result of registration.
+    for (const id of Object.keys(reply.broadcasts)) {
+      const wasRegistering = this._currentlyRegistering.delete(id);
+      if (wasRegistering) {
+        // If we get multiple broadcasts and only one is "registering",
+        // then we consider the phase to be REGISTER for all of them.
+        // It is acceptable since registrations do not happen so often,
+        // and are all very likely to occur soon after browser startup.
+        phase = pushBroadcastService.PHASES.REGISTER;
+      }
+    }
+    const context = { phase };
+    this._mainPushService.receivedBroadcastMessage(reply, context);
   },
 
   reportDeliveryError(messageID, reason) {
     console.debug("reportDeliveryError()");
     let code = kDELIVERY_REASON_TO_CODE[reason];
     if (!code) {
-      throw new Error('Invalid delivery error reason');
+      throw new Error("Invalid delivery error reason");
     }
-    let data = {messageType: 'nack',
-                version: messageID,
-                code: code};
+    let data = { messageType: "nack", version: messageID, code };
     this._queueRequest(data);
   },
 
@@ -775,27 +869,27 @@ var PushServiceWebSocket = {
     console.debug("sendAck()");
     let code = kACK_STATUS_TO_CODE[status];
     if (!code) {
-      throw new Error('Invalid ack status');
+      throw new Error("Invalid ack status");
     }
-    let data = {messageType: 'ack',
-                updates: [{channelID: channelID,
-                           version: version,
-                           code: code}]};
+    let data = { messageType: "ack", updates: [{ channelID, version, code }] };
     this._queueRequest(data);
   },
 
-  _generateID: function() {
-    let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"]
-                          .getService(Ci.nsIUUIDGenerator);
+  _generateID() {
+    let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(
+      Ci.nsIUUIDGenerator
+    );
     // generateUUID() gives a UUID surrounded by {...}, slice them off.
-    return uuidGenerator.generateUUID().toString().slice(1, -1);
+    return uuidGenerator
+      .generateUUID()
+      .toString()
+      .slice(1, -1);
   },
 
   register(record) {
     console.debug("register() ", record);
 
-    let data = {channelID: this._generateID(),
-                messageType: "register"};
+    let data = { channelID: this._generateID(), messageType: "register" };
 
     if (record.appServerKey) {
       data.key = ChromeUtils.base64URLEncode(record.appServerKey, {
@@ -808,13 +902,12 @@ var PushServiceWebSocket = {
       if (!this._dataEnabled) {
         return record;
       }
-      return PushCrypto.generateKeys()
-        .then(([publicKey, privateKey]) => {
-          record.p256dhPublicKey = publicKey;
-          record.p256dhPrivateKey = privateKey;
-          record.authenticationSecret = PushCrypto.generateAuthenticationSecret();
-          return record;
-        });
+      return PushCrypto.generateKeys().then(([publicKey, privateKey]) => {
+        record.p256dhPublicKey = publicKey;
+        record.p256dhPrivateKey = privateKey;
+        record.authenticationSecret = PushCrypto.generateAuthenticationSecret();
+        return record;
+      });
     });
   },
 
@@ -824,11 +917,13 @@ var PushServiceWebSocket = {
     return Promise.resolve().then(_ => {
       let code = kUNREGISTER_REASON_TO_CODE[reason];
       if (!code) {
-        throw new Error('Invalid unregister reason');
+        throw new Error("Invalid unregister reason");
       }
-      let data = {channelID: record.channelID,
-                  messageType: "unregister",
-                  code: code};
+      let data = {
+        channelID: record.channelID,
+        messageType: "unregister",
+        code,
+      };
 
       return this._sendRequestForReply(record, data);
     });
@@ -837,21 +932,21 @@ var PushServiceWebSocket = {
   _queueStart: Promise.resolve(),
   _notifyRequestQueue: null,
   _queue: null,
-  _enqueue: function(op) {
+  _enqueue(op) {
     console.debug("enqueue()");
     if (!this._queue) {
       this._queue = this._queueStart;
     }
-    this._queue = this._queue
-                    .then(op)
-                    .catch(_ => {});
+    this._queue = this._queue.then(op).catch(_ => {});
   },
 
   /** Sends a request to the server. */
   _send(data) {
     if (this._currentState != STATE_READY) {
-      console.warn("send: Unexpected state; ignoring message",
-        this._currentState);
+      console.warn(
+        "send: Unexpected state; ignoring message",
+        this._currentState
+      );
       return;
     }
     if (!this._requestHasReply(data)) {
@@ -923,35 +1018,51 @@ var PushServiceWebSocket = {
     }
   },
 
-  _receivedUpdate: function(aChannelID, aLatestVersion) {
+  _receivedUpdate(aChannelID, aLatestVersion) {
     console.debug("receivedUpdate: Updating", aChannelID, "->", aLatestVersion);
 
-    this._mainPushService.receivedPushMessage(aChannelID, "", null, null, record => {
-      if (record.version === null ||
-          record.version < aLatestVersion) {
-        console.debug("receivedUpdate: Version changed for", aChannelID,
-          aLatestVersion);
-        record.version = aLatestVersion;
-        return record;
-      }
-      console.debug("receivedUpdate: No significant version change for",
-        aChannelID, aLatestVersion);
-      return null;
-    }).then(status => {
-      this._sendAck(aChannelID, aLatestVersion, status);
-    }).catch(err => {
-      console.error("receivedUpdate: Error acknowledging message", aChannelID,
-        aLatestVersion, err);
-    });
+    this._mainPushService
+      .receivedPushMessage(aChannelID, "", null, null, record => {
+        if (record.version === null || record.version < aLatestVersion) {
+          console.debug(
+            "receivedUpdate: Version changed for",
+            aChannelID,
+            aLatestVersion
+          );
+          record.version = aLatestVersion;
+          return record;
+        }
+        console.debug(
+          "receivedUpdate: No significant version change for",
+          aChannelID,
+          aLatestVersion
+        );
+        return null;
+      })
+      .then(status => {
+        this._sendAck(aChannelID, aLatestVersion, status);
+      })
+      .catch(err => {
+        console.error(
+          "receivedUpdate: Error acknowledging message",
+          aChannelID,
+          aLatestVersion,
+          err
+        );
+      });
   },
 
   // begin Push protocol handshake
-  _wsOnStart: function(context) {
+  _wsOnStart(context) {
     console.debug("wsOnStart()");
 
     if (this._currentState != STATE_WAITING_FOR_WS_START) {
-      console.error("wsOnStart: NOT in STATE_WAITING_FOR_WS_START. Current",
-        "state", this._currentState, "Skipping");
+      console.error(
+        "wsOnStart: NOT in STATE_WAITING_FOR_WS_START. Current",
+        "state",
+        this._currentState,
+        "Skipping"
+      );
       return;
     }
 
@@ -976,7 +1087,7 @@ var PushServiceWebSocket = {
    * If we do not explicitly call ws.close() then statusCode is always
    * NS_BASE_STREAM_CLOSED, even on a successful close.
    */
-  _wsOnStop: function(context, statusCode) {
+  _wsOnStop(context, statusCode) {
     console.debug("wsOnStop()");
 
     if (statusCode != Cr.NS_OK && !this._skipReconnect) {
@@ -988,7 +1099,7 @@ var PushServiceWebSocket = {
     this._shutdownWS();
   },
 
-  _wsOnMessageAvailable: function(context, message) {
+  _wsOnMessageAvailable(context, message) {
     console.debug("wsOnMessageAvailable()", message);
 
     // Clearing the last ping time indicates we're no longer waiting for a pong.
@@ -997,7 +1108,7 @@ var PushServiceWebSocket = {
     let reply;
     try {
       reply = JSON.parse(message);
-    } catch(e) {
+    } catch (e) {
       console.warn("wsOnMessageAvailable: Invalid JSON", message, e);
       return;
     }
@@ -1007,10 +1118,12 @@ var PushServiceWebSocket = {
     this._retryFailCount = 0;
 
     let doNotHandle = false;
-    if ((message === '{}') ||
-        (reply.messageType === undefined) ||
-        (reply.messageType === "ping") ||
-        (typeof reply.messageType != "string")) {
+    if (
+      message === "{}" ||
+      reply.messageType === undefined ||
+      reply.messageType === "ping" ||
+      typeof reply.messageType != "string"
+    ) {
       console.debug("wsOnMessageAvailable: Pong received");
       doNotHandle = true;
     }
@@ -1026,24 +1139,38 @@ var PushServiceWebSocket = {
 
     // A whitelist of protocol handlers. Add to these if new messages are added
     // in the protocol.
-    let handlers = ["Hello", "Register", "Unregister", "Notification", "Broadcast"];
+    let handlers = [
+      "Hello",
+      "Register",
+      "Unregister",
+      "Notification",
+      "Broadcast",
+    ];
 
     // Build up the handler name to call from messageType.
     // e.g. messageType == "register" -> _handleRegisterReply.
-    let handlerName = reply.messageType[0].toUpperCase() +
-                      reply.messageType.slice(1).toLowerCase();
+    let handlerName =
+      reply.messageType[0].toUpperCase() +
+      reply.messageType.slice(1).toLowerCase();
 
     if (!handlers.includes(handlerName)) {
-      console.warn("wsOnMessageAvailable: No whitelisted handler", handlerName,
-        "for message", reply.messageType);
+      console.warn(
+        "wsOnMessageAvailable: No whitelisted handler",
+        handlerName,
+        "for message",
+        reply.messageType
+      );
       return;
     }
 
     let handler = "_handle" + handlerName + "Reply";
 
     if (typeof this[handler] !== "function") {
-      console.warn("wsOnMessageAvailable: Handler", handler,
-        "whitelisted but not implemented");
+      console.warn(
+        "wsOnMessageAvailable: Handler",
+        handler,
+        "whitelisted but not implemented"
+      );
       return;
     }
 
@@ -1060,7 +1187,7 @@ var PushServiceWebSocket = {
    * next network state change event, or until we need to send a new register
    * request.
    */
-  _wsOnServerClose: function(context, aStatusCode, aReason) {
+  _wsOnServerClose(context, aStatusCode, aReason) {
     console.debug("wsOnServerClose()", aStatusCode, aReason);
 
     if (aStatusCode == kBACKOFF_WS_STATUS_CODE) {
@@ -1093,8 +1220,8 @@ var PushServiceWebSocket = {
       let key = this._makePendingRequestKey(data);
       if (!this._pendingRequests.has(key)) {
         let request = {
-          data: data,
-          record: record,
+          data,
+          record,
           ctime: Date.now(),
         };
         request.promise = new Promise((resolve, reject) => {
@@ -1127,10 +1254,11 @@ var PushServiceWebSocket = {
   },
 
   sendSubscribeBroadcast(serviceId, version) {
+    this._currentlyRegistering.add(serviceId);
     let data = {
       messageType: "broadcast_subscribe",
       broadcasts: {
-        [serviceId]: version
+        [serviceId]: version,
       },
     };
 

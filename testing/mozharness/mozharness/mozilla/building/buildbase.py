@@ -340,6 +340,7 @@ class BuildOptionParser(object):
         'cross-debug-searchfox': 'builds/releng_sub_%s_configs/%s_cross_debug_searchfox.py',
         'cross-noopt-debug': 'builds/releng_sub_%s_configs/%s_cross_noopt_debug.py',
         'cross-fuzzing-asan': 'builds/releng_sub_%s_configs/%s_cross_fuzzing_asan.py',
+        'cross-fuzzing-debug': 'builds/releng_sub_%s_configs/%s_cross_fuzzing_debug.py',
         'debug': 'builds/releng_sub_%s_configs/%s_debug.py',
         'fuzzing-debug': 'builds/releng_sub_%s_configs/%s_fuzzing_debug.py',
         'asan-and-debug': 'builds/releng_sub_%s_configs/%s_asan_and_debug.py',
@@ -352,20 +353,32 @@ class BuildOptionParser(object):
         'api-16-gradle-dependencies':
             'builds/releng_sub_%s_configs/%s_api_16_gradle_dependencies.py',
         'api-16': 'builds/releng_sub_%s_configs/%s_api_16.py',
+        'api-16-beta': 'builds/releng_sub_%s_configs/%s_api_16_beta.py',
+        'api-16-beta-debug': 'builds/releng_sub_%s_configs/%s_api_16_beta_debug.py',
         'api-16-debug': 'builds/releng_sub_%s_configs/%s_api_16_debug.py',
         'api-16-debug-ccov': 'builds/releng_sub_%s_configs/%s_api_16_debug_ccov.py',
         'api-16-debug-searchfox': 'builds/releng_sub_%s_configs/%s_api_16_debug_searchfox.py',
         'api-16-gradle': 'builds/releng_sub_%s_configs/%s_api_16_gradle.py',
+        'api-16-profile-generate': 'builds/releng_sub_%s_configs/%s_api_16_profile_generate.py',
+        'api-16-profile-use': 'builds/releng_sub_%s_configs/%s_api_16_profile_use.py',
         'api-16-without-google-play-services':
             'builds/releng_sub_%s_configs/%s_api_16_without_google_play_services.py',
         'rusttests': 'builds/releng_sub_%s_configs/%s_rusttests.py',
         'rusttests-debug': 'builds/releng_sub_%s_configs/%s_rusttests_debug.py',
         'x86': 'builds/releng_sub_%s_configs/%s_x86.py',
+        'x86-beta': 'builds/releng_sub_%s_configs/%s_x86_beta.py',
+        'x86-beta-debug': 'builds/releng_sub_%s_configs/%s_x86_beta_debug.py',
+        'x86-debug': 'builds/releng_sub_%s_configs/%s_x86_debug.py',
         'x86-fuzzing-debug': 'builds/releng_sub_%s_configs/%s_x86_fuzzing_debug.py',
         'x86_64': 'builds/releng_sub_%s_configs/%s_x86_64.py',
+        'x86_64-beta': 'builds/releng_sub_%s_configs/%s_x86_64_beta.py',
+        'x86_64-beta-debug': 'builds/releng_sub_%s_configs/%s_x86_64_beta_debug.py',
         'x86_64-debug': 'builds/releng_sub_%s_configs/%s_x86_64_debug.py',
         'api-16-partner-sample1': 'builds/releng_sub_%s_configs/%s_api_16_partner_sample1.py',
         'aarch64': 'builds/releng_sub_%s_configs/%s_aarch64.py',
+        'aarch64-beta': 'builds/releng_sub_%s_configs/%s_aarch64_beta.py',
+        'aarch64-beta-debug': 'builds/releng_sub_%s_configs/%s_aarch64_beta_debug.py',
+        'aarch64-pgo': 'builds/releng_sub_%s_configs/%s_aarch64_pgo.py',
         'aarch64-debug': 'builds/releng_sub_%s_configs/%s_aarch64_debug.py',
         'android-test': 'builds/releng_sub_%s_configs/%s_test.py',
         'android-test-ccov': 'builds/releng_sub_%s_configs/%s_test_ccov.py',
@@ -555,14 +568,6 @@ BUILD_BASE_CONFIG_OPTIONS = [
         "type": "string",
         "dest": "branch",
         "help": "This sets the branch we will be building this for."}],
-    [['--scm-level'], {
-        "action": "store",
-        "type": "int",
-        "dest": "scm_level",
-        "default": 1,
-        "help": "This sets the SCM level for the branch being built."
-                " See https://www.mozilla.org/en-US/about/"
-                "governance/policies/commit/access-policy/"}],
     [['--enable-pgo'], {
         "action": "store_true",
         "dest": "pgo_build",
@@ -1628,7 +1633,7 @@ or run without that action (ie: --no-{action})"
         '''If sccache was in use for this build, shut down the sccache server.'''
         if os.environ.get('USE_SCCACHE') == '1':
             topsrcdir = self.query_abs_dirs()['abs_src_dir']
-            sccache = os.path.join(topsrcdir, 'sccache2', 'sccache')
+            sccache = os.path.join(topsrcdir, 'sccache', 'sccache')
             if self._is_windows():
                 sccache += '.exe'
             self.run_command([sccache, '--stop-server'], cwd=topsrcdir)

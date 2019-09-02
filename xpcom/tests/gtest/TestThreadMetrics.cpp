@@ -9,7 +9,6 @@
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/DocGroup.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/TaskCategory.h"
@@ -150,7 +149,6 @@ TEST_F(ThreadMetrics, CollectMetrics) {
   // Did we get incremented in the docgroup ?
   uint64_t duration = mCounter->GetExecutionDuration();
   ASSERT_GE(duration, 50000u);
-  ASSERT_LT(duration, 200000u);
 }
 
 TEST_F(ThreadMetrics, CollectRecursiveMetrics) {
@@ -159,8 +157,8 @@ TEST_F(ThreadMetrics, CollectRecursiveMetrics) {
   initScheduler();
 
   // Dispatching a runnable that will last for +50ms
-  // and run another one recursively that lasts for 200ms
-  rv = Dispatch(25, 25, 200);
+  // and run another one recursively that lasts for 400ms
+  rv = Dispatch(25, 25, 400);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Flush the queue
@@ -181,5 +179,5 @@ TEST_F(ThreadMetrics, CollectRecursiveMetrics) {
   ASSERT_GE(duration, 50000u);
 
   // let's make sure we don't count the time spent in recursive calls
-  ASSERT_LT(duration, 200000u);
+  ASSERT_LT(duration, 300000u);
 }

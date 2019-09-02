@@ -14,7 +14,7 @@ dictionary KeyframeAnimationOptions : KeyframeEffectOptions {
   DOMString id = "";
 };
 
-dictionary AnimationFilter {
+dictionary GetAnimationsOptions {
   boolean subtree = false;
 };
 
@@ -22,7 +22,7 @@ dictionary AnimationFilter {
 interface Animatable {
   [Throws]
   Animation animate(object? keyframes,
-                    optional UnrestrictedDoubleOrKeyframeAnimationOptions options);
+                    optional UnrestrictedDoubleOrKeyframeAnimationOptions options = {});
   [Func="Document::IsWebAnimationsGetAnimationsEnabled"]
-  sequence<Animation> getAnimations(optional AnimationFilter filter);
+  sequence<Animation> getAnimations(optional GetAnimationsOptions options = {});
 };

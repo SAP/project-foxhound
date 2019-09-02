@@ -4,34 +4,51 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = [
-  "TelemetryEnvironment",
-];
+var EXPORTED_SYMBOLS = ["TelemetryEnvironment"];
 
 const myScope = this;
 
-const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-const {ObjectUtils} = ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
-const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const { ObjectUtils } = ChromeUtils.import(
+  "resource://gre/modules/ObjectUtils.jsm"
+);
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
 const Utils = TelemetryUtils;
 
-const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
+const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
+  "resource://gre/modules/AddonManager.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "AttributionCode",
-                               "resource:///modules/AttributionCode.jsm");
-ChromeUtils.defineModuleGetter(this, "ctypes",
-                               "resource://gre/modules/ctypes.jsm");
-ChromeUtils.defineModuleGetter(this, "LightweightThemeManager",
-                               "resource://gre/modules/LightweightThemeManager.jsm");
-ChromeUtils.defineModuleGetter(this, "ProfileAge",
-                               "resource://gre/modules/ProfileAge.jsm");
-ChromeUtils.defineModuleGetter(this, "WindowsRegistry",
-                               "resource://gre/modules/WindowsRegistry.jsm");
-ChromeUtils.defineModuleGetter(this, "UpdateUtils",
-                               "resource://gre/modules/UpdateUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "AttributionCode",
+  "resource:///modules/AttributionCode.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ctypes",
+  "resource://gre/modules/ctypes.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ProfileAge",
+  "resource://gre/modules/ProfileAge.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "WindowsRegistry",
+  "resource://gre/modules/WindowsRegistry.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "UpdateUtils",
+  "resource://gre/modules/UpdateUtils.jsm"
+);
 
 // The maximum length of a string (e.g. description) in the addons section.
 const MAX_ADDON_STRING_LENGTH = 100;
@@ -113,7 +130,7 @@ var TelemetryEnvironment = {
     if (gGlobalEnvironment) {
       gGlobalEnvironment.setExperimentActive(id, branch, options);
     } else {
-      gActiveExperimentStartupBuffer.set(id, {branch, options});
+      gActiveExperimentStartupBuffer.set(id, { branch, options });
     }
   },
 
@@ -147,7 +164,7 @@ var TelemetryEnvironment = {
     }
 
     const result = {};
-    for (const [id, {branch}] of gActiveExperimentStartupBuffer.entries()) {
+    for (const [id, { branch }] of gActiveExperimentStartupBuffer.entries()) {
       result[id] = branch;
     }
     return result;
@@ -196,84 +213,93 @@ const RECORD_PREF_VALUE = TelemetryEnvironment.RECORD_PREF_VALUE;
 const RECORD_DEFAULTPREF_VALUE = TelemetryEnvironment.RECORD_DEFAULTPREF_VALUE;
 const RECORD_DEFAULTPREF_STATE = TelemetryEnvironment.RECORD_DEFAULTPREF_STATE;
 const DEFAULT_ENVIRONMENT_PREFS = new Map([
-  ["app.feedback.baseURL", {what: RECORD_PREF_VALUE}],
-  ["app.support.baseURL", {what: RECORD_PREF_VALUE}],
-  ["accessibility.browsewithcaret", {what: RECORD_PREF_VALUE}],
-  ["accessibility.force_disabled", {what:  RECORD_PREF_VALUE}],
-  ["app.shield.optoutstudies.enabled", {what: RECORD_PREF_VALUE}],
-  ["app.update.interval", {what: RECORD_PREF_VALUE}],
-  ["app.update.service.enabled", {what: RECORD_PREF_VALUE}],
-  ["app.update.silent", {what: RECORD_PREF_VALUE}],
-  ["app.update.url", {what: RECORD_PREF_VALUE}],
-  ["browser.cache.disk.enable", {what: RECORD_PREF_VALUE}],
-  ["browser.cache.disk.capacity", {what: RECORD_PREF_VALUE}],
-  ["browser.cache.memory.enable", {what: RECORD_PREF_VALUE}],
-  ["browser.cache.offline.enable", {what: RECORD_PREF_VALUE}],
-  ["browser.formfill.enable", {what: RECORD_PREF_VALUE}],
-  ["browser.newtabpage.enabled", {what: RECORD_PREF_VALUE}],
-  ["browser.shell.checkDefaultBrowser", {what: RECORD_PREF_VALUE}],
-  ["browser.search.ignoredJAREngines", {what: RECORD_DEFAULTPREF_VALUE}],
-  ["browser.search.region", {what: RECORD_PREF_VALUE}],
-  ["browser.search.suggest.enabled", {what: RECORD_PREF_VALUE}],
-  ["browser.search.widget.inNavBar", {what: RECORD_DEFAULTPREF_VALUE}],
-  ["browser.startup.homepage", {what: RECORD_PREF_STATE}],
-  ["browser.startup.page", {what: RECORD_PREF_VALUE}],
-  ["toolkit.cosmeticAnimations.enabled", {what: RECORD_PREF_VALUE}],
-  ["browser.urlbar.suggest.searches", {what: RECORD_PREF_VALUE}],
-  ["browser.urlbar.userMadeSearchSuggestionsChoice", {what: RECORD_PREF_VALUE}],
-  ["devtools.chrome.enabled", {what: RECORD_PREF_VALUE}],
-  ["devtools.debugger.enabled", {what: RECORD_PREF_VALUE}],
-  ["devtools.debugger.remote-enabled", {what: RECORD_PREF_VALUE}],
-  ["dom.ipc.plugins.enabled", {what: RECORD_PREF_VALUE}],
-  ["dom.ipc.plugins.sandbox-level.flash", {what: RECORD_PREF_VALUE}],
-  ["dom.ipc.processCount", {what: RECORD_PREF_VALUE}],
-  ["dom.max_script_run_time", {what: RECORD_PREF_VALUE}],
-  ["extensions.autoDisableScopes", {what: RECORD_PREF_VALUE}],
-  ["extensions.enabledScopes", {what: RECORD_PREF_VALUE}],
-  ["extensions.blocklist.enabled", {what: RECORD_PREF_VALUE}],
-  ["extensions.blocklist.url", {what: RECORD_PREF_VALUE}],
-  ["extensions.formautofill.addresses.enabled", {what: RECORD_PREF_VALUE}],
-  ["extensions.formautofill.creditCards.enabled", {what: RECORD_PREF_VALUE}],
-  ["extensions.legacy.enabled", {what: RECORD_PREF_VALUE}],
-  ["extensions.strictCompatibility", {what: RECORD_PREF_VALUE}],
-  ["extensions.update.enabled", {what: RECORD_PREF_VALUE}],
-  ["extensions.update.url", {what: RECORD_PREF_VALUE}],
-  ["extensions.update.background.url", {what: RECORD_PREF_VALUE}],
-  ["extensions.screenshots.disabled", {what: RECORD_PREF_VALUE}],
-  ["general.config.filename", {what: RECORD_DEFAULTPREF_STATE}],
-  ["general.smoothScroll", {what: RECORD_PREF_VALUE}],
-  ["gfx.direct2d.disabled", {what: RECORD_PREF_VALUE}],
-  ["gfx.direct2d.force-enabled", {what: RECORD_PREF_VALUE}],
-  ["gfx.webrender.all", {what: RECORD_PREF_VALUE}],
-  ["gfx.webrender.all.qualified", {what: RECORD_PREF_VALUE}],
-  ["gfx.webrender.force-disabled", {what: RECORD_PREF_VALUE}],
-  ["layers.acceleration.disabled", {what: RECORD_PREF_VALUE}],
-  ["layers.acceleration.force-enabled", {what: RECORD_PREF_VALUE}],
-  ["layers.async-pan-zoom.enabled", {what: RECORD_PREF_VALUE}],
-  ["layers.async-video-oop.enabled", {what: RECORD_PREF_VALUE}],
-  ["layers.async-video.enabled", {what: RECORD_PREF_VALUE}],
-  ["layers.componentalpha.enabled", {what: RECORD_PREF_VALUE}],
-  ["layers.d3d11.disable-warp", {what: RECORD_PREF_VALUE}],
-  ["layers.d3d11.force-warp", {what: RECORD_PREF_VALUE}],
-  ["layers.offmainthreadcomposition.force-disabled", {what: RECORD_PREF_VALUE}],
-  ["layers.prefer-d3d9", {what: RECORD_PREF_VALUE}],
-  ["layers.prefer-opengl", {what: RECORD_PREF_VALUE}],
-  ["layout.css.devPixelsPerPx", {what: RECORD_PREF_VALUE}],
-  ["marionette.enabled", {what: RECORD_PREF_VALUE}],
-  ["network.proxy.autoconfig_url", {what: RECORD_PREF_STATE}],
-  ["network.proxy.http", {what: RECORD_PREF_STATE}],
-  ["network.proxy.ssl", {what: RECORD_PREF_STATE}],
-  ["pdfjs.disabled", {what: RECORD_PREF_VALUE}],
-  ["places.history.enabled", {what: RECORD_PREF_VALUE}],
-  ["plugins.show_infobar", {what: RECORD_PREF_VALUE}],
-  ["privacy.fuzzyfox.enabled", {what: RECORD_PREF_VALUE}],
-  ["privacy.trackingprotection.enabled", {what: RECORD_PREF_VALUE}],
-  ["privacy.donottrackheader.enabled", {what: RECORD_PREF_VALUE}],
-  ["security.mixed_content.block_active_content", {what: RECORD_PREF_VALUE}],
-  ["security.mixed_content.block_display_content", {what: RECORD_PREF_VALUE}],
-  ["toolkit.telemetry.testing.overridePreRelease", {what: RECORD_PREF_VALUE}],
-  ["toolkit.telemetry.overrideUpdateChannel", {what: RECORD_PREF_STATE}],
-  ["xpinstall.signatures.required", {what: RECORD_PREF_VALUE}],
+  ["app.feedback.baseURL", { what: RECORD_PREF_VALUE }],
+  ["app.support.baseURL", { what: RECORD_PREF_VALUE }],
+  ["accessibility.browsewithcaret", { what: RECORD_PREF_VALUE }],
+  ["accessibility.force_disabled", { what: RECORD_PREF_VALUE }],
+  ["app.shield.optoutstudies.enabled", { what: RECORD_PREF_VALUE }],
+  ["app.update.interval", { what: RECORD_PREF_VALUE }],
+  ["app.update.service.enabled", { what: RECORD_PREF_VALUE }],
+  ["app.update.silent", { what: RECORD_PREF_VALUE }],
+  ["app.update.url", { what: RECORD_PREF_VALUE }],
+  ["browser.cache.disk.enable", { what: RECORD_PREF_VALUE }],
+  ["browser.cache.disk.capacity", { what: RECORD_PREF_VALUE }],
+  ["browser.cache.memory.enable", { what: RECORD_PREF_VALUE }],
+  ["browser.cache.offline.enable", { what: RECORD_PREF_VALUE }],
+  ["browser.formfill.enable", { what: RECORD_PREF_VALUE }],
+  ["browser.newtabpage.enabled", { what: RECORD_PREF_VALUE }],
+  ["browser.shell.checkDefaultBrowser", { what: RECORD_PREF_VALUE }],
+  ["browser.search.ignoredJAREngines", { what: RECORD_DEFAULTPREF_VALUE }],
+  ["browser.search.region", { what: RECORD_PREF_VALUE }],
+  ["browser.search.suggest.enabled", { what: RECORD_PREF_VALUE }],
+  ["browser.search.widget.inNavBar", { what: RECORD_DEFAULTPREF_VALUE }],
+  ["browser.startup.homepage", { what: RECORD_PREF_STATE }],
+  ["browser.startup.page", { what: RECORD_PREF_VALUE }],
+  ["toolkit.cosmeticAnimations.enabled", { what: RECORD_PREF_VALUE }],
+  ["browser.urlbar.suggest.searches", { what: RECORD_PREF_VALUE }],
+  [
+    "browser.urlbar.userMadeSearchSuggestionsChoice",
+    { what: RECORD_PREF_VALUE },
+  ],
+  ["devtools.chrome.enabled", { what: RECORD_PREF_VALUE }],
+  ["devtools.debugger.enabled", { what: RECORD_PREF_VALUE }],
+  ["devtools.debugger.remote-enabled", { what: RECORD_PREF_VALUE }],
+  ["dom.ipc.plugins.enabled", { what: RECORD_PREF_VALUE }],
+  ["dom.ipc.plugins.sandbox-level.flash", { what: RECORD_PREF_VALUE }],
+  ["dom.ipc.processCount", { what: RECORD_PREF_VALUE }],
+  ["dom.max_script_run_time", { what: RECORD_PREF_VALUE }],
+  ["extensions.autoDisableScopes", { what: RECORD_PREF_VALUE }],
+  ["extensions.enabledScopes", { what: RECORD_PREF_VALUE }],
+  ["extensions.blocklist.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.blocklist.url", { what: RECORD_PREF_VALUE }],
+  ["extensions.formautofill.addresses.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.formautofill.creditCards.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.htmlaboutaddons.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.legacy.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.strictCompatibility", { what: RECORD_PREF_VALUE }],
+  ["extensions.update.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.update.url", { what: RECORD_PREF_VALUE }],
+  ["extensions.update.background.url", { what: RECORD_PREF_VALUE }],
+  ["extensions.screenshots.disabled", { what: RECORD_PREF_VALUE }],
+  ["general.config.filename", { what: RECORD_DEFAULTPREF_STATE }],
+  ["general.smoothScroll", { what: RECORD_PREF_VALUE }],
+  ["gfx.direct2d.disabled", { what: RECORD_PREF_VALUE }],
+  ["gfx.direct2d.force-enabled", { what: RECORD_PREF_VALUE }],
+  ["gfx.webrender.all", { what: RECORD_PREF_VALUE }],
+  ["gfx.webrender.all.qualified", { what: RECORD_PREF_VALUE }],
+  ["gfx.webrender.force-disabled", { what: RECORD_PREF_VALUE }],
+  ["layers.acceleration.disabled", { what: RECORD_PREF_VALUE }],
+  ["layers.acceleration.force-enabled", { what: RECORD_PREF_VALUE }],
+  ["layers.async-pan-zoom.enabled", { what: RECORD_PREF_VALUE }],
+  ["layers.async-video-oop.enabled", { what: RECORD_PREF_VALUE }],
+  ["layers.async-video.enabled", { what: RECORD_PREF_VALUE }],
+  ["layers.componentalpha.enabled", { what: RECORD_PREF_VALUE }],
+  ["layers.d3d11.disable-warp", { what: RECORD_PREF_VALUE }],
+  ["layers.d3d11.force-warp", { what: RECORD_PREF_VALUE }],
+  [
+    "layers.offmainthreadcomposition.force-disabled",
+    { what: RECORD_PREF_VALUE },
+  ],
+  ["layers.prefer-d3d9", { what: RECORD_PREF_VALUE }],
+  ["layers.prefer-opengl", { what: RECORD_PREF_VALUE }],
+  ["layout.css.devPixelsPerPx", { what: RECORD_PREF_VALUE }],
+  ["marionette.enabled", { what: RECORD_PREF_VALUE }],
+  ["network.proxy.autoconfig_url", { what: RECORD_PREF_STATE }],
+  ["network.proxy.http", { what: RECORD_PREF_STATE }],
+  ["network.proxy.ssl", { what: RECORD_PREF_STATE }],
+  ["network.trr.mode", { what: RECORD_PREF_VALUE }],
+  ["pdfjs.disabled", { what: RECORD_PREF_VALUE }],
+  ["places.history.enabled", { what: RECORD_PREF_VALUE }],
+  ["plugins.show_infobar", { what: RECORD_PREF_VALUE }],
+  ["privacy.fuzzyfox.enabled", { what: RECORD_PREF_VALUE }],
+  ["privacy.trackingprotection.enabled", { what: RECORD_PREF_VALUE }],
+  ["privacy.donottrackheader.enabled", { what: RECORD_PREF_VALUE }],
+  ["security.enterprise_roots.auto-enabled", { what: RECORD_PREF_VALUE }],
+  ["security.enterprise_roots.enabled", { what: RECORD_PREF_VALUE }],
+  ["security.pki.mitm_detected", { what: RECORD_PREF_VALUE }],
+  ["security.mixed_content.block_active_content", { what: RECORD_PREF_VALUE }],
+  ["security.mixed_content.block_display_content", { what: RECORD_PREF_VALUE }],
+  ["xpinstall.signatures.required", { what: RECORD_PREF_VALUE }],
 ]);
 
 const LOGGER_NAME = "Toolkit.Telemetry";
@@ -289,13 +315,14 @@ const PREF_SEARCH_COHORT = "browser.search.cohort";
 
 const COMPOSITOR_CREATED_TOPIC = "compositor:created";
 const COMPOSITOR_PROCESS_ABORTED_TOPIC = "compositor:process-aborted";
-const DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC = "distribution-customization-complete";
+const DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC =
+  "distribution-customization-complete";
 const GFX_FEATURES_READY_TOPIC = "gfx-features-ready";
 const SEARCH_ENGINE_MODIFIED_TOPIC = "browser-search-engine-modified";
 const SEARCH_SERVICE_TOPIC = "browser-search-service";
 const SESSIONSTORE_WINDOWS_RESTORED_TOPIC = "sessionstore-windows-restored";
 const PREF_CHANGED_TOPIC = "nsPref:changed";
-const BLOCKLIST_LOADED_TOPIC = "blocklist-loaded";
+const BLOCKLIST_LOADED_TOPIC = "plugin-blocklist-loaded";
 const AUTO_UPDATE_PREF_CHANGE_TOPIC = "auto-update-config-change";
 
 /**
@@ -305,7 +332,7 @@ const AUTO_UPDATE_PREF_CHANGE_TOPIC = "auto-update-config-change";
  *         value. Otherwise, return null.
  */
 function enforceBoolean(aValue) {
-  if (typeof(aValue) !== "number" && typeof(aValue) !== "boolean") {
+  if (typeof aValue !== "number" && typeof aValue !== "boolean") {
     return null;
   }
   return Boolean(aValue);
@@ -329,9 +356,9 @@ function getBrowserLocale() {
  */
 function getSystemLocale() {
   try {
-    return Cc["@mozilla.org/intl/ospreferences;1"].
-             getService(Ci.mozIOSPreferences).
-             systemLocale;
+    return Cc["@mozilla.org/intl/ospreferences;1"].getService(
+      Ci.mozIOSPreferences
+    ).systemLocale;
   } catch (e) {
     return null;
   }
@@ -343,9 +370,9 @@ function getSystemLocale() {
  */
 function getSystemLocales() {
   try {
-    return Cc["@mozilla.org/intl/ospreferences;1"].
-             getService(Ci.mozIOSPreferences).
-             systemLocales;
+    return Cc["@mozilla.org/intl/ospreferences;1"].getService(
+      Ci.mozIOSPreferences
+    ).systemLocales;
   } catch (e) {
     return null;
   }
@@ -357,9 +384,9 @@ function getSystemLocales() {
  */
 function getRegionalPrefsLocales() {
   try {
-    return Cc["@mozilla.org/intl/ospreferences;1"].
-             getService(Ci.mozIOSPreferences).
-             regionalPrefsLocales;
+    return Cc["@mozilla.org/intl/ospreferences;1"].getService(
+      Ci.mozIOSPreferences
+    ).regionalPrefsLocales;
   } catch (e) {
     return null;
   }
@@ -372,11 +399,10 @@ function getIntlSettings() {
     appLocales: Services.locale.appLocalesAsBCP47,
     systemLocales: getSystemLocales(),
     regionalPrefsLocales: getRegionalPrefsLocales(),
-    acceptLanguages:
-      Services.prefs.getComplexValue("intl.accept_languages", Ci.nsIPrefLocalizedString)
-        .data
-        .split(",")
-        .map(str => str.trim()),
+    acceptLanguages: Services.prefs
+      .getComplexValue("intl.accept_languages", Ci.nsIPrefLocalizedString)
+      .data.split(",")
+      .map(str => str.trim()),
   };
 }
 
@@ -428,7 +454,7 @@ function getGfxField(aPropertyName, aDefault) {
  * @return {String} The substring or null if the input string is null.
  */
 function limitStringToLength(aString, aMaxLength) {
-  if (typeof(aString) !== "string") {
+  if (typeof aString !== "string") {
     return null;
   }
   return aString.substring(0, aMaxLength);
@@ -467,6 +493,7 @@ function getGfxAdapter(aSuffix = "") {
     subsysID: getGfxField("adapterSubsysID" + aSuffix, null),
     RAM: memoryMB,
     driver: getGfxField("adapterDriver" + aSuffix, null),
+    driverVendor: getGfxField("adapterDriverVendor" + aSuffix, null),
     driverVersion: getGfxField("adapterDriverVersion" + aSuffix, null),
     driverDate: getGfxField("adapterDriverDate" + aSuffix, null),
   };
@@ -480,7 +507,11 @@ function getGfxAdapter(aSuffix = "") {
  *         build number.
  */
 function getWindowsVersionInfo() {
-  const UNKNOWN_VERSION_INFO = {servicePackMajor: null, servicePackMinor: null, buildNumber: null};
+  const UNKNOWN_VERSION_INFO = {
+    servicePackMajor: null,
+    servicePackMinor: null,
+    buildNumber: null,
+  };
 
   if (AppConstants.platform !== "win") {
     return UNKNOWN_VERSION_INFO;
@@ -495,32 +526,33 @@ function getWindowsVersionInfo() {
   // This structure is described at:
   // http://msdn.microsoft.com/en-us/library/ms724833%28v=vs.85%29.aspx
   const SZCSDVERSIONLENGTH = 128;
-  const OSVERSIONINFOEXW = new ctypes.StructType("OSVERSIONINFOEXW",
-      [
-      {dwOSVersionInfoSize: DWORD},
-      {dwMajorVersion: DWORD},
-      {dwMinorVersion: DWORD},
-      {dwBuildNumber: DWORD},
-      {dwPlatformId: DWORD},
-      {szCSDVersion: ctypes.ArrayType(WCHAR, SZCSDVERSIONLENGTH)},
-      {wServicePackMajor: WORD},
-      {wServicePackMinor: WORD},
-      {wSuiteMask: WORD},
-      {wProductType: BYTE},
-      {wReserved: BYTE},
-      ]);
+  const OSVERSIONINFOEXW = new ctypes.StructType("OSVERSIONINFOEXW", [
+    { dwOSVersionInfoSize: DWORD },
+    { dwMajorVersion: DWORD },
+    { dwMinorVersion: DWORD },
+    { dwBuildNumber: DWORD },
+    { dwPlatformId: DWORD },
+    { szCSDVersion: ctypes.ArrayType(WCHAR, SZCSDVERSIONLENGTH) },
+    { wServicePackMajor: WORD },
+    { wServicePackMinor: WORD },
+    { wSuiteMask: WORD },
+    { wProductType: BYTE },
+    { wReserved: BYTE },
+  ]);
 
   let kernel32 = ctypes.open("kernel32");
   try {
-    let GetVersionEx = kernel32.declare("GetVersionExW",
-                                        ctypes.winapi_abi,
-                                        BOOL,
-                                        OSVERSIONINFOEXW.ptr);
+    let GetVersionEx = kernel32.declare(
+      "GetVersionExW",
+      ctypes.winapi_abi,
+      BOOL,
+      OSVERSIONINFOEXW.ptr
+    );
     let winVer = OSVERSIONINFOEXW();
     winVer.dwOSVersionInfoSize = OSVERSIONINFOEXW.size;
 
     if (0 === GetVersionEx(winVer.address())) {
-      throw ("Failure in GetVersionEx (returned 0)");
+      throw new Error("Failure in GetVersionEx (returned 0)");
     }
 
     return {
@@ -558,15 +590,10 @@ EnvironmentAddonBuilder.prototype = {
    * Get the initial set of addons.
    * @returns Promise<void> when the initial load is complete.
    */
-  init() {
-    // Some tests don't initialize the addon manager. This accounts for the
-    // unfortunate reality of life.
-    try {
-      AddonManager.shutdown.addBlocker("EnvironmentAddonBuilder",
-        () => this._shutdownBlocker());
-    } catch (err) {
-      return Promise.reject(err);
-    }
+  async init() {
+    AddonManager.beforeShutdown.addBlocker("EnvironmentAddonBuilder", () =>
+      this._shutdownBlocker()
+    );
 
     this._pendingTask = (async () => {
       try {
@@ -574,18 +601,9 @@ EnvironmentAddonBuilder.prototype = {
         await this._updateAddons(true);
 
         if (!this._environment._addonsAreFull) {
-          // The addon database has not been loaded, so listen for the event
-          // triggered by the AddonManager when it is loaded so we can
-          // immediately gather full data at that time.
-          await new Promise(resolve => {
-            const ADDON_LOAD_NOTIFICATION = "xpi-database-loaded";
-            Services.obs.addObserver({
-              observe(subject, topic, data) {
-                Services.obs.removeObserver(this, ADDON_LOAD_NOTIFICATION);
-                resolve();
-              },
-            }, ADDON_LOAD_NOTIFICATION);
-          });
+          // The addon database has not been loaded, wait for it to
+          // initialize and gather full data as soon as it does.
+          await AddonManagerPrivate.databaseReady;
 
           // Now gather complete addons details.
           await this._updateAddons();
@@ -609,23 +627,26 @@ EnvironmentAddonBuilder.prototype = {
   },
 
   // AddonListener
-  onEnabled() {
-    this._onAddonChange();
+  onEnabled(addon) {
+    this._onAddonChange(addon);
   },
-  onDisabled() {
-    this._onAddonChange();
+  onDisabled(addon) {
+    this._onAddonChange(addon);
   },
-  onInstalled() {
-    this._onAddonChange();
+  onInstalled(addon) {
+    this._onAddonChange(addon);
   },
-  onUninstalling() {
-    this._onAddonChange();
+  onUninstalling(addon) {
+    this._onAddonChange(addon);
   },
-  onUninstalled() {
-    this._onAddonChange();
+  onUninstalled(addon) {
+    this._onAddonChange(addon);
   },
 
-  _onAddonChange() {
+  _onAddonChange(addon) {
+    if (addon && addon.isBuiltin && !addon.isSystem) {
+      return;
+    }
     this._environment._log.trace("_onAddonChange");
     this._checkForChanges("addons-changed");
   },
@@ -638,33 +659,49 @@ EnvironmentAddonBuilder.prototype = {
       this._blocklistObserverAdded = false;
       let plugins = this._getActivePlugins();
       let gmpPluginsPromise = this._getActiveGMPlugins();
-      gmpPluginsPromise.then(gmpPlugins => {
-        let {addons} = this._environment._currentEnvironment;
-        addons.activePlugins = plugins;
-        addons.activeGMPlugins = gmpPlugins;
-      }, err => {
-        this._environment._log.error("blocklist observe: Error collecting plugins", err);
-      });
+      gmpPluginsPromise.then(
+        gmpPlugins => {
+          let { addons } = this._environment._currentEnvironment;
+          addons.activePlugins = plugins;
+          addons.activeGMPlugins = gmpPlugins;
+        },
+        err => {
+          this._environment._log.error(
+            "blocklist observe: Error collecting plugins",
+            err
+          );
+        }
+      );
     }
   },
 
   _checkForChanges(changeReason) {
     if (this._pendingTask) {
-      this._environment._log.trace("_checkForChanges - task already pending, dropping change with reason " + changeReason);
+      this._environment._log.trace(
+        "_checkForChanges - task already pending, dropping change with reason " +
+          changeReason
+      );
       return;
     }
 
     this._pendingTask = this._updateAddons().then(
-      (result) => {
+      result => {
         this._pendingTask = null;
         if (result.changed) {
-          this._environment._onEnvironmentChange(changeReason, result.oldEnvironment);
+          this._environment._onEnvironmentChange(
+            changeReason,
+            result.oldEnvironment
+          );
         }
       },
-      (err) => {
+      err => {
         this._pendingTask = null;
-        this._environment._log.error("_checkForChanges: Error collecting addons", err);
-      });
+        this._environment._log.error(
+          "_checkForChanges: Error collecting addons",
+          err
+        );
+      }
+    );
   },
 
   _shutdownBlocker() {
@@ -699,28 +736,29 @@ EnvironmentAddonBuilder.prototype = {
    */
   async _updateAddons(atStartup) {
     this._environment._log.trace("_updateAddons");
-    let personaId = null;
-    let theme = LightweightThemeManager.currentTheme;
-    if (theme) {
-      personaId = theme.id;
-    }
 
     let addons = {
       activeAddons: await this._getActiveAddons(),
       theme: await this._getActiveTheme(),
       activePlugins: this._getActivePlugins(atStartup),
       activeGMPlugins: await this._getActiveGMPlugins(atStartup),
-      persona: personaId,
     };
 
     let result = {
-      changed: !this._environment._currentEnvironment.addons ||
-               !ObjectUtils.deepEqual(addons, this._environment._currentEnvironment.addons),
+      changed:
+        !this._environment._currentEnvironment.addons ||
+        !ObjectUtils.deepEqual(
+          addons,
+          this._environment._currentEnvironment.addons
+        ),
     };
 
     if (result.changed) {
       this._environment._log.trace("_updateAddons: addons differ");
-      result.oldEnvironment = Cu.cloneInto(this._environment._currentEnvironment, myScope);
+      result.oldEnvironment = Cu.cloneInto(
+        this._environment._currentEnvironment,
+        myScope
+      );
       this._environment._currentEnvironment.addons = addons;
     }
 
@@ -733,11 +771,18 @@ EnvironmentAddonBuilder.prototype = {
    */
   async _getActiveAddons() {
     // Request addons, asynchronously.
-    let {addons: allAddons, fullData} = await AddonManager.getActiveAddons(["extension", "service"]);
+    let { addons: allAddons, fullData } = await AddonManager.getActiveAddons([
+      "extension",
+      "service",
+    ]);
 
     this._environment._addonsAreFull = fullData;
     let activeAddons = {};
     for (let addon of allAddons) {
+      // Don't collect any information about the new built-in search webextensions
+      if (addon.isBuiltin && !addon.isSystem) {
+        continue;
+      }
       // Weird addon data in the wild can lead to exceptions while collecting
       // the data.
       try {
@@ -759,8 +804,12 @@ EnvironmentAddonBuilder.prototype = {
         if (fullData) {
           let installDate = new Date(Math.max(0, addon.installDate));
           Object.assign(activeAddons[addon.id], {
-            blocklisted: (addon.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED),
-            description: limitStringToLength(addon.description, MAX_ADDON_STRING_LENGTH),
+            blocklisted:
+              addon.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
+            description: limitStringToLength(
+              addon.description,
+              MAX_ADDON_STRING_LENGTH
+            ),
             name: limitStringToLength(addon.name, MAX_ADDON_STRING_LENGTH),
             userDisabled: enforceBoolean(addon.userDisabled),
             appDisabled: addon.appDisabled,
@@ -771,7 +820,10 @@ EnvironmentAddonBuilder.prototype = {
           });
         }
       } catch (ex) {
-        this._environment._log.error("_getActiveAddons - An addon was discarded due to an error", ex);
+        this._environment._log.error(
+          "_getActiveAddons - An addon was discarded due to an error",
+          ex
+        );
         continue;
       }
     }
@@ -785,7 +837,7 @@ EnvironmentAddonBuilder.prototype = {
    */
   async _getActiveTheme() {
     // Request themes, asynchronously.
-    let {addons: themes} = await AddonManager.getActiveAddons(["theme"]);
+    let { addons: themes } = await AddonManager.getActiveAddons(["theme"]);
 
     let activeTheme = {};
     // We only store information about the active theme.
@@ -797,8 +849,12 @@ EnvironmentAddonBuilder.prototype = {
 
       activeTheme = {
         id: theme.id,
-        blocklisted: (theme.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED),
-        description: limitStringToLength(theme.description, MAX_ADDON_STRING_LENGTH),
+        blocklisted:
+          theme.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
+        description: limitStringToLength(
+          theme.description,
+          MAX_ADDON_STRING_LENGTH
+        ),
         name: limitStringToLength(theme.name, MAX_ADDON_STRING_LENGTH),
         userDisabled: enforceBoolean(theme.userDisabled),
         appDisabled: theme.appDisabled,
@@ -831,15 +887,22 @@ EnvironmentAddonBuilder.prototype = {
         Services.obs.addObserver(this, BLOCKLIST_LOADED_TOPIC);
         this._blocklistObserverAdded = true;
       }
-      return [{
-        name: "dummy", version: "0.1", description: "Blocklist unavailable",
-        blocklisted: false, disabled: true, clicktoplay: false,
-        mimeTypes: ["text/there.is.only.blocklist"],
-        updateDay: Utils.millisecondsToDays(Date.now()),
-      }];
+      return [
+        {
+          name: "dummy",
+          version: "0.1",
+          description: "Blocklist unavailable",
+          blocklisted: false,
+          disabled: true,
+          clicktoplay: false,
+          mimeTypes: ["text/there.is.only.blocklist"],
+          updateDay: Utils.millisecondsToDays(Date.now()),
+        },
+      ];
     }
-    let pluginTags =
-      Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost).getPluginTags({});
+    let pluginTags = Cc["@mozilla.org/plugin/host;1"]
+      .getService(Ci.nsIPluginHost)
+      .getPluginTags();
 
     let activePlugins = [];
     for (let tag of pluginTags) {
@@ -855,15 +918,21 @@ EnvironmentAddonBuilder.prototype = {
         activePlugins.push({
           name: limitStringToLength(tag.name, MAX_ADDON_STRING_LENGTH),
           version: limitStringToLength(tag.version, MAX_ADDON_STRING_LENGTH),
-          description: limitStringToLength(tag.description, MAX_ADDON_STRING_LENGTH),
+          description: limitStringToLength(
+            tag.description,
+            MAX_ADDON_STRING_LENGTH
+          ),
           blocklisted: tag.blocklisted,
           disabled: tag.disabled,
           clicktoplay: tag.clicktoplay,
-          mimeTypes: tag.getMimeTypes({}),
+          mimeTypes: tag.getMimeTypes(),
           updateDay: Utils.millisecondsToDays(updateDate.getTime()),
         });
       } catch (ex) {
-        this._environment._log.error("_getActivePlugins - A plugin was discarded due to an error", ex);
+        this._environment._log.error(
+          "_getActivePlugins - A plugin was discarded due to an error",
+          ex
+        );
         continue;
       }
     }
@@ -892,7 +961,11 @@ EnvironmentAddonBuilder.prototype = {
         this._blocklistObserverAdded = true;
       }
       return {
-        "dummy-gmp": {version: "0.1", userDisabled: false, applyBackgroundUpdates: 1},
+        "dummy-gmp": {
+          version: "0.1",
+          userDisabled: false,
+          applyBackgroundUpdates: 1,
+        },
       };
     }
     // Request plugins, asynchronously.
@@ -912,7 +985,10 @@ EnvironmentAddonBuilder.prototype = {
           applyBackgroundUpdates: plugin.applyBackgroundUpdates,
         };
       } catch (ex) {
-        this._environment._log.error("_getActiveGMPlugins - A GMPlugin was discarded due to an error", ex);
+        this._environment._log.error(
+          "_getActiveGMPlugins - A GMPlugin was discarded due to an error",
+          ex
+        );
         continue;
       }
     }
@@ -923,11 +999,12 @@ EnvironmentAddonBuilder.prototype = {
 
 function EnvironmentCache() {
   this._log = Log.repository.getLoggerWithMessagePrefix(
-    LOGGER_NAME, "TelemetryEnvironment::");
+    LOGGER_NAME,
+    "TelemetryEnvironment::"
+  );
   this._log.trace("constructor");
 
   this._shutdown = false;
-  this._delayedInitFinished = false;
   // Don't allow querying the search service too early to prevent
   // impacting the startup performance.
   this._canQuerySearch = false;
@@ -953,7 +1030,7 @@ function EnvironmentCache() {
   // Build the remaining asynchronous parts of the environment. Don't register change listeners
   // until the initial environment has been built.
 
-  let p = [ this._updateSettings() ];
+  let p = [this._updateSettings()];
   this._addonBuilder = new EnvironmentAddonBuilder(this);
   p.push(this._addonBuilder.init());
 
@@ -965,7 +1042,10 @@ function EnvironmentCache() {
   p.push(this._loadAutoUpdateAsync());
   p.push(this._loadIntlData());
 
-  for (const [id, {branch, options}] of gActiveExperimentStartupBuffer.entries()) {
+  for (const [
+    id,
+    { branch, options },
+  ] of gActiveExperimentStartupBuffer.entries()) {
     this.setExperimentActive(id, branch, options);
   }
   gActiveExperimentStartupBuffer = null;
@@ -978,14 +1058,14 @@ function EnvironmentCache() {
     return this.currentEnvironment;
   };
 
-  this._initTask = Promise.all(p)
-    .then(
-      () => setup(),
-      (err) => {
-        // log errors but eat them for consumers
-        this._log.error("EnvironmentCache - error while initializing", err);
-        return setup();
-      });
+  this._initTask = Promise.all(p).then(
+    () => setup(),
+    err => {
+      // log errors but eat them for consumers
+      this._log.error("EnvironmentCache - error while initializing", err);
+      return setup();
+    }
+  );
 
   // Addons may contain partial or full data depending on whether the Addons DB
   // has had a chance to load. Do we have full data yet?
@@ -1015,8 +1095,24 @@ EnvironmentCache.prototype = {
   /**
    * This gets called when the delayed init completes.
    */
-  delayedInit() {
-    this._delayedInitFinished = true;
+  async delayedInit() {
+    if (AppConstants.platform == "win") {
+      this._hddData = await Services.sysinfo.diskInfo;
+      let oldEnv = null;
+      if (!this._initTask) {
+        // We've finished creating the initial env, so notify for the update
+        // This is all a bit awkward because `currentEnvironment` clones
+        // the object, which we need to pass to the notification, but we
+        // should only notify once we've updated the current environment...
+        // Ideally, _onEnvironmentChange should somehow deal with all this
+        // instead of all the consumers.
+        oldEnv = this.currentEnvironment;
+      }
+      this._currentEnvironment.system.hdd = this._getHDDData();
+      if (!this._initTask) {
+        this._onEnvironmentChange("hdd-info", oldEnv);
+      }
+    }
   },
 
   /**
@@ -1053,15 +1149,22 @@ EnvironmentCache.prototype = {
     this._log.trace("setExperimentActive");
     // Make sure both the id and the branch have sane lengths.
     const saneId = limitStringToLength(id, MAX_EXPERIMENT_ID_LENGTH);
-    const saneBranch = limitStringToLength(branch, MAX_EXPERIMENT_BRANCH_LENGTH);
+    const saneBranch = limitStringToLength(
+      branch,
+      MAX_EXPERIMENT_BRANCH_LENGTH
+    );
     if (!saneId || !saneBranch) {
-      this._log.error("setExperimentActive - the provided arguments are not strings.");
+      this._log.error(
+        "setExperimentActive - the provided arguments are not strings."
+      );
       return;
     }
 
     // Warn the user about any content truncation.
     if (saneId.length != id.length || saneBranch.length != branch.length) {
-      this._log.warn("setExperimentActive - the experiment id or branch were truncated.");
+      this._log.warn(
+        "setExperimentActive - the experiment id or branch were truncated."
+      );
     }
 
     // Truncate the experiment type if present.
@@ -1069,14 +1172,16 @@ EnvironmentCache.prototype = {
       let type = limitStringToLength(options.type, MAX_EXPERIMENT_TYPE_LENGTH);
       if (type.length != options.type.length) {
         options.type = type;
-        this._log.warn("setExperimentActive - the experiment type was truncated.");
+        this._log.warn(
+          "setExperimentActive - the experiment type was truncated."
+        );
       }
     }
 
     let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
     // Add the experiment annotation.
     let experiments = this._currentEnvironment.experiments || {};
-    experiments[saneId] = { "branch": saneBranch };
+    experiments[saneId] = { branch: saneBranch };
     if (options.hasOwnProperty("type")) {
       experiments[saneId].type = options.type;
     }
@@ -1094,7 +1199,10 @@ EnvironmentCache.prototype = {
       // Remove the experiment annotation.
       delete this._currentEnvironment.experiments[id];
       // Notify of the change.
-      this._onEnvironmentChange("experiment-annotation-changed", oldEnvironment);
+      this._onEnvironmentChange(
+        "experiment-annotation-changed",
+        oldEnvironment
+      );
     }
   },
 
@@ -1151,8 +1259,10 @@ EnvironmentCache.prototype = {
     // or whether it changed from the default value.
     let prefType = Services.prefs.getPrefType(pref);
 
-    if (what == TelemetryEnvironment.RECORD_DEFAULTPREF_VALUE ||
-      what == TelemetryEnvironment.RECORD_DEFAULTPREF_STATE) {
+    if (
+      what == TelemetryEnvironment.RECORD_DEFAULTPREF_VALUE ||
+      what == TelemetryEnvironment.RECORD_DEFAULTPREF_STATE
+    ) {
       // For default prefs, make sure they exist
       if (prefType == Ci.nsIPrefBranch.PREF_INVALID) {
         return undefined;
@@ -1175,7 +1285,9 @@ EnvironmentCache.prototype = {
     } else if (prefType == Ci.nsIPrefBranch.PREF_INVALID) {
       return null;
     }
-    throw new Error(`Unexpected preference type ("${prefType}") for "${pref}".`);
+    throw new Error(
+      `Unexpected preference type ("${prefType}") for "${pref}".`
+    );
   },
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsISupportsWeakReference]),
@@ -1192,7 +1304,10 @@ EnvironmentCache.prototype = {
   _onPrefChanged(aData) {
     this._log.trace("_onPrefChanged");
     let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
-    this._currentEnvironment.settings.userPrefs[aData] = this._getPrefValue(aData, this._watchedPrefs.get(aData).what);
+    this._currentEnvironment.settings.userPrefs[aData] = this._getPrefValue(
+      aData,
+      this._watchedPrefs.get(aData).what
+    );
     this._onEnvironmentChange("pref-changed", oldEnvironment);
   },
 
@@ -1222,7 +1337,10 @@ EnvironmentCache.prototype = {
     Services.obs.removeObserver(this, COMPOSITOR_CREATED_TOPIC);
     Services.obs.removeObserver(this, COMPOSITOR_PROCESS_ABORTED_TOPIC);
     try {
-      Services.obs.removeObserver(this, DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC);
+      Services.obs.removeObserver(
+        this,
+        DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC
+      );
     } catch (ex) {}
     Services.obs.removeObserver(this, GFX_FEATURES_READY_TOPIC);
     Services.obs.removeObserver(this, SEARCH_ENGINE_MODIFIED_TOPIC);
@@ -1234,7 +1352,7 @@ EnvironmentCache.prototype = {
     this._log.trace("observe - aTopic: " + aTopic + ", aData: " + aData);
     switch (aTopic) {
       case SEARCH_ENGINE_MODIFIED_TOPIC:
-        if (aData != "engine-current") {
+        if (aData != "engine-default") {
           return;
         }
         // Record the new default search choice and send the change notification.
@@ -1282,7 +1400,7 @@ EnvironmentCache.prototype = {
         }
         break;
       case AUTO_UPDATE_PREF_CHANGE_TOPIC:
-        this._currentEnvironment.settings.update.autoDownload = (aData == "true");
+        this._currentEnvironment.settings.update.autoDownload = aData == "true";
         break;
     }
   },
@@ -1326,7 +1444,9 @@ EnvironmentCache.prototype = {
       return;
     }
 
-    this._log.trace("_updateSearchEngine - isInitialized: " + Services.search.isInitialized);
+    this._log.trace(
+      "_updateSearchEngine - isInitialized: " + Services.search.isInitialized
+    );
     if (!Services.search.isInitialized) {
       return;
     }
@@ -1335,8 +1455,7 @@ EnvironmentCache.prototype = {
     this._currentEnvironment.settings = this._currentEnvironment.settings || {};
     // Update the search engine entry in the current environment.
     this._currentEnvironment.settings.defaultSearchEngine = this._getDefaultSearchEngine();
-    this._currentEnvironment.settings.defaultSearchEngineData =
-      await Services.search.getDefaultEngineInfo();
+    this._currentEnvironment.settings.defaultSearchEngineData = await Services.search.getDefaultEngineInfo();
 
     // Record the cohort identifier used for search defaults A/B testing.
     if (Services.prefs.prefHasUserValue(PREF_SEARCH_COHORT)) {
@@ -1422,18 +1541,25 @@ EnvironmentCache.prototype = {
       try {
         return !!service.isDefaultBrowser(...args);
       } catch (ex) {
-        this._log.error("_isDefaultBrowser - Could not determine if default browser", ex);
+        this._log.error(
+          "_isDefaultBrowser - Could not determine if default browser",
+          ex
+        );
         return null;
       }
     };
 
     if (!("@mozilla.org/browser/shell-service;1" in Cc)) {
-      this._log.info("_isDefaultBrowser - Could not obtain browser shell service");
+      this._log.info(
+        "_isDefaultBrowser - Could not obtain browser shell service"
+      );
       return null;
     }
 
     try {
-      let { ShellService } = ChromeUtils.import("resource:///modules/ShellService.jsm");
+      let { ShellService } = ChromeUtils.import(
+        "resource:///modules/ShellService.jsm"
+      );
       // This uses the same set of flags used by the pref pane.
       return isDefault(ShellService, false, true);
     } catch (ex) {
@@ -1441,9 +1567,10 @@ EnvironmentCache.prototype = {
     }
 
     try {
-      let shellService = Cc["@mozilla.org/browser/shell-service;1"]
-                            .getService(Ci.nsIShellService);
-    // This uses the same set of flags used by the pref pane.
+      let shellService = Cc["@mozilla.org/browser/shell-service;1"].getService(
+        Ci.nsIShellService
+      );
+      // This uses the same set of flags used by the pref pane.
       return isDefault(shellService, true);
     } catch (ex) {
       this._log.error("_isDefaultBrowser - Could not obtain shell service", ex);
@@ -1457,8 +1584,10 @@ EnvironmentCache.prototype = {
     }
     // Make sure to have a settings section.
     this._currentEnvironment.settings = this._currentEnvironment.settings || {};
-    this._currentEnvironment.settings.isDefaultBrowser =
-      this._sessionWasRestored ? this._isDefaultBrowser() : null;
+    this._currentEnvironment.settings.isDefaultBrowser = this
+      ._sessionWasRestored
+      ? this._isDefaultBrowser()
+      : null;
   },
 
   /**
@@ -1471,7 +1600,10 @@ EnvironmentCache.prototype = {
     } catch (e) {}
 
     this._currentEnvironment.settings = {
-      blocklistEnabled: Services.prefs.getBoolPref(PREF_BLOCKLIST_ENABLED, true),
+      blocklistEnabled: Services.prefs.getBoolPref(
+        PREF_BLOCKLIST_ENABLED,
+        true
+      ),
       e10sEnabled: Services.appinfo.browserTabsRemoteAutostart,
       e10sMultiProcesses: Services.appinfo.maxWebProcessCount,
       telemetryEnabled: Utils.isTelemetryEnabled,
@@ -1490,7 +1622,8 @@ EnvironmentCache.prototype = {
     // Services.appinfo.launcherProcessState is not available in all build
     // configurations, in which case an exception may be thrown.
     try {
-      this._currentEnvironment.settings.launcherProcessState = Services.appinfo.launcherProcessState;
+      this._currentEnvironment.settings.launcherProcessState =
+        Services.appinfo.launcherProcessState;
     } catch (e) {}
 
     this._currentEnvironment.settings.addonCompatibilityCheckEnabled =
@@ -1505,8 +1638,9 @@ EnvironmentCache.prototype = {
   _getSandboxData() {
     let effectiveContentProcessLevel = null;
     try {
-      let sandboxSettings = Cc["@mozilla.org/sandbox/sandbox-settings;1"].
-                            getService(Ci.mozISandboxSettings);
+      let sandboxSettings = Cc[
+        "@mozilla.org/sandbox/sandbox-settings;1"
+      ].getService(Ci.mozISandboxSettings);
       effectiveContentProcessLevel =
         sandboxSettings.effectiveContentSandboxLevel;
     } catch (e) {}
@@ -1526,15 +1660,18 @@ EnvironmentCache.prototype = {
     let resetDate = await profileAccessor.reset;
     let firstUseDate = await profileAccessor.firstUse;
 
-    this._currentEnvironment.profile.creationDate =
-      Utils.millisecondsToDays(creationDate);
+    this._currentEnvironment.profile.creationDate = Utils.millisecondsToDays(
+      creationDate
+    );
     if (resetDate) {
-      this._currentEnvironment.profile.resetDate =
-        Utils.millisecondsToDays(resetDate);
+      this._currentEnvironment.profile.resetDate = Utils.millisecondsToDays(
+        resetDate
+      );
     }
     if (firstUseDate) {
-      this._currentEnvironment.profile.firstUseDate =
-        Utils.millisecondsToDays(firstUseDate);
+      this._currentEnvironment.profile.firstUseDate = Utils.millisecondsToDays(
+        firstUseDate
+      );
     }
   },
 
@@ -1571,8 +1708,10 @@ EnvironmentCache.prototype = {
 
     let attributionData = {};
     for (let key in data) {
-      attributionData[key] =
-        limitStringToLength(data[key], MAX_ATTRIBUTION_STRING_LENGTH);
+      attributionData[key] = limitStringToLength(
+        data[key],
+        MAX_ATTRIBUTION_STRING_LENGTH
+      );
     }
     this._currentEnvironment.settings.attribution = attributionData;
   },
@@ -1601,9 +1740,9 @@ EnvironmentCache.prototype = {
   },
 
   /**
-  * Get i18n data about the system.
-  * @return A promise of completion.
-  */
+   * Get i18n data about the system.
+   * @return A promise of completion.
+   */
   async _loadIntlData() {
     // Wait for the startup topic.
     await Policy._browserDelayedStartup();
@@ -1618,10 +1757,16 @@ EnvironmentCache.prototype = {
   _getPartner() {
     let partnerData = {
       distributionId: Services.prefs.getStringPref(PREF_DISTRIBUTION_ID, null),
-      distributionVersion: Services.prefs.getStringPref(PREF_DISTRIBUTION_VERSION, null),
+      distributionVersion: Services.prefs.getStringPref(
+        PREF_DISTRIBUTION_VERSION,
+        null
+      ),
       partnerId: Services.prefs.getStringPref(PREF_PARTNER_ID, null),
       distributor: Services.prefs.getStringPref(PREF_DISTRIBUTOR, null),
-      distributorChannel: Services.prefs.getStringPref(PREF_DISTRIBUTOR_CHANNEL, null),
+      distributorChannel: Services.prefs.getStringPref(
+        PREF_DISTRIBUTOR_CHANNEL,
+        null
+      ),
     };
 
     // Get the PREF_APP_PARTNER_BRANCH branch and append its children to partner data.
@@ -1648,9 +1793,23 @@ EnvironmentCache.prototype = {
       speedMHz: getSysinfoProperty("cpuspeed", null),
     };
 
-    const CPU_EXTENSIONS = ["hasMMX", "hasSSE", "hasSSE2", "hasSSE3", "hasSSSE3",
-                            "hasSSE4A", "hasSSE4_1", "hasSSE4_2", "hasAVX", "hasAVX2",
-                            "hasAES", "hasEDSP", "hasARMv6", "hasARMv7", "hasNEON"];
+    const CPU_EXTENSIONS = [
+      "hasMMX",
+      "hasSSE",
+      "hasSSE2",
+      "hasSSE3",
+      "hasSSSE3",
+      "hasSSE4A",
+      "hasSSE4_1",
+      "hasSSE4_2",
+      "hasAVX",
+      "hasAVX2",
+      "hasAES",
+      "hasEDSP",
+      "hasARMv6",
+      "hasARMv7",
+      "hasNEON",
+    ];
 
     // Enumerate the available CPU extensions.
     let availableExts = [];
@@ -1695,24 +1854,32 @@ EnvironmentCache.prototype = {
     };
 
     if (AppConstants.platform == "android") {
-      data.kernelVersion = forceToStringOrNull(getSysinfoProperty("kernel_version", null));
+      data.kernelVersion = forceToStringOrNull(
+        getSysinfoProperty("kernel_version", null)
+      );
     } else if (AppConstants.platform === "win") {
       // The path to the "UBR" key, queried to get additional version details on Windows.
-      const WINDOWS_UBR_KEY_PATH = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+      const WINDOWS_UBR_KEY_PATH =
+        "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 
       let versionInfo = getWindowsVersionInfo();
       data.servicePackMajor = versionInfo.servicePackMajor;
       data.servicePackMinor = versionInfo.servicePackMinor;
       data.windowsBuildNumber = versionInfo.buildNumber;
       // We only need the UBR if we're at or above Windows 10.
-      if (typeof(data.version) === "string" &&
-          Services.vc.compare(data.version, "10") >= 0) {
+      if (
+        typeof data.version === "string" &&
+        Services.vc.compare(data.version, "10") >= 0
+      ) {
         // Query the UBR key and only add it to the environment if it's available.
         // |readRegKey| doesn't throw, but rather returns 'undefined' on error.
-        let ubr = WindowsRegistry.readRegKey(Ci.nsIWindowsRegKey.ROOT_KEY_LOCAL_MACHINE,
-                                             WINDOWS_UBR_KEY_PATH, "UBR",
-                                             Ci.nsIWindowsRegKey.WOW64_64);
-        data.windowsUBR = (ubr !== undefined) ? ubr : null;
+        let ubr = WindowsRegistry.readRegKey(
+          Ci.nsIWindowsRegKey.ROOT_KEY_LOCAL_MACHINE,
+          WINDOWS_UBR_KEY_PATH,
+          "UBR",
+          Ci.nsIWindowsRegKey.WOW64_64
+        );
+        data.windowsUBR = ubr !== undefined ? ubr : null;
       }
       data.installYear = getSysinfoProperty("installYear", null);
     }
@@ -1720,25 +1887,17 @@ EnvironmentCache.prototype = {
     return data;
   },
 
+  _hddData: null,
   /**
    * Get the HDD information.
    * @return Object containing the HDD data.
    */
   _getHDDData() {
-    return {
-      profile: { // hdd where the profile folder is located
-        model: getSysinfoProperty("profileHDDModel", null),
-        revision: getSysinfoProperty("profileHDDRevision", null),
-      },
-      binary:  { // hdd where the application binary is located
-        model: getSysinfoProperty("binHDDModel", null),
-        revision: getSysinfoProperty("binHDDRevision", null),
-      },
-      system:  { // hdd where the system files are located
-        model: getSysinfoProperty("winHDDModel", null),
-        revision: getSysinfoProperty("winHDDRevision", null),
-      },
-    };
+    if (this._hddData) {
+      return this._hddData;
+    }
+    let nullData = { model: null, revision: null, type: null };
+    return { profile: nullData, binary: nullData, system: nullData };
   },
 
   /**
@@ -1748,9 +1907,11 @@ EnvironmentCache.prototype = {
   _getSecurityAppData() {
     const maxStringLength = 256;
 
-    const keys = [ ["registeredAntiVirus", "antivirus"],
-                   ["registeredAntiSpyware", "antispyware"],
-                   ["registeredFirewall", "firewall"] ];
+    const keys = [
+      ["registeredAntiVirus", "antivirus"],
+      ["registeredAntiSpyware", "antispyware"],
+      ["registeredFirewall", "firewall"],
+    ];
 
     let result = {};
 
@@ -1775,7 +1936,7 @@ EnvironmentCache.prototype = {
       D2DEnabled: getGfxField("D2DEnabled", null),
       DWriteEnabled: getGfxField("DWriteEnabled", null),
       ContentBackend: getGfxField("ContentBackend", null),
-      LowEndMachine: getGfxField("LowEndMachine", false),
+      Headless: getGfxField("isHeadless", null),
       // The following line is disabled due to main thread jank and will be enabled
       // again as part of bug 1154500.
       // DWriteVersion: getGfxField("DWriteVersion", null),
@@ -1784,7 +1945,7 @@ EnvironmentCache.prototype = {
       features: {},
     };
 
-    if (!["android", "linux"].includes(AppConstants.platform)) {
+    if (AppConstants.platform !== "android") {
       let gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
       try {
         gfxData.monitors = gfxInfo.getMonitors();
@@ -1877,13 +2038,15 @@ EnvironmentCache.prototype = {
         this._log.debug("_onEnvironmentChange - calling " + name);
         listener(what, oldEnvironment);
       } catch (e) {
-        this._log.error("_onEnvironmentChange - listener " + name + " caught error", e);
+        this._log.error(
+          "_onEnvironmentChange - listener " + name + " caught error",
+          e
+        );
       }
     }
   },
 
   reset() {
     this._shutdown = false;
-    this._delayedInitFinished = false;
   },
 };

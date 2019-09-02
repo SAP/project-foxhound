@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Various zoom-related tests that spawn in new windows</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="apz_test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
@@ -29,8 +29,8 @@ var prefs = [
   // Explicitly enable pinch-zooming, so this test can run on desktop
   // even though zooming isn't enabled by default on desktop yet.
   ["apz.allow_zooming", true],
-  // Pinch-zooming currently requires meta viewport support (this requirement
-  // will eventually be removed).
+  // Similarly, explicitly enable support for meta viewport tags (which the
+  // test cases use) so they're processed even on desktop.
   ["dom.meta-viewport.enabled", true],
   // Increase the content response timeout because some tests do preventDefault
   // and we want to make sure APZ actually waits for them.
@@ -64,6 +64,10 @@ var subtests = [
   {"file": "helper_fixed_position_scroll_hittest.html", "prefs": prefs},
   {"file": "helper_basic_doubletap_zoom.html", "prefs": doubletap_prefs},
   {"file": "helper_onetouchpinch_nested.html", "prefs": onetouchpinch_prefs},
+  {"file": "helper_visual_smooth_scroll.html", "prefs": prefs},
+  {"file": "helper_scroll_into_view_bug1516056.html", "prefs": prefs},
+  {"file": "helper_scroll_into_view_bug1562757.html", "prefs": prefs},
+  {"file": "helper_fixed_pos_displayport.html", "prefs": prefs},
 ];
 
 if (isApzEnabled()) {

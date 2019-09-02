@@ -15,7 +15,7 @@
 #include "MediaChangeMonitor.h"
 #include "MediaInfo.h"
 #include "VPXDecoder.h"
-#include "gfxPrefs.h"
+#include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
 #include "mozilla/CDMProxy.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/GpuDecoderModule.h"
@@ -173,7 +173,6 @@ void PDMFactory::EnsureInit() {
     if (!sInstance) {
       // Ensure that all system variables are initialized.
       gfx::gfxVars::Initialize();
-      gfxPrefs::GetSingleton();
       // On the main thread and holding the lock -> Create instance.
       sInstance = new PDMFactoryImpl();
       ClearOnShutdown(&sInstance);
@@ -335,7 +334,7 @@ bool PDMFactory::Supports(const TrackInfo& aTrackInfo,
 void PDMFactory::CreatePDMs() {
   RefPtr<PlatformDecoderModule> m;
 
-  if (StaticPrefs::MediaUseBlankDecoder()) {
+  if (StaticPrefs::media_use_blank_decoder()) {
     m = CreateBlankDecoderModule();
     StartupPDM(m);
     // The Blank PDM SupportsMimeType reports true for all codecs; the creation
@@ -344,35 +343,37 @@ void PDMFactory::CreatePDMs() {
     return;
   }
 
-  if (StaticPrefs::MediaRddProcessEnabled()) {
+  if (StaticPrefs::media_rdd_process_enabled() &&
+      BrowserTabsRemoteAutostart()) {
     m = new RemoteDecoderModule;
     StartupPDM(m);
   }
 
 #ifdef XP_WIN
-  if (StaticPrefs::MediaWmfEnabled() && !IsWin7AndPre2000Compatible()) {
+  if (StaticPrefs::media_wmf_enabled() && !IsWin7AndPre2000Compatible()) {
     m = new WMFDecoderModule();
     RefPtr<PlatformDecoderModule> remote = new GpuDecoderModule(m);
     StartupPDM(remote);
     mWMFFailedToLoad = !StartupPDM(m);
   } else {
-    mWMFFailedToLoad = StaticPrefs::MediaDecoderDoctorWmfDisabledIsFailure();
+    mWMFFailedToLoad =
+        StaticPrefs::media_decoder_doctor_wmf_disabled_is_failure();
   }
 #endif
 #ifdef MOZ_OMX
-  if (StaticPrefs::MediaOmxEnabled()) {
+  if (StaticPrefs::media_omx_enabled()) {
     m = OmxDecoderModule::Create();
     StartupPDM(m);
   }
 #endif
 #ifdef MOZ_FFVPX
-  if (StaticPrefs::MediaFfvpxEnabled()) {
+  if (StaticPrefs::media_ffvpx_enabled()) {
     m = FFVPXRuntimeLinker::CreateDecoderModule();
     StartupPDM(m);
   }
 #endif
 #ifdef MOZ_FFMPEG
-  if (StaticPrefs::MediaFfmpegEnabled()) {
+  if (StaticPrefs::media_ffmpeg_enabled()) {
     m = FFmpegRuntimeLinker::CreateDecoderModule();
     mFFmpegFailedToLoad = !StartupPDM(m);
   } else {
@@ -384,16 +385,16 @@ void PDMFactory::CreatePDMs() {
   StartupPDM(m);
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::MediaAndroidMediaCodecEnabled()) {
+  if (StaticPrefs::media_android_media_codec_enabled()) {
     m = new AndroidDecoderModule();
-    StartupPDM(m, StaticPrefs::MediaAndroidMediaCodecPreferred());
+    StartupPDM(m, StaticPrefs::media_android_media_codec_preferred());
   }
 #endif
 
   m = new AgnosticDecoderModule();
   StartupPDM(m);
 
-  if (StaticPrefs::MediaGmpDecoderEnabled()) {
+  if (StaticPrefs::media_gmp_decoder_enabled()) {
     m = new GMPDecoderModule();
     mGMPPDMFailedToStartup = !StartupPDM(m);
   } else {

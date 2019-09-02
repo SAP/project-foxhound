@@ -1,5 +1,4 @@
-const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpserver = null;
 
@@ -8,13 +7,13 @@ XPCOMUtils.defineLazyGetter(this, "uri", function() {
 });
 
 function make_channel(url) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
+  return NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
 }
 
-var multipartBody = "\r\nboundary\r\n\r\nSome text\r\nboundary\r\n\r\n<?xml version='1.0'?><root/>\r\nboundary--";
+var multipartBody =
+  "\r\nboundary\r\n\r\nSome text\r\nboundary\r\n\r\n<?xml version='1.0'?><root/>\r\nboundary--";
 
-function contentHandler(metadata, response)
-{
+function contentHandler(metadata, response) {
   response.setHeader("Content-Type", 'multipart/mixed; boundary="boundary"');
   response.bodyOutputStream.write(multipartBody, multipartBody.length);
 }
@@ -22,37 +21,35 @@ function contentHandler(metadata, response)
 var numTests = 2;
 var testNum = 0;
 
-var testData =
-  [
-   { data: "Some text", type: "text/plain" },
-   { data: "<?xml version='1.0'?><root/>", type: "text/xml" }
-  ];
+var testData = [
+  { data: "Some text", type: "text/plain" },
+  { data: "<?xml version='1.0'?><root/>", type: "text/xml" },
+];
 
-function responseHandler(request, buffer)
-{
-    Assert.equal(buffer, testData[testNum].data);
-    Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType,
-		testData[testNum].type);
-    if (++testNum == numTests)
-	httpserver.stop(do_test_finished);
+function responseHandler(request, buffer) {
+  Assert.equal(buffer, testData[testNum].data);
+  Assert.equal(
+    request.QueryInterface(Ci.nsIChannel).contentType,
+    testData[testNum].type
+  );
+  if (++testNum == numTests) {
+    httpserver.stop(do_test_finished);
+  }
 }
 
 var multipartListener = {
   _buffer: "",
 
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsIStreamListener) ||
-        iid.equals(Ci.nsIRequestObserver) ||
-        iid.equals(Ci.nsISupports))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI([
+    "nsIStreamListener",
+    "nsIRequestObserver",
+  ]),
 
-  onStartRequest: function(request) {
+  onStartRequest(request) {
     this._buffer = "";
   },
 
-  onDataAvailable: function(request, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     try {
       this._buffer = this._buffer.concat(read_stream(stream, count));
       dump("BUFFEEE: " + this._buffer + "\n\n");
@@ -61,27 +58,29 @@ var multipartListener = {
     }
   },
 
-  onStopRequest: function(request, status) {
+  onStopRequest(request, status) {
     try {
       responseHandler(request, this._buffer);
     } catch (ex) {
       do_throw("Error in closure function: " + ex);
     }
-  }
+  },
 };
 
-function run_test()
-{
+function run_test() {
   httpserver = new HttpServer();
   httpserver.registerPathHandler("/multipart", contentHandler);
   httpserver.start(-1);
 
-  var streamConv = Cc["@mozilla.org/streamConverters;1"]
-                     .getService(Ci.nsIStreamConverterService);
-  var conv = streamConv.asyncConvertData("multipart/mixed",
-					 "*/*",
-					 multipartListener,
-					 null);
+  var streamConv = Cc["@mozilla.org/streamConverters;1"].getService(
+    Ci.nsIStreamConverterService
+  );
+  var conv = streamConv.asyncConvertData(
+    "multipart/mixed",
+    "*/*",
+    multipartListener,
+    null
+  );
 
   var chan = make_channel(uri);
   chan.asyncOpen(conv);

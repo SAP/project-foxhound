@@ -11,9 +11,9 @@
 #include "nsStyleStruct.h"
 
 namespace mozilla {
-#define STYLE_STRUCT(name_) \
-  struct Gecko##name_ {     \
-    nsStyle##name_ gecko;   \
+#define STYLE_STRUCT(name_)                  \
+  struct Gecko##name_ {                      \
+    ServoManuallyDrop<nsStyle##name_> gecko; \
   };
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
@@ -21,7 +21,7 @@ namespace mozilla {
 
 #define STYLE_STRUCT(name_)                                          \
   const nsStyle##name_* ServoComputedData::GetStyle##name_() const { \
-    return &name_.mPtr->gecko;                                       \
+    return &name_.mPtr->gecko.mInner;                                \
   }
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT

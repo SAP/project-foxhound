@@ -1,5 +1,5 @@
 /*
- * Copyright © 2015-2018  Ebrahim Byagowi
+ * Copyright © 2015-2019  Ebrahim Byagowi
  *
  *  This is part of HarfBuzz, a text shaping library.
  *
@@ -23,6 +23,9 @@
  */
 
 #include "hb.hh"
+
+#ifdef HAVE_DIRECTWRITE
+
 #include "hb-shaper-impl.hh"
 
 #include <DWrite_1.h>
@@ -173,7 +176,7 @@ _hb_directwrite_shaper_face_data_create (hb_face_t *face)
   HB_STMT_START { \
     DEBUG_MSG (DIRECTWRITE, nullptr, __VA_ARGS__); \
     return nullptr; \
-  } HB_STMT_END;
+  } HB_STMT_END
 
   if (FAILED (hr))
     FAIL ("Failed to load font file from data!");
@@ -530,12 +533,12 @@ _hb_directwrite_shape_full (hb_shape_plan_t    *shape_plan,
   hb_buffer_t::scratch_buffer_t *scratch = buffer->get_scratch_buffer (&scratch_size);
 #define ALLOCATE_ARRAY(Type, name, len) \
   Type *name = (Type *) scratch; \
-  { \
+  do { \
     unsigned int _consumed = DIV_CEIL ((len) * sizeof (Type), sizeof (*scratch)); \
     assert (_consumed <= scratch_size); \
     scratch += _consumed; \
     scratch_size -= _consumed; \
-  }
+  } while (0)
 
 #define utf16_index() var1.u32
 
@@ -658,10 +661,10 @@ retry_getglyphs:
    * alignment needed after the WORD array.  sizeof (WORD) == 2. */
   unsigned int glyphs_size = (scratch_size * sizeof (int) - 2)
 			     / (sizeof (WORD) +
-			        sizeof (DWRITE_SHAPING_GLYPH_PROPERTIES) +
-			        sizeof (int) +
-			        sizeof (DWRITE_GLYPH_OFFSET) +
-			        sizeof (uint32_t));
+				sizeof (DWRITE_SHAPING_GLYPH_PROPERTIES) +
+				sizeof (int) +
+				sizeof (DWRITE_GLYPH_OFFSET) +
+				sizeof (uint32_t));
   ALLOCATE_ARRAY (uint32_t, vis_clusters, glyphs_size);
 
 #undef ALLOCATE_ARRAY
@@ -778,7 +781,7 @@ retry_getglyphs:
   {
     uint32_t *p =
       &vis_clusters[log_clusters[buffer->info[i].utf16_index ()]];
-    *p = MIN (*p, buffer->info[i].cluster);
+    *p = hb_min (*p, buffer->info[i].cluster);
   }
   for (unsigned int i = 1; i < glyphCount; i++)
     if (vis_clusters[i] == (uint32_t) -1)
@@ -846,10 +849,23 @@ _hb_directwrite_shape (hb_shape_plan_t    *shape_plan,
 				     features, num_features, 0);
 }
 
-/*
- * Public [experimental] API
- */
-
+/**
+ * hb_directwrite_shape_experimental_width:
+ * Experimental API to test DirectWrite's justification algorithm.
+ *
+ * It inserts Kashida at wrong order so don't use the API ever.
+ *
+ * It doesn't work with cygwin/msys due to header bugs so one
+ * should use MSVC toolchain in order to use it for now.
+ *
+ * @font:
+ * @buffer:
+ * @features:
+ * @num_features:
+ * @width:
+ *
+ * Since: 1.4.2
+ **/
 hb_bool_t
 hb_directwrite_shape_experimental_width (hb_font_t          *font,
 					 hb_buffer_t        *buffer,
@@ -868,3 +884,83 @@ hb_directwrite_shape_experimental_width (hb_font_t          *font,
 
   return res;
 }
+
+struct _hb_directwrite_font_table_context {
+  IDWriteFontFace *face;
+  void *table_context;
+};
+
+static void
+_hb_directwrite_table_data_release (void *data)
+{
+  _hb_directwrite_font_table_context *context = (_hb_directwrite_font_table_context *) data;
+  context->face->ReleaseFontTable (context->table_context);
+  delete context;
+}
+
+static hb_blob_t *
+reference_table (hb_face_t *face HB_UNUSED, hb_tag_t tag, void *user_data)
+{
+  IDWriteFontFace *dw_face = ((IDWriteFontFace *) user_data);
+  const void *data;
+  uint32_t length;
+  void *table_context;
+  BOOL exists;
+  if (!dw_face || FAILED (dw_face->TryGetFontTable (hb_uint32_swap (tag), &data,
+						    &length, &table_context, &exists)))
+    return nullptr;
+
+  if (!data || !exists || !length)
+  {
+    dw_face->ReleaseFontTable (table_context);
+    return nullptr;
+  }
+
+  _hb_directwrite_font_table_context *context = new _hb_directwrite_font_table_context;
+  context->face = dw_face;
+  context->table_context = table_context;
+
+  return hb_blob_create ((const char *) data, length, HB_MEMORY_MODE_READONLY,
+			 context, _hb_directwrite_table_data_release);
+}
+
+static void
+_hb_directwrite_font_release (void *data)
+{
+  if (data)
+    ((IDWriteFontFace *) data)->Release ();
+}
+
+/**
+ * hb_directwrite_face_create:
+ * @font_face: a DirectWrite IDWriteFontFace object.
+ *
+ * Return value: #hb_face_t object corresponding to the given input
+ *
+ * Since: 2.4.0
+ **/
+hb_face_t *
+hb_directwrite_face_create (IDWriteFontFace *font_face)
+{
+  if (font_face)
+    font_face->AddRef ();
+  return hb_face_create_for_tables (reference_table, font_face,
+				    _hb_directwrite_font_release);
+}
+
+/**
+* hb_directwrite_face_get_font_face:
+* @face: a #hb_face_t object
+*
+* Return value: DirectWrite IDWriteFontFace object corresponding to the given input
+*
+* Since: 2.5.0
+**/
+IDWriteFontFace *
+hb_directwrite_face_get_font_face (hb_face_t *face)
+{
+  return face->data.directwrite->fontFace;
+}
+
+
+#endif

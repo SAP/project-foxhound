@@ -281,9 +281,9 @@ nsresult CompositionTransaction::SetIMESelection(
         std::min(textRange.mEndOffset, aLengthOfCompositionString));
     MOZ_ASSERT(endOffset >= startOffset &&
                static_cast<uint32_t>(endOffset) <= maxOffset);
-    rv = nsRange::CreateRange(aTextNode, startOffset, aTextNode, endOffset,
-                              getter_AddRefs(clauseRange));
-    if (NS_FAILED(rv)) {
+    clauseRange = nsRange::Create(aTextNode, startOffset, aTextNode, endOffset,
+                                  IgnoreErrors());
+    if (!clauseRange) {
       NS_WARNING("Failed to create a DOM range for a clause of composition");
       break;
     }
@@ -297,7 +297,8 @@ nsresult CompositionTransaction::SetIMESelection(
     }
 
     IgnoredErrorResult err;
-    selectionOfIME->AddRange(*clauseRange, err);
+    selectionOfIME->AddRangeAndSelectFramesAndNotifyListeners(*clauseRange,
+                                                              err);
     if (err.Failed()) {
       NS_WARNING("Failed to add selection range for a clause of composition");
       break;

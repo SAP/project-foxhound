@@ -22,26 +22,46 @@
 /* globals Components, ValueExtractor, ImageObjectProcessor, ConsoleAPI*/
 "use strict";
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
-const displayModes = new Set(["fullscreen", "standalone", "minimal-ui",
+const displayModes = new Set([
+  "fullscreen",
+  "standalone",
+  "minimal-ui",
   "browser",
 ]);
-const orientationTypes = new Set(["any", "natural", "landscape", "portrait",
-  "portrait-primary", "portrait-secondary", "landscape-primary",
+const orientationTypes = new Set([
+  "any",
+  "natural",
+  "landscape",
+  "portrait",
+  "portrait-primary",
+  "portrait-secondary",
+  "landscape-primary",
   "landscape-secondary",
 ]);
 const textDirections = new Set(["ltr", "rtl", "auto"]);
 
-const {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 // ValueExtractor is used by the various processors to get values
 // from the manifest and to report errors.
-const {ValueExtractor} = ChromeUtils.import("resource://gre/modules/ValueExtractor.jsm");
+const { ValueExtractor } = ChromeUtils.import(
+  "resource://gre/modules/ValueExtractor.jsm"
+);
 // ImageObjectProcessor is used to process things like icons and images
-const {ImageObjectProcessor} = ChromeUtils.import("resource://gre/modules/ImageObjectProcessor.jsm");
+const { ImageObjectProcessor } = ChromeUtils.import(
+  "resource://gre/modules/ImageObjectProcessor.jsm"
+);
 
-var ManifestProcessor = { // jshint ignore:line
+const domBundle = Services.strings.createBundle(
+  "chrome://global/locale/dom/dom.properties"
+);
+
+var ManifestProcessor = {
+  // jshint ignore:line
   get defaultDisplayMode() {
     return "browser";
   },
@@ -60,41 +80,37 @@ var ManifestProcessor = { // jshint ignore:line
   //  * jsonText: the JSON string to be processed.
   //  * manifestURL: the URL of the manifest, to resolve URLs.
   //  * docURL: the URL of the owner doc, for security checks
-  process({
-    jsonText,
-    manifestURL: aManifestURL,
-    docURL: aDocURL,
-  }) {
-    const domBundle = Services.strings.createBundle("chrome://global/locale/dom/dom.properties");
-
+  process(aOptions) {
+    const { jsonText, manifestURL: aManifestURL, docURL: aDocURL } = aOptions;
     const console = new ConsoleAPI({
       prefix: "Web Manifest",
     });
-    const manifestURL = new URL(aManifestURL);
-    const docURL = new URL(aDocURL);
     let rawManifest = {};
     try {
       rawManifest = JSON.parse(jsonText);
     } catch (e) {}
-    if (typeof rawManifest !== "object" || rawManifest === null) {
+    if (rawManifest === null) {
+      return null;
+    }
+    if (typeof rawManifest !== "object") {
       console.warn(domBundle.GetStringFromName("ManifestShouldBeObject"));
       rawManifest = {};
     }
+    const manifestURL = new URL(aManifestURL);
+    const docURL = new URL(aDocURL);
     const extractor = new ValueExtractor(console, domBundle);
     const imgObjProcessor = new ImageObjectProcessor(console, extractor);
     const processedManifest = {
-      "dir": processDirMember.call(this),
-      "lang": processLangMember(),
-      "start_url": processStartURLMember(),
-      "display": processDisplayMember.call(this),
-      "orientation": processOrientationMember.call(this),
-      "name": processNameMember(),
-      "icons": imgObjProcessor.process(
-        rawManifest, manifestURL, "icons"
-      ),
-      "short_name": processShortNameMember(),
-      "theme_color": processThemeColorMember(),
-      "background_color": processBackgroundColorMember(),
+      dir: processDirMember.call(this),
+      lang: processLangMember(),
+      start_url: processStartURLMember(),
+      display: processDisplayMember.call(this),
+      orientation: processOrientationMember.call(this),
+      name: processNameMember(),
+      icons: imgObjProcessor.process(rawManifest, manifestURL, "icons"),
+      short_name: processShortNameMember(),
+      theme_color: processThemeColorMember(),
+      background_color: processBackgroundColorMember(),
     };
     processedManifest.scope = processScopeMember();
     return processedManifest;
@@ -145,7 +161,11 @@ var ManifestProcessor = { // jshint ignore:line
         trim: true,
       };
       const value = extractor.extractValue(spec);
-      if (value && typeof value === "string" && this.orientationTypes.has(value.toLowerCase())) {
+      if (
+        value &&
+        typeof value === "string" &&
+        this.orientationTypes.has(value.toLowerCase())
+      ) {
         return value.toLowerCase();
       }
       return undefined;
@@ -160,7 +180,11 @@ var ManifestProcessor = { // jshint ignore:line
         trim: true,
       };
       const value = extractor.extractValue(spec);
-      if (value && typeof value === "string" && displayModes.has(value.toLowerCase())) {
+      if (
+        value &&
+        typeof value === "string" &&
+        displayModes.has(value.toLowerCase())
+      ) {
         return value.toLowerCase();
       }
       return this.defaultDisplayMode;
@@ -193,7 +217,9 @@ var ManifestProcessor = { // jshint ignore:line
       // If start URL is not within scope of scope URL:
       let isSameOrigin = startURL && startURL.origin !== scopeURL.origin;
       if (isSameOrigin || !startURL.pathname.startsWith(scopeURL.pathname)) {
-        console.warn(domBundle.GetStringFromName("ManifestStartURLOutsideScope"));
+        console.warn(
+          domBundle.GetStringFromName("ManifestStartURLOutsideScope")
+        );
         return undefined;
       }
       return scopeURL.href;
@@ -220,7 +246,9 @@ var ManifestProcessor = { // jshint ignore:line
         return result;
       }
       if (potentialResult.origin !== docURL.origin) {
-        console.warn(domBundle.GetStringFromName("ManifestStartURLShouldBeSameOrigin"));
+        console.warn(
+          domBundle.GetStringFromName("ManifestStartURLShouldBeSameOrigin")
+        );
       } else {
         result = potentialResult.href;
       }
@@ -254,18 +282,10 @@ var ManifestProcessor = { // jshint ignore:line
         objectName: "manifest",
         object: rawManifest,
         property: "lang",
-        expectedType: "string", trim: true,
+        expectedType: "string",
+        trim: true,
       };
-      let tag = extractor.extractValue(spec);
-      // TODO: Check if tag is structurally valid.
-      //       Cannot do this because we don't support Intl API on Android.
-      //       https://bugzilla.mozilla.org/show_bug.cgi?id=864843
-      //       https://github.com/tc39/ecma402/issues/5
-      // TODO: perform canonicalization on the tag.
-      //       Can't do this today because there is no direct means to
-      //       access canonicalization algorithms through Intl API.
-      //       https://github.com/tc39/ecma402/issues/5
-      return tag;
+      return extractor.extractLanguageValue(spec);
     }
   },
 };

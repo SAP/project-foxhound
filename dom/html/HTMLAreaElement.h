@@ -37,15 +37,14 @@ class HTMLAreaElement final : public nsGenericHTMLElement, public Link {
   virtual int32_t TabIndexDefault() override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  MOZ_CAN_RUN_SCRIPT
+  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
   virtual bool IsLink(nsIURI** aURI) const override;
   virtual void GetLinkTarget(nsAString& aTarget) override;
   virtual already_AddRefed<nsIURI> GetHrefURI() const override;
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 

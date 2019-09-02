@@ -35,10 +35,8 @@ class nsMathMLElement final : public nsMathMLElementBase,
   // Implementation of nsISupports is inherited from nsMathMLElementBase
   NS_DECL_ISUPPORTS_INHERITED
 
-  nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                      nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
 
   virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,
@@ -65,8 +63,8 @@ class nsMathMLElement final : public nsMathMLElementBase,
                                       mozilla::MappedDeclarations&);
 
   void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
-  virtual nsresult PostHandleEvent(
-      mozilla::EventChainPostVisitor& aVisitor) override;
+  MOZ_CAN_RUN_SCRIPT
+  nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
   nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const override;
   virtual mozilla::EventStates IntrinsicState() const override;
   virtual bool IsNodeOfType(uint32_t aFlags) const override;

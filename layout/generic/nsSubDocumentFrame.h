@@ -7,16 +7,18 @@
 #ifndef NSSUBDOCUMENTFRAME_H_
 #define NSSUBDOCUMENTFRAME_H_
 
+#include "Layers.h"
+#include "LayerState.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/layers/WebRenderScrollData.h"
+#include "nsDisplayList.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsIReflowCallback.h"
 #include "nsFrameLoader.h"
 #include "Units.h"
 
 namespace mozilla {
-namespace layout {
-class RenderFrame;
-}
+class PresShell;
 }  // namespace mozilla
 
 /******************************************************************************
@@ -54,7 +56,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
   mozilla::IntrinsicSize GetIntrinsicSize() override;
-  nsSize GetIntrinsicRatio() override;
+  mozilla::AspectRatio GetIntrinsicRatio() override;
 
   mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
@@ -78,6 +80,8 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                             int32_t aModType) override;
 
+  void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
+
   // if the content is "visibility:hidden", then just hide the view
   // and all our contents. We don't extend "visibility:hidden" to
   // the child content ourselves, since it belongs to a different
@@ -94,7 +98,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   nsView* EnsureInnerView();
   nsIFrame* GetSubdocumentRootFrame();
   enum { IGNORE_PAINT_SUPPRESSION = 0x1 };
-  nsIPresShell* GetSubdocumentPresShellForPainting(uint32_t aFlags);
+  mozilla::PresShell* GetSubdocumentPresShellForPainting(uint32_t aFlags);
   mozilla::ScreenIntSize GetSubdocumentSize();
 
   // nsIReflowCallback
@@ -113,8 +117,13 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
     }
   }
 
-  void UnsetFrameLoader() { mFrameLoader = nullptr; }
   nsFrameLoader* FrameLoader() const;
+  void ResetFrameLoader();
+
+  void PropagateIsUnderHiddenEmbedderElementToSubView(
+      bool aIsUnderHiddenEmbedderElement);
+
+  void ClearDisplayItems();
 
  protected:
   friend class AsyncFrameInit;
@@ -131,8 +140,6 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   // runner, so that we can save and restore the presentation if we're
   // being reframed.
   void ShowViewer();
-
-  void ClearDisplayItems();
 
   /* Obtains the frame we should use for intrinsic size information if we are
    * an HTML <object> or <embed>  (a replaced element - not <iframe>)
@@ -155,7 +162,58 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   bool mPostedReflowCallback;
   bool mDidCreateDoc;
   bool mCallingShow;
-  WeakFrame mPreviousCaret;
+};
+
+/**
+ * A nsDisplayRemote will graft a remote frame's shadow layer tree (for a given
+ * nsFrameLoader) into its parent frame's layer tree.
+ */
+class nsDisplayRemote final : public nsPaintedDisplayItem {
+  typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
+  typedef mozilla::dom::TabId TabId;
+  typedef mozilla::gfx::Matrix4x4 Matrix4x4;
+  typedef mozilla::layers::EventRegionsOverride EventRegionsOverride;
+  typedef mozilla::layers::Layer Layer;
+  typedef mozilla::layers::LayersId LayersId;
+  typedef mozilla::layers::RefLayer RefLayer;
+  typedef mozilla::layers::StackingContextHelper StackingContextHelper;
+  typedef mozilla::LayerState LayerState;
+  typedef mozilla::LayoutDeviceRect LayoutDeviceRect;
+  typedef mozilla::LayoutDeviceIntPoint LayoutDeviceIntPoint;
+
+ public:
+  nsDisplayRemote(nsDisplayListBuilder* aBuilder, nsSubDocumentFrame* aFrame);
+
+  LayerState GetLayerState(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aParameters) override;
+
+  already_AddRefed<Layer> BuildLayer(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aContainerParameters) override;
+
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+
+  bool CreateWebRenderCommands(
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+  bool UpdateScrollData(
+      mozilla::layers::WebRenderScrollData* aData,
+      mozilla::layers::WebRenderLayerScrollData* aLayerData) override;
+
+  NS_DISPLAY_DECL_NAME("Remote", TYPE_REMOTE)
+
+ private:
+  friend class nsDisplayItemBase;
+  nsFrameLoader* GetFrameLoader() const;
+
+  TabId mTabId;
+  LayersId mLayersId;
+  LayoutDeviceIntPoint mOffset;
+  EventRegionsOverride mEventRegionsOverride;
 };
 
 #endif /* NSSUBDOCUMENTFRAME_H_ */

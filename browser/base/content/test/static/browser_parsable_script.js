@@ -5,6 +5,9 @@
  * detect newly occurring issues in shipping JS. It is a list of regexes
  * matching files which have errors:
  */
+
+requestLongerTimeout(2);
+
 const kWhitelist = new Set([
   /browser\/content\/browser\/places\/controller.js$/,
 ]);
@@ -13,6 +16,8 @@ const kESModuleList = new Set([
   /browser\/res\/payments\/(components|containers|mixins)\/.*\.js$/,
   /browser\/res\/payments\/paymentRequest\.js$/,
   /browser\/res\/payments\/PaymentsStore\.js$/,
+  /browser\/aboutlogins\/components\/.*\.js$/,
+  /browser\/aboutlogins\/.*\.js$/,
 ]);
 
 // Normally we would use reflect.jsm to get Reflect.parse. However, if
@@ -79,7 +84,7 @@ function parsePromise(uri, parseTarget) {
         }
       }
     };
-    xhr.onerror = (error) => {
+    xhr.onerror = error => {
       ok(false, "XHR error reading " + uri + ": " + error);
       resolve(false);
     };
@@ -101,9 +106,12 @@ add_task(async function checkAllTheJS() {
   let parseValue = parseRequested && Services.prefs.getCharPref("parse");
   if (SpecialPowers.isDebugBuild) {
     if (!parseRequested) {
-      ok(true, "Test disabled on debug build. To run, execute: ./mach" +
-               " mochitest-browser --setpref parse=<case_sensitive_filter>" +
-               " browser/base/content/test/general/browser_parsable_script.js");
+      ok(
+        true,
+        "Test disabled on debug build. To run, execute: ./mach" +
+          " mochitest-browser --setpref parse=<case_sensitive_filter>" +
+          " browser/base/content/test/general/browser_parsable_script.js"
+      );
       return;
     }
     // Request a 15 minutes timeout (30 seconds * 30) for debug builds.

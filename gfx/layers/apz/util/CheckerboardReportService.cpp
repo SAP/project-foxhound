@@ -6,7 +6,6 @@
 
 #include "CheckerboardReportService.h"
 
-#include "gfxPrefs.h"                 // for gfxPrefs
 #include "jsapi.h"                    // for JS_Now
 #include "MainThreadUtils.h"          // for NS_IsMainThread
 #include "mozilla/Assertions.h"       // for MOZ_ASSERT
@@ -192,11 +191,11 @@ void CheckerboardReportService::GetReports(
 }
 
 bool CheckerboardReportService::IsRecordingEnabled() const {
-  return gfxPrefs::APZRecordCheckerboarding();
+  return StaticPrefs::apz_record_checkerboarding();
 }
 
 void CheckerboardReportService::SetRecordingEnabled(bool aEnabled) {
-  gfxPrefs::SetAPZRecordCheckerboarding(aEnabled);
+  Preferences::SetBool("apz.record_checkerboarding", aEnabled);
 }
 
 void CheckerboardReportService::FlushActiveReports() {

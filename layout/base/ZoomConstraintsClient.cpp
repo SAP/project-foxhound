@@ -7,13 +7,13 @@
 #include "ZoomConstraintsClient.h"
 
 #include <inttypes.h>
-#include "gfxPrefs.h"
 #include "LayersLogging.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/ZoomConstraints.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "nsIFrame.h"
@@ -36,6 +36,7 @@ NS_IMPL_ISUPPORTS(ZoomConstraintsClient, nsIDOMEventListener, nsIObserver)
 #define NS_PREF_CHANGED NS_LITERAL_CSTRING("nsPref:changed")
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using namespace mozilla::layers;
 
 ZoomConstraintsClient::ZoomConstraintsClient()
@@ -43,11 +44,11 @@ ZoomConstraintsClient::ZoomConstraintsClient()
 
 ZoomConstraintsClient::~ZoomConstraintsClient() {}
 
-static nsIWidget* GetWidget(nsIPresShell* aShell) {
-  if (!aShell) {
+static nsIWidget* GetWidget(PresShell* aPresShell) {
+  if (!aPresShell) {
     return nullptr;
   }
-  if (nsIFrame* rootFrame = aShell->GetRootFrame()) {
+  if (nsIFrame* rootFrame = aPresShell->GetRootFrame()) {
 #if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
     return rootFrame->GetNearestWidget();
 #else
@@ -95,8 +96,7 @@ void ZoomConstraintsClient::Destroy() {
   mPresShell = nullptr;
 }
 
-void ZoomConstraintsClient::Init(nsIPresShell* aPresShell,
-                                 Document* aDocument) {
+void ZoomConstraintsClient::Init(PresShell* aPresShell, Document* aDocument) {
   if (!(aPresShell && aDocument)) {
     return;
   }
@@ -151,8 +151,9 @@ ZoomConstraintsClient::Observe(nsISupports* aSubject, const char* aTopic,
   } else if (NS_PREF_CHANGED.EqualsASCII(aTopic)) {
     ZCC_LOG("Got a pref-change event in %p\n", this);
     // We need to run this later because all the pref change listeners need
-    // to execute before we can be guaranteed that gfxPrefs::ForceUserScalable()
-    // returns the updated value.
+    // to execute before we can be guaranteed that
+    // StaticPrefs::browser_ui_zoom_force_user_scalable() returns the updated
+    // value.
 
     RefPtr<nsRunnableMethod<ZoomConstraintsClient>> event =
         NewRunnableMethod("ZoomConstraintsClient::RefreshZoomConstraints", this,
@@ -168,12 +169,12 @@ void ZoomConstraintsClient::ScreenSizeChanged() {
 }
 
 static mozilla::layers::ZoomConstraints ComputeZoomConstraintsFromViewportInfo(
-    const nsViewportInfo& aViewportInfo) {
+    const nsViewportInfo& aViewportInfo, Document* aDocument) {
   mozilla::layers::ZoomConstraints constraints;
-  constraints.mAllowZoom =
-      aViewportInfo.IsZoomAllowed() && gfxPrefs::APZAllowZooming();
+  constraints.mAllowZoom = aViewportInfo.IsZoomAllowed() &&
+                           nsLayoutUtils::AllowZoomingForDocument(aDocument);
   constraints.mAllowDoubleTapZoom =
-      constraints.mAllowZoom && gfxPrefs::APZAllowDoubleTapZooming();
+      constraints.mAllowZoom && StaticPrefs::apz_allow_double_tap_zooming();
   if (constraints.mAllowZoom) {
     constraints.mMinZoom.scale = aViewportInfo.GetMinZoom().scale;
     constraints.mMaxZoom.scale = aViewportInfo.GetMaxZoom().scale;
@@ -209,7 +210,7 @@ void ZoomConstraintsClient::RefreshZoomConstraints() {
       screenSize, PixelCastJustification::LayoutDeviceIsScreenForBounds));
 
   mozilla::layers::ZoomConstraints zoomConstraints =
-      ComputeZoomConstraintsFromViewportInfo(viewportInfo);
+      ComputeZoomConstraintsFromViewportInfo(viewportInfo, mDocument);
 
   if (mDocument->Fullscreen()) {
     ZCC_LOG("%p is in fullscreen, disallowing zooming\n", this);

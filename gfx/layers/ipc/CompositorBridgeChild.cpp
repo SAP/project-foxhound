@@ -11,13 +11,14 @@
 #include "ClientLayerManager.h"  // for ClientLayerManager
 #include "base/message_loop.h"   // for MessageLoop
 #include "base/task.h"           // for NewRunnableMethod, etc
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/APZChild.h"
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/layers/APZCTreeManagerChild.h"
+#include "mozilla/layers/CanvasChild.h"
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "mozilla/layers/PaintThread.h"
 #include "mozilla/layers/PLayerTransactionChild.h"
@@ -38,8 +39,8 @@
 #include "nsTArray.h"         // for nsTArray, nsTArray_Impl
 #include "nsXULAppAPI.h"      // for XRE_GetIOMessageLoop, etc
 #include "FrameLayerBuilder.h"
-#include "mozilla/dom/TabChild.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Unused.h"
 #include "mozilla/DebugOnly.h"
@@ -53,7 +54,6 @@
 #include "VsyncSource.h"
 
 using mozilla::Unused;
-using mozilla::dom::TabChildBase;
 using mozilla::gfx::GPUProcessManager;
 using mozilla::layers::LayerTransactionChild;
 
@@ -118,6 +118,10 @@ void CompositorBridgeChild::AfterDestroy() {
     mActorDestroyed = true;
   }
 
+  if (mCanvasChild) {
+    mCanvasChild->Destroy();
+  }
+
   if (sCompositorBridge == this) {
     sCompositorBridge = nullptr;
   }
@@ -125,7 +129,7 @@ void CompositorBridgeChild::AfterDestroy() {
 
 void CompositorBridgeChild::Destroy() {
   // This must not be called from the destructor!
-  mTexturesWaitingRecycled.clear();
+  mTexturesWaitingNotifyNotUsed.clear();
 
   // Destroying the layer manager may cause all sorts of things to happen, so
   // let's make sure there is still a reference to keep this alive whatever
@@ -175,6 +179,12 @@ void CompositorBridgeChild::Destroy() {
     wrBridge->Destroy(/* aIsSync */ false);
   }
 
+  AutoTArray<PAPZChild*, 16> apzChildren;
+  ManagedPAPZChild(apzChildren);
+  for (PAPZChild* child : apzChildren) {
+    Unused << child->SendDestroy();
+  }
+
   const ManagedContainer<PTextureChild>& textures = ManagedPTextureChild();
   for (auto iter = textures.ConstIter(); !iter.Done(); iter.Next()) {
     RefPtr<TextureClient> texture =
@@ -185,6 +195,9 @@ void CompositorBridgeChild::Destroy() {
     }
   }
 
+  // The WillClose message is synchronous, so we know that after it returns
+  // any messages sent by the above code will have been processed on the
+  // other side.
   SendWillClose();
   mCanSend = false;
 
@@ -237,6 +250,18 @@ void CompositorBridgeChild::InitForContent(uint32_t aNamespace) {
 
   mCanSend = true;
   mIdNamespace = aNamespace;
+
+  if (gfx::gfxVars::RemoteCanvasEnabled()) {
+    ipc::Endpoint<PCanvasParent> parentEndpoint;
+    ipc::Endpoint<PCanvasChild> childEndpoint;
+    nsresult rv = PCanvas::CreateEndpoints(OtherPid(), base::GetCurrentProcId(),
+                                           &parentEndpoint, &childEndpoint);
+    if (NS_SUCCEEDED(rv)) {
+      Unused << SendInitPCanvasParent(std::move(parentEndpoint));
+      mCanvasChild = new CanvasChild(std::move(childEndpoint));
+    }
+  }
+
   sCompositorBridge = this;
 }
 
@@ -290,12 +315,12 @@ PLayerTransactionChild* CompositorBridgeChild::AllocPLayerTransactionChild(
   LayerTransactionChild* c = new LayerTransactionChild(aId);
   c->AddIPDLReference();
 
-  TabChild* tabChild = TabChild::GetFrom(c->GetId());
+  BrowserChild* browserChild = BrowserChild::GetFrom(c->GetId());
 
   // Do the DOM Labeling.
-  if (tabChild) {
+  if (browserChild) {
     nsCOMPtr<nsIEventTarget> target =
-        tabChild->TabGroup()->EventTargetFor(TaskCategory::Other);
+        browserChild->TabGroup()->EventTargetFor(TaskCategory::Other);
     SetEventTargetForActor(c, target);
     MOZ_ASSERT(c->GetActorEventTarget());
   }
@@ -317,7 +342,7 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvInvalidateLayers(
     MOZ_ASSERT(!aLayersId.IsValid());
     FrameLayerBuilder::InvalidateAllLayers(mLayerManager);
   } else if (aLayersId.IsValid()) {
-    if (dom::TabChild* child = dom::TabChild::GetFrom(aLayersId)) {
+    if (dom::BrowserChild* child = dom::BrowserChild::GetFrom(aLayersId)) {
       child->InvalidateLayers();
     }
   }
@@ -510,7 +535,7 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvDidComposite(
     RefPtr<LayerManager> m = mLayerManager;
     m->DidComposite(aTransactionId, aCompositeStart, aCompositeEnd);
   } else if (aId.IsValid()) {
-    RefPtr<dom::TabChild> child = dom::TabChild::GetFrom(aId);
+    RefPtr<dom::BrowserChild> child = dom::BrowserChild::GetFrom(aId);
     if (child) {
       child->DidComposite(aTransactionId, aCompositeStart, aCompositeEnd);
     }
@@ -631,47 +656,48 @@ uint32_t CompositorBridgeChild::SharedFrameMetricsData::GetAPZCId() {
 
 mozilla::ipc::IPCResult CompositorBridgeChild::RecvRemotePaintIsReady() {
   // Used on the content thread, this bounces the message to the
-  // TabParent (via the TabChild) if the notification was previously requested.
-  // XPCOM gives a soup of compiler errors when trying to do_QueryReference
-  // so I'm using static_cast<>
+  // BrowserParent (via the BrowserChild) if the notification was previously
+  // requested. XPCOM gives a soup of compiler errors when trying to
+  // do_QueryReference so I'm using static_cast<>
   MOZ_LAYERS_LOG(
       ("[RemoteGfx] CompositorBridgeChild received RemotePaintIsReady"));
-  RefPtr<nsISupports> iTabChildBase(do_QueryReferent(mWeakTabChild));
-  if (!iTabChildBase) {
+  RefPtr<nsIBrowserChild> iBrowserChild(do_QueryReferent(mWeakBrowserChild));
+  if (!iBrowserChild) {
     MOZ_LAYERS_LOG(
-        ("[RemoteGfx] Note: TabChild was released before RemotePaintIsReady. "
+        ("[RemoteGfx] Note: BrowserChild was released before "
+         "RemotePaintIsReady. "
          "MozAfterRemotePaint will not be sent to listener."));
     return IPC_OK();
   }
-  TabChildBase* tabChildBase = static_cast<TabChildBase*>(iTabChildBase.get());
-  TabChild* tabChild = static_cast<TabChild*>(tabChildBase);
-  MOZ_ASSERT(tabChild);
-  Unused << tabChild->SendRemotePaintIsReady();
-  mWeakTabChild = nullptr;
+  BrowserChild* browserChild = static_cast<BrowserChild*>(iBrowserChild.get());
+  MOZ_ASSERT(browserChild);
+  Unused << browserChild->SendRemotePaintIsReady();
+  mWeakBrowserChild = nullptr;
   return IPC_OK();
 }
 
-void CompositorBridgeChild::RequestNotifyAfterRemotePaint(TabChild* aTabChild) {
-  MOZ_ASSERT(aTabChild,
-             "NULL TabChild not allowed in "
+void CompositorBridgeChild::RequestNotifyAfterRemotePaint(
+    BrowserChild* aBrowserChild) {
+  MOZ_ASSERT(aBrowserChild,
+             "NULL BrowserChild not allowed in "
              "CompositorBridgeChild::RequestNotifyAfterRemotePaint");
-  mWeakTabChild =
-      do_GetWeakReference(static_cast<dom::TabChildBase*>(aTabChild));
+  mWeakBrowserChild =
+      do_GetWeakReference(static_cast<dom::BrowserChild*>(aBrowserChild));
   if (!mCanSend) {
     return;
   }
   Unused << SendRequestNotifyAfterRemotePaint();
 }
 
-void CompositorBridgeChild::CancelNotifyAfterRemotePaint(TabChild* aTabChild) {
-  RefPtr<nsISupports> iTabChildBase(do_QueryReferent(mWeakTabChild));
-  if (!iTabChildBase) {
+void CompositorBridgeChild::CancelNotifyAfterRemotePaint(
+    BrowserChild* aBrowserChild) {
+  RefPtr<nsIBrowserChild> iBrowserChild(do_QueryReferent(mWeakBrowserChild));
+  if (!iBrowserChild) {
     return;
   }
-  TabChildBase* tabChildBase = static_cast<TabChildBase*>(iTabChildBase.get());
-  TabChild* tabChild = static_cast<TabChild*>(tabChildBase);
-  if (tabChild == aTabChild) {
-    mWeakTabChild = nullptr;
+  BrowserChild* browserChild = static_cast<BrowserChild*>(iBrowserChild.get());
+  if (browserChild == aBrowserChild) {
+    mWeakBrowserChild = nullptr;
   }
 }
 
@@ -802,17 +828,10 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvObserveLayersUpdate(
   MOZ_ASSERT(aLayersId.IsValid());
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  if (RefPtr<dom::TabParent> tab =
-          dom::TabParent::GetTabParentFromLayersId(aLayersId)) {
+  if (RefPtr<dom::BrowserParent> tab =
+          dom::BrowserParent::GetBrowserParentFromLayersId(aLayersId)) {
     tab->LayerTreeUpdate(aEpoch, aActive);
   }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult CompositorBridgeChild::RecvNotifyWebRenderError(
-    const WebRenderError& aError) {
-  MOZ_ASSERT(XRE_IsParentProcess());
-  GPUProcessManager::Get()->NotifyWebRenderError(aError);
   return IPC_OK();
 }
 
@@ -822,28 +841,31 @@ void CompositorBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
     return;
   }
 
-  if (!(aClient->GetFlags() & TextureFlags::RECYCLE)) {
+  bool waitNotifyNotUsed =
+      aClient->GetFlags() & TextureFlags::RECYCLE ||
+      aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END;
+  if (!waitNotifyNotUsed) {
     return;
   }
 
   aClient->SetLastFwdTransactionId(GetFwdTransactionId());
-  mTexturesWaitingRecycled.emplace(aClient->GetSerial(), aClient);
+  mTexturesWaitingNotifyNotUsed.emplace(aClient->GetSerial(), aClient);
 }
 
 void CompositorBridgeChild::NotifyNotUsed(uint64_t aTextureId,
                                           uint64_t aFwdTransactionId) {
-  auto it = mTexturesWaitingRecycled.find(aTextureId);
-  if (it != mTexturesWaitingRecycled.end()) {
+  auto it = mTexturesWaitingNotifyNotUsed.find(aTextureId);
+  if (it != mTexturesWaitingNotifyNotUsed.end()) {
     if (aFwdTransactionId < it->second->GetLastFwdTransactionId()) {
       // Released on host side, but client already requested newer use texture.
       return;
     }
-    mTexturesWaitingRecycled.erase(it);
+    mTexturesWaitingNotifyNotUsed.erase(it);
   }
 }
 
-void CompositorBridgeChild::CancelWaitForRecycle(uint64_t aTextureId) {
-  mTexturesWaitingRecycled.erase(aTextureId);
+void CompositorBridgeChild::CancelWaitForNotifyNotUsed(uint64_t aTextureId) {
+  mTexturesWaitingNotifyNotUsed.erase(aTextureId);
 }
 
 TextureClientPool* CompositorBridgeChild::GetTexturePool(
@@ -863,10 +885,10 @@ TextureClientPool* CompositorBridgeChild::GetTexturePool(
       aAllocator->GetCompositorBackendType(),
       aAllocator->SupportsTextureDirectMapping(),
       aAllocator->GetMaxTextureSize(), aFormat, gfx::gfxVars::TileSize(),
-      aFlags, gfxPrefs::LayersTilePoolShrinkTimeout(),
-      gfxPrefs::LayersTilePoolClearTimeout(),
-      gfxPrefs::LayersTileInitialPoolSize(),
-      gfxPrefs::LayersTilePoolUnusedSize(), this));
+      aFlags, StaticPrefs::layers_tile_pool_shrink_timeout(),
+      StaticPrefs::layers_tile_pool_clear_timeout(),
+      StaticPrefs::layers_tile_initial_pool_size(),
+      StaticPrefs::layers_tile_pool_unused_size(), this));
 
   return mTexturePools.LastElement();
 }
@@ -913,6 +935,16 @@ PTextureChild* CompositorBridgeChild::CreateTexture(
       LayersId{0} /* FIXME? */, aSerial, aExternalImageId);
 }
 
+already_AddRefed<CanvasChild> CompositorBridgeChild::GetCanvasChild() {
+  return do_AddRef(mCanvasChild);
+}
+
+void CompositorBridgeChild::EndCanvasTransaction() {
+  if (mCanvasChild) {
+    mCanvasChild->EndTransaction();
+  }
+}
+
 bool CompositorBridgeChild::AllocUnsafeShmem(
     size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
     ipc::Shmem* aShmem) {
@@ -957,10 +989,10 @@ PAPZCTreeManagerChild* CompositorBridgeChild::AllocPAPZCTreeManagerChild(
   APZCTreeManagerChild* child = new APZCTreeManagerChild();
   child->AddIPDLReference();
   if (aLayersId.IsValid()) {
-    TabChild* tabChild = TabChild::GetFrom(aLayersId);
-    if (tabChild) {
+    BrowserChild* browserChild = BrowserChild::GetFrom(aLayersId);
+    if (browserChild) {
       SetEventTargetForActor(
-          child, tabChild->TabGroup()->EventTargetFor(TaskCategory::Other));
+          child, browserChild->TabGroup()->EventTargetFor(TaskCategory::Other));
       MOZ_ASSERT(child->GetActorEventTarget());
     }
   }

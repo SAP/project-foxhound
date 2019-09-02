@@ -161,7 +161,7 @@ class D3D11YCbCrRecycleAllocator;
 class SurfaceDescriptorBuffer;
 
 struct ImageBackendData {
-  virtual ~ImageBackendData() {}
+  virtual ~ImageBackendData() = default;
 
  protected:
   ImageBackendData() {}
@@ -221,7 +221,7 @@ class Image {
    * For use with the TextureForwarder only (so that the later can
    * synchronize the TextureClient with the TextureHost).
    */
-  virtual TextureClient* GetTextureClient(KnowsCompositor* aForwarder) {
+  virtual TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) {
     return nullptr;
   }
 
@@ -242,7 +242,7 @@ class Image {
       : mImplData(aImplData), mSerial(++sSerialCounter), mFormat(aFormat) {}
 
   // Protected destructor, to discourage deletion outside of Release():
-  virtual ~Image() {}
+  virtual ~Image() = default;
 
   mozilla::EnumeratedArray<mozilla::layers::LayersBackend,
                            mozilla::layers::LayersBackend::LAYERS_LAST,
@@ -315,7 +315,7 @@ class ImageFactory {
   friend class ImageContainer;
 
   ImageFactory() {}
-  virtual ~ImageFactory() {}
+  virtual ~ImageFactory() = default;
 
   virtual RefPtr<PlanarYCbCrImage> CreatePlanarYCbCrImage(
       const gfx::IntSize& aScaleHint, BufferRecycleBin* aRecycleBin);
@@ -732,7 +732,7 @@ struct PlanarYCbCrData {
   uint32_t mPicY;
   gfx::IntSize mPicSize;
   StereoMode mStereoMode;
-  YUVColorSpace mYUVColorSpace;
+  gfx::YUVColorSpace mYUVColorSpace;
   gfx::ColorDepth mColorDepth;
 
   gfx::IntRect GetPictureRect() const {
@@ -754,7 +754,7 @@ struct PlanarYCbCrData {
         mPicY(0),
         mPicSize(0, 0),
         mStereoMode(StereoMode::MONO),
-        mYUVColorSpace(YUVColorSpace::BT601),
+        mYUVColorSpace(gfx::YUVColorSpace::BT601),
         mColorDepth(gfx::ColorDepth::COLOR_8) {}
 };
 
@@ -800,7 +800,7 @@ class PlanarYCbCrImage : public Image {
 
   enum { MAX_DIMENSION = 16384 };
 
-  virtual ~PlanarYCbCrImage() {}
+  virtual ~PlanarYCbCrImage() = default;
 
   /**
    * This makes a copy of the data buffers, in order to support functioning
@@ -944,7 +944,7 @@ class SourceSurfaceImage final : public Image {
   void SetTextureFlags(TextureFlags aTextureFlags) {
     mTextureFlags = aTextureFlags;
   }
-  TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
+  TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
   gfx::IntSize GetSize() const override { return mSize; }
 

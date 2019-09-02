@@ -14,6 +14,7 @@
 
 // Interpolated UV coordinates to sample.
 varying vec2 vUv;
+varying vec2 vLocalPos;
 
 // X = layer index to sample, Y = flag to allow perspective interpolation of UV.
 flat varying vec2 vLayerAndPerspective;
@@ -24,6 +25,7 @@ flat varying vec3 vColorOffset;
 flat varying vec4 vUvClipBounds;
 flat varying int vTableAddress;
 flat varying int vFuncs[4];
+flat varying vec4 vFloodColor;
 
 #ifdef WR_VERTEX_SHADER
 
@@ -32,26 +34,27 @@ void brush_vs(
     int prim_address,
     RectWithSize local_rect,
     RectWithSize segment_rect,
-    ivec4 user_data,
+    ivec4 prim_user_data,
+    int segment_user_data,
     mat4 transform,
     PictureTask pic_task,
     int brush_flags,
     vec4 unused
 ) {
-    ImageResource res = fetch_image_resource(user_data.x);
+    ImageResource res = fetch_image_resource(prim_user_data.x);
     vec2 uv0 = res.uv_rect.p0;
     vec2 uv1 = res.uv_rect.p1;
 
-    // PictureTask src_task = fetch_picture_task(user_data.x);
     vec2 texture_size = vec2(textureSize(sColor0, 0).xy);
     vec2 f = (vi.local_pos - local_rect.p0) / local_rect.size;
-    f = get_image_quad_uv(user_data.x, f);
+    f = get_image_quad_uv(prim_user_data.x, f);
     vec2 uv = mix(uv0, uv1, f);
     float perspective_interpolate = (brush_flags & BRUSH_FLAG_PERSPECTIVE_INTERPOLATION) != 0 ? 1.0 : 0.0;
 
     vUv = uv / texture_size * mix(vi.world_pos.w, 1.0, perspective_interpolate);
     vLayerAndPerspective = vec2(res.layer, perspective_interpolate);
     vUvClipBounds = vec4(uv0, uv1) / texture_size.xyxy;
+    vLocalPos = vi.local_pos;
 
     float lumR = 0.2126;
     float lumG = 0.7152;
@@ -60,10 +63,10 @@ void brush_vs(
     float oneMinusLumG = 1.0 - lumG;
     float oneMinusLumB = 1.0 - lumB;
 
-    float amount = float(user_data.z) / 65536.0;
+    float amount = float(prim_user_data.z) / 65536.0;
     float invAmount = 1.0 - amount;
 
-    vOp = user_data.y & 0xffff;
+    vOp = prim_user_data.y & 0xffff;
     vAmount = amount;
 
     // This assignment is only used for component transfer filters but this
@@ -73,10 +76,10 @@ void brush_vs(
     // https://github.com/servo/webrender/wiki/Driver-issues#bug-1505871---assignment-to-varying-flat-arrays-inside-switch-statement-of-vertex-shader-suspected-miscompile-on-windows
     // default: just to satisfy angle_shader_validation.rs which needs one
     // default: for every switch, even in comments.
-    vFuncs[0] = (user_data.y >> 28) & 0xf; // R
-    vFuncs[1] = (user_data.y >> 24) & 0xf; // G
-    vFuncs[2] = (user_data.y >> 20) & 0xf; // B
-    vFuncs[3] = (user_data.y >> 16) & 0xf; // A
+    vFuncs[0] = (prim_user_data.y >> 28) & 0xf; // R
+    vFuncs[1] = (prim_user_data.y >> 24) & 0xf; // G
+    vFuncs[2] = (prim_user_data.y >> 20) & 0xf; // B
+    vFuncs[3] = (prim_user_data.y >> 16) & 0xf; // A
 
     switch (vOp) {
         case 2: {
@@ -123,15 +126,20 @@ void brush_vs(
         }
         case 10: {
             // Color Matrix
-            vec4 mat_data[3] = fetch_from_gpu_cache_3(user_data.z);
-            vec4 offset_data = fetch_from_gpu_cache_1(user_data.z + 4);
+            vec4 mat_data[3] = fetch_from_gpu_cache_3(prim_user_data.z);
+            vec4 offset_data = fetch_from_gpu_cache_1(prim_user_data.z + 4);
             vColorMat = mat3(mat_data[0].xyz, mat_data[1].xyz, mat_data[2].xyz);
             vColorOffset = offset_data.rgb;
             break;
         }
         case 13: {
             // Component Transfer
-            vTableAddress = user_data.z;
+            vTableAddress = prim_user_data.z;
+            break;
+        }
+        case 14: {
+            // Flood
+            vFloodColor = fetch_from_gpu_cache_1(prim_user_data.z);
             break;
         }
         default: break;
@@ -262,13 +270,18 @@ Fragment brush_fs() {
             color = colora.rgb;
             alpha = colora.a;
             break;
+        case 14: // Flood
+            color = vFloodColor.rgb;
+            alpha = vFloodColor.a;
+            break;
         default:
             color = vColorMat * color + vColorOffset;
     }
 
     // Fail-safe to ensure that we don't sample outside the rendered
     // portion of a blend source.
-    alpha *= point_inside_rect(uv, vUvClipBounds.xy, vUvClipBounds.zw);
+    alpha *= min(point_inside_rect(uv, vUvClipBounds.xy, vUvClipBounds.zw),
+                 init_transform_fs(vLocalPos));
 
     // Pre-multiply the alpha into the output value.
     return Fragment(alpha * vec4(color, 1.0));

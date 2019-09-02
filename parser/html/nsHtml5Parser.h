@@ -135,13 +135,9 @@ class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
    *
    * @param   aSourceBuffer the argument of document.write (empty for .close())
    * @param   aKey a key unique to the script element that caused this call
-   * @param   aContentType "text/html" for HTML mode, else text/plain mode
    * @param   aLastCall true if .close() false if .write()
-   * @param   aMode ignored (for interface compat only)
    */
-  nsresult Parse(const nsAString& aSourceBuffer, void* aKey,
-                 const nsACString& aContentType, bool aLastCall,
-                 nsDTDMode aMode = eDTDMode_autodetect);
+  nsresult Parse(const nsAString& aSourceBuffer, void* aKey, bool aLastCall);
 
   /**
    * Stops the parser prematurely
@@ -176,16 +172,24 @@ class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
 
   /**
    * Call immediately before starting to evaluate a parser-inserted script or
-   * in general when the spec says to define an insertion point.
+   * in general when the spec says to increment the script nesting level.
    */
-  virtual void PushDefinedInsertionPoint() override;
+  void IncrementScriptNestingLevel() final;
 
   /**
    * Call immediately after having evaluated a parser-inserted script or
    * generally want to restore to the state before the last
-   * PushDefinedInsertionPoint call.
+   * IncrementScriptNestingLevel call.
    */
-  virtual void PopDefinedInsertionPoint() override;
+  void DecrementScriptNestingLevel() final;
+
+  /**
+   * True if this is an HTML5 parser whose script nesting level (in
+   * the sense of
+   * <https://html.spec.whatwg.org/multipage/parsing.html#script-nesting-level>)
+   * is nonzero.
+   */
+  bool HasNonzeroScriptNestingLevel() const final;
 
   /**
    * Marks the HTML5 parser as not a script-created parser: Prepares the
@@ -246,6 +250,13 @@ class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
    */
   nsresult ParseUntilBlocked();
 
+  /**
+   * Start our executor.  This is meant to be used from document.open() _only_
+   * and does some work similar to what nsHtml5StreamParser::OnStartRequest does
+   * for normal parses.
+   */
+  nsresult StartExecutor();
+
  private:
   virtual ~nsHtml5Parser();
 
@@ -274,10 +285,10 @@ class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
   bool mDocWriteSpeculatorActive;
 
   /**
-   * The number of PushDefinedInsertionPoint calls we've seen without a
-   * matching PopDefinedInsertionPoint.
+   * The number of IncrementScriptNestingLevel calls we've seen without a
+   * matching DecrementScriptNestingLevel.
    */
-  int32_t mInsertionPointPushLevel;
+  int32_t mScriptNestingLevel;
 
   /**
    * True if document.close() has been called.

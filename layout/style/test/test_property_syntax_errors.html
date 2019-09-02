@@ -4,7 +4,7 @@
 -->
 <head>
   <title>Test that we reject syntax errors listed in property_database.js</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="property_database.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -19,8 +19,8 @@
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-SimpleTest.requestLongerTimeout(2);
 SimpleTest.waitForExplicitFinish();
+SimpleTest.requestLongerTimeout(4);
 
 function check_not_accepted(decl, property, info, badval)
 {

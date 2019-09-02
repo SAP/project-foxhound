@@ -45,9 +45,9 @@ bool IsCrossOriginWhitelistedProp(JSContext* cx, JS::HandleId id) {
 }
 
 bool AppendCrossOriginWhitelistedPropNames(JSContext* cx,
-                                           JS::AutoIdVector& props) {
+                                           JS::MutableHandleIdVector props) {
   // Add "then" if it's not already in the list.
-  AutoIdVector thenProp(cx);
+  RootedIdVector thenProp(cx);
   if (!thenProp.append(GetJSIDByIndex(cx, XPCJSContext::IDX_THEN))) {
     return false;
   }
@@ -76,7 +76,8 @@ bool AppendCrossOriginWhitelistedPropNames(JSContext* cx,
 }
 
 template <typename Policy>
-static bool Filter(JSContext* cx, HandleObject wrapper, AutoIdVector& props) {
+static bool Filter(JSContext* cx, HandleObject wrapper,
+                   MutableHandleIdVector props) {
   size_t w = 0;
   RootedId id(cx);
   for (size_t n = 0; n < props.length(); ++n) {
@@ -147,7 +148,7 @@ bool FilteringWrapper<Base, Policy>::getOwnPropertyDescriptor(
 
 template <typename Base, typename Policy>
 bool FilteringWrapper<Base, Policy>::ownPropertyKeys(
-    JSContext* cx, HandleObject wrapper, AutoIdVector& props) const {
+    JSContext* cx, HandleObject wrapper, MutableHandleIdVector props) const {
   assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::ENUMERATE);
   return Base::ownPropertyKeys(cx, wrapper, props) &&
          Filter<Policy>(cx, wrapper, props);
@@ -155,16 +156,16 @@ bool FilteringWrapper<Base, Policy>::ownPropertyKeys(
 
 template <typename Base, typename Policy>
 bool FilteringWrapper<Base, Policy>::getOwnEnumerablePropertyKeys(
-    JSContext* cx, HandleObject wrapper, AutoIdVector& props) const {
+    JSContext* cx, HandleObject wrapper, MutableHandleIdVector props) const {
   assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::ENUMERATE);
   return Base::getOwnEnumerablePropertyKeys(cx, wrapper, props) &&
          Filter<Policy>(cx, wrapper, props);
 }
 
 template <typename Base, typename Policy>
-bool FilteringWrapper<Base, Policy>::enumerate(JSContext* cx,
-                                               HandleObject wrapper,
-                                               JS::AutoIdVector& props) const {
+bool FilteringWrapper<Base, Policy>::enumerate(
+    JSContext* cx, HandleObject wrapper,
+    JS::MutableHandleIdVector props) const {
   assertEnteredPolicy(cx, wrapper, JSID_VOID, BaseProxyHandler::ENUMERATE);
   // Trigger the default proxy enumerate trap, which will use
   // js::GetPropertyKeys for the list of (censored) ids.

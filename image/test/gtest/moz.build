@@ -13,18 +13,24 @@ UNIFIED_SOURCES = [
     'TestBlendAnimationFilter.cpp',
     'TestContainers.cpp',
     'TestCopyOnWrite.cpp',
-    'TestDecoders.cpp',
-    'TestDecodeToSurface.cpp',
     'TestDeinterlacingFilter.cpp',
     'TestFrameAnimator.cpp',
     'TestLoader.cpp',
-    'TestMetadata.cpp',
     'TestRemoveFrameRectFilter.cpp',
-    'TestSourceBuffer.cpp',
     'TestStreamingLexer.cpp',
-    'TestSurfaceCache.cpp',
     'TestSurfaceSink.cpp',
 ]
+
+# skip the test on windows10-aarch64, aarch64 due to 1544961
+if not(CONFIG['OS_TARGET'] == 'WINNT' and CONFIG['CPU_ARCH'] == 'aarch64'):
+    UNIFIED_SOURCES += [
+        'TestDecoders.cpp',
+        'TestDecodersPerf.cpp',
+        'TestDecodeToSurface.cpp',
+        'TestMetadata.cpp',
+        'TestSourceBuffer.cpp',
+        'TestSurfaceCache.cpp',
+    ]
 
 if CONFIG['MOZ_ENABLE_SKIA']:
     UNIFIED_SOURCES += [
@@ -72,6 +78,18 @@ TEST_HARNESS_FILES.gtest += [
     'invalid-truncated-metadata.bmp',
     'large.webp',
     'no-frame-delay.gif',
+    'perf_cmyk.jpg',
+    'perf_gray.jpg',
+    'perf_gray.png',
+    'perf_gray_alpha.png',
+    'perf_srgb.gif',
+    'perf_srgb.png',
+    'perf_srgb_alpha.png',
+    'perf_srgb_alpha_lossless.webp',
+    'perf_srgb_alpha_lossy.webp',
+    'perf_srgb_lossless.webp',
+    'perf_srgb_lossy.webp',
+    'perf_ycbcr.jpg',
     'rle4.bmp',
     'rle8.bmp',
     'transparent-ico-with-and-mask.ico',

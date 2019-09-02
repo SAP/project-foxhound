@@ -55,10 +55,6 @@
   min-width: -moz-fit-content;
 }
 
-.searchbar-textbox {
-  -moz-binding: url("chrome://browser/content/search/search.xml#searchbar-textbox");
-}
-
 .search-one-offs[compact=true] .search-setting-button,
 .search-one-offs:not([compact=true]) .search-setting-button-compact {
   display: none;
@@ -130,10 +126,6 @@ panelview[mainview] > .panel-header {
   transition: height var(--panelui-subview-transition-duration);
 }
 
-#tabbrowser-tabs {
-  -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-tabs");
-}
-
 @supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
   #tabbrowser-tabs {
     /* Without this, the tabs container width extends beyond the window width */
@@ -156,10 +148,6 @@ panelview[mainview] > .panel-header {
 
 #tabbrowser-tabs:not([overflow="true"])[using-closing-tabs-spacer] ~ #alltabs-button {
   visibility: hidden; /* temporary space to keep a tab's close button under the cursor */
-}
-
-.tabbrowser-tab {
-  -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-tab");
 }
 
 .tabbrowser-tab:not([pinned]) {
@@ -211,13 +199,13 @@ panelview[mainview] > .panel-header {
 }
 %endif
 
-#tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-tab[pinned] {
+#tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-arrowscrollbox > .tabbrowser-tab[pinned] {
   position: fixed !important;
   display: block; /* position:fixed already does this (bug 579776), but let's be explicit */
 }
 
-#tabbrowser-tabs[movingtab] > .tabbrowser-tab[selected],
-#tabbrowser-tabs[movingtab] > .tabbrowser-tab[multiselected] {
+#tabbrowser-tabs[movingtab] > .tabbrowser-arrowscrollbox > .tabbrowser-tab[selected],
+#tabbrowser-tabs[movingtab] > .tabbrowser-arrowscrollbox > .tabbrowser-tab[multiselected] {
   position: relative;
   z-index: 2;
   pointer-events: none; /* avoid blocking dragover events on scroll buttons */
@@ -699,7 +687,7 @@ html|input.urlbar-input {
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="loginsFooter"] {
   -moz-box-pack: center;
   color: -moz-fieldText;
-  min-height: 40px;
+  min-height: 2.6666em;
   border-top: 1px solid rgba(38,38,38,.15);
   background-color: hsla(0,0%,80%,.35); /* match arrowpanel-dimmed */;
 }
@@ -709,8 +697,15 @@ html|input.urlbar-input {
   background-color: hsla(0,0%,80%,.5); /* match arrowpanel-dimmed-further */
 }
 
-#PopupAutoComplete[firstresultstyle="insecureWarning"] {
-  min-width: 200px;
+/* Define the minimum width based on the style of result rows.
+   The order of the min-width rules below must be in increasing order. */
+#PopupAutoComplete[resultstyles~="loginsFooter"],
+#PopupAutoComplete[resultstyles~="insecureWarning"] {
+  min-width: 17em;
+}
+
+#PopupAutoComplete[resultstyles~="generatedPassword"] {
+  min-width: 21em;
 }
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] {
@@ -718,6 +713,7 @@ html|input.urlbar-input {
   height: auto;
 }
 
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] > .ac-site-icon,
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] > .ac-site-icon {
   margin-inline-start: 0;
   display: initial;
@@ -923,6 +919,14 @@ window[chromehidden~="toolbar"] toolbar:not(#nav-bar):not(#TabsToolbar):not(#pri
   background: black;
 }
 
+html|*#fullscreen-and-pointerlock-wrapper {
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
+  top: 0;
+  pointer-events: none;
+}
+
 html|*.pointerlockfswarning {
   position: fixed;
   z-index: 2147483647 !important;
@@ -1049,7 +1053,7 @@ browser[tabmodalPromptShowing] {
    and just show the icon. This is a hack to side-step very weird layout bugs that
    seem to be caused by the indicator stack interacting with the menu panel. */
 #downloads-button[indicator]:not([cui-areatype="menu-panel"]) > .toolbarbutton-badge-stack > image.toolbarbutton-icon,
-#downloads-button[indicator][cui-areatype="menu-panel"] > #downloads-indicator-anchor {
+#downloads-button[indicator][cui-areatype="menu-panel"] > .toolbarbutton-badge-stack > #downloads-indicator-anchor {
   display: none;
 }
 
@@ -1057,7 +1061,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
   display: -moz-box;
 }
 
-toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > #downloads-indicator-anchor {
+toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbutton-badge-stack > #downloads-indicator-anchor {
   display: none;
 }
 
@@ -1083,72 +1087,71 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > #downloads-
   -moz-image-region: auto;
 }
 
+@supports -moz-bool-pref("xul.panel-animations.enabled") {
 %ifdef MOZ_WIDGET_COCOA
+  /* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
+     instead of "transform" and "opacity" for these animations.
+     The -moz-window* properties apply to the whole window including the window's
+     shadow, and they don't affect the window's "shape", so the system doesn't
+     have to recompute the shadow shape during the animation. This makes them a
+     lot faster. In fact, Gecko no longer triggers shadow shape recomputations
+     for repaints.
+     These properties are not implemented on other platforms. */
+  #BMB_bookmarksPopup:not([animate="false"]) {
+    -moz-window-opacity: 0;
+    -moz-window-transform: translateY(-70px);
+    transition-property: -moz-window-transform, -moz-window-opacity;
+    transition-duration: 0.18s, 0.18s;
+    transition-timing-function:
+      var(--animation-easing-function), ease-out;
+  }
 
-/* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
-   instead of "transform" and "opacity" for these animations.
-   The -moz-window* properties apply to the whole window including the window's
-   shadow, and they don't affect the window's "shape", so the system doesn't
-   have to recompute the shadow shape during the animation. This makes them a
-   lot faster. In fact, Gecko no longer triggers shadow shape recomputations
-   for repaints.
-   These properties are not implemented on other platforms. */
-#BMB_bookmarksPopup:not([animate="false"]) {
-  -moz-window-opacity: 0;
-  -moz-window-transform: translateY(-70px);
-  transition-property: -moz-window-transform, -moz-window-opacity;
-  transition-duration: 0.18s, 0.18s;
-  transition-timing-function:
-    var(--animation-easing-function), ease-out;
-}
+  #BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
+    -moz-window-transform: translateY(70px);
+  }
 
-#BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
-  -moz-window-transform: translateY(70px);
-}
+  /* [animate] is here only so that this rule has greater specificity than the
+   * rule right above */
+  #BMB_bookmarksPopup[animate][animate="open"] {
+    -moz-window-opacity: 1.0;
+    transition-duration: 0.18s, 0.18s;
+    -moz-window-transform: none;
+    transition-timing-function:
+      var(--animation-easing-function), ease-in-out;
+  }
 
-#BMB_bookmarksPopup[side][animate="open"] {
-  -moz-window-opacity: 1.0;
-  transition-duration: 0.18s, 0.18s;
-  -moz-window-transform: none;
-  transition-timing-function:
-    var(--animation-easing-function), ease-in-out;
-}
+  #BMB_bookmarksPopup[animate][animate="cancel"] {
+    -moz-window-transform: none;
+  }
+%else
+  #BMB_bookmarksPopup:not([animate="false"]) {
+    opacity: 0;
+    transform: translateY(-70px);
+    transition-property: transform, opacity;
+    transition-duration: 0.18s, 0.18s;
+    transition-timing-function:
+      var(--animation-easing-function), ease-out;
+  }
 
-#BMB_bookmarksPopup[animate="cancel"] {
-  -moz-window-transform: none;
-}
+  #BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
+    transform: translateY(70px);
+  }
 
-%elifndef MOZ_WIDGET_GTK
+  /* [animate] is here only so that this rule has greater specificity than the
+   * rule right above */
+  #BMB_bookmarksPopup[animate][animate="open"] {
+    opacity: 1.0;
+    transition-duration: 0.18s, 0.18s;
+    transform: none;
+    transition-timing-function:
+      var(--animation-easing-function), ease-in-out;
+  }
 
-#BMB_bookmarksPopup {
-  will-change: transform, opacity; /* workaround for bug 1414033 */
-}
-
-#BMB_bookmarksPopup:not([animate="false"]) {
-  opacity: 0;
-  transform: translateY(-70px);
-  transition-property: transform, opacity;
-  transition-duration: 0.18s, 0.18s;
-  transition-timing-function:
-    var(--animation-easing-function), ease-out;
-}
-
-#BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
-  transform: translateY(70px);
-}
-
-#BMB_bookmarksPopup[side][animate="open"] {
-  opacity: 1.0;
-  transition-duration: 0.18s, 0.18s;
-  transform: none;
-  transition-timing-function:
-    var(--animation-easing-function), ease-in-out;
-}
-
-#BMB_bookmarksPopup[animate="cancel"] {
-  transform: none;
-}
+  #BMB_bookmarksPopup[animate][animate="cancel"] {
+    transform: none;
+  }
 %endif
+}
 
 /* Apply crisp rendering for favicons at exactly 2dppx resolution */
 @media (resolution: 2dppx) {
@@ -1418,5 +1421,3 @@ toolbarpaletteitem > toolbaritem {
 toolbar[keyNav=true]:not([collapsed=true]):not([customizing=true]) toolbartabstop {
   -moz-user-focus: normal;
 }
-
-%include theme-vars.inc.css

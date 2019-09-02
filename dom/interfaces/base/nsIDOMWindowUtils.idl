@@ -52,7 +52,7 @@ webidl Node;
 webidl NodeList;
 webidl Storage;
 
-[scriptable, uuid(4d6732ca-9da7-4176-b8a1-8dde15cd0bf9)]
+[builtinclass, scriptable, uuid(4d6732ca-9da7-4176-b8a1-8dde15cd0bf9)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -106,6 +106,7 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Force a synchronous layer transaction for this window if necessary.
    */
+  [can_run_script]
   void updateLayerTree();
 
   /**
@@ -199,6 +200,20 @@ interface nsIDOMWindowUtils : nsISupports {
                                     in Element aElement);
 
   /**
+   * If |aElement| is a scroll container, returns the amount of layout
+   * space taken up by its scrollbars (that is, the width of the vertical
+   * scrollbar and the height of the horizontal scrollbar) in CSS pixels;
+   * otherwise returns zero.
+   *
+   * Note that on some platforms, scrollbars don't take up layout space
+   * ("overlay scrollbars"). On such platforms, the returned sizes are
+   * always zero.
+   */
+  void getScrollbarSizes(in Element aElement,
+                         out uint32_t aVerticalScrollbarWidth,
+                         out uint32_t aHorizontalScrollbarHeight);
+
+  /**
    * Get/set the resolution at which rescalable web content is drawn.
    *
    * Setting a new resolution does *not* trigger reflow.  This API is
@@ -208,9 +223,9 @@ interface nsIDOMWindowUtils : nsISupports {
    * The effect of this API is for gfx code to allocate more or fewer
    * pixels for rescalable content by a factor of |resolution| in
    * both dimensions.
-   * 
+   *
    * In addition, the content is scaled by the amount of the resolution,
-   * so that it is displayed at a correspondingly larger or smaller size, 
+   * so that it is displayed at a correspondingly larger or smaller size,
    * without the need for the caller to set an additional transform.
    *
    * This can be used to implement a non-reflowing scale-zoom, e.g.
@@ -356,14 +371,13 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   [can_run_script]
   boolean sendTouchEvent(in AString aType,
-                         [array, size_is(count)] in uint32_t aIdentifiers,
-                         [array, size_is(count)] in int32_t aXs,
-                         [array, size_is(count)] in int32_t aYs,
-                         [array, size_is(count)] in uint32_t aRxs,
-                         [array, size_is(count)] in uint32_t aRys,
-                         [array, size_is(count)] in float aRotationAngles,
-                         [array, size_is(count)] in float aForces,
-                         in uint32_t count,
+                         in Array<uint32_t> aIdentifiers,
+                         in Array<int32_t> aXs,
+                         in Array<int32_t> aYs,
+                         in Array<uint32_t> aRxs,
+                         in Array<uint32_t> aRys,
+                         in Array<float> aRotationAngles,
+                         in Array<float> aForces,
                          in long aModifiers,
                          [optional] in boolean aIgnoreRootScrollFrame);
 
@@ -390,14 +404,13 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   [can_run_script]
   boolean sendTouchEventToWindow(in AString aType,
-                                 [array, size_is(count)] in uint32_t aIdentifiers,
-                                 [array, size_is(count)] in int32_t aXs,
-                                 [array, size_is(count)] in int32_t aYs,
-                                 [array, size_is(count)] in uint32_t aRxs,
-                                 [array, size_is(count)] in uint32_t aRys,
-                                 [array, size_is(count)] in float aRotationAngles,
-                                 [array, size_is(count)] in float aForces,
-                                 in uint32_t count,
+                                 in Array<uint32_t> aIdentifiers,
+                                 in Array<int32_t> aXs,
+                                 in Array<int32_t> aYs,
+                                 in Array<uint32_t> aRxs,
+                                 in Array<uint32_t> aRys,
+                                 in Array<float> aRotationAngles,
+                                 in Array<float> aForces,
                                  in long aModifiers,
                                  [optional] in boolean aIgnoreRootScrollFrame);
 
@@ -745,6 +758,8 @@ interface nsIDOMWindowUtils : nsISupports {
    *        frame when retrieving the element. If false, this method returns
    *        null for coordinates outside of the viewport.
    * @param aFlushLayout flushes layout if true. Otherwise, no flush occurs.
+   * @param aOnlyVisible Set to true if you only want nodes that pass a visibility
+   *        hit test.
    */
   NodeList nodesFromRect(in float aX,
                          in float aY,
@@ -753,7 +768,8 @@ interface nsIDOMWindowUtils : nsISupports {
                          in float aBottomSize,
                          in float aLeftSize,
                          in boolean aIgnoreRootScrollFrame,
-                         in boolean aFlushLayout);
+                         in boolean aFlushLayout,
+                         in boolean aOnlyVisible);
 
 
   /**
@@ -837,13 +853,15 @@ interface nsIDOMWindowUtils : nsISupports {
    * Note: this does not take effect right away. Rather, the visual scroll
    *       request is sent to APZ with the next transaction, and will be
    *       reflected in the main thread with the subsequent APZ repaint request.
-   * Please see the caveats mentioned at nsIPresShell::
-   * SetPendingVisualViewportOffset(), and request APZ review if adding a new
-   * call to this.
+   * Please see the caveats mentioned at PresShell::ScrollToVisual(), and
+   * request APZ review if adding a new call to this.
    */
   const long UPDATE_TYPE_RESTORE = 0;
   const long UPDATE_TYPE_MAIN_THREAD = 1;
-  void scrollToVisual(in float aOffsetX, in float aOffsetY, in long aUpdateType);
+  const long SCROLL_MODE_INSTANT = 0;
+  const long SCROLL_MODE_SMOOTH = 1;
+  void scrollToVisual(in float aOffsetX, in float aOffsetY,
+                      in long aUpdateType, in long aScrollMode);
 
   /**
    * Returns the offset of the window's visual viewport relative to the
@@ -935,7 +953,8 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute float fullZoom;
 
   /**
-   * Dispatches aEvent via the nsIPresShell object of the window's document.
+   * Dispatches aEvent as a trusted event via the PresShell object of the
+   * window's document.
    * The event is dispatched to aTarget, which should be an object
    * which implements nsIContent interface (#element, #text, etc).
    *
@@ -946,9 +965,9 @@ interface nsIDOMWindowUtils : nsISupports {
    * @note Event handlers won't get aEvent as parameter, but a similar event.
    *       Also, aEvent should not be reused.
    */
+  [can_run_script]
   boolean dispatchDOMEventViaPresShell(in Node aTarget,
-                                       in Event aEvent,
-                                       in boolean aTrusted);
+                                       in Event aEvent);
 
   /**
    * Sets WidgetEvent::mFlags::mOnlyChromeDispatch to true to ensure that
@@ -1293,11 +1312,6 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute boolean usingAdvancedLayers;
 
   /**
-   * True if the current build includes WebRender.
-   */
-  readonly attribute boolean isWebRenderBuilt;
-
-  /**
    * True if webrender was requested by the user (via pref or env-var), false
    * otherwise. Note that this doesn't represent whether or not webrender is
    * *actually* enabled, just whether or not it was requested.
@@ -1344,13 +1358,10 @@ interface nsIDOMWindowUtils : nsISupports {
   void startFrameTimeRecording([retval] out unsigned long startIndex);
 
   /**
-   * Returns number of recorded frames since startIndex was issued,
-   *   and allocates+populates 2 arraye with the recorded data.
-   * - Allocation is infallible. Should be released even if size is 0.
+   * Returns array of frame intervals since the time when the given startIndex
+   * was handed out from startFrameTimeRecording.
    */
-  void stopFrameTimeRecording(in unsigned long startIndex,
-                             [optional] out unsigned long frameCount,
-                             [retval, array, size_is(frameCount)] out float frameIntervals);
+  Array<float> stopFrameTimeRecording(in unsigned long startIndex);
 
   /**
    * The DPI of the display
@@ -1430,7 +1441,7 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Ask APZ to pan and zoom to the focused input element.
    */
-  void zoomToFocusedInput();
+  [can_run_script] void zoomToFocusedInput();
 
   /**
    * Method for testing StyleAnimationValue::ComputeDistance.
@@ -1462,6 +1473,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * Get the type of the currently focused html input, if any.
    */
   readonly attribute AString focusedInputType;
+
+  /**
+   * Get the action hint of the currently focused html input, if any.
+   */
+  readonly attribute AString focusedActionHint;
 
   /**
    * Find the view ID for a given element. This is the reverse of
@@ -1503,8 +1519,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * elements doesn't have a primary frame, or if that frame's display items are
    * assigned to any other layers than just a single PaintedLayer per element.
    */
-  unsigned long numberOfAssignedPaintedLayers([array, size_is(count)] in Element aElements,
-                                              in uint32_t count);
+  unsigned long numberOfAssignedPaintedLayers(in Array<Element> aElements);
 
   /**
    * Get internal id of the stored blob, file or file handle.
@@ -1762,7 +1777,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * This method doesn't do anything useful.  It was solely added for the
    * purpose of the test for bug 503926.
    */
-  void xpconnectArgument(in nsIDOMWindowUtils aThis);
+  void xpconnectArgument(in nsISupports aObj);
 
   /**
    * Helper for JS components that need to send permission requests with
@@ -1930,6 +1945,11 @@ interface nsIDOMWindowUtils : nsISupports {
   void wrCapture();
 
   /**
+   * Toggle recording of composition on and off.
+   */
+  void setCompositionRecording(in boolean aValue);
+
+  /**
    * Returns whether the document we're associated to has recorded a given CSS
    * property via the use counter mechanism.
    *
@@ -1960,12 +1980,12 @@ interface nsIDOMWindowUtils : nsISupports {
   const long DEFAULT_PEN_POINTER_ID   = 1;
   const long DEFAULT_TOUCH_POINTER_ID = 2;
 
-  // Match WidgetMouseEventBase::buttonType.
+  // Match mozilla::MouseButton.
   const long MOUSE_BUTTON_LEFT_BUTTON   = 0;
   const long MOUSE_BUTTON_MIDDLE_BUTTON = 1;
   const long MOUSE_BUTTON_RIGHT_BUTTON  = 2;
 
-  // Match WidgetMouseEventBase::buttonsFlag.
+  // Match mozilla::MouseButtonsFlag.
   const long MOUSE_BUTTONS_NO_BUTTON = 0x00;
   const long MOUSE_BUTTONS_LEFT_BUTTON = 0x01;
   const long MOUSE_BUTTONS_RIGHT_BUTTON = 0x02;
@@ -1985,6 +2005,8 @@ interface nsIDOMWindowUtils : nsISupports {
   const long DIRECTION_NOT_SET = 2;
 
   void syncFlushCompositor();
+
+  unsigned long long getLayersId();
 };
 
 [scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]

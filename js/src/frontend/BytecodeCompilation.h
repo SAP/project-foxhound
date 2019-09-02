@@ -15,7 +15,6 @@
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint32_t
 
-#include "frontend/EitherParser.h"  // js::frontend::EitherParser
 #include "frontend/ParseContext.h"  // js::frontend::UsedNameTracker
 #include "frontend/SharedContext.h"  // js::frontend::Directives, js::frontend::{,Eval,Global}SharedContext
 #include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
@@ -31,6 +30,8 @@ class JSObject;
 namespace js {
 
 namespace frontend {
+
+class EitherParser;
 
 template <typename Unit>
 class SourceAwareCompiler;
@@ -100,7 +101,9 @@ class MOZ_STACK_CLASS BytecodeCompiler {
   // This function lives here, not in SourceAwareCompiler, because it mostly
   // uses fields in *this* class.
   template <typename Unit>
-  MOZ_MUST_USE bool assignSource(JS::SourceText<Unit>& sourceBuffer);
+  MOZ_MUST_USE bool assignSource(JS::SourceText<Unit>& sourceBuffer) {
+    return scriptSource->assignSource(cx, options, sourceBuffer);
+  }
 
   bool canLazilyParse() const;
 

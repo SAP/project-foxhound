@@ -9,8 +9,8 @@ import android.graphics.*
 import android.support.test.filters.MediumTest
 import android.support.test.runner.AndroidJUnit4
 import android.view.Surface
-import org.hamcrest.Matchers.notNullValue
-import org.hamcrest.Matchers.nullValue
+import org.hamcrest.Matchers.*
+import org.junit.Ignore
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
@@ -19,9 +19,10 @@ import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
+import java.nio.ByteBuffer
 
-const val SCREEN_HEIGHT = 100
-const val SCREEN_WIDTH = 100
+private const val SCREEN_HEIGHT = 100
+private const val SCREEN_WIDTH = 100
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
@@ -44,7 +45,15 @@ class ScreenshotTest : BaseSessionTest() {
         sessionRule.waitForResult(result).let {
             assertThat("Screenshot is not null",
                     it, notNullValue())
-            assert(it.sameAs(comparisonImage)) {  "Screenshots are the same" }
+            assertThat("Widths are the same", comparisonImage.width, equalTo(it.width))
+            assertThat("Heights are the same", comparisonImage.height, equalTo(it.height))
+            assertThat("Byte counts are the same", comparisonImage.byteCount, equalTo(it.byteCount))
+            assertThat("Configs are the same", comparisonImage.config, equalTo(it.config))
+            val comparisonPixels: ByteBuffer = ByteBuffer.allocate(comparisonImage.byteCount)
+            comparisonImage.copyPixelsToBuffer(comparisonPixels)
+            val itPixels: ByteBuffer = ByteBuffer.allocate(it.byteCount)
+            it.copyPixelsToBuffer(itPixels)
+            assertThat("Bytes are the same", comparisonPixels, equalTo(itPixels))
         }
     }
 
@@ -91,16 +100,5 @@ class ScreenshotTest : BaseSessionTest() {
             it.surfaceChanged(surface, SCREEN_WIDTH, SCREEN_HEIGHT)
             sessionRule.waitForResult(result)
         }
-    }
-
-    @Test
-    fun capturePixelsThrowsCompositorNotReady() {
-        expectedEx.expect(IllegalStateException::class.java)
-        expectedEx.expectMessage("Compositor must be ready before pixels can be captured")
-        val session = sessionRule.createClosedSession()
-        val display = session.acquireDisplay()
-
-        sessionRule.waitForResult(display.capturePixels())
-        fail("IllegalStateException expected to be thrown")
     }
 }

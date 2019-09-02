@@ -17,6 +17,7 @@ class DebugTargetItem extends PureComponent {
   static get propTypes() {
     return {
       actionComponent: PropTypes.any.isRequired,
+      additionalActionsComponent: PropTypes.any,
       detailComponent: PropTypes.any.isRequired,
       dispatch: PropTypes.func.isRequired,
       target: Types.debugTarget.isRequired,
@@ -29,23 +30,33 @@ class DebugTargetItem extends PureComponent {
       {
         className: "debug-target-item__action",
       },
-      actionComponent({ dispatch, target }),
+      actionComponent({ dispatch, target })
+    );
+  }
+
+  renderAdditionalActions() {
+    const { additionalActionsComponent, dispatch, target } = this.props;
+
+    if (!additionalActionsComponent) {
+      return null;
+    }
+
+    return dom.section(
+      {
+        className: "debug-target-item__additional_actions",
+      },
+      additionalActionsComponent({ dispatch, target })
     );
   }
 
   renderDetail() {
     const { detailComponent, target } = this.props;
-    return dom.div(
-      {
-        className: "debug-target-item__detail",
-      },
-      detailComponent({ target }),
-    );
+    return detailComponent({ target });
   }
 
   renderIcon() {
     return dom.img({
-      className: "debug-target-item__icon js-debug-target-item-icon",
+      className: "debug-target-item__icon qa-debug-target-item-icon",
       src: this.props.target.icon,
     });
   }
@@ -56,19 +67,20 @@ class DebugTargetItem extends PureComponent {
         className: "debug-target-item__name ellipsis-text",
         title: this.props.target.name,
       },
-      this.props.target.name,
+      this.props.target.name
     );
   }
 
   render() {
     return dom.li(
       {
-        className: "card debug-target-item js-debug-target-item",
+        className: "card debug-target-item qa-debug-target-item",
       },
       this.renderIcon(),
       this.renderName(),
       this.renderAction(),
       this.renderDetail(),
+      this.renderAdditionalActions()
     );
   }
 }

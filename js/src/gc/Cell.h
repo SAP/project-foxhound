@@ -83,6 +83,8 @@ struct alignas(gc::CellAlignBytes) Cell {
   MOZ_ALWAYS_INLINE bool isMarkedAny() const;
   MOZ_ALWAYS_INLINE bool isMarkedBlack() const;
   MOZ_ALWAYS_INLINE bool isMarkedGray() const;
+  MOZ_ALWAYS_INLINE bool isMarked(gc::MarkColor color) const;
+  MOZ_ALWAYS_INLINE bool isMarkedAtLeast(gc::MarkColor color) const;
 
   inline JSRuntime* runtimeFromMainThread() const;
 
@@ -243,6 +245,14 @@ MOZ_ALWAYS_INLINE bool Cell::isMarkedGray() const {
   return isTenured() && asTenured().isMarkedGray();
 }
 
+MOZ_ALWAYS_INLINE bool Cell::isMarked(gc::MarkColor color) const {
+  return color == MarkColor::Gray ? isMarkedGray() : isMarkedBlack();
+}
+
+MOZ_ALWAYS_INLINE bool Cell::isMarkedAtLeast(gc::MarkColor color) const {
+  return color == MarkColor::Gray ? isMarkedAny() : isMarkedBlack();
+}
+
 inline JSRuntime* Cell::runtimeFromMainThread() const {
   JSRuntime* rt = chunk()->trailer.runtime;
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
@@ -372,7 +382,7 @@ bool TenuredCell::isInsideZone(JS::Zone* zone) const {
   }
 
   if (thing->isMarkedGray()) {
-    // There shouldn't be anything marked grey unless we're on the main thread.
+    // There shouldn't be anything marked gray unless we're on the main thread.
     MOZ_ASSERT(CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread()));
     if (!JS::RuntimeHeapIsCollecting()) {
       JS::UnmarkGrayGCThingRecursively(

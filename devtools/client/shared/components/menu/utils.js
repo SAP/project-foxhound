@@ -7,8 +7,6 @@
 const Menu = require("devtools/client/framework/menu");
 const MenuItem = require("devtools/client/framework/menu-item");
 
-loader.lazyRequireGetter(this, "getTopLevelWindow", "devtools/client/responsive.html/utils/window", true);
-
 /**
  * Helper function for opening context menu.
  *
@@ -21,9 +19,6 @@ loader.lazyRequireGetter(this, "getTopLevelWindow", "devtools/client/responsive.
  *           Screen x coordinate of the menu on the screen.
  * @property {Number} screenY
  *           Screen y coordinate of the menu on the screen.
- * @property {Boolean} useTopLevelWindow
- *           Whether or not the top level window needs to be fetched. This option is used
- *           by RDM.
  */
 function showMenu(items, options) {
   if (items.length === 0) {
@@ -32,7 +27,7 @@ function showMenu(items, options) {
 
   // Build the menu object from provided menu items.
   const menu = new Menu();
-  items.forEach((item) => {
+  items.forEach(item => {
     if (item == "-") {
       item = { type: "separator" };
     }
@@ -42,7 +37,7 @@ function showMenu(items, options) {
 
     if (subItems) {
       const subMenu = new Menu();
-      subItems.forEach((subItem) => {
+      subItems.forEach(subItem => {
         subMenu.append(new MenuItem(subItem));
       });
       menuItem.submenu = subMenu;
@@ -51,27 +46,15 @@ function showMenu(items, options) {
     menu.append(menuItem);
   });
 
-  let screenX = options.screenX;
-  let screenY = options.screenY;
-
   // Calculate position on the screen according to
   // the parent button if available.
   if (options.button) {
-    const button = options.button;
-    const rect = button.getBoundingClientRect();
-    const defaultView = button.ownerDocument.defaultView;
-    screenX = rect.left + defaultView.mozInnerScreenX;
-    screenY = rect.bottom + defaultView.mozInnerScreenY;
-  }
-
-  let doc;
-  if (options.useTopLevelWindow) {
-    doc = getTopLevelWindow(window).document;
+    menu.popupAtTarget(options.button, window.document);
   } else {
-    doc = window.parent.document;
+    const screenX = options.screenX;
+    const screenY = options.screenY;
+    menu.popup(screenX, screenY, window.document);
   }
-
-  menu.popup(screenX, screenY, { doc });
 }
 
 module.exports = {

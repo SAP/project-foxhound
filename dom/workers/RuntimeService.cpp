@@ -35,6 +35,7 @@
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/Telemetry.h"
@@ -69,6 +70,10 @@
 #include "nsXPCOMPrivate.h"
 #include "OSFileConstants.h"
 #include "xpcpublic.h"
+
+#if defined(XP_MACOSX)
+#  include "nsMacUtilsImpl.h"
+#endif
 
 #include "Principal.h"
 #include "WorkerDebuggerManager.h"
@@ -134,6 +139,9 @@ static_assert(MAX_WORKERS_PER_DOMAIN >= 1,
 #define GC_REQUEST_OBSERVER_TOPIC "child-gc-request"
 #define CC_REQUEST_OBSERVER_TOPIC "child-cc-request"
 #define MEMORY_PRESSURE_OBSERVER_TOPIC "memory-pressure"
+#define LOW_MEMORY_DATA "low-memory"
+#define LOW_MEMORY_ONGOING_DATA "low-memory-ongoing"
+#define MEMORY_PRESSURE_STOP_OBSERVER_TOPIC "memory-pressure-stop"
 
 #define BROADCAST_ALL_WORKERS(_func, ...)                         \
   PR_BEGIN_MACRO                                                  \
@@ -496,7 +504,7 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       int32_t prefValue = GetWorkerPref(matchName, -1);
       uint32_t value =
           (prefValue <= 0 || prefValue >= 100000) ? 0 : uint32_t(prefValue);
-      UpdateOtherJSGCMemoryOption(rts, JSGC_SLICE_TIME_BUDGET, value);
+      UpdateOtherJSGCMemoryOption(rts, JSGC_SLICE_TIME_BUDGET_MS, value);
       continue;
     }
 
@@ -818,21 +826,19 @@ static bool PreserveWrapper(JSContext* cx, JS::HandleObject obj) {
   return mozilla::dom::TryPreserveWrapper(obj);
 }
 
+static bool IsWorkerDebuggerGlobalOrSandbox(JSObject* aGlobal) {
+  return IsWorkerDebuggerGlobal(aGlobal) || IsWorkerDebuggerSandbox(aGlobal);
+}
+
 JSObject* Wrap(JSContext* cx, JS::HandleObject existing, JS::HandleObject obj) {
   JSObject* targetGlobal = JS::CurrentGlobalOrNull(cx);
-  if (!IsWorkerDebuggerGlobal(targetGlobal) &&
-      !IsWorkerDebuggerSandbox(targetGlobal)) {
-    JS_ReportErrorASCII(
-        cx, "There should be no edges from the debuggee to the debugger.");
-    return nullptr;
-  }
 
   // Note: the JS engine unwraps CCWs before calling this callback.
   JSObject* originGlobal = JS::GetNonCCWObjectGlobal(obj);
 
   const js::Wrapper* wrapper = nullptr;
-  if (IsWorkerDebuggerGlobal(originGlobal) ||
-      IsWorkerDebuggerSandbox(originGlobal)) {
+  if (IsWorkerDebuggerGlobalOrSandbox(targetGlobal) &&
+      IsWorkerDebuggerGlobalOrSandbox(originGlobal)) {
     wrapper = &js::CrossCompartmentWrapper::singleton;
   } else {
     wrapper = &js::OpaqueCrossCompartmentWrapper::singleton;
@@ -931,7 +937,10 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     SetTargetedMicroTaskRecursionDepth(2);
   }
 
-  ~WorkerJSContext() {
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY because otherwise we have to annotate the
+  // SpiderMonkey JS::JobQueue's destructor as MOZ_CAN_RUN_SCRIPT, which is a
+  // bit of a pain.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY ~WorkerJSContext() {
     MOZ_COUNT_DTOR_INHERITED(WorkerJSContext, CycleCollectedJSContext);
     JSContext* cx = MaybeContext();
     if (!cx) {
@@ -1664,7 +1673,7 @@ void RuntimeService::Shutdown() {
         MutexAutoUnlock unlock(mMutex);
 
         for (uint32_t index = 0; index < workers.Length(); index++) {
-          if (!workers[index]->Kill()) {
+          if (!workers[index]->Cancel()) {
             NS_WARNING("Failed to cancel worker!");
           }
         }
@@ -2022,8 +2031,7 @@ void RuntimeService::PropagateFirstPartyStorageAccessGranted(
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT_IF(
       aWindow->GetExtantDoc(),
-      aWindow->GetExtantDoc()->CookieSettings()->GetCookieBehavior() ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER);
+      aWindow->GetExtantDoc()->CookieSettings()->GetRejectThirdPartyTrackers());
 
   nsTArray<WorkerPrivate*> workers;
   GetWorkersForWindow(aWindow, workers);
@@ -2115,6 +2123,10 @@ void RuntimeService::UpdateAllWorkerGCZeal() {
 }
 #endif
 
+void RuntimeService::SetLowMemoryStateAllWorkers(bool aState) {
+  BROADCAST_ALL_WORKERS(SetLowMemoryState, aState);
+}
+
 void RuntimeService::GarbageCollectAllWorkers(bool aShrinking) {
   BROADCAST_ALL_WORKERS(GarbageCollect, aShrinking);
 }
@@ -2146,7 +2158,17 @@ uint32_t RuntimeService::ClampedHardwareConcurrency() const {
   // No need to loop here: if compareExchange fails, that just means that some
   // other worker has initialized numberOfProcessors, so we're good to go.
   if (!clampedHardwareConcurrency) {
-    int32_t numberOfProcessors = PR_GetNumberOfProcessors();
+    int32_t numberOfProcessors = 0;
+#if defined(XP_MACOSX)
+    if (nsMacUtilsImpl::IsTCSMAvailable()) {
+      // On failure, zero is returned from GetPhysicalCPUCount()
+      // and we fallback to PR_GetNumberOfProcessors below.
+      numberOfProcessors = nsMacUtilsImpl::GetPhysicalCPUCount();
+    }
+#endif
+    if (numberOfProcessors == 0) {
+      numberOfProcessors = PR_GetNumberOfProcessors();
+    }
     if (numberOfProcessors <= 0) {
       numberOfProcessors = 1;  // Must be one there somewhere
     }
@@ -2184,9 +2206,22 @@ RuntimeService::Observe(nsISupports* aSubject, const char* aTopic,
     return NS_OK;
   }
   if (!strcmp(aTopic, MEMORY_PRESSURE_OBSERVER_TOPIC)) {
+    nsDependentString data(aData);
+    // Don't continue to GC/CC if we are in an ongoing low-memory state since
+    // its very slow and it likely won't help us anyway.
+    if (data.EqualsLiteral(LOW_MEMORY_ONGOING_DATA)) {
+      return NS_OK;
+    }
+    if (data.EqualsLiteral(LOW_MEMORY_DATA)) {
+      SetLowMemoryStateAllWorkers(true);
+    }
     GarbageCollectAllWorkers(/* shrinking = */ true);
     CycleCollectAllWorkers();
     MemoryPressureAllWorkers();
+    return NS_OK;
+  }
+  if (!strcmp(aTopic, MEMORY_PRESSURE_STOP_OBSERVER_TOPIC)) {
+    SetLowMemoryStateAllWorkers(false);
     return NS_OK;
   }
   if (!strcmp(aTopic, NS_IOSERVICE_OFFLINE_STATUS_TOPIC)) {
@@ -2215,6 +2250,9 @@ bool LogViolationDetailsRunnable::MainThreadRun() {
   return true;
 }
 
+// MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
+// bug 1535398.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY
 NS_IMETHODIMP
 WorkerThreadPrimaryRunnable::Run() {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING(
@@ -2291,7 +2329,11 @@ WorkerThreadPrimaryRunnable::Run() {
       PROFILER_SET_JS_CONTEXT(cx);
 
       {
-        mWorkerPrivate->DoRunLoop(cx);
+        // We're on the worker thread here, and WorkerPrivate's refcounting is
+        // non-threadsafe: you can only do it on the parent thread.  What that
+        // means in practice is that we're relying on it being kept alive while
+        // we run.  Hopefully.
+        MOZ_KnownLive(mWorkerPrivate)->DoRunLoop(cx);
         // The AutoJSAPI in DoRunLoop should have reported any exceptions left
         // on cx.
         MOZ_ASSERT(!JS_IsExceptionPending(cx));
@@ -2406,8 +2448,7 @@ void PropagateFirstPartyStorageAccessGrantedToWorkers(
   AssertIsOnMainThread();
   MOZ_ASSERT_IF(
       aWindow->GetExtantDoc(),
-      aWindow->GetExtantDoc()->CookieSettings()->GetCookieBehavior() ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER);
+      aWindow->GetExtantDoc()->CookieSettings()->GetRejectThirdPartyTrackers());
 
   RuntimeService* runtime = RuntimeService::GetService();
   if (runtime) {

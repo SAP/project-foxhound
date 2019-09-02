@@ -2,7 +2,7 @@
 <head>
 <title>localStorage basic test</title>
 
-<script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
 <script type="text/javascript">
@@ -21,7 +21,7 @@ async function startTest()
 
   var uri = ios.newURI(url);
   var principal = ssm.createCodebasePrincipal(uri, {});
-  var storage = dsm.createStorage(window, principal, "");
+  var storage = dsm.createStorage(window, principal, principal, "");
 
   storage.setItem("chromekey", "chromevalue");
 

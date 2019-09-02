@@ -22,6 +22,7 @@ using mozilla::gfx::gfxConfig;
 using mozilla::layers::BasicCompositor;
 using mozilla::layers::Compositor;
 using mozilla::layers::CompositorOptions;
+using mozilla::layers::ISurfaceAllocator;
 using mozilla::layers::LayersBackend;
 using mozilla::layers::TestSurfaceAllocator;
 using mozilla::layers::TextureClient;
@@ -107,7 +108,8 @@ static void CheckCompatibilityWithBasicCompositor(
   }
 }
 
-TEST(Gfx, TestTextureCompatibility) {
+TEST(Gfx, TestTextureCompatibility)
+{
   nsTArray<LayersBackend> backendHints;
   RefPtr<TestSurfaceAllocator> deallocator = new TestSurfaceAllocator();
 

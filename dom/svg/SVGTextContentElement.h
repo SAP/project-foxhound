@@ -8,9 +8,9 @@
 #define mozilla_dom_SVGTextContentElement_h
 
 #include "mozilla/dom/SVGGraphicsElement.h"
-#include "mozilla/dom/SVGAnimatedEnumeration.h"
-#include "SVGEnum.h"
-#include "nsSVGLength2.h"
+#include "DOMSVGAnimatedEnumeration.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedLength.h"
 
 class SVGTextFrame;
 
@@ -19,7 +19,8 @@ class nsISVGPoint;
 
 namespace dom {
 
-class SVGIRect;
+struct DOMPointInit;
+class SVGRect;
 
 typedef SVGGraphicsElement SVGTextContentElementBase;
 
@@ -30,8 +31,8 @@ class SVGTextContentElement : public SVGTextContentElementBase {
   using FragmentOrElement::TextLength;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedLength> TextLength();
-  already_AddRefed<SVGAnimatedEnumeration> LengthAdjust();
+  already_AddRefed<DOMSVGAnimatedLength> TextLength();
+  already_AddRefed<DOMSVGAnimatedEnumeration> LengthAdjust();
   MOZ_CAN_RUN_SCRIPT int32_t GetNumberOfChars();
   MOZ_CAN_RUN_SCRIPT float GetComputedTextLength();
   MOZ_CAN_RUN_SCRIPT
@@ -45,9 +46,9 @@ class SVGTextContentElement : public SVGTextContentElementBase {
   already_AddRefed<nsISVGPoint> GetEndPositionOfChar(uint32_t charnum,
                                                      ErrorResult& rv);
   MOZ_CAN_RUN_SCRIPT
-  already_AddRefed<SVGIRect> GetExtentOfChar(uint32_t charnum, ErrorResult& rv);
+  already_AddRefed<SVGRect> GetExtentOfChar(uint32_t charnum, ErrorResult& rv);
   MOZ_CAN_RUN_SCRIPT float GetRotationOfChar(uint32_t charnum, ErrorResult& rv);
-  MOZ_CAN_RUN_SCRIPT int32_t GetCharNumAtPosition(nsISVGPoint& point);
+  MOZ_CAN_RUN_SCRIPT int32_t GetCharNumAtPosition(const DOMPointInit& aPoint);
 
  protected:
   explicit SVGTextContentElement(
@@ -60,12 +61,12 @@ class SVGTextContentElement : public SVGTextContentElementBase {
   GetNonLayoutDependentNumberOfChars();
 
   enum { LENGTHADJUST };
-  virtual SVGEnum* EnumAttributes() = 0;
+  virtual SVGAnimatedEnumeration* EnumAttributes() = 0;
   static SVGEnumMapping sLengthAdjustMap[];
   static EnumInfo sEnumInfo[1];
 
   enum { TEXTLENGTH };
-  virtual nsSVGLength2* LengthAttributes() = 0;
+  virtual SVGAnimatedLength* LengthAttributes() = 0;
   static LengthInfo sLengthInfo[1];
 };
 

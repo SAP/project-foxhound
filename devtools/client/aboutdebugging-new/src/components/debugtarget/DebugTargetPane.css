@@ -25,3 +25,15 @@
 .debug-target-pane__title {
   cursor: pointer;
 }
+
+.debug-target-pane__collapsable {
+  overflow: hidden;
+  /* padding will give space for card shadow to appear and
+     margin will correct the alignment */
+  margin-inline: calc(var(--card-shadow-blur-radius) * -1);
+  padding-inline: var(--card-shadow-blur-radius);
+}
+
+.debug-target-pane__collapsable--collapsed {
+  max-height: 0;
+}

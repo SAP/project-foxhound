@@ -1,37 +1,39 @@
-function SHistoryListener() {
-}
+/* eslint-env mozilla/frame-script */
+
+function SHistoryListener() {}
 
 SHistoryListener.prototype = {
   retval: true,
   last: "initial",
 
-  OnHistoryNewEntry: function (aNewURI) {
+  OnHistoryNewEntry(aNewURI) {
     this.last = "newentry";
   },
 
-  OnHistoryGotoIndex: function (aIndex, aGotoURI) {
+  OnHistoryGotoIndex() {
     this.last = "gotoindex";
   },
 
-  OnHistoryPurge: function (aNumEntries) {
+  OnHistoryPurge() {
     this.last = "purge";
   },
 
-  OnHistoryReload: function (aReloadURI, aReloadFlags) {
+  OnHistoryReload() {
     this.last = "reload";
     return this.retval;
   },
 
-  OnHistoryReplaceEntry: function (aIndex) {},
+  OnHistoryReplaceEntry() {},
 
-  QueryInterface: ChromeUtils.generateQI([Ci.nsISHistoryListener,
-                                          Ci.nsISupportsWeakReference])
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsISHistoryListener,
+    Ci.nsISupportsWeakReference,
+  ]),
 };
 
 let testAPI = {
   shistory: null,
-  listeners: [ new SHistoryListener(),
-               new SHistoryListener() ],
+  listeners: [new SHistoryListener(), new SHistoryListener()],
 
   init() {
     this.shistory = docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory;
@@ -49,8 +51,10 @@ let testAPI = {
   },
 
   getListenerStatus() {
-    sendAsyncMessage("bug422543:getListenerStatus:return",
-                     this.listeners.map(l => l.last));
+    sendAsyncMessage(
+      "bug422543:getListenerStatus:return",
+      this.listeners.map(l => l.last)
+    );
   },
 
   resetListeners() {
@@ -63,8 +67,7 @@ let testAPI = {
 
   notifyReload() {
     let history = this.shistory.legacySHistory;
-    let rval =
-      history.notifyOnHistoryReload(content.document.documentURIObject, 0);
+    let rval = history.notifyOnHistoryReload();
     sendAsyncMessage("bug422543:notifyReload:return", { rval });
   },
 
@@ -74,10 +77,20 @@ let testAPI = {
   },
 };
 
-addMessageListener("bug422543:cleanup", () => { testAPI.cleanup(); });
-addMessageListener("bug422543:getListenerStatus", () => { testAPI.getListenerStatus(); });
-addMessageListener("bug422543:notifyReload", () => { testAPI.notifyReload(); });
-addMessageListener("bug422543:resetListeners", () => { testAPI.resetListeners(); });
-addMessageListener("bug422543:setRetval", (msg) => { testAPI.setRetval(msg.data); });
+addMessageListener("bug422543:cleanup", () => {
+  testAPI.cleanup();
+});
+addMessageListener("bug422543:getListenerStatus", () => {
+  testAPI.getListenerStatus();
+});
+addMessageListener("bug422543:notifyReload", () => {
+  testAPI.notifyReload();
+});
+addMessageListener("bug422543:resetListeners", () => {
+  testAPI.resetListeners();
+});
+addMessageListener("bug422543:setRetval", msg => {
+  testAPI.setRetval(msg.data);
+});
 
 testAPI.init();

@@ -17,7 +17,6 @@
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsIContentInlines.h"
 #include "mozilla/dom/Document.h"
-#include "nsIPresShell.h"
 #include "nsIDOMWindow.h"
 #include "nsXBLBinding.h"
 #include "nsXBLPrototypeBinding.h"
@@ -28,6 +27,8 @@
 #include "mozilla/EventStateManager.h"
 #include "nsAtom.h"
 #include "nsRange.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/dom/CharacterData.h"
 #include "mozilla/dom/Element.h"
@@ -58,19 +59,19 @@ void InspectorUtils::GetAllStyleSheets(GlobalObject& aGlobalObject,
                                        Document& aDocument, bool aDocumentOnly,
                                        nsTArray<RefPtr<StyleSheet>>& aResult) {
   // Get the agent, then user and finally xbl sheets in the style set.
-  nsIPresShell* presShell = aDocument.GetShell();
+  PresShell* presShell = aDocument.GetPresShell();
 
   if (presShell) {
     ServoStyleSet* styleSet = presShell->StyleSet();
 
     if (!aDocumentOnly) {
-      SheetType sheetType = SheetType::Agent;
-      for (int32_t i = 0; i < styleSet->SheetCount(sheetType); i++) {
-        aResult.AppendElement(styleSet->StyleSheetAt(sheetType, i));
-      }
-      sheetType = SheetType::User;
-      for (int32_t i = 0; i < styleSet->SheetCount(sheetType); i++) {
-        aResult.AppendElement(styleSet->StyleSheetAt(sheetType, i));
+      const StyleOrigin kOrigins[] = {StyleOrigin::UserAgent,
+                                      StyleOrigin::User};
+      for (const auto origin : kOrigins) {
+        for (size_t i = 0, count = styleSet->SheetCount(origin); i < count;
+             i++) {
+          aResult.AppendElement(styleSet->SheetAt(origin, i));
+        }
       }
     }
 
@@ -168,8 +169,8 @@ void InspectorUtils::GetCSSStyleRules(
   }
 
   Document* doc = aElement.OwnerDoc();
-  nsIPresShell* shell = doc->GetShell();
-  if (!shell) {
+  PresShell* presShell = doc->GetPresShell();
+  if (!presShell) {
     return;
   }
 
@@ -178,25 +179,9 @@ void InspectorUtils::GetCSSStyleRules(
 
   AutoTArray<ServoStyleRuleMap*, 1> maps;
   {
-    ServoStyleSet* styleSet = shell->StyleSet();
+    ServoStyleSet* styleSet = presShell->StyleSet();
     ServoStyleRuleMap* map = styleSet->StyleRuleMap();
     maps.AppendElement(map);
-  }
-
-  // Collect style rule maps for bindings.
-  for (nsIContent* bindingContent = &aElement; bindingContent;
-       bindingContent = bindingContent->GetBindingParent()) {
-    for (nsXBLBinding* binding = bindingContent->GetXBLBinding(); binding;
-         binding = binding->GetBaseBinding()) {
-      if (auto* map = binding->PrototypeBinding()->GetServoStyleRuleMap()) {
-        maps.AppendElement(map);
-      }
-    }
-    // Note that we intentionally don't cut off here, unlike when we
-    // do styling, because even if style rules from parent binding
-    // do not apply to the element directly in those cases, their
-    // rules may still show up in the list we get above due to the
-    // inheritance in cascading.
   }
 
   // Now shadow DOM stuff...
@@ -351,8 +336,8 @@ void InspectorUtils::GetCSSPropertyNames(GlobalObject& aGlobalObject,
                                          const PropertyNamesOptions& aOptions,
                                          nsTArray<nsString>& aResult) {
   CSSEnabledState enabledState = aOptions.mIncludeExperimentals
-                                     ? CSSEnabledState::eIgnoreEnabledState
-                                     : CSSEnabledState::eForAllContent;
+                                     ? CSSEnabledState::IgnoreEnabledState
+                                     : CSSEnabledState::ForAllContent;
 
   auto appendProperty = [enabledState, &aResult](uint32_t prop) {
     nsCSSPropertyID cssProp = nsCSSPropertyID(prop);
@@ -440,16 +425,32 @@ bool InspectorUtils::CssPropertyIsShorthand(GlobalObject& aGlobalObject,
   return isShorthand;
 }
 
+// This should match the constants in specified_value_info.rs
+//
+// Once we can use bitflags in consts, we can also cbindgen that and use them
+// here instead.
+static uint8_t ToServoCssType(InspectorPropertyType aType) {
+  switch (aType) {
+    case InspectorPropertyType::Color:
+      return 1;
+    case InspectorPropertyType::Gradient:
+      return 1 << 1;
+    case InspectorPropertyType::Timing_function:
+      return 1 << 2;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown property type?");
+      return 0;
+  }
+}
+
 bool InspectorUtils::CssPropertySupportsType(GlobalObject& aGlobalObject,
                                              const nsAString& aProperty,
-                                             uint32_t aType, ErrorResult& aRv) {
+                                             InspectorPropertyType aType,
+                                             ErrorResult& aRv) {
   NS_ConvertUTF16toUTF8 property(aProperty);
-  if (!aType || aType > InspectorUtils_Binding::TYPE_TIMING_FUNCTION) {
-    aRv.Throw(NS_ERROR_INVALID_ARG);
-    return false;
-  }
   bool found;
-  bool result = Servo_Property_SupportsType(&property, aType, &found);
+  bool result =
+      Servo_Property_SupportsType(&property, ToServoCssType(aType), &found);
   if (!found) {
     aRv.Throw(NS_ERROR_FAILURE);
     return false;
@@ -531,12 +532,12 @@ bool InspectorUtils::SetContentState(GlobalObject& aGlobalObject,
                                      ErrorResult& aRv) {
   RefPtr<EventStateManager> esm =
       inLayoutUtils::GetEventStateManagerFor(aElement);
-  if (!esm) {
+  EventStates state(aState);
+  if (!esm || !EventStateManager::ManagesState(state)) {
     aRv.Throw(NS_ERROR_INVALID_ARG);
     return false;
   }
-
-  return esm->SetContentState(&aElement, EventStates(aState));
+  return esm->SetContentState(&aElement, state);
 }
 
 /* static */
@@ -546,14 +547,15 @@ bool InspectorUtils::RemoveContentState(GlobalObject& aGlobalObject,
                                         ErrorResult& aRv) {
   RefPtr<EventStateManager> esm =
       inLayoutUtils::GetEventStateManagerFor(aElement);
-  if (!esm) {
+  EventStates state(aState);
+  if (!esm || !EventStateManager::ManagesState(state)) {
     aRv.Throw(NS_ERROR_INVALID_ARG);
     return false;
   }
 
-  bool result = esm->SetContentState(nullptr, EventStates(aState));
+  bool result = esm->SetContentState(nullptr, state);
 
-  if (aClearActiveDocument && EventStates(aState) == NS_EVENT_STATE_ACTIVE) {
+  if (aClearActiveDocument && state == NS_EVENT_STATE_ACTIVE) {
     EventStateManager* activeESM = static_cast<EventStateManager*>(
         EventStateManager::GetActiveEventStateManager());
     if (activeESM == esm) {
@@ -582,7 +584,7 @@ already_AddRefed<ComputedStyle> InspectorUtils::GetCleanComputedStyleForElement(
     return nullptr;
   }
 
-  nsIPresShell* presShell = doc->GetShell();
+  PresShell* presShell = doc->GetPresShell();
   if (!presShell) {
     return nullptr;
   }
@@ -624,7 +626,7 @@ void InspectorUtils::GetCSSPseudoElementNames(GlobalObject& aGlobalObject,
       static_cast<size_t>(PseudoStyleType::CSSPseudoElementsEnd);
   for (size_t i = 0; i < kPseudoCount; ++i) {
     PseudoStyleType type = static_cast<PseudoStyleType>(i);
-    if (nsCSSPseudoElements::IsEnabled(type, CSSEnabledState::eForAllContent)) {
+    if (nsCSSPseudoElements::IsEnabled(type, CSSEnabledState::ForAllContent)) {
       nsAtom* atom = nsCSSPseudoElements::GetPseudoAtom(type);
       aResult.AppendElement(nsDependentAtomString(atom));
     }

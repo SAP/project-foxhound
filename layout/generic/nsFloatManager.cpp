@@ -12,13 +12,13 @@
 #include <initializer_list>
 
 #include "gfxContext.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/ReflowInput.h"
 #include "mozilla/ShapeUtils.h"
 #include "nsBlockFrame.h"
 #include "nsDeviceContext.h"
 #include "nsError.h"
 #include "nsImageRenderer.h"
-#include "nsIPresShell.h"
 #include "nsMemory.h"
 
 using namespace mozilla;
@@ -31,7 +31,7 @@ void* nsFloatManager::sCachedFloatManagers[NS_FLOAT_MANAGER_CACHE_SIZE];
 /////////////////////////////////////////////////////////////////////////////
 // nsFloatManager
 
-nsFloatManager::nsFloatManager(nsIPresShell* aPresShell, WritingMode aWM)
+nsFloatManager::nsFloatManager(PresShell* aPresShell, WritingMode aWM)
     :
 #ifdef DEBUG
       mWritingMode(aWM),
@@ -134,7 +134,7 @@ nsFlowAreaRect nsFloatManager::GetFlowArea(
                           mFloats[floatCount - 1].mRightBEnd <= blockStart)) {
     return nsFlowAreaRect(aWM, aContentArea.IStart(aWM), aBCoord,
                           aContentArea.ISize(aWM), aBSize,
-                          nsFlowAreaRectFlags::NO_FLAGS);
+                          nsFlowAreaRectFlags::NoFlags);
   }
 
   nscoord blockEnd;
@@ -244,10 +244,10 @@ nsFlowAreaRect nsFloatManager::GetFlowArea(
           ? lineLeft - mLineLeft
           : mLineLeft - lineRight + LogicalSize(aWM, aContainerSize).ISize(aWM);
 
-  nsFlowAreaRectFlags flags = (haveFloats ? nsFlowAreaRectFlags::HAS_FLOATS
-                                          : nsFlowAreaRectFlags::NO_FLAGS) |
-                              (mayWiden ? nsFlowAreaRectFlags::MAY_WIDEN
-                                        : nsFlowAreaRectFlags::NO_FLAGS);
+  nsFlowAreaRectFlags flags =
+      (haveFloats ? nsFlowAreaRectFlags::HasFloats
+                  : nsFlowAreaRectFlags::NoFlags) |
+      (mayWiden ? nsFlowAreaRectFlags::MayWiden : nsFlowAreaRectFlags::NoFlags);
 
   return nsFlowAreaRect(aWM, inlineStart, blockStart - mBlockStart,
                         lineRight - lineLeft, blockSize, flags);
@@ -2281,10 +2281,6 @@ nsFloatManager::FloatInfo::FloatInfo(nsIFrame* aFrame, nscoord aLineLeft,
       // No need to create shape info.
       return;
 
-    case StyleShapeSourceType::URL:
-      MOZ_ASSERT_UNREACHABLE("shape-outside doesn't have URL source type!");
-      return;
-
     case StyleShapeSourceType::Path:
       MOZ_ASSERT_UNREACHABLE("shape-outside doesn't have Path source type!");
       return;
@@ -2503,15 +2499,15 @@ nsFloatManager::ShapeInfo::CreateBasicShape(const StyleBasicShape& aBasicShape,
                                             const LogicalRect& aMarginRect,
                                             WritingMode aWM,
                                             const nsSize& aContainerSize) {
-  switch (aBasicShape.GetShapeType()) {
-    case StyleBasicShapeType::Polygon:
+  switch (aBasicShape.tag) {
+    case StyleBasicShape::Tag::Polygon:
       return CreatePolygon(aBasicShape, aShapeMargin, aFrame, aShapeBoxRect,
                            aMarginRect, aWM, aContainerSize);
-    case StyleBasicShapeType::Circle:
-    case StyleBasicShapeType::Ellipse:
+    case StyleBasicShape::Tag::Circle:
+    case StyleBasicShape::Tag::Ellipse:
       return CreateCircleOrEllipse(aBasicShape, aShapeMargin, aFrame,
                                    aShapeBoxRect, aWM, aContainerSize);
-    case StyleBasicShapeType::Inset:
+    case StyleBasicShape::Tag::Inset:
       return CreateInset(aBasicShape, aShapeMargin, aFrame, aShapeBoxRect, aWM,
                          aContainerSize);
   }
@@ -2599,8 +2595,7 @@ nsFloatManager::ShapeInfo::CreateCircleOrEllipse(
 
   // Compute the circle or ellipse radii.
   nsSize radii;
-  StyleBasicShapeType type = aBasicShape.GetShapeType();
-  if (type == StyleBasicShapeType::Circle) {
+  if (aBasicShape.IsCircle()) {
     nscoord radius = ShapeUtils::ComputeCircleRadius(
         aBasicShape, physicalCenter, physicalShapeBoxRect);
     // Circles can use the three argument, math constructor for
@@ -2609,7 +2604,7 @@ nsFloatManager::ShapeInfo::CreateCircleOrEllipse(
     return MakeUnique<EllipseShapeInfo>(logicalCenter, radii, aShapeMargin);
   }
 
-  MOZ_ASSERT(type == StyleBasicShapeType::Ellipse);
+  MOZ_ASSERT(aBasicShape.IsEllipse());
   nsSize physicalRadii = ShapeUtils::ComputeEllipseRadii(
       aBasicShape, physicalCenter, physicalShapeBoxRect);
   LogicalSize logicalRadii(aWM, physicalRadii);
@@ -2684,7 +2679,13 @@ nsFloatManager::ShapeInfo::CreateImageShape(const nsStyleImage& aShapeImage,
                                 nsImageRenderer::FLAG_SYNC_DECODE_IMAGES);
 
   if (!imageRenderer.PrepareImage()) {
-    // The image is not ready yet.
+    // The image is not ready yet.  Boost its loading priority since it will
+    // affect layout.
+    if (aShapeImage.GetType() == eStyleImageType_Image) {
+      if (imgRequestProxy* req = aShapeImage.GetImageData()) {
+        req->BoostPriority(imgIRequest::CATEGORY_SIZE_QUERY);
+      }
+    }
     return nullptr;
   }
 

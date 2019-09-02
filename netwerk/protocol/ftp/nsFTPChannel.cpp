@@ -27,13 +27,14 @@ extern LazyLogModule gFTPLog;
 NS_IMPL_ISUPPORTS_INHERITED(nsFtpChannel, nsBaseChannel, nsIUploadChannel,
                             nsIResumableChannel, nsIFTPChannel,
                             nsIProxiedChannel, nsIForcePendingChannel,
+                            nsISupportsWeakReference,
                             nsIChannelWithDivertableParentListener)
 
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsFtpChannel::SetUploadStream(nsIInputStream *stream,
-                              const nsACString &contentType,
+nsFtpChannel::SetUploadStream(nsIInputStream* stream,
+                              const nsACString& contentType,
                               int64_t contentLength) {
   NS_ENSURE_TRUE(!Pending(), NS_ERROR_IN_PROGRESS);
 
@@ -45,7 +46,7 @@ nsFtpChannel::SetUploadStream(nsIInputStream *stream,
 }
 
 NS_IMETHODIMP
-nsFtpChannel::GetUploadStream(nsIInputStream **aStream) {
+nsFtpChannel::GetUploadStream(nsIInputStream** aStream) {
   NS_ENSURE_ARG_POINTER(aStream);
   nsCOMPtr<nsIInputStream> stream = mUploadStream;
   stream.forget(aStream);
@@ -55,7 +56,7 @@ nsFtpChannel::GetUploadStream(nsIInputStream **aStream) {
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsFtpChannel::ResumeAt(uint64_t aStartPos, const nsACString &aEntityID) {
+nsFtpChannel::ResumeAt(uint64_t aStartPos, const nsACString& aEntityID) {
   NS_ENSURE_TRUE(!Pending(), NS_ERROR_IN_PROGRESS);
   mEntityID = aEntityID;
   mStartPos = aStartPos;
@@ -64,7 +65,7 @@ nsFtpChannel::ResumeAt(uint64_t aStartPos, const nsACString &aEntityID) {
 }
 
 NS_IMETHODIMP
-nsFtpChannel::GetEntityID(nsACString &entityID) {
+nsFtpChannel::GetEntityID(nsACString& entityID) {
   if (mEntityID.IsEmpty()) return NS_ERROR_NOT_RESUMABLE;
 
   entityID = mEntityID;
@@ -73,7 +74,7 @@ nsFtpChannel::GetEntityID(nsACString &entityID) {
 
 //-----------------------------------------------------------------------------
 NS_IMETHODIMP
-nsFtpChannel::GetProxyInfo(nsIProxyInfo **aProxyInfo) {
+nsFtpChannel::GetProxyInfo(nsIProxyInfo** aProxyInfo) {
   nsCOMPtr<nsIProxyInfo> info = ProxyInfo();
   info.forget(aProxyInfo);
   return NS_OK;
@@ -81,8 +82,8 @@ nsFtpChannel::GetProxyInfo(nsIProxyInfo **aProxyInfo) {
 
 //-----------------------------------------------------------------------------
 
-nsresult nsFtpChannel::OpenContentStream(bool async, nsIInputStream **result,
-                                         nsIChannel **channel) {
+nsresult nsFtpChannel::OpenContentStream(bool async, nsIInputStream** result,
+                                         nsIChannel** channel) {
   if (!async) return NS_ERROR_NOT_IMPLEMENTED;
 
   RefPtr<nsFtpState> state = new nsFtpState();
@@ -96,7 +97,7 @@ nsresult nsFtpChannel::OpenContentStream(bool async, nsIInputStream **result,
   return NS_OK;
 }
 
-bool nsFtpChannel::GetStatusArg(nsresult status, nsString &statusArg) {
+bool nsFtpChannel::GetStatusArg(nsresult status, nsString& statusArg) {
   nsAutoCString host;
   URI()->GetHost(host);
   CopyUTF8toUTF16(host, statusArg);
@@ -113,7 +114,7 @@ class FTPEventSinkProxy final : public nsIFTPEventSink {
   ~FTPEventSinkProxy() = default;
 
  public:
-  explicit FTPEventSinkProxy(nsIFTPEventSink *aTarget)
+  explicit FTPEventSinkProxy(nsIFTPEventSink* aTarget)
       : mTarget(aTarget), mEventTarget(GetCurrentThreadEventTarget()) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -121,8 +122,8 @@ class FTPEventSinkProxy final : public nsIFTPEventSink {
 
   class OnFTPControlLogRunnable : public Runnable {
    public:
-    OnFTPControlLogRunnable(nsIFTPEventSink *aTarget, bool aServer,
-                            const char *aMessage)
+    OnFTPControlLogRunnable(nsIFTPEventSink* aTarget, bool aServer,
+                            const char* aMessage)
         : mozilla::Runnable("FTPEventSinkProxy::OnFTPControlLogRunnable"),
           mTarget(aTarget),
           mServer(aServer),
@@ -144,7 +145,7 @@ class FTPEventSinkProxy final : public nsIFTPEventSink {
 NS_IMPL_ISUPPORTS(FTPEventSinkProxy, nsIFTPEventSink)
 
 NS_IMETHODIMP
-FTPEventSinkProxy::OnFTPControlLog(bool aServer, const char *aMsg) {
+FTPEventSinkProxy::OnFTPControlLog(bool aServer, const char* aMsg) {
   RefPtr<OnFTPControlLogRunnable> r =
       new OnFTPControlLogRunnable(mTarget, aServer, aMsg);
   return mEventTarget->Dispatch(r, NS_DISPATCH_NORMAL);
@@ -158,7 +159,7 @@ FTPEventSinkProxy::OnFTPControlLogRunnable::Run() {
 
 }  // namespace
 
-void nsFtpChannel::GetFTPEventSink(nsCOMPtr<nsIFTPEventSink> &aResult) {
+void nsFtpChannel::GetFTPEventSink(nsCOMPtr<nsIFTPEventSink>& aResult) {
   if (!mFTPEventSink) {
     nsCOMPtr<nsIFTPEventSink> ftpSink;
     GetCallback(ftpSink);
@@ -181,7 +182,7 @@ nsFtpChannel::ForcePending(bool aForcePending) {
 }
 
 NS_IMETHODIMP
-nsFtpChannel::IsPending(bool *result) {
+nsFtpChannel::IsPending(bool* result) {
   *result = Pending();
   return NS_OK;
 }
@@ -224,7 +225,7 @@ nsFtpChannel::Resume() {
 
 NS_IMETHODIMP
 nsFtpChannel::MessageDiversionStarted(
-    ADivertableParentChannel *aParentChannel) {
+    ADivertableParentChannel* aParentChannel) {
   MOZ_ASSERT(!mParentChannel);
   mParentChannel = aParentChannel;
   // If the channel is suspended, propagate that info to the parent's mEventQ.

@@ -2,43 +2,48 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-*/
+ */
 
 "use strict";
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-const {E10SUtils} = ChromeUtils.import("resource://gre/modules/E10SUtils.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+const { E10SUtils } = ChromeUtils.import(
+  "resource://gre/modules/E10SUtils.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "AboutNewTab",
-                               "resource:///modules/AboutNewTab.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "AboutNewTab",
+  "resource:///modules/AboutNewTab.jsm"
+);
 
 const TOPIC_APP_QUIT = "quit-application-granted";
-const TOPIC_LOCALES_CHANGE = "intl:app-locales-changed";
 const TOPIC_CONTENT_DOCUMENT_INTERACTIVE = "content-document-interactive";
-
-// Automated tests ensure packaged locales are in this list. Copied output of:
-// https://github.com/mozilla/activity-stream/blob/master/bin/render-activity-stream-html.js
-const ACTIVITY_STREAM_BCP47 = "en-US ach an ar ast az be bg bn-BD bn-IN br bs ca cak crh cs cy da de dsb el en-CA en-GB eo es-AR es-CL es-ES es-MX et eu fa ff fi fr fy-NL ga-IE gd gl gn gu-IN he hi-IN hr hsb hu hy-AM ia id is it ja ja-JP-macos ka kab kk km kn ko lij lo lt ltg lv mai mk ml mr ms my nb-NO ne-NP nl nn-NO oc pa-IN pl pt-BR pt-PT rm ro ru si sk sl sq sr sv-SE ta te th tl tr uk ur uz vi zh-CN zh-TW".split(" ");
 
 const ABOUT_URL = "about:newtab";
 const BASE_URL = "resource://activity-stream/";
 const ACTIVITY_STREAM_PAGES = new Set(["home", "newtab", "welcome"]);
 
-const IS_MAIN_PROCESS = Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT;
-const IS_PRIVILEGED_PROCESS = Services.appinfo.remoteType === E10SUtils.PRIVILEGED_REMOTE_TYPE;
+const IS_MAIN_PROCESS =
+  Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT;
+const IS_PRIVILEGED_PROCESS =
+  Services.appinfo.remoteType === E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE;
 
 const IS_RELEASE_OR_BETA = AppConstants.RELEASE_OR_BETA;
 
-const PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS = "browser.tabs.remote.separatePrivilegedContentProcess";
-const PREF_ACTIVITY_STREAM_PRERENDER_ENABLED = "browser.newtabpage.activity-stream.prerender";
+const PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS =
+  "browser.tabs.remote.separatePrivilegedContentProcess";
 const PREF_ACTIVITY_STREAM_DEBUG = "browser.newtabpage.activity-stream.debug";
 
 function AboutNewTabService() {
   Services.obs.addObserver(this, TOPIC_APP_QUIT);
-  Services.obs.addObserver(this, TOPIC_LOCALES_CHANGE);
-  Services.prefs.addObserver(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS, this);
-  Services.prefs.addObserver(PREF_ACTIVITY_STREAM_PRERENDER_ENABLED, this);
+  Services.prefs.addObserver(
+    PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS,
+    this
+  );
   if (!IS_RELEASE_OR_BETA) {
     Services.prefs.addObserver(PREF_ACTIVITY_STREAM_DEBUG, this);
   }
@@ -73,7 +78,7 @@ function AboutNewTabService() {
  *
  * When the URL loaded is about:newtab, the default behavior, or when entered in the
  * URL bar, the redirector is hit. The service is then called to return the
- * appropriate activity stream url based on prefs and locales.
+ * appropriate activity stream url based on prefs.
  *
  * NOTE: "about:newtab" will always result in a default newtab page, and never an overridden URL.
  *
@@ -87,13 +92,10 @@ function AboutNewTabService() {
  * to the redirector from browser chrome is avoided.
  */
 AboutNewTabService.prototype = {
-
   _newTabURL: ABOUT_URL,
   _activityStreamEnabled: false,
-  _activityStreamPrerender: false,
-  _activityStreamPath: "",
   _activityStreamDebug: false,
-  _privilegedContentProcess: false,
+  _privilegedAboutContentProcess: false,
   _overridden: false,
   willNotifyUser: false,
 
@@ -106,16 +108,16 @@ AboutNewTabService.prototype = {
   observe(subject, topic, data) {
     switch (topic) {
       case "nsPref:changed":
-        if (data === PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS) {
-          this._privilegedContentProcess = Services.prefs.getBoolPref(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS);
-          this.updatePrerenderedPath();
-          this.notifyChange();
-        } else if (data === PREF_ACTIVITY_STREAM_PRERENDER_ENABLED) {
-          this._activityStreamPrerender = Services.prefs.getBoolPref(PREF_ACTIVITY_STREAM_PRERENDER_ENABLED);
+        if (data === PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS) {
+          this._privilegedAboutContentProcess = Services.prefs.getBoolPref(
+            PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS
+          );
           this.notifyChange();
         } else if (!IS_RELEASE_OR_BETA && data === PREF_ACTIVITY_STREAM_DEBUG) {
-          this._activityStreamDebug = Services.prefs.getBoolPref(PREF_ACTIVITY_STREAM_DEBUG, false);
-          this.updatePrerenderedPath();
+          this._activityStreamDebug = Services.prefs.getBoolPref(
+            PREF_ACTIVITY_STREAM_DEBUG,
+            false
+          );
           this.notifyChange();
         }
         break;
@@ -151,22 +153,16 @@ AboutNewTabService.prototype = {
             `${BASE_URL}vendor/react${debugString}.js`,
             `${BASE_URL}vendor/react-dom${debugString}.js`,
             `${BASE_URL}vendor/prop-types.js`,
-            `${BASE_URL}vendor/react-intl.js`,
             `${BASE_URL}vendor/redux.js`,
             `${BASE_URL}vendor/react-redux.js`,
-            `${BASE_URL}prerendered/${this.activityStreamLocale}/activity-stream-strings.js`,
             `${BASE_URL}data/content/activity-stream.bundle.js`,
           ];
-
-          if (this._activityStreamPrerender) {
-            scripts.unshift(`${BASE_URL}prerendered/static/activity-stream-initial-state.js`);
-          }
 
           for (let script of scripts) {
             Services.scriptloader.loadSubScript(script, win); // Synchronous call
           }
         };
-        subject.addEventListener("DOMContentLoaded", onLoaded, {once: true});
+        subject.addEventListener("DOMContentLoaded", onLoaded, { once: true });
 
         // There is a possibility that DOMContentLoaded won't be fired. This
         // unload event (which cannot be cancelled) will attempt to remove
@@ -174,7 +170,7 @@ AboutNewTabService.prototype = {
         const onUnloaded = () => {
           subject.removeEventListener("DOMContentLoaded", onLoaded);
         };
-        subject.addEventListener("unload", onUnloaded, {once: true});
+        subject.addEventListener("unload", onUnloaded, { once: true });
         break;
       }
       case TOPIC_APP_QUIT:
@@ -184,10 +180,6 @@ AboutNewTabService.prototype = {
         } else if (IS_PRIVILEGED_PROCESS) {
           Services.obs.removeObserver(this, TOPIC_CONTENT_DOCUMENT_INTERACTIVE);
         }
-        break;
-      case TOPIC_LOCALES_CHANGE:
-        this.updatePrerenderedPath();
-        this.notifyChange();
         break;
     }
   },
@@ -207,7 +199,10 @@ AboutNewTabService.prototype = {
    * @param {Boolean}   forceState      force state change
    */
   toggleActivityStream(stateEnabled, forceState = false) {
-    if (!forceState && (this.overridden || stateEnabled === this.activityStreamEnabled)) {
+    if (
+      !forceState &&
+      (this.overridden || stateEnabled === this.activityStreamEnabled)
+    ) {
       // exit there is no change of state
       return false;
     }
@@ -216,45 +211,38 @@ AboutNewTabService.prototype = {
     } else {
       this._activityStreamEnabled = false;
     }
-    this._privilegedContentProcess = Services.prefs.getBoolPref(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS);
-    this._activityStreamPrerender = Services.prefs.getBoolPref(PREF_ACTIVITY_STREAM_PRERENDER_ENABLED);
+    this._privilegedAboutContentProcess = Services.prefs.getBoolPref(
+      PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS
+    );
     if (!IS_RELEASE_OR_BETA) {
-      this._activityStreamDebug = Services.prefs.getBoolPref(PREF_ACTIVITY_STREAM_DEBUG, false);
+      this._activityStreamDebug = Services.prefs.getBoolPref(
+        PREF_ACTIVITY_STREAM_DEBUG,
+        false
+      );
     }
-    this.updatePrerenderedPath();
     this._newtabURL = ABOUT_URL;
     return true;
-  },
-
-  /**
-   * Figure out what path under prerendered to use based on current state.
-   */
-  updatePrerenderedPath() {
-    // Debug files are specially packaged in a non-localized directory, but with
-    // dynamic script loading, localized debug is supported.
-    this._activityStreamPath = `${this._activityStreamDebug &&
-      !this._privilegedContentProcess ? "static" : this.activityStreamLocale}/`;
   },
 
   /*
    * Returns the default URL.
    *
-   * This URL depends on various activity stream prefs and locales. Overriding
+   * This URL depends on various activity stream prefs. Overriding
    * the newtab page has no effect on the result of this function.
    */
   get defaultURL() {
     // Generate the desired activity stream resource depending on state, e.g.,
-    // resource://activity-stream/prerendered/ar/activity-stream.html
-    // resource://activity-stream/prerendered/en-US/activity-stream-prerendered.html
-    // resource://activity-stream/prerendered/static/activity-stream-debug.html
+    // "resource://activity-stream/prerendered/activity-stream.html"
+    // "resource://activity-stream/prerendered/activity-stream-debug.html"
+    // "resource://activity-stream/prerendered/activity-stream-noscripts.html"
     return [
       "resource://activity-stream/prerendered/",
-      this._activityStreamPath,
       "activity-stream",
-      this._activityStreamPrerender ? "-prerendered" : "",
       // Debug version loads dev scripts but noscripts separately loads scripts
-      this._activityStreamDebug && !this._privilegedContentProcess ? "-debug" : "",
-      this._privilegedContentProcess ? "-noscripts" : "",
+      this._activityStreamDebug && !this._privilegedAboutContentProcess
+        ? "-debug"
+        : "",
+      this._privilegedAboutContentProcess ? "-noscripts" : "",
       ".html",
     ].join("");
   },
@@ -262,15 +250,10 @@ AboutNewTabService.prototype = {
   /*
    * Returns the about:welcome URL
    *
-   * This is calculated in the same way the default URL is, except that we don't
-   * allow prerendering.
+   * This is calculated in the same way the default URL is.
    */
   get welcomeURL() {
-    const prerenderEnabled = this._activityStreamPrerender;
-    this._activityStreamPrerender = false;
-    const url = this.defaultURL;
-    this._activityStreamPrerender = prerenderEnabled;
-    return url;
+    return this.defaultURL;
   },
 
   get newTabURL() {
@@ -301,27 +284,8 @@ AboutNewTabService.prototype = {
     return this._activityStreamEnabled;
   },
 
-  get activityStreamPrerender() {
-    return this._activityStreamPrerender;
-  },
-
   get activityStreamDebug() {
     return this._activityStreamDebug;
-  },
-
-  get activityStreamLocale() {
-    // Pick the best available locale to match the app locales
-    return Services.locale.negotiateLanguages(
-      // Fix up incorrect BCP47 that are actually lang tags as a workaround for
-      // bug 1479606 returning the wrong values in the content process
-      Services.locale.appLocalesAsBCP47.map(l => l.replace(/^(ja-JP-mac)$/, "$1os")),
-      ACTIVITY_STREAM_BCP47,
-      // defaultLocale's strings aren't necessarily packaged, but en-US' are
-      "en-US",
-      Services.locale.langNegStrategyLookup
-    // Convert the BCP47 to lang tag, which is what is used in our paths, as a
-    // workaround for bug 1478930 negotiating incorrectly with lang tags
-    )[0].replace(/^(ja-JP-mac)os$/, "$1");
   },
 
   resetNewTabURL() {
@@ -350,9 +314,10 @@ AboutNewTabService.prototype = {
       return;
     }
     Services.obs.removeObserver(this, TOPIC_APP_QUIT);
-    Services.obs.removeObserver(this, TOPIC_LOCALES_CHANGE);
-    Services.prefs.removeObserver(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS, this);
-    Services.prefs.removeObserver(PREF_ACTIVITY_STREAM_PRERENDER_ENABLED, this);
+    Services.prefs.removeObserver(
+      PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS,
+      this
+    );
     if (!IS_RELEASE_OR_BETA) {
       Services.prefs.removeObserver(PREF_ACTIVITY_STREAM_DEBUG, this);
     }

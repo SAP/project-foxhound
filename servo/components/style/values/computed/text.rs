@@ -19,8 +19,9 @@ use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
 
 pub use crate::values::specified::TextAlignKeyword as TextAlign;
-pub use crate::values::specified::TextEmphasisPosition;
-pub use crate::values::specified::{OverflowWrap, WordBreak};
+pub use crate::values::specified::{LineBreak, OverflowWrap, WordBreak};
+pub use crate::values::specified::{TextDecorationLine, TextEmphasisPosition};
+pub use crate::values::specified::{TextDecorationSkipInk, TextTransform};
 
 /// A computed value for the `initial-letter` property.
 pub type InitialLetter = GenericInitialLetter<CSSFloat, CSSInteger>;
@@ -37,6 +38,7 @@ pub type InitialLetter = GenericInitialLetter<CSSFloat, CSSInteger>;
     PartialEq,
     ToAnimatedValue,
     ToAnimatedZero,
+    ToResolvedValue,
 )]
 pub struct LetterSpacing(pub Length);
 
@@ -102,7 +104,8 @@ impl ToComputedValue for specified::WordSpacing {
 /// A computed value for the `line-height` property.
 pub type LineHeight = GenericLineHeight<NonNegativeNumber, NonNegativeLength>;
 
-#[derive(Clone, Debug, MallocSizeOf, PartialEq)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToResolvedValue)]
+#[repr(C)]
 /// text-overflow.
 /// When the specified value only has one side, that's the "second"
 /// side, and the sides are logical, so "second" means "end".  The
@@ -155,7 +158,7 @@ impl ToCss for TextOverflow {
 /// and similar stuff when we implement it.
 ///
 /// FIXME(emilio): Also, should be just a bitfield instead of three bytes.
-#[derive(Clone, Copy, Debug, Default, MallocSizeOf, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, MallocSizeOf, PartialEq, ToResolvedValue)]
 pub struct TextDecorationsInEffect {
     /// Whether an underline is in effect.
     pub underline: bool,
@@ -182,18 +185,18 @@ impl TextDecorationsInEffect {
                 .clone(),
         };
 
-        let text_style = style.get_text();
+        let line = style.get_text().clone_text_decoration_line();
 
-        result.underline |= text_style.has_underline();
-        result.overline |= text_style.has_overline();
-        result.line_through |= text_style.has_line_through();
+        result.underline |= line.contains(TextDecorationLine::UNDERLINE);
+        result.overline |= line.contains(TextDecorationLine::OVERLINE);
+        result.line_through |= line.contains(TextDecorationLine::LINE_THROUGH);
 
         result
     }
 }
 
 /// computed value for the text-emphasis-style property
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToResolvedValue)]
 pub enum TextEmphasisStyle {
     /// Keyword value for the text-emphasis-style property (`filled` `open`)
     Keyword(TextEmphasisKeywordValue),
@@ -204,7 +207,7 @@ pub enum TextEmphasisStyle {
 }
 
 /// Keyword value for the text-emphasis-style property
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToResolvedValue)]
 pub struct TextEmphasisKeywordValue {
     /// fill for the text-emphasis-style property
     pub fill: TextEmphasisFillMode,

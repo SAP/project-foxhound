@@ -37,7 +37,7 @@ addRDMTask(TEST_URL, async function({ ui }) {
   await openDeviceModal(ui);
 
   info("Reveal device adder form, check that defaults match the viewport");
-  const adderShow = document.getElementById("device-adder-show");
+  const adderShow = document.getElementById("device-add-button");
   adderShow.click();
   testDeviceAdder(ui, {
     name: "Custom Device",
@@ -55,10 +55,9 @@ addRDMTask(TEST_URL, async function({ ui }) {
   const deviceCb = [...document.querySelectorAll(".device-input-checkbox")].find(cb => {
     return cb.value == device.name;
   });
-  const submitButton = document.getElementById("device-submit-button");
   ok(deviceCb, "Custom device checkbox added to modal");
   ok(deviceCb.checked, "Custom device enabled");
-  submitButton.click();
+  document.getElementById("device-close-button").click();
 
   info("Look for custom device in device selector");
   const deviceSelector = document.getElementById("device-selector");
@@ -82,22 +81,27 @@ addRDMTask(TEST_URL, async function({ ui }) {
   await openDeviceModal(ui);
 
   info("Reveal device adder form, check that defaults are based on selected device");
-  const adderShow = document.getElementById("device-adder-show");
+  const adderShow = document.getElementById("device-add-button");
   adderShow.click();
   testDeviceAdder(ui, Object.assign({}, device, {
     name: "Test Device (Custom)",
   }));
 
   info("Remove previously added custom device");
+  // Close the form since custom device buttons are only shown when form is not open.
+  const cancelButton = document.getElementById("device-form-cancel");
+  cancelButton.click();
+
   const deviceRemoveButton = document.querySelector(".device-remove-button");
-  const submitButton = document.getElementById("device-submit-button");
   const removed = Promise.all([
     waitUntilState(store, state => state.devices.custom.length == 0),
     once(ui, "device-association-removed"),
   ]);
   deviceRemoveButton.click();
   await removed;
-  submitButton.click();
+
+  info("Close the form before submitting.");
+  document.getElementById("device-close-button").click();
 
   info("Ensure custom device was removed from device selector");
   await waitUntilState(store, state => state.viewports[0].device == "");
@@ -126,7 +130,7 @@ addRDMTask(TEST_URL, async function({ ui }) {
   await openDeviceModal(ui);
 
   info("Reveal device adder form");
-  const adderShow = document.querySelector("#device-adder-show");
+  const adderShow = document.querySelector("#device-add-button");
   adderShow.click();
 
   info("Fill out device adder form by setting details to unicode device and save");
@@ -136,10 +140,9 @@ addRDMTask(TEST_URL, async function({ ui }) {
   const deviceCb = [...document.querySelectorAll(".device-input-checkbox")].find(cb => {
     return cb.value == unicodeDevice.name;
   });
-  const submitButton = document.getElementById("device-submit-button");
   ok(deviceCb, "Custom unicode device checkbox added to modal");
   ok(deviceCb.checked, "Custom unicode device enabled");
-  submitButton.click();
+  document.getElementById("device-close-button").click();
 
   info("Look for custom unicode device in device selector");
   const deviceSelector = document.getElementById("device-selector");
@@ -171,12 +174,12 @@ addRDMTask(TEST_URL, async function({ ui }) {
 function testDeviceAdder(ui, expected) {
   const { document } = ui.toolWindow;
 
-  const nameInput = document.querySelector("#device-adder-name input");
+  const nameInput = document.querySelector("#device-form-name input");
   const [ widthInput, heightInput ] =
-    document.querySelectorAll("#device-adder-size input");
-  const pixelRatioInput = document.querySelector("#device-adder-pixel-ratio input");
-  const userAgentInput = document.querySelector("#device-adder-user-agent input");
-  const touchInput = document.querySelector("#device-adder-touch input");
+    document.querySelectorAll("#device-form-size input");
+  const pixelRatioInput = document.querySelector("#device-form-pixel-ratio input");
+  const userAgentInput = document.querySelector("#device-form-user-agent input");
+  const touchInput = document.querySelector("#device-form-touch input");
 
   is(nameInput.value, expected.name, "Device name matches");
   is(parseInt(widthInput.value, 10), expected.width, "Width matches");

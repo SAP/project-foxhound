@@ -21,6 +21,7 @@
 #  include "nsDebug.h"
 #endif
 #include "2D.h"
+#include "mozilla/Atomics.h"
 #include "Point.h"
 #include "BaseRect.h"
 #include "Matrix.h"
@@ -58,7 +59,7 @@ class LoggingPrefs {
   // 1 just errors, 2 adds warnings and 3 or 4 add debug logging.
   // In addition to setting the value to 4, you will need to set the
   // environment variable MOZ_LOG to gfx:4. See mozilla/Logging.h for details.
-  static int32_t sGfxLogLevel;
+  static Atomic<int32_t> sGfxLogLevel;
 };
 
 /// Graphics logging is available in both debug and release builds and is
@@ -134,7 +135,9 @@ enum class LogReason : int {
   NativeFontResourceNotFound,
   UnscaledFontNotFound,
   ScaledFontNotFound,
-  InvalidLayerType,
+  InvalidLayerType,  // 40
+  PlayEventFailed,
+  InvalidConstrainedValueRead,
   // End
   MustBeLessThanThis = 101,
 };
@@ -212,7 +215,7 @@ typedef mozilla::Tuple<int32_t, std::string, double> LoggingRecordEntry;
 typedef std::vector<LoggingRecordEntry> LoggingRecord;
 class LogForwarder {
  public:
-  virtual ~LogForwarder() {}
+  virtual ~LogForwarder() = default;
   virtual void Log(const std::string& aString) = 0;
   virtual void CrashAction(LogReason aReason) = 0;
   virtual bool UpdateStringsVector(const std::string& aString) = 0;
@@ -257,7 +260,7 @@ void LogWStr(const wchar_t* aStr, std::stringstream& aOut);
 #endif
 
 template <int L, typename Logger = BasicLogger>
-class Log {
+class Log final {
  public:
   // The default is to have the prefix, have the new line, and for critical
   // logs assert on each call.
@@ -862,6 +865,7 @@ inline bool MOZ2D_warn_if_impl(bool aCondition, const char* aExpr,
 
 const int INDENT_PER_LEVEL = 2;
 
+template <int Level = LOG_DEBUG>
 class TreeLog {
  public:
   explicit TreeLog(const std::string& aPrefix = "")
@@ -906,7 +910,7 @@ class TreeLog {
   }
 
  private:
-  Log<LOG_DEBUG> mLog;
+  Log<Level> mLog;
   std::string mPrefix;
   uint32_t mDepth;
   bool mStartOfLine;
@@ -929,9 +933,10 @@ class TreeLog {
   }
 };
 
-class TreeAutoIndent {
+template <int Level = LOG_DEBUG>
+class TreeAutoIndent final {
  public:
-  explicit TreeAutoIndent(TreeLog& aTreeLog) : mTreeLog(aTreeLog) {
+  explicit TreeAutoIndent(TreeLog<Level>& aTreeLog) : mTreeLog(aTreeLog) {
     mTreeLog.IncreaseIndent();
   }
 
@@ -945,7 +950,7 @@ class TreeAutoIndent {
   ~TreeAutoIndent() { mTreeLog.DecreaseIndent(); }
 
  private:
-  TreeLog& mTreeLog;
+  TreeLog<Level>& mTreeLog;
 };
 
 }  // namespace gfx

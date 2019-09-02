@@ -3,7 +3,34 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Arg, RetVal, generateActorSpec, types} = require("devtools/shared/protocol");
+const {
+  Arg,
+  RetVal,
+  generateActorSpec,
+  types,
+} = require("devtools/shared/protocol");
+
+const longstringType = types.getType("longstring");
+const arraybufferType = types.getType("arraybuffer");
+// The sourcedata type needs some custom marshalling, because it is sometimes
+// returned as an arraybuffer and sometimes as a longstring.
+types.addType("sourcedata", {
+  write: (value, context, detail) => {
+    if (value.typeName === "arraybuffer") {
+      return arraybufferType.write(value, context, detail);
+    }
+    return longstringType.write(value, context, detail);
+  },
+  read: (value, context, detail) => {
+    // backward compatibility for FF67 or older: value might be an old style ArrayBuffer
+    // actor grip with type="arrayBuffer". The content should be the same so it can be
+    // translated to a regular ArrayBufferFront.
+    if (value.typeName === "arraybuffer" || value.type === "arrayBuffer") {
+      return arraybufferType.read(value, context, detail);
+    }
+    return longstringType.read(value, context, detail);
+  },
+});
 
 types.addDictType("sourceposition", {
   line: "number",
@@ -18,11 +45,15 @@ types.addDictType("breakpointquery", {
   end: "nullable:nullablesourceposition",
 });
 
+types.addDictType("source.onsource", {
+  contentType: "nullable:string",
+  source: "nullable:sourcedata",
+});
+
 const sourceSpec = generateActorSpec({
   typeName: "source",
 
   methods: {
-    getExecutableLines: { response: { lines: RetVal("json") } },
     getBreakpointPositions: {
       request: {
         query: Arg(0, "nullable:breakpointquery"),
@@ -39,9 +70,17 @@ const sourceSpec = generateActorSpec({
         positions: RetVal("json"),
       },
     },
+    getBreakableLines: {
+      request: {},
+      response: {
+        lines: RetVal("json"),
+      },
+    },
     onSource: {
+      // we are sending the type "source" to be compatible
+      // with FF67 and older
       request: { type: "source" },
-      response: RetVal("json"),
+      response: RetVal("source.onsource"),
     },
     setPausePoints: {
       request: {

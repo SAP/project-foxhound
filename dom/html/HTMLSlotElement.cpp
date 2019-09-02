@@ -39,12 +39,10 @@ NS_INTERFACE_MAP_END_INHERITING(nsGenericHTMLElement)
 
 NS_IMPL_ELEMENT_CLONE(HTMLSlotElement)
 
-nsresult HTMLSlotElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                     nsIContent* aBindingParent) {
+nsresult HTMLSlotElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   RefPtr<ShadowRoot> oldContainingShadow = GetContainingShadow();
 
-  nsresult rv =
-      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   ShadowRoot* containingShadow = GetContainingShadow();
@@ -55,10 +53,10 @@ nsresult HTMLSlotElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return NS_OK;
 }
 
-void HTMLSlotElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void HTMLSlotElement::UnbindFromTree(bool aNullParent) {
   RefPtr<ShadowRoot> oldContainingShadow = GetContainingShadow();
 
-  nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
 
   if (oldContainingShadow && !GetContainingShadow()) {
     oldContainingShadow->RemoveSlot(this);

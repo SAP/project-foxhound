@@ -6,7 +6,7 @@
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/PaymentRequestChild.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "nsContentUtils.h"
 #include "nsString.h"
 #include "nsIPrincipal.h"
@@ -264,7 +264,9 @@ void ConvertResponseData(const IPCPaymentResponseData& aIPCData,
       aData = bData;
       break;
     }
-    default: { break; }
+    default: {
+      break;
+    }
   }
 }
 
@@ -301,7 +303,9 @@ void ConvertMethodChangeDetails(const IPCMethodChangeDetails& aIPCDetails,
       aDetails = bDetails;
       break;
     }
-    default: { break; }
+    default: {
+      break;
+    }
   }
 }
 }  // end of namespace
@@ -352,13 +356,13 @@ PaymentRequestChild* PaymentRequestManager::GetPaymentChild(
 
   nsPIDOMWindowInner* win = aRequest->GetOwner();
   NS_ENSURE_TRUE(win, nullptr);
-  TabChild* tabChild = TabChild::GetFrom(win->GetDocShell());
-  NS_ENSURE_TRUE(tabChild, nullptr);
+  BrowserChild* browserChild = BrowserChild::GetFrom(win->GetDocShell());
+  NS_ENSURE_TRUE(browserChild, nullptr);
   nsAutoString requestId;
   aRequest->GetInternalId(requestId);
 
   PaymentRequestChild* paymentChild = new PaymentRequestChild(aRequest);
-  tabChild->SendPPaymentRequestConstructor(paymentChild);
+  browserChild->SendPPaymentRequestConstructor(paymentChild);
 
   return paymentChild;
 }
@@ -681,7 +685,9 @@ nsresult PaymentRequestManager::RespondPayment(
       NotifyRequestDone(aRequest);
       break;
     }
-    default: { return NS_ERROR_FAILURE; }
+    default: {
+      return NS_ERROR_FAILURE;
+    }
   }
   return NS_OK;
 }

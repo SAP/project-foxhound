@@ -210,7 +210,12 @@ public final class RemoteManager implements IBinder.DeathRecipient {
         proxy.deinit();
         synchronized (this) {
             if (mCodecs.remove(proxy)) {
-                releaseIfNeeded();
+                try {
+                    mRemote.endRequest();
+                    releaseIfNeeded();
+                } catch (RemoteException | NullPointerException e) {
+                    Log.e(LOGTAG, "fail to report remote codec disconnection");
+                }
             }
         }
     }
@@ -234,7 +239,12 @@ public final class RemoteManager implements IBinder.DeathRecipient {
 
         synchronized (this) {
             if (mDrmBridges.remove(remote)) {
-                releaseIfNeeded();
+                try {
+                    mRemote.endRequest();
+                    releaseIfNeeded();
+                } catch (RemoteException | NullPointerException e) {
+                    Log.e(LOGTAG, "Fail to report remote DRM bridge disconnection");
+                }
             }
         }
     }

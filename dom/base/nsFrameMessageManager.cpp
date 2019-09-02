@@ -409,7 +409,8 @@ bool nsFrameMessageManager::GetParamsForMessage(JSContext* aCx,
                                   "you trying to send an XPCOM object?"),
                 filename, EmptyString(), lineno, column,
                 nsIScriptError::warningFlag, "chrome javascript",
-                false /* from private window */);
+                false /* from private window */,
+                true /* from chrome context */);
     console->LogMessage(error);
   }
 
@@ -743,7 +744,7 @@ void nsFrameMessageManager::ReceiveMessage(
 
       if (JS::IsCallable(object)) {
         // A small hack to get 'this' value right on content side where
-        // messageManager is wrapped in TabChildMessageManager's global.
+        // messageManager is wrapped in BrowserChildMessageManager's global.
         nsCOMPtr<nsISupports> defaultThisValue;
         if (mChrome) {
           defaultThisValue = do_QueryObject(this);
@@ -824,7 +825,8 @@ void nsFrameMessageManager::ReceiveMessage(
                 do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
             error->Init(msg, EmptyString(), EmptyString(), 0, 0,
                         nsIScriptError::warningFlag, "chrome javascript",
-                        false /* from private window */);
+                        false /* from private window */,
+                        true /* from chrome context */);
             console->LogMessage(error);
           }
 
@@ -1226,7 +1228,7 @@ void nsMessageManagerScriptExecutor::LoadScriptInternal(
       }
     } else {
       JS::RootedValue rval(cx);
-      JS::AutoObjectVector envChain(cx);
+      JS::RootedVector<JSObject*> envChain(cx);
       if (!envChain.append(aMessageManager)) {
         return;
       }
@@ -1317,7 +1319,8 @@ void nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
     options.setFileAndLine(url.get(), 1);
     options.setNoScriptRval(true);
 
-    if (!JS::CompileForNonSyntacticScope(cx, options, srcBuf, &script)) {
+    script = JS::CompileForNonSyntacticScope(cx, options, srcBuf);
+    if (!script) {
       return;
     }
   }

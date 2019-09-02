@@ -89,6 +89,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'dom_media'
 
 EXPORTS += [
+    '../../third_party/rust/audio_thread_priority/audio_thread_priority.h',
     'ADTSDecoder.h',
     'ADTSDemuxer.h',
     'AsyncLogger.h',
@@ -115,6 +116,7 @@ EXPORTS += [
     'CubebUtils.h',
     'DecoderTraits.h',
     'DOMMediaStream.h',
+    'DriftCompensation.h',
     'FileBlockCache.h',
     'FrameStatistics.h',
     'ImageToI420.h',
@@ -139,11 +141,11 @@ EXPORTS += [
     'MediaResult.h',
     'MediaSegment.h',
     'MediaShutdownManager.h',
+    'MediaSpan.h',
     'MediaStatistics.h',
     'MediaStreamGraph.h',
     'MediaStreamListener.h',
     'MediaStreamTypes.h',
-    'MediaStreamVideoSink.h',
     'MediaTimer.h',
     'MediaTrack.h',
     'MediaTrackList.h',
@@ -166,6 +168,7 @@ EXPORTS += [
     'VideoSegment.h',
     'VideoUtils.h',
     'VorbisUtils.h',
+    'WavDumper.h',
     'XiphExtradata.h',
 ]
 
@@ -260,7 +263,6 @@ UNIFIED_SOURCES += [
     'MediaStreamGraph.cpp',
     'MediaStreamListener.cpp',
     'MediaStreamTrack.cpp',
-    'MediaStreamVideoSink.cpp',
     'MediaTimer.cpp',
     'MediaTrack.cpp',
     'MediaTrackList.cpp',
@@ -360,3 +362,7 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     ]
 
 FINAL_LIBRARY = 'xul'
+
+MARIONETTE_DOM_MEDIA_MANIFESTS += [
+ 'test/marionette/manifest.ini'
+]

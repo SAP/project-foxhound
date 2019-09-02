@@ -156,34 +156,13 @@ void WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
                                         HandleObject objArg,
                                         HandleObject objectPassedToWrap,
                                         MutableHandleObject retObj) {
+  // The JS engine calls ToWindowProxyIfWindow and deals with dead wrappers.
+  MOZ_ASSERT(!js::IsWindow(objArg));
+  MOZ_ASSERT(!JS_IsDeadWrapper(objArg));
+
   bool waive = ShouldWaiveXray(cx, objectPassedToWrap);
   RootedObject obj(cx, objArg);
   retObj.set(nullptr);
-  // Outerize any raw inner objects at the entry point here, so that we don't
-  // have to worry about them for the rest of the wrapping code.
-  if (js::IsWindow(obj)) {
-    obj = js::ToWindowProxyIfWindow(obj);
-    MOZ_ASSERT(obj);
-    // ToWindowProxyIfWindow can return a CCW if |obj| was a
-    // navigated-away-from Window. Strip any CCWs.
-    obj = js::UncheckedUnwrap(obj);
-    if (JS_IsDeadWrapper(obj)) {
-      retObj.set(JS_NewDeadWrapper(cx, obj));
-      return;
-    }
-    MOZ_ASSERT(js::IsWindowProxy(obj));
-    // We crossed a compartment boundary there, so may now have a gray
-    // object.  This function is not allowed to return gray objects, so
-    // don't do that.
-    ExposeObjectToActiveJS(obj);
-  }
-
-  // If the object is a dead wrapper, return a new dead wrapper rather than
-  // trying to wrap it for a different compartment.
-  if (JS_IsDeadWrapper(obj)) {
-    retObj.set(JS_NewDeadWrapper(cx, obj));
-    return;
-  }
 
   // If we've got a WindowProxy, there's nothing special that needs to be
   // done here, and we can move on to the next phase of wrapping. We handle
@@ -322,7 +301,7 @@ void WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
   // to do this cleverly in the common case to avoid too much overhead.
   XPCWrappedNative* newwn = XPCWrappedNative::Get(obj);
   RefPtr<XPCNativeSet> unionSet =
-      XPCNativeSet::GetNewOrUsed(newwn->GetSet(), wn->GetSet(), false);
+      XPCNativeSet::GetNewOrUsed(cx, newwn->GetSet(), wn->GetSet(), false);
   if (!unionSet) {
     return;
   }
@@ -723,8 +702,9 @@ static bool FixWaiverAfterTransplant(JSContext* cx, HandleObject oldWaiver,
   // cross-compartment wrapper (which should have no waiver). On the other hand,
   // in the !crossCompartmentTransplant case we know one already exists.
   // CreateXrayWaiver asserts all this.
-  JSObject* newWaiver = WrapperFactory::CreateXrayWaiver(
-      cx, newobj, /* allowExisting = */ !crossCompartmentTransplant);
+  RootedObject newWaiver(
+      cx, WrapperFactory::CreateXrayWaiver(
+              cx, newobj, /* allowExisting = */ !crossCompartmentTransplant));
   if (!newWaiver) {
     return false;
   }

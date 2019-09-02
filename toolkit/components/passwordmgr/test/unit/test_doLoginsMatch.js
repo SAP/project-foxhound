@@ -2,20 +2,23 @@
  * Test LoginHelper.doLoginsMatch
  */
 
-add_task(function test_formSubmitURL_ignoreSchemes() {
+add_task(function test_formActionOrigin_ignoreSchemes() {
   let httpActionLogin = TestData.formLogin();
   let httpsActionLogin = TestData.formLogin({
-    formSubmitURL: "https://www.example.com",
+    formActionOrigin: "https://www.example.com",
   });
   let jsActionLogin = TestData.formLogin({
-    formSubmitURL: "javascript:",
+    formActionOrigin: "javascript:",
   });
   let emptyActionLogin = TestData.formLogin({
-    formSubmitURL: "",
+    formActionOrigin: "",
   });
 
-  Assert.notEqual(httpActionLogin.formSubmitURL, httpsActionLogin.formSubmitURL,
-                  "Ensure actions differ");
+  Assert.notEqual(
+    httpActionLogin.formActionOrigin,
+    httpsActionLogin.formActionOrigin,
+    "Ensure actions differ"
+  );
 
   const TEST_CASES = [
     [httpActionLogin, httpActionLogin, true],
@@ -40,11 +43,15 @@ add_task(function test_formSubmitURL_ignoreSchemes() {
   ];
 
   for (let [login1, login2, expected] of TEST_CASES) {
-    Assert.strictEqual(LoginHelper.doLoginsMatch(login1, login2, {
-      ignorePassword: false,
-      ignoreSchemes: true,
-    }), expected, `LoginHelper.doLoginsMatch:
+    Assert.strictEqual(
+      LoginHelper.doLoginsMatch(login1, login2, {
+        ignorePassword: false,
+        ignoreSchemes: true,
+      }),
+      expected,
+      `LoginHelper.doLoginsMatch:
 \t${JSON.stringify(login1)}
-\t${JSON.stringify(login2)}`);
+\t${JSON.stringify(login2)}`
+    );
   }
 });

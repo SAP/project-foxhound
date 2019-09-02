@@ -4,11 +4,15 @@
 
 package org.mozilla.geckoview.test
 
+import android.app.ActivityManager
+import android.content.Context
 import android.app.assist.AssistStructure
 import android.graphics.SurfaceTexture
+import android.net.Uri
 import android.os.Build
+import android.os.Process
+import org.mozilla.gecko.GeckoAppShell
 import org.mozilla.geckoview.AllowOrDeny
-import org.mozilla.geckoview.GeckoDisplay
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest
@@ -21,6 +25,8 @@ import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.UiThreadUtils
 
 import android.os.Looper
+import android.support.annotation.AnyThread
+import android.support.test.InstrumentationRegistry
 import android.support.test.filters.MediumTest
 import android.support.test.filters.SdkSuppress
 import android.support.test.runner.AndroidJUnit4
@@ -31,15 +37,22 @@ import android.view.View
 import android.view.ViewStructure
 import android.widget.EditText
 import org.hamcrest.Matchers.*
+import org.json.JSONObject
 import org.junit.Assume.assumeThat
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.geckoview.test.util.HttpBin
+
+import java.net.URI
 
 import kotlin.concurrent.thread
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class ContentDelegateTest : BaseSessionTest() {
+    companion object {
+        val TEST_ENDPOINT: String = "http://localhost:4243"
+    }
 
     @Test fun titleChange() {
         sessionRule.session.loadTestPath(TITLE_CHANGE_HTML_PATH)
@@ -54,6 +67,8 @@ class ContentDelegateTest : BaseSessionTest() {
     }
 
     @Test fun download() {
+        // disable test on pgo for frequently failing Bug 1543355
+        assumeThat(sessionRule.env.isDebugBuild, equalTo(true))
         sessionRule.session.loadTestPath(DOWNLOAD_HTML_PATH)
 
         sessionRule.waitUntilCalled(object : Callbacks.NavigationDelegate, Callbacks.ContentDelegate {
@@ -97,7 +112,7 @@ class ContentDelegateTest : BaseSessionTest() {
                 assertThat("Session should be closed after a crash",
                            session.isOpen, equalTo(false))
             }
-        });
+        })
 
         // Recover immediately
         mainSession.open()
@@ -158,72 +173,78 @@ class ContentDelegateTest : BaseSessionTest() {
         // individually.
         val remainingSessions = mutableListOf(newSession, mainSession)
         while (remainingSessions.isNotEmpty()) {
-            sessionRule.waitUntilCalled(object : Callbacks.ContentDelegate {
-                @AssertCalled(count = 1)
+            val onCrashCalled = GeckoResult<Void>()
+            sessionRule.delegateDuringNextWait(object : Callbacks.ContentDelegate {
+                // Slower devices may not catch crashes in a timely manner, so we check to see
+                // if either `onKill` or `onCrash` is called
                 override fun onCrash(session: GeckoSession) {
                     remainingSessions.remove(session)
+                    onCrashCalled.complete(null)
+                }
+                override fun onKill(session: GeckoSession) {
+                    remainingSessions.remove(session)
+                    onCrashCalled.complete(null)
                 }
             })
+            sessionRule.waitForResult(onCrashCalled)
         }
     }
 
-    @WithDevToolsAPI
-    @WithDisplay(width = 400, height = 400)
-    @Test fun saveAndRestoreState() {
-        val startUri = createTestUrl(SAVE_STATE_PATH)
-        mainSession.loadUri(startUri)
-        sessionRule.waitForPageStop()
+    @AnyThread
+    fun killContentProcess() {
+        val context = GeckoAppShell.getApplicationContext()
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        for (info in manager.runningAppProcesses) {
+            if (info.processName.endsWith(":tab")) {
+                Process.killProcess(info.pid)
+            }
+        }
+    }
 
-        mainSession.evaluateJS("$('#name').value = 'the name'; window.setTimeout(() => window.scrollBy(0, 100),0);")
-        sessionRule.waitUntilCalled(Callbacks.ScrollDelegate::class, "onScrollChanged")
+    @IgnoreCrash
+    @ReuseSession(false)
+    @Test fun killContent() {
+        assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
+        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
+                equalTo(false))
 
-        val state = sessionRule.waitForResult(mainSession.saveState())
-        assertThat("State should not be null", state, notNullValue())
-
-        mainSession.loadUri("about:blank")
-        sessionRule.waitForPageStop()
-
-        mainSession.restoreState(state)
-        sessionRule.waitForPageStop()
-
-        sessionRule.forCallbacksDuringWait(object : Callbacks.NavigationDelegate {
-            @AssertCalled
-            override fun onLocationChange(session: GeckoSession, url: String?) {
-                assertThat("URI should match", url, equalTo(startUri))
+        killContentProcess()
+        mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
+            @AssertCalled(count = 1)
+            override fun onKill(session: GeckoSession) {
+                assertThat("Session should be closed after being killed",
+                        session.isOpen, equalTo(false))
             }
         })
 
-        assertThat("'name' field should match",
-                mainSession.evaluateJS("$('#name').value").toString(),
-                equalTo("the name"))
-
-        assertThat("Scroll position should match",
-                mainSession.evaluateJS("window.visualViewport.pageTop") as Double,
-                closeTo(100.0, .5))
+        mainSession.open()
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.waitUntilCalled(object : Callbacks.ProgressDelegate {
+            @AssertCalled(count = 1)
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                assertThat("Page should load successfully", success, equalTo(true))
+            }
+        })
     }
 
-    @Test fun saveStateSync() {
-        val startUri = createTestUrl(SAVE_STATE_PATH)
-        mainSession.loadUri(startUri)
-        sessionRule.waitForPageStop()
+    @IgnoreCrash
+    @ReuseSession(false)
+    @Test fun killContentMultipleSessions() {
+        assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
+        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
+                equalTo(false))
 
-        var worker = thread {
-            Looper.prepare()
+        val newSession = sessionRule.createOpenSession()
+        killContentProcess()
 
-            var thread = Thread.currentThread()
-            mainSession.saveState().then<Void> { _: GeckoSession.SessionState? ->
-                assertThat("We should be on the worker thread", Thread.currentThread(),
-                        equalTo(thread))
-                Looper.myLooper().quit()
-                null
-            }
-
-            Looper.loop()
-        }
-
-        worker.join(sessionRule.timeoutMillis)
-        if (worker.isAlive) {
-            throw UiThreadUtils.TimeoutException("Timed out")
+        val remainingSessions = mutableListOf(newSession, mainSession)
+        while (remainingSessions.isNotEmpty()) {
+            sessionRule.waitUntilCalled(object : Callbacks.ContentDelegate {
+                @AssertCalled(count = 1)
+                override fun onKill(session: GeckoSession) {
+                    remainingSessions.remove(session)
+                }
+            })
         }
     }
 
@@ -459,6 +480,7 @@ class ContentDelegateTest : BaseSessionTest() {
                    countAutoFillNodes({ it.isFocused }), equalTo(0))
     }
 
+    @WithDisplay(height = 100, width = 100)
     @WithDevToolsAPI
     @Test fun autofill_userpass() {
         if (Build.VERSION.SDK_INT < 26) {
@@ -469,13 +491,6 @@ class ContentDelegateTest : BaseSessionTest() {
         // Wait for the auto-fill nodes to populate.
         sessionRule.waitUntilCalled(object : Callbacks.TextInputDelegate {
             @AssertCalled(count = 2)
-            override fun notifyAutoFill(session: GeckoSession, notification: Int, virtualId: Int) {
-            }
-        })
-
-        mainSession.evaluateJS("$('#pass1').focus()")
-        sessionRule.waitUntilCalled(object : Callbacks.TextInputDelegate {
-            @AssertCalled(count = 1)
             override fun notifyAutoFill(session: GeckoSession, notification: Int, virtualId: Int) {
             }
         })
@@ -579,5 +594,45 @@ class ContentDelegateTest : BaseSessionTest() {
         })
         display.surfaceDestroyed()
         mainSession.releaseDisplay(display)
+    }
+
+    @Test fun webAppManifest() {
+        val httpBin = HttpBin(InstrumentationRegistry.getTargetContext(), URI.create(TEST_ENDPOINT))
+
+        try {
+            httpBin.start()
+
+            mainSession.loadUri("$TEST_ENDPOINT$HELLO_HTML_PATH")
+            mainSession.waitUntilCalled(object : Callbacks.All {
+
+                @AssertCalled(count = 1)
+                override fun onPageStop(session: GeckoSession, success: Boolean) {
+                    assertThat("Page load should succeed", success, equalTo(true))
+                }
+
+                @AssertCalled(count = 1)
+                override fun onWebAppManifest(session: GeckoSession, manifest: JSONObject) {
+                    // These values come from the manifest at assets/www/manifest.webmanifest
+                    assertThat("name should match", manifest.getString("name"), equalTo("App"))
+                    assertThat("short_name should match", manifest.getString("short_name"), equalTo("app"))
+                    assertThat("display should match", manifest.getString("display"), equalTo("standalone"))
+
+                    // The color here is "cadetblue" converted to hex.
+                    assertThat("theme_color should match", manifest.getString("theme_color"), equalTo("#5f9ea0"))
+                    assertThat("background_color should match", manifest.getString("background_color"), equalTo("#c0feee"))
+                    assertThat("start_url should match", manifest.getString("start_url"), equalTo("$TEST_ENDPOINT/assets/www/start/index.html"))
+
+                    val icon = manifest.getJSONArray("icons").getJSONObject(0);
+
+                    val iconSrc = Uri.parse(icon.getString("src"))
+                    assertThat("icon should have a valid src", iconSrc, notNullValue())
+                    assertThat("icon src should be absolute", iconSrc.isAbsolute, equalTo(true))
+                    assertThat("icon should have sizes", icon.getString("sizes"),  not(isEmptyOrNullString()))
+                    assertThat("icon type should match", icon.getString("type"), equalTo("image/gif"))
+                }
+            })
+        } finally {
+            httpBin.stop()
+        }
     }
 }

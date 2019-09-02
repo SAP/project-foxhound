@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 #include "gfxUtils.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Range.h"
@@ -312,7 +312,7 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
                                 const mozilla::wr::LayoutIntRect* aDirtyRect,
                                 Range<uint8_t> aOutput) {
   AUTO_PROFILER_TRACING("WebRender", "RasterizeSingleBlob", GRAPHICS);
-  MOZ_ASSERT(aSize.width > 0 && aSize.height > 0);
+  MOZ_RELEASE_ASSERT(aSize.width > 0 && aSize.height > 0);
   if (aSize.width <= 0 || aSize.height <= 0) {
     return false;
   }
@@ -437,7 +437,7 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
     offset = extra_end;
   }
 
-  if (gfxPrefs::WebRenderBlobPaintFlashing()) {
+  if (StaticPrefs::gfx_webrender_blob_paint_flashing()) {
     dt->SetTransform(gfx::Matrix());
     float r = float(rand()) / RAND_MAX;
     float g = float(rand()) / RAND_MAX;

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ThirdPartyUtil.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
@@ -18,10 +19,11 @@
 #include "nsReadableUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
-#include "nsPIDOMWindow.h"
+#include "nsGlobalWindowOuter.h"
 
 NS_IMPL_ISUPPORTS(ThirdPartyUtil, mozIThirdPartyUtil)
 
@@ -90,6 +92,16 @@ nsresult ThirdPartyUtil::IsThirdPartyInternal(const nsCString& aFirstDomain,
 
   *aResult = IsThirdPartyInternal(aFirstDomain, secondDomain);
   return NS_OK;
+}
+
+nsCString ThirdPartyUtil::GetBaseDomainFromWindow(nsPIDOMWindowOuter* aWindow) {
+  mozilla::dom::Document* doc = aWindow ? aWindow->GetExtantDoc() : nullptr;
+
+  if (!doc) {
+    return EmptyCString();
+  }
+
+  return doc->GetBaseDomain();
 }
 
 NS_IMETHODIMP
@@ -170,7 +182,9 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
     }
   }
 
-  if (aURI) {
+  // Ignore about:blank URIs here since they have no domain and attempting to
+  // compare against them will fail.
+  if (aURI && !NS_IsAboutBlank(aURI)) {
     // Determine whether aURI is foreign with respect to currentURI.
     nsresult rv = IsThirdPartyInternal(bottomDomain, aURI, &result);
     if (NS_FAILED(rv)) return rv;

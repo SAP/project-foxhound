@@ -9,14 +9,13 @@ import copy
 import datetime
 import json
 import os
-import re
 import sys
 import subprocess
 
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
-from mozharness.base.log import FATAL
+from mozharness.base.log import WARNING, FATAL
 from mozharness.base.script import BaseScript, PreScriptAction
 from mozharness.mozilla.automation import TBPL_RETRY
 from mozharness.mozilla.mozbase import MozbaseMixin
@@ -26,6 +25,7 @@ from mozharness.mozilla.testing.codecoverage import CodeCoverageMixin
 
 SUITE_DEFAULT_E10S = ['geckoview-junit', 'mochitest', 'reftest']
 SUITE_NO_E10S = ['cppunittest', 'xpcshell']
+SUITE_REPEATABLE = ['mochitest', 'reftest']
 
 
 class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
@@ -72,11 +72,27 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
          "help": "Set log level (debug|info|warning|error|critical|fatal)",
          }
     ], [
-        ['--e10s', ],
-        {"action": "store_true",
+        ['--disable-e10s', ],
+        {"action": "store_false",
          "dest": "e10s",
+         "default": True,
+         "help": "Run tests without multiple processes (e10s).",
+         }
+    ], [
+        ['--enable-webrender'],
+        {"action": "store_true",
+         "dest": "enable_webrender",
          "default": False,
-         "help": "Run tests with multiple processes.",
+         "help": "Run with WebRender enabled.",
+         }
+    ], [
+        ['--repeat'],
+        {"action": "store",
+         "type": "int",
+         "dest": "repeat",
+         "default": 0,
+         "help": "Repeat the tests the given number of times. Supported "
+                 "by mochitest, reftest, crashtest, ignored otherwise."
          }
     ]] + copy.deepcopy(testing_config_options)
 
@@ -109,20 +125,17 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
         self.test_packages_url = c.get('test_packages_url')
         self.test_manifest = c.get('test_manifest')
         self.robocop_path = os.path.join(abs_dirs['abs_work_dir'], "robocop.apk")
-        self.test_suite = c.get('test_suite')
+        suite = c.get('test_suite')
+        if suite and '-chunked' in suite:
+            suite = suite[:suite.index('-chunked')]
+        self.test_suite = suite
         self.this_chunk = c.get('this_chunk')
         self.total_chunks = c.get('total_chunks')
-        if self.test_suite and self.test_suite not in self.config["suite_definitions"]:
-            # accept old-style test suite name like "mochitest-3"
-            m = re.match("(.*)-(\d*)", self.test_suite)
-            if m:
-                self.test_suite = m.group(1)
-                if self.this_chunk is None:
-                    self.this_chunk = m.group(2)
         self.xre_path = None
         self.log_raw_level = c.get('log_raw_level')
         self.log_tbpl_level = c.get('log_tbpl_level')
         self.e10s = c.get('e10s')
+        self.enable_webrender = c.get('enable_webrender')
 
     def query_abs_dirs(self):
         if self.abs_dirs:
@@ -251,6 +264,19 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
                 cmd.extend(['--disable-e10s'])
             elif category not in SUITE_DEFAULT_E10S and self.e10s:
                 cmd.extend(['--e10s'])
+        if c.get('repeat'):
+            if category in SUITE_REPEATABLE:
+                cmd.extend(["--repeat=%s" % c.get('repeat')])
+            else:
+                self.log("--repeat not supported in {}".format(category), level=WARNING)
+
+        # Only enable WebRender if the flag is enabled. All downstream harnesses
+        # are expected to force-disable WebRender if not explicitly enabled,
+        # so that we don't have it accidentally getting enabled because the
+        # underlying hardware running the test becomes part of the WR-qualified
+        # set.
+        if self.enable_webrender:
+            cmd.extend(['--enable-webrender'])
 
         try_options, try_tests = self.try_args(self.test_suite)
         cmd.extend(try_options)
@@ -266,10 +292,9 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
         if self.test_suite:
             return [(self.test_suite, self.test_suite)]
         # per-test mode: determine test suites to run
-        all = [('mochitest', {'plain': 'mochitest',
-                              'chrome': 'mochitest-chrome',
-                              'plain-clipboard': 'mochitest-plain-clipboard',
-                              'plain-gpu': 'mochitest-plain-gpu'}),
+        all = [('mochitest', {'mochitest-plain': 'mochitest-plain',
+                              'mochitest-chrome': 'mochitest-chrome',
+                              'mochitest-plain-gpu': 'mochitest-plain-gpu'}),
                ('reftest', {'reftest': 'reftest', 'crashtest': 'crashtest'}),
                ('xpcshell', {'xpcshell': 'xpcshell'})]
         suites = []

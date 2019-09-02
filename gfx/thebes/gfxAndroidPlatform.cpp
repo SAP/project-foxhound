@@ -12,6 +12,7 @@
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 
 #include "gfx2DGlue.h"
 #include "gfxFT2FontList.h"
@@ -22,7 +23,6 @@
 #include "nsIScreenManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsUnicodeProperties.h"
-#include "gfxPrefs.h"
 #include "cairo.h"
 #include "VsyncSource.h"
 
@@ -93,7 +93,7 @@ gfxAndroidPlatform::gfxAndroidPlatform() {
   mOffscreenFormat = GetScreenDepth() == 16 ? SurfaceFormat::R5G6B5_UINT16
                                             : SurfaceFormat::X8R8G8B8_UINT32;
 
-  if (gfxPrefs::AndroidRGB16Force()) {
+  if (StaticPrefs::gfx_android_rgb16_force()) {
     mOffscreenFormat = SurfaceFormat::R5G6B5_UINT16;
   }
 }
@@ -356,7 +356,7 @@ class AndroidVsyncSource final : public VsyncSource {
   Display& GetGlobalDisplay() final { return GetDisplayInstance(); }
 
  private:
-  virtual ~AndroidVsyncSource() {}
+  virtual ~AndroidVsyncSource() = default;
 
   static Display& GetDisplayInstance() {
     static Display globalDisplay;

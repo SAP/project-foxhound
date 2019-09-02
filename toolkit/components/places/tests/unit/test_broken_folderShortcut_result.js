@@ -4,27 +4,32 @@
 add_task(async function test_brokenFolderShortcut() {
   let bookmarks = await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.unfiledGuid,
-    children: [{
-      url: "http://1.moz.org/",
-      title: "Bookmark 1",
-    }, {
-      url: "place:parent=1234",
-      title: "Shortcut 1",
-    }, {
-      url: "place:parent=-1",
-      title: "Shortcut 2",
-    }, {
-      url: "http://2.moz.org/",
-      title: "Bookmark 2",
-    }],
+    children: [
+      {
+        url: "http://1.moz.org/",
+        title: "Bookmark 1",
+      },
+      {
+        url: "place:parent=1234",
+        title: "Shortcut 1",
+      },
+      {
+        url: "place:parent=-1",
+        title: "Shortcut 2",
+      },
+      {
+        url: "http://2.moz.org/",
+        title: "Bookmark 2",
+      },
+    ],
   });
 
   // Add also a simple visit.
-  await PlacesTestUtils.addVisits(uri(("http://3.moz.org/")));
+  await PlacesTestUtils.addVisits(uri("http://3.moz.org/"));
 
   // Query containing a broken folder shortcuts among results.
   let query = PlacesUtils.history.getNewQuery();
-  query.setParents([PlacesUtils.bookmarks.unfiledGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.unfiledGuid]);
   let options = PlacesUtils.history.getNewQueryOptions();
   let root = PlacesUtils.history.executeQuery(query, options).root;
   root.containerOpen = true;
@@ -55,7 +60,7 @@ add_task(async function test_brokenFolderShortcut() {
 
   // Broken folder shortcut as root node.
   query = PlacesUtils.history.getNewQuery();
-  query.setParents([1234], 1);
+  query.setParents([1234]);
   options = PlacesUtils.history.getNewQueryOptions();
   root = PlacesUtils.history.executeQuery(query, options).root;
   root.containerOpen = true;
@@ -64,7 +69,7 @@ add_task(async function test_brokenFolderShortcut() {
 
   // Broken folder shortcut as root node with folder=-1.
   query = PlacesUtils.history.getNewQuery();
-  query.setParents([-1], 1);
+  query.setParents([-1]);
   options = PlacesUtils.history.getNewQueryOptions();
   root = PlacesUtils.history.executeQuery(query, options).root;
   root.containerOpen = true;

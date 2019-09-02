@@ -58,6 +58,7 @@ class ProfilerParent final : public PProfilerParent {
   static void ProfilerStopped();
   static void ProfilerPaused();
   static void ProfilerResumed();
+  static void ClearAllPages();
 
  private:
   friend class ProfilerParentTracker;
@@ -67,7 +68,7 @@ class ProfilerParent final : public PProfilerParent {
 
   void Init();
   void ActorDestroy(ActorDestroyReason aActorDestroyReason) override;
-  void DeallocPProfilerParent() override;
+  void ActorDealloc() override;
 
   RefPtr<ProfilerParent> mSelfRef;
   nsTArray<MozPromiseHolder<SingleProcessProfilePromise>>

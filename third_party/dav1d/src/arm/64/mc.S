@@ -27,7 +27,7 @@
  */
 
 #include "src/arm/asm.S"
-#include "src/arm/64/util.S"
+#include "util.S"
 
 .macro avg dst, t0, t1
         ld1             {\t0\().8h},   [x2],  16
@@ -235,8 +235,8 @@ bidir_fn mask
 
 
 // This has got the same signature as the put_8tap functions,
-// and assumes that x8 is set to (24-clz(w)).
-function put
+// and assumes that x8 is set to (clz(w)-24).
+function put_neon
         adr             x9,  L(put_tbl)
         ldrh            w8,  [x9, x8, lsl #1]
         sub             x9,  x9,  w8, uxtw
@@ -330,8 +330,8 @@ endfunc
 
 
 // This has got the same signature as the prep_8tap functions,
-// and assumes that x8 is set to (24-clz(w)), and x7 to w*2.
-function prep
+// and assumes that x8 is set to (clz(w)-24), and x7 to w*2.
+function prep_neon
         adr             x9,  L(prep_tbl)
         ldrh            w8,  [x9, x8, lsl #1]
         sub             x9,  x9,  w8, uxtw
@@ -703,7 +703,7 @@ endfunc
 function \op\()_8tap_\type\()_8bpc_neon, export=1
         mov             x8,  \type_h
         mov             x9,  \type_v
-        b               \op\()_8tap
+        b               \op\()_8tap_neon
 endfunc
 .endm
 
@@ -723,7 +723,7 @@ make_8tap_fn \type, sharp,          SHARP,   SHARP
 make_8tap_fn \type, sharp_regular,  SHARP,   REGULAR
 make_8tap_fn \type, sharp_smooth,   SHARP,   SMOOTH
 
-function \type\()_8tap
+function \type\()_8tap_neon
         mov             w10,  #0x4081  // (1 << 14) | (1 << 7) | (1 << 0)
         mul             \mx,  \mx, w10
         mul             \my,  \my, w10
@@ -741,7 +741,7 @@ function \type\()_8tap
         b.ne            L(\type\()_8tap_h)
         tst             \my, #(0x7f << 14)
         b.ne            L(\type\()_8tap_v)
-        b               \type
+        b               \type\()_neon
 
 L(\type\()_8tap_h):
         cmp             \w,  #4
@@ -1119,7 +1119,7 @@ L(\type\()_8tap_v):
         uxtl_b          v18, v19, v20, v21
         mul_mla_8_2     v1,  v2,  v24, v25, v26, v27, v16, v17, v18, v19, v20, v21
         shift_store_4   \type, \d_strd, v1, v2
-        b               48b
+        b.gt            48b
 0:
         ret
 
@@ -1151,7 +1151,7 @@ L(\type\()_8tap_v):
 0:
         ret
 
-880:    // 8x8, 8x16, 8x32 v
+880:    // 8x6, 8x8, 8x16, 8x32 v
 1680:   // 16x8, 16x16, ...
 320:    // 32x8, 32x16, ...
 640:
@@ -1183,12 +1183,17 @@ L(\type\()_8tap_v):
         mul_mla_8_1     v3,  v4,  v18, v19, v20, v21, v22, v23, v24, v25, v26
         shift_store_8   \type, \d_strd, v3, v4
         b.le            9f
-        subs            \h,  \h,  #4
-        load_8b         \sr2, \src, \s_strd, v27, v16, v17, v18
-        uxtl_b          v27, v16, v17, v18
+        subs            \h,  \h,  #2
+        load_8b         \sr2, \src, \s_strd, v27, v16
+        uxtl_b          v27, v16
         mul_mla_8_1     v1,  v2,  v20, v21, v22, v23, v24, v25, v26, v27, v16
+        shift_store_8   \type, \d_strd, v1, v2
+        b.le            9f
+        subs            \h,  \h,  #2
+        load_8b         \sr2, \src, \s_strd, v17, v18
+        uxtl_b          v17, v18
         mul_mla_8_1     v3,  v4,  v22, v23, v24, v25, v26, v27, v16, v17, v18
-        shift_store_8   \type, \d_strd, v1, v2, v3, v4
+        shift_store_8   \type, \d_strd, v3, v4
         b.le            9f
         subs            \h,  \h,  #4
         load_8b         \sr2, \src, \s_strd, v19, v20, v21, v22
@@ -1826,7 +1831,7 @@ function \type\()_bilin_8bpc_neon, export=1
         sub             w8,  w8,  #24
         cbnz            \mx, L(\type\()_bilin_h)
         cbnz            \my, L(\type\()_bilin_v)
-        b               \type
+        b               \type\()_neon
 
 L(\type\()_bilin_h):
         cbnz            \my, L(\type\()_bilin_hv)
@@ -2335,7 +2340,7 @@ filter_fn prep, x0, x7, x1, x2, w3, w4, w5, x5, w6, x6, x8, x9, 6
         add             \src, \src, \inc
 .endm
 
-function warp_filter_horz
+function warp_filter_horz_neon
         add             w12, w5,  #512
 
         ld1             {v16.8b, v17.8b}, [x2], x3
@@ -2431,24 +2436,24 @@ function warp_affine_8x8\t\()_8bpc_neon, export=1
         lsl             x1,  x1,  #1
 .endif
 
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v24.16b, v16.16b
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v25.16b, v16.16b
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v26.16b, v16.16b
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v27.16b, v16.16b
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v28.16b, v16.16b
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v29.16b, v16.16b
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v30.16b, v16.16b
 
 1:
         add             w14, w6,  #512
-        bl              warp_filter_horz
+        bl              warp_filter_horz_neon
         mov             v31.16b, v16.16b
 
         load_filter_row d0, w14, w9

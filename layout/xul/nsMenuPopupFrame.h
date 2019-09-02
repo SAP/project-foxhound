@@ -29,6 +29,7 @@
 class nsIWidget;
 
 namespace mozilla {
+class PresShell;
 namespace dom {
 class KeyboardEvent;
 }  // namespace dom
@@ -137,7 +138,7 @@ enum MenuPopupAnchorType {
 #define POPUPPOSITION_HFLIP(v) (v ^ 1)
 #define POPUPPOSITION_VFLIP(v) (v ^ 2)
 
-nsIFrame* NS_NewMenuPopupFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewMenuPopupFrame(mozilla::PresShell* aPresShell,
                                mozilla::ComputedStyle* aStyle);
 
 class nsView;
@@ -177,8 +178,10 @@ class nsMenuPopupFrame final : public nsBoxFrame,
 
   // nsMenuParent interface
   virtual nsMenuFrame* GetCurrentMenuItem() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD SetCurrentMenuItem(nsMenuFrame* aMenuItem) override;
   virtual void CurrentMenuIsBeingDestroyed() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD ChangeMenuItem(nsMenuFrame* aMenuItem, bool aSelectFirstItem,
                             bool aFromKey) override;
 
@@ -252,8 +255,9 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   virtual void UpdateWidgetProperties() override;
 
   // layout, position and display the popup as needed
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu,
-                   nsIFrame* aAnchor, bool aSizedToPopup);
+                   bool aSizedToPopup);
 
   nsView* GetRootViewForPopup(nsIFrame* aStartFrame);
 
@@ -345,7 +349,7 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   }
 #endif
 
-  void EnsureMenuItemIsVisible(nsMenuFrame* aMenuFrame);
+  MOZ_CAN_RUN_SCRIPT void EnsureMenuItemIsVisible(nsMenuFrame* aMenuFrame);
 
   void ChangeByPage(bool aIsUp);
 
@@ -543,6 +547,11 @@ class nsMenuPopupFrame final : public nsBoxFrame,
 
  public:
   bool ShouldFollowAnchor(nsRect& aRect);
+
+  // Returns parent menu widget for submenus that are in the same
+  // frame hierarchy, it's needed for Linux/Wayland which demands
+  // strict popup windows hierarchy.
+  nsIWidget* GetParentMenuWidget();
 
  protected:
   nsString mIncrementalString;  // for incremental typing navigation

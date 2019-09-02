@@ -26,8 +26,10 @@
 #include "vm/TaggedProto.h"
 
 #include "gc/Marking-inl.h"
+#include "gc/ObjectKind-inl.h"
+#include "vm/JSObject-inl.h"
+#include "vm/NativeObject-inl.h"
 #include "vm/TypeInference-inl.h"
-#include "vm/UnboxedObject-inl.h"
 
 using namespace js;
 
@@ -46,15 +48,16 @@ ObjectGroup::ObjectGroup(const Class* clasp, TaggedProto proto,
 }
 
 void ObjectGroup::finalize(FreeOp* fop) {
-  if (newScriptDontCheckGeneration()) {
-    newScriptDontCheckGeneration()->clear();
+  if (auto newScript = newScriptDontCheckGeneration()) {
+    newScript->clear();
+    fop->delete_(this, newScript, newScript->gcMallocBytes(),
+                 MemoryUse::ObjectGroupAddendum);
   }
-  fop->delete_(newScriptDontCheckGeneration());
-  fop->delete_(maybeUnboxedLayoutDontCheckGeneration());
   if (maybePreliminaryObjectsDontCheckGeneration()) {
     maybePreliminaryObjectsDontCheckGeneration()->clear();
   }
-  fop->delete_(maybePreliminaryObjectsDontCheckGeneration());
+  fop->delete_(this, maybePreliminaryObjectsDontCheckGeneration(),
+               MemoryUse::ObjectGroupAddendum);
 }
 
 void ObjectGroup::setProtoUnchecked(TaggedProto proto) {
@@ -74,16 +77,29 @@ size_t ObjectGroup::sizeOfExcludingThis(
   if (TypeNewScript* newScript = newScriptDontCheckGeneration()) {
     n += newScript->sizeOfIncludingThis(mallocSizeOf);
   }
-  if (UnboxedLayout* layout = maybeUnboxedLayoutDontCheckGeneration()) {
-    n += layout->sizeOfIncludingThis(mallocSizeOf);
-  }
   return n;
+}
+
+static inline size_t AddendumAllocSize(ObjectGroup::AddendumKind kind,
+                                       void* addendum) {
+  if (kind == ObjectGroup::Addendum_NewScript) {
+    auto newScript = static_cast<TypeNewScript*>(addendum);
+    return newScript->gcMallocBytes();
+  }
+  if (kind == ObjectGroup::Addendum_PreliminaryObjects) {
+    return sizeof(PreliminaryObjectArrayWithTemplate);
+  }
+  // Other addendum kinds point to GC memory tracked elsewhere.
+  return 0;
 }
 
 void ObjectGroup::setAddendum(AddendumKind kind, void* addendum,
                               bool writeBarrier /* = true */) {
   MOZ_ASSERT(!needsSweep());
   MOZ_ASSERT(kind <= (OBJECT_FLAG_ADDENDUM_MASK >> OBJECT_FLAG_ADDENDUM_SHIFT));
+
+  RemoveCellMemory(this, AddendumAllocSize(addendumKind(), addendum_),
+                   MemoryUse::ObjectGroupAddendum);
 
   if (writeBarrier) {
     // Manually trigger barriers if we are clearing new script or
@@ -107,6 +123,9 @@ void ObjectGroup::setAddendum(AddendumKind kind, void* addendum,
   flags_ &= ~OBJECT_FLAG_ADDENDUM_MASK;
   flags_ |= kind << OBJECT_FLAG_ADDENDUM_SHIFT;
   addendum_ = addendum;
+
+  AddCellMemory(this, AddendumAllocSize(kind, addendum),
+                MemoryUse::ObjectGroupAddendum);
 }
 
 /* static */
@@ -361,7 +380,7 @@ bool JSObject::setNewGroupUnknown(JSContext* cx, ObjectGroupRealm& realm,
  * (though there are only a few of these per realm).
  */
 struct ObjectGroupRealm::NewEntry {
-  ReadBarrieredObjectGroup group;
+  WeakHeapPtrObjectGroup group;
 
   // Note: This pointer is only used for equality and does not need a read
   // barrier.
@@ -389,6 +408,22 @@ struct ObjectGroupRealm::NewEntry {
       }
     }
   };
+
+  bool needsSweep() {
+    return IsAboutToBeFinalized(&group) ||
+           (associated && IsAboutToBeFinalizedUnbarriered(&associated));
+  }
+
+  bool operator==(const NewEntry& other) const {
+    return group == other.group && associated == other.associated;
+  }
+};
+
+namespace js {
+template <>
+struct MovableCellHasher<ObjectGroupRealm::NewEntry> {
+  using Key = ObjectGroupRealm::NewEntry;
+  using Lookup = ObjectGroupRealm::NewEntry::Lookup;
 
   static bool hasHash(const Lookup& l) {
     return MovableCellHasher<TaggedProto>::hasHash(l.proto) &&
@@ -421,37 +456,14 @@ struct ObjectGroupRealm::NewEntry {
     return MovableCellHasher<JSObject*>::match(key.associated,
                                                lookup.associated);
   }
-
-  static void rekey(NewEntry& k, const NewEntry& newKey) { k = newKey; }
-
-  bool needsSweep() {
-    return IsAboutToBeFinalized(&group) ||
-           (associated && IsAboutToBeFinalizedUnbarriered(&associated));
-  }
-
-  bool operator==(const NewEntry& other) const {
-    return group == other.group && associated == other.associated;
-  }
 };
-
-namespace mozilla {
-template <>
-struct FallibleHashMethods<ObjectGroupRealm::NewEntry> {
-  template <typename Lookup>
-  static bool hasHash(Lookup&& l) {
-    return ObjectGroupRealm::NewEntry::hasHash(std::forward<Lookup>(l));
-  }
-  template <typename Lookup>
-  static bool ensureHash(Lookup&& l) {
-    return ObjectGroupRealm::NewEntry::ensureHash(std::forward<Lookup>(l));
-  }
-};
-}  // namespace mozilla
+} // namespace js
 
 class ObjectGroupRealm::NewTable
-    : public JS::WeakCache<
-          js::GCHashSet<NewEntry, NewEntry, SystemAllocPolicy>> {
-  using Table = js::GCHashSet<NewEntry, NewEntry, SystemAllocPolicy>;
+    : public JS::WeakCache<js::GCHashSet<NewEntry, MovableCellHasher<NewEntry>,
+                                         SystemAllocPolicy>> {
+  using Table =
+      js::GCHashSet<NewEntry, MovableCellHasher<NewEntry>, SystemAllocPolicy>;
   using Base = JS::WeakCache<Table>;
 
  public:
@@ -567,8 +579,7 @@ ObjectGroup* ObjectGroup::defaultNewGroup(JSContext* cx, const Class* clasp,
   if (p) {
     ObjectGroup* group = p->group;
     MOZ_ASSERT_IF(clasp, group->clasp() == clasp);
-    MOZ_ASSERT_IF(!clasp, group->clasp() == &PlainObject::class_ ||
-                              group->clasp() == &UnboxedPlainObject::class_);
+    MOZ_ASSERT_IF(!clasp, group->clasp() == &PlainObject::class_);
     MOZ_ASSERT(group->proto() == proto);
     groups.defaultNewGroupCache.put(group, associated);
     return group;
@@ -730,6 +741,8 @@ inline const Class* GetClassForProtoKey(JSProtoKey key) {
     case JSProto_Float32Array:
     case JSProto_Float64Array:
     case JSProto_Uint8ClampedArray:
+    case JSProto_BigInt64Array:
+    case JSProto_BigUint64Array:
       return &TypedArrayObject::classes[key - JSProto_Int8Array];
 
     default:
@@ -1015,60 +1028,7 @@ bool js::CombinePlainObjectPropertyTypes(JSContext* cx, JSObject* newObj,
         }
       }
     }
-  } else if (newObj->is<UnboxedPlainObject>()) {
-    const UnboxedLayout& layout = newObj->as<UnboxedPlainObject>().layout();
-    const int32_t* traceList = layout.traceList();
-    if (!traceList) {
-      return true;
-    }
-
-    uint8_t* newData = newObj->as<UnboxedPlainObject>().data();
-    uint8_t* oldData = oldObj->as<UnboxedPlainObject>().data();
-
-    for (; *traceList != -1; traceList++) {
-    }
-    traceList++;
-    for (; *traceList != -1; traceList++) {
-      JSObject* newInnerObj =
-          *reinterpret_cast<JSObject**>(newData + *traceList);
-      JSObject* oldInnerObj =
-          *reinterpret_cast<JSObject**>(oldData + *traceList);
-
-      if (!newInnerObj || !oldInnerObj || SameGroup(oldInnerObj, newInnerObj)) {
-        continue;
-      }
-
-      if (!GiveObjectGroup(cx, newInnerObj, oldInnerObj)) {
-        return false;
-      }
-
-      if (SameGroup(oldInnerObj, newInnerObj)) {
-        continue;
-      }
-
-      if (!GiveObjectGroup(cx, oldInnerObj, newInnerObj)) {
-        return false;
-      }
-
-      if (SameGroup(oldInnerObj, newInnerObj)) {
-        for (size_t i = 1; i < ncompare; i++) {
-          if (compare[i].isObject() &&
-              SameGroup(&compare[i].toObject(), newObj)) {
-            uint8_t* otherData =
-                compare[i].toObject().as<UnboxedPlainObject>().data();
-            JSObject* otherInnerObj =
-                *reinterpret_cast<JSObject**>(otherData + *traceList);
-            if (otherInnerObj && !SameGroup(otherInnerObj, newInnerObj)) {
-              if (!GiveObjectGroup(cx, otherInnerObj, newInnerObj)) {
-                return false;
-              }
-            }
-          }
-        }
-      }
-    }
   }
-
   return true;
 }
 
@@ -1116,8 +1076,8 @@ struct ObjectGroupRealm::PlainObjectKey {
 };
 
 struct ObjectGroupRealm::PlainObjectEntry {
-  ReadBarrieredObjectGroup group;
-  ReadBarrieredShape shape;
+  WeakHeapPtrObjectGroup group;
+  WeakHeapPtrShape shape;
   TypeSet::Type* types;
 
   bool needsSweep(unsigned nproperties) {
@@ -1304,15 +1264,6 @@ JSObject* ObjectGroup::newPlainObject(JSContext* cx, IdValuePair* properties,
   mozilla::Maybe<AutoSweepObjectGroup> sweep;
   sweep.emplace(group);
 
-  // Watch for existing groups which now use an unboxed layout.
-  if (group->maybeUnboxedLayout(*sweep)) {
-    MOZ_ASSERT(group->maybeUnboxedLayout(*sweep)->properties().length() ==
-               nproperties);
-    sweep.reset();
-    return UnboxedPlainObject::createWithProperties(cx, group, newKind,
-                                                    properties);
-  }
-
   // Update property types according to the properties we are about to add.
   // Do this before we do anything which can GC, which might move or remove
   // this table entry.
@@ -1373,14 +1324,13 @@ JSObject* ObjectGroup::newPlainObject(JSContext* cx, IdValuePair* properties,
 // ObjectGroupRealm AllocationSiteTable
 /////////////////////////////////////////////////////////////////////
 
-struct ObjectGroupRealm::AllocationSiteKey
-    : public DefaultHasher<AllocationSiteKey> {
-  ReadBarrieredScript script;
+struct ObjectGroupRealm::AllocationSiteKey {
+  WeakHeapPtrScript script;
 
   uint32_t offset : 24;
   JSProtoKey kind : 8;
 
-  ReadBarrieredObject proto;
+  WeakHeapPtrObject proto;
 
   static const uint32_t OFFSET_LIMIT = (1 << 23);
 
@@ -1409,20 +1359,6 @@ struct ObjectGroupRealm::AllocationSiteKey
     proto = std::move(key.proto);
   }
 
-  static inline uint32_t hash(AllocationSiteKey key) {
-    return uint32_t(
-        size_t(key.script.unbarrieredGet()->offsetToPC(key.offset)) ^ key.kind ^
-        MovableCellHasher<JSObject*>::hash(key.proto.unbarrieredGet()));
-  }
-
-  static inline bool match(const AllocationSiteKey& a,
-                           const AllocationSiteKey& b) {
-    return DefaultHasher<JSScript*>::match(a.script.unbarrieredGet(),
-                                           b.script.unbarrieredGet()) &&
-           a.offset == b.offset && a.kind == b.kind &&
-           MovableCellHasher<JSObject*>::match(a.proto, b.proto);
-  }
-
   void trace(JSTracer* trc) {
     TraceRoot(trc, &script, "AllocationSiteKey script");
     TraceNullableRoot(trc, &proto, "AllocationSiteKey proto");
@@ -1439,12 +1375,47 @@ struct ObjectGroupRealm::AllocationSiteKey
   }
 };
 
+namespace js {
+template <>
+struct MovableCellHasher<ObjectGroupRealm::AllocationSiteKey> {
+  using Key = ObjectGroupRealm::AllocationSiteKey;
+  using Lookup = ObjectGroupRealm::AllocationSiteKey;
+
+  static bool hasHash(const Lookup& l) {
+    return MovableCellHasher<JSScript*>::hasHash(l.script.unbarrieredGet()) &&
+           MovableCellHasher<JSObject*>::hasHash(l.proto.unbarrieredGet());
+  }
+  static bool ensureHash(const Lookup& l) {
+    return MovableCellHasher<JSScript*>::ensureHash(
+               l.script.unbarrieredGet()) &&
+           MovableCellHasher<JSObject*>::ensureHash(l.proto.unbarrieredGet());
+  }
+  static inline HashNumber hash(const Key& key) {
+    HashNumber hash = mozilla::HashGeneric(key.offset, key.kind);
+    hash = mozilla::AddToHash(
+        hash, MovableCellHasher<JSScript*>::hash(key.script.unbarrieredGet()));
+    hash = mozilla::AddToHash(
+        hash, MovableCellHasher<JSObject*>::hash(key.proto.unbarrieredGet()));
+    return hash;
+  }
+
+  static inline bool match(const Key& a, const Lookup& b) {
+    return a.offset == b.offset && a.kind == b.kind &&
+           MovableCellHasher<JSScript*>::match(a.script.unbarrieredGet(),
+                                               b.script.unbarrieredGet()) &&
+           MovableCellHasher<JSObject*>::match(a.proto.unbarrieredGet(),
+                                               b.proto.unbarrieredGet());
+  }
+};
+} // namespace js
+
 class ObjectGroupRealm::AllocationSiteTable
-    : public JS::WeakCache<
-          js::GCHashMap<AllocationSiteKey, ReadBarrieredObjectGroup,
-                        AllocationSiteKey, SystemAllocPolicy>> {
-  using Table = js::GCHashMap<AllocationSiteKey, ReadBarrieredObjectGroup,
-                              AllocationSiteKey, SystemAllocPolicy>;
+    : public JS::WeakCache<js::GCHashMap<
+          AllocationSiteKey, WeakHeapPtrObjectGroup,
+          MovableCellHasher<AllocationSiteKey>, SystemAllocPolicy>> {
+  using Table =
+      js::GCHashMap<AllocationSiteKey, WeakHeapPtrObjectGroup,
+                    MovableCellHasher<AllocationSiteKey>, SystemAllocPolicy>;
   using Base = JS::WeakCache<Table>;
 
  public:
@@ -1577,13 +1548,6 @@ bool ObjectGroup::setAllocationSiteObjectGroup(JSContext* cx,
 
   if (singleton) {
     MOZ_ASSERT(obj->isSingleton());
-
-    /*
-     * Inference does not account for types of run-once initializer
-     * objects, as these may not be created until after the script
-     * has been analyzed.
-     */
-    TypeScript::Monitor(cx, script, pc, ObjectValue(*obj));
   } else {
     ObjectGroup* group = allocationSiteGroup(cx, script, pc, key);
     if (!group) {
@@ -1848,7 +1812,7 @@ void ObjectGroupRealm::sweep() {
     plainObjectTable->sweep();
   }
   if (stringSplitStringGroup) {
-    if (JS::GCPolicy<ReadBarrieredObjectGroup>::needsSweep(
+    if (JS::GCPolicy<WeakHeapPtrObjectGroup>::needsSweep(
             &stringSplitStringGroup)) {
       stringSplitStringGroup = nullptr;
     }

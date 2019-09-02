@@ -154,10 +154,35 @@ Schema definitions/validations that can be used for tests can be found in `syste
   "user_prefs": 7,
 
   // "pos" is the 0-based index to record the tile's position in the Pocket section.
-  "tiles": [{"id": 10000, "pos": 0}],
+  // "shim" is a base64 encoded shim attached to spocs, unique to the impression from the Ad server.
+  "tiles": [{"id": 10000, "pos": 0, "shim": "enuYa1j73z3RzxgTexHNxYPC/b,9JT6w5KB0CRKYEU+"}],
 
   // A 0-based index to record which tile in the "tiles" list that the user just interacted with.
   "click|block|pocket": 0
+}
+```
+
+# Example Discovery Stream `SPOCS Fill` log
+
+```js
+{
+  // both "client_id" and "session_id" are set to "n/a" in this ping.
+  "client_id": "n/a",
+  "session_id": "n/a",
+  "impression_id": "{005deed0-e3e4-4c02-a041-17405fd703f6}",
+  "addon_version": "20180710100040",
+  "locale": "en-US",
+  "version": "68",
+  "release_channel": "release",
+  "spoc_fills": [
+    {"id": 10000, displayed: 0, reason: "frequency_cap", full_recalc: 1},
+    {"id": 10001, displayed: 0, reason: "blocked_by_user", full_recalc: 1},
+    {"id": 10002, displayed: 0, reason: "below_min_score", full_recalc: 1},
+    {"id": 10003, displayed: 0, reason: "campaign_duplicate", full_recalc: 1},
+    {"id": 10004, displayed: 0, reason: "probability_selection", full_recalc: 0},
+    {"id": 10004, displayed: 0, reason: "out_of_position", full_recalc: 0},
+    {"id": 10005, displayed: 1, reason: "n/a", full_recalc: 0}
+  ]
 }
 ```
 
@@ -187,7 +212,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 | `search_vendor` | [Optional] the vendor of the search shortcut, one of ("google", "amazon", "wikipedia", "duckduckgo", "bing", etc.). This field only exists when `card_type = "search"` | :one:
 | `date` | [Auto populated by Onyx] The date in YYYY-MM-DD format. | :three:
 | `experiment_id` | [Optional] The unique identifier for a specific experiment. | :one:
-| `event_id` | [Required] An identifier shared by multiple performance pings that describe ane entire request flow. | :one:
+| `event_id` | [Required] An identifier shared by multiple performance pings that describe an entire request flow. | :one:
 | `event` | [Required] The type of event. Any user defined string ("click", "share", "delete", "more_items") | :one:
 | `highlight_type` | [Optional] Either ["bookmarks", "recommendation", "history"]. | :one:
 | `impression_id` | [Optional] The unique impression identifier for a specific client. | :one:
@@ -225,18 +250,20 @@ and losing focus. | :one:
 | `topsites_pinned` | [Optional] Number of topsites that are pinned. | :one:
 | `topsites_search_shortcuts` | [Optional] Number of search shortcut topsites. | :one:
 | `visibility_event_rcvd_ts` | [Optional][Server Counter][Server Alert for too many omissions] DOMHighResTimeStamp of when the page itself receives an event that document.visibilityState == visible. | :one:
-| `tiles` | [Required] A list of tile objects for the Pocket articles. Each tile object mush have a ID, and optionally a "pos" property to indicate the tile position | :one:
+| `tiles` | [Required] A list of tile objects for the Pocket articles. Each tile object mush have a ID, optionally a "pos" property to indicate the tile position, and optionally a "shim" property unique to the impression from the Ad server | :one:
 | `click` | [Optional] An integer to record the 0-based index when user clicks on a Pocket tile. | :one:
 | `block` | [Optional] An integer to record the 0-based index when user blocks a Pocket tile. | :one:
 | `pocket` | [Optional] An integer to record the 0-based index when user saves a Pocket tile to Pocket. | :one:
 | `user_prefs` | [Required] The encoded integer of user's preferences. | :one: & :four:
-| `is_prerendered` | [Required] A boolean to signify whether the page is prerendered or not | :one:
 | `is_preloaded` | [Required] A boolean to signify whether the page is preloaded or not | :one:
 | `icon_type` | [Optional] ("tippytop", "rich_icon", "screenshot_with_icon", "screenshot", "no_image") | :one:
 | `region` | [Optional] A string maps to pref "browser.search.region", which is essentially the two letter ISO 3166-1 country code populated by the Firefox search service. Note that: 1). it reports "OTHER" for those regions with smaller Firefox user base (less than 10000) so that users cannot be uniquely identified; 2). it reports "UNSET" if this pref is missing; 3). it reports "EMPTY" if the value of this pref is an empty string. | :one:
 | `profile_creation_date` | [Optional] An integer to record the age of the Firefox profile as the total number of days since the UNIX epoch. | :one:
 | `message_id` | [required] A string identifier of the message in Activity Stream Router. | :one:
 | `has_flow_params` | [required] One of [true, false]. A boolean identifier that indicates if Firefox Accounts flow parameters are set or unset. | :one:
+| `displayed` | [required] 1: a SPOC is displayed; 0: non-displayed | :one:
+| `reason` | [required] The reason if a SPOC is not displayed, "n/a" for the displayed, one of ("frequency_cap", "blocked_by_user", "campaign_duplicate", "probability_selection", "below_min_score", "out_of_position", "n/a") | :one:
+| `full_recalc` | [required] Is it a full SPOCS recalculation: 0: false; 1: true. Recalculation case: 1). fetch SPOCS from Pocket endpoint. Non-recalculation cases: 1). An impression updates the SPOCS; 2). Any action that triggers the `selectLayoutRender ` | :one:
 
 **Where:**
 

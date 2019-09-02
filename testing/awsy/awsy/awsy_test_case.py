@@ -42,6 +42,9 @@ class AwsyTestCase(MarionetteTestCase):
     def perf_checkpoints(self):
         raise NotImplementedError()
 
+    def perf_extra_opts(self):
+        return None
+
     def iterations(self):
         return self._iterations
 
@@ -60,6 +63,9 @@ class AwsyTestCase(MarionetteTestCase):
         self.logger = mozlog.structured.structuredlog.get_default_logger()
         self.marionette.set_context('chrome')
         self._resultsDir = self.testvars["resultsDir"]
+
+        self._binary = self.testvars['bin']
+        self._run_local = self.testvars.get('run_local', False)
 
         # Cleanup our files from previous runs.
         for patt in ('memory-report-*.json.gz',
@@ -89,7 +95,8 @@ class AwsyTestCase(MarionetteTestCase):
             self.logger.info("processing data in %s!" % self._resultsDir)
             perf_blob = process_perf_data.create_perf_data(
                             self._resultsDir, self.perf_suites(),
-                            self.perf_checkpoints())
+                            self.perf_checkpoints(),
+                            self.perf_extra_opts())
             self.logger.info("PERFHERDER_DATA: %s" % json.dumps(perf_blob))
 
             perf_file = os.path.join(self._resultsDir, "perfherder_data.json")
@@ -167,7 +174,7 @@ class AwsyTestCase(MarionetteTestCase):
         try:
             result = self.marionette.execute_async_script(
                 gc_script, script_timeout=180000)
-        except JavascriptException, e:
+        except JavascriptException as e:
             self.logger.error("GC JavaScript error: %s" % e)
         except ScriptTimeoutException:
             self.logger.error("GC timed out")
@@ -217,7 +224,7 @@ class AwsyTestCase(MarionetteTestCase):
                 checkpoint_script, script_timeout=60000)
             if finished:
                 checkpoint = checkpoint_path
-        except JavascriptException, e:
+        except JavascriptException as e:
             self.logger.error("Checkpoint JavaScript error: %s" % e)
         except ScriptTimeoutException:
             self.logger.error("Memory report timed out")
@@ -285,7 +292,7 @@ class AwsyTestCase(MarionetteTestCase):
                 for f in incomplete:
                     os.remove(os.path.join(tmpdir, f))
 
-        except JavascriptException, e:
+        except JavascriptException as e:
             self.logger.error("DMD JavaScript error: %s" % e)
         except ScriptTimeoutException:
             self.logger.error("DMD timed out")
@@ -302,7 +309,6 @@ class AwsyTestCase(MarionetteTestCase):
         """
         page_to_load = self.urls()[self._pages_loaded % len(self.urls())]
         tabs_loaded = len(self._tabs)
-        is_new_tab = False
         open_tab_script = r"""
             gBrowser.loadOneTab("about:blank", {
                 inBackground: false,
@@ -326,8 +332,6 @@ class AwsyTestCase(MarionetteTestCase):
             self._tabs.append(new_tabs[0])
             tabs_loaded += 1
 
-            is_new_tab = True
-
         tab_idx = self._pages_loaded % self._maxTabs
 
         tab = self._tabs[tab_idx]
@@ -345,16 +349,16 @@ class AwsyTestCase(MarionetteTestCase):
             self.marionette.navigate(page_to_load)
             self.logger.info("loaded!")
 
-        # On e10s the tab handle can change after actually loading content
-        if is_new_tab:
-            # First build a set up w/o the current tab
-            old_tabs = set(self._tabs)
-            old_tabs.remove(tab)
-            # Perform a set diff to get the (possibly) new handle
-            [new_tab] = set(self.marionette.window_handles) - old_tabs
-            # Update the tab list at the current index to preserve the tab
-            # ordering
-            self._tabs[tab_idx] = new_tab
+        # The tab handle can change after actually loading content
+        # First build a set up w/o the current tab
+        old_tabs = set(self._tabs)
+        old_tabs.remove(tab)
+        # Perform a set diff to get the (possibly) new handle
+        new_tabs = set(self.marionette.window_handles) - old_tabs
+        # Update the tab list at the current index to preserve the tab
+        # ordering
+        if new_tabs:
+            self._tabs[tab_idx] = list(new_tabs)[0]
 
         # give the page time to settle
         time.sleep(self._perTabPause)

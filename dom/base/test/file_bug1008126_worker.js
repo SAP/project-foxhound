@@ -16,11 +16,11 @@ var gData1 = "TEST_DATA_1:ABCDEFGHIJKLMNOPQRSTUVWXYZ" + gPadding;
 var gData2 = "TEST_DATA_2:1234567890" + gPadding;
 
 function ok(a, msg) {
-  postMessage({type: "status", status: !!a, msg: msg });
+  postMessage({ type: "status", status: !!a, msg: msg });
 }
 
 function is(a, b, msg) {
-  postMessage({type: "status", status: a === b, msg: msg });
+  postMessage({ type: "status", status: a === b, msg: msg });
 }
 
 function checkData(xhr, data, mapped, cb) {
@@ -43,7 +43,7 @@ self.onmessage = function onmessage(event) {
     return "jar:" + jar + "!/" + entry;
   }
 
-  var xhr = new XMLHttpRequest({mozAnon: true, mozSystem: true});
+  var xhr = new XMLHttpRequest({ mozAnon: true, mozSystem: true });
 
   function reset_event_hander() {
     xhr.onerror = function(e) {
@@ -55,39 +55,15 @@ self.onmessage = function onmessage(event) {
     xhr.onloadend = null;
   }
 
-  function test_chunked_arraybuffer() {
-    ok(true, "Test chunked arraybuffer");
-
-    var lastIndex = 0;
-    xhr.onprogress = function(event) {
-      if (xhr.response) {
-        var buf = new Uint8Array(xhr.response);
-        var allMatched = true;
-        // The content of data cycles from 0 to 9 (i.e. 01234567890123......).
-        for (var i = 0; i < buf.length; i++) {
-          if (String.fromCharCode(buf[i]) != lastIndex % 10) {
-            allMatched = false;
-            break;
-          }
-          lastIndex++;
-        }
-        ok(allMatched, "Data chunk is correct.  Loaded " +
-                        event.loaded + "/" + event.total + " bytes.");
-      }
-    };
-    xhr.onload = runTests;
-    xhr.open("GET", makeJarURL(gEntry3), true);
-    xhr.responseType = "moz-chunked-arraybuffer";
-    xhr.send();
-  }
-
   var readystatechangeCount = 0;
   var loadCount = 0;
   var loadendCount = 0;
 
   function checkEventCount(cb) {
-    ok(readystatechangeCount == 1 && loadCount == 1 && loadendCount == 1,
-       "Saw all expected events");
+    ok(
+      readystatechangeCount == 1 && loadCount == 1 && loadendCount == 1,
+      "Saw all expected events"
+    );
     cb();
   }
 
@@ -98,16 +74,16 @@ self.onmessage = function onmessage(event) {
     xhr.onreadystatechange = function() {
       if (xhr.readyState == xhr.DONE) {
         readystatechangeCount++;
-        checkData(xhr, gData2, false, function() {} );
+        checkData(xhr, gData2, false, function() {});
       }
     };
     xhr.onload = function() {
       loadCount++;
-      checkData(xhr, gData2, false, function() {} );
+      checkData(xhr, gData2, false, function() {});
     };
     xhr.onloadend = function() {
       loadendCount++;
-      checkData(xhr, gData2, false, function() {} );
+      checkData(xhr, gData2, false, function() {});
     };
     xhr.open("GET", makeJarURL(gEntry2), false);
     xhr.responseType = "arraybuffer";
@@ -152,17 +128,16 @@ self.onmessage = function onmessage(event) {
   }
 
   var tests = [
-    test_chunked_arraybuffer,
     test_multiple_events,
     test_sync_xhr_data1,
     test_sync_xhr_data2,
     test_async_xhr_data1,
-    test_async_xhr_data2
+    test_async_xhr_data2,
   ];
 
   function runTests() {
     if (!tests.length) {
-      postMessage({type: "finish" });
+      postMessage({ type: "finish" });
       return;
     }
 

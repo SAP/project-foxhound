@@ -11,15 +11,17 @@
 
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/ServoBindingTypes.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/ServoStyleConsts.h"  // Servo_AnimationValue_Dump
+#include "mozilla/DbgMacro.h"
 #include "nsStringFwd.h"
 #include "nsStringBuffer.h"
 #include "nsCoord.h"
 #include "nsColor.h"
 #include "nsCSSPropertyID.h"
 #include "nsCSSValue.h"
-#include "nsStyleCoord.h"
+#include "nsStyleConsts.h"
 #include "nsStyleTransformMatrix.h"
 
 class nsIFrame;
@@ -36,6 +38,10 @@ class StyleRule;
 namespace dom {
 class Element;
 }  // namespace dom
+
+namespace layers {
+class Animatable;
+}  // namespace layers
 
 enum class PseudoStyleType : uint8_t;
 struct PropertyStyleAnimationValuePair;
@@ -73,8 +79,11 @@ struct AnimationValue {
   // Currently only background-color is supported.
   nscolor GetColor(nscolor aForegroundColor) const;
 
-  // Return the transform list as a RefPtr.
-  already_AddRefed<const nsCSSValueSharedList> GetTransformList() const;
+  // Return a transform list for the transform property.
+  const mozilla::StyleTransform& GetTransformProperty() const;
+  const mozilla::StyleScale& GetScaleProperty() const;
+  const mozilla::StyleTranslate& GetTranslateProperty() const;
+  const mozilla::StyleRotate& GetRotateProperty() const;
 
   // Return the scale for mServo, which is calculated with reference to aFrame.
   mozilla::gfx::Size GetScaleValue(const nsIFrame* aFrame) const;
@@ -101,16 +110,24 @@ struct AnimationValue {
                                    const nsAString& aValue,
                                    dom::Element* aElement);
 
-  // Create an AnimationValue from an opacity value.
-  static AnimationValue Opacity(float aOpacity);
-  // Create an AnimationValue from a transform list.
-  static AnimationValue Transform(nsCSSValueSharedList& aList);
-
-  static already_AddRefed<nsCSSValue::Array> AppendTransformFunction(
-      nsCSSKeyword aTransformFunction, nsCSSValueList**& aListTail);
+  // Create an already_AddRefed<RawServoAnimationValue> from a
+  // layers::Animatable. Basically, this function should return AnimationValue,
+  // but it seems the caller, AnimationHelper, only needs
+  // RawServoAnimationValue, so we return its already_AddRefed<> to avoid
+  // adding/removing a redundant ref-count.
+  static already_AddRefed<RawServoAnimationValue> FromAnimatable(
+      nsCSSPropertyID aProperty, const layers::Animatable& aAnimatable);
 
   RefPtr<RawServoAnimationValue> mServo;
 };
+
+inline std::ostream& operator<<(std::ostream& aOut,
+                                const AnimationValue& aValue) {
+  MOZ_ASSERT(aValue.mServo);
+  nsString s;
+  Servo_AnimationValue_Dump(aValue.mServo, &s);
+  return aOut << s;
+}
 
 struct PropertyStyleAnimationValuePair {
   nsCSSPropertyID mProperty;

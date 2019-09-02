@@ -3,7 +3,7 @@
 <head>
   <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
   <title>Test for Cross Site XMLHttpRequest</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -148,7 +148,7 @@ function* runTest() {
       is(res.statusText, "", "wrong status text for " + allowOrigin);
       is(res.responseXML, null, "should have no XML for " + allowOrigin);
       is(res.events.join(","),
-         "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
+         "opening,rs1,sending,loadstart,rs4,error,loadend",
          "wrong events in test for " + allowOrigin);
       is(res.progressEvents, 0,
          "wrong events in test for " + allowOrigin);

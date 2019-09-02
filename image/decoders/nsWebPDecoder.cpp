@@ -30,9 +30,7 @@ nsWebPDecoder::nsWebPDecoder(RasterImage* aImage)
       mLength(0),
       mIteratorComplete(false),
       mNeedDemuxer(true),
-      mGotColorProfile(false),
-      mInProfile(nullptr),
-      mTransform(nullptr) {
+      mGotColorProfile(false) {
   MOZ_LOG(sWebPLog, LogLevel::Debug,
           ("[this=%p] nsWebPDecoder::nsWebPDecoder", this));
 }
@@ -43,13 +41,6 @@ nsWebPDecoder::~nsWebPDecoder() {
   if (mDecoder) {
     WebPIDelete(mDecoder);
     WebPFreeDecBuffer(&mBuffer);
-  }
-  if (mInProfile) {
-    // mTransform belongs to us only if mInProfile is non-null
-    if (mTransform) {
-      qcms_transform_release(mTransform);
-    }
-    qcms_profile_release(mInProfile);
   }
 }
 
@@ -231,16 +222,14 @@ nsresult nsWebPDecoder::CreateFrame(const nsIntRect& aFrameRect) {
 
   SurfacePipeFlags pipeFlags = SurfacePipeFlags();
 
-  if (ShouldBlendAnimation()) {
-    pipeFlags |= SurfacePipeFlags::BLEND_ANIMATION;
+  Maybe<AnimationParams> animParams;
+  if (!IsFirstFrameDecode()) {
+    animParams.emplace(aFrameRect, mTimeout, mCurrentFrame, mBlend, mDisposal);
   }
 
-  AnimationParams animParams{aFrameRect, mTimeout, mCurrentFrame, mBlend,
-                             mDisposal};
-
   Maybe<SurfacePipe> pipe = SurfacePipeFactory::CreateSurfacePipe(
-      this, Size(), OutputSize(), aFrameRect, mFormat, Some(animParams),
-      pipeFlags);
+      this, Size(), OutputSize(), aFrameRect, mFormat, animParams,
+      /*aTransform*/ nullptr, pipeFlags);
   if (!pipe) {
     MOZ_LOG(sWebPLog, LogLevel::Error,
             ("[this=%p] nsWebPDecoder::CreateFrame -- no pipe\n", this));
@@ -282,15 +271,15 @@ void nsWebPDecoder::ApplyColorProfile(const char* aProfile, size_t aLength) {
   }
 
   auto mode = gfxPlatform::GetCMSMode();
-  if (mode == eCMSMode_Off || (mode == eCMSMode_TaggedOnly && !aProfile)) {
+  if (mode == eCMSMode_Off || (mode == eCMSMode_TaggedOnly && !aProfile) ||
+      !gfxPlatform::GetCMSOutputProfile()) {
     return;
   }
 
-  if (!aProfile || !gfxPlatform::GetCMSOutputProfile()) {
+  if (!aProfile) {
     MOZ_LOG(sWebPLog, LogLevel::Debug,
-            ("[this=%p] nsWebPDecoder::ApplyColorProfile -- not tagged or no "
-             "output "
-             "profile , use sRGB transform\n",
+            ("[this=%p] nsWebPDecoder::ApplyColorProfile -- not tagged, use "
+             "sRGB transform\n",
              this));
     mTransform = gfxPlatform::GetCMSRGBATransform();
     return;
@@ -306,10 +295,10 @@ void nsWebPDecoder::ApplyColorProfile(const char* aProfile, size_t aLength) {
   }
 
   uint32_t profileSpace = qcms_profile_get_color_space(mInProfile);
-  if (profileSpace == icSigGrayData) {
+  if (profileSpace != icSigRgbData) {
     // WebP doesn't produce grayscale data, this must be corrupt.
     MOZ_LOG(sWebPLog, LogLevel::Error,
-            ("[this=%p] nsWebPDecoder::ApplyColorProfile -- ignoring grayscale "
+            ("[this=%p] nsWebPDecoder::ApplyColorProfile -- ignoring non-rgb "
              "color profile\n",
              this));
     return;

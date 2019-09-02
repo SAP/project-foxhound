@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+---
 loader: taskgraph.loader.transform:loader
 
 transforms:
@@ -12,7 +12,7 @@ transforms:
 job-defaults:
     name: bouncer-check
     description: bouncer check
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
+    worker-type: b-linux
     worker:
         max-run-time: 1200
         docker-image: {in-tree: "update-verify"}
@@ -42,7 +42,7 @@ jobs:
                         - releases/bouncer_firefox_beta.py
                     release:
                         - releases/bouncer_firefox_release.py
-                    esr60:
+                    esr.*:
                         - releases/bouncer_firefox_esr.py
                     default:
                         - releases/bouncer_firefox_beta.py
@@ -51,6 +51,7 @@ jobs:
                     mozilla-beta: LATEST_FIREFOX_RELEASED_DEVEL_VERSION
                     mozilla-release: LATEST_FIREFOX_VERSION
                     mozilla-esr60: FIREFOX_ESR
+                    mozilla-esr68: FIREFOX_ESR_NEXT
                     default: LATEST_FIREFOX_DEVEL_VERSION
             products-url: https://product-details.mozilla.org/1.0/firefox_versions.json
         treeherder:

@@ -36,7 +36,7 @@ class SVGFEComponentTransferElement : public SVGFEComponentTransferElementBase {
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
   virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
                                          nsAtom* aAttribute) const override;
-  virtual SVGString& GetResultImageName() override {
+  virtual SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
@@ -45,13 +45,13 @@ class SVGFEComponentTransferElement : public SVGFEComponentTransferElementBase {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedString> In1();
+  already_AddRefed<DOMSVGAnimatedString> In1();
 
  protected:
   virtual StringAttributesInfo GetStringInfo() override;
 
   enum { RESULT, IN1 };
-  SVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 };
 

@@ -211,8 +211,6 @@ where
     type Item = (&'a S, SheetRebuildKind);
 
     fn next(&mut self) -> Option<Self::Item> {
-        use std::mem;
-
         loop {
             let potential_sheet = self.iter.next()?;
 
@@ -470,7 +468,14 @@ where
             .fold(0, |s, (item, _)| s + item.len())
     }
 
+    /// Returns the count of stylesheets for a given origin.
+    #[inline]
+    pub fn sheet_count(&self, origin: Origin) -> usize {
+        self.collections.borrow_for_origin(&origin).len()
+    }
+
     /// Returns the `index`th stylesheet in the set for the given origin.
+    #[inline]
     pub fn get(&self, origin: Origin, index: usize) -> Option<&S> {
         self.collections.borrow_for_origin(&origin).get(index)
     }
@@ -541,7 +546,7 @@ where
     }
 }
 
-/// The set of stylesheets effective for a given XBL binding or Shadow Root.
+/// The set of stylesheets effective for a given Shadow Root.
 #[derive(MallocSizeOf)]
 pub struct AuthorStylesheetSet<S>
 where
@@ -585,6 +590,16 @@ where
     /// Whether the collection is empty.
     pub fn is_empty(&self) -> bool {
         self.collection.len() == 0
+    }
+
+    /// Returns the `index`th stylesheet in the collection of author styles if present.
+    pub fn get(&self, index: usize) -> Option<&S> {
+        self.collection.get(index)
+    }
+
+    /// Returns the number of author stylesheets.
+    pub fn len(&self) -> usize {
+        self.collection.len()
     }
 
     fn collection_for(

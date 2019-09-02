@@ -12,24 +12,33 @@ add_task(async function() {
 
   const { document, tab } = await openAboutDebugging();
 
-  mocks.createUSBRuntime(RUNTIME_DEVICE_ID, { deviceName: RUNTIME_DEVICE_NAME });
+  mocks.createUSBRuntime(RUNTIME_DEVICE_ID, {
+    deviceName: RUNTIME_DEVICE_NAME,
+  });
   mocks.emitUSBUpdate();
 
   info("Wait until the USB sidebar item appears");
   await waitUntil(() => findSidebarItemByText(RUNTIME_DEVICE_NAME, document));
   const sidebarItem = findSidebarItemByText(RUNTIME_DEVICE_NAME, document);
-  const connectButton = sidebarItem.querySelector(".js-connect-button");
+  const connectButton = sidebarItem.querySelector(".qa-connect-button");
   ok(connectButton, "Connect button is displayed for the USB runtime");
 
-  info("Click on the connect button and wait until the sidebar displays a link");
+  info(
+    "Click on the connect button and wait until the sidebar displays a link"
+  );
   connectButton.click();
-  await waitUntil(() => findSidebarItemLinkByText(RUNTIME_DEVICE_NAME, document));
+  await waitUntil(() =>
+    findSidebarItemLinkByText(RUNTIME_DEVICE_NAME, document)
+  );
 
   info("Click on the runtime link");
   const link = findSidebarItemLinkByText(RUNTIME_DEVICE_NAME, document);
   link.click();
-  is(document.location.hash, `#/runtime/${RUNTIME_DEVICE_ID}`,
-    "Redirection to runtime page");
+  is(
+    document.location.hash,
+    `#/runtime/${RUNTIME_DEVICE_ID}`,
+    "Redirection to runtime page"
+  );
 
   await removeTab(tab);
 });

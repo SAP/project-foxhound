@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+---
 loader: taskgraph.loader.transform:loader
 
 transforms:
@@ -15,15 +15,13 @@ job-defaults:
     description: Sends email to release-drivers telling release was started.
     run-on-projects: []
     shipping-phase: promote
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
+    worker-type: b-linux
     worker:
         docker-image: {in-tree: "debian9-base"}
         max-run-time: 600
     emails:
         by-project:
-            mozilla-beta: ["release-signoff@mozilla.org"]
-            mozilla-release: ["release-signoff@mozilla.org"]
-            mozilla-esr60: ["release-signoff@mozilla.org"]
+            mozilla-(beta|release|esr.*): ["release-signoff@mozilla.org"]
             try: ["{config[params][owner]}"]
             default: []
 

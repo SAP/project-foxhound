@@ -3,20 +3,21 @@
 <head>
   <meta charset="utf-8">
   <title>Test forms and logins without a username</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="pwmgr_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
 Login Manager test: forms and logins without a username.
 <script>
+gTestDependsOnDeprecatedLogin = true;
 runChecksAfterCommonInit(() => startTest());
 runInParent(() => {
   const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
   var nsLoginInfo = Components.Constructor("@mozilla.org/login-manager/loginInfo;1", Ci.nsILoginInfo);
 
-  // pwlogin1 uses a unique formSubmitURL, to check forms where no other logins
-  // will apply. pwlogin2 uses the normal formSubmitURL, so that we can test
+  // pwlogin1 uses a unique formActionOrigin, to check forms where no other logins
+  // will apply. pwlogin2 uses the normal formActionOrigin, so that we can test
   // forms with a mix of username and non-username logins that might apply.
   //
   // Note: pwlogin2 is deleted at the end of the test.

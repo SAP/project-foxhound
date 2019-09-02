@@ -6,7 +6,7 @@
 <head>
   <title>File Handle Test</title>
 
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 
   <script type="text/javascript">
@@ -45,7 +45,7 @@
     function dummyWorkerScript() {
       /* eslint-env worker */
       onmessage = function(event) {
-        throw ("Shouldn't be called!");
+        throw new Error("Shouldn't be called!");
       };
     }
 

@@ -8,6 +8,7 @@
 
 #include "js/Date.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "nsDOMTokenList.h"
 
@@ -19,19 +20,6 @@ const double DateTimeInputTypeBase::kMsPerDay = 24 * 60 * 60 * 1000;
 
 using namespace mozilla;
 using namespace mozilla::dom;
-
-/* static */
-bool DateTimeInputTypeBase::IsInputDateTimeEnabled() {
-  static bool sDateTimeEnabled = false;
-  static bool sDateTimePrefCached = false;
-  if (!sDateTimePrefCached) {
-    sDateTimePrefCached = true;
-    mozilla::Preferences::AddBoolVarCache(&sDateTimeEnabled,
-                                          "dom.forms.datetime", false);
-  }
-
-  return sDateTimeEnabled;
-}
 
 bool DateTimeInputTypeBase::IsMutable() const {
   return !mInputElement->IsDisabled() &&
@@ -136,20 +124,18 @@ nsresult DateTimeInputTypeBase::GetRangeOverflowMessage(nsAString& aMessage) {
   nsAutoString maxStr;
   mInputElement->GetAttr(kNameSpaceID_None, nsGkAtoms::max, maxStr);
 
-  const char16_t* params[] = {maxStr.get()};
   return nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationDateTimeRangeOverflow",
-      params, aMessage);
+      aMessage, nsContentUtils::eDOM_PROPERTIES,
+      "FormValidationDateTimeRangeOverflow", maxStr);
 }
 
 nsresult DateTimeInputTypeBase::GetRangeUnderflowMessage(nsAString& aMessage) {
   nsAutoString minStr;
   mInputElement->GetAttr(kNameSpaceID_None, nsGkAtoms::min, minStr);
 
-  const char16_t* params[] = {minStr.get()};
   return nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationDateTimeRangeUnderflow",
-      params, aMessage);
+      aMessage, nsContentUtils::eDOM_PROPERTIES,
+      "FormValidationDateTimeRangeUnderflow", minStr);
 }
 
 nsresult DateTimeInputTypeBase::MinMaxStepAttrChanged() {
@@ -189,7 +175,7 @@ bool DateTimeInputTypeBase::GetTimeFromMs(double aValue, uint16_t* aHours,
 // input type=date
 
 nsresult DateInputType::GetBadInputMessage(nsAString& aMessage) {
-  if (!IsInputDateTimeEnabled()) {
+  if (!StaticPrefs::dom_forms_datetime()) {
     return NS_ERROR_UNEXPECTED;
   }
 

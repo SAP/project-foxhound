@@ -32,7 +32,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Hal.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "prenv.h"
@@ -412,6 +412,7 @@ nsAppShell::nsAppShell()
     mozilla::widget::WebExecutorSupport::Init();
     nsWindow::InitNatives();
     mozilla::gl::AndroidSurfaceTexture::Init();
+    mozilla::WebAuthnTokenManager::Init();
 
     if (jni::IsFennec()) {
       BrowserLocaleManagerSupport::Init();
@@ -616,7 +617,7 @@ nsAppShell::Observe(nsISupports* aSubject, const char* aTopic,
     }
 
   } else if (!strcmp(aTopic, "content-document-global-created")) {
-    // Associate the PuppetWidget of the newly-created TabChild with a
+    // Associate the PuppetWidget of the newly-created BrowserChild with a
     // GeckoEditableChild instance.
     MOZ_ASSERT(!XRE_IsParentProcess());
 
@@ -626,14 +627,15 @@ nsAppShell::Observe(nsISupports* aSubject, const char* aTopic,
         nsPIDOMWindowOuter::From(domWindow));
     NS_ENSURE_TRUE(domWidget, NS_OK);
 
-    widget::GeckoEditableSupport::SetOnTabChild(domWidget->GetOwningTabChild());
+    widget::GeckoEditableSupport::SetOnBrowserChild(
+        domWidget->GetOwningBrowserChild());
 
   } else if (!strcmp(aTopic, "geckoview-content-global-transferred")) {
     // We're transferring to a new GeckoEditableParent, so notify the
     // existing GeckoEditableChild instance associated with the docshell.
     nsCOMPtr<nsIDocShell> docShell = do_QueryInterface(aSubject);
-    widget::GeckoEditableSupport::SetOnTabChild(
-        dom::TabChild::GetFrom(docShell));
+    widget::GeckoEditableSupport::SetOnBrowserChild(
+        dom::BrowserChild::GetFrom(docShell));
   }
 
   if (removeObserver) {

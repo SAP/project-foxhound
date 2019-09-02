@@ -9,12 +9,13 @@
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 
 #include "frontend/BytecodeEmitter.h"  // BytecodeEmitter
+#include "vm/BytecodeUtil.h"           // SET_CODE_OFFSET
 #include "vm/Opcodes.h"                // JSOP_*
 
 using namespace js;
 using namespace js::frontend;
 
-bool LabelEmitter::emitLabel(JSAtom* name) {
+bool LabelEmitter::emitLabel(HandleAtom name) {
   MOZ_ASSERT(state_ == State::Start);
 
   // Emit a JSOP_LABEL instruction. The operand is the offset to the statement
@@ -27,7 +28,7 @@ bool LabelEmitter::emitLabel(JSAtom* name) {
     return false;
   }
 
-  controlInfo_.emplace(bce_, name, bce_->offset());
+  controlInfo_.emplace(bce_, name, bce_->bytecodeSection().offset());
 
 #ifdef DEBUG
   state_ = State::Label;
@@ -39,10 +40,11 @@ bool LabelEmitter::emitEnd() {
   MOZ_ASSERT(state_ == State::Label);
 
   // Patch the JSOP_LABEL offset.
-  jsbytecode* labelpc = bce_->code(top_);
-  int32_t offset = bce_->lastNonJumpTargetOffset() - top_;
+  jsbytecode* labelpc = bce_->bytecodeSection().code(top_);
+  BytecodeOffsetDiff offset =
+      bce_->bytecodeSection().lastNonJumpTargetOffset() - top_;
   MOZ_ASSERT(*labelpc == JSOP_LABEL);
-  SET_CODE_OFFSET(labelpc, offset);
+  SET_CODE_OFFSET(labelpc, offset.value());
 
   // Patch the break/continue to this label.
   if (!controlInfo_->patchBreaks(bce_)) {

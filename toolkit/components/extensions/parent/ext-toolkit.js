@@ -6,18 +6,24 @@
             getContainerForCookieStoreId,
             isValidCookieStoreId, isContainerCookieStoreId,
             EventManager, URL */
-/* global getCookieStoreIdForTab:false, getCookieStoreIdForContainer:false,
+/* global getCookieStoreIdForTab:false, getCookieStoreIdForOriginAttributes:false,
+          getCookieStoreIdForContainer:false,
           getContainerForCookieStoreId: false,
           isValidCookieStoreId:false, isContainerCookieStoreId:false,
           isDefaultCookieStoreId: false, isPrivateCookieStoreId:false,
           EventManager: false */
 
-ChromeUtils.defineModuleGetter(this, "ContextualIdentityService",
-                               "resource://gre/modules/ContextualIdentityService.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "ContextualIdentityService",
+  "resource://gre/modules/ContextualIdentityService.jsm"
+);
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
-var {ExtensionCommon} = ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
+var { ExtensionCommon } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionCommon.jsm"
+);
 
 global.EventEmitter = ExtensionCommon.EventEmitter;
 global.EventManager = ExtensionCommon.EventManager;
@@ -35,6 +41,18 @@ global.getCookieStoreIdForTab = function(data, tab) {
 
   if (tab.userContextId) {
     return getCookieStoreIdForContainer(tab.userContextId);
+  }
+
+  return DEFAULT_STORE;
+};
+
+global.getCookieStoreIdForOriginAttributes = function(originAttributes) {
+  if (originAttributes.privateBrowsingId) {
+    return PRIVATE_STORE;
+  }
+
+  if (originAttributes.userContextId) {
+    return getCookieStoreIdForContainer(originAttributes.userContextId);
   }
 
   return DEFAULT_STORE;
@@ -70,7 +88,9 @@ global.getContainerForCookieStoreId = function(storeId) {
 };
 
 global.isValidCookieStoreId = function(storeId) {
-  return isDefaultCookieStoreId(storeId) ||
-         isPrivateCookieStoreId(storeId) ||
-         isContainerCookieStoreId(storeId);
+  return (
+    isDefaultCookieStoreId(storeId) ||
+    isPrivateCookieStoreId(storeId) ||
+    isContainerCookieStoreId(storeId)
+  );
 };

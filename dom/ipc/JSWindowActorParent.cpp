@@ -12,110 +12,116 @@
 namespace mozilla {
 namespace dom {
 
+JSWindowActorParent::~JSWindowActorParent() { MOZ_ASSERT(!mManager); }
+
+nsIGlobalObject* JSWindowActorParent::GetParentObject() const {
+  return xpc::NativeGlobal(xpc::PrivilegedJunkScope());
+}
+
 JSObject* JSWindowActorParent::WrapObject(JSContext* aCx,
                                           JS::Handle<JSObject*> aGivenProto) {
   return JSWindowActorParent_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-WindowGlobalParent* JSWindowActorParent::Manager() const { return mManager; }
+WindowGlobalParent* JSWindowActorParent::GetManager() const { return mManager; }
 
 void JSWindowActorParent::Init(const nsAString& aName,
                                WindowGlobalParent* aManager) {
   MOZ_ASSERT(!mManager, "Cannot Init() a JSWindowActorParent twice!");
-  mName = aName;
+  SetName(aName);
   mManager = aManager;
-}
-
-nsISupports* JSWindowActorParent::GetParentObject() const {
-  return xpc::NativeGlobal(xpc::PrivilegedJunkScope());
 }
 
 namespace {
 
 class AsyncMessageToChild : public Runnable {
  public:
-  AsyncMessageToChild(const nsAString& aActorName,
-                      const nsAString& aMessageName,
+  AsyncMessageToChild(const JSWindowActorMessageMeta& aMetadata,
                       ipc::StructuredCloneData&& aData,
-                      WindowGlobalChild* aChild)
+                      WindowGlobalParent* aManager)
       : mozilla::Runnable("WindowGlobalChild::HandleAsyncMessage"),
-        mActorName(aActorName),
-        mMessageName(aMessageName),
+        mMetadata(aMetadata),
         mData(std::move(aData)),
-        mChild(aChild) {}
+        mManager(aManager) {}
 
   NS_IMETHOD Run() override {
     MOZ_ASSERT(NS_IsMainThread(), "Should be called on the main thread.");
-    mChild->HandleAsyncMessage(mActorName, mMessageName, mData);
+    RefPtr<WindowGlobalChild> child = mManager->GetChildActor();
+    if (child) {
+      child->ReceiveRawMessage(mMetadata, std::move(mData));
+    }
     return NS_OK;
   }
 
  private:
-  nsString mActorName;
-  nsString mMessageName;
+  JSWindowActorMessageMeta mMetadata;
   ipc::StructuredCloneData mData;
-  RefPtr<WindowGlobalChild> mChild;
+  RefPtr<WindowGlobalParent> mManager;
 };
 
 }  // anonymous namespace
 
-void JSWindowActorParent::SendAsyncMessage(JSContext* aCx,
-                                           const nsAString& aMessageName,
-                                           JS::Handle<JS::Value> aObj,
-                                           JS::Handle<JS::Value> aTransfers,
-                                           ErrorResult& aRv) {
-  // If we've closed our channel already, just raise a warning.
-  if (NS_WARN_IF(mManager->IsClosed())) {
+void JSWindowActorParent::SendRawMessage(const JSWindowActorMessageMeta& aMeta,
+                                         ipc::StructuredCloneData&& aData,
+                                         ErrorResult& aRv) {
+  if (NS_WARN_IF(!mCanSend || !mManager || mManager->IsClosed())) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
 
-  // Serialize our object out to a StructuredCloneData.
-  ipc::StructuredCloneData data;
-  if (!aObj.isUndefined() && !nsFrameMessageManager::GetParamsForMessage(
-                                 aCx, aObj, aTransfers, data)) {
-    aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
-    return;
-  }
-
-  // If we're an in-process, asynchronously fire off the callback for in-process
-  // loads.
   if (mManager->IsInProcess()) {
-    RefPtr<WindowGlobalChild> child = mManager->GetChildActor();
-    RefPtr<AsyncMessageToChild> ev =
-        new AsyncMessageToChild(mName, aMessageName, std::move(data), child);
-    DebugOnly<nsresult> rv = NS_DispatchToMainThread(ev);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                         "JS Window Actor AsyncMessageToChild dispatch failed");
+    nsCOMPtr<nsIRunnable> runnable =
+        new AsyncMessageToChild(aMeta, std::move(aData), mManager);
+    NS_DispatchToMainThread(runnable.forget());
     return;
   }
 
-  // If we're a cross-process, send the async message over the corresponding
-  // actor.
+  // Cross-process case - send data over WindowGlobalParent to other side.
   ClonedMessageData msgData;
-  RefPtr<TabParent> tabParent = mManager->GetTabParent();
-  ContentParent* cp = tabParent->Manager();
-  if (!data.BuildClonedMessageDataForParent(cp, msgData)) {
+  RefPtr<BrowserParent> browserParent = mManager->GetBrowserParent();
+  ContentParent* cp = browserParent->Manager();
+  if (NS_WARN_IF(!aData.BuildClonedMessageDataForParent(cp, msgData))) {
     aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
     return;
   }
 
-  if (!mManager->SendAsyncMessage(mName, PromiseFlatString(aMessageName),
-                                  msgData)) {
+  if (NS_WARN_IF(!mManager->SendRawMessage(aMeta, msgData))) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return;
   }
 }
 
+CanonicalBrowsingContext* JSWindowActorParent::GetBrowsingContext(
+    ErrorResult& aRv) {
+  if (!mManager) {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return nullptr;
+  }
+
+  return mManager->BrowsingContext();
+}
+
+void JSWindowActorParent::StartDestroy() {
+  JSWindowActor::StartDestroy();
+  mCanSend = false;
+}
+
+void JSWindowActorParent::AfterDestroy() {
+  JSWindowActor::AfterDestroy();
+  mManager = nullptr;
+}
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(JSWindowActorParent, JSWindowActor, mManager)
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(JSWindowActorParent,
+                                               JSWindowActor)
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(JSWindowActorParent)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
+NS_INTERFACE_MAP_END_INHERITING(JSWindowActor)
 
-NS_IMPL_CYCLE_COLLECTING_ADDREF(JSWindowActorParent)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(JSWindowActorParent)
-
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(JSWindowActorParent, mManager)
+NS_IMPL_ADDREF_INHERITED(JSWindowActorParent, JSWindowActor)
+NS_IMPL_RELEASE_INHERITED(JSWindowActorParent, JSWindowActor)
 
 }  // namespace dom
 }  // namespace mozilla

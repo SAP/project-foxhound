@@ -94,10 +94,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   void WillHandleEvent(EventChainPostVisitor& aVisitor) override;
   virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;
@@ -522,6 +520,17 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    */
   nsresult GetActionURL(nsIURI** aActionURL, Element* aOriginatingElement);
 
+  // Returns a number for this form that is unique within its owner document.
+  // This is used by nsContentUtils::GenerateStateKey to identify form controls
+  // that are inserted into the document by the parser.
+  int32_t GetFormNumberForStateKey();
+
+  /**
+   * Called when we have been cloned and adopted, and the information of the
+   * node has been changed.
+   */
+  void NodeInfoChanged(Document* aOldDoc) override;
+
  protected:
   //
   // Data members
@@ -582,6 +591,9 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    */
   int32_t mInvalidElementsCount;
 
+  // See GetFormNumberForStateKey.
+  int32_t mFormNumber;
+
   /** Whether we are currently processing a submit event or not */
   bool mGeneratingSubmit;
   /** Whether we are currently processing a reset event or not */
@@ -594,8 +606,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   bool mNotifiedObservers;
   /** If we notified the listeners early, what was the result? */
   bool mNotifiedObserversResult;
-  /** Keep track of whether a submission was user-initiated or not */
-  bool mSubmitInitiatedFromUserInput;
   /**
    * Whether the submission of this form has been ever prevented because of
    * being invalid.

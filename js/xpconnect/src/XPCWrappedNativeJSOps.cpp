@@ -43,7 +43,7 @@ static bool ToStringGuts(XPCCallContext& ccx) {
   XPCWrappedNative* wrapper = ccx.GetWrapper();
 
   if (wrapper) {
-    sz.reset(wrapper->ToString(ccx.GetTearOff()));
+    sz.reset(wrapper->ToString(ccx, ccx.GetTearOff()));
   } else {
     sz = JS_smprintf("[xpconnect wrapped native prototype]");
   }
@@ -110,7 +110,7 @@ static bool XPC_WN_Shared_toPrimitive(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   if (hint == JSTYPE_NUMBER) {
-    args.rval().set(JS_GetNaNValue(cx));
+    args.rval().set(NaNValue());
     return true;
   }
 
@@ -349,12 +349,13 @@ static bool DefinePropertyIfFound(
           break;
         }
 
-        iface2 = XPCNativeInterface::GetNewOrUsed(name.get());
+        iface2 = XPCNativeInterface::GetNewOrUsed(ccx, name.get());
         if (!iface2) {
           break;
         }
 
-        to = wrapperToReflectInterfaceNames->FindTearOff(iface2, true, &rv);
+        to =
+            wrapperToReflectInterfaceNames->FindTearOff(ccx, iface2, true, &rv);
         if (!to) {
           break;
         }
@@ -421,7 +422,7 @@ static bool DefinePropertyIfFound(
   if (!member) {
     if (wrapperToReflectInterfaceNames) {
       XPCWrappedNativeTearOff* to =
-          wrapperToReflectInterfaceNames->FindTearOff(iface, true);
+          wrapperToReflectInterfaceNames->FindTearOff(ccx, iface, true);
 
       if (!to) {
         return false;
@@ -849,7 +850,8 @@ bool XPC_WN_Helper_Enumerate(JSContext* cx, HandleObject obj) {
 /***************************************************************************/
 
 bool XPC_WN_NewEnumerate(JSContext* cx, HandleObject obj,
-                         AutoIdVector& properties, bool enumerableOnly) {
+                         MutableHandleIdVector properties,
+                         bool enumerableOnly) {
   XPCCallContext ccx(cx, obj);
   XPCWrappedNative* wrapper = ccx.GetWrapper();
   THROW_AND_RETURN_IF_BAD_WRAPPER(cx, wrapper);

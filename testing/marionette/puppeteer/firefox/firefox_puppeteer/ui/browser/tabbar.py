@@ -36,7 +36,7 @@ class TabBar(UIBaseLib):
 
         :returns: Reference to the new tab button.
         """
-        return self.toolbar.find_element(By.ANON_ATTRIBUTE, {'anonid': 'tabs-newtab-button'})
+        return self.toolbar.find_element(By.CLASS_NAME, 'tabs-newtab-button')
 
     @property
     def tabs(self):
@@ -233,7 +233,7 @@ class Tab(UIBaseLib):
 
         :returns: Reference to the tab close button.
         """
-        return self.tab_element.find_element(By.ANON_ATTRIBUTE, {'anonid': 'close-button'})
+        return self.tab_element.find_element(By.CSS_SELECTOR, '.tab-close-button')
 
     @property
     def tab_element(self):

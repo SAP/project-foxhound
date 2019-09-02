@@ -299,7 +299,8 @@ class gfxGDIFontList : public gfxPlatformFontList {
 
   gfxFontFamily* CreateFontFamily(const nsACString& aName) const override;
 
-  bool FindAndAddFamilies(const nsACString& aFamily,
+  bool FindAndAddFamilies(mozilla::StyleGenericFontFamily aGeneric,
+                          const nsACString& aFamily,
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
@@ -323,8 +324,7 @@ class gfxGDIFontList : public gfxPlatformFontList {
                                       FontListSizes* aSizes) const;
 
  protected:
-  virtual gfxFontFamily* GetDefaultFontForPlatform(
-      const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
 
  private:
   friend class gfxWindowsPlatform;

@@ -28,6 +28,7 @@
 
 #include "js/StructuredClone.h"
 
+#include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/FloatingPoint.h"
@@ -46,6 +47,7 @@
 #include "js/ArrayBuffer.h"  // JS::{ArrayBufferHasData,DetachArrayBuffer,IsArrayBufferObject,New{,Mapped}ArrayBufferWithContents,ReleaseMappedArrayBufferContents}
 #include "js/Date.h"
 #include "js/GCHashTable.h"
+#include "js/RegExpFlags.h"        // JS::RegExpFlag, JS::RegExpFlags
 #include "js/SharedArrayBuffer.h"  // JS::IsSharedArrayBufferObject
 #include "js/Wrapper.h"
 #include "vm/BigIntType.h"
@@ -64,6 +66,10 @@
 using namespace js;
 
 using JS::CanonicalizeNaN;
+using JS::RegExpFlag;
+using JS::RegExpFlags;
+using JS::RootedValueVector;
+using mozilla::AssertedCast;
 using mozilla::BitwiseCast;
 using mozilla::NativeEndian;
 using mozilla::NumbersAreIdentical;
@@ -129,8 +135,8 @@ enum StructuredDataType : uint32_t {
   SCTAG_TYPED_ARRAY_V1_FLOAT64 = SCTAG_TYPED_ARRAY_V1_MIN + Scalar::Float64,
   SCTAG_TYPED_ARRAY_V1_UINT8_CLAMPED =
       SCTAG_TYPED_ARRAY_V1_MIN + Scalar::Uint8Clamped,
-  SCTAG_TYPED_ARRAY_V1_MAX =
-      SCTAG_TYPED_ARRAY_V1_MIN + Scalar::MaxTypedArrayViewType - 1,
+  // BigInt64 and BigUint64 are not supported in the v1 format.
+  SCTAG_TYPED_ARRAY_V1_MAX = SCTAG_TYPED_ARRAY_V1_UINT8_CLAMPED,
 
   // Define a separate range of numbers for Transferable-only tags, since
   // they are not used for persistent clone buffers and therefore do not
@@ -404,7 +410,6 @@ struct JSStructuredCloneReader {
 
   BigInt* readBigInt(uint32_t data);
 
-  bool checkDouble(double d);
   MOZ_MUST_USE bool readTypedArray(uint32_t arrayType, uint32_t nelems,
                                    MutableHandleValue vp, bool v1Read = false);
   MOZ_MUST_USE bool readDataView(uint32_t byteLength, MutableHandleValue vp);
@@ -426,7 +431,7 @@ struct JSStructuredCloneReader {
   JS::StructuredCloneScope allowedScope;
 
   // Stack of objects with properties remaining to be read.
-  AutoValueVector objs;
+  RootedValueVector objs;
 
   // Array of all objects read during this deserialization, for resolving
   // backreferences.
@@ -439,7 +444,7 @@ struct JSStructuredCloneReader {
   //
   // The values in this vector are objects, except it can temporarily have
   // one `undefined` placeholder value (the readTypedArray hack).
-  AutoValueVector allObjs;
+  RootedValueVector allObjs;
 
   // The user defined callbacks that will be used for cloning.
   const JSStructuredCloneCallbacks* callbacks;
@@ -520,19 +525,19 @@ struct JSStructuredCloneWriter {
   //
   // NB: These can span multiple compartments, so the compartment must be
   // entered before any manipulation is performed.
-  AutoValueVector objs;
+  RootedValueVector objs;
 
   // counts[i] is the number of entries of objs[i] remaining to be written.
   // counts.length() == objs.length() and sum(counts) == entries.length().
   Vector<size_t> counts;
 
   // For JSObject: Property IDs as value
-  AutoIdVector objectEntries;
+  RootedIdVector objectEntries;
 
   // For Map: Key followed by value
   // For Set: Key
   // For SavedFrame: parent SavedFrame
-  AutoValueVector otherEntries;
+  RootedValueVector otherEntries;
 
   // The "memory" list described in the HTML5 internal structured cloning
   // algorithm.  memory is a superset of objs; items are never removed from
@@ -707,14 +712,11 @@ void SCInput::getPair(uint64_t data, uint32_t* tagp, uint32_t* datap) {
 }
 
 bool SCInput::readDouble(double* p) {
-  union {
-    uint64_t u;
-    double d;
-  } pun;
-  if (!read(&pun.u)) {
+  uint64_t u;
+  if (!read(&u)) {
     return false;
   }
-  *p = CanonicalizeNaN(pun.d);
+  *p = CanonicalizeNaN(mozilla::BitwiseCast<double>(u));
   return true;
 }
 
@@ -1333,8 +1335,8 @@ bool JSStructuredCloneWriter::startObject(HandleObject obj, bool* backref) {
 }
 
 static bool TryAppendNativeProperties(JSContext* cx, HandleObject obj,
-                                      AutoIdVector& entries, size_t* properties,
-                                      bool* optimized) {
+                                      MutableHandleIdVector entries,
+                                      size_t* properties, bool* optimized) {
   *optimized = false;
 
   if (!obj->isNative()) {
@@ -1389,7 +1391,7 @@ static bool TryAppendNativeProperties(JSContext* cx, HandleObject obj,
 bool JSStructuredCloneWriter::traverseObject(HandleObject obj, ESClass cls) {
   size_t count;
   bool optimized = false;
-  if (!TryAppendNativeProperties(context(), obj, objectEntries, &count,
+  if (!TryAppendNativeProperties(context(), obj, &objectEntries, &count,
                                  &optimized)) {
     return false;
   }
@@ -1397,7 +1399,7 @@ bool JSStructuredCloneWriter::traverseObject(HandleObject obj, ESClass cls) {
   if (!optimized) {
     // Get enumerable property ids and put them in reverse order so that they
     // will come off the stack in forward order.
-    AutoIdVector properties(context());
+    RootedIdVector properties(context());
     if (!GetPropertyKeys(context(), obj, JSITER_OWNONLY, &properties)) {
       return false;
     }
@@ -1677,7 +1679,7 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
         if (!re) {
           return false;
         }
-        return out.writePair(SCTAG_REGEXP_OBJECT, re->getFlags()) &&
+        return out.writePair(SCTAG_REGEXP_OBJECT, re->getFlags().value()) &&
                writeString(SCTAG_STRING, re->getSource());
       }
       case ESClass::ArrayBuffer: {
@@ -2010,15 +2012,6 @@ bool JSStructuredCloneWriter::write(HandleValue v) {
   return transferOwnership();
 }
 
-bool JSStructuredCloneReader::checkDouble(double d) {
-  if (!JS::IsCanonicalized(d)) {
-    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
-                              JSMSG_SC_BAD_SERIALIZED_DATA, "unrecognized NaN");
-    return false;
-  }
-  return true;
-}
-
 template <typename CharT>
 static UniquePtr<CharT[], JS::FreePolicy> AllocateChars(JSContext* cx,
                                                         size_t len) {
@@ -2093,7 +2086,7 @@ bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
                                              uint32_t nelems,
                                              MutableHandleValue vp,
                                              bool v1Read) {
-  if (arrayType > Scalar::Uint8Clamped) {
+  if (arrayType > (v1Read ? Scalar::Uint8Clamped : Scalar::BigUint64)) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA,
                               "unhandled typed array element type");
@@ -2163,6 +2156,14 @@ bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
     case Scalar::Uint8Clamped:
       obj = JS_NewUint8ClampedArrayWithBuffer(context(), buffer, byteOffset,
                                               nelems);
+      break;
+    case Scalar::BigInt64:
+      obj =
+          JS_NewBigInt64ArrayWithBuffer(context(), buffer, byteOffset, nelems);
+      break;
+    case Scalar::BigUint64:
+      obj =
+          JS_NewBigUint64ArrayWithBuffer(context(), buffer, byteOffset, nelems);
       break;
     default:
       MOZ_CRASH("Can't happen: arrayType range checked above");
@@ -2360,6 +2361,8 @@ bool JSStructuredCloneReader::readV1ArrayBuffer(uint32_t arrayType,
     case Scalar::Float32:
       return in.readArray((uint32_t*)buffer.dataPointer(), nelems);
     case Scalar::Float64:
+    case Scalar::BigInt64:
+    case Scalar::BigUint64:
       return in.readArray((uint64_t*)buffer.dataPointer(), nelems);
     default:
       MOZ_CRASH("Can't happen: arrayType range checked by caller");
@@ -2378,6 +2381,7 @@ static bool PrimitiveToObject(JSContext* cx, MutableHandleValue vp) {
 
 bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
   uint32_t tag, data;
+  bool alreadAppended = false;
 
   if (!in.readPair(&tag, &data)) {
     return false;
@@ -2419,10 +2423,10 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
 
     case SCTAG_NUMBER_OBJECT: {
       double d;
-      if (!in.readDouble(&d) || !checkDouble(d)) {
+      if (!in.readDouble(&d)) {
         return false;
       }
-      vp.setDouble(d);
+      vp.setDouble(CanonicalizeNaN(d));
       if (!PrimitiveToObject(context(), vp)) {
         return false;
       }
@@ -2444,7 +2448,7 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
 
     case SCTAG_DATE_OBJECT: {
       double d;
-      if (!in.readDouble(&d) || !checkDouble(d)) {
+      if (!in.readDouble(&d)) {
         return false;
       }
       JS::ClippedTime t = JS::TimeClip(d);
@@ -2462,7 +2466,14 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
     }
 
     case SCTAG_REGEXP_OBJECT: {
-      RegExpFlag flags = RegExpFlag(data);
+      if ((data & RegExpFlag::AllFlags) != data) {
+        JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                                  JSMSG_SC_BAD_SERIALIZED_DATA, "regexp");
+        return false;
+      }
+
+      RegExpFlags flags(AssertedCast<uint8_t>(data));
+
       uint32_t tag2, stringData;
       if (!in.readPair(&tag2, &stringData)) {
         return false;
@@ -2472,6 +2483,7 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
                                   JSMSG_SC_BAD_SERIALIZED_DATA, "regexp");
         return false;
       }
+
       JSString* str = readString(stringData);
       if (!str) {
         return false;
@@ -2585,10 +2597,7 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
     default: {
       if (tag <= SCTAG_FLOAT_MAX) {
         double d = ReinterpretPairAsDouble(tag, data);
-        if (!checkDouble(d)) {
-          return false;
-        }
-        vp.setNumber(d);
+        vp.setNumber(CanonicalizeNaN(d));
         break;
       }
 
@@ -2604,15 +2613,27 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
                                   "unsupported type");
         return false;
       }
+
+      // callbacks->read() might read other objects from the buffer.
+      // In startWrite we always write the object itself before calling
+      // the custom function. We should do the same here to keep
+      // indexing consistent.
+      uint32_t placeholderIndex = allObjs.length();
+      Value dummy = UndefinedValue();
+      if (!allObjs.append(dummy)) {
+        return false;
+      }
       JSObject* obj = callbacks->read(context(), this, tag, data, closure);
       if (!obj) {
         return false;
       }
       vp.setObject(*obj);
+      allObjs[placeholderIndex].set(vp);
+      alreadAppended = true;
     }
   }
 
-  if (vp.isObject() && !allObjs.append(vp)) {
+  if (!alreadAppended && vp.isObject() && !allObjs.append(vp)) {
     return false;
   }
 
@@ -3226,16 +3247,17 @@ JS_PUBLIC_API bool JS_WriteTypedArray(JSStructuredCloneWriter* w,
   w->context()->check(v);
   RootedObject obj(w->context(), &v.toObject());
 
-  // Note: writeTypedArray also does a maybeUnwrapAs but it assumes this
-  // returns non-null. This isn't guaranteed for JSAPI users so we do our
-  // own unwrapping here.
-  obj = obj->maybeUnwrapAs<TypedArrayObject>();
-  if (!obj) {
+  // startWrite can write everything, thus we should check here
+  // and report error if the user passes a wrong type.
+  if (!obj->canUnwrapAs<TypedArrayObject>()) {
     ReportAccessDenied(w->context());
     return false;
   }
 
-  return w->writeTypedArray(obj);
+  // We should use startWrite instead of writeTypedArray, because
+  // typed array is an object, we should add it to the |memory|
+  // (allObjs) list. Directly calling writeTypedArray won't add it.
+  return w->startWrite(v);
 }
 
 JS_PUBLIC_API bool JS_ObjectNotWritten(JSStructuredCloneWriter* w,

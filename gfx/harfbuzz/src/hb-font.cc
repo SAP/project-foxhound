@@ -355,6 +355,7 @@ hb_font_get_glyph_h_kerning_default (hb_font_t *font,
   return font->parent_scale_x_distance (font->parent->get_glyph_h_kerning (left_glyph, right_glyph));
 }
 
+#ifndef HB_DISABLE_DEPRECATED
 static hb_position_t
 hb_font_get_glyph_v_kerning_nil (hb_font_t *font HB_UNUSED,
 				 void *font_data HB_UNUSED,
@@ -373,6 +374,7 @@ hb_font_get_glyph_v_kerning_default (hb_font_t *font,
 {
   return font->parent_scale_y_distance (font->parent->get_glyph_v_kerning (top_glyph, bottom_glyph));
 }
+#endif
 
 static hb_bool_t
 hb_font_get_glyph_extents_nil (hb_font_t *font HB_UNUSED,
@@ -936,7 +938,6 @@ hb_font_get_glyph_v_origin (hb_font_t *font,
  * Return value: 
  *
  * Since: 0.9.2
- * Deprecated: 2.0.0
  **/
 hb_position_t
 hb_font_get_glyph_h_kerning (hb_font_t *font,
@@ -945,6 +946,7 @@ hb_font_get_glyph_h_kerning (hb_font_t *font,
   return font->get_glyph_h_kerning (left_glyph, right_glyph);
 }
 
+#ifndef HB_DISABLE_DEPRECATED
 /**
  * hb_font_get_glyph_v_kerning:
  * @font: a font.
@@ -964,6 +966,7 @@ hb_font_get_glyph_v_kerning (hb_font_t *font,
 {
   return font->get_glyph_v_kerning (top_glyph, bottom_glyph);
 }
+#endif
 
 /**
  * hb_font_get_glyph_extents:
@@ -1185,7 +1188,6 @@ hb_font_subtract_glyph_origin_for_direction (hb_font_t *font,
  * 
  *
  * Since: 0.9.2
- * Deprecated: 2.0.0
  **/
 void
 hb_font_get_glyph_kerning_for_direction (hb_font_t *font,
@@ -1347,8 +1349,10 @@ hb_font_create (hb_face_t *face)
 {
   hb_font_t *font = _hb_font_create (face);
 
+#ifndef HB_NO_OT_FONT
   /* Install our in-house, very lightweight, funcs. */
   hb_ot_font_set_funcs (font);
+#endif
 
   return font;
 }
@@ -1820,6 +1824,7 @@ _hb_font_adopt_var_coords_normalized (hb_font_t *font,
   font->num_coords = coords_length;
 }
 
+#ifndef HB_NO_VAR
 /**
  * hb_font_set_variations:
  *
@@ -1850,7 +1855,6 @@ hb_font_set_variations (hb_font_t *font,
 				  normalized, coords_length);
   _hb_font_adopt_var_coords_normalized (font, normalized, coords_length);
 }
-
 /**
  * hb_font_set_var_coords_design:
  *
@@ -1871,6 +1875,7 @@ hb_font_set_var_coords_design (hb_font_t *font,
   hb_ot_var_normalize_coords (font->face, coords_length, coords, normalized);
   _hb_font_adopt_var_coords_normalized (font, normalized, coords_length);
 }
+#endif
 
 /**
  * hb_font_set_var_coords_normalized:
@@ -1914,6 +1919,7 @@ hb_font_get_var_coords_normalized (hb_font_t *font,
 }
 
 
+#ifndef HB_DISABLE_DEPRECATED
 /*
  * Deprecated get_glyph_func():
  */
@@ -2036,3 +2042,4 @@ hb_font_funcs_set_glyph_func (hb_font_funcs_t *ffuncs,
 					  trampoline,
 					  trampoline_destroy);
 }
+#endif

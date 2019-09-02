@@ -25,7 +25,7 @@
 #include "UnitTransforms.h"                  // for ViewAs
 #include "apz/src/AsyncPanZoomController.h"  // for AsyncPanZoomController
 #include "gfxEnv.h"                          // for gfxEnv
-#include "gfxPrefs.h"                        // for gfxPrefs
+
 #ifdef XP_MACOSX
 #  include "gfxPlatformMac.h"
 #endif
@@ -71,6 +71,7 @@
 #include "TextRenderer.h"  // for TextRenderer
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "TreeTraversal.h"  // for ForEachNode
+#include "CompositionRecorder.h"
 
 #ifdef USE_SKIA
 #  include "PaintCounter.h"  // For PaintCounter
@@ -215,6 +216,80 @@ void LayerManagerComposite::BeginTransactionWithDrawTarget(
   mTargetBounds = aRect;
 }
 
+template <typename Units>
+static IntRectTyped<Units> TransformRect(const IntRectTyped<Units>& aRect,
+                                         const Matrix& aTransform,
+                                         bool aRoundIn = false) {
+  if (aRect.IsEmpty()) {
+    return IntRectTyped<Units>();
+  }
+
+  Rect rect(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height());
+  rect = aTransform.TransformBounds(rect);
+  if (aRoundIn) {
+    MOZ_ASSERT(aTransform.PreservesAxisAlignedRectangles());
+    rect.RoundIn();
+  } else {
+    rect.RoundOut();
+  }
+
+  IntRect intRect;
+  if (!rect.ToIntRect(&intRect)) {
+    intRect = IntRect::MaxIntRect();
+  }
+
+  return ViewAs<Units>(intRect);
+}
+
+template <typename Units>
+static IntRectTyped<Units> TransformRect(const IntRectTyped<Units>& aRect,
+                                         const Matrix4x4& aTransform,
+                                         bool aRoundIn = false) {
+  if (aRect.IsEmpty()) {
+    return IntRectTyped<Units>();
+  }
+
+  Rect rect(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height());
+  rect = aTransform.TransformAndClipBounds(rect, Rect::MaxIntRect());
+  if (aRoundIn) {
+    rect.RoundIn();
+  } else {
+    rect.RoundOut();
+  }
+
+  IntRect intRect;
+  if (!rect.ToIntRect(&intRect)) {
+    intRect = IntRect::MaxIntRect();
+  }
+
+  return ViewAs<Units>(intRect);
+}
+
+template <typename Units, typename MatrixType>
+static IntRectTyped<Units> TransformRectRoundIn(
+    const IntRectTyped<Units>& aRect, const MatrixType& aTransform) {
+  return TransformRect(aRect, aTransform, true);
+}
+
+template <typename Units, typename MatrixType>
+static void AddTransformedRegion(IntRegionTyped<Units>& aDest,
+                                 const IntRegionTyped<Units>& aSource,
+                                 const MatrixType& aTransform) {
+  for (auto iter = aSource.RectIter(); !iter.Done(); iter.Next()) {
+    aDest.Or(aDest, TransformRect(iter.Get(), aTransform));
+  }
+  aDest.SimplifyOutward(20);
+}
+
+template <typename Units, typename MatrixType>
+static void AddTransformedRegionRoundIn(IntRegionTyped<Units>& aDest,
+                                        const IntRegionTyped<Units>& aSource,
+                                        const MatrixType& aTransform) {
+  for (auto iter = aSource.RectIter(); !iter.Done(); iter.Next()) {
+    aDest.Or(aDest, TransformRectRoundIn(iter.Get(), aTransform));
+  }
+}
+
 void LayerManagerComposite::PostProcessLayers(nsIntRegion& aOpaqueRegion) {
   LayerIntRegion visible;
   LayerComposite* rootComposite =
@@ -224,7 +299,7 @@ void LayerManagerComposite::PostProcessLayers(nsIntRegion& aOpaqueRegion) {
       ViewAs<RenderTargetPixel>(
           rootComposite->GetShadowClipRect(),
           PixelCastJustification::RenderTargetIsParentLayerForRoot),
-      Nothing());
+      Nothing(), true);
 }
 
 // We want to skip directly through ContainerLayers that don't have an
@@ -242,7 +317,8 @@ static bool ShouldProcessLayer(Layer* aLayer) {
 void LayerManagerComposite::PostProcessLayers(
     Layer* aLayer, nsIntRegion& aOpaqueRegion, LayerIntRegion& aVisibleRegion,
     const Maybe<RenderTargetIntRect>& aRenderTargetClip,
-    const Maybe<ParentLayerIntRect>& aClipFromAncestors) {
+    const Maybe<ParentLayerIntRect>& aClipFromAncestors,
+    bool aCanContributeOpaque) {
   // Compute a clip that's the combination of our layer clip with the clip
   // from our ancestors.
   LayerComposite* composite =
@@ -313,8 +389,11 @@ void LayerManagerComposite::PostProcessLayers(
         renderTargetClip = IntersectMaybeRects(renderTargetClip, Some(clip));
       }
 
-      PostProcessLayers(child, opaqueRegion, aVisibleRegion, renderTargetClip,
-                        ancestorClipForChildren);
+      PostProcessLayers(
+          child, opaqueRegion, aVisibleRegion, renderTargetClip,
+          ancestorClipForChildren,
+          aCanContributeOpaque &
+              !(aLayer->GetContentFlags() & Layer::CONTENT_BACKFACE_HIDDEN));
     }
     return;
   }
@@ -324,17 +403,18 @@ void LayerManagerComposite::PostProcessLayers(
   // a giant layer if it is a leaf.
   Matrix4x4 transform = aLayer->GetEffectiveTransform();
   Matrix transform2d;
-  Maybe<IntPoint> integerTranslation;
+  bool canTransformOpaqueRegion = false;
   // If aLayer has a simple transform (only an integer translation) then we
   // can easily convert aOpaqueRegion into pre-transform coordinates and include
   // that region.
-  if (transform.Is2D(&transform2d)) {
-    if (transform2d.IsIntegerTranslation()) {
-      integerTranslation =
-          Some(IntPoint::Truncate(transform2d.GetTranslation()));
-      localOpaque = opaqueRegion;
-      localOpaque.MoveBy(-*integerTranslation);
-    }
+  if (aCanContributeOpaque &&
+      !(aLayer->GetContentFlags() & Layer::CONTENT_BACKFACE_HIDDEN) &&
+      transform.Is2D(&transform2d) &&
+      transform2d.PreservesAxisAlignedRectangles()) {
+    Matrix inverse = transform2d;
+    inverse.Invert();
+    AddTransformedRegionRoundIn(localOpaque, opaqueRegion, inverse);
+    canTransformOpaqueRegion = true;
   }
 
   // Save the value of localOpaque, which currently stores the region obscured
@@ -358,7 +438,7 @@ void LayerManagerComposite::PostProcessLayers(
         ViewAs<RenderTargetPixel>(
             childComposite->GetShadowClipRect(),
             PixelCastJustification::RenderTargetIsParentLayerForRoot),
-        ancestorClipForChildren);
+        ancestorClipForChildren, true);
     if (child->Extend3DContext()) {
       hasPreserve3DChild = true;
     }
@@ -394,16 +474,17 @@ void LayerManagerComposite::PostProcessLayers(
 
   // If we have a simple transform, then we can add our opaque area into
   // aOpaqueRegion.
-  if (integerTranslation && !aLayer->HasMaskLayers() &&
+  if (canTransformOpaqueRegion && !aLayer->HasMaskLayers() &&
       aLayer->IsOpaqueForVisibility()) {
     if (aLayer->IsOpaque()) {
       localOpaque.OrWith(composite->GetFullyRenderedRegion());
     }
-    localOpaque.MoveBy(*integerTranslation);
+    nsIntRegion parentSpaceOpaque;
+    AddTransformedRegionRoundIn(parentSpaceOpaque, localOpaque, transform2d);
     if (aRenderTargetClip) {
-      localOpaque.AndWith(aRenderTargetClip->ToUnknownRect());
+      parentSpaceOpaque.AndWith(aRenderTargetClip->ToUnknownRect());
     }
-    opaqueRegion.OrWith(localOpaque);
+    opaqueRegion.OrWith(parentSpaceOpaque);
   }
 }
 
@@ -541,8 +622,8 @@ LayerComposite* LayerManagerComposite::RootLayer() const {
 
 void LayerManagerComposite::InvalidateDebugOverlay(nsIntRegion& aInvalidRegion,
                                                    const IntRect& aBounds) {
-  bool drawFps = gfxPrefs::LayersDrawFPS();
-  bool drawFrameColorBars = gfxPrefs::CompositorDrawColorBars();
+  bool drawFps = StaticPrefs::layers_acceleration_draw_fps();
+  bool drawFrameColorBars = StaticPrefs::gfx_draw_color_bars();
 
   if (drawFps) {
     aInvalidRegion.Or(aInvalidRegion, nsIntRect(0, 0, 650, 400));
@@ -552,7 +633,7 @@ void LayerManagerComposite::InvalidateDebugOverlay(nsIntRegion& aInvalidRegion,
   }
 
 #ifdef USE_SKIA
-  bool drawPaintTimes = gfxPrefs::AlwaysPaint();
+  bool drawPaintTimes = StaticPrefs::gfx_content_always_paint();
   if (drawPaintTimes) {
     aInvalidRegion.Or(aInvalidRegion, nsIntRect(PaintCounter::GetPaintRect()));
   }
@@ -572,8 +653,8 @@ void LayerManagerComposite::DrawPaintTimes(Compositor* aCompositor) {
 
 static uint16_t sFrameCount = 0;
 void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
-  bool drawFps = gfxPrefs::LayersDrawFPS();
-  bool drawFrameColorBars = gfxPrefs::CompositorDrawColorBars();
+  bool drawFps = StaticPrefs::layers_acceleration_draw_fps();
+  bool drawFrameColorBars = StaticPrefs::gfx_draw_color_bars();
 
   // Don't draw diagnostic overlays if we want to snapshot the output.
   if (mTarget) {
@@ -683,7 +764,7 @@ void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
   }
 
 #ifdef USE_SKIA
-  bool drawPaintTimes = gfxPrefs::AlwaysPaint();
+  bool drawPaintTimes = StaticPrefs::gfx_content_always_paint();
   if (drawPaintTimes) {
     DrawPaintTimes(mCompositor);
   }
@@ -694,9 +775,9 @@ RefPtr<CompositingRenderTarget>
 LayerManagerComposite::PushGroupForLayerEffects() {
   // This is currently true, so just making sure that any new use of this
   // method is flagged for investigation
-  MOZ_ASSERT(gfxPrefs::LayersEffectInvert() ||
-             gfxPrefs::LayersEffectGrayscale() ||
-             gfxPrefs::LayersEffectContrast() != 0.0);
+  MOZ_ASSERT(StaticPrefs::layers_effect_invert() ||
+             StaticPrefs::layers_effect_grayscale() ||
+             StaticPrefs::layers_effect_contrast() != 0.0);
 
   RefPtr<CompositingRenderTarget> previousTarget =
       mCompositor->GetCurrentRenderTarget();
@@ -815,6 +896,8 @@ void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
     return;
   }
 
+  mCompositor->RequestAllowFrameRecording(!!mCompositionRecorder);
+
   ClearLayerFlags(mRoot);
 
   // At this time, it doesn't really matter if these preferences change
@@ -822,18 +905,16 @@ void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
   // permutations. However, may as well just get the values onces and
   // then use them, just in case the consistency becomes important in
   // the future.
-  bool invertVal = gfxPrefs::LayersEffectInvert();
-  bool grayscaleVal = gfxPrefs::LayersEffectGrayscale();
-  float contrastVal = gfxPrefs::LayersEffectContrast();
+  bool invertVal = StaticPrefs::layers_effect_invert();
+  bool grayscaleVal = StaticPrefs::layers_effect_grayscale();
+  float contrastVal = StaticPrefs::layers_effect_contrast();
   bool haveLayerEffects = (invertVal || grayscaleVal || contrastVal != 0.0);
 
   // Set LayerScope begin/end frame
   LayerScopeAutoFrame frame(PR_Now());
 
-  // Dump to console
-  if (gfxPrefs::LayersDump()) {
-    this->Dump(/* aSorted= */ true);
-  }
+  // If you're looking for the code to dump the layer tree, it was moved
+  // to CompositorBridgeParent::CompositeToTarget().
 
   // Dump to LayerScope Viewer
   if (LayerScope::CheckSendable()) {
@@ -949,6 +1030,23 @@ void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
       &widgetContext, LayoutDeviceIntRect::FromUnknownRect(actualBounds));
 
   mProfilerScreenshotGrabber.MaybeGrabScreenshot(mCompositor);
+
+  if (mCompositionRecorder) {
+    bool hasContentPaint = false;
+    for (CompositionPayload& payload : mPayload) {
+      if (payload.mType == CompositionPayloadType::eContentPaint) {
+        hasContentPaint = true;
+        break;
+      }
+    }
+
+    if (hasContentPaint) {
+      if (RefPtr<RecordedFrame> frame =
+              mCompositor->RecordFrame(TimeStamp::Now())) {
+        mCompositionRecorder->RecordFrame(frame);
+      }
+    }
+  }
 
   mCompositor->NormalDrawingDone();
 
@@ -1325,7 +1423,7 @@ bool LayerManagerComposite::CanUseCanvasLayerForSize(const IntSize& aSize) {
 }
 
 void LayerManagerComposite::NotifyShadowTreeTransaction() {
-  if (gfxPrefs::LayersDrawFPS()) {
+  if (StaticPrefs::layers_acceleration_draw_fps()) {
     mDiagnostics->AddTxnFrame();
   }
 }
@@ -1376,33 +1474,6 @@ Matrix4x4 HostLayer::GetShadowTransform() {
   return transform;
 }
 
-static LayerIntRect TransformRect(const LayerIntRect& aRect,
-                                  const Matrix4x4& aTransform) {
-  if (aRect.IsEmpty()) {
-    return LayerIntRect();
-  }
-
-  Rect rect(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height());
-  rect = aTransform.TransformAndClipBounds(rect, Rect::MaxIntRect());
-  rect.RoundOut();
-
-  IntRect intRect;
-  if (!rect.ToIntRect(&intRect)) {
-    intRect = IntRect::MaxIntRect();
-  }
-
-  return ViewAs<LayerPixel>(intRect);
-}
-
-static void AddTransformedRegion(LayerIntRegion& aDest,
-                                 const LayerIntRegion& aSource,
-                                 const Matrix4x4& aTransform) {
-  for (auto iter = aSource.RectIter(); !iter.Done(); iter.Next()) {
-    aDest.Or(aDest, TransformRect(iter.Get(), aTransform));
-  }
-  aDest.SimplifyOutward(20);
-}
-
 // Async animations can move child layers without updating our visible region.
 // PostProcessLayers will recompute visible regions for layers with an
 // intermediate surface, but otherwise we need to do it now.
@@ -1423,7 +1494,14 @@ void HostLayer::RecomputeShadowVisibleRegionFromChildren() {
   mShadowVisibleRegion.SetEmpty();
   ContainerLayer* container = GetLayer()->AsContainerLayer();
   MOZ_ASSERT(container);
-  if (container) {
+  // Layers that extend a 3d context have a local visible region
+  // that can only be represented correctly in 3d space. Since
+  // we can't do that, leave it empty instead to stop anyone
+  // from trying to use it.
+  NS_ASSERTION(
+      !GetLayer()->Extend3DContext(),
+      "Can't compute visible region for layers that extend a 3d context");
+  if (container && !GetLayer()->Extend3DContext()) {
     ComputeVisibleRegionForChildren(container, mShadowVisibleRegion);
   }
 }

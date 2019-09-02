@@ -10,6 +10,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
 #include "nsIObserverService.h"
@@ -20,11 +21,13 @@
 #include "prsystem.h"
 #include "nsIXULRuntime.h"
 
-#include "gfxPrefs.h"
-
 #include "Decoder.h"
 #include "IDecodingTask.h"
 #include "RasterImage.h"
+
+#if defined(XP_WIN)
+#  include <objbase.h>
+#endif
 
 using std::max;
 using std::min;
@@ -333,9 +336,24 @@ DecodePool* DecodePool::Singleton() {
 /* static */
 uint32_t DecodePool::NumberOfCores() { return sNumCores; }
 
-DecodePool::DecodePool() : mMutex("image::DecodePool") {
+#if defined(XP_WIN)
+class IOThreadIniter final : public Runnable {
+ public:
+  explicit IOThreadIniter() : Runnable("image::IOThreadIniter") {}
+
+  NS_IMETHOD Run() override {
+    MOZ_ASSERT(!NS_IsMainThread());
+
+    CoInitialize(nullptr);
+
+    return NS_OK;
+  }
+};
+#endif
+
+DecodePool::DecodePool() : mMutex("image::IOThread") {
   // Determine the number of threads we want.
-  int32_t prefLimit = gfxPrefs::ImageMTDecodingLimit();
+  int32_t prefLimit = StaticPrefs::image_multithreaded_decoding_limit();
   uint32_t limit;
   if (prefLimit <= 0) {
     int32_t numCores = NumberOfCores();
@@ -365,7 +383,8 @@ DecodePool::DecodePool() : mMutex("image::DecodePool") {
   uint32_t idleLimit;
 
   // The timeout period before shutting down idle threads.
-  int32_t prefIdleTimeout = gfxPrefs::ImageMTDecodingIdleTimeout();
+  int32_t prefIdleTimeout =
+      StaticPrefs::image_multithreaded_decoding_idle_timeout();
   TimeDuration idleTimeout;
   if (prefIdleTimeout <= 0) {
     idleTimeout = TimeDuration::Forever();
@@ -379,7 +398,16 @@ DecodePool::DecodePool() : mMutex("image::DecodePool") {
   mImpl = new DecodePoolImpl(limit, idleLimit, idleTimeout);
 
   // Initialize the I/O thread.
+#if defined(XP_WIN)
+  // On Windows we use the io thread to get icons from the system. Any thread
+  // that makes system calls needs to call CoInitialize. And these system calls
+  // (SHGetFileInfo) should only be called from one thread at a time, in case
+  // we ever create more than on io thread.
+  nsCOMPtr<nsIRunnable> initer = new IOThreadIniter();
+  nsresult rv = NS_NewNamedThread("ImageIO", getter_AddRefs(mIOThread), initer);
+#else
   nsresult rv = NS_NewNamedThread("ImageIO", getter_AddRefs(mIOThread));
+#endif
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv) && mIOThread,
                      "Should successfully create image I/O thread");
 

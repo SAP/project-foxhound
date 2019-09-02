@@ -3,7 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 /// Gecko's pseudo-element definition.
-#[derive(Clone, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, MallocSizeOf, PartialEq, ToShmem)]
 pub enum PseudoElement {
     % for pseudo in PSEUDOS:
         /// ${pseudo.value}
@@ -112,7 +112,7 @@ impl PseudoElement {
             % for pseudo in PSEUDOS:
                 ${pseudo_element_variant(pseudo)} =>
                 % if pseudo.is_tree_pseudo_element():
-                    if unsafe { structs::StaticPrefs_sVarCache_layout_css_xul_tree_pseudos_content_enabled } {
+                    if unsafe { structs::StaticPrefs::sVarCache_layout_css_xul_tree_pseudos_content_enabled } {
                         0
                     } else {
                         structs::CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS_AND_CHROME
@@ -195,19 +195,22 @@ impl PseudoElement {
                 return Some(${pseudo_element_variant(pseudo)})
             }
             % endfor
-            // Alias "-moz-selection" to "selection" at parse time.
+            // Alias some legacy prefixed pseudos to their standardized name at parse time:
             "-moz-selection" => {
                 return Some(PseudoElement::Selection);
             }
             "-moz-placeholder" => {
                 return Some(PseudoElement::Placeholder);
             }
+            "-moz-list-bullet" | "-moz-list-number" => {
+                return Some(PseudoElement::Marker);
+            }
             _ => {
                 if starts_with_ignore_ascii_case(name, "-moz-tree-") {
                     return PseudoElement::tree_pseudo_element(name, Box::new([]))
                 }
                 if unsafe {
-                    structs::StaticPrefs_sVarCache_layout_css_unknown_webkit_pseudo_element
+                    structs::StaticPrefs::sVarCache_layout_css_unknown_webkit_pseudo_element
                 } {
                     const WEBKIT_PREFIX: &str = "-webkit-";
                     if starts_with_ignore_ascii_case(name, WEBKIT_PREFIX) {

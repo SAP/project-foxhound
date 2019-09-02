@@ -7,13 +7,12 @@
 
 "use strict";
 
-function run_test() {
-  Services.prefs.getDefaultBranch(null).setCharPref("distribution.id", "partner-test");
-
-  Assert.ok(!Services.search.isInitialized, "search isn't initialized yet");
-
-  run_next_test();
-}
+add_task(async function setup() {
+  Services.prefs
+    .getDefaultBranch(null)
+    .setCharPref("distribution.id", "partner-test");
+  await AddonTestUtils.promiseStartupManager();
+});
 
 // Giving defaultenginename prefs a user value for partner build
 // shouldn't change the default engine assigned from list.json
@@ -23,8 +22,11 @@ add_task(async function test_defaultEngineNamePref() {
   // Set the browser.search.defaultenginename pref.
   Services.prefs.setCharPref(kDefaultenginenamePref, "Bing");
 
-  Assert.equal((await Services.search.getDefault()).name,
-               defaultEngineName, "expected default search engine after pref set");
+  Assert.equal(
+    (await Services.search.getDefault()).name,
+    defaultEngineName,
+    "expected default search engine after pref set"
+  );
 
   Services.prefs.clearUserPref(kDefaultenginenamePref);
 });
@@ -39,9 +41,12 @@ add_task(async function test_defaultEngineNameUserPrefUS() {
   // Set the browser.search.defaultenginename pref.
   Services.prefs.setCharPref(kDefaultenginenamePref, "Bing");
 
-  await asyncReInit();
-  Assert.equal((await Services.search.getDefault()).name,
-               defaultEngineName, "expected US default search engine after pref set");
+  await asyncReInit({ skipReset: true });
+  Assert.equal(
+    (await Services.search.getDefault()).name,
+    defaultEngineName,
+    "expected US default search engine after pref set"
+  );
 
   Services.prefs.clearUserPref(kDefaultenginenamePref);
   Services.prefs.clearUserPref("browser.search.region");
@@ -56,12 +61,17 @@ add_task(async function test_defaultEngineNameDefaultPrefUS() {
 
   // Set the browser.search.defaultenginename pref.
   let defaultBranch = Services.prefs.getDefaultBranch(null);
-  defaultBranch.setCharPref(kDefaultenginenamePref,
-                            "data:text/plain,browser.search.defaultenginename=Bing");
+  defaultBranch.setCharPref(
+    kDefaultenginenamePref,
+    "data:text/plain,browser.search.defaultenginename=Bing"
+  );
 
-  await asyncReInit();
-  Assert.equal((await Services.search.getDefault()).name,
-               "Bing", "expected new default search engine after pref set");
+  await asyncReInit({ skipReset: true });
+  Assert.equal(
+    (await Services.search.getDefault()).name,
+    "Bing",
+    "expected new default search engine after pref set"
+  );
 
   Services.prefs.clearUserPref("browser.search.region");
 });

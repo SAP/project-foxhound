@@ -720,6 +720,9 @@ struct NamedConstructor {
  * isGlobal if true, we're creating interface objects for a [Global] or
  *        [PrimaryGlobal] interface, and hence shouldn't define properties on
  *        the prototype object.
+ * legacyWindowAliases if not null it points to a null-terminated list of const
+ *                     char* names of the legacy window aliases for this
+ *                     interface.
  *
  * At least one of protoClass, constructorClass or constructor should be
  * non-null. If constructorClass or constructor are non-null, the resulting
@@ -736,7 +739,8 @@ void CreateInterfaceObjects(
     JS::Heap<JSObject*>* constructorCache,
     const NativeProperties* regularProperties,
     const NativeProperties* chromeOnlyProperties, const char* name,
-    bool defineOnGlobal, const char* const* unscopableNames, bool isGlobal);
+    bool defineOnGlobal, const char* const* unscopableNames, bool isGlobal,
+    const char* const* legacyWindowAliases);
 
 /**
  * Define the properties (regular and chrome-only) on obj.
@@ -887,15 +891,9 @@ bool MaybeWrapObjectValue(JSContext* cx, JS::MutableHandle<JS::Value> rval) {
     return JS_WrapValue(cx, rval);
   }
 
-  // We're same-compartment, but even then we might need to wrap
-  // objects specially.  Check for that.
-  if (IsDOMObject(obj)) {
-    return TryToOuterize(rval);
-  }
-
-  // It's not a WebIDL object, so it's OK to just leave it as-is: only WebIDL
-  // objects (specifically only windows) require outerization.
-  return true;
+  // We're same-compartment, but we might still need to outerize if we
+  // have a Window.
+  return TryToOuterize(rval);
 }
 
 // Like MaybeWrapObjectValue, but working with a
@@ -906,15 +904,9 @@ bool MaybeWrapObject(JSContext* cx, JS::MutableHandle<JSObject*> obj) {
     return JS_WrapObject(cx, obj);
   }
 
-  // We're same-compartment, but even then we might need to wrap
-  // objects specially.  Check for that.
-  if (IsDOMObject(obj)) {
-    return TryToOuterize(obj);
-  }
-
-  // It's not a WebIDL object, so it's OK to just leave it as-is: only WebIDL
-  // objects (specifically only windows) require outerization.
-  return true;
+  // We're same-compartment, but we might still need to outerize if we
+  // have a Window.
+  return TryToOuterize(obj);
 }
 
 // Like MaybeWrapObjectValue, but also allows null
@@ -928,14 +920,16 @@ bool MaybeWrapObjectOrNullValue(JSContext* cx,
   return MaybeWrapObjectValue(cx, rval);
 }
 
-// Wrapping for objects that are known to not be DOM or XPConnect objects
+// Wrapping for objects that are known to not be DOM objects
 MOZ_ALWAYS_INLINE
 bool MaybeWrapNonDOMObjectValue(JSContext* cx,
                                 JS::MutableHandle<JS::Value> rval) {
   MOZ_ASSERT(rval.isObject());
+  // Compared to MaybeWrapObjectValue we just skip the TryToOuterize call.  The
+  // only reason it would be needed is if we have a Window object, which would
+  // have a DOM class.  Assert that we don't have any DOM-class objects coming
+  // through here.
   MOZ_ASSERT(!GetDOMClass(&rval.toObject()));
-  MOZ_ASSERT(!(js::GetObjectClass(&rval.toObject())->flags &
-               JSCLASS_PRIVATE_IS_NSISUPPORTS));
 
   JSObject* obj = &rval.toObject();
   if (js::GetObjectCompartment(obj) == js::GetContextCompartment(cx)) {
@@ -1384,8 +1378,6 @@ inline mozilla::dom::ReflectionScope GetReflectionScope(
 
 template <class T>
 inline void ClearWrapper(T* p, nsWrapperCache* cache, JSObject* obj) {
-  JS::AutoAssertGCCallback inCallback;
-
   // Skip clearing the wrapper when replaying. This method is called during
   // finalization of |obj|, and when replaying a strong reference is kept on
   // the contents of the cache: since |obj| is being finalized, the cache
@@ -1394,13 +1386,15 @@ inline void ClearWrapper(T* p, nsWrapperCache* cache, JSObject* obj) {
   // released, if we are finalizing later than we did while recording, and the
   // cache may have already been deleted.
   if (!recordreplay::IsReplaying()) {
+    MOZ_ASSERT(cache->GetWrapperMaybeDead() == obj);
     cache->ClearWrapper(obj);
   }
 }
 
 template <class T>
 inline void ClearWrapper(T* p, void*, JSObject* obj) {
-  JS::AutoAssertGCCallback inCallback;
+  // QueryInterface to nsWrapperCache can't GC, we hope.
+  JS::AutoSuppressGCAnalysis nogc;
 
   // Skip clearing the wrapper when replaying, for the same reason as in the
   // overload above: |p| may have been deleted and we cannot QI it.
@@ -1670,9 +1664,7 @@ inline JSObject* FindAssociatedGlobal(JSContext* cx,
   }
 
   MOZ_ASSERT(JS_IsGlobalObject(global));
-  // This object could be gray if the nsIGlobalObject is the only thing keeping
-  // it alive.
-  JS::ExposeObjectToActiveJS(global);
+  JS::AssertObjectIsNotGray(global);
   return global;
 }
 
@@ -1826,7 +1818,7 @@ bool HasPropertyOnPrototype(JSContext* cx, JS::Handle<JSObject*> proxy,
 bool AppendNamedPropertyIds(JSContext* cx, JS::Handle<JSObject*> proxy,
                             nsTArray<nsString>& names,
                             bool shadowPrototypeProperties,
-                            JS::AutoIdVector& props);
+                            JS::MutableHandleVector<jsid> props);
 
 enum StringificationBehavior { eStringify, eEmpty, eNull };
 
@@ -2081,21 +2073,24 @@ void DoTraceSequence(JSTracer* trc, InfallibleTArray<T>& seq) {
 template <typename T>
 class MOZ_RAII SequenceRooter final : private JS::CustomAutoRooter {
  public:
-  SequenceRooter(JSContext* aCx,
+  template <typename CX>
+  SequenceRooter(const CX& cx,
                  FallibleTArray<T>* aSequence MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+      : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
         mFallibleArray(aSequence),
         mSequenceType(eFallibleArray) {}
 
-  SequenceRooter(JSContext* aCx,
+  template <typename CX>
+  SequenceRooter(const CX& cx,
                  InfallibleTArray<T>* aSequence MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+      : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
         mInfallibleArray(aSequence),
         mSequenceType(eInfallibleArray) {}
 
-  SequenceRooter(JSContext* aCx, Nullable<nsTArray<T>>* aSequence
-                                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+  template <typename CX>
+  SequenceRooter(const CX& cx, Nullable<nsTArray<T>>* aSequence
+                                   MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
         mNullableArray(aSequence),
         mSequenceType(eNullableArray) {}
 
@@ -2128,15 +2123,17 @@ class MOZ_RAII SequenceRooter final : private JS::CustomAutoRooter {
 template <typename K, typename V>
 class MOZ_RAII RecordRooter final : private JS::CustomAutoRooter {
  public:
-  RecordRooter(JSContext* aCx,
+  template <typename CX>
+  RecordRooter(const CX& cx,
                Record<K, V>* aRecord MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+      : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
         mRecord(aRecord),
         mRecordType(eRecord) {}
 
-  RecordRooter(JSContext* aCx,
+  template <typename CX>
+  RecordRooter(const CX& cx,
                Nullable<Record<K, V>>* aRecord MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
+      : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
         mNullableRecord(aRecord),
         mRecordType(eNullableRecord) {}
 
@@ -2165,7 +2162,8 @@ class MOZ_RAII RecordRooter final : private JS::CustomAutoRooter {
 template <typename T>
 class MOZ_RAII RootedUnion : public T, private JS::CustomAutoRooter {
  public:
-  explicit RootedUnion(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  template <typename CX>
+  explicit RootedUnion(const CX& cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : T(),
         JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT) {}
 
@@ -2176,7 +2174,8 @@ template <typename T>
 class MOZ_STACK_CLASS NullableRootedUnion : public Nullable<T>,
                                             private JS::CustomAutoRooter {
  public:
-  explicit NullableRootedUnion(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  template <typename CX>
+  explicit NullableRootedUnion(const CX& cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : Nullable<T>(),
         JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT) {}
 
@@ -2192,7 +2191,8 @@ inline bool IdEquals(jsid id, const char* string) {
          JS_FlatStringEqualsAscii(JSID_TO_FLAT_STRING(id), string);
 }
 
-inline bool AddStringToIDVector(JSContext* cx, JS::AutoIdVector& vector,
+inline bool AddStringToIDVector(JSContext* cx,
+                                JS::MutableHandleVector<jsid> vector,
                                 const char* name) {
   return vector.growBy(1) &&
          AtomizeAndPinJSString(cx, *(vector[vector.length() - 1]).address(),
@@ -2253,7 +2253,7 @@ bool XrayDefineProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
  */
 bool XrayOwnPropertyKeys(JSContext* cx, JS::Handle<JSObject*> wrapper,
                          JS::Handle<JSObject*> obj, unsigned flags,
-                         JS::AutoIdVector& props);
+                         JS::MutableHandleVector<jsid> props);
 
 /**
  * Returns the prototype to use for an Xray for a DOM object, wrapped in cx's
@@ -2590,7 +2590,8 @@ class MOZ_STACK_CLASS BindingJSObjectCreator {
     }
 
     if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
-      JS_updateMallocCounter(aCx, mallocBytes);
+      JS::AddAssociatedMemory(aReflector, mallocBytes,
+                              JS::MemoryUse::DOMBinding);
     }
   }
 
@@ -2606,7 +2607,8 @@ class MOZ_STACK_CLASS BindingJSObjectCreator {
     }
 
     if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
-      JS_updateMallocCounter(aCx, mallocBytes);
+      JS::AddAssociatedMemory(aReflector, mallocBytes,
+                              JS::MemoryUse::DOMBinding);
     }
   }
 
@@ -2778,7 +2780,8 @@ bool ResolveGlobal(JSContext* aCx, JS::Handle<JSObject*> aObj,
 bool MayResolveGlobal(const JSAtomState& aNames, jsid aId, JSObject* aMaybeObj);
 
 bool EnumerateGlobal(JSContext* aCx, JS::HandleObject aObj,
-                     JS::AutoIdVector& aProperties, bool aEnumerableOnly);
+                     JS::MutableHandleVector<jsid> aProperties,
+                     bool aEnumerableOnly);
 
 struct CreateGlobalOptionsGeneric {
   static void TraceGlobal(JSTracer* aTrc, JSObject* aObj) {
@@ -2873,6 +2876,10 @@ bool CreateGlobal(JSContext* aCx, T* aNative, nsWrapperCache* aCache,
   MOZ_ASSERT(succeeded,
              "making a fresh global object's [[Prototype]] immutable can "
              "internally fail, but it should never be unsuccessful");
+
+  if (!JS_DefineProfilingFunctions(aCx, aGlobal)) {
+    return false;
+  }
 
   return true;
 }
@@ -3061,8 +3068,12 @@ bool GetSetlikeBackingObject(JSContext* aCx, JS::Handle<JSObject*> aObj,
                              bool* aBackingObjCreated);
 
 // Get the desired prototype object for an object construction from the given
-// CallArgs.  Null is returned if the default prototype should be used.
+// CallArgs.  The CallArgs must be for a constructor call.  The
+// aProtoId/aCreator arguments are used to get a default if we don't find a
+// prototype on the newTarget of the callargs.
 bool GetDesiredProto(JSContext* aCx, const JS::CallArgs& aCallArgs,
+                     prototypes::id::ID aProtoId,
+                     CreateInterfaceObjectsMethod aCreator,
                      JS::MutableHandle<JSObject*> aDesiredProto);
 
 // This function is expected to be called from the constructor function for an

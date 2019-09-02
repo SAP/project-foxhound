@@ -67,6 +67,8 @@
 #  include FT_FREETYPE_H
 #endif
 #include "MainThreadUtils.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 
 #if defined(MOZ_LOGGING)
 GFX2D_API mozilla::LogModule* GetGFX2DLog() {
@@ -188,8 +190,9 @@ void mozilla_UnlockFTLibrary(FT_Library aFTLibrary) {
 namespace mozilla {
 namespace gfx {
 
-// In Gecko, this value is managed by gfx.logging.level in gfxPrefs.
-int32_t LoggingPrefs::sGfxLogLevel = LOG_DEFAULT;
+// In Gecko, this value is managed by gfx.logging.level and gets updated when
+// the pref change.
+Atomic<int32_t> LoggingPrefs::sGfxLogLevel(LOG_DEFAULT);
 
 #ifdef MOZ_ENABLE_FREETYPE
 FT_Library Factory::mFTLibrary = nullptr;
@@ -210,13 +213,24 @@ StaticMutex Factory::mDeviceLock;
 StaticMutex Factory::mDTDependencyLock;
 #endif
 
+bool Factory::mBGRSubpixelOrder = false;
+
 DrawEventRecorder* Factory::mRecorder;
 
 mozilla::gfx::Config* Factory::sConfig = nullptr;
 
+static void PrefChanged(const char* aPref, void*) {
+  mozilla::gfx::LoggingPrefs::sGfxLogLevel =
+      Preferences::GetInt(StaticPrefs::GetPrefName_gfx_logging_level(),
+                          StaticPrefs::GetPrefDefault_gfx_logging_level());
+}
+
 void Factory::Init(const Config& aConfig) {
   MOZ_ASSERT(!sConfig);
   sConfig = new Config(aConfig);
+  Preferences::RegisterCallback(
+      PrefChanged,
+      nsDependentCString(StaticPrefs::GetPrefName_gfx_logging_level()));
 }
 
 void Factory::ShutDown() {
@@ -657,6 +671,10 @@ already_AddRefed<SourceSurface> Factory::CreateDualSourceSurface(
   return newSource.forget();
 }
 
+void Factory::SetBGRSubpixelOrder(bool aBGR) { mBGRSubpixelOrder = aBGR; }
+
+bool Factory::GetBGRSubpixelOrder() { return mBGRSubpixelOrder; }
+
 #ifdef MOZ_ENABLE_FREETYPE
 void Factory::SetFTLibrary(FT_Library aFTLibrary) { mFTLibrary = aFTLibrary; }
 
@@ -719,6 +737,30 @@ FT_Error Factory::LoadFTGlyph(FT_Face aFace, uint32_t aGlyphIndex,
   return FT_Load_Glyph(aFace, aGlyphIndex, aFlags);
 }
 #endif
+
+AutoSerializeWithMoz2D::AutoSerializeWithMoz2D(BackendType aBackendType) {
+#ifdef WIN32
+  // We use a multi-threaded ID2D1Factory1, so that makes the calls through the
+  // Direct2D API thread-safe. However, if the Moz2D objects are using Direct3D
+  // resources we need to make sure that calls through the Direct3D or DXGI API
+  // use the Direct2D synchronization. It's possible that this should be pushed
+  // down into the TextureD3D11 objects, so that we always use this.
+  if (aBackendType == BackendType::DIRECT2D1_1 ||
+      aBackendType == BackendType::DIRECT2D) {
+    D2DFactory()->QueryInterface(
+        static_cast<ID2D1Multithread**>(getter_AddRefs(mMT)));
+    mMT->Enter();
+  }
+#endif
+}
+
+AutoSerializeWithMoz2D::~AutoSerializeWithMoz2D() {
+#ifdef WIN32
+  if (mMT) {
+    mMT->Leave();
+  }
+#endif
+};
 
 #ifdef WIN32
 already_AddRefed<DrawTarget> Factory::CreateDrawTargetForD3D11Texture(
@@ -917,10 +959,11 @@ void Factory::D2DCleanup() {
 already_AddRefed<ScaledFont> Factory::CreateScaledFontForDWriteFont(
     IDWriteFontFace* aFontFace, const gfxFontStyle* aStyle,
     const RefPtr<UnscaledFont>& aUnscaledFont, float aSize,
-    bool aUseEmbeddedBitmap, bool aForceGDIMode,
+    bool aUseEmbeddedBitmap, int aRenderingMode,
     IDWriteRenderingParams* aParams, Float aGamma, Float aContrast) {
   return MakeAndAddRef<ScaledFontDWrite>(aFontFace, aUnscaledFont, aSize,
-                                         aUseEmbeddedBitmap, aForceGDIMode,
+                                         aUseEmbeddedBitmap,
+                                         (DWRITE_RENDERING_MODE)aRenderingMode,
                                          aParams, aGamma, aContrast, aStyle);
 }
 

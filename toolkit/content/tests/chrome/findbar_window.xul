@@ -16,8 +16,7 @@
         onload="onLoad();"
         title="findbar test">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
   <script type="application/javascript"><![CDATA[
     const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
@@ -153,7 +152,7 @@
     async function testFindbarSelection() {
       function checkFindbarState(aTestName, aExpSelection) {
         ok(!gFindBar.hidden, "testFindbarSelection: failed to open findbar: " + aTestName);
-        ok(document.commandDispatcher.focusedElement == gFindBar._findField.inputField,
+        ok(document.commandDispatcher.focusedElement == gFindBar._findField,
            "testFindbarSelection: find field is not focused: " + aTestName);
         if (!gHasFindClipboard) {
           ok(gFindBar._findField.value == aExpSelection,
@@ -202,7 +201,7 @@
       // use an dummy image to start the drag so it doesn't get interrupted by a selection
       var img = gBrowser.contentDocument.getElementById("img");
       synthesizeDrop(img, gFindBar._findField, [[ {type: "text/plain", data: "Rabbits" } ]], "copy", window);
-      is(gFindBar._findField.inputField.value, "Rabbits", "drop on findbar");
+      is(gFindBar._findField.value, "Rabbits", "drop on findbar");
       gFindBar.close();
     }
 
@@ -274,7 +273,7 @@
         let event = document.createEvent("KeyboardEvent");
         event.initKeyEvent("keypress", true, true, null, false, false,
                            false, false, 0, str.charCodeAt(i));
-        gFindBar._findField.inputField.dispatchEvent(event);
+        gFindBar._findField.dispatchEvent(event);
         if (waitForResult) {
           await promise;
         }
@@ -297,7 +296,7 @@
       document.getElementById("cmd_find").doCommand();
 
       ok(!gFindBar.hidden, "testNormalFind: failed to open findbar");
-      ok(document.commandDispatcher.focusedElement == gFindBar._findField.inputField,
+      ok(document.commandDispatcher.focusedElement == gFindBar._findField,
          "testNormalFind: find field is not focused");
 
       let promise;
@@ -341,7 +340,7 @@
 
     async function testNormalFindWithComposition() {
       ok(!gFindBar.hidden, "testNormalFindWithComposition: findbar should be open");
-      ok(document.commandDispatcher.focusedElement == gFindBar._findField.inputField,
+      ok(document.commandDispatcher.focusedElement == gFindBar._findField,
          "testNormalFindWithComposition: find field should be focused");
 
       var matchCaseCheckbox = gFindBar.getElement("find-case-sensitive");
@@ -351,7 +350,7 @@
         clicked = true;
       }
 
-      gFindBar._findField.inputField.focus();
+      gFindBar._findField.focus();
 
       var searchStr = "text";
 
@@ -434,7 +433,7 @@
       });
 
       ok(!gFindBar.hidden, "testQuickFindLink: failed to open findbar");
-      ok(document.commandDispatcher.focusedElement == gFindBar._findField.inputField,
+      ok(document.commandDispatcher.focusedElement == gFindBar._findField,
          "testQuickFindLink: find field is not focused");
 
       var searchStr = "Link Test";
@@ -553,7 +552,7 @@
       });
 
       ok(!gFindBar.hidden, "testQuickFindText: failed to open findbar");
-      ok(document.commandDispatcher.focusedElement == gFindBar._findField.inputField,
+      ok(document.commandDispatcher.focusedElement == gFindBar._findField,
         "testQuickFindText: find field is not focused");
 
       await enterStringIntoFindField(SEARCH_TEXT);
@@ -580,7 +579,7 @@
       }
 
       ok(!gFindBar.hidden, "testFindCountUI: failed to open findbar");
-      ok(document.commandDispatcher.focusedElement == gFindBar._findField.inputField,
+      ok(document.commandDispatcher.focusedElement == gFindBar._findField,
          "testFindCountUI: find field is not focused");
 
       let promise;

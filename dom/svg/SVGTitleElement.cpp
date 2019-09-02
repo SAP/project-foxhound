@@ -32,8 +32,6 @@ SVGTitleElement::SVGTitleElement(
   AddMutationObserver(this);
 }
 
-SVGTitleElement::~SVGTitleElement() {}
-
 void SVGTitleElement::CharacterDataChanged(nsIContent* aContent,
                                            const CharacterDataChangeInfo&) {
   SendTitleChangeEvent(false);
@@ -52,11 +50,9 @@ void SVGTitleElement::ContentRemoved(nsIContent* aChild,
   SendTitleChangeEvent(false);
 }
 
-nsresult SVGTitleElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                     nsIContent* aBindingParent) {
+nsresult SVGTitleElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   // Let this fall through.
-  nsresult rv =
-      SVGTitleElementBase::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = SVGTitleElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   SendTitleChangeEvent(true);
@@ -64,11 +60,11 @@ nsresult SVGTitleElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return NS_OK;
 }
 
-void SVGTitleElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void SVGTitleElement::UnbindFromTree(bool aNullParent) {
   SendTitleChangeEvent(false);
 
   // Let this fall through.
-  SVGTitleElementBase::UnbindFromTree(aDeep, aNullParent);
+  SVGTitleElementBase::UnbindFromTree(aNullParent);
 }
 
 void SVGTitleElement::DoneAddingChildren(bool aHaveNotified) {

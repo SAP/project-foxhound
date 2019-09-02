@@ -95,8 +95,8 @@ interface mozIStorageAsyncConnection : nsISupports {
    *
    * @note If your connection is already read-only, you will get a read-only
    *       clone.
-   * @note The resulting connection will NOT implement mozIStorageConnection,
-   *       it will only implement mozIStorageAsyncConnection.
+   * @note The resulting connection will implement `mozIStorageConnection`, but
+   *       all synchronous methods will throw if called from the main thread.
    * @note Due to a bug in SQLite, if you use the shared cache
    *       (see mozIStorageService), you end up with the same privileges as the
    *       first connection opened regardless of what is specified in aReadOnly.
@@ -165,8 +165,6 @@ interface mozIStorageAsyncConnection : nsISupports {
    * @param aStatements
    *        The array of statements to execute asynchronously, in the order they
    *        are given in the array.
-   * @param aNumStatements
-   *        The number of statements in aStatements.
    * @param aCallback [optional]
    *        The callback object that will be notified of progress, errors, and
    *        completion.
@@ -176,8 +174,7 @@ interface mozIStorageAsyncConnection : nsISupports {
    *        re-entrant since they can be called on multiple threads.
    */
   mozIStoragePendingStatement executeAsync(
-    [array, size_is(aNumStatements)] in mozIStorageBaseStatement aStatements,
-    in unsigned long aNumStatements,
+    in Array<mozIStorageBaseStatement> aStatements,
     [optional] in mozIStorageStatementCallback aCallback
   );
 

@@ -9,17 +9,18 @@
 
 // Keep others in (case-insensitive) order:
 #include "gfxContext.h"
-#include "SVGObserverUtils.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/SVGMarkerElement.h"
 #include "SVGGeometryElement.h"
 #include "SVGGeometryFrame.h"
+#include "SVGObserverUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
 
-nsContainerFrame* NS_NewSVGMarkerFrame(nsIPresShell* aPresShell,
+nsContainerFrame* NS_NewSVGMarkerFrame(PresShell* aPresShell,
                                        ComputedStyle* aStyle) {
   return new (aPresShell)
       nsSVGMarkerFrame(aStyle, aPresShell->GetPresContext());
@@ -105,7 +106,7 @@ void nsSVGMarkerFrame::PaintMark(gfxContext& aContext,
     return;
   }
 
-  const SVGViewBoxRect viewBox = marker->GetViewBoxRect();
+  const SVGViewBox viewBox = marker->GetViewBox();
 
   if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
     // We must disable rendering if the viewBox width or height are zero.
@@ -154,7 +155,7 @@ SVGBBox nsSVGMarkerFrame::GetMarkBBoxContribution(
     return bbox;
   }
 
-  const SVGViewBoxRect viewBox = content->GetViewBoxRect();
+  const SVGViewBox viewBox = content->GetViewBox();
 
   if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
     return bbox;
@@ -213,7 +214,7 @@ nsSVGMarkerFrame::AutoMarkerReferencer::~AutoMarkerReferencer() {
 //----------------------------------------------------------------------
 // Implementation of nsSVGMarkerAnonChildFrame
 
-nsContainerFrame* NS_NewSVGMarkerAnonChildFrame(nsIPresShell* aPresShell,
+nsContainerFrame* NS_NewSVGMarkerAnonChildFrame(PresShell* aPresShell,
                                                 ComputedStyle* aStyle) {
   return new (aPresShell)
       nsSVGMarkerAnonChildFrame(aStyle, aPresShell->GetPresContext());

@@ -66,20 +66,17 @@ class DecodedStream : public MediaSink {
   bool IsStarted() const override;
   bool IsPlaying() const override;
   void Shutdown() override;
-
-  nsCString GetDebugInfo() override;
+  void GetDebugInfo(dom::MediaSinkDebugInfo& aInfo) override;
 
  protected:
   virtual ~DecodedStream();
 
  private:
-  media::TimeUnit FromMicroseconds(int64_t aTime) {
-    return media::TimeUnit::FromMicroseconds(aTime);
-  }
   void DestroyData(UniquePtr<DecodedStreamData>&& aData);
   void SendAudio(double aVolume, bool aIsSameOrigin,
                  const PrincipalHandle& aPrincipalHandle);
   void SendVideo(bool aIsSameOrigin, const PrincipalHandle& aPrincipalHandle);
+  void ResetVideo(const PrincipalHandle& aPrincipalHandle);
   StreamTime SentDuration();
   void SendData();
   void NotifyOutput(int64_t aTime);

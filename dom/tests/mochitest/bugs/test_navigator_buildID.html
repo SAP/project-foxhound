@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=583181
 -->
 <head>
   <title>Test for Bug 583181</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -47,13 +47,13 @@ let chromeScript = SpecialPowers.loadChromeScript(() => {
   });
 });
 
-let chromeBuildID = chromeScript.sendSyncMessage("test:getBuildID")[0][0];
-chromeScript.destroy();
+async function onMozillaIFrameLoaded() {
+  let chromeBuildID = await chromeScript.sendQuery("test:getBuildID");
+  chromeScript.destroy();
 
-ok(+chromeBuildID > LEGACY_BUILD_ID,
-   `navigator.buildID should be exposed in chrome - got "${chromeBuildID}"`);
+  ok(+chromeBuildID > LEGACY_BUILD_ID,
+     `navigator.buildID should be exposed in chrome - got "${chromeBuildID}"`);
 
-function onMozillaIFrameLoaded() {
   //
   // Access navigator.buildID from mozilla.org.
   //

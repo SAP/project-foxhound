@@ -57,11 +57,12 @@
   border.
 */
 #navigator-toolbox::after {
+  content: "";
+  display: -moz-box;
   -moz-appearance: toolbox;
   height: 1px;
-  /* use inset box-shadow instead of border because -moz-appearance hides the border */
-  border: none;
-  box-shadow: inset 0 -1px var(--chrome-content-separator-color);
+  margin-top: -1px;
+  opacity: 0.001;
 }
 
 #tabbrowser-tabs {
@@ -85,7 +86,7 @@
   -moz-box-pack: center;
 }
 
-#titlebar-buttonbox > .titlebar-button {
+.titlebar-button {
   display: none;
 }
 
@@ -118,7 +119,7 @@
 
 /** End titlebar **/
 
-#main-window[chromehidden~="toolbar"][chromehidden~="location"][chromehidden~="directories"] {
+:root[chromehidden~="toolbar"][chromehidden~="location"][chromehidden~="directories"] {
   border-top: 1px solid rgba(0,0,0,0.65);
 }
 
@@ -130,10 +131,10 @@
 
 /* Draw the bottom border of the tabs toolbar when it's not using
    -moz-appearance: toolbar. */
-#main-window:-moz-any([sizemode="fullscreen"],[customize-entered]) #nav-bar:not([tabs-hidden="true"]),
-#main-window:not([tabsintitlebar]) #nav-bar:not([tabs-hidden="true"]),
+:root:-moz-any([sizemode="fullscreen"],[customize-entered]) #nav-bar:not([tabs-hidden="true"]),
+:root:not([tabsintitlebar]) #nav-bar:not([tabs-hidden="true"]),
 #nav-bar:not([tabs-hidden="true"]):-moz-lwtheme {
-  box-shadow: 0 -@navbarTabsShadowSize@ 0 var(--tabs-border-color);
+  box-shadow: 0 calc(-1 * var(--tabs-navbar-shadow-size)) 0 var(--tabs-border-color);
 }
 
 /* Always draw a border on Yosemite to ensure the border is well-defined there
@@ -146,8 +147,8 @@
     --tabs-border-color: rgba(0,0,0,.05);
   }
 
-  #main-window[tabsintitlebar] #nav-bar:not([tabs-hidden="true"]):not(:-moz-lwtheme) {
-    box-shadow: 0 -@navbarTabsShadowSize@ 0 var(--tabs-border-color);
+  :root[tabsintitlebar] #nav-bar:not([tabs-hidden="true"]):not(:-moz-lwtheme) {
+    box-shadow: 0 calc(-1 * var(--tabs-navbar-shadow-size)) 0 var(--tabs-border-color);
   }
 }
 
@@ -227,7 +228,7 @@
 
 /* Inactive elements are faded out on OSX */
 .toolbarbutton-1:not(:hover):-moz-window-inactive,
-#main-window:not([customizing]) .toolbarbutton-1:-moz-window-inactive[disabled="true"] {
+:root:not([customizing]) .toolbarbutton-1:-moz-window-inactive[disabled="true"] {
   opacity: 0.5;
 }
 
@@ -248,7 +249,7 @@
 }
 
 #urlbar,
-.searchbar-textbox {
+#searchbar {
   font-size: 1.25em;
 }
 
@@ -259,7 +260,7 @@ html|input.urlbar-input {
 }
 
 #urlbar:not(.hidden-focus)[focused="true"],
-.searchbar-textbox[focused="true"] {
+#searchbar:focus-within {
   box-shadow: 0 0 0 1px var(--toolbar-field-focus-border-color) inset,
               0 0 0 1px var(--toolbar-field-focus-border-color);
 }
@@ -312,12 +313,6 @@ html|input.urlbar-input {
   max-width: 20em;
 }
 
-.urlbar-display {
-  margin-top: 0;
-  margin-bottom: 0;
-  color: GrayText;
-}
-
 #pageAction-urlbar-shareURL,
 #pageAction-panel-shareURL {
   list-style-image: url("chrome://browser/skin/share.svg");
@@ -333,6 +328,12 @@ html|input.urlbar-input {
 :root {
   --urlbar-popup-url-color: hsl(210, 77%, 47%);
   --urlbar-popup-action-color: hsl(178, 100%, 28%);
+}
+
+/* Remove our custom border since we already get a native one that we can't
+ * seem to override. */
+#urlbar-results {
+  border-style: none;
 }
 
 /* Give an extra margin top to align the top of the awesomebar with the

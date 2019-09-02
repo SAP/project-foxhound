@@ -12,23 +12,23 @@
 
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/RefPtr.h"
-#include "nsIHTMLDocument.h"
+#include "mozilla/dom/Document.h"
 
 class nsIDocShell;
-class nsIEditingSession;
+class nsEditingSession;
 
 class nsDocShellEditorData {
  public:
   explicit nsDocShellEditorData(nsIDocShell* aOwningDocShell);
   ~nsDocShellEditorData();
 
-  nsresult MakeEditable(bool aWaitForUriLoad);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult MakeEditable(bool aWaitForUriLoad);
   bool GetEditable();
-  nsresult CreateEditor();
-  nsresult GetEditingSession(nsIEditingSession** aResult);
+  nsEditingSession* GetEditingSession();
   mozilla::HTMLEditor* GetHTMLEditor() const { return mHTMLEditor; }
-  nsresult SetHTMLEditor(mozilla::HTMLEditor* aHTMLEditor);
-  void TearDownEditor();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
+  SetHTMLEditor(mozilla::HTMLEditor* aHTMLEditor);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void TearDownEditor();
   nsresult DetachFromWindow();
   nsresult ReattachToWindow(nsIDocShell* aDocShell);
   bool WaitingForLoad() const { return mMakeEditable; }
@@ -40,14 +40,14 @@ class nsDocShellEditorData {
   nsIDocShell* mDocShell;
 
   // Only present for the content root docShell. Session is owned here.
-  nsCOMPtr<nsIEditingSession> mEditingSession;
+  RefPtr<nsEditingSession> mEditingSession;
 
   // If this frame is editable, store HTML editor here. It's owned here.
   RefPtr<mozilla::HTMLEditor> mHTMLEditor;
 
-  // Backup for the corresponding nsIHTMLDocument's  editing state while
+  // Backup for the corresponding HTMLDocument's  editing state while
   // the editor is detached.
-  nsIHTMLDocument::EditingState mDetachedEditingState;
+  mozilla::dom::Document::EditingState mDetachedEditingState;
 
   // Indicates whether to make an editor after a url load.
   bool mMakeEditable;

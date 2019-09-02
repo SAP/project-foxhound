@@ -15,6 +15,9 @@ def add_common_arguments(parser):
     parser.add_argument("--verbose",
                         action="store_true", dest="verbose", default=False,
                         help="always print stdout and stderr from tests")
+    parser.add_argument('--verbose-if-fails',
+                        action='store_true', dest="verboseIfFails", default=False,
+                        help='Output the log if a test fails, even when run in parallel')
     parser.add_argument("--keep-going",
                         action="store_true", dest="keepGoing", default=False,
                         help="continue running tests after test killed with control-C (SIGINT)")
@@ -137,6 +140,10 @@ def add_common_arguments(parser):
                         dest="verifyMaxTime",
                         type=int, default=3600,
                         help="Maximum time, in seconds, to run in --verify mode.")
+    parser.add_argument("--enable-webrender",
+                        action="store_true", default=False,
+                        dest="enable_webrender",
+                        help="Enable the WebRender compositor in Gecko.")
 
 
 def add_remote_arguments(parser):
@@ -158,9 +165,6 @@ def add_remote_arguments(parser):
     parser.add_argument("--noSetup", action="store_false", dest="setup", default=True,
                         help="Do not copy any files to device (to be used only if "
                              "device is already setup).")
-
-    parser.add_argument("--local-lib-dir", action="store", type=str, dest="localLib",
-                        help="Local path to library directory.")
 
     parser.add_argument("--local-bin-dir", action="store", type=str, dest="localBin",
                         help="Local path to bin directory.")

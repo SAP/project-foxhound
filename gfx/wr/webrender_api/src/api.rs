@@ -4,7 +4,7 @@
 
 extern crate serde_bytes;
 
-use channel::{self, MsgSender, Payload, PayloadSender, PayloadSenderHelperMethods};
+use crate::channel::{self, MsgSender, Payload, PayloadSender, PayloadSenderHelperMethods};
 use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
@@ -13,11 +13,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::u32;
 // local imports
-use {display_item as di, font};
-use color::{ColorU, ColorF};
-use display_list::{BuiltDisplayList, BuiltDisplayListDescriptor};
-use image::{BlobImageData, BlobImageKey, ImageData, ImageDescriptor, ImageKey};
-use units::*;
+use crate::{display_item as di, font};
+use crate::color::{ColorU, ColorF};
+use crate::display_list::{BuiltDisplayList, BuiltDisplayListDescriptor};
+use crate::image::{BlobImageData, BlobImageKey, ImageData, ImageDescriptor, ImageKey};
+use crate::units::*;
 
 
 pub type TileSize = u16;
@@ -202,12 +202,12 @@ impl Transaction {
     /// Setup the output region in the framebuffer for a given document.
     pub fn set_document_view(
         &mut self,
-        framebuffer_rect: FramebufferIntRect,
+        device_rect: DeviceIntRect,
         device_pixel_ratio: f32,
     ) {
         self.scene_ops.push(
             SceneMsg::SetDocumentView {
-                framebuffer_rect,
+                device_rect,
                 device_pixel_ratio,
             },
         );
@@ -242,6 +242,10 @@ impl Transaction {
 
     pub fn set_pinch_zoom(&mut self, pinch_zoom: ZoomFactor) {
         self.frame_ops.push(FrameMsg::SetPinchZoom(pinch_zoom));
+    }
+
+    pub fn set_is_transform_pinch_zooming(&mut self, is_zooming: bool, animation_id: PropertyBindingId) {
+        self.frame_ops.push(FrameMsg::SetIsTransformPinchZooming(is_zooming, animation_id));
     }
 
     pub fn set_pan(&mut self, pan: DeviceIntPoint) {
@@ -439,6 +443,11 @@ impl Transaction {
     }
 }
 
+pub struct DocumentTransaction {
+    pub document_id: DocumentId,
+    pub transaction: Transaction,
+}
+
 /// Represents a transaction in the format sent through the channel.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct TransactionMsg {
@@ -595,7 +604,7 @@ pub enum SceneMsg {
         preserve_frame_state: bool,
     },
     SetDocumentView {
-        framebuffer_rect: FramebufferIntRect,
+        device_rect: DeviceIntRect,
         device_pixel_ratio: f32,
     },
 }
@@ -612,6 +621,7 @@ pub enum FrameMsg {
     UpdateDynamicProperties(DynamicProperties),
     AppendDynamicProperties(DynamicProperties),
     SetPinchZoom(ZoomFactor),
+    SetIsTransformPinchZooming(bool, PropertyBindingId),
 }
 
 impl fmt::Debug for SceneMsg {
@@ -640,6 +650,7 @@ impl fmt::Debug for FrameMsg {
             FrameMsg::UpdateDynamicProperties(..) => "FrameMsg::UpdateDynamicProperties",
             FrameMsg::AppendDynamicProperties(..) => "FrameMsg::AppendDynamicProperties",
             FrameMsg::SetPinchZoom(..) => "FrameMsg::SetPinchZoom",
+            FrameMsg::SetIsTransformPinchZooming(..) => "FrameMsg::SetIsTransformPinchZooming",
         })
     }
 }
@@ -699,10 +710,10 @@ pub enum DebugCommand {
     ClearCaches(ClearCache),
     /// Invalidate GPU cache, forcing the update from the CPU mirror.
     InvalidateGpuCache,
-    /// Causes the scene builder to pause for a given amount of miliseconds each time it
+    /// Causes the scene builder to pause for a given amount of milliseconds each time it
     /// processes a transaction.
     SimulateLongSceneBuild(u32),
-    /// Causes the low priority scene builder to pause for a given amount of miliseconds
+    /// Causes the low priority scene builder to pause for a given amount of milliseconds
     /// each time it processes a transaction.
     SimulateLongLowPrioritySceneBuild(u32),
 }
@@ -724,9 +735,9 @@ pub enum ApiMsg {
     /// Adds a new document namespace.
     CloneApiByClient(IdNamespace),
     /// Adds a new document with given initial size.
-    AddDocument(DocumentId, FramebufferIntSize, DocumentLayer),
+    AddDocument(DocumentId, DeviceIntSize, DocumentLayer),
     /// A message targeted at a particular document.
-    UpdateDocument(DocumentId, TransactionMsg),
+    UpdateDocuments(Vec<DocumentId>, Vec<TransactionMsg>),
     /// Deletes an existing document.
     DeleteDocument(DocumentId),
     /// An opaque handle that must be passed to the render notifier. It is used by Gecko
@@ -758,7 +769,7 @@ impl fmt::Debug for ApiMsg {
             ApiMsg::CloneApi(..) => "ApiMsg::CloneApi",
             ApiMsg::CloneApiByClient(..) => "ApiMsg::CloneApiByClient",
             ApiMsg::AddDocument(..) => "ApiMsg::AddDocument",
-            ApiMsg::UpdateDocument(..) => "ApiMsg::UpdateDocument",
+            ApiMsg::UpdateDocuments(..) => "ApiMsg::UpdateDocuments",
             ApiMsg::DeleteDocument(..) => "ApiMsg::DeleteDocument",
             ApiMsg::ExternalEvent(..) => "ApiMsg::ExternalEvent",
             ApiMsg::ClearNamespace(..) => "ApiMsg::ClearNamespace",
@@ -789,10 +800,20 @@ pub struct IdNamespace(pub u32);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
-pub struct DocumentId(pub IdNamespace, pub u32);
+pub struct DocumentId {
+    pub namespace_id: IdNamespace,
+    pub id: u32,
+}
 
 impl DocumentId {
-    pub const INVALID: DocumentId = DocumentId(IdNamespace(0), 0);
+    pub fn new(namespace_id: IdNamespace, id: u32) -> Self {
+        DocumentId {
+            namespace_id,
+            id,
+        }
+    }
+
+    pub const INVALID: DocumentId = DocumentId { namespace_id: IdNamespace(0), id: 0 };
 }
 
 /// This type carries no valuable semantics for WR. However, it reflects the fact that
@@ -976,9 +997,9 @@ impl RenderApiSender {
                 // This is used to discover the underlying cause of https://github.com/servo/servo/issues/13480.
                 let webrender_is_alive = self.api_sender.send(ApiMsg::WakeUp);
                 if webrender_is_alive.is_err() {
-                    panic!("Webrender was shut down before processing CloneApi: {}", e);
+                    panic!("WebRender was shut down before processing CloneApi: {}", e);
                 } else {
-                    panic!("CloneApi message response was dropped while Webrender was still alive: {}", e);
+                    panic!("CloneApi message response was dropped while WebRender was still alive: {}", e);
                 }
             }
         };
@@ -1036,15 +1057,21 @@ bitflags! {
         const TEXTURE_CACHE_DBG_CLEAR_EVICTED = 1 << 14;
         /// Show picture caching debug overlay
         const PICTURE_CACHING_DBG   = 1 << 15;
-        const TEXTURE_CACHE_DBG_DISABLE_SHRINK = 1 << 16;
         /// Highlight all primitives with colors based on kind.
-        const PRIMITIVE_DBG = 1 << 17;
+        const PRIMITIVE_DBG = 1 << 16;
         /// Draw a zoom widget showing part of the framebuffer zoomed in.
-        const ZOOM_DBG = 1 << 18;
+        const ZOOM_DBG = 1 << 17;
         /// Scale the debug renderer down for a smaller screen. This will disrupt
         /// any mapping between debug display items and page content, so shouldn't
         /// be used with overlays like the picture caching or primitive display.
-        const SMALL_SCREEN = 1 << 19;
+        const SMALL_SCREEN = 1 << 18;
+        /// Disable various bits of the WebRender pipeline, to help narrow
+        /// down where slowness might be coming from.
+        const DISABLE_OPAQUE_PASS = 1 << 19;
+        const DISABLE_ALPHA_PASS = 1 << 20;
+        const DISABLE_CLIP_MASKS = 1 << 21;
+        const DISABLE_TEXT_PRIMS = 1 << 22;
+        const DISABLE_GRADIENT_PRIMS = 1 << 23;
     }
 }
 
@@ -1064,9 +1091,16 @@ impl RenderApi {
         RenderApiSender::new(self.api_sender.clone(), self.payload_sender.clone())
     }
 
-    pub fn add_document(&self, initial_size: FramebufferIntSize, layer: DocumentLayer) -> DocumentId {
+    pub fn add_document(&self, initial_size: DeviceIntSize, layer: DocumentLayer) -> DocumentId {
         let new_id = self.next_unique_id();
-        let document_id = DocumentId(self.namespace_id, new_id);
+        self.add_document_with_id(initial_size, layer, new_id)
+    }
+
+    pub fn add_document_with_id(&self,
+                                initial_size: DeviceIntSize,
+                                layer: DocumentLayer,
+                                id: u32) -> DocumentId {
+        let document_id = DocumentId::new(self.namespace_id, id);
 
         let msg = ApiMsg::AddDocument(document_id, initial_size, layer);
         self.api_sender.send(msg).unwrap();
@@ -1199,7 +1233,7 @@ impl RenderApi {
         // `RenderApi` instances for layout and compositor.
         //assert_eq!(document_id.0, self.namespace_id);
         self.api_sender
-            .send(ApiMsg::UpdateDocument(document_id, TransactionMsg::scene_message(msg)))
+            .send(ApiMsg::UpdateDocuments(vec![document_id], vec![TransactionMsg::scene_message(msg)]))
             .unwrap()
     }
 
@@ -1209,7 +1243,7 @@ impl RenderApi {
         // `RenderApi` instances for layout and compositor.
         //assert_eq!(document_id.0, self.namespace_id);
         self.api_sender
-            .send(ApiMsg::UpdateDocument(document_id, TransactionMsg::frame_message(msg)))
+            .send(ApiMsg::UpdateDocuments(vec![document_id], vec![TransactionMsg::frame_message(msg)]))
             .unwrap()
     }
 
@@ -1218,7 +1252,24 @@ impl RenderApi {
         for payload in payloads {
             self.payload_sender.send_payload(payload).unwrap();
         }
-        self.api_sender.send(ApiMsg::UpdateDocument(document_id, msg)).unwrap();
+        self.api_sender.send(ApiMsg::UpdateDocuments(vec![document_id], vec![msg])).unwrap();
+    }
+
+    pub fn send_transactions(&self, document_ids: Vec<DocumentId>, mut transactions: Vec<Transaction>) {
+        debug_assert!(document_ids.len() == transactions.len());
+        let length = document_ids.len();
+        let (msgs, mut document_payloads) = transactions.drain(..)
+            .fold((Vec::with_capacity(length), Vec::with_capacity(length)),
+                |(mut msgs, mut document_payloads), transaction| {
+                    let (msg, payloads) = transaction.finalize();
+                    msgs.push(msg);
+                    document_payloads.push(payloads);
+                    (msgs, document_payloads)
+                });
+        for payload in document_payloads.drain(..).flatten() {
+            self.payload_sender.send_payload(payload).unwrap();
+        }
+        self.api_sender.send(ApiMsg::UpdateDocuments(document_ids.clone(), msgs)).unwrap();
     }
 
     /// Does a hit test on display items in the specified document, at the given
@@ -1246,12 +1297,12 @@ impl RenderApi {
     pub fn set_document_view(
         &self,
         document_id: DocumentId,
-        framebuffer_rect: FramebufferIntRect,
+        device_rect: DeviceIntRect,
         device_pixel_ratio: f32,
     ) {
         self.send_scene_msg(
             document_id,
-            SceneMsg::SetDocumentView { framebuffer_rect, device_pixel_ratio },
+            SceneMsg::SetDocumentView { device_rect, device_pixel_ratio },
         );
     }
 
@@ -1436,9 +1487,9 @@ pub struct DynamicProperties {
 }
 
 pub trait RenderNotifier: Send {
-    fn clone(&self) -> Box<RenderNotifier>;
+    fn clone(&self) -> Box<dyn RenderNotifier>;
     fn wake_up(&self);
-    fn new_frame_ready(&self, DocumentId, scrolled: bool, composite_needed: bool, render_time_ns: Option<u64>);
+    fn new_frame_ready(&self, _: DocumentId, scrolled: bool, composite_needed: bool, render_time_ns: Option<u64>);
     fn external_event(&self, _evt: ExternalEvent) {
         unimplemented!()
     }
@@ -1462,12 +1513,12 @@ pub trait NotificationHandler : Send + Sync {
 }
 
 pub struct NotificationRequest {
-    handler: Option<Box<NotificationHandler>>,
+    handler: Option<Box<dyn NotificationHandler>>,
     when: Checkpoint,
 }
 
 impl NotificationRequest {
-    pub fn new(when: Checkpoint, handler: Box<NotificationHandler>) -> Self {
+    pub fn new(when: Checkpoint, handler: Box<dyn NotificationHandler>) -> Self {
         NotificationRequest {
             handler: Some(handler),
             when,

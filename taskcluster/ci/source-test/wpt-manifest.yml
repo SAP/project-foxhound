@@ -1,9 +1,13 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 job-defaults:
     platform: linux64/opt
     treeherder:
         kind: test
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-t-linux-xlarge
+    worker-type: t-linux-xlarge
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 1800
@@ -20,7 +24,7 @@ upload:
         using: run-task
         command: >
             cd /builds/worker/checkouts/gecko
-            && ./mach wpt-manifest-update --config testing/web-platform/wptrunner.ini
+            && ./mach wpt-manifest-update --config testing/web-platform/wptrunner.ini --no-download
             && tar -cvzf manifests.tar.gz -C testing/web-platform/ meta/MANIFEST.json mozilla/meta/MANIFEST.json
     worker:
         artifacts:

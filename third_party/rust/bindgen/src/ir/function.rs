@@ -8,10 +8,10 @@ use super::traversal::{EdgeKind, Trace, Tracer};
 use super::ty::TypeKind;
 use clang;
 use clang_sys::{self, CXCallingConv};
-use ir::derive::{CanTriviallyDeriveDebug, CanTriviallyDeriveHash,
-                 CanTriviallyDerivePartialEqOrPartialOrd, CanDerive};
 use parse::{ClangItemParser, ClangSubItemParser, ParseError, ParseResult};
 use quote;
+use quote::TokenStreamExt;
+use proc_macro2;
 use std::io;
 
 const RUST_DERIVE_FUNPTR_LIMIT: usize = 12;
@@ -192,7 +192,7 @@ impl Abi {
 }
 
 impl quote::ToTokens for Abi {
-    fn to_tokens(&self, tokens: &mut quote::Tokens) {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.append_all(match *self {
             Abi::C => quote! { "C" },
             Abi::Stdcall => quote! { "stdcall" },
@@ -221,6 +221,9 @@ pub struct FunctionSig {
     /// Whether this function is variadic.
     is_variadic: bool,
 
+    /// Whether this function's return value must be used.
+    must_use: bool,
+
     /// The ABI of this function.
     abi: Abi,
 }
@@ -244,15 +247,13 @@ pub fn cursor_mangling(
     ctx: &BindgenContext,
     cursor: &clang::Cursor,
 ) -> Option<String> {
-    use clang_sys;
-
     if !ctx.options().enable_mangling {
         return None;
     }
 
     // We early return here because libclang may crash in some case
     // if we pass in a variable inside a partial specialized template.
-    // See rust-lang-nursery/rust-bindgen#67, and rust-lang-nursery/rust-bindgen#462.
+    // See rust-lang/rust-bindgen#67, and rust-lang/rust-bindgen#462.
     if cursor.is_in_non_fully_specialized_template() {
         return None;
     }
@@ -304,18 +305,58 @@ pub fn cursor_mangling(
     Some(mangling)
 }
 
+fn args_from_ty_and_cursor(
+    ty: &clang::Type,
+    cursor: &clang::Cursor,
+    ctx: &mut BindgenContext,
+) -> Vec<(Option<String>, TypeId)> {
+    let cursor_args = cursor.args().unwrap().into_iter();
+    let type_args = ty.args().unwrap_or_default().into_iter();
+
+    // Argument types can be found in either the cursor or the type, but argument names may only be
+    // found on the cursor. We often have access to both a type and a cursor for each argument, but
+    // in some cases we may only have one.
+    //
+    // Prefer using the type as the source of truth for the argument's type, but fall back to
+    // inspecting the cursor (this happens for Objective C interfaces).
+    //
+    // Prefer using the cursor for the argument's type, but fall back to using the parent's cursor
+    // (this happens for function pointer return types).
+    cursor_args
+        .map(Some)
+        .chain(std::iter::repeat(None))
+        .zip(
+            type_args
+            .map(Some)
+            .chain(std::iter::repeat(None))
+        )
+        .take_while(|(cur, ty)| cur.is_some() || ty.is_some())
+        .map(|(arg_cur, arg_ty)| {
+            let name = arg_cur
+                .map(|a| a.spelling())
+                .and_then(|name| if name.is_empty() { None} else { Some(name) });
+
+            let cursor = arg_cur.unwrap_or(*cursor);
+            let ty = arg_ty.unwrap_or(cursor.cur_type());
+            (name, Item::from_ty_or_ref(ty, cursor, None, ctx))
+        })
+        .collect()
+}
+
 impl FunctionSig {
     /// Construct a new function signature.
     pub fn new(
         return_type: TypeId,
-        arguments: Vec<(Option<String>, TypeId)>,
+        argument_types: Vec<(Option<String>, TypeId)>,
         is_variadic: bool,
+        must_use: bool,
         abi: Abi,
     ) -> Self {
         FunctionSig {
-            return_type: return_type,
-            argument_types: arguments,
-            is_variadic: is_variadic,
+            return_type,
+            argument_types,
+            is_variadic,
+            must_use,
             abi: abi,
         }
     }
@@ -330,7 +371,8 @@ impl FunctionSig {
         debug!("FunctionSig::from_ty {:?} {:?}", ty, cursor);
 
         // Skip function templates
-        if cursor.kind() == CXCursor_FunctionTemplate {
+        let kind = cursor.kind();
+        if kind == CXCursor_FunctionTemplate {
             return Err(ParseError::Continue);
         }
 
@@ -340,34 +382,29 @@ impl FunctionSig {
             return Err(ParseError::Continue);
         }
 
+        // Constructors of non-type template parameter classes for some reason
+        // include the template parameter in their name. Just skip them, since
+        // we don't handle well non-type template parameters anyway.
+        if (kind == CXCursor_Constructor || kind == CXCursor_Destructor) &&
+            spelling.contains('<')
+        {
+            return Err(ParseError::Continue);
+        }
+
         let cursor = if cursor.is_valid() {
             *cursor
         } else {
             ty.declaration()
         };
 
-        let mut args: Vec<_> = match cursor.kind() {
+        let mut args = match kind {
             CXCursor_FunctionDecl |
             CXCursor_Constructor |
             CXCursor_CXXMethod |
             CXCursor_ObjCInstanceMethodDecl |
             CXCursor_ObjCClassMethodDecl => {
-                // For CXCursor_FunctionDecl, cursor.args() is the reliable way
-                // to get parameter names and types.
-                cursor
-                    .args()
-                    .unwrap()
-                    .iter()
-                    .map(|arg| {
-                        let arg_ty = arg.cur_type();
-                        let name = arg.spelling();
-                        let name =
-                            if name.is_empty() { None } else { Some(name) };
-                        let ty = Item::from_ty_or_ref(arg_ty, *arg, None, ctx);
-                        (name, ty)
-                    })
-                    .collect()
-            }
+                args_from_ty_and_cursor(&ty, &cursor, ctx)
+            },
             _ => {
                 // For non-CXCursor_FunctionDecl, visiting the cursor's children
                 // is the only reliable way to get parameter names.
@@ -387,9 +424,12 @@ impl FunctionSig {
             }
         };
 
-        let is_method = cursor.kind() == CXCursor_CXXMethod;
-        let is_constructor = cursor.kind() == CXCursor_Constructor;
-        let is_destructor = cursor.kind() == CXCursor_Destructor;
+        let must_use =
+            ctx.options().enable_function_attribute_detection &&
+            cursor.has_simple_attr("warn_unused_result");
+        let is_method = kind == CXCursor_CXXMethod;
+        let is_constructor = kind == CXCursor_Constructor;
+        let is_destructor = kind == CXCursor_Destructor;
         if (is_constructor || is_destructor || is_method) &&
             cursor.lexical_parent() != cursor.semantic_parent()
         {
@@ -432,8 +472,8 @@ impl FunctionSig {
             }
         }
 
-        let ty_ret_type = if cursor.kind() == CXCursor_ObjCInstanceMethodDecl ||
-            cursor.kind() == CXCursor_ObjCClassMethodDecl
+        let ty_ret_type = if kind == CXCursor_ObjCInstanceMethodDecl ||
+            kind == CXCursor_ObjCClassMethodDecl
         {
             ty.ret_type().or_else(|| cursor.ret_type()).ok_or(
                 ParseError::Continue,
@@ -458,7 +498,7 @@ impl FunctionSig {
             warn!("Unknown calling convention: {:?}", call_conv);
         }
 
-        Ok(Self::new(ret.into(), args, ty.is_variadic(), abi))
+        Ok(Self::new(ret.into(), args, ty.is_variadic(), must_use, abi))
     }
 
     /// Get this function signature's return type.
@@ -484,13 +524,18 @@ impl FunctionSig {
         self.is_variadic && !self.argument_types.is_empty()
     }
 
+    /// Must this function's return value be used?
+    pub fn must_use(&self) -> bool {
+        self.must_use
+    }
+
     /// Are function pointers with this signature able to derive Rust traits?
     /// Rust only supports deriving traits for function pointers with a limited
     /// number of parameters and a couple ABIs.
     ///
     /// For more details, see:
     ///
-    /// * https://github.com/rust-lang-nursery/rust-bindgen/issues/547,
+    /// * https://github.com/rust-lang/rust-bindgen/issues/547,
     /// * https://github.com/rust-lang/rust/issues/38848,
     /// * and https://github.com/rust-lang/rust/issues/40158
     pub fn function_pointers_can_derive(&self) -> bool {
@@ -581,28 +626,6 @@ impl Trace for FunctionSig {
 
         for &(_, ty) in self.argument_types() {
             tracer.visit_kind(ty.into(), EdgeKind::FunctionParameter);
-        }
-    }
-}
-
-impl CanTriviallyDeriveDebug for FunctionSig {
-    fn can_trivially_derive_debug(&self, _: &BindgenContext) -> bool {
-        self.function_pointers_can_derive()
-    }
-}
-
-impl CanTriviallyDeriveHash for FunctionSig {
-    fn can_trivially_derive_hash(&self, _: &BindgenContext) -> bool {
-        self.function_pointers_can_derive()
-    }
-}
-
-impl CanTriviallyDerivePartialEqOrPartialOrd for FunctionSig {
-    fn can_trivially_derive_partialeq_or_partialord(&self, _: &BindgenContext) -> CanDerive {
-        if self.function_pointers_can_derive() {
-            CanDerive::Yes
-        } else {
-            CanDerive::No
         }
     }
 }

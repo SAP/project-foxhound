@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=553917
 <html>
   <head>
     <title>Test for Bug 553917</title>
-    <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-    <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
     <script type="application/javascript">
       var stringBundleService = 
@@ -78,7 +78,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=553917
         if (name != "MMultiscriptsErrors") {
           var formatParams = g_errorInfo[name].args[idx];
           if (formatParams.length > 0) {
-            return g_bundl.formatStringFromName(name,formatParams,formatParams.length);
+            return g_bundl.formatStringFromName(name,formatParams);
           } else {
             return g_bundl.GetStringFromName(name);
           }

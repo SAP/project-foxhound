@@ -5,7 +5,7 @@
 
 #include "DecodedSurfaceProvider.h"
 
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 #include "nsProxyRelease.h"
 
 #include "Decoder.h"
@@ -200,7 +200,8 @@ void DecodedSurfaceProvider::FinishDecoding() {
 }
 
 bool DecodedSurfaceProvider::ShouldPreferSyncRun() const {
-  return mDecoder->ShouldSyncDecode(gfxPrefs::ImageMemDecodeBytesAtATime());
+  return mDecoder->ShouldSyncDecode(
+      StaticPrefs::image_mem_decode_bytes_at_a_time());
 }
 
 }  // namespace image

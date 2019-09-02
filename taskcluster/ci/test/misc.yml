@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 geckoview-junit:
     description: "Geckoview junit run"
     suite: geckoview-junit
@@ -14,9 +18,13 @@ geckoview-junit:
     chunks:
         by-test-platform:
             android-em-4.3-arm7-api-16-ccov/debug: 8
-            android-em-4.3-arm7-api-16/debug: 8
-            android-em-4.3-arm7-api-16/opt: 3
+            android-em-4.3-arm7-api-16.*\/debug: 8
+            android-em-4.*\/(?:opt|pgo)?: 3
             default: 1
+    run-on-projects:
+        by-test-platform:
+            android-em-4.3-arm7-api-16/opt: ['try']
+            default: ['try', 'trunk', 'mozilla-beta', 'mozilla-release']
     mozharness:
         script: android_emulator_unittest.py
         config:
@@ -35,13 +43,18 @@ robocop:
     suite: robocop
     treeherder-symbol: M(rc)
     instance-size: xlarge
+    tier: 2
     chunks:
         by-test-platform:
             # android-em-4.3-arm7-api-16/debug -- not run
             android-em-4.3-arm7-api-16-ccov/debug: 8
-            android-em-4.3-arm7-api-16/opt: 4
+            android-em-4.*\/(?:opt|pgo)?: 4
     loopback-video: true
     e10s: false
+    run-on-projects:
+        by-test-platform:
+            android-em-4.*/.*: ['try', 'mozilla-central']
+            default: built-projects
     mozharness:
         script: android_emulator_unittest.py
         config:
@@ -54,8 +67,8 @@ telemetry-tests-client:
     description: "Telemetry tests client run"
     suite: telemetry-tests-client
     treeherder-symbol: tt(c)
-    max-run-time: 600
-    tier: 2
+    max-run-time: 1200
+    tier: default
     mozharness:
         script: telemetry/telemetry_client.py
         config:
@@ -63,6 +76,7 @@ telemetry-tests-client:
                 linux.*:
                     - remove_executables.py
                 windows.*: []
+                macosx.*: []
 
 test-verify:
     description: "Extra verification of tests modified on this push"
@@ -77,10 +91,12 @@ test-verify:
     allow-software-gl-layers: false
     run-on-projects:
         by-test-platform:
+            android-em-4.*/.*: ['try', 'mozilla-central']  # bug 1548659
             # do not run on ccov
             .*-ccov/.*: []
             .*-asan/.*: []
             (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
+            macosx.*64(?:-qr)?/opt: ['mozilla-central', 'try']
             # do not run on beta or release: usually just confirms earlier results
             default: ['trunk', 'try']
     tier: 2
@@ -103,13 +119,16 @@ test-verify:
                 macosx.*:
                     - unittests/mac_unittest.py
                 windows.*:
-                    - unittests/win_taskcluster_unittest.py
+                    - unittests/win_unittest.py
         extra-options:
             - --verify
 
 test-verify-gpu:
     description: "Extra verification of tests modified on this push on gpu instances"
-    suite: test-verify
+    suite:
+        category: test-verify
+        name: test-verify-gpu
+    schedules-component: test-verify-gpu
     treeherder-symbol: TVg
     loopback-video: true
     virtualization: virtual-with-gpu
@@ -125,6 +144,7 @@ test-verify-gpu:
             .*-ccov/.*: []
             .*-asan/.*: []
             (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
+            macosx.*64(?:-qr)?/opt: ['mozilla-central', 'try']
             # do not run on beta or release: usually just confirms earlier results
             default: ['trunk', 'try']
     tier: 2
@@ -147,7 +167,7 @@ test-verify-gpu:
                 macosx.*:
                     - unittests/mac_unittest.py
                 windows.*:
-                    - unittests/win_taskcluster_unittest.py
+                    - unittests/win_unittest.py
         extra-options:
             - --verify
             - --gpu-required
@@ -184,7 +204,7 @@ test-coverage:
                 macosx.*:
                     - unittests/mac_unittest.py
                 windows.*:
-                    - unittests/win_taskcluster_unittest.py
+                    - unittests/win_unittest.py
         extra-options:
             - --per-test-coverage
 
@@ -225,7 +245,7 @@ test-coverage-gpu:
                 macosx.*:
                     - unittests/mac_unittest.py
                 windows.*:
-                    - unittests/win_taskcluster_unittest.py
+                    - unittests/win_unittest.py
         extra-options:
             - --per-test-coverage
             - --gpu-required

@@ -5,13 +5,13 @@
 
 "use strict";
 
-const OPTOUT = Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTOUT;
+const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 
 /**
  * Test the throttle_change telemetry event.
  */
 add_task(async function() {
-  const { monitor } = await initNetMonitor(SIMPLE_URL);
+  const { monitor, toolbox } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
   const { document, store, windowRequire } = monitor.panelWin;
@@ -22,19 +22,25 @@ add_task(async function() {
   Services.telemetry.clearEvents();
 
   // Ensure no events have been logged
-  const snapshot = Services.telemetry.snapshotEvents(OPTOUT, true);
+  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
   ok(!snapshot.parent, "No events have been logged for the main process");
 
   document.getElementById("network-throttling-menu").click();
-  monitor.panelWin.parent.document.querySelector("menuitem[label='GPRS']").click();
+  // Throttling menu items cannot be retrieved by id so we can't use getContextMenuItem
+  // here. Instead use querySelector on the toolbox top document, where the context menu
+  // will be rendered.
+  toolbox.topWindow.document.querySelector("menuitem[label='GPRS']").click();
   await waitFor(monitor.panelWin.api, EVENTS.THROTTLING_CHANGED);
 
   // Verify existence of the telemetry event.
-  checkTelemetryEvent({
-    mode: "GPRS",
-  }, {
-    method: "throttle_changed",
-  });
+  checkTelemetryEvent(
+    {
+      mode: "GPRS",
+    },
+    {
+      method: "throttle_changed",
+    }
+  );
 
   return teardown(monitor);
 });

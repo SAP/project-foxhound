@@ -45,6 +45,7 @@
 #     taskGroupId, // targetted taskGroupId
 #     action: {name, title, description, taskGroupId, symbol, repo_scope, cb_name}
 #     ownTaskId:   // taskId of the task that will be created
+#     clientId:    // clientId that triggered this hook
 #   }
 
 version: 1
@@ -58,6 +59,11 @@ tasks:
         ownerEmail: {$if: '"@" in push.owner', then: '${push.owner}', else: '${push.owner}@noreply.mozilla.org'}
         # ensure there's no trailing `/` on the repo URL
         repoUrl: {$if: 'repository.url[-1] == "/"', then: {$eval: 'repository.url[:-1]'}, else: {$eval: 'repository.url'}}
+        # expire try earlier than other branches
+        expires:
+          $if: 'repository.project == "try"'
+          then: {$fromNow: '28 days'}
+          else: {$fromNow: '1 year'}
       in:
         taskId: {$if: 'tasks_for != "action"', then: '${ownTaskId}'}
         taskGroupId:
@@ -70,7 +76,7 @@ tasks:
 
         created: {$fromNow: ''}
         deadline: {$fromNow: '1 day'}
-        expires: {$fromNow: '1 year 1 second'} # 1 second so artifacts expire first, despite rounding errors
+        expires: {$eval: 'expires'}
         metadata:
           $merge:
             - owner: "${ownerEmail}"
@@ -110,7 +116,7 @@ tasks:
                 kind: cron-task
 
         routes:
-          $flatten:
+          $flattenDeep:
             - "tc-treeherder.v2.${repository.project}.${push.revision}.${push.pushlog_id}"
             - $if: 'tasks_for == "hg-push"'
               then:
@@ -130,8 +136,6 @@ tasks:
               else:
                 $if: 'tasks_for == "action"'
                 then:
-                - "notify.email.taskcluster-notifications+action-task@mozilla.com.on-failed"
-                - "notify.email.taskcluster-notifications+action-task@mozilla.com.on-exception"
                 - "index.gecko.v2.${repository.project}.pushlog-id.${push.pushlog_id}.actions.${ownTaskId}"
                 else:  # cron
                 - "index.gecko.v2.${repository.project}.latest.taskgraph.decision-${cron.job_name}"
@@ -140,10 +144,12 @@ tasks:
                 # list each cron task on this revision, so actions can find them
                 - 'index.gecko.v2.${repository.project}.revision.${push.revision}.cron.${ownTaskId}'
                 # BUG 1500166 Notify ciduty by email if a nightly hook fails
-                - "notify.email.ciduty+failedcron@mozilla.com.on-failed"
-                - "notify.email.ciduty+exceptioncron@mozilla.com.on-exception"
-                - "notify.email.sheriffs+failedcron@mozilla.org.on-failed"
-                - "notify.email.sheriffs+exceptioncron@mozilla.org.on-exception"
+                - $if: 'repository.project != "try"'
+                  then:
+                  - "notify.email.ciduty+failedcron@mozilla.com.on-failed"
+                  - "notify.email.ciduty+exceptioncron@mozilla.com.on-exception"
+                  - "notify.email.sheriffs+failedcron@mozilla.org.on-failed"
+                  - "notify.email.sheriffs+exceptioncron@mozilla.org.on-exception"
                 # These are the old index routes for the decision task.
                 - "index.gecko.v2.${repository.project}.latest.firefox.decision-${cron.job_name}"
 
@@ -213,14 +219,14 @@ tasks:
 
           # Note: This task is built server side without the context or tooling that
           # exist in tree so we must hard code the hash
-          image: 'taskcluster/decision:2.1.0@sha256:6db3b697d7a3c7aba440d72f04199331b872111cefff57206b8b8b1d53230360'
+          image: 'taskcluster/decision:2.2.0@sha256:0e9689e94605eb8395f5b49141a48148416b0d825f6f7be04c29642d1a85ee3d'
 
           maxRunTime: 1800
 
           command:
             - /builds/worker/bin/run-task
-            - '--vcs-checkout=/builds/worker/checkouts/gecko'
-            - '--sparse-profile=build/sparse-profiles/taskgraph'
+            - '--gecko-checkout=/builds/worker/checkouts/gecko'
+            - '--gecko-sparse-profile=build/sparse-profiles/taskgraph'
             - '--'
             - bash
             - -cx
@@ -252,7 +258,7 @@ tasks:
             'public':
               type: 'directory'
               path: '/builds/worker/artifacts'
-              expires: {$fromNow: '1 year'}
+              expires: {$eval: expires}
 
         extra:
           $merge:

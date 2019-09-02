@@ -6,21 +6,28 @@
 /* global EVENTS */
 
 // React & Redux
-const { Component, createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  Component,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 
-const TreeView = createFactory(require("devtools/client/shared/components/tree/TreeView"));
+const TreeView = createFactory(
+  require("devtools/client/shared/components/tree/TreeView")
+);
 // Reps
-const { REPS, MODE } = require("devtools/client/shared/components/reps/reps");
-const Rep = createFactory(REPS.Rep);
-const Grip = REPS.Grip;
+const { MODE } = require("devtools/client/shared/components/reps/reps");
 
 const { fetchChildren } = require("../actions/accessibles");
 
 const { L10N } = require("../utils/l10n");
+const { isFiltered } = require("../utils/audit");
 const AccessibilityRow = createFactory(require("./AccessibilityRow"));
+const AccessibilityRowValue = createFactory(require("./AccessibilityRowValue"));
 const { Provider } = require("../provider");
+
+const { scrollIntoView } = require("devtools/client/shared/scroll");
 
 /**
  * Renders Accessibility panel tree.
@@ -35,6 +42,7 @@ class AccessibilityTree extends Component {
       selected: PropTypes.string,
       highlighted: PropTypes.object,
       supports: PropTypes.object,
+      filtered: PropTypes.bool,
     };
   }
 
@@ -44,6 +52,7 @@ class AccessibilityTree extends Component {
     this.onNameChange = this.onNameChange.bind(this);
     this.onReorder = this.onReorder.bind(this);
     this.onTextChange = this.onTextChange.bind(this);
+    this.renderValue = this.renderValue.bind(this);
   }
 
   /**
@@ -58,7 +67,16 @@ class AccessibilityTree extends Component {
     return null;
   }
 
-  componentDidUpdate() {
+  componentDidUpdate(prevProps) {
+    // When filtering is toggled, make sure that the selected row remains in
+    // view.
+    if (this.props.filtered !== prevProps.filtered) {
+      const selected = document.querySelector(".treeTable .treeRow.selected");
+      if (selected) {
+        scrollIntoView(selected, { center: true });
+      }
+    }
+
     window.emit(EVENTS.ACCESSIBILITY_INSPECTOR_UPDATED);
   }
 
@@ -99,8 +117,10 @@ class AccessibilityTree extends Component {
     const { accessibles, walker, dispatch } = this.props;
     parent = parent || walker;
 
-    if (accessibles.has(accessible.actorID) ||
-        accessibles.has(parent.actorID)) {
+    if (
+      accessibles.has(accessible.actorID) ||
+      accessibles.has(parent.actorID)
+    ) {
       dispatch(fetchChildren(parent));
     }
   }
@@ -120,17 +140,24 @@ class AccessibilityTree extends Component {
     }
   }
 
+  renderValue(props) {
+    return AccessibilityRowValue(props);
+  }
+
   /**
    * Render Accessibility panel content
    */
   render() {
-    const columns = [{
-      "id": "default",
-      "title": L10N.getStr("accessibility.role"),
-    }, {
-      "id": "value",
-      "title": L10N.getStr("accessibility.name"),
-    }];
+    const columns = [
+      {
+        id: "default",
+        title: L10N.getStr("accessibility.role"),
+      },
+      {
+        id: "value",
+        title: L10N.getStr("accessibility.name"),
+      },
+    ];
 
     const {
       accessibles,
@@ -140,54 +167,56 @@ class AccessibilityTree extends Component {
       highlighted: highlightedItem,
       supports,
       walker,
+      filtered,
     } = this.props;
 
     // Historically, the first context menu item is snapshot function and it is available
     // for all accessible object.
     const hasContextMenu = supports.snapshot;
 
-    const renderValue = props => {
-      return Rep(Object.assign({}, props, {
-        defaultRep: Grip,
-        cropLimit: 50,
-      }));
-    };
-
     const renderRow = rowProps => {
       const { object } = rowProps.member;
       const highlighted = object === highlightedItem;
-      return AccessibilityRow(Object.assign({}, rowProps, {
-        walker,
-        hasContextMenu,
-        highlighted,
-        decorator: {
-          getRowClass: function() {
-            return highlighted ? ["highlighted"] : [];
+      return AccessibilityRow(
+        Object.assign({}, rowProps, {
+          walker,
+          hasContextMenu,
+          highlighted,
+          decorator: {
+            getRowClass: function() {
+              return highlighted ? ["highlighted"] : [];
+            },
           },
-        },
-      }));
+        })
+      );
     };
+    const className = filtered ? "filtered" : undefined;
 
-    return (
-      TreeView({
-        object: walker,
-        mode: MODE.SHORT,
-        provider: new Provider(accessibles, dispatch),
-        columns: columns,
-        renderValue,
-        renderRow,
-        label: L10N.getStr("accessibility.treeName"),
-        header: true,
-        expandedNodes: expanded,
-        selected,
-        onClickRow(nodePath, event) {
-          event.stopPropagation();
-          if (event.target.classList.contains("theme-twisty")) {
-            this.toggle(nodePath);
-          }
-          this.selectRow(event.currentTarget);
-        },
-        onContextMenuTree: hasContextMenu && function(e) {
+    return TreeView({
+      object: walker,
+      mode: MODE.SHORT,
+      provider: new Provider(accessibles, filtered, dispatch),
+      columns: columns,
+      className,
+      renderValue: this.renderValue,
+      renderRow,
+      label: L10N.getStr("accessibility.treeName"),
+      header: true,
+      expandedNodes: expanded,
+      selected,
+      onClickRow(nodePath, event) {
+        if (event.target.classList.contains("theme-twisty")) {
+          this.toggle(nodePath);
+        }
+
+        this.selectRow(
+          this.rows.find(row => row.props.member.path === nodePath),
+          { preventAutoScroll: true }
+        );
+      },
+      onContextMenuTree:
+        hasContextMenu &&
+        function(e) {
           // If context menu event is triggered on (or bubbled to) the TreeView, it was
           // done via keyboard. Open context menu for currently selected row.
           let row = this.getSelectedRow();
@@ -198,17 +227,21 @@ class AccessibilityTree extends Component {
           row = row.getWrappedInstance();
           row.onContextMenu(e);
         },
-      })
-    );
+    });
   }
 }
 
-const mapStateToProps = ({ accessibles, ui }) => ({
+const mapStateToProps = ({
   accessibles,
-  expanded: ui.expanded,
-  selected: ui.selected,
-  supports: ui.supports,
-  highlighted: ui.highlighted,
+  ui: { expanded, selected, supports, highlighted },
+  audit: { filters },
+}) => ({
+  accessibles,
+  expanded,
+  selected,
+  supports,
+  highlighted,
+  filtered: isFiltered(filters),
 });
 // Exports from this module
 module.exports = connect(mapStateToProps)(AccessibilityTree);

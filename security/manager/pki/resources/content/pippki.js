@@ -25,21 +25,22 @@ function setText(id, value) {
   element.appendChild(document.createTextNode(value));
 }
 
-const nsICertificateDialogs = Ci.nsICertificateDialogs;
-const nsCertificateDialogs = "@mozilla.org/nsCertificateDialogs;1";
-
 function viewCertHelper(parent, cert) {
   if (!cert) {
     return;
   }
 
-  Services.ww.openWindow(parent, "chrome://pippki/content/certViewer.xul",
-                         "_blank", "centerscreen,chrome", cert);
+  Services.ww.openWindow(
+    parent,
+    "chrome://pippki/content/certViewer.xul",
+    "_blank",
+    "centerscreen,chrome",
+    cert
+  );
 }
 
 function getDERString(cert) {
-  var length = {};
-  var derArray = cert.getRawDER(length);
+  var derArray = cert.getRawDER();
   var derString = "";
   for (var i = 0; i < derArray.length; i++) {
     derString += String.fromCharCode(derArray[i]);
@@ -48,8 +49,9 @@ function getDERString(cert) {
 }
 
 function getPKCS7String(certArray) {
-  let certList = Cc["@mozilla.org/security/x509certlist;1"]
-                   .createInstance(Ci.nsIX509CertList);
+  let certList = Cc["@mozilla.org/security/x509certlist;1"].createInstance(
+    Ci.nsIX509CertList
+  );
   for (let cert of certArray) {
     certList.addCert(cert);
   }
@@ -61,17 +63,20 @@ function getPEMString(cert) {
   // Wrap the Base64 string into lines of 64 characters with CRLF line breaks
   // (as specified in RFC 1421).
   var wrapped = derb64.replace(/(\S{64}(?!$))/g, "$1\r\n");
-  return "-----BEGIN CERTIFICATE-----\r\n"
-         + wrapped
-         + "\r\n-----END CERTIFICATE-----\r\n";
+  return (
+    "-----BEGIN CERTIFICATE-----\r\n" +
+    wrapped +
+    "\r\n-----END CERTIFICATE-----\r\n"
+  );
 }
 
 function alertPromptService(title, message) {
   // XXX Bug 1425832 - Using Services.prompt here causes tests to report memory
   // leaks.
   // eslint-disable-next-line mozilla/use-services
-  var ps = Cc["@mozilla.org/embedcomp/prompt-service;1"].
-           getService(Ci.nsIPromptService);
+  var ps = Cc["@mozilla.org/embedcomp/prompt-service;1"].getService(
+    Ci.nsIPromptService
+  );
   ps.alert(window, title, message);
 }
 
@@ -90,10 +95,11 @@ function certToFilename(cert) {
   let filename = cert.displayName;
 
   // Remove unneeded and/or unsafe characters.
-  filename = filename.replace(/\s/g, "")
-                     .replace(/\./g, "_")
-                     .replace(/\\/g, "")
-                     .replace(/\//g, "");
+  filename = filename
+    .replace(/\s/g, "")
+    .replace(/\./g, "_")
+    .replace(/\\/g, "")
+    .replace(/\//g, "");
 
   // Ci.nsIFilePicker.defaultExtension is more of a suggestion to some
   // implementations, so we include the extension in the file name as well. This
@@ -114,17 +120,17 @@ async function exportToFile(parent, cert) {
   }
 
   let formats = {
-    "base64": "*.crt; *.pem",
+    base64: "*.crt; *.pem",
     "base64-chain": "*.crt; *.pem",
-    "der": "*.der",
-    "pkcs7": "*.p7c",
+    der: "*.der",
+    pkcs7: "*.p7c",
     "pkcs7-chain": "*.p7c",
   };
-  let [saveCertAs, ...formatLabels] =
-    await document.l10n.formatValues([
-      "save-cert-as",
-      ...Object.keys(formats).map(f => "cert-format-" + f),
-    ].map(id => ({id})));
+  let [saveCertAs, ...formatLabels] = await document.l10n.formatValues(
+    ["save-cert-as", ...Object.keys(formats).map(f => "cert-format-" + f)].map(
+      id => ({ id })
+    )
+  );
 
   var fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
   fp.init(parent, saveCertAs, Ci.nsIFilePicker.modeSave);
@@ -138,8 +144,10 @@ async function exportToFile(parent, cert) {
     fp.open(resolve);
   });
 
-  if (filePickerResult != Ci.nsIFilePicker.returnOK &&
-      filePickerResult != Ci.nsIFilePicker.returnReplace) {
+  if (
+    filePickerResult != Ci.nsIFilePicker.returnOK &&
+    filePickerResult != Ci.nsIFilePicker.returnReplace
+  ) {
     return;
   }
 
@@ -179,11 +187,11 @@ async function exportToFile(parent, cert) {
 const PRErrorCodeSuccess = 0;
 
 // Certificate usages we care about in the certificate viewer.
-const certificateUsageSSLClient              = 0x0001;
-const certificateUsageSSLServer              = 0x0002;
-const certificateUsageSSLCA                  = 0x0008;
-const certificateUsageEmailSigner            = 0x0010;
-const certificateUsageEmailRecipient         = 0x0020;
+const certificateUsageSSLClient = 0x0001;
+const certificateUsageSSLServer = 0x0002;
+const certificateUsageSSLCA = 0x0008;
+const certificateUsageEmailSigner = 0x0010;
+const certificateUsageEmailRecipient = 0x0020;
 
 // A map from the name of a certificate usage to the value of the usage.
 // Useful for printing debugging information and for enumerating all supported
@@ -209,18 +217,29 @@ const certificateUsages = {
 function asyncDetermineUsages(cert) {
   let promises = [];
   let now = Date.now() / 1000;
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"]
-                 .getService(Ci.nsIX509CertDB);
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
   Object.keys(certificateUsages).forEach(usageString => {
-    promises.push(new Promise((resolve, reject) => {
-      let usage = certificateUsages[usageString];
-      certdb.asyncVerifyCertAtTime(cert, usage, 0, null, now,
-        (aPRErrorCode, aVerifiedChain, aHasEVPolicy) => {
-          resolve({ usageString,
-                    errorCode: aPRErrorCode,
-                    chain: aVerifiedChain });
-        });
-    }));
+    promises.push(
+      new Promise((resolve, reject) => {
+        let usage = certificateUsages[usageString];
+        certdb.asyncVerifyCertAtTime(
+          cert,
+          usage,
+          0,
+          null,
+          now,
+          (aPRErrorCode, aVerifiedChain, aHasEVPolicy) => {
+            resolve({
+              usageString,
+              errorCode: aPRErrorCode,
+              chain: aVerifiedChain,
+            });
+          }
+        );
+      })
+    );
   });
   return Promise.all(promises);
 }
@@ -240,9 +259,13 @@ function asyncDetermineUsages(cert) {
  *          certificate chain for the given usage, or null if there is none.
  */
 function getBestChain(results) {
-  let usages = [ certificateUsageSSLServer, certificateUsageSSLClient,
-                 certificateUsageEmailSigner, certificateUsageEmailRecipient,
-                 certificateUsageSSLCA ];
+  let usages = [
+    certificateUsageSSLServer,
+    certificateUsageSSLClient,
+    certificateUsageEmailSigner,
+    certificateUsageEmailRecipient,
+    certificateUsageSSLCA,
+  ];
   for (let usage of usages) {
     let chain = getChainForUsage(results, usage);
     if (chain) {
@@ -266,8 +289,10 @@ function getBestChain(results) {
  */
 function getChainForUsage(results, usage) {
   for (let result of results) {
-    if (certificateUsages[result.usageString] == usage &&
-        result.errorCode == PRErrorCodeSuccess) {
+    if (
+      certificateUsages[result.usageString] == usage &&
+      result.errorCode == PRErrorCodeSuccess
+    ) {
       return Array.from(result.chain.getEnumerator());
     }
   }

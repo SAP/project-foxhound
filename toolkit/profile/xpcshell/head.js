@@ -3,12 +3,20 @@
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+const { FileUtils } = ChromeUtils.import(
+  "resource://gre/modules/FileUtils.jsm"
+);
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { AppConstants } = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import("resource://testing-common/TelemetryTestUtils.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+const { TelemetryTestUtils } = ChromeUtils.import(
+  "resource://testing-common/TelemetryTestUtils.jsm"
+);
 
 const NS_ERROR_START_PROFILE_MANAGER = 0x805800c9;
+
+const UPDATE_CHANNEL = AppConstants.MOZ_UPDATE_CHANNEL;
 
 let gProfD = do_get_profile();
 let gDataHome = gProfD.clone();
@@ -18,8 +26,9 @@ let gDataHomeLocal = gProfD.clone();
 gDataHomeLocal.append("local");
 gDataHomeLocal.createUnique(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
 
-let xreDirProvider = Cc["@mozilla.org/xre/directory-provider;1"].
-                     getService(Ci.nsIXREDirProvider);
+let xreDirProvider = Cc["@mozilla.org/xre/directory-provider;1"].getService(
+  Ci.nsIXREDirProvider
+);
 xreDirProvider.setUserDataDirectory(gDataHome, false);
 xreDirProvider.setUserDataDirectory(gDataHomeLocal, true);
 
@@ -39,7 +48,12 @@ const ShellService = {
       },
     };
 
-    registrar.registerFactory(this.ID, "ToolkitShellService", this.CONTRACT, factory);
+    registrar.registerFactory(
+      this.ID,
+      "ToolkitShellService",
+      this.CONTRACT,
+      factory
+    );
   },
 
   isDefaultApplication() {
@@ -53,23 +67,34 @@ const ShellService = {
 
 ShellService.register();
 
-let gIsSnap = false;
+let gIsLegacy = false;
 
 function simulateSnapEnvironment() {
-  let env = Cc["@mozilla.org/process/environment;1"].
-          getService(Ci.nsIEnvironment);
+  let env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
   env.set("SNAP_NAME", "foo");
 
-  gIsSnap = true;
+  gIsLegacy = true;
+}
+
+function enableLegacyProfiles() {
+  let env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  env.set("MOZ_LEGACY_PROFILES", "1");
+
+  gIsLegacy = true;
 }
 
 function getProfileService() {
-  return Cc["@mozilla.org/toolkit/profile-service;1"].
-         getService(Ci.nsIToolkitProfileService);
+  return Cc["@mozilla.org/toolkit/profile-service;1"].getService(
+    Ci.nsIToolkitProfileService
+  );
 }
 
 let PROFILE_DEFAULT = "default";
-let DEDICATED_NAME = `default-${AppConstants.MOZ_UPDATE_CHANNEL}`;
+let DEDICATED_NAME = `default-${UPDATE_CHANNEL}`;
 if (AppConstants.MOZ_DEV_EDITION) {
   DEDICATED_NAME = PROFILE_DEFAULT = "dev-edition-default";
 }
@@ -88,18 +113,34 @@ function makeRandomProfileDir(name) {
  * A wrapper around nsIToolkitProfileService.selectStartupProfile to make it
  * a bit nicer to use from JS.
  */
-function selectStartupProfile(args = [], isResetting = false) {
+function selectStartupProfile(args = [], isResetting = false, legacyHash = "") {
   let service = getProfileService();
   let rootDir = {};
   let localDir = {};
   let profile = {};
-  let didCreate = service.selectStartupProfile(["xpcshell", ...args], isResetting,
-                                               rootDir, localDir, profile);
+  let didCreate = service.selectStartupProfile(
+    ["xpcshell", ...args],
+    isResetting,
+    UPDATE_CHANNEL,
+    legacyHash,
+    rootDir,
+    localDir,
+    profile
+  );
 
   if (profile.value) {
-    Assert.ok(rootDir.value.equals(profile.value.rootDir), "Should have matched the root dir.");
-    Assert.ok(localDir.value.equals(profile.value.localDir), "Should have matched the local dir.");
-    Assert.ok(service.currentProfile === profile.value, "Should have marked the profile as the current profile.");
+    Assert.ok(
+      rootDir.value.equals(profile.value.rootDir),
+      "Should have matched the root dir."
+    );
+    Assert.ok(
+      localDir.value.equals(profile.value.localDir),
+      "Should have matched the local dir."
+    );
+    Assert.ok(
+      service.currentProfile === profile.value,
+      "Should have marked the profile as the current profile."
+    );
   } else {
     Assert.ok(!service.currentProfile, "Should be no current profile.");
   }
@@ -118,7 +159,11 @@ function testStartsProfileManager(args = [], isResetting = false) {
     Assert.ok(false, "Should have started the profile manager");
     checkStartupReason();
   } catch (e) {
-    Assert.equal(e.result, NS_ERROR_START_PROFILE_MANAGER, "Should have started the profile manager");
+    Assert.equal(
+      e.result,
+      NS_ERROR_START_PROFILE_MANAGER,
+      "Should have started the profile manager"
+    );
   }
 }
 
@@ -134,20 +179,32 @@ function safeGet(ini, section, key) {
  * Writes a compatibility.ini file that marks the give profile directory as last
  * used by the given install path.
  */
-function writeCompatibilityIni(dir, appDir = FileUtils.getDir("CurProcD", []),
-                                    greDir = FileUtils.getDir("GreD", [])) {
+function writeCompatibilityIni(
+  dir,
+  appDir = FileUtils.getDir("CurProcD", []),
+  greDir = FileUtils.getDir("GreD", [])
+) {
   let target = dir.clone();
   target.append("compatibility.ini");
 
-  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].
-                getService(Ci.nsIINIParserFactory);
+  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].getService(
+    Ci.nsIINIParserFactory
+  );
   let ini = factory.createINIParser().QueryInterface(Ci.nsIINIParserWriter);
 
   // The profile service doesn't care about these so just use fixed values
-  ini.setString("Compatibility", "LastVersion", "64.0a1_20180919123806/20180919123806");
+  ini.setString(
+    "Compatibility",
+    "LastVersion",
+    "64.0a1_20180919123806/20180919123806"
+  );
   ini.setString("Compatibility", "LastOSABI", "Darwin_x86_64-gcc3");
 
-  ini.setString("Compatibility", "LastPlatformDir", greDir.persistentDescriptor);
+  ini.setString(
+    "Compatibility",
+    "LastPlatformDir",
+    greDir.persistentDescriptor
+  );
   ini.setString("Compatibility", "LastAppDir", appDir.persistentDescriptor);
 
   ini.writeFile(target);
@@ -164,14 +221,19 @@ function writeProfilesIni(profileData) {
   let target = gDataHome.clone();
   target.append("profiles.ini");
 
-  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].
-                getService(Ci.nsIINIParserFactory);
+  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].getService(
+    Ci.nsIINIParserFactory
+  );
   let ini = factory.createINIParser().QueryInterface(Ci.nsIINIParserWriter);
 
   const { options = {}, profiles = [], installs = null } = profileData;
 
   let { startWithLastProfile = true } = options;
-  ini.setString("General", "StartWithLastProfile", startWithLastProfile ? "1" : "0");
+  ini.setString(
+    "General",
+    "StartWithLastProfile",
+    startWithLastProfile ? "1" : "0"
+  );
 
   for (let i = 0; i < profiles.length; i++) {
     let profile = profiles[i];
@@ -192,7 +254,11 @@ function writeProfilesIni(profileData) {
     for (let hash of Object.keys(installs)) {
       ini.setString(`Install${hash}`, "Default", installs[hash].default);
       if ("locked" in installs[hash]) {
-        ini.setString(`Install${hash}`, "Locked", installs[hash].locked ? "1" : "0");
+        ini.setString(
+          `Install${hash}`,
+          "Locked",
+          installs[hash].locked ? "1" : "0"
+        );
       }
     }
 
@@ -226,11 +292,13 @@ function readProfilesIni() {
     return profileData;
   }
 
-  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].
-                getService(Ci.nsIINIParserFactory);
+  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].getService(
+    Ci.nsIINIParserFactory
+  );
   let ini = factory.createINIParser(target);
 
-  profileData.options.startWithLastProfile = safeGet(ini, "General", "StartWithLastProfile") == "1";
+  profileData.options.startWithLastProfile =
+    safeGet(ini, "General", "StartWithLastProfile") == "1";
   if (safeGet(ini, "General", "Version") == "2") {
     profileData.installs = {};
   }
@@ -248,7 +316,11 @@ function readProfilesIni() {
       if (isRelative === null) {
         break;
       }
-      Assert.equal(isRelative, "1", "Paths should always be relative in these tests.");
+      Assert.equal(
+        isRelative,
+        "1",
+        "Paths should always be relative in these tests."
+      );
 
       let profile = {
         name: safeGet(ini, section, "Name"),
@@ -257,7 +329,10 @@ function readProfilesIni() {
 
       try {
         profile.default = ini.getString(section, "Default") == "1";
-        Assert.ok(profile.default, "The Default value is only written when true.");
+        Assert.ok(
+          profile.default,
+          "The Default value is only written when true."
+        );
       } catch (e) {
         profile.default = false;
       }
@@ -266,7 +341,10 @@ function readProfilesIni() {
     }
 
     if (section.startsWith("Install")) {
-      Assert.ok(profileData.installs, "Should only see an install section if the ini version was correct.");
+      Assert.ok(
+        profileData.installs,
+        "Should only see an install section if the ini version was correct."
+      );
 
       profileData.installs[section.substring(7)] = {
         default: safeGet(ini, section, "Default"),
@@ -296,15 +374,15 @@ function writeInstallsIni(installData) {
   if (!installData) {
     try {
       target.remove(false);
-    } catch (e) {
-    }
+    } catch (e) {}
     return;
   }
 
   const { installs = {} } = installData;
 
-  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].
-                getService(Ci.nsIINIParserFactory);
+  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].getService(
+    Ci.nsIINIParserFactory
+  );
   let ini = factory.createINIParser(null).QueryInterface(Ci.nsIINIParserWriter);
 
   for (let hash of Object.keys(installs)) {
@@ -332,8 +410,9 @@ function readInstallsIni() {
     return installData;
   }
 
-  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].
-                getService(Ci.nsIINIParserFactory);
+  let factory = Cc["@mozilla.org/xpcom/ini-parser-factory;1"].getService(
+    Ci.nsIINIParserFactory
+  );
   let ini = factory.createINIParser(target);
 
   let sections = ini.getSections();
@@ -358,21 +437,31 @@ function readInstallsIni() {
  * Check that the backup data in installs.ini matches the install data in
  * profiles.ini.
  */
-function checkBackup(profileData = readProfilesIni(), installData = readInstallsIni()) {
+function checkBackup(
+  profileData = readProfilesIni(),
+  installData = readInstallsIni()
+) {
   if (!profileData.installs) {
     // If the profiles db isn't of the right version we wouldn't expect the
     // backup to be accurate.
     return;
   }
 
-  Assert.deepEqual(profileData.installs, installData.installs, "Backup installs.ini should match installs in profiles.ini");
+  Assert.deepEqual(
+    profileData.installs,
+    installData.installs,
+    "Backup installs.ini should match installs in profiles.ini"
+  );
 }
 
 /**
  * Checks that the profile service seems to have the right data in it compared
  * to profile and install data structured as in the above functions.
  */
-function checkProfileService(profileData = readProfilesIni(), verifyBackup = true) {
+function checkProfileService(
+  profileData = readProfilesIni(),
+  verifyBackup = true
+) {
   let service = getProfileService();
 
   let expectedStartWithLast = true;
@@ -380,32 +469,51 @@ function checkProfileService(profileData = readProfilesIni(), verifyBackup = tru
     expectedStartWithLast = profileData.options.startWithLastProfile;
   }
 
-  Assert.equal(service.startWithLastProfile, expectedStartWithLast,
-               "Start with last profile should match.");
+  Assert.equal(
+    service.startWithLastProfile,
+    expectedStartWithLast,
+    "Start with last profile should match."
+  );
 
   let serviceProfiles = Array.from(service.profiles);
 
-  Assert.equal(serviceProfiles.length, profileData.profiles.length, "Should be the same number of profiles.");
+  Assert.equal(
+    serviceProfiles.length,
+    profileData.profiles.length,
+    "Should be the same number of profiles."
+  );
 
   // Sort to make matching easy.
   serviceProfiles.sort((a, b) => a.name.localeCompare(b.name));
   profileData.profiles.sort((a, b) => a.name.localeCompare(b.name));
 
   let hash = xreDirProvider.getInstallHash();
-  let defaultPath = (profileData.installs && hash in profileData.installs) ?
-                    profileData.installs[hash].default : null;
+  let defaultPath =
+    profileData.installs && hash in profileData.installs
+      ? profileData.installs[hash].default
+      : null;
   let dedicatedProfile = null;
-  let snapProfile = null;
+  let legacyProfile = null;
 
   for (let i = 0; i < serviceProfiles.length; i++) {
     let serviceProfile = serviceProfiles[i];
     let expectedProfile = profileData.profiles[i];
 
-    Assert.equal(serviceProfile.name, expectedProfile.name, "Should have the same name.");
+    Assert.equal(
+      serviceProfile.name,
+      expectedProfile.name,
+      "Should have the same name."
+    );
 
-    let expectedPath = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+    let expectedPath = Cc["@mozilla.org/file/local;1"].createInstance(
+      Ci.nsIFile
+    );
     expectedPath.setRelativeDescriptor(gDataHome, expectedProfile.path);
-    Assert.equal(serviceProfile.rootDir.path, expectedPath.path, "Should have the same path.");
+    Assert.equal(
+      serviceProfile.rootDir.path,
+      expectedPath.path,
+      "Should have the same path."
+    );
 
     if (expectedProfile.path == defaultPath) {
       dedicatedProfile = serviceProfile;
@@ -413,17 +521,25 @@ function checkProfileService(profileData = readProfilesIni(), verifyBackup = tru
 
     if (AppConstants.MOZ_DEV_EDITION) {
       if (expectedProfile.name == PROFILE_DEFAULT) {
-        snapProfile = serviceProfile;
+        legacyProfile = serviceProfile;
       }
     } else if (expectedProfile.default) {
-      snapProfile = serviceProfile;
+      legacyProfile = serviceProfile;
     }
   }
 
-  if (gIsSnap) {
-    Assert.equal(service.defaultProfile, snapProfile, "Should have seen the right profile selected.");
+  if (gIsLegacy) {
+    Assert.equal(
+      service.defaultProfile,
+      legacyProfile,
+      "Should have seen the right profile selected."
+    );
   } else {
-    Assert.equal(service.defaultProfile, dedicatedProfile, "Should have seen the right profile selected.");
+    Assert.equal(
+      service.defaultProfile,
+      dedicatedProfile,
+      "Should have seen the right profile selected."
+    );
   }
 
   if (verifyBackup) {
@@ -445,12 +561,19 @@ function checkStartupReason(expected = undefined) {
   let scalars = TelemetryTestUtils.getProcessScalars("parent");
 
   if (expected === undefined) {
-    Assert.ok(!(tId in scalars), "Startup telemetry should not have been recorded.");
+    Assert.ok(
+      !(tId in scalars),
+      "Startup telemetry should not have been recorded."
+    );
     return;
   }
 
   if (tId in scalars) {
-    Assert.equal(scalars[tId], expected, "Should have seen the right startup reason.");
+    Assert.equal(
+      scalars[tId],
+      expected,
+      "Should have seen the right startup reason."
+    );
   } else {
     Assert.ok(false, "Startup telemetry should have been recorded.");
   }

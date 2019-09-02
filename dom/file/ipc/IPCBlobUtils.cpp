@@ -87,7 +87,7 @@ nsresult SerializeInputStreamParent(nsIInputStream* aInputStream,
   // In case this is a IPCBlobInputStream, we don't want to create a loop:
   // IPCBlobInputStreamParent -> IPCBlobInputStream ->
   // IPCBlobInputStreamParent. Let's use the underlying inputStream instead.
-  nsCOMPtr<nsIIPCBlobInputStream> ipcBlobInputStream =
+  nsCOMPtr<mozIIPCBlobInputStream> ipcBlobInputStream =
       do_QueryInterface(aInputStream);
   if (ipcBlobInputStream) {
     stream = ipcBlobInputStream->GetInternalStream();
@@ -261,7 +261,7 @@ nsresult SerializeUntyped(BlobImpl* aBlobImpl, IProtocol* aActor,
   }
 
   // We always need the toplevel protocol
-  switch (manager->GetProtocolTypeId()) {
+  switch (manager->GetProtocolId()) {
     case PBackgroundMsgStart:
       if (manager->GetSide() == mozilla::ipc::ParentSide) {
         return SerializeInternal(
@@ -287,7 +287,7 @@ nsresult SerializeUntyped(BlobImpl* aBlobImpl, IProtocol* aActor,
 }  // namespace dom
 
 namespace ipc {
-void IPDLParamTraits<mozilla::dom::BlobImpl>::Write(
+void IPDLParamTraits<mozilla::dom::BlobImpl*>::Write(
     IPC::Message* aMsg, IProtocol* aActor, mozilla::dom::BlobImpl* aParam) {
   nsresult rv;
   mozilla::dom::IPCBlob ipcblob;
@@ -302,7 +302,7 @@ void IPDLParamTraits<mozilla::dom::BlobImpl>::Write(
   }
 }
 
-bool IPDLParamTraits<mozilla::dom::BlobImpl>::Read(
+bool IPDLParamTraits<mozilla::dom::BlobImpl*>::Read(
     const IPC::Message* aMsg, PickleIterator* aIter, IProtocol* aActor,
     RefPtr<mozilla::dom::BlobImpl>* aResult) {
   *aResult = nullptr;

@@ -328,16 +328,26 @@ class MockRuntime {
   }
 
   getEnvironmentIntegrationProvider(environmentProviderRequest) {
-    let environmentProviderBinding = new mojo.AssociatedBinding(
+    this.environmentProviderBinding_ = new mojo.AssociatedBinding(
         device.mojom.XREnvironmentIntegrationProvider, this,
         environmentProviderRequest);
+  }
+
+  // Note that if getEnvironmentProvider hasn't finished running yet this will
+  // be undefined. It's recommended that you allow a successful task to post
+  // first before attempting to close.
+  closeEnvironmentIntegrationProvider() {
+    this.environmentProviderBinding_.close();
+  }
+
+  closeDataProvider() {
+    this.dataProviderBinding_.close();
   }
 
   updateSessionGeometry(frame_size, display_rotation) {
     // This function must exist to ensure that calls to it do not crash, but we
     // do not have any use for this data at present.
   }
-
 
   // Utility function
   requestRuntimeSession(sessionOptions) {
@@ -359,7 +369,7 @@ class MockRuntime {
 
         let dataProviderPtr = new device.mojom.XRFrameDataProviderPtr();
         let dataProviderRequest = mojo.makeRequest(dataProviderPtr);
-        let dataProviderBinding = new mojo.Binding(
+        this.dataProviderBinding_ = new mojo.Binding(
             device.mojom.XRFrameDataProvider, this, dataProviderRequest);
 
         let clientRequest = mojo.makeRequest(this.sessionClient_);

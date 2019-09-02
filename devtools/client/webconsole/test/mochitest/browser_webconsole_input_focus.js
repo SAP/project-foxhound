@@ -7,8 +7,7 @@
 
 "use strict";
 
-const TEST_URI =
-  `data:text/html;charset=utf-8,Test input focused
+const TEST_URI = `data:text/html;charset=utf-8,Test input focused
   <script>
     console.log("console message 1");
   </script>`;
@@ -31,14 +30,14 @@ add_task(async function() {
 
   info("Focus after clicking in the output area");
   await waitForBlurredInput(hud);
-  EventUtils.sendMouseEvent({type: "click"}, msg);
+  EventUtils.sendMouseEvent({ type: "click" }, msg);
   ok(isInputFocused(hud), "input node is focused, second time");
 
   info("Setting a text selection and making sure a click does not re-focus");
   await waitForBlurredInput(hud);
   const selection = hud.iframeWindow.getSelection();
   selection.selectAllChildren(msg.querySelector(".message-body"));
-  EventUtils.sendMouseEvent({type: "click"}, msg);
+  EventUtils.sendMouseEvent({ type: "click" }, msg);
   ok(!isInputFocused(hud), "input node not focused after text is selected");
 });
 
@@ -52,6 +51,6 @@ function waitForBlurredInput(hud) {
     node.addEventListener("focusout", lostFocus, { once: true });
 
     // The 'focusout' event fires if we focus e.g. the filter box.
-    node.ownerDocument.querySelector("input.text-filter").focus();
+    getFilterInput(hud).focus();
   });
 }

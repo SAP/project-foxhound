@@ -26,7 +26,6 @@ _mochitest_summary = {
 }
 
 TinderBoxPrintRe = {
-    "mochitest_summary": _mochitest_summary,
     "mochitest-chrome_summary": _mochitest_summary,
     "mochitest-webgl1-core_summary": _mochitest_summary,
     "mochitest-webgl1-ext_summary": _mochitest_summary,
@@ -34,7 +33,7 @@ TinderBoxPrintRe = {
     "mochitest-webgl2-ext_summary": _mochitest_summary,
     "mochitest-webgl2-deqp_summary": _mochitest_summary,
     "mochitest-media_summary": _mochitest_summary,
-    "mochitest-plain-clipboard_summary": _mochitest_summary,
+    "mochitest-plain_summary": _mochitest_summary,
     "mochitest-plain-gpu_summary": _mochitest_summary,
     "marionette_summary": {
         'regex': re.compile(r'''(passed|failed|todo):\ +(\d+)'''),
@@ -122,7 +121,7 @@ TestPassed = [
     {'regex': re.compile('''(TEST-INFO|TEST-KNOWN-FAIL|TEST-PASS|INFO \| )'''), 'level': INFO},
 ]
 
-HarnessErrorList = [
+BaseHarnessErrorList = [
     {'substr': 'TEST-UNEXPECTED', 'level': ERROR, },
     {'substr': 'PROCESS-CRASH', 'level': ERROR, },
     {'regex': re.compile('''ERROR: (Address|Leak)Sanitizer'''), 'level': ERROR, },
@@ -130,6 +129,13 @@ HarnessErrorList = [
     {'substr': 'pure virtual method called', 'level': ERROR, },
     {'substr': 'Pure virtual function called!', 'level': ERROR, },
 ]
+
+HarnessErrorList = BaseHarnessErrorList + [
+    {'substr': 'A content process crashed', 'level': ERROR, },
+]
+
+# wpt can have expected crashes so we can't always turn treeherder orange in those cases
+WptHarnessErrorList = BaseHarnessErrorList
 
 LogcatErrorList = [
     {'substr': 'Fatal signal 11 (SIGSEGV)', 'level': ERROR,

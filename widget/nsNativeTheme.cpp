@@ -8,7 +8,6 @@
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
-#include "nsIPresShell.h"
 #include "nsNumberControlFrame.h"
 #include "nsPresContext.h"
 #include "nsString.h"
@@ -28,6 +27,7 @@
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLProgressElement.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include <algorithm>
@@ -39,13 +39,6 @@ nsNativeTheme::nsNativeTheme() : mAnimatedContentTimeout(UINT32_MAX) {}
 
 NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
 
-nsIPresShell* nsNativeTheme::GetPresShell(nsIFrame* aFrame) {
-  if (!aFrame) return nullptr;
-
-  nsPresContext* context = aFrame->PresContext();
-  return context ? context->GetPresShell() : nullptr;
-}
-
 EventStates nsNativeTheme::GetContentState(nsIFrame* aFrame,
                                            StyleAppearance aAppearance) {
   if (!aFrame) return EventStates();
@@ -56,9 +49,6 @@ EventStates nsNativeTheme::GetContentState(nsIFrame* aFrame,
   if (isXULCheckboxRadio) aFrame = aFrame->GetParent();
 
   if (!aFrame->GetContent()) return EventStates();
-
-  nsIPresShell* shell = GetPresShell(aFrame);
-  if (!shell) return EventStates();
 
   nsIContent* frameContent = aFrame->GetContent();
   EventStates flags;

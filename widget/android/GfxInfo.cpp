@@ -16,6 +16,8 @@
 #include "nsIWindowWatcher.h"
 #include "nsServiceManagerUtils.h"
 
+#include "mozilla/Preferences.h"
+
 #define NS_CRASHREPORTER_CONTRACTID "@mozilla.org/toolkit/crash-reporter;1"
 
 namespace mozilla {
@@ -137,6 +139,11 @@ GfxInfo::GetCleartypeParameters(nsAString& aCleartypeParams) {
   return NS_ERROR_FAILURE;
 }
 
+NS_IMETHODIMP
+GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) {
+  return NS_ERROR_FAILURE;
+}
+
 void GfxInfo::EnsureInitialized() {
   if (mInitialized) return;
 
@@ -242,6 +249,19 @@ GfxInfo::GetAdapterDriver2(nsAString& aAdapterDriver) {
 }
 
 NS_IMETHODIMP
+GfxInfo::GetAdapterDriverVendor(nsAString& aAdapterDriverVendor) {
+  EnsureInitialized();
+  aAdapterDriverVendor.Truncate();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+GfxInfo::GetAdapterDriverVendor2(nsAString& aAdapterDriverVendor) {
+  EnsureInitialized();
+  return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
 GfxInfo::GetAdapterDriverVersion(nsAString& aAdapterDriverVersion) {
   EnsureInitialized();
   aAdapterDriverVersion = NS_ConvertASCIItoUTF16(mGLStrings->Version());
@@ -325,6 +345,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
     APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Android,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorAll),
+        (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_OPENGL_LAYERS,
         nsIGfxInfo::FEATURE_STATUS_OK, DRIVER_COMPARISON_IGNORED,
         GfxDriverInfo::allDriverVersions, "FEATURE_OK_FORCE_OPENGL");
@@ -384,6 +405,14 @@ nsresult GfxInfo::GetFeatureStatusImpl(
           mGLStrings->Renderer().Find("Adreno 205") != -1) {
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_ADRENO_20x";
+        return NS_OK;
+      }
+
+      if (mSDKVersion <= 17) {
+        if (mGLStrings->Renderer().Find("Adreno (TM) 3") != -1) {
+          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+          aFailureId = "FEATURE_FAILURE_ADRENO_3xx";
+        }
         return NS_OK;
       }
 
@@ -470,18 +499,14 @@ nsresult GfxInfo::GetFeatureStatusImpl(
 
     if (aFeature == FEATURE_WEBRTC_HW_ACCELERATION_ENCODE) {
       if (mozilla::AndroidBridge::Bridge()) {
-        *aStatus = mozilla::AndroidBridge::Bridge()->GetHWEncoderCapability()
-                       ? nsIGfxInfo::FEATURE_STATUS_OK
-                       : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+        *aStatus = WebRtcHwEncodeSupported();
         aFailureId = "FEATURE_FAILURE_WEBRTC_ENCODE";
         return NS_OK;
       }
     }
     if (aFeature == FEATURE_WEBRTC_HW_ACCELERATION_DECODE) {
       if (mozilla::AndroidBridge::Bridge()) {
-        *aStatus = mozilla::AndroidBridge::Bridge()->GetHWDecoderCapability()
-                       ? nsIGfxInfo::FEATURE_STATUS_OK
-                       : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+        *aStatus = WebRtcHwDecodeSupported();
         aFailureId = "FEATURE_FAILURE_WEBRTC_DECODE";
         return NS_OK;
       }
@@ -508,6 +533,89 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       aFeature, aStatus, aSuggestedDriverVersion, aDriverInfo, aFailureId, &os);
 }
 
+static nsCString FeatureCacheOsVerPrefName(int32_t aFeature) {
+  nsCString osPrefName;
+  osPrefName.AppendASCII("gfxinfo.cache.");
+  osPrefName.AppendInt(aFeature);
+  osPrefName.AppendASCII(".osver");
+  return osPrefName;
+}
+
+static nsCString FeatureCacheValuePrefName(int32_t aFeature) {
+  nsCString osPrefName;
+  osPrefName.AppendASCII("gfxinfo.cache.");
+  osPrefName.AppendInt(aFeature);
+  osPrefName.AppendASCII(".value");
+  return osPrefName;
+}
+
+static bool GetCachedFeatureVal(int32_t aFeature, uint32_t aExpectedOsVer,
+                                int32_t& aOutStatus) {
+  uint32_t osVer = 0;
+  nsresult rv =
+      Preferences::GetUint(FeatureCacheOsVerPrefName(aFeature).get(), &osVer);
+  if (NS_FAILED(rv) || osVer != aExpectedOsVer) {
+    return false;
+  }
+  int32_t status = 0;
+  rv = Preferences::GetInt(FeatureCacheValuePrefName(aFeature).get(), &status);
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+  aOutStatus = status;
+  return true;
+}
+
+static void SetCachedFeatureVal(int32_t aFeature, uint32_t aOsVer,
+                                int32_t aStatus) {
+  // Ignore failures; not much we can do anyway.
+  Preferences::SetUint(FeatureCacheOsVerPrefName(aFeature).get(), aOsVer);
+  Preferences::SetInt(FeatureCacheValuePrefName(aFeature).get(), aStatus);
+}
+
+int32_t GfxInfo::WebRtcHwEncodeSupported() {
+  MOZ_ASSERT(mozilla::AndroidBridge::Bridge());
+
+  // The Android side of this caclulation is very slow, so we cache the result
+  // in preferences, invalidating if the OS version changes.
+
+  int32_t status = 0;
+  if (GetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_ENCODE,
+                          mOSVersionInteger, status)) {
+    return status;
+  }
+
+  status = mozilla::AndroidBridge::Bridge()->GetHWEncoderCapability()
+               ? nsIGfxInfo::FEATURE_STATUS_OK
+               : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+
+  SetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_ENCODE, mOSVersionInteger,
+                      status);
+
+  return status;
+}
+
+int32_t GfxInfo::WebRtcHwDecodeSupported() {
+  MOZ_ASSERT(mozilla::AndroidBridge::Bridge());
+
+  // The Android side of this caclulation is very slow, so we cache the result
+  // in preferences, invalidating if the OS version changes.
+
+  int32_t status = 0;
+  if (GetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_DECODE,
+                          mOSVersionInteger, status)) {
+    return status;
+  }
+
+  status = mozilla::AndroidBridge::Bridge()->GetHWDecoderCapability()
+               ? nsIGfxInfo::FEATURE_STATUS_OK
+               : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+
+  SetCachedFeatureVal(FEATURE_WEBRTC_HW_ACCELERATION_DECODE, mOSVersionInteger,
+                      status);
+
+  return status;
+}
 #ifdef DEBUG
 
 // Implement nsIGfxInfoDebug
@@ -532,6 +640,8 @@ NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion) {
   mOSVersion = aVersion;
   return NS_OK;
 }
+
+NS_IMETHODIMP GfxInfo::FireTestProcess() { return NS_OK; }
 
 #endif
 

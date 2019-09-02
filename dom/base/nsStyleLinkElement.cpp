@@ -40,7 +40,8 @@ nsStyleLinkElement::SheetInfo::SheetInfo(
     already_AddRefed<nsIPrincipal> aTriggeringPrincipal,
     mozilla::net::ReferrerPolicy aReferrerPolicy, mozilla::CORSMode aCORSMode,
     const nsAString& aTitle, const nsAString& aMedia,
-    HasAlternateRel aHasAlternateRel, IsInline aIsInline)
+    HasAlternateRel aHasAlternateRel, IsInline aIsInline,
+    IsExplicitlyEnabled aIsExplicitlyEnabled)
     : mContent(aContent),
       mURI(aURI),
       mTriggeringPrincipal(aTriggeringPrincipal),
@@ -49,7 +50,8 @@ nsStyleLinkElement::SheetInfo::SheetInfo(
       mTitle(aTitle),
       mMedia(aMedia),
       mHasAlternateRel(aHasAlternateRel == HasAlternateRel::Yes),
-      mIsInline(aIsInline == IsInline::Yes) {
+      mIsInline(aIsInline == IsInline::Yes),
+      mIsExplicitlyEnabled(aIsExplicitlyEnabled) {
   MOZ_ASSERT(!mIsInline || aContent);
   MOZ_ASSERT_IF(aContent, aContent->OwnerDoc() == &aDocument);
 
@@ -328,9 +330,8 @@ nsStyleLinkElement::DoUpdateStyleSheet(Document* aOldDocument,
     MOZ_ASSERT(thisContent->IsElement());
     nsresult rv = NS_OK;
     if (!nsStyleUtil::CSPAllowsInlineStyle(
-            thisContent->AsElement(), thisContent->NodePrincipal(),
-            info->mTriggeringPrincipal, doc->GetDocumentURI(), mLineNumber,
-            mColumnNumber, text, &rv)) {
+            thisContent->AsElement(), doc, info->mTriggeringPrincipal,
+            mLineNumber, mColumnNumber, text, &rv)) {
       if (NS_FAILED(rv)) {
         return Err(rv);
       }

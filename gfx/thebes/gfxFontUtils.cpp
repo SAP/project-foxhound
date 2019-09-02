@@ -935,15 +935,14 @@ gfxUserFontType gfxFontUtils::DetermineFontDataType(const uint8_t* aFontData,
     }
   }
 
-  // test for WOFF
+  // test for WOFF or WOFF2
   if (aFontDataLength >= sizeof(AutoSwap_PRUint32)) {
     const AutoSwap_PRUint32* version =
         reinterpret_cast<const AutoSwap_PRUint32*>(aFontData);
     if (uint32_t(*version) == TRUETYPE_TAG('w', 'O', 'F', 'F')) {
       return GFX_USERFONT_WOFF;
     }
-    if (Preferences::GetBool(GFX_PREF_WOFF2_ENABLED) &&
-        uint32_t(*version) == TRUETYPE_TAG('w', 'O', 'F', '2')) {
+    if (uint32_t(*version) == TRUETYPE_TAG('w', 'O', 'F', '2')) {
       return GFX_USERFONT_WOFF2;
     }
   }
@@ -1848,6 +1847,49 @@ void gfxFontUtils::GetVariationInstances(
       instance.mValues.AppendElement(value);
     }
     aInstances.AppendElement(instance);
+  }
+}
+
+void gfxFontUtils::ReadOtherFamilyNamesForFace(
+    const nsACString& aFamilyName, const char* aNameData, uint32_t aDataLength,
+    nsTArray<nsCString>& aOtherFamilyNames, bool useFullName) {
+  const NameHeader* nameHeader = reinterpret_cast<const NameHeader*>(aNameData);
+
+  uint32_t nameCount = nameHeader->count;
+  if (nameCount * sizeof(NameRecord) > aDataLength) {
+    NS_WARNING("invalid font (name records)");
+    return;
+  }
+
+  const NameRecord* nameRecord =
+      reinterpret_cast<const NameRecord*>(aNameData + sizeof(NameHeader));
+  uint32_t stringsBase = uint32_t(nameHeader->stringOffset);
+
+  for (uint32_t i = 0; i < nameCount; i++, nameRecord++) {
+    uint32_t nameLen = nameRecord->length;
+    uint32_t nameOff =
+        nameRecord->offset;  // offset from base of string storage
+
+    if (stringsBase + nameOff + nameLen > aDataLength) {
+      NS_WARNING("invalid font (name table strings)");
+      return;
+    }
+
+    uint16_t nameID = nameRecord->nameID;
+    if ((useFullName && nameID == NAME_ID_FULL) ||
+        (!useFullName &&
+         (nameID == NAME_ID_FAMILY || nameID == NAME_ID_PREFERRED_FAMILY))) {
+      nsAutoCString otherFamilyName;
+      bool ok = DecodeFontName(
+          aNameData + stringsBase + nameOff, nameLen,
+          uint32_t(nameRecord->platformID), uint32_t(nameRecord->encodingID),
+          uint32_t(nameRecord->languageID), otherFamilyName);
+      // add if not same as canonical family name
+      if (ok && otherFamilyName != aFamilyName &&
+          !aOtherFamilyNames.Contains(otherFamilyName)) {
+        aOtherFamilyNames.AppendElement(otherFamilyName);
+      }
+    }
   }
 }
 

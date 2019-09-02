@@ -6,12 +6,21 @@
 
 include protocol PBrowser;
 include protocol PInProcess;
+include protocol PBrowserBridge;
 
 include DOMTypes;
 
+using JSWindowActorMessageKind from "mozilla/dom/JSWindowActor.h";
 
 namespace mozilla {
 namespace dom {
+
+struct JSWindowActorMessageMeta {
+  nsString actorName;
+  nsString messageName;
+  uint64_t queryId;
+  JSWindowActorMessageKind kind;
+};
 
 /**
  * A PWindowGlobal actor has a lifetime matching that of a single Window Global,
@@ -26,15 +35,32 @@ async protocol PWindowGlobal
 child:
   async __delete__();
 
+  async ChangeFrameRemoteness(BrowsingContext aFrameContext,
+                              nsString aRemoteType,
+                              uint64_t aSwitchId)
+      returns (nsresult rv, nullable PBrowserBridge bridge);
+
+  /**
+   * Returns the serialized security info associated with this window.
+   */
+  async GetSecurityInfo() returns(nsCString? serializedSecInfo);
+
 both:
-  async AsyncMessage(nsString aActorName, nsString aMessage, ClonedMessageData aData);
+  async RawMessage(JSWindowActorMessageMeta aMetadata, ClonedMessageData aData);
 
 parent:
   /// Update the URI of the document in this WindowGlobal.
   async UpdateDocumentURI(nsIURI aUri);
 
+  /// Send down initial document bit to the parent.
+  async SetIsInitialDocument(bool aIsInitialDocument);
+
   /// Notify the parent that this PWindowGlobal is now the current global.
   async BecomeCurrentWindowGlobal();
+
+  /// Notify the parent that this PWindowGlobal has embedded the given
+  /// BrowsingContext.
+  async DidEmbedBrowsingContext(BrowsingContext aContext);
 
   async Destroy();
 };

@@ -12,15 +12,22 @@ function getEngineClone(engine) {
 
 // Check whether and engine does or doesn't exist.
 function checkEngineState(exists, engine) {
-  Assert.equal(exists, Services.search.hasEngineWithURL(engine.method,
-                                                        engine.formURL,
-                                                        engine.queryParams));
+  Assert.equal(
+    exists,
+    Services.search.hasEngineWithURL(
+      engine.method,
+      engine.formURL,
+      engine.queryParams
+    )
+  );
 }
 
 // Add a search engine for testing.
 async function addEngineWithParams(engine) {
-  await Services.search.addEngineWithDetails(engine.name, null, null, null,
-                                             engine.method, engine.formURL);
+  await Services.search.addEngineWithDetails(engine.name, {
+    method: engine.method,
+    template: engine.formURL,
+  });
 
   let addedEngine = Services.search.getEngineByName(engine.name);
   for (let param of engine.queryParams) {
@@ -35,8 +42,8 @@ add_task(async function test_hasEngineWithURL() {
   useHttpServer();
 
   info("Test starting");
-  // Avoid deprecated synchronous initialization.
-  await asyncInit();
+  await AddonTestUtils.promiseStartupManager();
+  await Services.search.init();
 
   // Setup various Engine definitions for method tests.
   let UNSORTED_ENGINE = {
@@ -87,7 +94,6 @@ add_task(async function test_hasEngineWithURL() {
   let SORTED_ENGINE_NAME_CHANGE = getEngineClone(SORTED_ENGINE);
   SORTED_ENGINE_NAME_CHANGE.name += " 2";
 
-
   // First ensure neither the unsorted engine, nor the same engine
   // with a pre-sorted list of query parms matches.
   checkEngineState(false, UNSORTED_ENGINE);
@@ -105,11 +111,9 @@ add_task(async function test_hasEngineWithURL() {
   checkEngineState(false, SORTED_ENGINE_NAME_CHANGE);
   info("There is no NAME modified version of the sorted test engine.");
 
-
   // Add the unsorted engine and it's queryParams.
   await addEngineWithParams(UNSORTED_ENGINE);
   info("The unsorted engine has been added.");
-
 
   // Then, ensure we find a match for the unsorted engine, and for the
   // same engine with a pre-sorted list of query parms.

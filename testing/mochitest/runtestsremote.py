@@ -6,6 +6,7 @@ import os
 import posixpath
 import sys
 import traceback
+import uuid
 
 sys.path.insert(
     0, os.path.abspath(
@@ -38,7 +39,6 @@ class MochiRemote(MochitestDesktop):
 
         self.certdbNew = True
         self.chromePushed = False
-        self.mozLogName = "moz.log"
 
         self.device = ADBDevice(adb=options.adbPath or 'adb',
                                 device=options.deviceSerial,
@@ -211,13 +211,14 @@ class MochiRemote(MochitestDesktop):
 
         return fixup
 
-    def startServers(self, options, debuggerInfo):
+    def startServers(self, options, debuggerInfo, public=None):
         """ Create the servers on the host and start them up """
         restoreRemotePaths = self.switchToLocalPaths(options)
         MochitestDesktop.startServers(
             self,
             options,
-            debuggerInfo)
+            debuggerInfo,
+            public=True)
         restoreRemotePaths()
 
     def buildProfile(self, options):
@@ -311,11 +312,10 @@ class MochiRemote(MochitestDesktop):
         # remove desktop environment not used on device
         if "XPCOM_MEM_BLOAT_LOG" in browserEnv:
             del browserEnv["XPCOM_MEM_BLOAT_LOG"]
-        # override mozLogs to avoid processing in MochitestDesktop base class
-        self.mozLogs = None
-        browserEnv["MOZ_LOG_FILE"] = os.path.join(
-            self.remoteMozLog,
-            self.mozLogName)
+        if self.mozLogs:
+            browserEnv["MOZ_LOG_FILE"] = os.path.join(
+                self.remoteMozLog,
+                "moz-pid=%PID-uid={}.log".format(str(uuid.uuid4())))
         if options.dmd:
             browserEnv['DMD'] = '1'
         # Contents of remoteMozLog will be pulled from device and copied to the
@@ -382,8 +382,9 @@ def run_test_harness(parser, options):
         retVal = 1
 
     if not device_exception and options.log_mach is None and not options.verify:
-        mochitest.printDeviceInfo(printLogcat=True)
+        mochitest.printDeviceInfo(printLogcat=(retVal != 0))
 
+    mochitest.archiveMozLogs()
     mochitest.message_logger.finish()
 
     return retVal

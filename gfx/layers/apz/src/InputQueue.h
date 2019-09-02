@@ -51,10 +51,11 @@ class InputQueue {
    * See the documentation on APZCTreeManager::ReceiveInputEvent for info on
    * return values from this function, including |aOutInputBlockId|.
    */
-  nsEventStatus ReceiveInputEvent(const RefPtr<AsyncPanZoomController>& aTarget,
-                                  TargetConfirmationFlags aFlags,
-                                  const InputData& aEvent,
-                                  uint64_t* aOutInputBlockId);
+  nsEventStatus ReceiveInputEvent(
+      const RefPtr<AsyncPanZoomController>& aTarget,
+      TargetConfirmationFlags aFlags, const InputData& aEvent,
+      uint64_t* aOutInputBlockId,
+      const Maybe<nsTArray<TouchBehaviorFlags>>& aTouchBehaviors = Nothing());
   /**
    * This function should be invoked to notify the InputQueue when web content
    * decides whether or not it wants to cancel a block of events. The block
@@ -144,7 +145,7 @@ class InputQueue {
 
   // RAII class for automatically running a timeout task that may
   // need to be run immediately after an event has been queued.
-  class AutoRunImmediateTimeout {
+  class AutoRunImmediateTimeout final {
    public:
     explicit AutoRunImmediateTimeout(InputQueue* aQueue);
     ~AutoRunImmediateTimeout();
@@ -171,10 +172,11 @@ class InputQueue {
       const RefPtr<AsyncPanZoomController>& aTarget,
       CancelableBlockState* aBlock);
 
-  nsEventStatus ReceiveTouchInput(const RefPtr<AsyncPanZoomController>& aTarget,
-                                  TargetConfirmationFlags aFlags,
-                                  const MultiTouchInput& aEvent,
-                                  uint64_t* aOutInputBlockId);
+  nsEventStatus ReceiveTouchInput(
+      const RefPtr<AsyncPanZoomController>& aTarget,
+      TargetConfirmationFlags aFlags, const MultiTouchInput& aEvent,
+      uint64_t* aOutInputBlockId,
+      const Maybe<nsTArray<TouchBehaviorFlags>>& aTouchBehaviors);
   nsEventStatus ReceiveMouseInput(const RefPtr<AsyncPanZoomController>& aTarget,
                                   TargetConfirmationFlags aFlags,
                                   const MouseInput& aEvent,

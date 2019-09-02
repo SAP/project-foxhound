@@ -101,8 +101,8 @@ class CompileDebuggerScriptRunnable final : public WorkerDebuggerRunnable {
 
     ErrorResult rv;
     JSAutoRealm ar(aCx, global);
-    workerinternals::LoadMainScript(aWorkerPrivate, mScriptURL, DebuggerScript,
-                                    rv);
+    workerinternals::LoadMainScript(aWorkerPrivate, nullptr, mScriptURL,
+                                    DebuggerScript, rv);
     rv.WouldReportJSException();
     // Explicitly ignore NS_BINDING_ABORTED on rv.  Or more precisely, still
     // return false and don't SetWorkerScriptExecutedSuccessfully() in that
@@ -316,6 +316,18 @@ WorkerDebugger::GetServiceWorkerID(uint32_t* aResult) {
 }
 
 NS_IMETHODIMP
+WorkerDebugger::GetId(nsAString& aResult) {
+  AssertIsOnMainThread();
+
+  if (!mWorkerPrivate) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  aResult = mWorkerPrivate->Id();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 WorkerDebugger::Initialize(const nsAString& aURL) {
   AssertIsOnMainThread();
 
@@ -435,10 +447,16 @@ void WorkerDebugger::ReportErrorToDebuggerOnMainThread(
     listeners[index]->OnError(aFilename, aLineno, aMessage);
   }
 
+  // We need a JSContext to be able to read any stack associated with the error.
+  // This will not run any scripts.
+  AutoJSAPI jsapi;
+  DebugOnly<bool> ok = jsapi.Init(xpc::UnprivilegedJunkScope());
+  MOZ_ASSERT(ok, "UnprivilegedJunkScope should exist");
+
   WorkerErrorReport report;
   report.mMessage = aMessage;
   report.mFilename = aFilename;
-  WorkerErrorReport::LogErrorToConsole(report, 0);
+  WorkerErrorReport::LogErrorToConsole(jsapi.cx(), report, 0);
 }
 
 RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
@@ -515,18 +533,19 @@ RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
       SystemGroup::AbstractMainThreadFor(TaskCategory::Performance);
 
   return CollectMemoryInfo(top, mainThread)
-      ->Then(mainThread, __func__,
-             [workerRef, url, pid, perfId, windowID, duration, isTopLevel,
-              items](const PerformanceMemoryInfo& aMemoryInfo) {
-               return PerformanceInfoPromise::CreateAndResolve(
-                   PerformanceInfo(url, pid, windowID, duration, perfId, true,
-                                   isTopLevel, aMemoryInfo, items),
-                   __func__);
-             },
-             [workerRef]() {
-               return PerformanceInfoPromise::CreateAndReject(NS_ERROR_FAILURE,
-                                                              __func__);
-             });
+      ->Then(
+          mainThread, __func__,
+          [workerRef, url, pid, perfId, windowID, duration, isTopLevel,
+           items](const PerformanceMemoryInfo& aMemoryInfo) {
+            return PerformanceInfoPromise::CreateAndResolve(
+                PerformanceInfo(url, pid, windowID, duration, perfId, true,
+                                isTopLevel, aMemoryInfo, items),
+                __func__);
+          },
+          [workerRef]() {
+            return PerformanceInfoPromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                           __func__);
+          });
 }
 
 }  // namespace dom

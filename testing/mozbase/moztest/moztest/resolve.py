@@ -76,43 +76,42 @@ TEST_SUITES = {
     'mochitest-a11y': {
         'aliases': ('a11y', 'ally'),
         'mach_command': 'mochitest',
-        'kwargs': {'flavor': 'a11y', 'test_paths': None},
+        'kwargs': {'flavor': 'a11y', 'test_paths': None, 'e10s': False},
         'task_regex': ['mochitest-a11y($|.*(-1|[^0-9])$)',
                        'test-verify($|.*(-1|[^0-9])$)'],
     },
-    'mochitest-browser': {
-        'aliases': ('bc', 'browser-chrome'),
+    'mochitest-browser-chrome': {
+        'aliases': ('bc', 'browser'),
         'mach_command': 'mochitest',
         'kwargs': {'flavor': 'browser-chrome', 'test_paths': None},
         'task_regex': ['mochitest-browser-chrome($|.*(-1|[^0-9])$)',
                        'test-verify($|.*(-1|[^0-9])$)'],
     },
+    'mochitest-browser-chrome-screenshots': {
+        'aliases': ('ss', 'screenshots-chrome'),
+        'mach_command': 'mochitest',
+        'kwargs': {'flavor': 'browser-chrome', 'subsuite': 'screenshots', 'test_paths': None},
+        'task_regex': ['browser-screenshots($|.*(-1|[^0-9])$)'],
+    },
     'mochitest-chrome': {
         'aliases': ('mc',),
         'mach_command': 'mochitest',
-        'kwargs': {'flavor': 'chrome', 'test_paths': None},
+        'kwargs': {'flavor': 'chrome', 'test_paths': None, 'e10s': False},
         'task_regex': ['mochitest-chrome($|.*(-1|[^0-9])$)',
                        'test-verify($|.*(-1|[^0-9])$)'],
     },
-    'mochitest-clipboard': {
-        'aliases': ('cl', 'clipboard',),
+    'mochitest-chrome-gpu': {
+        'aliases': ('gpu',),
         'mach_command': 'mochitest',
-        'kwargs': {'subsuite': 'clipboard', 'test_paths': None},
-        'task_regex': ['mochitest-clipboard($|.*(-1|[^0-9])$)',
+        'kwargs': {'flavor': 'chrome', 'subsuite': 'gpu', 'test_paths': None, 'e10s': False},
+        'task_regex': ['mochitest-gpu($|.*(-1|[^0-9])$)',
                        'test-verify($|.*(-1|[^0-9])$)'],
     },
-    'mochitest-devtools': {
-        'aliases': ('dt', 'devtools-chrome'),
+    'mochitest-devtools-chrome': {
+        'aliases': ('dt', 'devtools'),
         'mach_command': 'mochitest',
         'kwargs': {'flavor': 'browser-chrome', 'subsuite': 'devtools', 'test_paths': None},
         'task_regex': ['mochitest-devtools-chrome($|.*(-1|[^0-9])$)',
-                       'test-verify($|.*(-1|[^0-9])$)'],
-    },
-    'mochitest-gpu': {
-        'aliases': ('gpu',),
-        'mach_command': 'mochitest',
-        'kwargs': {'subsuite': 'gpu', 'test_paths': None},
-        'task_regex': ['mochitest-gpu($|.*(-1|[^0-9])$)',
                        'test-verify($|.*(-1|[^0-9])$)'],
     },
     'mochitest-media': {
@@ -126,14 +125,22 @@ TEST_SUITES = {
         'aliases': ('mp', 'plain',),
         'mach_command': 'mochitest',
         'kwargs': {'flavor': 'plain', 'test_paths': None},
-        'task_regex': ['mochitest(?!-a11y|-browser|-chrome|-clip|-devtools|-gpu|-media|-screen)($|.*(-1|[^0-9])$)',  # noqa
+        'task_regex': ['mochitest(?!-a11y|-browser|-chrome|-devtools|-gpu|-harness|-media|-screen|-webgl)($|.*(-1|[^0-9])$)',  # noqa
                        'test-verify($|.*(-1|[^0-9])$)'],
     },
-    'mochitest-screenshots': {
-        'aliases': ('ss', 'screenshots-chrome'),
+    'mochitest-plain-gpu': {
+        'aliases': ('gpu',),
         'mach_command': 'mochitest',
-        'kwargs': {'flavor': 'browser-chrome', 'subsuite': 'screenshots', 'test_paths': None},
-        'task_regex': ['browser-screenshots($|.*(-1|[^0-9])$)'],
+        'kwargs': {'flavor': 'plain', 'subsuite': 'gpu', 'test_paths': None},
+        'task_regex': ['mochitest-gpu($|.*(-1|[^0-9])$)',
+                       'test-verify($|.*(-1|[^0-9])$)'],
+    },
+    'mochitest-remote': {
+        'aliases': ('remote',),
+        'mach_command': 'mochitest',
+        'kwargs': {'flavor': 'browser-chrome', 'subsuite': 'remote', 'test_paths': None},
+        'task_regex': ['mochitest-remote($|.*(-1|[^0-9])$)',
+                       'test-verify($|.*(-1|[^0-9])$)'],
     },
     'mochitest-webgl1-core': WebglSuite('webgl1-core'),
     'mochitest-webgl1-ext': WebglSuite('webgl1-ext'),
@@ -143,6 +150,12 @@ TEST_SUITES = {
     'python': {
         'mach_command': 'python-test',
         'kwargs': {'tests': None},
+    },
+    'telemetry-tests-client': {
+        'aliases': ('ttc',),
+        'mach_command': 'telemetry-tests-client',
+        'kwargs': {},
+        'task_regex': ['telemetry-tests-client($|.*(-1|[^0-9])$)'],
     },
     'reftest': {
         'aliases': ('rr',),
@@ -161,28 +174,28 @@ TEST_SUITES = {
         'mach_command': 'web-platform-tests',
         'kwargs': {'include': []},
         'task_regex': ['web-platform-tests($|.*(-1|[^0-9])$)',
-                       'test-verify-wpt-e10s'],
+                       'test-verify-wpt'],
     },
     'web-platform-tests-testharness': {
         'aliases': ('wpt',),
         'mach_command': 'web-platform-tests',
         'kwargs': {'include': []},
         'task_regex': ['web-platform-tests(?!-reftest|-wdspec)($|.*(-1|[^0-9])$)',
-                       'test-verify-wpt-e10s'],
+                       'test-verify-wpt'],
     },
     'web-platform-tests-reftest': {
         'aliases': ('wpt',),
         'mach_command': 'web-platform-tests',
         'kwargs': {'include': []},
         'task_regex': ['web-platform-tests-reftests($|.*(-1|[^0-9])$)',
-                       'test-verify-wpt-e10s'],
+                       'test-verify-wpt'],
     },
     'web-platform-tests-wdspec': {
         'aliases': ('wpt',),
         'mach_command': 'web-platform-tests',
         'kwargs': {'include': []},
         'task_regex': ['web-platform-tests-wdspec($|.*(-1|[^0-9])$)',
-                       'test-verify-wpt-e10s'],
+                       'test-verify-wpt'],
     },
     'valgrind': {
         'aliases': ('v',),
@@ -214,7 +227,7 @@ for i in range(1, MOCHITEST_TOTAL_CHUNKS + 1):
 
 _test_flavors = {
     'a11y': 'mochitest-a11y',
-    'browser-chrome': 'mochitest-browser',
+    'browser-chrome': 'mochitest-browser-chrome',
     'chrome': 'mochitest-chrome',
     'crashtest': 'crashtest',
     'firefox-ui-functional': 'firefox-ui-functional',
@@ -224,19 +237,18 @@ _test_flavors = {
     'python': 'python',
     'reftest': 'reftest',
     'steeplechase': '',
+    'telemetry-tests-client': 'telemetry-tests-client',
     'web-platform-tests': 'web-platform-tests',
     'xpcshell': 'xpcshell',
 }
 
 _test_subsuites = {
-    ('browser-chrome', 'clipboard'): 'mochitest-clipboard',
-    ('browser-chrome', 'devtools'): 'mochitest-devtools',
-    ('browser-chrome', 'gpu'): 'mochitest-gpu',
-    ('browser-chrome', 'screenshots'): 'mochitest-screenshots',
-    ('chrome', 'clipboard'): 'mochitest-clipboard',
-    ('chrome', 'gpu'): 'mochitest-gpu',
-    ('mochitest', 'clipboard'): 'mochitest-clipboard',
-    ('mochitest', 'gpu'): 'mochitest-gpu',
+    ('browser-chrome', 'devtools'): 'mochitest-devtools-chrome',
+    ('browser-chrome', 'gpu'): 'mochitest-browser-chrome-gpu',
+    ('browser-chrome', 'remote'): 'mochitest-remote',
+    ('browser-chrome', 'screenshots'): 'mochitest-browser-chrome-screenshots',
+    ('chrome', 'gpu'): 'mochitest-chrome-gpu',
+    ('mochitest', 'gpu'): 'mochitest-plain-gpu',
     ('mochitest', 'media'): 'mochitest-media',
     ('mochitest', 'robocop'): 'robocop',
     ('mochitest', 'webgl1-core'): 'mochitest-webgl1-core',
@@ -262,20 +274,20 @@ def get_suite_definition(flavor, subsuite=None, strict=False):
     """
     if not subsuite:
         suite_name = _test_flavors.get(flavor)
-        return TEST_SUITES.get(suite_name, {}).copy()
+        return suite_name, TEST_SUITES.get(suite_name, {}).copy()
 
     suite_name = _test_subsuites.get((flavor, subsuite))
     if suite_name or strict:
-        return TEST_SUITES.get(suite_name, {}).copy()
+        return suite_name, TEST_SUITES.get(suite_name, {}).copy()
 
     suite_name = _test_flavors.get(flavor)
     if suite_name not in TEST_SUITES:
-        return {}
+        return suite_name, {}
 
     suite = TEST_SUITES[suite_name].copy()
     suite.setdefault('kwargs', {})
     suite['kwargs']['subsuite'] = subsuite
-    return suite
+    return suite_name, suite
 
 
 def rewrite_test_base(test, new_base, honor_install_to_subdir=False):
@@ -506,16 +518,12 @@ class TestResolver(MozbuildObject):
         # If installing tests is going to result in re-generating the build
         # backend, we need to do this here, so that the updated contents of
         # all-tests.pkl make it to the set of tests to run.
-        self._run_make(
-            target='backend.TestManifestBackend', pass_thru=True, print_directory=False,
-            filename=mozpath.join(self.topsrcdir, 'build', 'rebuild-backend.mk'),
-            append_env={
-                b'PYTHON': self.virtualenv_manager.python_path,
-                b'BUILD_BACKEND_FILES': b'backend.TestManifestBackend',
-                b'BACKEND_GENERATION_SCRIPT': mozpath.join(
-                    self.topsrcdir, 'build', 'gen_test_backend.py'),
-            },
-        )
+        if self.backend_out_of_date(mozpath.join(self.topobjdir,
+                                                 'backend.TestManifestBackend'
+                                                 )):
+            print("Test configuration changed. Regenerating backend.")
+            from mozbuild.gen_test_backend import gen_test_backend
+            gen_test_backend()
 
         self._tests = TestMetadata(os.path.join(self.topobjdir,
                                                 'all-tests.pkl'),

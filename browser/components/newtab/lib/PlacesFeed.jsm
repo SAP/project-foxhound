@@ -3,14 +3,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const {actionCreators: ac, actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm");
+const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
+  "resource://activity-stream/common/Actions.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "NewTabUtils",
-  "resource://gre/modules/NewTabUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "NewTabUtils",
+  "resource://gre/modules/NewTabUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm"
+);
 
 const LINK_BLOCKED_EVENT = "newtab-linkBlocked";
 const PLACES_LINKS_CHANGED_DELAY_TIME = 1000; // time in ms to delay timer for places links changed events
@@ -21,7 +29,10 @@ const PLACES_LINKS_CHANGED_DELAY_TIME = 1000; // time in ms to delay timer for p
 class Observer {
   constructor(dispatch, observerInterface) {
     this.dispatch = dispatch;
-    this.QueryInterface = ChromeUtils.generateQI([observerInterface, Ci.nsISupportsWeakReference]);
+    this.QueryInterface = ChromeUtils.generateQI([
+      observerInterface,
+      Ci.nsISupportsWeakReference,
+    ]);
   }
 }
 
@@ -40,10 +51,10 @@ class HistoryObserver extends Observer {
    *         {str} uri.spec   The URI as a string
    */
   onDeleteURI(uri) {
-    this.dispatch({type: at.PLACES_LINKS_CHANGED});
+    this.dispatch({ type: at.PLACES_LINKS_CHANGED });
     this.dispatch({
       type: at.PLACES_LINK_DELETED,
-      data: {url: uri.spec},
+      data: { url: uri.spec },
     });
   }
 
@@ -51,7 +62,7 @@ class HistoryObserver extends Observer {
    * onClearHistory - Called when the user clears their entire history.
    */
   onClearHistory() {
-    this.dispatch({type: at.PLACES_HISTORY_CLEARED});
+    this.dispatch({ type: at.PLACES_HISTORY_CLEARED });
   }
 
   // Empty functions to make xpconnect happy
@@ -90,16 +101,19 @@ class BookmarksObserver extends Observer {
    * @param  {str} uri
    * @param  {str} guid      The unique id of the bookmark
    */
-  onItemRemoved(id, folderId, index, type, uri, guid, parentGuid, source) { // eslint-disable-line max-params
-    if (type === PlacesUtils.bookmarks.TYPE_BOOKMARK &&
-        source !== PlacesUtils.bookmarks.SOURCES.IMPORT &&
-        source !== PlacesUtils.bookmarks.SOURCES.RESTORE &&
-        source !== PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP &&
-        source !== PlacesUtils.bookmarks.SOURCES.SYNC) {
-      this.dispatch({type: at.PLACES_LINKS_CHANGED});
+  // eslint-disable-next-line max-params
+  onItemRemoved(id, folderId, index, type, uri, guid, parentGuid, source) {
+    if (
+      type === PlacesUtils.bookmarks.TYPE_BOOKMARK &&
+      source !== PlacesUtils.bookmarks.SOURCES.IMPORT &&
+      source !== PlacesUtils.bookmarks.SOURCES.RESTORE &&
+      source !== PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP &&
+      source !== PlacesUtils.bookmarks.SOURCES.SYNC
+    ) {
+      this.dispatch({ type: at.PLACES_LINKS_CHANGED });
       this.dispatch({
         type: at.PLACES_BOOKMARK_REMOVED,
-        data: {url: uri.spec, bookmarkGuid: guid},
+        data: { url: uri.spec, bookmarkGuid: guid },
       });
     }
   }
@@ -128,20 +142,30 @@ class PlacesObserver extends Observer {
   }
 
   handlePlacesEvent(events) {
-    for (let {itemType, source, dateAdded, guid, title, url, isTagging} of events) {
+    for (let {
+      itemType,
+      source,
+      dateAdded,
+      guid,
+      title,
+      url,
+      isTagging,
+    } of events) {
       // Skips items that are not bookmarks (like folders), about:* pages or
       // default bookmarks, added when the profile is created.
-      if (isTagging ||
-          itemType !== PlacesUtils.bookmarks.TYPE_BOOKMARK ||
-          source === PlacesUtils.bookmarks.SOURCES.IMPORT ||
-          source === PlacesUtils.bookmarks.SOURCES.RESTORE ||
-          source === PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP ||
-          source === PlacesUtils.bookmarks.SOURCES.SYNC ||
-          (!url.startsWith("http://") && !url.startsWith("https://"))) {
+      if (
+        isTagging ||
+        itemType !== PlacesUtils.bookmarks.TYPE_BOOKMARK ||
+        source === PlacesUtils.bookmarks.SOURCES.IMPORT ||
+        source === PlacesUtils.bookmarks.SOURCES.RESTORE ||
+        source === PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP ||
+        source === PlacesUtils.bookmarks.SOURCES.SYNC ||
+        (!url.startsWith("http://") && !url.startsWith("https://"))
+      ) {
         return;
       }
 
-      this.dispatch({type: at.PLACES_LINKS_CHANGED});
+      this.dispatch({ type: at.PLACES_LINKS_CHANGED });
       this.dispatch({
         type: at.PLACES_BOOKMARK_ADDED,
         data: {
@@ -172,8 +196,10 @@ class PlacesFeed {
     Cc["@mozilla.org/browser/nav-bookmarks-service;1"]
       .getService(Ci.nsINavBookmarksService)
       .addObserver(this.bookmarksObserver, true);
-    PlacesUtils.observers.addListener(["bookmark-added"],
-                                      this.placesObserver.handlePlacesEvent);
+    PlacesUtils.observers.addListener(
+      ["bookmark-added"],
+      this.placesObserver.handlePlacesEvent
+    );
 
     Services.obs.addObserver(this, LINK_BLOCKED_EVENT);
   }
@@ -214,8 +240,10 @@ class PlacesFeed {
     }
     PlacesUtils.history.removeObserver(this.historyObserver);
     PlacesUtils.bookmarks.removeObserver(this.bookmarksObserver);
-    PlacesUtils.observers.removeListener(["bookmark-added"],
-                                         this.placesObserver.handlePlacesEvent);
+    PlacesUtils.observers.removeListener(
+      ["bookmark-added"],
+      this.placesObserver.handlePlacesEvent
+    );
     Services.obs.removeObserver(this, LINK_BLOCKED_EVENT);
   }
 
@@ -229,10 +257,12 @@ class PlacesFeed {
    */
   observe(subject, topic, value) {
     if (topic === LINK_BLOCKED_EVENT) {
-      this.store.dispatch(ac.BroadcastToContent({
-        type: at.PLACES_LINK_BLOCKED,
-        data: {url: value},
-      }));
+      this.store.dispatch(
+        ac.BroadcastToContent({
+          type: at.PLACES_LINK_BLOCKED,
+          data: { url: value },
+        })
+      );
     }
   }
 
@@ -242,18 +272,29 @@ class PlacesFeed {
   openLink(action, where = "", isPrivate = false) {
     const params = {
       private: isPrivate,
-      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
+        {}
+      ),
     };
 
     // Always include the referrer (even for http links) if we have one
-    const {event, referrer, typedBonus} = action.data;
+    const { event, referrer, typedBonus } = action.data;
     if (referrer) {
-      params.referrerPolicy = Ci.nsIHttpChannel.REFERRER_POLICY_UNSAFE_URL;
-      params.referrerURI = Services.io.newURI(referrer);
+      const ReferrerInfo = Components.Constructor(
+        "@mozilla.org/referrer-info;1",
+        "nsIReferrerInfo",
+        "init"
+      );
+      params.referrerInfo = new ReferrerInfo(
+        Ci.nsIHttpChannel.REFERRER_POLICY_UNSAFE_URL,
+        true,
+        Services.io.newURI(referrer)
+      );
     }
 
     // Pocket gives us a special reader URL to open their stories in
-    const urlToOpen = action.data.type === "pocket" ? action.data.open_url : action.data.url;
+    const urlToOpen =
+      action.data.type === "pocket" ? action.data.open_url : action.data.url;
 
     // Mark the page as typed for frecency bonus before opening the link
     if (typedBonus) {
@@ -265,33 +306,73 @@ class PlacesFeed {
   }
 
   async saveToPocket(site, browser) {
-    const {url, title} = site;
+    const { url, title } = site;
     try {
-      let data = await NewTabUtils.activityStreamLinks.addPocketEntry(url, title, browser);
+      let data = await NewTabUtils.activityStreamLinks.addPocketEntry(
+        url,
+        title,
+        browser
+      );
       if (data) {
-        this.store.dispatch(ac.BroadcastToContent({
-          type: at.PLACES_SAVED_TO_POCKET,
-          data: {url, open_url: data.item.open_url, title, pocket_id: data.item.item_id},
-        }));
+        this.store.dispatch(
+          ac.BroadcastToContent({
+            type: at.PLACES_SAVED_TO_POCKET,
+            data: {
+              url,
+              open_url: data.item.open_url,
+              title,
+              pocket_id: data.item.item_id,
+            },
+          })
+        );
       }
     } catch (err) {
       Cu.reportError(err);
     }
   }
 
-  fillSearchTopSiteTerm({_target, data}) {
+  /**
+   * Deletes an item from a user's saved to Pocket feed
+   * @param {int} itemID
+   *  The unique ID given by Pocket for that item; used to look the item up when deleting
+   */
+  async deleteFromPocket(itemID) {
+    try {
+      await NewTabUtils.activityStreamLinks.deletePocketEntry(itemID);
+      this.store.dispatch({ type: at.POCKET_LINK_DELETED_OR_ARCHIVED });
+    } catch (err) {
+      Cu.reportError(err);
+    }
+  }
+
+  /**
+   * Archives an item from a user's saved to Pocket feed
+   * @param {int} itemID
+   *  The unique ID given by Pocket for that item; used to look the item up when archiving
+   */
+  async archiveFromPocket(itemID) {
+    try {
+      await NewTabUtils.activityStreamLinks.archivePocketEntry(itemID);
+      this.store.dispatch({ type: at.POCKET_LINK_DELETED_OR_ARCHIVED });
+    } catch (err) {
+      Cu.reportError(err);
+    }
+  }
+
+  fillSearchTopSiteTerm({ _target, data }) {
     _target.browser.ownerGlobal.gURLBar.search(`${data.label} `);
   }
 
   _getSearchPrefix() {
-    const searchAliases = Services.search.defaultEngine.wrappedJSObject.__internalAliases;
+    const searchAliases =
+      Services.search.defaultEngine.wrappedJSObject.__internalAliases;
     if (searchAliases && searchAliases.length > 0) {
       return `${searchAliases[0]} `;
     }
     return "";
   }
 
-  handoffSearchToAwesomebar({_target, data, meta}) {
+  handoffSearchToAwesomebar({ _target, data, meta }) {
     const searchAlias = this._getSearchPrefix();
     const urlBar = _target.browser.ownerGlobal.gURLBar;
     let isFirstChange = true;
@@ -312,7 +393,9 @@ class PlacesFeed {
         isFirstChange = false;
         urlBar.removeHiddenFocus();
         urlBar.search(searchAlias);
-        this.store.dispatch(ac.OnlyToOneContent({type: at.HIDE_SEARCH}, meta.fromTarget));
+        this.store.dispatch(
+          ac.OnlyToOneContent({ type: at.HIDE_SEARCH }, meta.fromTarget)
+        );
         urlBar.removeEventListener("compositionstart", checkFirstChange);
         urlBar.removeEventListener("paste", checkFirstChange);
       }
@@ -331,7 +414,9 @@ class PlacesFeed {
 
     const onDone = () => {
       // We are done. Show in-content search again and cleanup.
-      this.store.dispatch(ac.OnlyToOneContent({type: at.SHOW_SEARCH}, meta.fromTarget));
+      this.store.dispatch(
+        ac.OnlyToOneContent({ type: at.SHOW_SEARCH }, meta.fromTarget)
+      );
       urlBar.removeHiddenFocus();
 
       urlBar.removeEventListener("keydown", onKeydown);
@@ -358,21 +443,24 @@ class PlacesFeed {
         this.removeObservers();
         break;
       case at.BLOCK_URL: {
-        const {url, pocket_id} = action.data;
-        NewTabUtils.activityStreamLinks.blockURL({url, pocket_id});
+        const { url, pocket_id } = action.data;
+        NewTabUtils.activityStreamLinks.blockURL({ url, pocket_id });
         break;
       }
       case at.BOOKMARK_URL:
-        NewTabUtils.activityStreamLinks.addBookmark(action.data, action._target.browser.ownerGlobal);
+        NewTabUtils.activityStreamLinks.addBookmark(
+          action.data,
+          action._target.browser.ownerGlobal
+        );
         break;
       case at.DELETE_BOOKMARK_BY_ID:
         NewTabUtils.activityStreamLinks.deleteBookmark(action.data);
         break;
       case at.DELETE_HISTORY_URL: {
-        const {url, forceBlock, pocket_id} = action.data;
+        const { url, forceBlock, pocket_id } = action.data;
         NewTabUtils.activityStreamLinks.deleteHistoryEntry(url);
         if (forceBlock) {
-          NewTabUtils.activityStreamLinks.blockURL({url, pocket_id});
+          NewTabUtils.activityStreamLinks.blockURL({ url, pocket_id });
         }
         break;
       }
@@ -384,6 +472,12 @@ class PlacesFeed {
         break;
       case at.SAVE_TO_POCKET:
         this.saveToPocket(action.data.site, action._target.browser);
+        break;
+      case at.DELETE_FROM_POCKET:
+        this.deleteFromPocket(action.data.pocket_id);
+        break;
+      case at.ARCHIVE_FROM_POCKET:
+        this.archiveFromPocket(action.data.pocket_id);
         break;
       case at.FILL_SEARCH_TERM:
         this.fillSearchTopSiteTerm(action);

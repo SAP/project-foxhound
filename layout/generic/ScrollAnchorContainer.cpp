@@ -8,10 +8,17 @@
 
 #include "GeckoProfiler.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs.h"
 #include "mozilla/ToString.h"
+#include "nsBlockFrame.h"
 #include "nsGfxScrollFrame.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsLayoutUtils.h"
+#include "nsPlaceholderFrame.h"
+
+using namespace mozilla::dom;
 
 #define ANCHOR_LOG(...)
 // #define ANCHOR_LOG(...) printf_stderr("ANCHOR: " __VA_ARGS__)
@@ -300,10 +307,16 @@ void ScrollAnchorContainer::Destroy() {
 }
 
 void ScrollAnchorContainer::ApplyAdjustments() {
-  if (!mAnchorNode || mAnchorNodeIsDirty) {
+  if (!mAnchorNode || mAnchorNodeIsDirty ||
+      mScrollFrame->HasPendingScrollRestoration() ||
+      mScrollFrame->IsProcessingAsyncScroll()) {
     mSuppressAnchorAdjustment = false;
-    ANCHOR_LOG("Ignoring post-reflow (anchor=%p, dirty=%d, container=%p).\n",
-               mAnchorNode, mAnchorNodeIsDirty, this);
+    ANCHOR_LOG(
+        "Ignoring post-reflow (anchor=%p, dirty=%d, pendingRestoration=%d, "
+        "asyncScroll=%d container=%p).\n",
+        mAnchorNode, mAnchorNodeIsDirty,
+        mScrollFrame->HasPendingScrollRestoration(),
+        mScrollFrame->IsProcessingAsyncScroll(), this);
     return;
   }
 
@@ -350,12 +363,14 @@ void ScrollAnchorContainer::ApplyAdjustments() {
   // We should use AutoRestore here, but that doesn't work with bitfields
   mApplyingAnchorAdjustment = true;
   mScrollFrame->ScrollTo(mScrollFrame->GetScrollPosition() + physicalAdjustment,
-                         nsIScrollableFrame::INSTANT, nsGkAtoms::relative);
+                         ScrollMode::Instant, nsGkAtoms::relative);
   mApplyingAnchorAdjustment = false;
 
   nsPresContext* pc = Frame()->PresContext();
-  Document* doc = pc->Document();
-  doc->UpdateForScrollAnchorAdjustment(logicalAdjustment);
+  if (mScrollFrame->mIsRoot) {
+    pc->PresShell()->RootScrollFrameAdjusted(physicalAdjustment.y);
+  }
+  pc->Document()->UpdateForScrollAnchorAdjustment(logicalAdjustment);
 
   // The anchor position may not be in the same relative position after
   // adjustment. Update ourselves so we have consistent state.

@@ -24,20 +24,17 @@
   buttons="accept,cancel"
   style="width: 30em;"
   onload="startup();"
-  ondialogaccept="return acceptDialog()"
-  ondialogcancel="return exitDialog()"
   buttonlabelaccept="&start.label;"
   buttonlabelcancel="&exit.label;">
 
-  <script type="application/javascript"
-          src="chrome://global/content/customElements.js"/>
+  <script src="chrome://global/content/customElements.js"/>
 
   <stringbundle id="bundle_profileManager"
                 src="chrome://mozapps/locale/profile/profileSelection.properties"/>
   <stringbundle id="bundle_brand"
                 src="chrome://branding/locale/brand.properties"/>
 
-  <script type="application/javascript" src="chrome://mozapps/content/profile/profileSelection.js"/>
+  <script src="chrome://mozapps/content/profile/profileSelection.js"/>
 
   <description class="label">&pmDescription.label;</description>
 

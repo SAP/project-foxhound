@@ -40,7 +40,6 @@ class nsCSPParser {
   void directive();
   nsCSPDirective* directiveName();
   void directiveValue(nsTArray<nsCSPBaseSrc*>& outSrcs);
-  void requireSRIForDirectiveValue(nsRequireSRIForDirective* aDir);
   void referrerDirectiveValue(nsCSPDirective* aDir);
   void reportURIList(nsCSPDirective* aDir);
   void sandboxFlagList(nsCSPDirective* aDir);
@@ -109,8 +108,7 @@ class nsCSPParser {
   void resetCurChar(const nsAString& aToken);
 
   void logWarningErrorToConsole(uint32_t aSeverityFlag, const char* aProperty,
-                                const char16_t* aParams[],
-                                uint32_t aParamsLength);
+                                const nsTArray<nsString>& aParams);
 
   /**
    * When parsing the policy, the parser internally uses the following helper

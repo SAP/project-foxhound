@@ -7,7 +7,6 @@
 #include "mozilla/dom/SVGElement.h"
 
 #include "mozilla/dom/MutationEventBinding.h"
-#include "mozilla/dom/SVGAnimatedEnumeration.h"
 #include "mozilla/dom/SVGElementBinding.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
@@ -20,21 +19,23 @@
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/InternalMutationEvent.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/Unused.h"
 
+#include "DOMSVGAnimatedEnumeration.h"
 #include "mozAutoDocUpdate.h"
 #include "nsAttrValueOrString.h"
 #include "nsCSSProps.h"
 #include "nsContentUtils.h"
+#include "nsDOMCSSAttrDeclaration.h"
 #include "nsICSSDeclaration.h"
 #include "nsIContentInlines.h"
 #include "mozilla/dom/Document.h"
 #include "nsError.h"
 #include "nsGkAtoms.h"
-#include "nsIPresShell.h"
 #include "nsIFrame.h"
 #include "nsQueryObject.h"
 #include "nsLayoutUtils.h"
@@ -43,17 +44,18 @@
 #include "SVGAnimatedPointList.h"
 #include "SVGAnimatedPathSegList.h"
 #include "SVGAnimatedTransformList.h"
-#include "SVGBoolean.h"
-#include "SVGEnum.h"
-#include "SVGInteger.h"
-#include "SVGIntegerPair.h"
-#include "nsSVGLength2.h"
+#include "SVGAnimatedBoolean.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedInteger.h"
+#include "SVGAnimatedIntegerPair.h"
+#include "SVGAnimatedLength.h"
+#include "SVGAnimatedNumber.h"
+#include "SVGAnimatedNumberPair.h"
+#include "SVGAnimatedOrient.h"
+#include "SVGAnimatedString.h"
+#include "SVGAnimatedViewBox.h"
+#include "SVGGeometryProperty.h"
 #include "SVGMotionSMILAttr.h"
-#include "nsSVGNumber2.h"
-#include "SVGNumberPair.h"
-#include "SVGOrient.h"
-#include "SVGString.h"
-#include "SVGViewBox.h"
 #include <stdarg.h>
 
 // This is needed to ensure correct handling of calls to the
@@ -105,9 +107,9 @@ JSObject* SVGElement::WrapNode(JSContext* aCx,
 
 void SVGElement::DidAnimateClass() {
   // For Servo, snapshot the element before we change it.
-  nsIPresShell* shell = OwnerDoc()->GetShell();
-  if (shell) {
-    if (nsPresContext* presContext = shell->GetPresContext()) {
+  PresShell* presShell = OwnerDoc()->GetPresShell();
+  if (presShell) {
+    if (nsPresContext* presContext = presShell->GetPresContext()) {
       presContext->RestyleManager()->ClassAttributeWillBeChangedBySMIL(this);
     }
   }
@@ -121,8 +123,8 @@ void SVGElement::DidAnimateClass() {
 
   // FIXME(emilio): This re-selector-matches, but we do the snapshot stuff right
   // above... Is this needed anymore?
-  if (shell) {
-    shell->RestyleForAnimation(this, StyleRestyleHint_RESTYLE_SELF);
+  if (presShell) {
+    presShell->RestyleForAnimation(this, StyleRestyleHint_RESTYLE_SELF);
   }
 }
 
@@ -173,20 +175,20 @@ nsresult SVGElement::Init() {
     enumInfo.Reset(i);
   }
 
-  SVGOrient* orient = GetOrient();
+  SVGAnimatedOrient* orient = GetAnimatedOrient();
 
   if (orient) {
     orient->Init();
   }
 
-  SVGViewBox* viewBox = GetViewBox();
+  SVGAnimatedViewBox* viewBox = GetAnimatedViewBox();
 
   if (viewBox) {
     viewBox->Init();
   }
 
   SVGAnimatedPreserveAspectRatio* preserveAspectRatio =
-      GetPreserveAspectRatio();
+      GetAnimatedPreserveAspectRatio();
 
   if (preserveAspectRatio) {
     preserveAspectRatio->Init();
@@ -225,9 +227,8 @@ nsresult SVGElement::Init() {
 //----------------------------------------------------------------------
 // nsIContent methods
 
-nsresult SVGElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                nsIContent* aBindingParent) {
-  nsresult rv = SVGElementBase::BindToTree(aDocument, aParent, aBindingParent);
+nsresult SVGElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = SVGElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!MayHaveStyle()) {
@@ -301,7 +302,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
   bool didSetResult = false;
 
   if (aNamespaceID == kNameSpaceID_None) {
-    // Check for nsSVGLength2 attribute
+    // Check for SVGAnimatedLength attribute
     LengthAttributesInfo lengthInfo = GetLengthInfo();
 
     uint32_t i;
@@ -390,7 +391,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for nsSVGNumber2 attribute
+      // Check for SVGAnimatedNumber attribute
       NumberAttributesInfo numberInfo = GetNumberInfo();
       for (i = 0; i < numberInfo.mNumberCount; i++) {
         if (aAttribute == numberInfo.mNumberInfo[i].mName) {
@@ -408,7 +409,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for SVGNumberPair attribute
+      // Check for SVGAnimatedNumberPair attribute
       NumberPairAttributesInfo numberPairInfo = GetNumberPairInfo();
       for (i = 0; i < numberPairInfo.mNumberPairCount; i++) {
         if (aAttribute == numberPairInfo.mNumberPairInfo[i].mName) {
@@ -426,7 +427,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for SVGInteger attribute
+      // Check for SVGAnimatedInteger attribute
       IntegerAttributesInfo integerInfo = GetIntegerInfo();
       for (i = 0; i < integerInfo.mIntegerCount; i++) {
         if (aAttribute == integerInfo.mIntegerInfo[i].mName) {
@@ -444,7 +445,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for SVGIntegerPair attribute
+      // Check for SVGAnimatedIntegerPair attribute
       IntegerPairAttributesInfo integerPairInfo = GetIntegerPairInfo();
       for (i = 0; i < integerPairInfo.mIntegerPairCount; i++) {
         if (aAttribute == integerPairInfo.mIntegerPairInfo[i].mName) {
@@ -463,7 +464,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for SVGBoolean attribute
+      // Check for SVGAnimatedBoolean attribute
       BooleanAttributesInfo booleanInfo = GetBooleanInfo();
       for (i = 0; i < booleanInfo.mBooleanCount; i++) {
         if (aAttribute == booleanInfo.mBooleanInfo[i].mName) {
@@ -484,7 +485,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
 
     if (!foundMatch) {
-      // Check for SVGEnum attribute
+      // Check for SVGAnimatedEnumeration attribute
       EnumAttributesInfo enumInfo = GetEnumInfo();
       for (i = 0; i < enumInfo.mEnumCount; i++) {
         if (aAttribute == enumInfo.mEnumInfo[i].mName) {
@@ -532,7 +533,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     if (!foundMatch) {
       // Check for orient attribute
       if (aAttribute == nsGkAtoms::orient) {
-        SVGOrient* orient = GetOrient();
+        SVGAnimatedOrient* orient = GetAnimatedOrient();
         if (orient) {
           rv = orient->SetBaseValueString(aValue, this, false);
           if (NS_FAILED(rv)) {
@@ -543,9 +544,9 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
           }
           foundMatch = true;
         }
-        // Check for SVGViewBox attribute
+        // Check for viewBox attribute
       } else if (aAttribute == nsGkAtoms::viewBox) {
-        SVGViewBox* viewBox = GetViewBox();
+        SVGAnimatedViewBox* viewBox = GetAnimatedViewBox();
         if (viewBox) {
           rv = viewBox->SetBaseValueString(aValue, this, false);
           if (NS_FAILED(rv)) {
@@ -556,10 +557,10 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
           }
           foundMatch = true;
         }
-        // Check for SVGAnimatedPreserveAspectRatio attribute
+        // Check for preserveAspectRatio attribute
       } else if (aAttribute == nsGkAtoms::preserveAspectRatio) {
         SVGAnimatedPreserveAspectRatio* preserveAspectRatio =
-            GetPreserveAspectRatio();
+            GetAnimatedPreserveAspectRatio();
         if (preserveAspectRatio) {
           rv = preserveAspectRatio->SetBaseValueString(aValue, this, false);
           if (NS_FAILED(rv)) {
@@ -603,7 +604,7 @@ bool SVGElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
   }
 
   if (!foundMatch) {
-    // Check for SVGString attribute
+    // Check for SVGAnimatedString attribute
     StringAttributesInfo stringInfo = GetStringInfo();
     for (uint32_t i = 0; i < stringInfo.mStringCount; i++) {
       if (aNamespaceID == stringInfo.mStringInfo[i].mNamespaceID &&
@@ -768,7 +769,7 @@ void SVGElement::UnsetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
 
     // Check if this is an orient attribute going away
     if (aName == nsGkAtoms::orient) {
-      SVGOrient* orient = GetOrient();
+      SVGAnimatedOrient* orient = GetAnimatedOrient();
       if (orient) {
         MaybeSerializeAttrBeforeRemoval(aName, aNotify);
         orient->Init();
@@ -778,7 +779,7 @@ void SVGElement::UnsetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
 
     // Check if this is a viewBox attribute going away
     if (aName == nsGkAtoms::viewBox) {
-      SVGViewBox* viewBox = GetViewBox();
+      SVGAnimatedViewBox* viewBox = GetAnimatedViewBox();
       if (viewBox) {
         MaybeSerializeAttrBeforeRemoval(aName, aNotify);
         viewBox->Init();
@@ -789,7 +790,7 @@ void SVGElement::UnsetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
     // Check if this is a preserveAspectRatio attribute going away
     if (aName == nsGkAtoms::preserveAspectRatio) {
       SVGAnimatedPreserveAspectRatio* preserveAspectRatio =
-          GetPreserveAspectRatio();
+          GetAnimatedPreserveAspectRatio();
       if (preserveAspectRatio) {
         MaybeSerializeAttrBeforeRemoval(aName, aNotify);
         preserveAspectRatio->Init();
@@ -1016,8 +1017,43 @@ SVGElement* SVGElement::GetViewportElement() {
   return SVGContentUtils::GetNearestViewportElement(this);
 }
 
-already_AddRefed<SVGAnimatedString> SVGElement::ClassName() {
+already_AddRefed<DOMSVGAnimatedString> SVGElement::ClassName() {
   return mClassAttribute.ToDOMAnimatedString(this);
+}
+
+/* static */
+bool SVGElement::UpdateDeclarationBlockFromLength(
+    DeclarationBlock& aBlock, nsCSSPropertyID aPropId,
+    const SVGAnimatedLength& aLength, ValToUse aValToUse) {
+  aBlock.AssertMutable();
+
+  float value;
+  if (aValToUse == ValToUse::Anim) {
+    value = aLength.GetAnimValInSpecifiedUnits();
+  } else {
+    MOZ_ASSERT(aValToUse == ValToUse::Base);
+    value = aLength.GetBaseValInSpecifiedUnits();
+  }
+
+  // SVG parser doesn't check non-negativity of some parsed value,
+  // we should not pass those to CSS side.
+  if (value < 0 &&
+      SVGGeometryProperty::IsNonNegativeGeometryProperty(aPropId)) {
+    return false;
+  }
+
+  nsCSSUnit cssUnit = SVGGeometryProperty::SpecifiedUnitTypeToCSSUnit(
+      aLength.GetSpecifiedUnitType());
+
+  if (cssUnit == eCSSUnit_Percent) {
+    Servo_DeclarationBlock_SetPercentValue(aBlock.Raw(), aPropId,
+                                           value / 100.f);
+  } else {
+    Servo_DeclarationBlock_SetLengthValue(aBlock.Raw(), aPropId, value,
+                                          cssUnit);
+  }
+
+  return true;
 }
 
 //------------------------------------------------------------------------
@@ -1034,6 +1070,9 @@ class MOZ_STACK_CLASS MappedAttrParser {
   // Parses a mapped attribute value.
   void ParseMappedAttrValue(nsAtom* aMappedAttrName,
                             const nsAString& aMappedAttrValue);
+
+  void TellStyleAlreadyParsedResult(nsAtom const* aAtom,
+                                    SVGAnimatedLength const& aLength);
 
   // If we've parsed any values for mapped attributes, this method returns the
   // already_AddRefed css::Declaration that incorporates the parsed
@@ -1097,7 +1136,7 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
       // since it doesn't have a sheet.
       if (nsCSSProps::IsShorthand(propertyID)) {
         CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subprop, propertyID,
-                                             CSSEnabledState::eForAllContent) {
+                                             CSSEnabledState::ForAllContent) {
           UseCounter useCounter = nsCSSProps::UseCounterFor(*subprop);
           if (useCounter != eUseCounter_UNKNOWN) {
             mElement->OwnerDoc()->SetDocumentAndPageUseCounter(useCounter);
@@ -1120,6 +1159,18 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
     RefPtr<nsAtom> atom = NS_Atomize(aMappedAttrValue);
     Servo_DeclarationBlock_SetIdentStringValue(mDecl->Raw(), propertyID, atom);
   }
+}
+
+void MappedAttrParser::TellStyleAlreadyParsedResult(
+    nsAtom const* aAtom, SVGAnimatedLength const& aLength) {
+  if (!mDecl) {
+    mDecl = new DeclarationBlock();
+  }
+  nsCSSPropertyID propertyID =
+      nsCSSProps::LookupProperty(nsDependentAtomString(aAtom));
+
+  SVGElement::UpdateDeclarationBlockFromLength(*mDecl, propertyID, aLength,
+                                               SVGElement::ValToUse::Base);
 }
 
 already_AddRefed<DeclarationBlock> MappedAttrParser::GetDeclarationBlock() {
@@ -1145,6 +1196,9 @@ void SVGElement::UpdateContentDeclarationBlock() {
   MappedAttrParser mappedAttrParser(doc->CSSLoader(), doc->GetDocumentURI(),
                                     GetBaseURI(), this);
 
+  bool lengthAffectsStyle =
+      SVGGeometryProperty::ElementMapsLengthsToStyle(this);
+
   for (uint32_t i = 0; i < attrCount; ++i) {
     const nsAttrName* attrName = mAttrs.AttrNameAt(i);
     if (!attrName->IsAtom() || !IsAttributeMapped(attrName->Atom())) continue;
@@ -1159,20 +1213,16 @@ void SVGElement::UpdateContentDeclarationBlock() {
       continue;  // xml:lang has precedence
     }
 
-    if (IsSVGElement(nsGkAtoms::svg)) {
-      // Special case: we don't want <svg> 'width'/'height' mapped into style
-      // if the attribute value isn't a valid <length> according to SVG (which
-      // only supports a subset of the CSS <length> values). We don't enforce
-      // this by checking the attribute value in SVGSVGElement::
-      // IsAttributeMapped since we don't want that method to depend on the
-      // value of the attribute that is being checked. Rather we just prevent
-      // the actual mapping here, as necessary.
-      if (attrName->Atom() == nsGkAtoms::width &&
-          !GetAnimatedLength(nsGkAtoms::width)->HasBaseVal()) {
-        continue;
-      }
-      if (attrName->Atom() == nsGkAtoms::height &&
-          !GetAnimatedLength(nsGkAtoms::height)->HasBaseVal()) {
+    if (lengthAffectsStyle) {
+      auto const* length = GetAnimatedLength(attrName->Atom());
+
+      if (length && length->HasBaseVal()) {
+        // This is an element with geometry property set via SVG attribute,
+        // and the attribute is already successfully parsed. We want to go
+        // through the optimized path to tell the style system the result
+        // directly, rather than let it parse the same thing again.
+        mappedAttrParser.TellStyleAlreadyParsedResult(attrName->Atom(),
+                                                      *length);
         continue;
       }
     }
@@ -1259,9 +1309,9 @@ nsAttrValue SVGElement::WillChangeValue(nsAtom* aName) {
 
   // This is not strictly correct--the attribute value parameter for
   // BeforeSetAttr should reflect the value that *will* be set but that implies
-  // allocating, e.g. an extra nsSVGLength2, and isn't necessary at the moment
-  // since no SVG elements overload BeforeSetAttr. For now we just pass the
-  // current value.
+  // allocating, e.g. an extra SVGAnimatedLength, and isn't necessary at the
+  // moment since no SVG elements overload BeforeSetAttr. For now we just pass
+  // the current value.
   nsAttrValueOrString attrStringOrValue(attrValue ? *attrValue
                                                   : emptyOrOldAttrValue);
   DebugOnly<nsresult> rv = BeforeSetAttr(
@@ -1359,7 +1409,7 @@ void SVGElement::LengthAttributesInfo::Reset(uint8_t aAttrEnum) {
                            mLengthInfo[aAttrEnum].mDefaultUnitType);
 }
 
-void SVGElement::SetLength(nsAtom* aName, const nsSVGLength2& aLength) {
+void SVGElement::SetLength(nsAtom* aName, const SVGAnimatedLength& aLength) {
   LengthAttributesInfo lengthInfo = GetLengthInfo();
 
   for (uint32_t i = 0; i < lengthInfo.mLengthCount; i++) {
@@ -1391,6 +1441,15 @@ void SVGElement::DidChangeLength(uint8_t aAttrEnum,
 }
 
 void SVGElement::DidAnimateLength(uint8_t aAttrEnum) {
+  if (SVGGeometryProperty::ElementMapsLengthsToStyle(this)) {
+    nsCSSPropertyID propId =
+        SVGGeometryProperty::AttrEnumToCSSPropId(this, aAttrEnum);
+
+    SMILOverrideStyle()->SetSMILValue(propId,
+                                      GetLengthInfo().mLengths[aAttrEnum]);
+    return;
+  }
+
   ClearAnyCachedPath();
 
   nsIFrame* frame = GetPrimaryFrame();
@@ -1403,7 +1462,7 @@ void SVGElement::DidAnimateLength(uint8_t aAttrEnum) {
   }
 }
 
-nsSVGLength2* SVGElement::GetAnimatedLength(const nsAtom* aAttrName) {
+SVGAnimatedLength* SVGElement::GetAnimatedLength(const nsAtom* aAttrName) {
   LengthAttributesInfo lengthInfo = GetLengthInfo();
 
   for (uint32_t i = 0; i < lengthInfo.mLengthCount; i++) {
@@ -1411,7 +1470,6 @@ nsSVGLength2* SVGElement::GetAnimatedLength(const nsAtom* aAttrName) {
       return &lengthInfo.mLengths[i];
     }
   }
-  MOZ_ASSERT(false, "no matching length found");
   return nullptr;
 }
 
@@ -1885,14 +1943,14 @@ void SVGElement::DidAnimateEnum(uint8_t aAttrEnum) {
   }
 }
 
-SVGOrient* SVGElement::GetOrient() { return nullptr; }
+SVGAnimatedOrient* SVGElement::GetAnimatedOrient() { return nullptr; }
 
 nsAttrValue SVGElement::WillChangeOrient() {
   return WillChangeValue(nsGkAtoms::orient);
 }
 
 void SVGElement::DidChangeOrient(const nsAttrValue& aEmptyOrOldValue) {
-  SVGOrient* orient = GetOrient();
+  SVGAnimatedOrient* orient = GetAnimatedOrient();
 
   NS_ASSERTION(orient, "DidChangeOrient on element with no orient attrib");
 
@@ -1911,14 +1969,14 @@ void SVGElement::DidAnimateOrient() {
   }
 }
 
-SVGViewBox* SVGElement::GetViewBox() { return nullptr; }
+SVGAnimatedViewBox* SVGElement::GetAnimatedViewBox() { return nullptr; }
 
 nsAttrValue SVGElement::WillChangeViewBox() {
   return WillChangeValue(nsGkAtoms::viewBox);
 }
 
 void SVGElement::DidChangeViewBox(const nsAttrValue& aEmptyOrOldValue) {
-  SVGViewBox* viewBox = GetViewBox();
+  SVGAnimatedViewBox* viewBox = GetAnimatedViewBox();
 
   NS_ASSERTION(viewBox, "DidChangeViewBox on element with no viewBox attrib");
 
@@ -1937,7 +1995,7 @@ void SVGElement::DidAnimateViewBox() {
   }
 }
 
-SVGAnimatedPreserveAspectRatio* SVGElement::GetPreserveAspectRatio() {
+SVGAnimatedPreserveAspectRatio* SVGElement::GetAnimatedPreserveAspectRatio() {
   return nullptr;
 }
 
@@ -1948,7 +2006,7 @@ nsAttrValue SVGElement::WillChangePreserveAspectRatio() {
 void SVGElement::DidChangePreserveAspectRatio(
     const nsAttrValue& aEmptyOrOldValue) {
   SVGAnimatedPreserveAspectRatio* preserveAspectRatio =
-      GetPreserveAspectRatio();
+      GetAnimatedPreserveAspectRatio();
 
   NS_ASSERTION(preserveAspectRatio,
                "DidChangePreserveAspectRatio on element with no "
@@ -2109,11 +2167,11 @@ void SVGElement::StringListAttributesInfo::Reset(uint8_t aAttrEnum) {
 nsresult SVGElement::ReportAttributeParseFailure(Document* aDocument,
                                                  nsAtom* aAttribute,
                                                  const nsAString& aValue) {
-  const nsString& attributeValue = PromiseFlatString(aValue);
-  const char16_t* strings[] = {aAttribute->GetUTF16String(),
-                               attributeValue.get()};
+  AutoTArray<nsString, 2> strings;
+  strings.AppendElement(nsDependentAtomString(aAttribute));
+  strings.AppendElement(aValue);
   return SVGContentUtils::ReportToConsole(aDocument, "AttributeParseWarning",
-                                          strings, ArrayLength(strings));
+                                          strings);
 }
 
 void SVGElement::RecompileScriptEventListeners() {
@@ -2222,21 +2280,20 @@ UniquePtr<SMILAttr> SVGElement::GetAnimatedAttr(int32_t aNamespaceID,
 
     // orient:
     if (aName == nsGkAtoms::orient) {
-      SVGOrient* orient = GetOrient();
+      SVGAnimatedOrient* orient = GetAnimatedOrient();
       return orient ? orient->ToSMILAttr(this) : nullptr;
     }
 
-    // preserveAspectRatio:
     // viewBox:
     if (aName == nsGkAtoms::viewBox) {
-      SVGViewBox* viewBox = GetViewBox();
+      SVGAnimatedViewBox* viewBox = GetAnimatedViewBox();
       return viewBox ? viewBox->ToSMILAttr(this) : nullptr;
     }
 
     // preserveAspectRatio:
     if (aName == nsGkAtoms::preserveAspectRatio) {
       SVGAnimatedPreserveAspectRatio* preserveAspectRatio =
-          GetPreserveAspectRatio();
+          GetAnimatedPreserveAspectRatio();
       return preserveAspectRatio ? preserveAspectRatio->ToSMILAttr(this)
                                  : nullptr;
     }
@@ -2315,6 +2372,21 @@ void SVGElement::FlushAnimations() {
   Document* doc = GetComposedDoc();
   if (doc && doc->HasAnimationController()) {
     doc->GetAnimationController()->FlushResampleRequests();
+  }
+}
+
+void SVGElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                        size_t* aNodeSize) const {
+  Element::AddSizeOfExcludingThis(aSizes, aNodeSize);
+
+  // These are owned by the element and not referenced from the stylesheets.
+  // They're referenced from the rule tree, but the rule nodes don't measure
+  // their style source (since they're non-owning), so unconditionally reporting
+  // them even though it's a refcounted object is ok.
+  if (mContentDeclarationBlock) {
+    aSizes.mLayoutSvgMappedDeclarations +=
+        mContentDeclarationBlock->SizeofIncludingThis(
+            aSizes.mState.mMallocSizeOf);
   }
 }
 

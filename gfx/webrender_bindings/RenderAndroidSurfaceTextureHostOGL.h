@@ -25,17 +25,34 @@ class RenderAndroidSurfaceTextureHostOGL final : public RenderTextureHostOGL {
                            wr::ImageRendering aRendering) override;
   void Unlock() override;
 
-  virtual gfx::IntSize GetSize(uint8_t aChannelIndex) const override;
-  virtual GLuint GetGLHandle(uint8_t aChannelIndex) const override;
+  gfx::IntSize GetSize(uint8_t aChannelIndex) const override;
+  GLuint GetGLHandle(uint8_t aChannelIndex) const override;
+
+  virtual void PrepareForUse() override;
+  virtual void NofityForUse() override;
+  virtual void NotifyNotUsed() override;
 
  private:
   virtual ~RenderAndroidSurfaceTextureHostOGL();
   void DeleteTextureHandle();
+  bool EnsureAttachedToGLContext();
+  bool CheckIfAttachedToGLContext();
+
+  enum PrepareStatus {
+    STATUS_NONE,
+    STATUS_MIGHT_BE_USED,
+    STATUS_PREPARE_NEEDED,
+    STATUS_PREPARED
+  };
 
   const mozilla::java::GeckoSurfaceTexture::GlobalRef mSurfTex;
   const gfx::IntSize mSize;
-  // XXX const bool mContinuousUpdate;
+  // mContinuousUpdate was used for rendering video in the past.
+  // It is not used on current gecko.
+  const bool mContinuousUpdate;
   // XXX const bool mIgnoreTransform;
+  PrepareStatus mPrepareStatus;
+  bool mAttachedToGLContext;
 
   RefPtr<gl::GLContext> mGL;
 };

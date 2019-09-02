@@ -10,6 +10,7 @@
 
 #include "nsGkAtoms.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderCanvasRenderer.h"
@@ -38,13 +39,9 @@ using namespace mozilla::gfx;
  */
 static IntrinsicSize IntrinsicSizeFromCanvasSize(
     const nsIntSize& aCanvasSizeInPx) {
-  IntrinsicSize intrinsicSize;
-  intrinsicSize.width.SetCoordValue(
-      nsPresContext::CSSPixelsToAppUnits(aCanvasSizeInPx.width));
-  intrinsicSize.height.SetCoordValue(
+  return IntrinsicSize(
+      nsPresContext::CSSPixelsToAppUnits(aCanvasSizeInPx.width),
       nsPresContext::CSSPixelsToAppUnits(aCanvasSizeInPx.height));
-
-  return intrinsicSize;
 }
 
 /* Helper for our nsIFrame::GetIntrinsicRatio() impl. Takes the result of
@@ -55,15 +52,15 @@ static IntrinsicSize IntrinsicSizeFromCanvasSize(
  *                        by GetCanvasSize().
  * @return The canvas's intrinsic ratio, as a nsSize.
  */
-static nsSize IntrinsicRatioFromCanvasSize(const nsIntSize& aCanvasSizeInPx) {
-  return nsSize(nsPresContext::CSSPixelsToAppUnits(aCanvasSizeInPx.width),
-                nsPresContext::CSSPixelsToAppUnits(aCanvasSizeInPx.height));
+static AspectRatio IntrinsicRatioFromCanvasSize(
+    const nsIntSize& aCanvasSizeInPx) {
+  return AspectRatio::FromSize(aCanvasSizeInPx.width, aCanvasSizeInPx.height);
 }
 
-class nsDisplayCanvas final : public nsDisplayItem {
+class nsDisplayCanvas final : public nsPaintedDisplayItem {
  public:
   nsDisplayCanvas(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayCanvas);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -89,7 +86,7 @@ class nsDisplayCanvas final : public nsDisplayItem {
       // Need intrinsic size & ratio, for ComputeObjectDestRect:
       nsIntSize canvasSize = f->GetCanvasSize();
       IntrinsicSize intrinsicSize = IntrinsicSizeFromCanvasSize(canvasSize);
-      nsSize intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSize);
+      AspectRatio intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSize);
 
       const nsRect destRect = nsLayoutUtils::ComputeObjectDestRect(
           constraintRect, intrinsicSize, intrinsicRatio, f->StylePosition());
@@ -129,7 +126,7 @@ class nsDisplayCanvas final : public nsDisplayItem {
         RefPtr<WebRenderCanvasData> canvasData =
             aManager->CommandBuilder()
                 .CreateOrRecycleWebRenderUserData<WebRenderCanvasData>(
-                    this, &isRecycled);
+                    this, aBuilder.GetRenderRoot(), &isRecycled);
         nsHTMLCanvasFrame* canvasFrame =
             static_cast<nsHTMLCanvasFrame*>(mFrame);
         if (!canvasFrame->UpdateWebRenderCanvasData(aDisplayListBuilder,
@@ -140,7 +137,7 @@ class nsDisplayCanvas final : public nsDisplayItem {
             static_cast<WebRenderCanvasRendererAsync*>(
                 canvasData->GetCanvasRenderer());
         MOZ_ASSERT(data);
-        data->UpdateCompositableClient();
+        data->UpdateCompositableClient(aBuilder.GetRenderRoot());
 
         // Push IFrame for async image pipeline.
         // XXX Remove this once partial display list update is supported.
@@ -148,7 +145,8 @@ class nsDisplayCanvas final : public nsDisplayItem {
         nsIntSize canvasSizeInPx = data->GetSize();
         IntrinsicSize intrinsicSize =
             IntrinsicSizeFromCanvasSize(canvasSizeInPx);
-        nsSize intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSizeInPx);
+        AspectRatio intrinsicRatio =
+            IntrinsicRatioFromCanvasSize(canvasSizeInPx);
 
         nsRect area =
             mFrame->GetContentRectRelativeToSelf() + ToReferenceFrame();
@@ -174,10 +172,6 @@ class nsDisplayCanvas final : public nsDisplayItem {
         scTransform.PreScale(destGFXRect.Width() / canvasSizeInPx.width,
                              destGFXRect.Height() / canvasSizeInPx.height,
                              1.0f);
-        if (data->NeedsYFlip()) {
-          scTransform = scTransform.PreTranslate(0, data->GetSize().height, 0)
-                            .PreScale(1, -1, 1);
-        }
 
         MaybeIntSize scaleToSize;
         LayoutDeviceRect scBounds(LayoutDevicePoint(0, 0), bounds.Size());
@@ -187,7 +181,8 @@ class nsDisplayCanvas final : public nsDisplayItem {
         aManager->WrBridge()->AddWebRenderParentCommand(
             OpUpdateAsyncImagePipeline(data->GetPipelineId().value(), scBounds,
                                        scTransform, scaleToSize, filter,
-                                       mixBlendMode));
+                                       mixBlendMode),
+            aBuilder.GetRenderRoot());
         break;
       }
       case CanvasContextType::ImageBitmap: {
@@ -205,14 +200,14 @@ class nsDisplayCanvas final : public nsDisplayItem {
       const ContainerLayerParameters& aParameters) override {
     if (HTMLCanvasElement::FromNode(mFrame->GetContent())
             ->ShouldForceInactiveLayer(aManager))
-      return LAYER_INACTIVE;
+      return LayerState::LAYER_INACTIVE;
 
     // If compositing is cheap, just do that
     if (aManager->IsCompositingCheap() ||
         ActiveLayerTracker::IsContentActive(mFrame))
-      return mozilla::LAYER_ACTIVE;
+      return mozilla::LayerState::LAYER_ACTIVE;
 
-    return LAYER_INACTIVE;
+    return LayerState::LAYER_INACTIVE;
   }
 
   // FirstContentfulPaint is supposed to ignore "white" canvases.  We use
@@ -225,8 +220,7 @@ class nsDisplayCanvas final : public nsDisplayItem {
   }
 };
 
-nsIFrame* NS_NewHTMLCanvasFrame(nsIPresShell* aPresShell,
-                                ComputedStyle* aStyle) {
+nsIFrame* NS_NewHTMLCanvasFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell)
       nsHTMLCanvasFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -269,8 +263,13 @@ nscoord nsHTMLCanvasFrame::GetMinISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the height,
   // min-height, and max-height properties.
   bool vertical = GetWritingMode().IsVertical();
-  nscoord result = nsPresContext::CSSPixelsToAppUnits(
-      vertical ? GetCanvasSize().height : GetCanvasSize().width);
+  nscoord result;
+  if (StyleDisplay()->IsContainSize()) {
+    result = 0;
+  } else {
+    result = nsPresContext::CSSPixelsToAppUnits(
+        vertical ? GetCanvasSize().height : GetCanvasSize().width);
+  }
   DISPLAY_MIN_INLINE_SIZE(this, result);
   return result;
 }
@@ -280,19 +279,30 @@ nscoord nsHTMLCanvasFrame::GetPrefISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the height,
   // min-height, and max-height properties.
   bool vertical = GetWritingMode().IsVertical();
-  nscoord result = nsPresContext::CSSPixelsToAppUnits(
-      vertical ? GetCanvasSize().height : GetCanvasSize().width);
+  nscoord result;
+  if (StyleDisplay()->IsContainSize()) {
+    result = 0;
+  } else {
+    result = nsPresContext::CSSPixelsToAppUnits(
+        vertical ? GetCanvasSize().height : GetCanvasSize().width);
+  }
   DISPLAY_PREF_INLINE_SIZE(this, result);
   return result;
 }
 
 /* virtual */
 IntrinsicSize nsHTMLCanvasFrame::GetIntrinsicSize() {
+  if (StyleDisplay()->IsContainSize()) {
+    return IntrinsicSize(0, 0);
+  }
   return IntrinsicSizeFromCanvasSize(GetCanvasSize());
 }
 
 /* virtual */
-nsSize nsHTMLCanvasFrame::GetIntrinsicRatio() {
+AspectRatio nsHTMLCanvasFrame::GetIntrinsicRatio() {
+  if (StyleDisplay()->IsContainSize()) {
+    return AspectRatio();
+  }
   return IntrinsicRatioFromCanvasSize(GetCanvasSize());
 }
 
@@ -302,15 +312,16 @@ LogicalSize nsHTMLCanvasFrame::ComputeSize(
     nscoord aAvailableISize, const LogicalSize& aMargin,
     const LogicalSize& aBorder, const LogicalSize& aPadding,
     ComputeSizeFlags aFlags) {
-  nsIntSize size = GetCanvasSize();
-
   IntrinsicSize intrinsicSize;
-  intrinsicSize.width.SetCoordValue(
-      nsPresContext::CSSPixelsToAppUnits(size.width));
-  intrinsicSize.height.SetCoordValue(
-      nsPresContext::CSSPixelsToAppUnits(size.height));
-
-  nsSize intrinsicRatio = GetIntrinsicRatio();  // won't actually be used
+  AspectRatio intrinsicRatio;
+  if (StyleDisplay()->IsContainSize()) {
+    intrinsicSize = IntrinsicSize(0, 0);
+    // intrinsicRatio is already implicitly zero via default ctor.
+  } else {
+    nsIntSize canvasSizeInPx = GetCanvasSize();
+    intrinsicSize = IntrinsicSizeFromCanvasSize(canvasSizeInPx);
+    intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSizeInPx);
+  }
 
   return ComputeSizeWithIntrinsicDimensions(
       aRenderingContext, aWM, intrinsicSize, intrinsicRatio, aCBSize, aMargin,
@@ -406,7 +417,7 @@ already_AddRefed<Layer> nsHTMLCanvasFrame::BuildLayer(
   if (!layer) return nullptr;
 
   IntrinsicSize intrinsicSize = IntrinsicSizeFromCanvasSize(canvasSizeInPx);
-  nsSize intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSizeInPx);
+  AspectRatio intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSizeInPx);
 
   nsRect dest = nsLayoutUtils::ComputeObjectDestRect(
       area, intrinsicSize, intrinsicRatio, StylePosition());
@@ -455,8 +466,7 @@ void nsHTMLCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   DisplayListClipState::AutoClipContainingBlockDescendantsToContentBox clip(
       aBuilder, this, clipFlags);
 
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplayCanvas>(aBuilder, this));
+  aLists.Content()->AppendNewToTop<nsDisplayCanvas>(aBuilder, this);
 
   DisplaySelectionOverlay(aBuilder, aLists.Content(),
                           nsISelectionDisplay::DISPLAY_IMAGES);

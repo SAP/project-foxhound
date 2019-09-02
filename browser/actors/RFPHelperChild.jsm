@@ -5,16 +5,29 @@
 
 var EXPORTED_SYMBOLS = ["RFPHelperChild"];
 
-const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { ActorChild } = ChromeUtils.import(
+  "resource://gre/modules/ActorChild.jsm"
+);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 const kPrefLetterboxing = "privacy.resistFingerprinting.letterboxing";
 
-XPCOMUtils.defineLazyPreferenceGetter(this, "isLetterboxingEnabled",
-  kPrefLetterboxing, false);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "isLetterboxingEnabled",
+  kPrefLetterboxing,
+  false
+);
 
 class RFPHelperChild extends ActorChild {
   handleEvent() {
+    if (isLetterboxingEnabled) {
+      this.mm.sendAsyncMessage("Letterboxing:ContentSizeUpdated");
+    }
+  }
+  receiveMessage(aMessage) {
     if (isLetterboxingEnabled) {
       this.mm.sendAsyncMessage("Letterboxing:ContentSizeUpdated");
     }

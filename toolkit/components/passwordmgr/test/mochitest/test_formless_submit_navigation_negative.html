@@ -4,7 +4,6 @@
   <meta charset="utf-8">
   <title>Test no capturing of fields outside of a form due to navigation</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script src="/tests/SimpleTest/AddTask.js"></script>
   <script src="pwmgr_common.js"></script>
   <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
 </head>
@@ -56,8 +55,8 @@ const SCRIPTS = {
 const TESTCASES = [
   // Begin test cases that shouldn't trigger capture.
   {
-    // For now we don't trigger upon navigation if <form> is used.
-    document: `<form><input type=password value="pass1"></form>`,
+    // Empty password field in a form
+    document: `<form><input type=password value=""></form>`,
   },
   {
     // Empty password field
@@ -67,6 +66,12 @@ const TESTCASES = [
     // Test with an input that would normally be captured but with SCRIPTS that
     // shouldn't trigger capture.
     document: `<input type=password value="pass2">`,
+    wouldCapture: true,
+  },
+  {
+    // Test with an input that would normally be captured but with SCRIPTS that
+    // shouldn't trigger capture.
+    document: `<form><input type=password value="pass2"></form>`,
     wouldCapture: true,
   },
 ];

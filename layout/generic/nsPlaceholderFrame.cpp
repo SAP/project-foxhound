@@ -15,6 +15,8 @@
 #include "gfxUtils.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsDisplayList.h"
@@ -26,7 +28,7 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 
-nsPlaceholderFrame* NS_NewPlaceholderFrame(nsIPresShell* aPresShell,
+nsPlaceholderFrame* NS_NewPlaceholderFrame(PresShell* aPresShell,
                                            ComputedStyle* aStyle,
                                            nsFrameState aTypeBits) {
   return new (aPresShell)
@@ -57,7 +59,7 @@ nsSize nsPlaceholderFrame::GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) {
 
 /* virtual */
 nsSize nsPlaceholderFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
-  nsSize size(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
+  nsSize size(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
   DISPLAY_MAX_SIZE(this, size);
   return size;
 }
@@ -205,7 +207,7 @@ ComputedStyle* nsPlaceholderFrame::GetParentComputedStyleForOutOfFlow(
       mContent ? mContent->GetFlattenedTreeParentElement() : nullptr;
   if (parentElement && Servo_Element_IsDisplayContents(parentElement)) {
     RefPtr<ComputedStyle> style =
-        PresShell()->StyleSet()->ResolveServoStyle(*parentElement);
+        ServoStyleSet::ResolveServoStyle(*parentElement);
     *aProviderFrame = nullptr;
     // See the comment in GetParentComputedStyle to see why returning this as a
     // weak ref is fine.
@@ -252,9 +254,9 @@ void nsPlaceholderFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 #  ifdef DEBUG
   if (GetShowFrameBorders()) {
-    aLists.Outlines()->AppendToTop(MakeDisplayItem<nsDisplayGeneric>(
+    aLists.Outlines()->AppendNewToTop<nsDisplayGeneric>(
         aBuilder, this, PaintDebugPlaceholder, "DebugPlaceholder",
-        DisplayItemType::TYPE_DEBUG_PLACEHOLDER));
+        DisplayItemType::TYPE_DEBUG_PLACEHOLDER);
   }
 #  endif
 }

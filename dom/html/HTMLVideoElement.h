@@ -51,8 +51,7 @@ class HTMLVideoElement final : public HTMLMediaElement {
 
   virtual nsresult Clone(NodeInfo*, nsINode** aResult) const override;
 
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
 
   // Set size with the current video frame's height and width.
   // If there is no video frame, returns NS_ERROR_FAILURE.
@@ -67,13 +66,17 @@ class HTMLVideoElement final : public HTMLMediaElement {
 
   // WebIDL
 
-  uint32_t Width() const { return GetIntAttr(nsGkAtoms::width, 0); }
+  uint32_t Width() const {
+    return GetDimensionAttrAsUnsignedInt(nsGkAtoms::width, 0);
+  }
 
   void SetWidth(uint32_t aValue, ErrorResult& aRv) {
     SetUnsignedIntAttr(nsGkAtoms::width, aValue, 0, aRv);
   }
 
-  uint32_t Height() const { return GetIntAttr(nsGkAtoms::height, 0); }
+  uint32_t Height() const {
+    return GetDimensionAttrAsUnsignedInt(nsGkAtoms::height, 0);
+  }
 
   void SetHeight(uint32_t aValue, ErrorResult& aRv) {
     SetUnsignedIntAttr(nsGkAtoms::height, aValue, 0, aRv);
@@ -105,6 +108,8 @@ class HTMLVideoElement final : public HTMLMediaElement {
     return mMediaInfo.mVideo.mRotation;
   }
 
+  bool HasAlpha() const { return mMediaInfo.mVideo.HasAlpha(); }
+
   void GetPoster(nsAString& aValue) {
     GetURIAttr(nsGkAtoms::poster, nullptr, aValue);
   }
@@ -130,7 +135,7 @@ class HTMLVideoElement final : public HTMLMediaElement {
   already_AddRefed<VideoPlaybackQuality> GetVideoPlaybackQuality();
 
   bool MozOrientationLockEnabled() const {
-    return StaticPrefs::MediaVideocontrolsLockVideoOrientation();
+    return StaticPrefs::media_videocontrols_lock_video_orientation();
   }
 
   bool MozIsOrientationLocked() const { return mIsOrientationLocked; }
@@ -142,6 +147,8 @@ class HTMLVideoElement final : public HTMLMediaElement {
   void StopCloningElementVisually();
 
   bool IsCloningElementVisually() const { return !!mVisualCloneTarget; }
+
+  void TogglePictureInPicture(ErrorResult& rv);
 
  protected:
   virtual ~HTMLVideoElement();

@@ -12,14 +12,14 @@
 namespace mozilla {
 namespace gfx {
 
-class AutoRestoreTransform {
+class AutoRestoreTransform final {
  public:
-  AutoRestoreTransform() {}
+  AutoRestoreTransform() = default;
 
-  explicit AutoRestoreTransform(DrawTarget *aTarget)
+  explicit AutoRestoreTransform(DrawTarget* aTarget)
       : mDrawTarget(aTarget), mOldTransform(aTarget->GetTransform()) {}
 
-  void Init(DrawTarget *aTarget) {
+  void Init(DrawTarget* aTarget) {
     MOZ_ASSERT(!mDrawTarget || aTarget == mDrawTarget);
     if (!mDrawTarget) {
       mDrawTarget = aTarget;
@@ -38,21 +38,21 @@ class AutoRestoreTransform {
   Matrix mOldTransform;
 };
 
-class AutoPopClips {
+class AutoPopClips final {
  public:
-  explicit AutoPopClips(DrawTarget *aTarget)
+  explicit AutoPopClips(DrawTarget* aTarget)
       : mDrawTarget(aTarget), mPushCount(0) {
     MOZ_ASSERT(mDrawTarget);
   }
 
   ~AutoPopClips() { PopAll(); }
 
-  void PushClip(const Path *aPath) {
+  void PushClip(const Path* aPath) {
     mDrawTarget->PushClip(aPath);
     ++mPushCount;
   }
 
-  void PushClipRect(const Rect &aRect) {
+  void PushClipRect(const Rect& aRect) {
     mDrawTarget->PushClipRect(aRect);
     ++mPushCount;
   }

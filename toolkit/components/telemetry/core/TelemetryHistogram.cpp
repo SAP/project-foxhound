@@ -119,8 +119,6 @@ static StaticMutexNotRecorded gTelemetryHistogramMutex;
 
 namespace {
 
-typedef nsDataHashtable<nsCStringHashKey, HistogramID> StringToHistogramIdMap;
-
 // Hardcoded probes
 //
 // The order of elements here is important to minimize the memory footprint of a
@@ -2260,7 +2258,7 @@ bool internal_JSKeyedHistogram_Keys(JSContext* cx, unsigned argc,
   }
 
   // Convert keys from nsTArray<nsCString> to JS array.
-  JS::AutoValueVector autoKeys(cx);
+  JS::RootedVector<JS::Value> autoKeys(cx);
   if (!autoKeys.reserve(keys.Length())) {
     return false;
   }
@@ -3157,7 +3155,7 @@ nsresult TelemetryHistogram::SerializeHistograms(mozilla::JSONWriter& aWriter) {
     // it was recorded.
     if (NS_FAILED(internal_GetHistogramsSnapshot(
             locker, NS_LITERAL_CSTRING("main"),
-            nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN,
+            nsITelemetry::DATASET_PRERELEASE_CHANNELS,
             false /* aClearSubsession */, includeGPUProcess,
             false /* aFilterTest */, processHistArray))) {
       return NS_ERROR_FAILURE;
@@ -3202,7 +3200,7 @@ nsresult TelemetryHistogram::SerializeKeyedHistograms(
     // it was recorded.
     if (NS_FAILED(internal_GetKeyedHistogramsSnapshot(
             locker, NS_LITERAL_CSTRING("main"),
-            nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN,
+            nsITelemetry::DATASET_PRERELEASE_CHANNELS,
             false /* aClearSubsession */, includeGPUProcess,
             false /* aFilterTest */, processHistArray))) {
       return NS_ERROR_FAILURE;

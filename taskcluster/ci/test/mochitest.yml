@@ -1,13 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 job-defaults:
+    suite:
+        category: mochitest
     target:
         by-test-platform:
             android-em-7.*: geckoview-androidTest.apk
             default: null
-    serviceworker-e10s:
+    variants:
         by-test-platform:
-            linux64/debug: both
-            default: false
-    socketprocess-e10s: false
+            linux64/debug: ['fission', 'serviceworker']
+            default: ['fission']
+    run-on-projects:
+        by-test-platform:
+            android-em-4.*/.*: ['try', 'mozilla-central']  # bug 1548659
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            default: built-projects
     mozharness:
         script:
             by-test-platform:
@@ -31,17 +41,18 @@ job-defaults:
                 macosx.*:
                     - unittests/mac_unittest.py
                 windows.*:
-                    - unittests/win_taskcluster_unittest.py
+                    - unittests/win_unittest.py
 
 mochitest:
     description: "Mochitest plain run"
-    suite: mochitest/plain-chunked
+    suite:
+        name: mochitest-plain-chunked
     treeherder-symbol: M()
     loopback-video: true
-    run-on-projects: built-projects
     tier:
         by-test-platform:
-            android-em-7.*/opt: 2
+            android-em-7.*/debug: 2
+            windows10-aarch64.*: 2
             default: default
     instance-size:
         by-test-platform:
@@ -49,23 +60,20 @@ mochitest:
             default: default
     virtualization:
         by-test-platform:
-            windows10-64(?:-pgo)?-qr/.*: virtual-with-gpu
+            windows10-64(?:-pgo|-shippable)?-qr/.*: virtual-with-gpu
             default: virtual
     chunks:
         by-test-platform:
-            android-em-4.3-arm7-api-16/debug: 60
-            android-em-4.*: 24
-            android-em-7.*: 4
+            android-em-4.*\/debug: 60
+            android-em-4.*\/(?:opt|pgo)?: 24
+            android-em-7.*: 3
             linux.*/debug: 16
             linux64-asan/opt: 10
             linux64-.*cov/opt: 10
             windows10-64-ccov/debug: 10
-            macosx64-ccov/debug: 10
+            macosx.*64-ccov/debug: 10
             default: 5
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     max-run-time:
         by-test-platform:
             android-em.*: 7200
@@ -76,7 +84,7 @@ mochitest:
         extra-options:
             by-test-platform:
                 android-em.*:
-                    - --test-suite=mochitest
+                    - --test-suite=mochitest-plain
                 default: []
         chunked:
             by-test-platform:
@@ -85,9 +93,12 @@ mochitest:
 
 mochitest-a11y:
     description: "Mochitest a11y run"
-    suite: mochitest/a11y
     treeherder-symbol: M(a11y)
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     e10s: false
     run-on-projects: built-projects
     mozharness:
@@ -95,23 +106,32 @@ mochitest-a11y:
 
 mochitest-browser-chrome:
     description: "Mochitest browser-chrome run"
-    suite: mochitest/browser-chrome-chunked
+    suite:
+        name: mochitest-browser-chrome-chunked
     treeherder-symbol: M(bc)
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     chunks:
         by-test-platform:
             linux.*/debug: 16
             linux64-asan/opt: 16
-            macosx64/debug: 12
+            macosx.*64/debug: 12
             default: 7
     max-run-time:
         by-test-platform:
             linux64-.*cov/opt: 7200
             windows10-64-ccov/debug: 7200
             windows10-aarch64/*: 7200
-            macosx64-ccov/debug: 10800
+            macosx.*64-ccov/debug: 10800
             linux.*/debug: 5400
             default: 3600
+    virtualization:
+        by-test-platform:
+            windows10-64(?:-pgo|-shippable)?-qr/.*: virtual-with-gpu
+            default: virtual
     mozharness:
         mochitest-flavor: browser
         chunked: true
@@ -121,13 +141,14 @@ mochitest-browser-chrome:
 
 browser-instrumentation:
     description: "Extra instrumentation for a browser-chrome run (XUL, XBL, etc)"
-    suite: mochitest/browser-chrome-instrumentation
+    suite:
+        name: mochitest-browser-chrome-instrumentation
     treeherder-symbol: M(inst)
     loopback-video: true
     tier: 3
     run-on-projects:
         by-test-platform:
-            windows.*-nightly/.*: ["mozilla-central"]
+            windows.*-(?:nightly|shippable)/.*: ["mozilla-central"]
             default: []
     max-run-time: 14400
     mozharness:
@@ -136,17 +157,17 @@ browser-instrumentation:
 
 browser-screenshots:
     description: "Browser Screenshots"
-    suite: mochitest/browser-chrome-screenshots
+    suite:
+        name: mochitest-browser-chrome-screenshots
     treeherder-symbol: M(ss)
     loopback-video: true
     run-on-projects:
         by-test-platform:
-            # We don't want debug, pgo, devedition or nightly builds
-            windows7-32-pgo(?:-qr)?/opt: ['mozilla-central', 'integration']
-            windows10-64-pgo(?:-qr)?/opt: ['mozilla-central', 'integration']
+            windows7-32(?:-pgo|-shippable)(?:-qr)?/opt: ['mozilla-central', 'integration']
+            windows10-64(?:-pgo|-shippable)(?:-qr)?/opt: ['mozilla-central', 'integration']
             (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central']
-            linux64-pgo(?:-qr)?/opt: ['mozilla-central', 'integration']
-            macosx64/opt: ['mozilla-central', 'integration']
+            linux64-(?:pgo|shippable)(?:-qr)?/opt: ['mozilla-central', 'integration']
+            macosx.*64-shippable/opt: ['mozilla-central', 'integration']
             default: []
     max-run-time: 3600
     mozharness:
@@ -155,19 +176,28 @@ browser-screenshots:
 
 mochitest-chrome:
     description: "Mochitest chrome run"
-    suite: mochitest/chrome
     treeherder-symbol: M(c)
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            android-em-4.*/.*: 2  # bug 1548659
+            default: default
     instance-size:
         by-test-platform:
             android-em.*: xlarge
             default: default
     chunks:
         by-test-platform:
-            android-em-4.3-arm7-api-16/debug: 8
-            android-em-7.0-x86/opt: 1
-            android-em.*: 4
-            default: 3
+            android-em-4.*\/debug: 8
+            android-em.4.*\/(?:opt|pgo)?: 4
+            android-em-7.*: 1
+            .*-ccov/.*: 3
+            .*-qr/.*: 3
+            .*-asan/opt: 3
+            (linux64|windows.*-..|macosx10..)/debug: 3
+            windows10-aarch64/.*: 3
+            default: 2
     max-run-time:
         by-test-platform:
             android-em.*: 7200
@@ -185,49 +215,29 @@ mochitest-chrome:
                 android-em.*: false
                 default: true
 
-mochitest-clipboard:
-    description: "Mochitest clipboard run"
-    suite: mochitest/clipboard
-    treeherder-symbol: M(cl)
-    loopback-video: true
-    instance-size: xlarge
-    max-run-time:
-        by-test-platform:
-            windows10-64-ccov/debug: 7200
-            macosx64-ccov/debug: 7200
-            default: 3600
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
-    mozharness:
-        mochitest-flavor: plain
-        extra-options:
-            by-test-platform:
-                android-em.*:
-                    # note that Android runs fewer suites than other platforms
-                    - --test-suite=mochitest-plain-clipboard
-                default:
-                    - --mochitest-suite=plain-clipboard,chrome-clipboard,browser-chrome-clipboard
-
 mochitest-devtools-chrome:
     description: "Mochitest devtools-chrome run"
-    suite: mochitest/mochitest-devtools-chrome-chunked
+    suite:
+        name: mochitest-devtools-chrome-chunked
     treeherder-symbol: M(dt)
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     max-run-time:
         by-test-platform:
             windows10-64-ccov/debug: 7200
-            macosx64-ccov/debug: 9000
+            macosx.*64-ccov/debug: 9000
             linux64-ccov/debug: 7200
             default: 5400
     chunks:
         by-test-platform:
-            linux64/debug: 16
-            linux64-ccov/debug: 16
-            windows10-64-ccov/debug: 10
-            macosx64-ccov/debug: 15
-            default: 8
+            .*-ccov/debug: 16
+            linux64/debug: 12
+            macosx.*64/debug: 8
+            .*-asan/opt: 8
+            default: 5
     mozharness:
         mochitest-flavor: chrome
         chunked: true
@@ -240,34 +250,42 @@ mochitest-devtools-chrome:
 
 mochitest-devtools-webreplay:
     description: "Mochitest devtools-webreplay run"
-    suite: mochitest/mochitest-devtools-webreplay
     treeherder-symbol: M(dt-wr)
     loopback-video: true
     tier: 2
     max-run-time: 900
     mozharness:
         mochitest-flavor: chrome
+        extra-options:
+            - --mochitest-suite=mochitest-devtools-chrome-webreplay
     allow-software-gl-layers: false
     run-on-projects:
         by-test-platform:
-            macosx64.*/opt: ['trunk', 'try']
+            macosx.*64/opt: ['mozilla-central', 'try']
+            macosx.*64.*/opt: ['trunk', 'try']
             default: []
 
 mochitest-gpu:
     description: "Mochitest GPU run"
-    suite: mochitest/gpu
+    suite:
+        name: mochitest-plain-gpu
     treeherder-symbol: M(gpu)
-    run-on-projects: built-projects
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            android-em-4.*/.*: 2  # bug 1548659
+            default: default
     instance-size:
         by-test-platform:
             android-em.*: xlarge
             default: default
     virtualization: virtual-with-gpu
-    e10s:
+    e10s: true
+    run-on-projects:
         by-test-platform:
-            linux32/debug: both
-            default: true
+            android-em-4.*/.*: ['try', 'mozilla-central']
+            default: built-projects
     mozharness:
         mochitest-flavor: plain
         extra-options:
@@ -276,26 +294,32 @@ mochitest-gpu:
                     # note that Android runs fewer suites than other platforms
                     - --test-suite=mochitest-plain-gpu
                 default:
-                    - --mochitest-suite=plain-gpu,chrome-gpu,browser-chrome-gpu
+                    - --mochitest-suite=mochitest-plain-gpu,mochitest-chrome-gpu,mochitest-browser-chrome-gpu
 
 mochitest-media:
     description: "Mochitest media run"
-    suite: mochitest/mochitest-media
     treeherder-symbol: M(mda)
     max-run-time:
         by-test-platform:
             windows10-64-ccov/debug: 7200
-            macosx64-ccov/debug: 7200
+            macosx.*64-ccov/debug: 7200
             default: 5400
-    run-on-projects: built-projects
-    socketprocess-e10s:
+    run-on-projects:
         by-test-platform:
-            android.*: false
-            default: both
+            android-hw-.*-api-16/opt: ['try']
+            android-hw-.*-api-16/(?:debug|pgo)?: ['try', 'trunk', 'mozilla-beta', 'mozilla-release']
+            android-em-4.*/.*: ['try']  # bug 1553955
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            default: built-projects
+    variants:
+        by-test-platform:
+            android.*: []
+            linux64/debug: ['fission', 'serviceworker', 'socketprocess']
+            default: ['fission', 'socketprocess']
     loopback-video: true
     virtualization:
         by-test-platform:
-            windows10-64(?:-pgo)?-qr/.*: virtual-with-gpu
+            windows10-64(?:-pgo|-shippable)?-qr/.*: virtual-with-gpu
             default: virtual
     instance-size:
         by-test-platform:
@@ -304,25 +328,31 @@ mochitest-media:
     chunks:
         by-test-platform:
             android-em-7.*: 1
-            macosx64.*: 1
             windows10-64.*: 1
+            macosx.*64.*/.*: 2
+            windows10-aarch64/.*: 2
+            windows7-32-shippable/.*: 2
+            linux64(-shippable|-devedition|-.*qr)/opt: 2
             default: 3
     mozharness:
         mochitest-flavor: plain
         chunked:
             by-test-platform:
                 android.*: false
-                macosx64.*: false
+                macosx.*64.*: false
                 windows10-64.*: false
                 default: true
     tier:
         by-test-platform:
-            android-hw.*: 2
+            android-em.*: 2
+            windows10-aarch64.*: 2
+            android-hw.*: 1
             default: default
 
 mochitest-plain-headless:
     description: "Mochitest plain headless run"
-    suite: mochitest/plain-chunked
+    suite:
+        name: mochitest-plain-chunked
     treeherder-symbol: M(h)
     loopback-video: true
     chunks:
@@ -332,7 +362,8 @@ mochitest-plain-headless:
     e10s: true
     max-run-time: 5400
     allow-software-gl-layers: false
-    tier: default
+    tier: 2
+    run-on-projects: ['try', 'mozilla-central']
     mozharness:
         mochitest-flavor: plain
         chunked: true
@@ -341,7 +372,8 @@ mochitest-plain-headless:
 
 mochitest-valgrind:
     description: "Mochitest plain Valgrind run"
-    suite: mochitest/valgrind-plain
+    suite:
+        name: mochitest-valgrind-plain
     treeherder-symbol: M-V()
     run-on-projects: []
     tier: 3
@@ -351,7 +383,7 @@ mochitest-valgrind:
     # We could re-enable e10s later.
     # There's no intrinsic reason not to use it.
     e10s: false
-    serviceworker-e10s: false
+    variants: []
     allow-software-gl-layers: false
     mozharness:
         mochitest-flavor: plain
@@ -359,19 +391,22 @@ mochitest-valgrind:
 
 mochitest-webgl1-core:
     description: "Mochitest webgl1-core run"
-    suite: mochitest/mochitest-webgl1-core
     treeherder-symbol: M(gl1c)
-    run-on-projects: built-projects
-    virtualization: virtual-with-gpu
-    e10s:
+    run-on-projects:
         by-test-platform:
-            linux32/debug: both
-            default: true
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            default: built-projects
+    virtualization: virtual-with-gpu
+    e10s: true
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     max-run-time:
         by-test-platform:
             windows.*: 5400
-            macosx64-ccov/debug: 7200
+            macosx.*64-ccov/debug: 7200
             default: 3600
     # Bug 1296733: llvmpipe with mesa 9.2.1 lacks thread safety
     allow-software-gl-layers: false
@@ -380,15 +415,18 @@ mochitest-webgl1-core:
 
 mochitest-webgl1-ext:
     description: "Mochitest webgl1-ext run"
-    suite: mochitest/mochitest-webgl1-ext
     treeherder-symbol: M(gl1e)
-    run-on-projects: built-projects
-    virtualization: virtual-with-gpu
-    e10s:
+    run-on-projects:
         by-test-platform:
-            linux32/debug: both
-            default: true
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            default: built-projects
+    virtualization: virtual-with-gpu
+    e10s: true
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     max-run-time:
         by-test-platform:
             windows.*: 5400
@@ -400,15 +438,18 @@ mochitest-webgl1-ext:
 
 mochitest-webgl2-core:
     description: "Mochitest webgl2-core run"
-    suite: mochitest/mochitest-webgl2-core
     treeherder-symbol: M(gl2c)
-    run-on-projects: built-projects
-    virtualization: virtual-with-gpu
-    e10s:
+    run-on-projects:
         by-test-platform:
-            linux32/debug: both
-            default: true
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            default: built-projects
+    virtualization: virtual-with-gpu
+    e10s: true
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     max-run-time:
         by-test-platform:
             windows.*: 5400
@@ -420,16 +461,19 @@ mochitest-webgl2-core:
 
 mochitest-webgl2-ext:
     description: "Mochitest webgl2-ext run"
-    suite: mochitest/mochitest-webgl2-ext
     treeherder-symbol: M(gl2e)
-    run-on-projects: built-projects
+    run-on-projects:
+        by-test-platform:
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            default: built-projects
     virtualization: virtual-with-gpu
     chunks: 4
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     max-run-time:
         by-test-platform:
             windows.*: 5400
@@ -442,16 +486,16 @@ mochitest-webgl2-ext:
 
 mochitest-webgl2-deqp:
     description: "Mochitest webgl2-deqp run"
-    suite: mochitest/mochitest-webgl2-deqp
     treeherder-symbol: M(gl2d)
     run-on-projects: []  # Don't run this for now.
     virtualization: virtual-with-gpu
     chunks: 4
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     loopback-video: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     max-run-time:
         by-test-platform:
             windows.*: 5400
@@ -461,3 +505,13 @@ mochitest-webgl2-deqp:
     mozharness:
         mochitest-flavor: plain
         chunked: true
+
+mochitest-remote:
+    description: "Mochitest for the remote agent (/remote folder)"
+    suite:
+        name: mochitest-remote
+    treeherder-symbol: M(remote)
+    loopback-video: true
+    max-run-time: 5400
+    mozharness:
+        mochitest-flavor: browser

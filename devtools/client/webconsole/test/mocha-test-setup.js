@@ -24,6 +24,11 @@ pref("devtools.webconsole.persistlog", false);
 pref("devtools.webconsole.timestampMessages", false);
 pref("devtools.webconsole.sidebarToggle", true);
 pref("devtools.webconsole.jsterm.codeMirror", true);
+pref("devtools.webconsole.groupWarningMessages", false);
+pref("devtools.webconsole.input.editor", false);
+pref("devtools.webconsole.input.autocomplete", true);
+pref("devtools.browserconsole.contentMessages", true);
+pref("devtools.webconsole.features.editor", true);
 
 global.loader = {
   lazyServiceGetter: () => {},
@@ -56,8 +61,29 @@ global.loader = {
 global.isWorker = false;
 global.indexedDB = {open: () => ({})};
 
+// URLSearchParams was added to the global object in Node 10.0.0. To not cause any issue
+// with prior versions, we add it to the global object if it is not defined there.
+if (!global.URLSearchParams) {
+  global.URLSearchParams = require("url").URLSearchParams;
+}
+
+if (!global.ResizeObserver) {
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
+// Mock ChromeUtils.
+global.ChromeUtils = {
+  import: () => {},
+  defineModuleGetter: () => {},
+};
+
 // Point to vendored-in files and mocks when needed.
 const requireHacker = require("require-hacker");
+/* eslint-disable complexity */
 requireHacker.global_hook("default", (path, module) => {
   switch (path) {
     // For Enzyme
@@ -75,8 +101,6 @@ requireHacker.global_hook("default", (path, module) => {
       return getModule("devtools/client/shared/vendor/react-dev");
     case "chrome":
       return `module.exports = { Cc: {}, Ci: {}, Cu: {} }`;
-    case "ChromeUtils":
-      return `module.exports = { import: () => {} }`;
   }
 
   // Some modules depend on Chrome APIs which don't work in mocha. When such a module
@@ -111,6 +135,8 @@ requireHacker.global_hook("default", (path, module) => {
       return "{}";
     case "devtools/server/actors/reflow":
       return "{}";
+    case "devtools/shared/layout/utils":
+      return "{getCurrentZoom = () => {}}";
   }
 
   // We need to rewrite all the modules assuming the root is mozilla-central and give them
@@ -121,6 +147,7 @@ requireHacker.global_hook("default", (path, module) => {
 
   return undefined;
 });
+/* eslint-enable complexity */
 
 // Configure enzyme with React 16 adapter. This needs to be done after we set the
 // requireHack hook so `require()` calls in Enzyme are handled as well.

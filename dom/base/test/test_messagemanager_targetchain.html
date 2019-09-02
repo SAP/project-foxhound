@@ -2,11 +2,9 @@
 <html>
 <head>
   <title>Test for EventTarget chain of MessageManagers</title>
-  <script type="application/javascript"
-          src="/tests/SimpleTest/SimpleTest.js">
+  <script src="/tests/SimpleTest/SimpleTest.js">
   </script>
-  <script type="application/javascript"
-          src="/tests/SimpleTest/EventUtils.js">
+  <script src="/tests/SimpleTest/EventUtils.js">
   </script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -77,7 +75,7 @@
             info("Third iframe loaded");
             let doc3 = SpecialPowers.wrap(iframe3).contentDocument;
             let target = doc3.getElementById("target");
-            target.addEventListener("test-event", function onEvent(e) {
+            target.addEventListener("test-event", function onEvent() {
               is(messageIndex, 2,
                  "target should be the last one to receive the test event");
               messageIndex++;
@@ -104,12 +102,9 @@
       var principal = SpecialPowers.wrap(document).nodePrincipal;
       SpecialPowers.pushPermissions([
         { type: "browser", allow: 1, context: { url: principal.URI.spec,
-                                                originAttributes: {
-                                                  appId: principal.appId
-                                                }}},
+                                                originAttributes: {}}},
         { type: "browser", allow: 1, context: { url: principal.URI.spec,
                                                 originAttributes: {
-                                                  appId: principal.appId,
                                                   inIsolatedMozBrowser: true }}}
       ], () => {
         SpecialPowers.pushPrefEnv({

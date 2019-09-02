@@ -137,6 +137,8 @@ int nr_ice_media_stream_initialize(nr_ice_ctx *ctx, nr_ice_media_stream *stream)
     int r,_status;
     nr_ice_component *comp;
 
+    assert(!stream->obsolete);
+
     comp=STAILQ_FIRST(&stream->components);
     while(comp){
       if(r=nr_ice_component_initialize(ctx,comp))
@@ -654,6 +656,19 @@ void nr_ice_media_stream_set_obsolete(nr_ice_media_stream *str)
     }
 
     nr_ice_media_stream_stop_checking(str);
+  }
+
+int nr_ice_media_stream_is_done_gathering(nr_ice_media_stream *str)
+  {
+    nr_ice_component *comp;
+    comp=STAILQ_FIRST(&str->components);
+    while(comp){
+      if(!nr_ice_component_is_done_gathering(comp)) {
+        return 0;
+      }
+      comp=STAILQ_NEXT(comp,entry);
+    }
+    return 1;
   }
 
 void nr_ice_media_stream_refresh_consent_all(nr_ice_media_stream *stream)

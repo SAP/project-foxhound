@@ -12,6 +12,8 @@
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/layers/AnimationInfo.h"
+#include "mozilla/layers/RenderRootBoundary.h"
+#include "mozilla/dom/RemoteBrowser.h"
 #include "nsIFrame.h"
 #include "ImageTypes.h"
 
@@ -77,8 +79,10 @@ class WebRenderUserData {
     eFallback,
     eAnimation,
     eCanvas,
+    eRemote,
     eGroup,
     eMask,
+    eRenderRoot,
   };
 
   virtual UserDataType GetType() = 0;
@@ -132,8 +136,8 @@ class WebRenderImageData : public WebRenderUserData {
                      nsIFrame* aFrame);
   virtual ~WebRenderImageData();
 
-  virtual WebRenderImageData* AsImageData() override { return this; }
-  virtual UserDataType GetType() override { return UserDataType::eImage; }
+  WebRenderImageData* AsImageData() override { return this; }
+  UserDataType GetType() override { return UserDataType::eImage; }
   static UserDataType Type() { return UserDataType::eImage; }
   Maybe<wr::ImageKey> GetImageKey() { return mKey; }
   void SetImageKey(const wr::ImageKey& aKey);
@@ -180,8 +184,8 @@ class WebRenderFallbackData : public WebRenderUserData {
   WebRenderFallbackData(RenderRootStateManager* aManager, nsDisplayItem* aItem);
   virtual ~WebRenderFallbackData();
 
-  virtual WebRenderFallbackData* AsFallbackData() override { return this; }
-  virtual UserDataType GetType() override { return UserDataType::eFallback; }
+  WebRenderFallbackData* AsFallbackData() override { return this; }
+  UserDataType GetType() override { return UserDataType::eFallback; }
   static UserDataType Type() { return UserDataType::eFallback; }
 
   void SetInvalid(bool aInvalid) { mInvalid = aInvalid; }
@@ -221,7 +225,7 @@ class WebRenderAnimationData : public WebRenderUserData {
                          nsDisplayItem* aItem);
   virtual ~WebRenderAnimationData();
 
-  virtual UserDataType GetType() override { return UserDataType::eAnimation; }
+  UserDataType GetType() override { return UserDataType::eAnimation; }
   static UserDataType Type() { return UserDataType::eAnimation; }
   AnimationInfo& GetAnimationInfo() { return mAnimationInfo; }
 
@@ -234,8 +238,8 @@ class WebRenderCanvasData : public WebRenderUserData {
   WebRenderCanvasData(RenderRootStateManager* aManager, nsDisplayItem* aItem);
   virtual ~WebRenderCanvasData();
 
-  virtual WebRenderCanvasData* AsCanvasData() override { return this; }
-  virtual UserDataType GetType() override { return UserDataType::eCanvas; }
+  WebRenderCanvasData* AsCanvasData() override { return this; }
+  UserDataType GetType() override { return UserDataType::eCanvas; }
   static UserDataType Type() { return UserDataType::eCanvas; }
 
   void ClearCanvasRenderer();
@@ -244,6 +248,37 @@ class WebRenderCanvasData : public WebRenderUserData {
 
  protected:
   UniquePtr<WebRenderCanvasRendererAsync> mCanvasRenderer;
+};
+
+class WebRenderRemoteData : public WebRenderUserData {
+ public:
+  WebRenderRemoteData(RenderRootStateManager* aManager, nsDisplayItem* aItem);
+  virtual ~WebRenderRemoteData();
+
+  UserDataType GetType() override { return UserDataType::eRemote; }
+  static UserDataType Type() { return UserDataType::eRemote; }
+
+  void SetRemoteBrowser(dom::RemoteBrowser* aBrowser) {
+    mRemoteBrowser = aBrowser;
+  }
+
+ protected:
+  RefPtr<dom::RemoteBrowser> mRemoteBrowser;
+};
+
+class WebRenderRenderRootData : public WebRenderUserData {
+ public:
+  WebRenderRenderRootData(RenderRootStateManager* aManager,
+                          nsDisplayItem* aItem);
+  virtual ~WebRenderRenderRootData();
+
+  UserDataType GetType() override { return UserDataType::eRenderRoot; }
+  static UserDataType Type() { return UserDataType::eRenderRoot; }
+
+  RenderRootBoundary& EnsureHasBoundary(wr::RenderRoot aChildType);
+
+ protected:
+  Maybe<RenderRootBoundary> mBoundary;
 };
 
 extern void DestroyWebRenderUserDataTable(WebRenderUserDataTable* aTable);

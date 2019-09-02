@@ -7,6 +7,7 @@
 #include "DetailsFrame.h"
 
 #include "mozilla/Attributes.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLDetailsElement.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
 #include "nsContentUtils.h"
@@ -23,8 +24,7 @@ NS_QUERYFRAME_HEAD(DetailsFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
 NS_QUERYFRAME_TAIL_INHERITING(nsBlockFrame)
 
-nsBlockFrame* NS_NewDetailsFrame(nsIPresShell* aPresShell,
-                                 ComputedStyle* aStyle) {
+nsBlockFrame* NS_NewDetailsFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) DetailsFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -49,9 +49,11 @@ void DetailsFrame::SetInitialChildList(ChildListID aListID,
 #ifdef DEBUG
 bool DetailsFrame::CheckValidMainSummary(const nsFrameList& aFrameList) const {
   for (nsIFrame* child : aFrameList) {
+    if (child->IsGeneratedContentFrame()) {
+      continue;
+    }
     HTMLSummaryElement* summary =
         HTMLSummaryElement::FromNode(child->GetContent());
-
     if (child == aFrameList.FirstChild()) {
       if (summary && summary->IsMainSummary()) {
         return true;
@@ -125,7 +127,7 @@ bool DetailsFrame::HasMainSummaryFrame(nsIFrame* aSummaryFrame) {
         child = nsPlaceholderFrame::GetRealFrameFor(child);
         // We skip any non-primary frames such as a list-style-position:inside
         // bullet frame for the <details> itself.
-        if (child->IsPrimaryFrame()) {
+        if (!child->IsGeneratedContentFrame()) {
           return aSummaryFrame == child;
         }
       }

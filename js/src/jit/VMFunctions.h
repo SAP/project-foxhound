@@ -838,11 +838,13 @@ MOZ_MUST_USE bool InitProp(JSContext* cx, HandleObject obj,
                            HandlePropertyName name, HandleValue value,
                            jsbytecode* pc);
 
-template <bool Equal>
+enum class EqualityKind : bool { NotEqual, Equal };
+
+template <EqualityKind Kind>
 bool LooselyEqual(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs,
                   bool* res);
 
-template <bool Equal>
+template <EqualityKind Kind>
 bool StrictlyEqual(JSContext* cx, MutableHandleValue lhs,
                    MutableHandleValue rhs, bool* res);
 
@@ -855,13 +857,14 @@ bool GreaterThan(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs,
 bool GreaterThanOrEqual(JSContext* cx, MutableHandleValue lhs,
                         MutableHandleValue rhs, bool* res);
 
-template <bool Equal>
-bool StringsEqual(JSContext* cx, HandleString left, HandleString right,
-                  bool* res);
+template <EqualityKind Kind>
+bool StringsEqual(JSContext* cx, HandleString lhs, HandleString rhs, bool* res);
 
-MOZ_MUST_USE bool StringSplitHelper(JSContext* cx, HandleString str,
-                                    HandleString sep, HandleObjectGroup group,
-                                    uint32_t limit, MutableHandleValue result);
+enum class ComparisonKind : bool { GreaterThanOrEqual, LessThan };
+
+template <ComparisonKind Kind>
+bool StringsCompare(JSContext* cx, HandleString lhs, HandleString rhs,
+                    bool* res);
 
 MOZ_MUST_USE bool ArrayPopDense(JSContext* cx, HandleObject obj,
                                 MutableHandleValue rval);
@@ -884,7 +887,6 @@ MOZ_MUST_USE bool SetProperty(JSContext* cx, HandleObject obj,
 
 MOZ_MUST_USE bool InterruptCheck(JSContext* cx);
 
-void* MallocWrapper(JS::Zone* zone, size_t nbytes);
 JSObject* NewCallObject(JSContext* cx, HandleShape shape,
                         HandleObjectGroup group);
 JSObject* NewStringObject(JSContext* cx, HandleString str);
@@ -937,7 +939,7 @@ MOZ_MUST_USE bool DebugAfterYield(JSContext* cx, BaselineFrame* frame,
 MOZ_MUST_USE bool GeneratorThrowOrReturn(
     JSContext* cx, BaselineFrame* frame,
     Handle<AbstractGeneratorObject*> genObj, HandleValue arg,
-    uint32_t resumeKind);
+    uint32_t resumeKindArg);
 
 MOZ_MUST_USE bool GlobalNameConflictsCheckFromIon(JSContext* cx,
                                                   HandleScript script);
@@ -1053,6 +1055,10 @@ MOZ_MUST_USE bool BaselineGetFunctionThis(JSContext* cx, BaselineFrame* frame,
 MOZ_MUST_USE bool CallNativeGetter(JSContext* cx, HandleFunction callee,
                                    HandleObject obj, MutableHandleValue result);
 
+MOZ_MUST_USE bool CallNativeGetterByValue(JSContext* cx, HandleFunction callee,
+                                          HandleValue receiver,
+                                          MutableHandleValue result);
+
 MOZ_MUST_USE bool CallNativeSetter(JSContext* cx, HandleFunction callee,
                                    HandleObject obj, HandleValue rhs);
 
@@ -1060,6 +1066,9 @@ MOZ_MUST_USE bool EqualStringsHelperPure(JSString* str1, JSString* str2);
 
 MOZ_MUST_USE bool CheckIsCallable(JSContext* cx, HandleValue v,
                                   CheckIsCallableKind kind);
+
+void HandleCodeCoverageAtPC(BaselineFrame* frame, jsbytecode* pc);
+void HandleCodeCoverageAtPrologue(BaselineFrame* frame);
 
 template <bool HandleMissing>
 bool GetNativeDataPropertyPure(JSContext* cx, JSObject* obj, PropertyName* name,
@@ -1099,9 +1108,6 @@ bool IsPossiblyWrappedTypedArray(JSContext* cx, JSObject* obj, bool* result);
 
 bool DoToNumber(JSContext* cx, HandleValue arg, MutableHandleValue ret);
 bool DoToNumeric(JSContext* cx, HandleValue arg, MutableHandleValue ret);
-
-bool CopyStringSplitArray(JSContext* cx, HandleArrayObject arr,
-                          MutableHandleValue result);
 
 enum class TailCallVMFunctionId;
 enum class VMFunctionId;

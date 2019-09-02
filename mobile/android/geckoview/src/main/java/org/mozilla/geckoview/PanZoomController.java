@@ -5,11 +5,16 @@
 
 package org.mozilla.geckoview;
 
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.PrefsHelper;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.JNIObject;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
+import android.app.UiModeManager;
+import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Rect;
 import android.os.SystemClock;
 import android.support.annotation.NonNull;
@@ -26,11 +31,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 
 @UiThread
-public class PanZoomController extends JNIObject {
+public class PanZoomController {
     private static final String LOGTAG = "GeckoNPZC";
     private static final int EVENT_SOURCE_SCROLL = 0;
     private static final int EVENT_SOURCE_MOTION = 1;
     private static final int EVENT_SOURCE_MOUSE = 2;
+    private static final String PREF_MOUSE_AS_TOUCH = "ui.android.mouse_as_touch";
+    private static boolean sTreatMouseAsTouch = true;
 
     private final GeckoSession mSession;
     private final Rect mTempRect = new Rect();
@@ -57,22 +64,65 @@ public class PanZoomController extends JNIObject {
 
     private boolean mSynthesizedEvent = false;
 
-    @WrapForJNI(calledFrom = "ui")
-    private native boolean handleMotionEvent(
-            int action, int actionIndex, long time, int metaState,  float screenX, float screenY,
-            int pointerId[], float x[], float y[], float orientation[], float pressure[],
-            float toolMajor[], float toolMinor[]);
+    /* package */ final class NativeProvider extends JNIObject {
+        @Override // JNIObject
+        protected void disposeNative() {
+            // Disposal happens in native code.
+            throw new UnsupportedOperationException();
+        }
 
-    @WrapForJNI(calledFrom = "ui")
-    private native boolean handleScrollEvent(
-            long time, int metaState,
-            float x, float y,
-            float hScroll, float vScroll);
+        @WrapForJNI(calledFrom = "ui")
+        public native boolean handleMotionEvent(
+               int action, int actionIndex, long time, int metaState,  float screenX, float screenY,
+               int pointerId[], float x[], float y[], float orientation[], float pressure[],
+               float toolMajor[], float toolMinor[]);
 
-    @WrapForJNI(calledFrom = "ui")
-    private native boolean handleMouseEvent(
-            int action, long time, int metaState,
-            float x, float y, int buttons);
+        @WrapForJNI(calledFrom = "ui")
+        private native boolean handleScrollEvent(
+                long time, int metaState,
+                float x, float y,
+                float hScroll, float vScroll);
+
+        @WrapForJNI(calledFrom = "ui")
+        private native boolean handleMouseEvent(
+                int action, long time, int metaState,
+                float x, float y, int buttons);
+
+        @WrapForJNI(stubName = "SetIsLongpressEnabled") // Called from test thread.
+        private native void nativeSetIsLongpressEnabled(boolean isLongpressEnabled);
+
+        @WrapForJNI(calledFrom = "ui")
+        private void synthesizeNativeTouchPoint(final int pointerId, final int eventType,
+                                                final int clientX, final int clientY,
+                                                final double pressure, final int orientation) {
+            if (pointerId == PointerInfo.RESERVED_MOUSE_POINTER_ID) {
+                throw new IllegalArgumentException("Pointer ID reserved for mouse");
+            }
+            synthesizeNativePointer(InputDevice.SOURCE_TOUCHSCREEN, pointerId,
+                    eventType, clientX, clientY, pressure, orientation);
+        }
+
+        @WrapForJNI(calledFrom = "ui")
+        private void synthesizeNativeMouseEvent(final int eventType, final int clientX,
+                                                final int clientY) {
+            synthesizeNativePointer(InputDevice.SOURCE_MOUSE,
+                    PointerInfo.RESERVED_MOUSE_POINTER_ID,
+                    eventType, clientX, clientY, 0, 0);
+        }
+
+        @WrapForJNI(calledFrom = "ui")
+        private void setAttached(final boolean attached) {
+            if (attached) {
+                mAttached = true;
+                flushEventQueue();
+            } else if (mAttached) {
+                mAttached = false;
+                enableEventQueue();
+            }
+        }
+    }
+
+    /* package */ final NativeProvider mNative = new NativeProvider();
 
     private boolean handleMotionEvent(final MotionEvent event) {
         if (!mAttached) {
@@ -124,9 +174,9 @@ public class PanZoomController extends JNIObject {
             mSession.onScreenOriginChanged((int)screenX, (int)screenY);
         }
 
-        return handleMotionEvent(action, event.getActionIndex(), event.getEventTime(),
-                event.getMetaState(), screenX, screenY, pointerId, x, y, orientation, pressure,
-                toolMajor, toolMinor);
+        return mNative.handleMotionEvent(action, event.getActionIndex(), event.getEventTime(),
+                                         event.getMetaState(), screenX, screenY, pointerId, x, y,
+                                         orientation, pressure, toolMajor, toolMinor);
     }
 
     private boolean handleScrollEvent(final MotionEvent event) {
@@ -154,8 +204,8 @@ public class PanZoomController extends JNIObject {
         final float vScroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL) *
                               mPointerScrollFactor;
 
-        return handleScrollEvent(event.getEventTime(), event.getMetaState(), x, y,
-                                 hScroll, vScroll);
+        return mNative.handleScrollEvent(event.getEventTime(), event.getMetaState(), x, y,
+                                         hScroll, vScroll);
     }
 
     private boolean handleMouseEvent(final MotionEvent event) {
@@ -178,13 +228,37 @@ public class PanZoomController extends JNIObject {
         final float x = coords.x - mTempRect.left;
         final float y = coords.y - mTempRect.top;
 
-        return handleMouseEvent(event.getActionMasked(), event.getEventTime(),
-                                event.getMetaState(), x, y, event.getButtonState());
+        return mNative.handleMouseEvent(event.getActionMasked(), event.getEventTime(),
+                                        event.getMetaState(), x, y, event.getButtonState());
     }
 
     protected PanZoomController(final GeckoSession session) {
         mSession = session;
         enableEventQueue();
+        initMouseAsTouch();
+    }
+
+    private static void initMouseAsTouch() {
+        PrefsHelper.PrefHandler prefHandler = new PrefsHelper.PrefHandlerBase() {
+            @Override
+            public void prefValue(final String pref, final int value) {
+                if (!PREF_MOUSE_AS_TOUCH.equals(pref)) {
+                    return;
+                }
+                if (value == 0) {
+                    sTreatMouseAsTouch = false;
+                } else if (value == 1) {
+                    sTreatMouseAsTouch = true;
+                } else if (value == 2) {
+                    Context c = GeckoAppShell.getApplicationContext();
+                    UiModeManager m = (UiModeManager)c.getSystemService(Context.UI_MODE_SERVICE);
+                    // on TV devices, treat mouse as touch. everywhere else, don't
+                    sTreatMouseAsTouch = (m.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION);
+                }
+            }
+        };
+        PrefsHelper.addObserver(new String[] { PREF_MOUSE_AS_TOUCH }, prefHandler);
+        PrefsHelper.getPref(PREF_MOUSE_AS_TOUCH, prefHandler);
     }
 
     /**
@@ -218,6 +292,10 @@ public class PanZoomController extends JNIObject {
      */
     public boolean onTouchEvent(final @NonNull MotionEvent event) {
         ThreadUtils.assertOnUiThread();
+
+        if (!sTreatMouseAsTouch && event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE) {
+            return handleMouseEvent(event);
+        }
         return handleMotionEvent(event);
     }
 
@@ -240,7 +318,7 @@ public class PanZoomController extends JNIObject {
 
     @Override
     protected void finalize() throws Throwable {
-        setAttached(false);
+        mNative.setAttached(false);
     }
 
     /**
@@ -258,7 +336,8 @@ public class PanZoomController extends JNIObject {
         if (action == MotionEvent.ACTION_SCROLL) {
             if (event.getDownTime() >= mLastDownTime) {
                 mLastDownTime = event.getDownTime();
-            } else if ((InputDevice.getDevice(event.getDeviceId()).getSources() &
+            } else if ((InputDevice.getDevice(event.getDeviceId()) != null) &&
+                       (InputDevice.getDevice(event.getDeviceId()).getSources() &
                         InputDevice.SOURCE_TOUCHPAD) == InputDevice.SOURCE_TOUCHPAD) {
                 return false;
             }
@@ -301,26 +380,6 @@ public class PanZoomController extends JNIObject {
         }
     }
 
-    @WrapForJNI(calledFrom = "ui")
-    private void setAttached(final boolean attached) {
-        if (attached) {
-            mAttached = true;
-            flushEventQueue();
-        } else if (mAttached) {
-            mAttached = false;
-            enableEventQueue();
-        }
-    }
-
-    @Override // JNIObject
-    protected void disposeNative() {
-        // Disposal happens in native code.
-        throw new UnsupportedOperationException();
-    }
-
-    @WrapForJNI(stubName = "SetIsLongpressEnabled") // Called from test thread.
-    private native void nativeSetIsLongpressEnabled(boolean isLongpressEnabled);
-
     /**
      * Set whether Gecko should generate long-press events.
      *
@@ -330,7 +389,7 @@ public class PanZoomController extends JNIObject {
         ThreadUtils.assertOnUiThread();
 
         if (mAttached) {
-            nativeSetIsLongpressEnabled(isLongpressEnabled);
+            mNative.nativeSetIsLongpressEnabled(isLongpressEnabled);
         }
     }
 
@@ -538,25 +597,6 @@ public class PanZoomController extends JNIObject {
             eventType == MotionEvent.ACTION_HOVER_MOVE) {
             mPointerState.pointers.remove(pointerIndex);
         }
-    }
-
-    @WrapForJNI(calledFrom = "ui")
-    private void synthesizeNativeTouchPoint(final int pointerId, final int eventType,
-                                            final int clientX, final int clientY,
-                                            final double pressure, final int orientation) {
-        if (pointerId == PointerInfo.RESERVED_MOUSE_POINTER_ID) {
-            throw new IllegalArgumentException("Pointer ID reserved for mouse");
-        }
-        synthesizeNativePointer(InputDevice.SOURCE_TOUCHSCREEN, pointerId,
-                                eventType, clientX, clientY, pressure, orientation);
-    }
-
-    @WrapForJNI(calledFrom = "ui")
-    private void synthesizeNativeMouseEvent(final int eventType, final int clientX,
-                                            final int clientY) {
-        synthesizeNativePointer(InputDevice.SOURCE_MOUSE,
-                                PointerInfo.RESERVED_MOUSE_POINTER_ID,
-                                eventType, clientX, clientY, 0, 0);
     }
 
     /**

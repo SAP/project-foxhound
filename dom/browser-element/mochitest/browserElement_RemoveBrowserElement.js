@@ -6,14 +6,16 @@
 
 "use strict";
 
+/* global browserElementTestHelpers */
+
 SimpleTest.waitForExplicitFinish();
 browserElementTestHelpers.setEnabledPref(true);
 browserElementTestHelpers.addPermission();
 browserElementTestHelpers.allowTopLevelDataURINavigation();
 
 function runTest() {
-  var iframe = document.createElement('iframe');
-  iframe.setAttribute('mozbrowser', 'true');
+  var iframe = document.createElement("iframe");
+  iframe.setAttribute("mozbrowser", "true");
   document.body.appendChild(iframe);
 
   iframe.addEventListener("mozbrowsershowmodalprompt", function(e) {
@@ -24,8 +26,9 @@ function runTest() {
     });
   });
 
-  iframe.src = "data:text/html,<html><body><script>alert(\"test\")</script>" +
-               "</body></html>";
+  iframe.src =
+    'data:text/html,<html><body><script>alert("test")</script>' +
+    "</body></html>";
 }
 
-addEventListener('testready', runTest);
+addEventListener("testready", runTest);

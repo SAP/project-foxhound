@@ -35,7 +35,7 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
       JSContext* aCx, JS::Handle<JSObject*> aProxy, JS::Handle<jsid> aId,
       JS::MutableHandle<JS::PropertyDescriptor> aDesc) const override;
   bool ownPropertyKeys(JSContext* aCx, JS::Handle<JSObject*> aProxy,
-                       JS::AutoIdVector& aProps) const override;
+                       JS::MutableHandleVector<jsid> aProps) const override;
   bool defineProperty(JSContext* aCx, JS::Handle<JSObject*> aProxy,
                       JS::Handle<jsid> aId,
                       JS::Handle<JS::PropertyDescriptor> aDesc,
@@ -67,9 +67,9 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
   // SpiderMonkey extensions
   bool hasOwn(JSContext* aCx, JS::Handle<JSObject*> aProxy,
               JS::Handle<jsid> aId, bool* aBp) const override;
-  bool getOwnEnumerablePropertyKeys(JSContext* aCx,
-                                    JS::Handle<JSObject*> aProxy,
-                                    JS::AutoIdVector& aProps) const override;
+  bool getOwnEnumerablePropertyKeys(
+      JSContext* aCx, JS::Handle<JSObject*> aProxy,
+      JS::MutableHandleVector<jsid> aProps) const override;
   const char* className(JSContext* aCx,
                         JS::Handle<JSObject*> aProxy) const final;
 
@@ -172,8 +172,7 @@ class RemoteObjectProxy : public RemoteObjectProxyBase {
  * represents an object implementing the WebIDL interface for
  * aProtoID.
  */
-static inline bool IsRemoteObjectProxy(JSObject* aObj,
-                                       prototypes::ID aProtoID) {
+inline bool IsRemoteObjectProxy(JSObject* aObj, prototypes::ID aProtoID) {
   if (!js::IsProxy(aObj)) {
     return false;
   }
@@ -184,7 +183,7 @@ static inline bool IsRemoteObjectProxy(JSObject* aObj,
  * Returns true if aObj is a cross-process proxy object, no matter
  * which WebIDL interface it corresponds to.
  */
-static inline bool IsRemoteObjectProxy(JSObject* aObj) {
+inline bool IsRemoteObjectProxy(JSObject* aObj) {
   if (!js::IsProxy(aObj)) {
     return false;
   }

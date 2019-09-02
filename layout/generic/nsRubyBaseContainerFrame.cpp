@@ -13,6 +13,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/WritingModes.h"
 #include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
@@ -35,7 +36,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsRubyBaseContainerFrame)
 
-nsContainerFrame* NS_NewRubyBaseContainerFrame(nsIPresShell* aPresShell,
+nsContainerFrame* NS_NewRubyBaseContainerFrame(PresShell* aPresShell,
                                                ComputedStyle* aStyle) {
   return new (aPresShell)
       nsRubyBaseContainerFrame(aStyle, aPresShell->GetPresContext());
@@ -303,11 +304,11 @@ void nsRubyBaseContainerFrame::Reflow(nsPresContext* aPresContext,
   LogicalSize availSize(lineWM, aReflowInput.AvailableISize(),
                         aReflowInput.AvailableBSize());
 
-  // We have a reflow state and a line layout for each RTC.
+  // We have a reflow input and a line layout for each RTC.
   // They are conceptually the state of the RTCs, but we don't actually
   // reflow those RTCs in this code. These two arrays are holders of
-  // the reflow states and line layouts.
-  // Since there are pointers refer to reflow states and line layouts,
+  // the reflow inputs and line layouts.
+  // Since there are pointers refer to reflow inputs and line layouts,
   // it is necessary to guarantee that they won't be moved. For this
   // reason, they are wrapped in UniquePtr here.
   AutoTArray<UniquePtr<ReflowInput>, RTC_ARRAY_SIZE> reflowInputs;
@@ -745,8 +746,7 @@ void nsRubyBaseContainerFrame::PullOneColumn(nsLineLayout* aLineLayout,
     MOZ_ASSERT(newFloatCB, "Must have a float containing block");
     if (oldFloatCB != newFloatCB) {
       for (nsIFrame* frame : aColumn) {
-        newFloatCB->ReparentFloats(frame, oldFloatCB, false,
-                                   ReparentingDirection::Backwards);
+        newFloatCB->ReparentFloats(frame, oldFloatCB, false);
       }
     }
   }

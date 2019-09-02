@@ -1,4 +1,4 @@
-/*
+/**
  * Test Services.logins.searchLogins with the `schemeUpgrades` property.
  */
 
@@ -15,18 +15,19 @@ const HTTP_ORIGIN = "http://www.example.com";
  *        entries from the test data that match the property exactly.
  */
 function buildExpectedLogins(aQuery) {
-  return TestData.loginList().filter(
-    entry => Object.keys(aQuery).every(name => {
+  return TestData.loginList().filter(entry =>
+    Object.keys(aQuery).every(name => {
       if (name == "schemeUpgrades") {
         return true;
       }
-      if (["hostname", "formSubmitURL"].includes(name)) {
+      if (["origin", "formActionOrigin"].includes(name)) {
         return LoginHelper.isOriginMatching(entry[name], aQuery[name], {
           schemeUpgrades: aQuery.schemeUpgrades,
         });
       }
       return entry[name] === aQuery[name];
-    }));
+    })
+  );
 }
 
 /**
@@ -47,9 +48,7 @@ function checkSearch(aQuery, aExpectedCount) {
   let expectedLogins = buildExpectedLogins(aQuery);
   Assert.equal(expectedLogins.length, aExpectedCount);
 
-  let outCount = {};
-  let logins = Services.logins.searchLogins(outCount, newPropertyBag(aQuery));
-  Assert.equal(outCount.value, expectedLogins.length);
+  let logins = Services.logins.searchLogins(newPropertyBag(aQuery));
   LoginTestUtils.assertLoginListsEqual(logins, expectedLogins);
 }
 
@@ -65,120 +64,178 @@ add_task(function test_initialize() {
 /**
  * Tests searchLogins with the `schemeUpgrades` property
  */
-add_task(function test_search_schemeUpgrades_hostname() {
-  // Hostname-only
-  checkSearch({
-    hostname: HTTPS_ORIGIN,
-  }, 1);
-  checkSearch({
-    hostname: HTTPS_ORIGIN,
-    schemeUpgrades: false,
-  }, 1);
-  checkSearch({
-    hostname: HTTPS_ORIGIN,
-    schemeUpgrades: undefined,
-  }, 1);
-  checkSearch({
-    hostname: HTTPS_ORIGIN,
-    schemeUpgrades: true,
-  }, 2);
+add_task(function test_search_schemeUpgrades_origin() {
+  // Origin-only
+  checkSearch(
+    {
+      origin: HTTPS_ORIGIN,
+    },
+    1
+  );
+  checkSearch(
+    {
+      origin: HTTPS_ORIGIN,
+      schemeUpgrades: false,
+    },
+    1
+  );
+  checkSearch(
+    {
+      origin: HTTPS_ORIGIN,
+      schemeUpgrades: undefined,
+    },
+    1
+  );
+  checkSearch(
+    {
+      origin: HTTPS_ORIGIN,
+      schemeUpgrades: true,
+    },
+    2
+  );
 });
 
 /**
- * Same as above but replacing hostname with formSubmitURL.
+ * Same as above but replacing origin with formActionOrigin.
  */
-add_task(function test_search_schemeUpgrades_formSubmitURL() {
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-  }, 2);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    schemeUpgrades: false,
-  }, 2);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    schemeUpgrades: undefined,
-  }, 2);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    schemeUpgrades: true,
-  }, 4);
+add_task(function test_search_schemeUpgrades_formActionOrigin() {
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+    },
+    2
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      schemeUpgrades: false,
+    },
+    2
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      schemeUpgrades: undefined,
+    },
+    2
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      schemeUpgrades: true,
+    },
+    4
+  );
 });
 
-
-add_task(function test_search_schemeUpgrades_hostname_formSubmitURL() {
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTPS_ORIGIN,
-  }, 1);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTPS_ORIGIN,
-    schemeUpgrades: false,
-  }, 1);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTPS_ORIGIN,
-    schemeUpgrades: undefined,
-  }, 1);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTPS_ORIGIN,
-    schemeUpgrades: true,
-  }, 2);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTPS_ORIGIN,
-    schemeUpgrades: true,
-    usernameField: "form_field_username",
-  }, 2);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTPS_ORIGIN,
-    passwordField: "form_field_password",
-    schemeUpgrades: true,
-    usernameField: "form_field_username",
-  }, 2);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTPS_ORIGIN,
-    httpRealm: null,
-    passwordField: "form_field_password",
-    schemeUpgrades: true,
-    usernameField: "form_field_username",
-  }, 2);
+add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTPS_ORIGIN,
+    },
+    1
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTPS_ORIGIN,
+      schemeUpgrades: false,
+    },
+    1
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTPS_ORIGIN,
+      schemeUpgrades: undefined,
+    },
+    1
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTPS_ORIGIN,
+      schemeUpgrades: true,
+    },
+    2
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTPS_ORIGIN,
+      schemeUpgrades: true,
+      usernameField: "form_field_username",
+    },
+    2
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTPS_ORIGIN,
+      passwordField: "form_field_password",
+      schemeUpgrades: true,
+      usernameField: "form_field_username",
+    },
+    2
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTPS_ORIGIN,
+      httpRealm: null,
+      passwordField: "form_field_password",
+      schemeUpgrades: true,
+      usernameField: "form_field_username",
+    },
+    2
+  );
 });
 
 /**
  * HTTP submitting to HTTPS
  */
 add_task(function test_http_to_https() {
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTP3_ORIGIN,
-    httpRealm: null,
-    schemeUpgrades: false,
-  }, 1);
-  checkSearch({
-    formSubmitURL: HTTPS_ORIGIN,
-    hostname: HTTP3_ORIGIN,
-    httpRealm: null,
-    schemeUpgrades: true,
-  }, 2);
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTP3_ORIGIN,
+      httpRealm: null,
+      schemeUpgrades: false,
+    },
+    1
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTPS_ORIGIN,
+      origin: HTTP3_ORIGIN,
+      httpRealm: null,
+      schemeUpgrades: true,
+    },
+    2
+  );
 });
 
 /**
  * schemeUpgrades shouldn't cause downgrades
  */
 add_task(function test_search_schemeUpgrades_downgrade() {
-  checkSearch({
-    formSubmitURL: HTTP_ORIGIN,
-    hostname: HTTP_ORIGIN,
-  }, 1);
-  info("The same number should be found with schemeUpgrades since we're searching for HTTP");
-  checkSearch({
-    formSubmitURL: HTTP_ORIGIN,
-    hostname: HTTP_ORIGIN,
-    schemeUpgrades: true,
-  }, 1);
+  checkSearch(
+    {
+      formActionOrigin: HTTP_ORIGIN,
+      origin: HTTP_ORIGIN,
+    },
+    1
+  );
+  info(
+    "The same number should be found with schemeUpgrades since we're searching for HTTP"
+  );
+  checkSearch(
+    {
+      formActionOrigin: HTTP_ORIGIN,
+      origin: HTTP_ORIGIN,
+      schemeUpgrades: true,
+    },
+    1
+  );
 });

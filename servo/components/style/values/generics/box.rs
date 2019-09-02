@@ -6,6 +6,37 @@
 
 use crate::values::animated::ToAnimatedZero;
 
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    FromPrimitive,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum VerticalAlignKeyword {
+    Baseline,
+    Sub,
+    Super,
+    Top,
+    TextTop,
+    Middle,
+    Bottom,
+    TextBottom,
+    #[cfg(feature = "gecko")]
+    MozMiddleWithBaseline,
+}
+
 /// A generic value for the `vertical-align` property.
 #[derive(
     Animate,
@@ -18,36 +49,24 @@ use crate::values::animated::ToAnimatedZero;
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
-pub enum VerticalAlign<LengthPercentage> {
-    /// `baseline`
-    Baseline,
-    /// `sub`
-    Sub,
-    /// `super`
-    Super,
-    /// `top`
-    Top,
-    /// `text-top`
-    TextTop,
-    /// `middle`
-    Middle,
-    /// `bottom`
-    Bottom,
-    /// `text-bottom`
-    TextBottom,
-    /// `-moz-middle-with-baseline`
-    #[cfg(feature = "gecko")]
-    MozMiddleWithBaseline,
+#[repr(C, u8)]
+pub enum GenericVerticalAlign<LengthPercentage> {
+    /// One of the vertical-align keywords.
+    Keyword(VerticalAlignKeyword),
     /// `<length-percentage>`
     Length(LengthPercentage),
 }
+
+pub use self::GenericVerticalAlign as VerticalAlign;
 
 impl<L> VerticalAlign<L> {
     /// Returns `baseline`.
     #[inline]
     pub fn baseline() -> Self {
-        VerticalAlign::Baseline
+        VerticalAlign::Keyword(VerticalAlignKeyword::Baseline)
     }
 }
 
@@ -58,7 +77,17 @@ impl<L> ToAnimatedZero for VerticalAlign<L> {
 }
 
 /// https://drafts.csswg.org/css-animations/#animation-iteration-count
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 pub enum AnimationIterationCount<Number> {
     /// A `<number>` value.
     Number(Number),
@@ -81,6 +110,8 @@ pub enum AnimationIterationCount<Number> {
     ToAnimatedZero,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[repr(C, u8)]
 pub enum GenericPerspective<NonNegativeLength> {

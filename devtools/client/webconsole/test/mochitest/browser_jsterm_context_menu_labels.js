@@ -24,13 +24,16 @@ add_task(async function() {
   const undoMenuItem = menuPopup.querySelector("#editmenu-undo");
   await waitUntil(() => !!undoMenuItem.getAttribute("label"));
 
-  is(undoMenuItem.getAttribute("label"), "Undo",
-    "Undo is visible and localized");
+  is(
+    undoMenuItem.getAttribute("label"),
+    "Undo",
+    "Undo is visible and localized"
+  );
 });
 
 async function openTextBoxContextMenu(toolbox, element) {
   const onConsoleMenuOpened = toolbox.once("menu-open");
   synthesizeContextMenuEvent(element);
   await onConsoleMenuOpened;
-  return toolbox.doc.getElementById("toolbox-menu");
+  return toolbox.getTextBoxContextMenu();
 }

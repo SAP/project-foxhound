@@ -20,6 +20,8 @@
   width: 24px;
   height: 24px;
   margin-inline-end: 16px;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .card-heading {
@@ -82,7 +84,10 @@
   background-color: var(--error-background);
   border-radius: 2px;
   margin: 0;
+  margin-inline-end: 8px;
+  max-width: 300px;
   padding: 5px 10px;
+  word-wrap: break-word;
 }
 
 .error-message-arrow {

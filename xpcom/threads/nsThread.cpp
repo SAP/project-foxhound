@@ -26,6 +26,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Logging.h"
 #include "nsIObserverService.h"
+#include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/ipc/BackgroundChild.h"
@@ -121,6 +122,10 @@ Array<char, nsThread::kRunnableNameBufSize> nsThread::sMainThreadRunnableName;
 
 uint32_t nsThread::sActiveThreads;
 uint32_t nsThread::sMaxActiveThreads;
+
+#ifdef EARLY_BETA_OR_EARLIER
+const uint32_t kTelemetryWakeupCountLimit = 100;
+#endif
 
 //-----------------------------------------------------------------------------
 // Because we do not have our own nsIFactory, we have to implement nsIClassInfo
@@ -572,6 +577,7 @@ void nsThread::InitCommon() {
 #endif
   }
 
+  InitThreadLocalVariables();
   AddToThreadList();
 }
 
@@ -591,13 +597,16 @@ nsThread::nsThread(NotNull<SynchronizedEventQueue*> aQueue,
       mThread(nullptr),
       mStackSize(aStackSize),
       mNestedEventLoopDepth(0),
-      mCurrentEventLoopDepth(-1),
+      mCurrentEventLoopDepth(MaxValue<uint32_t>::value),
       mShutdownRequired(false),
       mPriority(PRIORITY_NORMAL),
-      mIsMainThread(uint8_t(aMainThread)),
+      mIsMainThread(aMainThread == MAIN_THREAD),
       mCanInvokeJS(false),
       mCurrentEvent(nullptr),
       mCurrentEventStart(TimeStamp::Now()),
+#ifdef EARLY_BETA_OR_EARLIER
+      mLastWakeupCheckTime(mCurrentEventStart),
+#endif
       mCurrentPerformanceCounter(nullptr) {
   mLastLongTaskEnd = mCurrentEventStart;
   mLastLongNonIdleTaskEnd = mCurrentEventStart;
@@ -611,13 +620,16 @@ nsThread::nsThread()
       mThread(nullptr),
       mStackSize(0),
       mNestedEventLoopDepth(0),
-      mCurrentEventLoopDepth(-1),
+      mCurrentEventLoopDepth(MaxValue<uint32_t>::value),
       mShutdownRequired(false),
       mPriority(PRIORITY_NORMAL),
-      mIsMainThread(NOT_MAIN_THREAD),
+      mIsMainThread(false),
       mCanInvokeJS(false),
       mCurrentEvent(nullptr),
       mCurrentEventStart(TimeStamp::Now()),
+#ifdef EARLY_BETA_OR_EARLIER
+      mLastWakeupCheckTime(mCurrentEventStart),
+#endif
       mCurrentPerformanceCounter(nullptr) {
   mLastLongTaskEnd = mCurrentEventStart;
   mLastLongNonIdleTaskEnd = mCurrentEventStart;
@@ -764,6 +776,14 @@ nsThread::GetLastLongTaskEnd(TimeStamp* _retval) {
 NS_IMETHODIMP
 nsThread::GetLastLongNonIdleTaskEnd(TimeStamp* _retval) {
   *_retval = mLastLongNonIdleTaskEnd;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsThread::SetNameForWakeupTelemetry(const nsACString& aName) {
+#ifdef EARLY_BETA_OR_EARLIER
+  mNameForWakeupTelemetry = aName;
+#endif
   return NS_OK;
 }
 
@@ -1070,7 +1090,7 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
     return NS_OK;
   }
 
-  if (IsMainThread()) {
+  if (mIsMainThread) {
     DoMainThreadSpecificProcessing(reallyWait);
   }
 
@@ -1085,6 +1105,13 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
     noJSAPI.emplace();
     mScriptObserver->BeforeProcessTask(reallyWait);
   }
+
+#ifdef EARLY_BETA_OR_EARLIER
+  // Need to capture mayWaitForWakeup state before OnProcessNextEvent,
+  // since on the main thread OnProcessNextEvent ends up waiting for the new
+  // events.
+  bool mayWaitForWakeup = reallyWait && !mEvents->HasPendingEvent();
+#endif
 
   nsCOMPtr<nsIThreadObserver> obs = mEvents->GetObserverOnThread();
   if (obs) {
@@ -1109,13 +1136,37 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
     *aResult = (event.get() != nullptr);
 
     if (event) {
+#ifdef EARLY_BETA_OR_EARLIER
+      if (mayWaitForWakeup && mThread) {
+        ++mWakeupCount;
+        if (mWakeupCount == kTelemetryWakeupCountLimit) {
+          TimeStamp now = TimeStamp::Now();
+          double ms = (now - mLastWakeupCheckTime).ToMilliseconds();
+          if (ms < 0) {
+            ms = 0;
+          }
+          const char* name = !mNameForWakeupTelemetry.IsEmpty()
+                                 ? mNameForWakeupTelemetry.get()
+                                 : PR_GetThreadName(mThread);
+          if (!name) {
+            name = mIsMainThread ? "MainThread" : "(nameless thread)";
+          }
+          nsDependentCString key(name);
+          Telemetry::Accumulate(Telemetry::THREAD_WAKEUP, key,
+                                static_cast<uint32_t>(ms));
+          mLastWakeupCheckTime = now;
+          mWakeupCount = 0;
+        }
+      }
+#endif
+
       LOG(("THRD(%p) running [%p]\n", this, event.get()));
 
       // Delay event processing to encourage whoever dispatched this event
       // to run.
       DelayForChaosMode(ChaosFeature::TaskRunning, 1000);
 
-      if (IsMainThread()) {
+      if (mIsMainThread) {
         BackgroundHangMonitor().NotifyActivity();
       }
 
@@ -1134,12 +1185,12 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
       Array<char, kRunnableNameBufSize> restoreRunnableName;
       restoreRunnableName[0] = '\0';
       auto clear = MakeScopeExit([&] {
-        if (IsMainThread()) {
+        if (mIsMainThread) {
           MOZ_ASSERT(NS_IsMainThread());
           sMainThreadRunnableName = restoreRunnableName;
         }
       });
-      if (IsMainThread()) {
+      if (mIsMainThread) {
         nsAutoCString name;
         GetLabeledRunnableName(event, name, priority);
 
@@ -1162,7 +1213,7 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
       // The event starts to run, storing the timestamp.
       bool recursiveEvent = mNestedEventLoopDepth > mCurrentEventLoopDepth;
       mCurrentEventLoopDepth = mNestedEventLoopDepth;
-      if (IsMainThread() && !recursiveEvent) {
+      if (mIsMainThread && !recursiveEvent) {
         mCurrentEventStart = mozilla::TimeStamp::Now();
       }
       RefPtr<mozilla::PerformanceCounter> currentPerformanceCounter;
@@ -1175,7 +1226,7 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
 
       mozilla::TimeDuration duration;
       // Remember the last 50ms+ task on mainthread for Long Task.
-      if (IsMainThread() && !recursiveEvent) {
+      if (mIsMainThread && !recursiveEvent) {
         TimeStamp now = TimeStamp::Now();
         duration = now - mCurrentEventStart;
         if (duration.ToMilliseconds() > LONGTASK_BUSY_WINDOW_MS) {
@@ -1211,7 +1262,7 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
               duration.ToMicroseconds());
         }
         mCurrentEvent = nullptr;
-        mCurrentEventLoopDepth = -1;
+        mCurrentEventLoopDepth = MaxValue<uint32_t>::value;
         mCurrentPerformanceCounter = nullptr;
       }
     } else if (aMayWait) {
@@ -1360,7 +1411,7 @@ void nsThread::SetScriptObserver(
 }
 
 void nsThread::DoMainThreadSpecificProcessing(bool aReallyWait) {
-  MOZ_ASSERT(IsMainThread());
+  MOZ_ASSERT(mIsMainThread);
 
   ipc::CancelCPOWs();
 

@@ -20,14 +20,12 @@ from distutils.spawn import find_executable
 import psutil
 import six.moves.urllib as urllib
 from mozdevice import ADBHost, ADBDevice
-from mozprocess import ProcessHandler
-from six.moves.urllib.parse import urlparse
 
 EMULATOR_HOME_DIR = os.path.join(os.path.expanduser('~'), '.mozbuild', 'android-device')
 
 EMULATOR_AUTH_FILE = os.path.join(os.path.expanduser('~'), '.emulator_console_auth_token')
 
-TOOLTOOL_URL = 'https://raw.githubusercontent.com/mozilla/build-tooltool/master/tooltool.py'
+TOOLTOOL_PATH = 'testing/mozharness/external_tools/tooltool.py'
 
 TRY_URL = 'https://hg.mozilla.org/try/raw-file/default'
 
@@ -214,63 +212,64 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
                 break
 
     if device_verified and install:
-        # Determine if Firefox is installed on the device; if not,
+        # Determine if test app is installed on the device; if not,
         # prompt to install. This feature allows a test command to
-        # launch an emulator, install Firefox, and proceed with testing
+        # launch an emulator, install the test app, and proceed with testing
         # in one operation. It is also a basic safeguard against other
-        # cases where testing is requested but Firefox installation has
+        # cases where testing is requested but test app installation has
         # been forgotten.
-        # If Firefox is installed, there is no way to determine whether
+        # If a test app is installed, there is no way to determine whether
         # the current build is installed, and certainly no way to
         # determine if the installed build is the desired build.
-        # Installing every time is problematic because:
+        # Installing every time (without prompting) is problematic because:
         #  - it prevents testing against other builds (downloaded apk)
         #  - installation may take a couple of minutes.
         if not app:
-            app = build_obj.substs["ANDROID_PACKAGE_NAME"]
+            app = "org.mozilla.geckoview.test"
         device = _get_device(build_obj.substs, device_serial)
         response = ''
-        while not device.is_app_installed(app):
-            try:
-                if 'fennec' in app or 'firefox' in app:
-                    response = response = raw_input(
-                        "It looks like %s is not installed on this device.\n"
-                        "Install Firefox? (Y/n) or quit to exit " % app).strip()
-                    if response.lower().startswith('y') or response == '':
-                        _log_info("Installing Firefox. This may take a while...")
-                        build_obj._run_make(directory=".", target='install',
-                                            ensure_exit_code=False)
-                elif app == 'org.mozilla.geckoview.test':
-                    response = response = raw_input(
-                        "It looks like %s is not installed on this device.\n"
-                        "Install geckoview AndroidTest? (Y/n) or quit to exit " % app).strip()
-                    if response.lower().startswith('y') or response == '':
-                        _log_info("Installing geckoview AndroidTest. This may take a while...")
-                        sub = 'geckoview:installWithGeckoBinariesDebugAndroidTest'
-                        build_obj._mach_context.commands.dispatch('gradle',
-                                                                  args=[sub],
-                                                                  context=build_obj._mach_context)
-                elif app == 'org.mozilla.geckoview_example':
-                    response = response = raw_input(
-                        "It looks like %s is not installed on this device.\n"
-                        "Install geckoview_example? (Y/n) or quit to exit " % app).strip()
-                    if response.lower().startswith('y') or response == '':
-                        _log_info("Installing geckoview_example. This may take a while...")
-                        sub = 'install-geckoview_example'
-                        build_obj._mach_context.commands.dispatch('android',
-                                                                  subcommand=sub,
-                                                                  args=[],
-                                                                  context=build_obj._mach_context)
-                else:
-                    response = raw_input(
-                        "It looks like %s is not installed on this device,\n"
-                        "but I don't know how to install it.\n"
-                        "Install it now, then hit Enter or quit to exit " % app)
-            except EOFError:
-                response = 'quit'
-            if response == 'quit':
-                device_verified = False
-                break
+        action = 'Re-install'
+        installed = device.is_app_installed(app)
+        if not installed:
+            _log_info("It looks like %s is not installed on this device." % app)
+            action = 'Install'
+        if 'fennec' in app or 'firefox' in app:
+            response = response = raw_input(
+                "%s Firefox? (Y/n) " % action).strip()
+            if response.lower().startswith('y') or response == '':
+                if installed:
+                    device.uninstall_app(app)
+                _log_info("Installing Firefox. This may take a while...")
+                build_obj._run_make(directory=".", target='install',
+                                    ensure_exit_code=False)
+        elif app == 'org.mozilla.geckoview.test':
+            response = response = raw_input(
+                "%s geckoview AndroidTest? (Y/n) " % action).strip()
+            if response.lower().startswith('y') or response == '':
+                if installed:
+                    device.uninstall_app(app)
+                _log_info("Installing geckoview AndroidTest. This may take a while...")
+                sub = 'geckoview:installWithGeckoBinariesDebugAndroidTest'
+                build_obj._mach_context.commands.dispatch('gradle',
+                                                          args=[sub],
+                                                          context=build_obj._mach_context)
+        elif app == 'org.mozilla.geckoview_example':
+            response = response = raw_input(
+                "%s geckoview_example? (Y/n) " % action).strip()
+            if response.lower().startswith('y') or response == '':
+                if installed:
+                    device.uninstall_app(app)
+                _log_info("Installing geckoview_example. This may take a while...")
+                sub = 'install-geckoview_example'
+                build_obj._mach_context.commands.dispatch('android',
+                                                          subcommand=sub,
+                                                          args=[],
+                                                          context=build_obj._mach_context)
+        elif not installed:
+            response = raw_input(
+                "It looks like %s is not installed on this device,\n"
+                "but I don't know how to install it.\n"
+                "Install it now, then hit Enter " % app)
 
     if device_verified and xre:
         # Check whether MOZ_HOST_BIN has been set to a valid xre; if not,
@@ -322,56 +321,7 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
             _log_debug("network check skipped on emulator")
 
     if debugger:
-        # Optionally set up JimDB. See https://wiki.mozilla.org/Mobile/Fennec/Android/GDB.
-        build_platform = _get_device_platform(build_obj.substs)
-        jimdb_path = os.path.join(EMULATOR_HOME_DIR, 'jimdb-%s' % build_platform)
-        jimdb_utils_path = os.path.join(jimdb_path, 'utils')
-        gdb_path = os.path.join(jimdb_path, 'bin', 'gdb')
-        err = None
-        if not os.path.isdir(jimdb_path):
-            err = '%s does not exist' % jimdb_path
-        elif not os.path.isfile(gdb_path):
-            err = '%s not found' % gdb_path
-        if err:
-            _log_info("JimDB (%s) not found: %s" % (build_platform, err))
-            response = raw_input(
-                "Download and setup JimDB (%s)? (Y/n) " % build_platform).strip()
-            if response.lower().startswith('y') or response == '':
-                host_platform = _get_host_platform()
-                if host_platform:
-                    _log_info(
-                        "Installing JimDB (%s/%s). This may take a while..." % (host_platform,
-                                                                                build_platform))
-                    path = os.path.join(MANIFEST_PATH, host_platform,
-                                        'jimdb-%s.manifest' % build_platform)
-                    _get_tooltool_manifest(build_obj.substs, path,
-                                           EMULATOR_HOME_DIR, 'releng.manifest')
-                    _tooltool_fetch()
-                    if os.path.isfile(gdb_path):
-                        # Get JimDB utilities from git repository
-                        proc = ProcessHandler(['git', 'pull'], cwd=jimdb_utils_path)
-                        proc.run()
-                        git_pull_complete = False
-                        try:
-                            proc.wait()
-                            if proc.proc.returncode == 0:
-                                git_pull_complete = True
-                        except Exception:
-                            if proc.poll() is None:
-                                proc.kill(signal.SIGTERM)
-                        if not git_pull_complete:
-                            _log_warning("Unable to update JimDB utils from git -- "
-                                         "some JimDB features may be unavailable.")
-                    else:
-                        _log_warning("Unable to install JimDB -- unable to fetch from tooltool.")
-                else:
-                    _log_warning("Unable to install JimDB -- your platform is not supported!")
-        if os.path.isfile(gdb_path):
-            # sync gdbinit.local with build settings
-            _update_gdbinit(build_obj.substs, os.path.join(jimdb_utils_path, "gdbinit.local"))
-            # ensure JimDB is in system path, so that mozdebug can find it
-            bin_path = os.path.join(jimdb_path, 'bin')
-            os.environ['PATH'] = "%s:%s" % (bin_path, os.environ['PATH'])
+        _log_warning("JimDB is no longer supported")
 
     return device_verified
 
@@ -380,40 +330,10 @@ def get_adb_path(build_obj):
     return _find_sdk_exe(build_obj.substs, 'adb', False)
 
 
-def run_firefox_for_android(build_obj, params):
-    """
-       Launch Firefox for Android on the connected device.
-       Optional 'params' allow parameters to be passed to Firefox.
-    """
-    device = _get_device(build_obj.substs)
-    try:
-        #
-        # Construct an adb command similar to:
-        #
-        # $ adb shell am start -a android.activity.MAIN \
-        #   -n org.mozilla.fennec_$USER \
-        #   -d <url param> \
-        #   --es args "<params>"
-        #
-        app = build_obj.substs['ANDROID_PACKAGE_NAME']
-        url = None
-        if params:
-            for p in params:
-                if urlparse.urlparse(p).scheme != "":
-                    url = p
-                    params.remove(p)
-                    break
-        device.launch_fennec(app, extra_args=params, url=url)
-    except Exception:
-        _log_warning("unable to launch Firefox for Android")
-        return 1
-    return 0
-
-
 def grant_runtime_permissions(build_obj, app, device_serial=None):
     """
     Grant required runtime permissions to the specified app
-    (typically org.mozilla.fennec_$USER).
+    (eg. org.mozilla.geckoview.test).
     """
     device = _get_device(build_obj.substs, device_serial)
     try:
@@ -469,11 +389,14 @@ class AndroidEmulator(object):
            Returns True if the Android emulator is running.
         """
         for proc in psutil.process_iter():
-            name = proc.name()
-            # On some platforms, "emulator" may start an emulator with
-            # process name "emulator64-arm" or similar.
-            if name and name.startswith('emulator'):
-                return True
+            try:
+                name = proc.name()
+                # On some platforms, "emulator" may start an emulator with
+                # process name "emulator64-arm" or similar.
+                if name and name.startswith('emulator'):
+                    return True
+            except Exception as e:
+                _log_debug("failed to get process name: %s" % str(e))
         return False
 
     def is_available(self):
@@ -521,6 +444,9 @@ class AndroidEmulator(object):
             EMULATOR_HOME_DIR, 'avd', self.avd_info.name + '.ini')
         if force and os.path.exists(avd):
             shutil.rmtree(avd)
+        if force:
+            for f in glob.glob(os.path.join(EMULATOR_HOME_DIR, 'AVD*.checksum')):
+                os.remove(f)
         if not os.path.exists(avd):
             if os.path.exists(ini_file):
                 os.remove(ini_file)
@@ -542,33 +468,26 @@ class AndroidEmulator(object):
         auth_file = open(EMULATOR_AUTH_FILE, 'w')
         auth_file.close()
 
-        def outputHandler(line):
-            self.emulator_log.write("<%s>\n" % line)
-            if "Invalid value for -gpu" in line or "Invalid GPU mode" in line:
-                self.gpu = False
-
         env = os.environ
         env['ANDROID_AVD_HOME'] = os.path.join(EMULATOR_HOME_DIR, "avd")
         command = [self.emulator_path, "-avd", self.avd_info.name]
         if self.gpu:
             command += ['-gpu', 'swiftshader_indirect']
         if self.avd_info.extra_args:
-            # -enable-kvm option is not valid on OSX
-            if _get_host_platform() == 'macosx64' and '-enable-kvm' in self.avd_info.extra_args:
+            # -enable-kvm option is not valid on OSX and Windows
+            if _get_host_platform() in ('macosx64', 'win32') and \
+               '-enable-kvm' in self.avd_info.extra_args:
                 self.avd_info.extra_args.remove('-enable-kvm')
             command += self.avd_info.extra_args
         log_path = os.path.join(EMULATOR_HOME_DIR, 'emulator.log')
-        self.emulator_log = open(log_path, 'w')
+        self.emulator_log = open(log_path, 'w+')
         _log_debug("Starting the emulator with this command: %s" %
                    ' '.join(command))
         _log_debug("Emulator output will be written to '%s'" %
                    log_path)
-        self.proc = ProcessHandler(
-            command, storeOutput=False, processOutputLine=outputHandler,
-            stdin=subprocess.PIPE, env=env, ignore_children=True)
-        self.proc.run()
-        _log_debug("Emulator started with pid %d" %
-                   int(self.proc.proc.pid))
+        self.proc = subprocess.Popen(command, env=env, stdin=subprocess.PIPE,
+                                     stdout=self.emulator_log, stderr=self.emulator_log)
+        _log_debug("Emulator started with pid %d" % int(self.proc.pid))
 
     def wait_for_start(self):
         """
@@ -622,7 +541,16 @@ class AndroidEmulator(object):
         return True
 
     def check_completed(self):
-        if self.proc.proc.poll() is not None:
+        if self.proc.poll() is not None:
+            if self.gpu:
+                try:
+                    for line in self.emulator_log.readlines():
+                        if "Invalid value for -gpu" in line or "Invalid GPU mode" in line:
+                            self.gpu = False
+                            break
+                except Exception as e:
+                    _log_warning(str(e))
+
             if not self.gpu and not self.restarted:
                 _log_warning("Emulator failed to start. Your emulator may be out of date.")
                 _log_warning("Trying to restart the emulator without -gpu argument.")
@@ -712,7 +640,7 @@ class AndroidEmulator(object):
                     tn.close()
             if not telnet_ok:
                 time.sleep(10)
-                if self.proc.proc.poll() is not None:
+                if self.proc.poll() is not None:
                     _log_warning("Emulator has already completed!")
                     return False
         return telnet_ok
@@ -861,27 +789,22 @@ def _get_tooltool_manifest(substs, src_path, dst_path, filename):
 
 
 def _tooltool_fetch():
-    def outputHandler(line):
-        _log_debug(line)
-
-    _download_file(TOOLTOOL_URL, 'tooltool.py', EMULATOR_HOME_DIR)
-    command = [sys.executable, 'tooltool.py',
+    tooltool_full_path = os.path.abspath(TOOLTOOL_PATH)
+    command = [sys.executable, tooltool_full_path,
                'fetch', '-o', '-m', 'releng.manifest']
-    proc = ProcessHandler(
-        command, processOutputLine=outputHandler, storeOutput=False,
-        cwd=EMULATOR_HOME_DIR)
-    proc.run()
     try:
-        proc.wait()
-    except Exception:
-        if proc.poll() is None:
-            proc.kill(signal.SIGTERM)
+        response = subprocess.check_output(command, cwd=EMULATOR_HOME_DIR)
+        _log_debug(response)
+    except Exception as e:
+        _log_warning(str(e))
 
 
 def _get_host_platform():
     plat = None
     if 'darwin' in str(sys.platform).lower():
         plat = 'macosx64'
+    elif 'win32' in str(sys.platform).lower():
+        plat = 'win32'
     elif 'linux' in str(sys.platform).lower():
         if '64' in platform.architecture()[0]:
             plat = 'linux64'
@@ -943,10 +866,7 @@ def _verify_kvm(substs):
         emulator_path = 'emulator'
     command = [emulator_path, '-accel-check']
     try:
-        p = ProcessHandler(command, storeOutput=True)
-        p.run()
-        p.wait()
-        out = p.output
+        out = subprocess.check_output(command)
         if 'is installed and usable' in ''.join(out):
             return
     except Exception as e:

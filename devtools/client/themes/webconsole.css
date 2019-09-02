@@ -4,10 +4,6 @@
 
 /* Webconsole specific theme variables */
 :root {
-  /* Output rows should be 20px tall for a single line of text;
-   * 20 = 3 (top padding) + 14 (line-height) + 3 (bottom padding)
-   */
-  --console-output-font-size: 11px;
   --console-output-line-height: calc(14 / 11);
   --console-output-vertical-padding: 3px;
   /* Width of the left gutter where icons appear */
@@ -18,27 +14,47 @@
 }
 
 .theme-dark {
-  --console-output-icon-error-color: var(--red-40);
-  --console-output-icon-warning-color: var(--yellow-60);
-  --console-output-indent-border-color: var(--theme-highlight-blue);
+  --console-input-background: var(--theme-tab-toolbar-background);
+  --console-message-background: var(--theme-body-background);
+  --console-message-border: var(--theme-splitter-color);
+  --console-message-color: var(--theme-text-color-strong);
+  --console-error-background: hsl(345, 23%, 24%);
+  --console-error-border: hsl(345, 30%, 35%);
+  --console-error-color: var(--red-20);
+  --console-warning-background: hsl(42, 37%, 19%);
+  --console-warning-border: hsl(60, 30%, 26%);
+  --console-warning-color: hsl(43, 94%, 81%);
+  --console-navigation-color: var(--theme-highlight-blue);
+  --console-navigation-border: var(--blue-60);
+  --console-indent-border-color: var(--theme-highlight-blue);
+  --console-repeat-bubble-background: var(--blue-60);
+
+  /* TODO in bug 1549195: colors used in shared components (e.g. Reps) should
+     be renamed and/or moved to variables.css so they work everywhere */
   --error-color: var(--red-20);
-  --error-background-color: hsl(345, 23%, 24%);
-  --warning-color: hsl(43, 94%, 81%);
-  --warning-background-color: hsl(42, 37%, 19%);
   --console-output-color: white;
-  --repeat-bubble-background-color: var(--blue-60);
 }
 
 .theme-light {
-  --console-output-icon-error-color: var(--red-60);
-  --console-output-icon-warning-color: var(--yellow-65);
-  --console-output-indent-border-color: var(--theme-highlight-blue);
+  --console-input-background: var(--theme-body-background);
+  --console-message-background: var(--theme-body-background);
+  --console-message-border: #f2f2f4; /* between Grey 10 and Grey 20 */
+  --console-message-color: var(--theme-text-color-strong);
+  --console-error-background: hsl(344, 73%, 97%);
+  --console-error-border: rgba(215, 0, 34, 0.12); /* Red 60 + opacity */
+  --console-error-color: var(--red-70);
+  --console-warning-background: hsl(54, 100%, 92%);
+  --console-warning-border: rgba(215, 182, 0, 0.28); /* Yellow 60 + opacity */
+  --console-warning-color: var(--yellow-80);
+  --console-navigation-color: var(--theme-highlight-blue);
+  --console-navigation-border: var(--blue-30);
+  --console-indent-border-color: var(--theme-highlight-blue);
+  --console-repeat-bubble-background: var(--theme-highlight-blue);
+
+  /* TODO in bug 1549195: colors used in shared components (e.g. Reps) should
+     be renamed and/or moved to variables.css so they work everywhere */
   --error-color: var(--red-70);
-  --error-background-color: hsl(344, 73%, 97%);
-  --warning-color: var(--yellow-80);
-  --warning-background-color: hsl(54, 100%, 92%);
   --console-output-color: var(--grey-90);
-  --repeat-bubble-background-color: var(--theme-highlight-blue);
 }
 
 /* General output styles */
@@ -57,17 +73,51 @@ a {
   box-sizing: border-box;
 }
 
+/*
+ * Stack messages on the z axis so that we can make their borders overlap
+ * and show color borders on top:
+ *
+ *   -----------------  <-- Red
+ *   Error message
+ *   -----------------  <-- Red
+ *   Normal message
+ *   -----------------  <-- Grey
+ *
+ * and:
+ *
+ *   -----------------  <-- Grey
+ *   Normal message
+ *   -----------------  <-- Red
+ *   Error message
+ *   -----------------  <-- Red
+ *
+ * The exact stacking order is:
+ *
+ *   - z-index: 3 = Navigation and Paused markers
+ *   - z-index: 2 = Errors and warnings
+ *   - z-index: 1 = Other (console.log, console.info, requests, etc.)
+ */
 .message {
+  position: relative;
+  z-index: 1;
   display: flex;
   width: 100%;
+  /* Make the top border cover the previous message's bottom border */
+  margin-top: -1px;
+  border-top: 1px solid var(--console-message-border);
+  border-bottom: 1px solid var(--console-message-border);
   /* Avoid vertical padding, so that we can draw full-height items (e.g. indent guides).
-   * Use vertical margins on children instead. */
-  padding-inline-start: 1px;
+   * Use vertical margins of --console-output-vertical-padding on children instead. */
+  padding-block: 0;
+  /* Layout of the 32px-wide left gutter:
+   * | 4px message padding | 24px icon container | 4px icon margin |
+   * Note: on hover we show a 3px pseudo-border on top of the left padding. */
+  padding-inline-start: 4px;
   padding-inline-end: 8px;
-  border-inline-start: solid 3px transparent;
-  font-size: var(--console-output-font-size);
+  font-size: var(--theme-code-font-size);
   line-height: var(--console-output-line-height);
-  position: relative;
+  color: var(--console-message-color);
+  background-color: var(--console-message-background);
 }
 
 @media (min-width: 1000px) {
@@ -76,58 +126,72 @@ a {
   }
 }
 
+/* We already paint a top border on jsterm-input-container (and we need to keep
+ * it when scrolling console content), so remove the last item's border. */
+.webconsole-app:not(.jsterm-editor) .message:last-child {
+  border-bottom-width: 0;
+}
+
+/*
+ * Show a blue border on the left side of rows on hover. Avoid using border
+ * properties because the top/bottom borders would not span the full width.
+ * We always place an empty before pseudo element in order to avoid costly reflows on 
+ * hover (See Bug 1571349).
+ */
+.message::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.message:hover::before {
+  background-color: var(--theme-highlight-blue);
+}
+
 /*
  * By default, prevent any element in message to overflow.
+ * We exclude network messages as it may cause issues in the network detail panel.
  * This makes console reflows faster (See Bug 1487457).
  */
-.message * {
+.message:not(.network) * {
   overflow: hidden;
 }
 
-/* Reset the overflow for the network info panel (when a network message is expanded) */
-.message .network-info * {
-  overflow: unset;
-}
-
-.message:hover {
-  border-inline-start-color: var(--theme-highlight-blue);
-}
-
 .message.error {
-  color: var(--error-color);
-  background-color: var(--error-background-color);
-}
-
-.message.navigationMarker {
-  border-top: 1px solid var(--theme-emphasized-splitter-color);
-  color: var(--object-color);
-}
-
-/* Removes the top border for message in console (See Bug 1512621). */
-.webconsole-output:first-child.message.navigationMarker {
-  border-top: none;
+  z-index: 2;
+  color: var(--console-error-color);
+  border-color: var(--console-error-border);
+  background-color: var(--console-error-background);
 }
 
 .message.warn {
-  color: var(--warning-color);
-  background-color: var(--warning-background-color);
+  z-index: 2;
+  color: var(--console-warning-color);
+  border-color: var(--console-warning-border);
+  background-color: var(--console-warning-background);
 }
 
-.message.paused::before {
-  background: var(--purple-50);
-  opacity: 0.6;
-  width: 100vw;
-  height: 1px;
-  bottom: 0px;
-  left: -3px;
-  display: block;
-  content: "";
-  position: absolute;
+.message.navigationMarker {
+  z-index: 3;
+  color: var(--console-navigation-color);
+  border-color: var(--console-navigation-border);
 }
 
-.message.paused.paused-before::before {
-  top: 0px;
-  bottom: inherit;
+.message.paused {
+  z-index: 3;
+}
+
+.message.paused.paused-before {
+  border-top-color: var(--purple-50);
+}
+
+.message.paused:not(.paused-before) {
+  border-bottom-color: var(--purple-50);
+  /* always show the border, even for the last child */
+  border-bottom-width: 1px;
 }
 
 .message.paused ~ .message:not(.command):not(.result) .message-body-wrapper,
@@ -137,7 +201,12 @@ a {
 
 .message.startGroup,
 .message.startGroupCollapsed {
-  --console-output-indent-border-color: transparent;
+  --console-indent-border-color: transparent;
+}
+
+/* Hide border between a command and its result */
+.message.command + .result.log {
+  border-top-width: 0;
 }
 
 .message > .prefix,
@@ -156,8 +225,15 @@ a {
 .message > .indent {
   flex: none;
   display: inline-block;
+  /* Display indent borders above the message's top and bottom border.
+   * This avoids interrupted indent lines (looking like dashes). */
+  margin-block: -1px;
   margin-inline-start: 12px;
-  border-inline-end: solid 1px var(--console-output-indent-border-color);
+  border-inline-end: solid 1px var(--console-indent-border-color);
+}
+
+.message > .indent.warning-indent {
+  border-inline-end-color: var(--console-warning-color);
 }
 
 .message > .indent[data-indent="0"] {
@@ -179,9 +255,9 @@ a {
   height: 14px;
   margin: var(--console-output-vertical-padding) 4px;
   background-image: none;
-  background-position: 50% 50%;
+  background-position: center;
   background-repeat: no-repeat;
-  background-size: 12px 12px;
+  background-size: 12px;
   -moz-context-properties: fill;
   fill: currentColor;
 }
@@ -205,28 +281,33 @@ a {
 
 .message.info > .icon {
   color: var(--theme-icon-color);
-  background-image: url(chrome://devtools/skin/images/webconsole/info.svg);
+  background-image: url(chrome://devtools/skin/images/info-small.svg);
 }
 
 .message.error > .icon {
-  color: var(--console-output-icon-error-color);
-  background-image: url(chrome://devtools/skin/images/webconsole/error.svg);
+  color: var(--theme-icon-error-color);
+  background-image: url(chrome://devtools/skin/images/error-small.svg);
 }
 
 .message.warn > .icon {
-  color: var(--console-output-icon-warning-color);
-  background-image: url(chrome://devtools/skin/images/alert.svg);
+  color: var(--theme-icon-warning-color);
+  background-image: url(chrome://devtools/skin/images/alert-small.svg);
 }
 
 .message.navigationMarker > .icon {
-  color: var(--object-color);
-  background-image: url(chrome://devtools/skin/images/globe.svg);
+  color: var(--console-navigation-color);
+  background-image: url(chrome://devtools/skin/images/webconsole/navigation.svg);
 }
 
 .message:hover > .icon.rewindable {
   background-image: url(chrome://devtools/skin/images/next-circle.svg);
   cursor: pointer;
   transform: rotate(180deg);
+}
+
+.message > .icon.logpoint {
+  background-image: url(resource://devtools/client/debugger/images/webconsole-logpoint.svg);
+  color: var(--theme-graphs-purple);
 }
 
 /*
@@ -248,23 +329,38 @@ a {
   overflow: visible;
 }
 
+.message-body-wrapper .elements-label {
+  color: var(--location-color);
+  margin: calc(var(--console-output-vertical-padding) * 2) 0;
+}
+
 /* The bubble that shows the number of times a message is repeated */
-.message-repeats {
-  -moz-user-select: none;
+.message-repeats,
+.warning-group-badge {
   flex-shrink: 0;
   margin: 2px 5px 0 5px;
   padding: 0 6px;
   height: 1.25em;
-  color: white;
-  background-color: var(--repeat-bubble-background-color);
   border-radius: 40px;
   font: message-box;
   font-size: 0.8em;
   font-weight: normal;
 }
 
+.message-repeats {
+  display: inline-block;
+  color: white;
+  background-color: var(--console-repeat-bubble-background);
+}
+
 .message-repeats[value="1"] {
   display: none;
+}
+
+.warning-group-badge {
+  display: inline-block;
+  color: var(--console-warning-background);
+  background-color: var(--console-warning-color);
 }
 
 .message-location {
@@ -356,7 +452,7 @@ a {
 }
 
 .message.network .xhr {
-  background-color: var(--theme-body-color-alt);
+  background-color: var(--theme-text-color-alt);
   color: var(--theme-body-background);
   border-radius: 3px;
   font-weight: bold;
@@ -376,7 +472,7 @@ html #webconsole-notificationbox {
 }
 
 .jsterm-input-container {
-  background-color: var(--theme-tab-toolbar-background);
+  background-color: var(--console-input-background);
   border-top: 1px solid var(--theme-splitter-color);
   position: relative;
 }
@@ -384,7 +480,7 @@ html #webconsole-notificationbox {
 .jsterm-input-node {
   box-sizing: border-box;
   min-height: 100%;
-  color: var(--theme-content-color1);
+  color: var(--theme-text-color-strong);
   /* input icon */
   background-image: url(chrome://devtools/skin/images/webconsole/input.svg);
   background-position-x: calc(10px + var(--console-icon-horizontal-offset));
@@ -397,13 +493,6 @@ html #webconsole-notificationbox {
 
 .jsterm-complete-node {
   color: var(--theme-comment);
-}
-
-.theme-light .jsterm-input-container {
-  /* For light theme use a white background for the input - it looks better
-     than off-white */
-  background-color: #fff;
-  border-top-color: #e0e0e0;
 }
 
 textarea.jsterm-input-node,
@@ -436,7 +525,7 @@ textarea.jsterm-input-node:focus {
 
 /* CodeMirror-powered JsTerm */
 .jsterm-cm .jsterm-input-container > .CodeMirror {
-  font-size: var(--console-output-font-size);
+  font-size: var(--theme-code-font-size);
   line-height: var(--console-output-line-height);
   /* aim for a 32px left space (a descendent has 4px padding) */
   padding-inline-start: calc(var(--console-inline-start-gutter) - 4px);
@@ -457,6 +546,14 @@ textarea.jsterm-input-node:focus {
 .jsterm-cm .cm-auto-complete-shadow-text::after {
   content: attr(title);
   color: var(--theme-comment);
+  /* This is important for the completion text not to move while the user is typing */
+  /* See Bugs 1491776 & 1558248 */
+  position: absolute;
+}
+
+.jsterm-cm .CodeMirror-hscrollbar {
+  /* We never want to see the horizontal scrollbar */
+  display: none !important;
 }
 
 /* Security styles */
@@ -515,39 +612,38 @@ a.learn-more-link.webconsole-learn-more-link {
 
 /*
   This element contains the different toolbars in the console
-    - primary, containing the clear messages button and the text search input.
-      It can expand as much as it need.
-    - filtered messages, containing the "X items hidden by filters" and the reset filters button.
-      It should be on the same row than the primary bar if it fits there, or on its own 100% row if it is wrapped.
-    - close button, close the split console panel. This button will be displayed on righ-top of tool bar always.
-    - secondary, containing the filter buttons (Error, Warning, …).
-      It should be on its own 100% row.
+    - primary, containing the clear messages button and the text search input, and a
+      checkbox (Persist logs or Show Content Messages).
+      It can expand as much as it needs.
+    - close button, close the split console panel. This button will always be displayed on
+      righ-top of the toolbar.
+    - secondary, containing the filter buttons (Error, Warning, …). It's placed inside the
+      primary toolbar if there's enought space.
 
-  Basically here's what we can have :
+  We have 2 different layout:
 
-  --------------------------------------------------------------------------------------------------------------------------
-  | Clear button - Open filter bar button - Filter Input | X items hidden by filters - Reset Filters button | Close button |
-  --------------------------------------------------------------------------------------------------------------------------
-  | Error - Warning - Log - Info - Debug - CSS - Network - XHR                                                             |
-  --------------------------------------------------------------------------------------------------------------------------
+  Narrow:
 
-  or
+  --------------------------------------------------------------
+  | 🗑 - Filter Input                                      | ✕ |
+  --------------------------------------------------------------
+  | Error - Warning - Log - Info - Debug - CSS - Network - XHR |
+  --------------------------------------------------------------
 
-  ---------------------------------------------------------------------------------------------------
-  | Clear button - Open filter bar button - Filter Input                             | Close button |
-  ---------------------------------------------------------------------------------------------------
-  |                                               X items hidden by filters  - Reset Filters button |
-  ---------------------------------------------------------------------------------------------------
-  | Error - Warning - Log - Info - Debug - CSS - Network - XHR                                      |
-  ---------------------------------------------------------------------------------------------------
+  And wide:
+
+  --------------------------------------------------------------------------------------
+  | 🗑 - Filter Input | Error - Warning - Log - Info - Debug - CSS - Network - XHR | ✕ |
+  --------------------------------------------------------------------------------------
 */
 .webconsole-filteringbar-wrapper {
   display: grid;
-  grid-row: 1 / 2;
-  grid-template-columns: 1fr auto auto;
-  /* Wrap so the "Hidden messages" bar can go to its own row if needed */
-  flex-wrap: wrap;
+  grid-template-columns: 1fr auto;
   --primary-toolbar-height: 29px;
+}
+
+.webconsole-filteringbar-wrapper .devtools-toolbar {
+  background-color: var(--theme-body-background);
 }
 
 .webconsole-filterbar-primary {
@@ -562,10 +658,11 @@ a.learn-more-link.webconsole-learn-more-link {
 .devtools-toolbar.webconsole-filterbar-secondary {
   --separator-inline-margin: 5px;
   display: flex;
-  width: 100%;
   align-items: center;
+  align-self: stretch;
   -moz-user-select: none;
   grid-column: 1 / -1;
+  min-height: var(--primary-toolbar-height);
 }
 
 .split-console-close-button-wrapper {
@@ -592,18 +689,15 @@ a.learn-more-link.webconsole-learn-more-link {
   background-image: url(chrome://devtools/skin/images/close.svg);
 }
 
-.webconsole-filterbar-primary .devtools-plaininput {
-  flex: 1 1 100%;
+.webconsole-filterbar-primary .devtools-searchbox {
   align-self: stretch;
+  /* Prevent the filter height from devtools-searchbox */
+  height: unset;
+  flex: 1 1 100%;
   margin-inline-start: 1px;
-  padding-inline-start: 4px;
-  border: 1px solid transparent;
-}
-
-.devtools-plaininput:focus {
-  border: 1px solid var(--blue-50);
-  transition: all 0.2s ease-in-out;
-  outline: none;
+  /* It's important to keep this in px as it's used in JS to control the display mode
+   * of the filter toolbar. */
+  min-width: 150px;
 }
 
 .webconsole-filterbar-primary .filter-checkbox {
@@ -627,7 +721,7 @@ a.learn-more-link.webconsole-learn-more-link {
 
 @media (max-width: 965px) {
   /* This media query will make filtered message element to be displayed in new
-    line. This width is based on greek localized size since it will longer than
+    line. This width is based on greek localized size since it is longer than
     other localized strings. */
   .webconsole-filterbar-filtered-messages {
     grid-row: 2 / 3;
@@ -670,7 +764,7 @@ a.learn-more-link.webconsole-learn-more-link {
 }
 .theme-dark .message.error .tree.object-inspector,
 .theme-dark .message.warn .tree.object-inspector {
-  --console-output-indent-border-color: var(--theme-body-color);
+  --console-indent-border-color: var(--theme-body-color);
 }
 
 .webconsole-app .message-flex-body > .message-body {
@@ -742,6 +836,7 @@ a.learn-more-link.webconsole-learn-more-link {
 .network .message-flex-body > .message-body {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
 }
 
 /*
@@ -753,7 +848,7 @@ a.learn-more-link.webconsole-learn-more-link {
 }
 
 /* console.table() */
-.new-consoletable {
+.message .new-consoletable {
   width: 100%;
   --consoletable-border: var(--theme-splitter-color);
   margin-block-end: var(--attachment-margin-block-end);
@@ -821,7 +916,7 @@ body {
  *
  *  +------------------------------+--------------+
  *  |                              |              |
- *  |  WEBCONSOLE FLEX WRAPPER     |   SIDEBAR    |
+ *  |  WEBCONSOLE WRAPPER          |   SIDEBAR    |
  *  |                              |              |
  *  +------------------------------+--------------+
  */
@@ -839,7 +934,7 @@ body {
   -moz-user-focus: normal;
 }
 
-.webconsole-flex-wrapper {
+.webconsole-wrapper {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -847,17 +942,17 @@ body {
   overflow: hidden;
 }
 
-.webconsole-flex-wrapper .webconsole-filteringbar-wrapper {
+.webconsole-wrapper .webconsole-filteringbar-wrapper {
   flex-shrink: 0;
   overflow: hidden;
 }
 
-.webconsole-flex-wrapper .webconsole-output {
+.webconsole-wrapper .webconsole-output {
   flex-shrink: 100000;
   overflow-x: hidden;
 }
 
-.webconsole-flex-wrapper > .webconsole-output:not(:empty) {
+.webconsole-wrapper > .webconsole-output:not(:empty) {
   min-height: 19px;
 }
 
@@ -876,7 +971,7 @@ body {
   padding-block-start: 2px;
 }
 
-.webconsole-flex-wrapper > .webconsole-output:empty ~ .jsterm-input-container {
+.webconsole-wrapper > .webconsole-output:empty ~ .jsterm-input-container {
   border-top: none;
 }
 
@@ -887,7 +982,7 @@ body {
 }
 
 .webconsole-app .object-inspector.tree .tree-indent {
-  border-inline-start-color: var(--console-output-indent-border-color);
+  border-inline-start-color: var(--console-indent-border-color);
 }
 
 .webconsole-app .object-inspector.tree .tree-node:hover:not(.focused) {
@@ -1034,18 +1129,92 @@ body {
   min-width: 100%;
 }
 
+
+/** EDITOR MODE */
+.jsterm-editor .webconsole-wrapper {
+    display: grid;
+    /*
+     * Here's the design we want in editor mode
+     * +----------------------------------------------------+
+     * |    Editor Toolbar        |   Filter bar primary    |
+     * +----------------------------------------------------+
+     * |                          |  (Filter bar secondary) |
+     * |                          +-------------------------+
+     * |         Editor           |                         |
+     * |                          |                         |
+     * |                          |                         |
+     * |                          |        output           |
+     * |                          |                         |
+     * |                          |                         |
+     * +--------------------------+                         |
+     * |  (Reverse search input)  |                         |
+     * +----------------------------------------------------+
+     *
+     * Elements in parens may not be visible, so we set some rows to be auto to make them
+     * have no height when the element they contain is hidden.
+     */
+    grid-template-rows: var(--primary-toolbar-height) auto 1fr auto;
+    /* The first column is set to auto so we can resize it */
+    grid-template-columns: auto 1fr;
+}
+
+.jsterm-editor .webconsole-filteringbar-wrapper {
+    grid-column: 2 / 3;
+    grid-row: 1 / 3;
+    grid-template-rows: subgrid;
+}
+
+.jsterm-editor .webconsole-filterbar-primary {
+    grid-row: 1 / 2;
+}
+
+/* Only put the filter buttons toolbar on its own row in narrow filterbar layout  */
+.jsterm-editor .narrow .devtools-toolbar.webconsole-filterbar-secondary {
+    grid-row: 2 / 3;
+}
+
+.jsterm-editor .webconsole-editor-toolbar {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+    border-inline-end: 1px solid var(--theme-splitter-color);
+    display: flex;
+    flex-direction: row;
+    justify-content: start;
+    height: unset;
+}
+
+.jsterm-editor .webconsole-output {
+    grid-column: 2 / 3;
+    grid-row: 3 / -1;
+}
+
+.jsterm-editor .jsterm-input-container {
+    grid-column: 1 / 2;
+    grid-row: 2 / 4;
+    width: 50vw;
+    border-inline-end: 1px solid var(--theme-splitter-color);
+    border-top: none;
+}
+
+.jsterm-editor #webconsole-notificationbox {
+    display: none;
+}
+
+.jsterm-cm.jsterm-editor .jsterm-input-container > .CodeMirror {
+    padding-inline-start: 0;
+    background-image: none;
+}
+
+.jsterm-editor .reverse-search {
+    grid-column: 1 / 2;
+    grid-row: -1 / -2;
+    border-top: 1px solid var(--theme-splitter-color);
+}
+
 /** Utils **/
 .clipboard-only {
   position: absolute;
   left: -9999px;
   width: 0;
   height: 0;
-}
-
-/* set to prevent the filter height from devtools-searchbox */
-.webconsole-filterbar-primary .devtools-searchbox {
-  align-self: stretch;
-  height: unset;
-  flex: 1 1 100%;
-  margin-inline-start: 1px;
 }

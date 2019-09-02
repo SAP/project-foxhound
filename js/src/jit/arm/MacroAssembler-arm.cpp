@@ -2511,7 +2511,7 @@ Assembler::Condition MacroAssemblerARMCompat::testMagic(
 Assembler::Condition MacroAssemblerARMCompat::testPrimitive(
     Assembler::Condition cond, Register tag) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
-  ma_cmp(tag, ImmTag(JSVAL_UPPER_EXCL_TAG_OF_PRIMITIVE_SET));
+  ma_cmp(tag, ImmTag(JS::detail::ValueUpperExclPrimitiveTag));
   return cond == Equal ? Below : AboveOrEqual;
 }
 
@@ -2520,7 +2520,7 @@ Assembler::Condition MacroAssemblerARMCompat::testGCThing(
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
   ScratchRegisterScope scratch(asMasm());
   Register tag = extractTag(address, scratch);
-  ma_cmp(tag, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+  ma_cmp(tag, ImmTag(JS::detail::ValueLowerInclGCThingTag));
   return cond == Equal ? AboveOrEqual : Below;
 }
 
@@ -2625,7 +2625,7 @@ Assembler::Condition MacroAssemblerARMCompat::testDouble(Condition cond,
 Assembler::Condition MacroAssemblerARMCompat::testNumber(Condition cond,
                                                          Register tag) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
-  ma_cmp(tag, ImmTag(JSVAL_UPPER_INCL_TAG_OF_NUMBER_SET));
+  ma_cmp(tag, ImmTag(JS::detail::ValueUpperInclNumberTag));
   return cond == Equal ? BelowOrEqual : Above;
 }
 
@@ -2725,7 +2725,7 @@ Assembler::Condition MacroAssemblerARMCompat::testGCThing(
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
   ScratchRegisterScope scratch(asMasm());
   Register tag = extractTag(address, scratch);
-  ma_cmp(tag, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+  ma_cmp(tag, ImmTag(JS::detail::ValueLowerInclGCThingTag));
   return cond == Equal ? AboveOrEqual : Below;
 }
 
@@ -2797,8 +2797,13 @@ void MacroAssemblerARMCompat::unboxDouble(const ValueOperand& operand,
 void MacroAssemblerARMCompat::unboxDouble(const Address& src,
                                           FloatRegister dest) {
   MOZ_ASSERT(dest.isDouble());
-  ScratchRegisterScope scratch(asMasm());
-  ma_vldr(src, dest, scratch);
+  loadDouble(src, dest);
+}
+
+void MacroAssemblerARMCompat::unboxDouble(const BaseIndex& src,
+                                          FloatRegister dest) {
+  MOZ_ASSERT(dest.isDouble());
+  loadDouble(src, dest);
 }
 
 void MacroAssemblerARMCompat::unboxValue(const ValueOperand& src,
@@ -3050,9 +3055,6 @@ void MacroAssemblerARMCompat::loadValue(const BaseIndex& addr,
 }
 
 void MacroAssemblerARMCompat::loadValue(Address src, ValueOperand val) {
-  Address payload = ToPayload(src);
-  Address type = ToType(src);
-
   // TODO: copy this code into a generic function that acts on all sequences
   // of memory accesses
   if (isValueDTRDCandidate(val)) {
@@ -3096,16 +3098,25 @@ void MacroAssemblerARMCompat::loadValue(Address src, ValueOperand val) {
       return;
     }
   }
+
+  loadUnalignedValue(src, val);
+}
+
+void MacroAssemblerARMCompat::loadUnalignedValue(const Address& src,
+                                                 ValueOperand dest) {
+  Address payload = ToPayload(src);
+  Address type = ToType(src);
+
   // Ensure that loading the payload does not erase the pointer to the Value
   // in memory.
-  if (type.base != val.payloadReg()) {
+  if (type.base != dest.payloadReg()) {
     SecondScratchRegisterScope scratch2(asMasm());
-    ma_ldr(payload, val.payloadReg(), scratch2);
-    ma_ldr(type, val.typeReg(), scratch2);
+    ma_ldr(payload, dest.payloadReg(), scratch2);
+    ma_ldr(type, dest.typeReg(), scratch2);
   } else {
     SecondScratchRegisterScope scratch2(asMasm());
-    ma_ldr(type, val.typeReg(), scratch2);
-    ma_ldr(payload, val.payloadReg(), scratch2);
+    ma_ldr(type, dest.typeReg(), scratch2);
+    ma_ldr(payload, dest.payloadReg(), scratch2);
   }
 }
 
@@ -4173,6 +4184,11 @@ void MacroAssembler::Push(FloatRegister reg) {
   adjustFrame(r.size());
 }
 
+void MacroAssembler::PushBoxed(FloatRegister reg) {
+  MOZ_ASSERT(reg.isDouble());
+  Push(reg);
+}
+
 void MacroAssembler::Pop(Register reg) {
   ma_pop(reg);
   adjustFrame(-sizeof(intptr_t));
@@ -4261,7 +4277,7 @@ CodeOffset MacroAssembler::farJumpWithPatch() {
 
   // Inhibit pools since these three words must be contiguous so that the offset
   // calculations below are valid.
-  AutoForbidPools afp(this, 3);
+  AutoForbidPoolsAndNops afp(this, 3);
 
   // When pc is used, the read value is the address of the instruction + 8.
   // This is exactly the address of the uint32 word we want to load.
@@ -4292,7 +4308,8 @@ void MacroAssembler::patchFarJump(CodeOffset farJump, uint32_t targetOffset) {
 }
 
 CodeOffset MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc) {
-  AutoForbidPools afp(this, /* max number of instructions in scope = */ 1);
+  AutoForbidPoolsAndNops afp(this,
+                             /* max number of instructions in scope = */ 1);
   CodeOffset offset(currentOffset());
   ma_nop();
   append(desc, CodeOffset(currentOffset()));
@@ -6112,7 +6129,9 @@ void MacroAssemblerARM::wasmUnalignedLoadImpl(
     }
     case Scalar::Int8:
     case Scalar::Uint8:
-    default: { MOZ_CRASH("Bad type"); }
+    default: {
+      MOZ_CRASH("Bad type");
+    }
   }
 
   asMasm().memoryBarrierAfter(access.sync());

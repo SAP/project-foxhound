@@ -21,14 +21,12 @@
 #include "js/Value.h"
 #include "vm/JSObject.h"
 #include "vm/Shape.h"
-#include "vm/ShapedObject.h"
 #include "vm/StringType.h"
 
 namespace js {
 
 class Shape;
 class TenuringTracer;
-class UnboxedPlainObject;
 
 /*
  * To really poison a set of values, using 'magic' or 'undefined' isn't good
@@ -460,7 +458,7 @@ enum class ShouldUpdateTypes { Update, DontUpdate };
  * Slots and elements may both be non-empty. The slots may be either names or
  * indexes; no indexed property will be in both the slots and elements.
  */
-class NativeObject : public ShapedObject {
+class NativeObject : public JSObject {
  protected:
   /* Slots for object properties. */
   js::HeapSlot* slots_;
@@ -540,16 +538,6 @@ class NativeObject : public ShapedObject {
   // the new properties.
   void setLastPropertyShrinkFixedSlots(Shape* shape);
 
-  // As for setLastProperty(), but changes the class associated with the
-  // object to a non-native one. This leaves the object with a type and shape
-  // that are (temporarily) inconsistent.
-  void setLastPropertyMakeNonNative(Shape* shape);
-
-  // As for setLastProperty(), but changes the class associated with the
-  // object to a native one. The object's type has already been changed, and
-  // this brings the shape into sync with it.
-  void setLastPropertyMakeNative(JSContext* cx, Shape* shape);
-
   // Newly-created TypedArrays that map a SharedArrayBuffer are
   // marked as shared by giving them an ObjectElements that has the
   // ObjectElements::SHARED_MEMORY flag set.
@@ -565,7 +553,7 @@ class NativeObject : public ShapedObject {
       js::HandleShape shape, js::HandleObjectGroup group);
 
   static inline JS::Result<NativeObject*, JS::OOM&> createWithTemplate(
-      JSContext* cx, js::gc::InitialHeap heap, HandleObject templateObject);
+      JSContext* cx, HandleObject templateObject);
 
 #ifdef DEBUG
   static void enableShapeConsistencyChecks();
@@ -944,7 +932,8 @@ class NativeObject : public ShapedObject {
 
   static MOZ_MUST_USE bool fillInAfterSwap(JSContext* cx,
                                            HandleNativeObject obj,
-                                           const AutoValueVector& values,
+                                           NativeObject* old,
+                                           HandleValueVector values,
                                            void* priv);
 
  public:
@@ -1222,26 +1211,7 @@ class NativeObject : public ShapedObject {
   inline void elementsRangeWriteBarrierPost(uint32_t start, uint32_t count);
 
  public:
-  // When an array's length becomes non-writable, writes to indexes greater
-  // greater than or equal to the length don't change the array.  We handle
-  // this with a check for non-writable length in most places. But in JIT code
-  // every check counts -- so we piggyback the check on the already-required
-  // range check for |index < capacity| by making capacity of arrays with
-  // non-writable length never exceed the length. This mechanism is also used
-  // when an object becomes non-extensible.
-  void shrinkCapacityToInitializedLength(JSContext* cx) {
-    if (getElementsHeader()->numShiftedElements() > 0) {
-      moveShiftedElements();
-    }
-
-    ObjectElements* header = getElementsHeader();
-    uint32_t len = header->initializedLength;
-    if (header->capacity > len) {
-      shrinkElements(cx, len);
-      header = getElementsHeader();
-      header->capacity = len;
-    }
-  }
+  void shrinkCapacityToInitializedLength(JSContext* cx);
 
  private:
   void setDenseInitializedLengthInternal(uint32_t length) {
@@ -1306,7 +1276,10 @@ class NativeObject : public ShapedObject {
   inline void setDenseElementHole(JSContext* cx, uint32_t index);
   inline void removeDenseElementForSparseIndex(JSContext* cx, uint32_t index);
 
-  inline Value getDenseOrTypedArrayElement(uint32_t idx);
+  template <AllowGC allowGC>
+  inline bool getDenseOrTypedArrayElement(
+      JSContext* cx, uint32_t idx,
+      typename MaybeRooted<Value, allowGC>::MutableHandleType val);
 
   inline void copyDenseElements(uint32_t dstStart, const Value* src,
                                 uint32_t count);
@@ -1433,7 +1406,7 @@ class NativeObject : public ShapedObject {
     MOZ_ASSERT(*cellp);
     gc::StoreBuffer* storeBuffer = (*cellp)->storeBuffer();
     if (storeBuffer) {
-      storeBuffer->putCell(cellp);
+      storeBuffer->putCell(reinterpret_cast<JSObject**>(cellp));
     }
   }
 
@@ -1488,7 +1461,6 @@ class NativeObject : public ShapedObject {
   /* Return the allocKind we would use if we were to tenure this object. */
   inline js::gc::AllocKind allocKindForTenure() const;
 
-  void updateShapeAfterMovingGC();
   void sweepDictionaryListPointer();
   void updateDictionaryListPointerAfterMinorGC(NativeObject* old);
 
@@ -1588,7 +1560,7 @@ inline bool NativeGetProperty(JSContext* cx, HandleNativeObject obj,
 }
 
 extern bool NativeGetElement(JSContext* cx, HandleNativeObject obj,
-                             HandleValue reciever, int32_t index,
+                             HandleValue receiver, int32_t index,
                              MutableHandleValue vp);
 
 bool GetSparseElementHelper(JSContext* cx, HandleArrayObject obj,
@@ -1672,11 +1644,6 @@ extern void AddPropertyTypesAfterProtoChange(JSContext* cx, NativeObject* obj,
 // Specializations of 7.3.23 CopyDataProperties(...) for NativeObjects.
 extern bool CopyDataPropertiesNative(JSContext* cx, HandlePlainObject target,
                                      HandleNativeObject from,
-                                     HandlePlainObject excludedItems,
-                                     bool* optimized);
-
-extern bool CopyDataPropertiesNative(JSContext* cx, HandlePlainObject target,
-                                     Handle<UnboxedPlainObject*> from,
                                      HandlePlainObject excludedItems,
                                      bool* optimized);
 

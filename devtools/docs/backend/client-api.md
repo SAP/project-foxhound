@@ -82,7 +82,7 @@ function attachToTab() {
       // Now the targetFront is ready and can be used.
 
       // Attach listeners for client events.
-      targetFront.addListener("tabNavigated", onTab);
+      targetFront.on("tabNavigated", onTab);
     });
   });
 }
@@ -119,9 +119,9 @@ client.attachThread(response.threadActor).then(function([response, threadClient]
   }
 
   // Attach listeners for thread events.
-  threadClient.addListener("paused", onPause);
-  threadClient.addListener("resumed", fooListener);
-  threadClient.addListener("detached", fooListener);
+  threadClient.on("paused", onPause);
+  threadClient.on("resumed", fooListener);
+  threadClient.on("detached", fooListener);
 
   // Resume the thread.
   threadClient.resume();
@@ -182,9 +182,9 @@ function debugTab() {
       // Attach to the thread (context).
       targetFront.attachThread().then(([response, threadClient]) => {
         // Attach listeners for thread events.
-        threadClient.addListener("paused", onPause);
-        threadClient.addListener("resumed", fooListener);
-        threadClient.addListener("detached", fooListener);
+        threadClient.on("paused", onPause);
+        threadClient.on("resumed", fooListener);
+        threadClient.on("detached", fooListener);
 
         // Resume the thread.
         threadClient.resume();
@@ -199,9 +199,9 @@ function debugTab() {
  */
 function onTab() {
   // Detach from the previous thread.
-  client.activeThread.detach(() => {
+  client.activeThread.detach().then(() => {
     // Detach from the previous tab.
-    client.detach(() => {
+    client.detach().then(() => {
       // Start debugging the new tab.
       debugTab();
     });

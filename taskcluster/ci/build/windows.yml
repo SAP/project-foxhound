@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 job-defaults:
     run:
         using: mozharness
@@ -14,7 +18,7 @@ win32/debug:
         platform: windows2012-32/debug
         symbol: B
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -49,7 +53,7 @@ win32/opt:
         platform: windows2012-32/opt
         symbol: B
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -74,41 +78,6 @@ win32/opt:
         - win64-nasm
         - win64-node
 
-win32/pgo:
-    description: "Win32 Opt PGO"
-    index:
-        product: firefox
-        job-name: win32-pgo
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: windows2012-32/pgo
-        symbol: B
-        tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
-    worker:
-        max-run-time: 9000
-        env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
-    run:
-        options: [enable-pgo, append-env-variables-from-configs]
-        script: mozharness/scripts/fx_desktop_build.py
-        secrets: true
-        config:
-            - builds/releng_base_firefox.py
-            - builds/taskcluster_base_windows.py
-            - builds/taskcluster_base_win32.py
-        extra-config:
-            stage_platform: win32
-    toolchains:
-        - win64-clang-cl
-        - win64-rust
-        - win64-rust-size
-        - win64-cbindgen
-        - win64-sccache
-        - win64-nasm
-        - win64-node
-
 win64/debug:
     description: "Win64 Debug"
     index:
@@ -120,7 +89,7 @@ win64/debug:
         platform: windows2012-64/debug
         symbol: B
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -155,7 +124,7 @@ win64-fuzzing/debug:
         platform: windows2012-64/debug
         symbol: Bf
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -190,7 +159,7 @@ win64-plain/debug:
         platform: windows2012-64/debug
         symbol: Bp
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -227,7 +196,7 @@ win64/opt:
         platform: windows2012-64/opt
         symbol: B
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -261,7 +230,7 @@ win64-plain/opt:
         platform: windows2012-64/opt
         symbol: Bp
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -287,29 +256,34 @@ win64-plain/opt:
         - win64-node
         - win64-cbindgen
 
-win32-nightly/opt:
-    description: "Win32 Nightly"
+win32-shippable/opt:
+    description: "Win32 Opt Shippable"
+    use-pgo: true
     index:
         product: firefox
         job-name: win32-opt
-        type: nightly
+        type: shippable
     attributes:
-        nightly: true
+        shippable: true
         enable-full-crashsymbols: true
     stub-installer:
-        by-project:
-            default: false
-            mozilla-central: true
-            try: true
-            mozilla-beta: true
-            mozilla-release: true
+        by-release-type:
+            nightly: true
+            beta: true
+            release.*: true
+            esr.*: false
+            default:
+                by-project:
+                    # browser/confvars.sh looks for nightly-try
+                    try: true
+                    default: false
     shipping-phase: build
     shipping-product: firefox
     treeherder:
-        platform: windows2012-32/opt
-        symbol: N
+        platform: windows2012-32-shippable/opt
+        symbol: Bpgo(B)
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 10800
         env:
@@ -333,22 +307,23 @@ win32-nightly/opt:
         - win64-nasm
         - win64-node
 
-win64-nightly/opt:
-    description: "Win64 Nightly"
+win64-shippable/opt:
+    description: "Win64 Shippable"
+    use-pgo: true
     index:
         product: firefox
         job-name: win64-opt
-        type: nightly
+        type: shippable
     attributes:
-        nightly: true
+        shippable: true
         enable-full-crashsymbols: true
     shipping-phase: build
     shipping-product: firefox
     treeherder:
-        platform: windows2012-64/opt
-        symbol: N
+        platform: windows2012-64-shippable/opt
+        symbol: Bpgo(B)
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 10800
         env:
@@ -372,41 +347,6 @@ win64-nightly/opt:
         - win64-nasm
         - win64-node
 
-win64/pgo:
-    description: "Win64 Opt PGO"
-    index:
-        product: firefox
-        job-name: win64-pgo
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: windows2012-64/pgo
-        symbol: B
-        tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
-    worker:
-        max-run-time: 10800
-        env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
-    run:
-        options: [enable-pgo, append-env-variables-from-configs]
-        script: mozharness/scripts/fx_desktop_build.py
-        secrets: true
-        config:
-            - builds/releng_base_firefox.py
-            - builds/taskcluster_base_windows.py
-            - builds/taskcluster_base_win64.py
-        extra-config:
-            stage_platform: win64
-    toolchains:
-        - win64-clang-cl
-        - win64-rust
-        - win64-rust-size
-        - win64-cbindgen
-        - win64-sccache
-        - win64-nasm
-        - win64-node
-
 win32-add-on-devel/opt:
     description: "Windows32 add-on-devel"
     index:
@@ -416,7 +356,7 @@ win32-add-on-devel/opt:
         platform: windows2012-32-add-on-devel/opt
         symbol: B
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 10800
         env:
@@ -451,7 +391,7 @@ win64-add-on-devel/opt:
         platform: windows2012-64-add-on-devel/opt
         symbol: B
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 10800
         env:
@@ -486,7 +426,7 @@ win64-noopt/debug:
         platform: windows2012-64-noopt/debug
         symbol: B
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -520,7 +460,7 @@ win32-noopt/debug:
         platform: windows2012-32-noopt/debug
         symbol: B
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -554,7 +494,7 @@ win32-rusttests/opt:
         platform: windows2012-32/opt
         symbol: BR
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 5400
         env:
@@ -592,7 +532,7 @@ win32-rusttests/debug:
         platform: windows2012-32/debug
         symbol: BR
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 5400
         env:
@@ -630,7 +570,7 @@ win64-rusttests/opt:
         platform: windows2012-64/opt
         symbol: BR
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 5400
         env:
@@ -665,7 +605,7 @@ win64-rusttests/debug:
         platform: windows2012-64/debug
         symbol: BR
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 5400
         env:
@@ -700,7 +640,7 @@ win64-ccov/debug:
         platform: windows2012-64/ccov
         symbol: B
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         artifacts:
             - name: public/code-coverage-grcov.zip
@@ -741,7 +681,7 @@ win64-asan/debug:
         platform: windows2012-64/asan
         symbol: Bd
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -776,7 +716,7 @@ win64-asan/opt:
         platform: windows2012-64/asan
         symbol: Bo
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -818,7 +758,7 @@ win64-asan-reporter-nightly/opt:
     treeherder:
         platform: win64-asan-reporter/opt
         symbol: BoR
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -854,7 +794,7 @@ win64-asan-fuzzing/opt:
     treeherder:
         platform: windows2012-64/asan
         symbol: Bof
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -883,6 +823,7 @@ win64-asan-fuzzing/opt:
 
 win32-devedition-nightly/opt:
     description: "Win32 Dev Edition Nightly"
+    use-pgo: win32-shippable/opt
     index:
         product: devedition
         job-name: win32-opt
@@ -891,19 +832,22 @@ win32-devedition-nightly/opt:
         nightly: true
         enable-full-crashsymbols: true
     stub-installer:
-        by-project:
-            default: false
-            mozilla-central: true
-            try: true
-            mozilla-beta: true
-            mozilla-release: true
+        by-release-type:
+            nightly: true
+            beta: true
+            release.*: true
+            default:
+                by-project:
+                    # browser/confvars.sh looks for nightly-try
+                    try: true
+                    default: false
     shipping-phase: build
     shipping-product: devedition
     treeherder:
         platform: windows2012-32-devedition/opt
         symbol: N
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 10800
         env:
@@ -931,6 +875,7 @@ win32-devedition-nightly/opt:
 
 win64-devedition-nightly/opt:
     description: "Win64 Dev Edition Nightly"
+    use-pgo: win64-shippable/opt
     index:
         product: devedition
         job-name: win64-opt
@@ -944,7 +889,7 @@ win64-devedition-nightly/opt:
         platform: windows2012-64-devedition/opt
         symbol: N
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 10800
         env:
@@ -981,7 +926,7 @@ win64-aarch64/debug:
         platform: windows2012-aarch64/debug
         symbol: B
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -1001,7 +946,8 @@ win64-aarch64/debug:
         mozconfig-variant: debug
     toolchains:
         - win64-clang-cl
-        - win64-aarch64-rust
+        - win64-rust
+        - win64-rust-size
         - win64-cbindgen
         - win64-sccache
         - win64-nasm
@@ -1018,7 +964,7 @@ win64-aarch64/opt:
         platform: windows2012-aarch64/opt
         symbol: B
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -1038,7 +984,8 @@ win64-aarch64/opt:
             mozconfig_platform: win64-aarch64
     toolchains:
         - win64-clang-cl
-        - win64-aarch64-rust
+        - win64-rust
+        - win64-rust-size
         - win64-cbindgen
         - win64-sccache
         - win64-nasm
@@ -1053,7 +1000,7 @@ win64-aarch64-eme/opt:
         platform: windows2012-aarch64/opt
         symbol: Be
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -1080,12 +1027,66 @@ win64-aarch64-eme/opt:
     toolchains:
         - win64-node
 
-win64-aarch64-nightly-no-eme/opt:
-    description: "AArch64 Win64 Nightly w/o EME"
+win64-aarch64-shippable/opt:
+    description: "AArch64 Win64 Shippable"
+    index:
+        product: firefox
+        job-name: win64-aarch64-opt
+        type: shippable
+    attributes:
+        shippable: true
+        enable-full-crashsymbols: true
+    shipping-phase: build
+    shipping-product: firefox
+    treeherder:
+        platform: windows2012-aarch64-shippable/opt
+        symbol: B
+        tier: 1
+    worker-type: b-win2012
+    worker:
+        max-run-time: 7200
+        env:
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/aarch64.manifest"
+            PERFHERDER_EXTRA_OPTIONS: aarch64
+            MOZ_ARTIFACT_TASK: {task-reference: '<win64-aarch64-opt>'}
+            MOZ_ARTIFACT_TASK_WIN32_OPT: {task-reference: '<win32-opt>'}
+            USE_ARTIFACT: '1'
+    run:
+        actions: [get-secrets, build]
+        options: [append-env-variables-from-configs]
+        script: mozharness/scripts/fx_desktop_build.py
+        secrets: true
+        config:
+            - builds/releng_base_firefox.py
+            - builds/taskcluster_base_windows.py
+            - builds/taskcluster_base_win64.py
+            - taskcluster_nightly.py
+        extra-config:
+            stage_platform: win64-aarch64
+            mozconfig_platform: win64-aarch64
+    dependencies:
+        win32-opt: build-win32-shippable/opt
+        win64-aarch64-opt: build-win64-aarch64-shippable-no-eme/opt
+    fetches:
+        # Abuse fetches to copy the generated-files artifact from the non-eme
+        # build directly to the artifacts directory of this build. Likewise
+        # for target.langpack.xpi
+        win64-aarch64-opt:
+            - artifact: target.generated-files.tar.gz
+              extract: false
+              dest: ../public/build
+            - artifact: target.langpack.xpi
+              extract: false
+              dest: ../public/build
+    toolchains:
+        - win64-node
+
+win64-aarch64-shippable-no-eme/opt:
+    description: "AArch64 Win64 Shippable w/o EME"
     index:
         product: firefox
         job-name: win64-aarch64-no-eme-opt
-        type: nightly
+        type: shippable
     attributes:
         enable-full-crashsymbols: true
     shipping-phase: build
@@ -1094,7 +1095,7 @@ win64-aarch64-nightly-no-eme/opt:
         platform: windows2012-aarch64/opt
         symbol: Nn
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -1115,63 +1116,12 @@ win64-aarch64-nightly-no-eme/opt:
     run-on-projects: []
     toolchains:
         - win64-clang-cl
-        - win64-aarch64-rust
+        - win64-rust
+        - win64-rust-size
         - win64-cbindgen
         - win64-nasm
         - win64-node
 
-win64-aarch64-nightly/opt:
-    description: "AArch64 Win64 Nightly"
-    index:
-        product: firefox
-        job-name: win64-aarch64-opt
-        type: nightly
-    attributes:
-        nightly: true
-        enable-full-crashsymbols: true
-    shipping-phase: build
-    shipping-product: firefox
-    treeherder:
-        platform: windows2012-aarch64/opt
-        symbol: N
-        tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
-    worker:
-        max-run-time: 7200
-        env:
-            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/aarch64.manifest"
-            PERFHERDER_EXTRA_OPTIONS: aarch64
-            MOZ_ARTIFACT_TASK: {task-reference: '<win64-aarch64-opt>'}
-            MOZ_ARTIFACT_TASK_WIN32_OPT: {task-reference: '<win32-opt>'}
-            USE_ARTIFACT: '1'
-    run:
-        actions: [get-secrets, build]
-        options: [append-env-variables-from-configs]
-        script: mozharness/scripts/fx_desktop_build.py
-        secrets: true
-        config:
-            - builds/releng_base_firefox.py
-            - builds/taskcluster_base_windows.py
-            - taskcluster_nightly.py
-        extra-config:
-            stage_platform: win64-aarch64
-            mozconfig_platform: win64-aarch64
-    dependencies:
-        win32-opt: build-win32-nightly/opt
-        win64-aarch64-opt: build-win64-aarch64-nightly-no-eme/opt
-    fetches:
-        # Abuse fetches to copy the generated-files artifact from the non-eme
-        # build directly to the artifacts directory of this build. Likewise
-        # for target.langpack.xpi
-        win64-aarch64-opt:
-            - artifact: target.generated-files.tar.gz
-              extract: false
-              dest: ../public/build
-            - artifact: target.langpack.xpi
-              extract: false
-              dest: ../public/build
-    toolchains:
-        - win64-node
 
 win64-aarch64-devedition-nightly/opt:
     description: "AArch64 Win64 MSVC Devedition Nightly"
@@ -1188,7 +1138,7 @@ win64-aarch64-devedition-nightly/opt:
         platform: windows2012-aarch64-devedition/opt
         symbol: N
         tier: 1
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:
@@ -1210,151 +1160,8 @@ win64-aarch64-devedition-nightly/opt:
     run-on-projects: ['mozilla-beta']
     toolchains:
         - win64-clang-cl
-        - win64-aarch64-rust
+        - win64-rust
+        - win64-rust-size
         - win64-cbindgen
         - win64-nasm
         - win64-node
-
-win32-mingwclang/opt:
-    description: "Win32 MinGW-Clang Opt"
-    index:
-        product: firefox
-        job-name: win32-mingwclang-opt
-    treeherder:
-        platform: windows-mingw32/all
-        symbol: WMC32(Bo)
-        tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
-    worker:
-        docker-image: {in-tree: mingw32-build}
-        max-run-time: 7200
-        env:
-            PERFHERDER_EXTRA_OPTIONS: "opt 32 clang"
-    run:
-        actions: [build]
-        script: mozharness/scripts/fx_desktop_build.py
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_windows_32_mingw_builds.py
-            - builds/releng_sub_windows_configs/32_mingwclang.py
-        mozconfig-variant: mingwclang
-        need-xvfb: false
-    toolchains:
-        - mingw32-rust
-        - linux64-upx
-        - linux64-wine
-        - linux64-sccache
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
-        - linux64-clang-trunk-mingw-x86
-        - linux64-mingw32-nsis
-        - linux64-mingw-fxc2-x86
-
-win32-mingwclang/debug:
-    description: "Win32 MinGW-Clang Debug"
-    index:
-        product: firefox
-        job-name: win32-mingwclang-debug
-    treeherder:
-        platform: windows-mingw32/all
-        symbol: WMC32(Bd)
-        tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
-    worker:
-        docker-image: {in-tree: mingw32-build}
-        max-run-time: 72000
-        env:
-            PERFHERDER_EXTRA_OPTIONS: "debug 32 clang"
-    run:
-        actions: [build]
-        script: mozharness/scripts/fx_desktop_build.py
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_windows_32_mingw_builds.py
-            - builds/releng_sub_windows_configs/32_mingwclang.py
-        mozconfig-variant: mingwclang-debug
-        need-xvfb: false
-    toolchains:
-        - mingw32-rust
-        - linux64-upx
-        - linux64-wine
-        - linux64-sccache
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
-        - linux64-clang-trunk-mingw-x86
-        - linux64-mingw32-nsis
-        - linux64-mingw-fxc2-x86
-
-win64-mingwclang/opt:
-    description: "Win64 MinGW-Clang Opt"
-    index:
-        product: firefox
-        job-name: win64-mingwclang-opt
-    treeherder:
-        platform: windows-mingw32/all
-        symbol: WMC64(Bo)
-        tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
-    worker:
-        docker-image: {in-tree: mingw32-build}
-        max-run-time: 7200
-        env:
-            PERFHERDER_EXTRA_OPTIONS: "opt 64 clang"
-    run:
-        actions: [build]
-        script: mozharness/scripts/fx_desktop_build.py
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_windows_64_mingw_builds.py
-            - builds/releng_sub_windows_configs/64_mingwclang.py
-        mozconfig-variant: mingwclang
-        need-xvfb: false
-    toolchains:
-        - mingw32-rust
-        - linux64-upx
-        - linux64-wine
-        - linux64-sccache
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
-        - linux64-clang-trunk-mingw-x64
-        - linux64-mingw32-nsis
-        - linux64-mingw-fxc2-x86
-
-win64-mingwclang/debug:
-    description: "Win64 MinGW-Clang Debug"
-    index:
-        product: firefox
-        job-name: win64-mingwclang-debug
-    treeherder:
-        platform: windows-mingw32/all
-        symbol: WMC64(Bd)
-        tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
-    worker:
-        docker-image: {in-tree: mingw32-build}
-        max-run-time: 72000
-        env:
-            PERFHERDER_EXTRA_OPTIONS: "debug 64 clang"
-    run:
-        actions: [build]
-        script: mozharness/scripts/fx_desktop_build.py
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_windows_64_mingw_builds.py
-            - builds/releng_sub_windows_configs/64_mingwclang.py
-        mozconfig-variant: mingwclang-debug
-        need-xvfb: false
-    toolchains:
-        - mingw32-rust
-        - linux64-upx
-        - linux64-wine
-        - linux64-sccache
-        - linux64-cbindgen
-        - linux64-nasm
-        - linux64-node
-        - linux64-clang-trunk-mingw-x64
-        - linux64-mingw32-nsis
-        - linux64-mingw-fxc2-x86

@@ -111,7 +111,8 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
    */
   explicit MediaStreamGraphImpl(GraphDriverType aGraphDriverRequested,
                                 GraphRunType aRunTypeRequested,
-                                TrackRate aSampleRate, AbstractThread* aWindow);
+                                TrackRate aSampleRate, uint32_t aChannelCount,
+                                AbstractThread* aWindow);
 
   // Intended only for assertions, either on graph thread or not running (in
   // which case we must be on the main thread).
@@ -289,7 +290,8 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
    * graph thread.
    */
   void AudioContextOperationCompleted(MediaStream* aStream, void* aPromise,
-                                      dom::AudioContextOperation aOperation);
+                                      dom::AudioContextOperation aOperation,
+                                      dom::AudioContextOperationFlags aFlags);
 
   /**
    * Apply and AudioContext operation (suspend/resume/closed), on the graph
@@ -298,7 +300,8 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
   void ApplyAudioContextOperationImpl(MediaStream* aDestinationStream,
                                       const nsTArray<MediaStream*>& aStreams,
                                       dom::AudioContextOperation aOperation,
-                                      void* aPromise);
+                                      void* aPromise,
+                                      dom::AudioContextOperationFlags aSource);
 
   /**
    * Increment suspend count on aStream and move it to mSuspendedStreams if
@@ -395,6 +398,7 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
    * reevaluated, for example, if the channel count of the input stream should
    * be changed. */
   void ReevaluateInputDevice();
+
   /* Called on the graph thread when there is new output data for listeners.
    * This is the mixed audio output of this MediaStreamGraph. */
   void NotifyOutputData(AudioDataValue* aBuffer, size_t aFrames,
@@ -480,6 +484,29 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
                                   listener->RequestedInputChannelCount(this));
     }
     return maxInputChannels;
+  }
+
+  AudioInputType AudioInputDevicePreference() {
+    MOZ_ASSERT(OnGraphThreadOrNotRunning());
+
+    if (!mInputDeviceUsers.GetValue(mInputDeviceID)) {
+      return AudioInputType::Unknown;
+    }
+    bool voiceInput = false;
+    // When/if we decide to support multiple input device per graph, this needs
+    // loop over them.
+    nsTArray<RefPtr<AudioDataListener>>* listeners =
+        mInputDeviceUsers.GetValue(mInputDeviceID);
+    MOZ_ASSERT(listeners);
+
+    // If at least one stream is considered to be voice,
+    for (const auto& listener : *listeners) {
+      voiceInput |= listener->IsVoiceInput(this);
+    }
+    if (voiceInput) {
+      return AudioInputType::Voice;
+    }
+    return AudioInputType::Unknown;
   }
 
   CubebUtils::AudioDeviceID InputDeviceID() { return mInputDeviceID; }
@@ -812,10 +839,11 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
   }
 
   /**
-   * True when we need to do a forced shutdown during application shutdown.
-   * Only set on main thread.
-   * Can be read safely on the main thread, on all other threads mMonitor must
-   * be held.
+   * True when we need to do a forced shutdown, during application shutdown or
+   * when shutting down a non-realtime graph.
+   * Only set on the graph thread.
+   * Can be read safely on the thread currently owning the graph, as indicated
+   * by mLifecycleState.
    */
   bool mForceShutDown;
 

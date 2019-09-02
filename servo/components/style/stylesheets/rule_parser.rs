@@ -19,8 +19,8 @@ use crate::stylesheets::keyframes_rule::parse_keyframe_list;
 use crate::stylesheets::stylesheet::Namespaces;
 use crate::stylesheets::supports_rule::SupportsCondition;
 use crate::stylesheets::viewport_rule;
+use crate::stylesheets::{CorsMode, DocumentRule, FontFeatureValuesRule, KeyframesRule, MediaRule};
 use crate::stylesheets::{CssRule, CssRuleType, CssRules, RulesMutateError, StylesheetLoader};
-use crate::stylesheets::{DocumentRule, FontFeatureValuesRule, KeyframesRule, MediaRule};
 use crate::stylesheets::{NamespaceRule, PageRule, StyleRule, SupportsRule, ViewportRule};
 use crate::values::computed::font::FamilyName;
 use crate::values::{CssUrl, CustomIdent, KeyframesName};
@@ -44,7 +44,7 @@ pub struct TopLevelRuleParser<'a> {
     /// A reference to the lock we need to use to create rules.
     pub shared_lock: &'a SharedRwLock,
     /// A reference to a stylesheet loader if applicable, for `@import` rules.
-    pub loader: Option<&'a StylesheetLoader>,
+    pub loader: Option<&'a dyn StylesheetLoader>,
     /// The top-level parser context.
     ///
     /// This won't contain any namespaces, and only nested parsers created with
@@ -133,7 +133,7 @@ pub enum State {
     Body = 4,
 }
 
-#[derive(Clone, Debug, MallocSizeOf)]
+#[derive(Clone, Debug, MallocSizeOf, ToShmem)]
 /// Vendor prefix.
 pub enum VendorPrefix {
     /// -moz prefix.
@@ -197,7 +197,7 @@ impl<'a, 'i> AtRuleParser<'i> for TopLevelRuleParser<'a> {
                 }
 
                 let url_string = input.expect_url_or_string()?.as_ref().to_owned();
-                let url = CssUrl::parse_from_string(url_string, &self.context);
+                let url = CssUrl::parse_from_string(url_string, &self.context, CorsMode::None);
 
                 let media = MediaList::parse(&self.context, input);
                 let media = Arc::new(self.shared_lock.wrap(media));
@@ -548,7 +548,7 @@ impl<'a, 'b, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'b> {
                     self.namespaces,
                 );
 
-                let declarations = parse_property_declaration_list(&context, input);
+                let declarations = parse_property_declaration_list(&context, input, None);
                 Ok(CssRule::Page(Arc::new(self.shared_lock.wrap(PageRule {
                     block: Arc::new(self.shared_lock.wrap(declarations)),
                     source_location,
@@ -596,7 +596,7 @@ impl<'a, 'b, 'i> QualifiedRuleParser<'i> for NestedRuleParser<'a, 'b> {
         let context =
             ParserContext::new_with_rule_type(self.context, CssRuleType::Style, self.namespaces);
 
-        let declarations = parse_property_declaration_list(&context, input);
+        let declarations = parse_property_declaration_list(&context, input, Some(&selectors));
         let block = Arc::new(self.shared_lock.wrap(declarations));
         Ok(CssRule::Style(Arc::new(self.shared_lock.wrap(StyleRule {
             selectors,

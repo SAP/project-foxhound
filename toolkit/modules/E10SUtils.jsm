@@ -6,22 +6,61 @@
 
 var EXPORTED_SYMBOLS = ["E10SUtils"];
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-XPCOMUtils.defineLazyPreferenceGetter(this, "useSeparateFileUriProcess",
-                                      "browser.tabs.remote.separateFileUriProcess", false);
-XPCOMUtils.defineLazyPreferenceGetter(this, "allowLinkedWebInFileUriProcess",
-                                      "browser.tabs.remote.allowLinkedWebInFileUriProcess", false);
-XPCOMUtils.defineLazyPreferenceGetter(this, "useSeparatePrivilegedContentProcess",
-                                      "browser.tabs.remote.separatePrivilegedContentProcess", false);
-XPCOMUtils.defineLazyPreferenceGetter(this, "useHttpResponseProcessSelection",
-                                      "browser.tabs.remote.useHTTPResponseProcessSelection", false);
-XPCOMUtils.defineLazyPreferenceGetter(this, "useCrossOriginOpenerPolicy",
-                                      "browser.tabs.remote.useCrossOriginOpenerPolicy", false);
-XPCOMUtils.defineLazyServiceGetter(this, "serializationHelper",
-                                   "@mozilla.org/network/serialization-helper;1",
-                                   "nsISerializationHelper");
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "useSeparateFileUriProcess",
+  "browser.tabs.remote.separateFileUriProcess",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "allowLinkedWebInFileUriProcess",
+  "browser.tabs.remote.allowLinkedWebInFileUriProcess",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "useSeparatePrivilegedAboutContentProcess",
+  "browser.tabs.remote.separatePrivilegedContentProcess",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "separatePrivilegedMozillaWebContentProcess",
+  "browser.tabs.remote.separatePrivilegedMozillaWebContentProcess",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "separatedMozillaDomains",
+  "browser.tabs.remote.separatedMozillaDomains",
+  false,
+  false,
+  val => val.split(",")
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "useHttpResponseProcessSelection",
+  "browser.tabs.remote.useHTTPResponseProcessSelection",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "useCrossOriginOpenerPolicy",
+  "browser.tabs.remote.useCrossOriginOpenerPolicy",
+  false
+);
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "serializationHelper",
+  "@mozilla.org/network/serialization-helper;1",
+  "nsISerializationHelper"
+);
 
 function debug(msg) {
   Cu.reportError(new Error("E10SUtils: " + msg));
@@ -46,18 +85,46 @@ const NOT_REMOTE = null;
 const WEB_REMOTE_TYPE = "web";
 const FILE_REMOTE_TYPE = "file";
 const EXTENSION_REMOTE_TYPE = "extension";
-const PRIVILEGED_REMOTE_TYPE = "privileged";
+const PRIVILEGEDABOUT_REMOTE_TYPE = "privilegedabout";
+const PRIVILEGEDMOZILLA_REMOTE_TYPE = "privilegedmozilla";
 
 // This must start with the WEB_REMOTE_TYPE above.
 const LARGE_ALLOCATION_REMOTE_TYPE = "webLargeAllocation";
 const DEFAULT_REMOTE_TYPE = WEB_REMOTE_TYPE;
 
-function validatedWebRemoteType(aPreferredRemoteType, aTargetUri, aCurrentUri) {
+function validatedWebRemoteType(
+  aPreferredRemoteType,
+  aTargetUri,
+  aCurrentUri,
+  aRemoteSubframes
+) {
+  // To load into the Privileged Mozilla Content Process you must be https,
+  // and be an exact match or a subdomain of an allowlisted domain.
+  if (
+    separatePrivilegedMozillaWebContentProcess &&
+    aTargetUri.asciiHost &&
+    aTargetUri.scheme == "https" &&
+    separatedMozillaDomains.some(function(val) {
+      return (
+        aTargetUri.asciiHost == val || aTargetUri.asciiHost.endsWith("." + val)
+      );
+    })
+  ) {
+    return PRIVILEGEDMOZILLA_REMOTE_TYPE;
+  }
+
   // If the domain is whitelisted to allow it to use file:// URIs, then we have
   // to run it in a file content process, in case it uses file:// sub-resources.
   const sm = Services.scriptSecurityManager;
   if (sm.inFileURIAllowlist(aTargetUri)) {
     return FILE_REMOTE_TYPE;
+  }
+
+  // If we're within a fission window, extract site information from the URI in
+  // question, and use it to generate an isolated origin.
+  if (aRemoteSubframes) {
+    let targetPrincipal = sm.createCodebasePrincipal(aTargetUri, {});
+    return "webIsolated=" + targetPrincipal.siteOrigin;
   }
 
   if (!aPreferredRemoteType) {
@@ -68,8 +135,10 @@ function validatedWebRemoteType(aPreferredRemoteType, aTargetUri, aCurrentUri) {
     return aPreferredRemoteType;
   }
 
-  if (allowLinkedWebInFileUriProcess &&
-      aPreferredRemoteType == FILE_REMOTE_TYPE) {
+  if (
+    allowLinkedWebInFileUriProcess &&
+    aPreferredRemoteType == FILE_REMOTE_TYPE
+  ) {
     // If aCurrentUri is passed then we should only allow FILE_REMOTE_TYPE
     // when it is same origin as target.
     if (aCurrentUri) {
@@ -96,7 +165,8 @@ var E10SUtils = {
   WEB_REMOTE_TYPE,
   FILE_REMOTE_TYPE,
   EXTENSION_REMOTE_TYPE,
-  PRIVILEGED_REMOTE_TYPE,
+  PRIVILEGEDABOUT_REMOTE_TYPE,
+  PRIVILEGEDMOZILLA_REMOTE_TYPE,
   LARGE_ALLOCATION_REMOTE_TYPE,
 
   useHttpResponseProcessSelection() {
@@ -133,8 +203,9 @@ var E10SUtils = {
    * @return {nsIContentSecurityPolicy} A deserialized csp.
    */
   deserializeCSP(csp_b64) {
-    if (!csp_b64)
+    if (!csp_b64) {
       return null;
+    }
 
     try {
       let csp = serializationHelper.deserializeObject(csp_b64);
@@ -146,23 +217,38 @@ var E10SUtils = {
     return null;
   },
 
-  canLoadURIInRemoteType(aURL, aRemoteType = DEFAULT_REMOTE_TYPE,
-                         aPreferredRemoteType = undefined) {
+  canLoadURIInRemoteType(
+    aURL,
+    aRemoteSubframes,
+    aRemoteType = DEFAULT_REMOTE_TYPE,
+    aPreferredRemoteType = undefined
+  ) {
     // We need a strict equality here because the value of `NOT_REMOTE` is
     // `null`, and there is a possibility that `undefined` is passed as an
     // argument, which might result a load in the parent process.
     if (aPreferredRemoteType === undefined) {
-      aPreferredRemoteType = aRemoteType === NOT_REMOTE
-        ? NOT_REMOTE
-        : DEFAULT_REMOTE_TYPE;
+      aPreferredRemoteType =
+        aRemoteType === NOT_REMOTE ? NOT_REMOTE : DEFAULT_REMOTE_TYPE;
     }
 
-    return aRemoteType == this.getRemoteTypeForURI(aURL, true, aPreferredRemoteType);
+    return (
+      aRemoteType ==
+      this.getRemoteTypeForURI(
+        aURL,
+        true,
+        aRemoteSubframes,
+        aPreferredRemoteType
+      )
+    );
   },
 
-  getRemoteTypeForURI(aURL, aMultiProcess,
-                      aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
-                      aCurrentUri) {
+  getRemoteTypeForURI(
+    aURL,
+    aMultiProcess,
+    aRemoteSubframes,
+    aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
+    aCurrentUri
+  ) {
     if (!aMultiProcess) {
       return NOT_REMOTE;
     }
@@ -174,7 +260,10 @@ var E10SUtils = {
 
     let uri;
     try {
-      uri = Services.uriFixup.createFixupURI(aURL, Ci.nsIURIFixup.FIXUP_FLAG_NONE);
+      uri = Services.uriFixup.createFixupURI(
+        aURL,
+        Ci.nsIURIFixup.FIXUP_FLAG_NONE
+      );
     } catch (e) {
       // If we have an invalid URI, it's still possible that it might get
       // fixed-up into a valid URI later on. However, we don't want to return
@@ -183,13 +272,22 @@ var E10SUtils = {
       return DEFAULT_REMOTE_TYPE;
     }
 
-    return this.getRemoteTypeForURIObject(uri, aMultiProcess,
-                                          aPreferredRemoteType, aCurrentUri);
+    return this.getRemoteTypeForURIObject(
+      uri,
+      aMultiProcess,
+      aRemoteSubframes,
+      aPreferredRemoteType,
+      aCurrentUri
+    );
   },
 
-  getRemoteTypeForURIObject(aURI, aMultiProcess,
-                            aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
-                            aCurrentUri) {
+  getRemoteTypeForURIObject(
+    aURI,
+    aMultiProcess,
+    aRemoteSubframes,
+    aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
+    aCurrentUri
+  ) {
     if (!aMultiProcess) {
       return NOT_REMOTE;
     }
@@ -206,12 +304,14 @@ var E10SUtils = {
         // unless it is non-remote. In that case we don't want to load them in
         // the parent process, so we load them in the default remote process,
         // which is sandboxed and limits any risk.
-        return aPreferredRemoteType == NOT_REMOTE ? DEFAULT_REMOTE_TYPE
-                                                  : aPreferredRemoteType;
+        return aPreferredRemoteType == NOT_REMOTE
+          ? DEFAULT_REMOTE_TYPE
+          : aPreferredRemoteType;
 
       case "file":
-        return useSeparateFileUriProcess ? FILE_REMOTE_TYPE
-                                         : DEFAULT_REMOTE_TYPE;
+        return useSeparateFileUriProcess
+          ? FILE_REMOTE_TYPE
+          : DEFAULT_REMOTE_TYPE;
 
       case "about":
         let module = getAboutModule(aURI);
@@ -223,13 +323,17 @@ var E10SUtils = {
 
         let flags = module.getURIFlags(aURI);
         if (flags & Ci.nsIAboutModule.URI_MUST_LOAD_IN_EXTENSION_PROCESS) {
-          return WebExtensionPolicy.useRemoteWebExtensions ? EXTENSION_REMOTE_TYPE : NOT_REMOTE;
+          return WebExtensionPolicy.useRemoteWebExtensions
+            ? EXTENSION_REMOTE_TYPE
+            : NOT_REMOTE;
         }
 
         if (flags & Ci.nsIAboutModule.URI_MUST_LOAD_IN_CHILD) {
-          if ((flags & Ci.nsIAboutModule.URI_CAN_LOAD_IN_PRIVILEGED_CHILD) &&
-              useSeparatePrivilegedContentProcess) {
-            return PRIVILEGED_REMOTE_TYPE;
+          if (
+            flags & Ci.nsIAboutModule.URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS &&
+            useSeparatePrivilegedAboutContentProcess
+          ) {
+            return PRIVILEGEDABOUT_REMOTE_TYPE;
           }
           return DEFAULT_REMOTE_TYPE;
         }
@@ -243,21 +347,26 @@ var E10SUtils = {
         return NOT_REMOTE;
 
       case "chrome":
-        let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].
-                        getService(Ci.nsIXULChromeRegistry);
+        let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(
+          Ci.nsIXULChromeRegistry
+        );
         if (chromeReg.mustLoadURLRemotely(aURI)) {
           return DEFAULT_REMOTE_TYPE;
         }
 
-        if (chromeReg.canLoadURLRemotely(aURI) &&
-            aPreferredRemoteType != NOT_REMOTE) {
+        if (
+          chromeReg.canLoadURLRemotely(aURI) &&
+          aPreferredRemoteType != NOT_REMOTE
+        ) {
           return DEFAULT_REMOTE_TYPE;
         }
 
         return NOT_REMOTE;
 
       case "moz-extension":
-        return WebExtensionPolicy.useRemoteWebExtensions ? EXTENSION_REMOTE_TYPE : NOT_REMOTE;
+        return WebExtensionPolicy.useRemoteWebExtensions
+          ? EXTENSION_REMOTE_TYPE
+          : NOT_REMOTE;
 
       default:
         // WebExtensions may set up protocol handlers for protocol names
@@ -269,7 +378,9 @@ var E10SUtils = {
         // Protocols that redirect to http(s) will just flip back to a
         // regular content process after the redirect.
         if (aURI.scheme.startsWith("ext+")) {
-          return WebExtensionPolicy.useRemoteWebExtensions ? EXTENSION_REMOTE_TYPE : NOT_REMOTE;
+          return WebExtensionPolicy.useRemoteWebExtensions
+            ? EXTENSION_REMOTE_TYPE
+            : NOT_REMOTE;
         }
 
         // For any other nested URIs, we use the innerURI to determine the
@@ -281,18 +392,31 @@ var E10SUtils = {
         // cases above, so we don't still end up using the fake inner URI here.
         if (aURI instanceof Ci.nsINestedURI) {
           let innerURI = aURI.QueryInterface(Ci.nsINestedURI).innerURI;
-          return this.getRemoteTypeForURIObject(innerURI, aMultiProcess,
-                                                aPreferredRemoteType,
-                                                aCurrentUri);
+          return this.getRemoteTypeForURIObject(
+            innerURI,
+            aMultiProcess,
+            aRemoteSubframes,
+            aPreferredRemoteType,
+            aCurrentUri
+          );
         }
 
-        return validatedWebRemoteType(aPreferredRemoteType, aURI, aCurrentUri);
+        return validatedWebRemoteType(
+          aPreferredRemoteType,
+          aURI,
+          aCurrentUri,
+          aRemoteSubframes
+        );
     }
   },
 
-  getRemoteTypeForPrincipal(aPrincipal, aMultiProcess,
-                            aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
-                            aCurrentPrincipal) {
+  getRemoteTypeForPrincipal(
+    aPrincipal,
+    aMultiProcess,
+    aRemoteSubframes,
+    aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
+    aCurrentPrincipal
+  ) {
     if (!aMultiProcess) {
       return NOT_REMOTE;
     }
@@ -305,36 +429,45 @@ var E10SUtils = {
 
     // Null principals can be loaded in any remote process.
     if (aPrincipal.isNullPrincipal) {
-      return aPreferredRemoteType == NOT_REMOTE ? DEFAULT_REMOTE_TYPE
-                                                : aPreferredRemoteType;
+      return aPreferredRemoteType == NOT_REMOTE
+        ? DEFAULT_REMOTE_TYPE
+        : aPreferredRemoteType;
     }
 
     // We might care about the currently loaded URI. Pull it out of our current
     // principal. We never care about the current URI when working with a
     // non-codebase principal.
-    let currentURI = (aCurrentPrincipal && aCurrentPrincipal.isCodebasePrincipal)
-                     ? aCurrentPrincipal.URI : null;
-    return E10SUtils.getRemoteTypeForURIObject(aPrincipal.URI,
-                                               aMultiProcess,
-                                               aPreferredRemoteType,
-                                               currentURI);
+    let currentURI =
+      aCurrentPrincipal && aCurrentPrincipal.isCodebasePrincipal
+        ? aCurrentPrincipal.URI
+        : null;
+    return E10SUtils.getRemoteTypeForURIObject(
+      aPrincipal.URI,
+      aMultiProcess,
+      aRemoteSubframes,
+      aPreferredRemoteType,
+      currentURI
+    );
   },
 
   makeInputStream(data) {
     if (typeof data == "string") {
-      let stream = Cc["@mozilla.org/io/string-input-stream;1"].
-                   createInstance(Ci.nsISupportsCString);
+      let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+        Ci.nsISupportsCString
+      );
       stream.data = data;
       return stream; // XPConnect will QI this to nsIInputStream for us.
     }
 
-    let stream = Cc["@mozilla.org/io/string-input-stream;1"].
-                 createInstance(Ci.nsISupportsCString);
+    let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+      Ci.nsISupportsCString
+    );
     stream.data = data.content;
 
     if (data.headers) {
-      let mimeStream = Cc["@mozilla.org/network/mime-input-stream;1"]
-          .createInstance(Ci.nsIMIMEInputStream);
+      let mimeStream = Cc[
+        "@mozilla.org/network/mime-input-stream;1"
+      ].createInstance(Ci.nsIMIMEInputStream);
 
       mimeStream.setData(stream);
       for (let [name, value] of data.headers) {
@@ -357,7 +490,9 @@ var E10SUtils = {
 
     try {
       if (principal) {
-        serializedPrincipal = serializationHelper.serializeToString(principal);
+        serializedPrincipal = btoa(
+          Services.scriptSecurityManager.principalToJSON(principal)
+        );
       }
     } catch (e) {
       debug(`Failed to serialize principal '${principal}' ${e}`);
@@ -376,7 +511,9 @@ var E10SUtils = {
   deserializePrincipal(principal_b64, fallbackPrincipalCallback = null) {
     if (!principal_b64) {
       if (!fallbackPrincipalCallback) {
-        debug("No principal passed to deserializePrincipal and no fallbackPrincipalCallback");
+        debug(
+          "No principal passed to deserializePrincipal and no fallbackPrincipalCallback"
+        );
         return null;
       }
 
@@ -384,21 +521,38 @@ var E10SUtils = {
     }
 
     try {
-      let principal = serializationHelper.deserializeObject(principal_b64);
+      let principal;
+      let tmpa = atob(principal_b64);
+      // Both the legacy and new JSON representation of principals are stored as base64
+      // The new kind are the only ones that will start with "{" when decoded.
+      // We check here for the new JSON serialized, if it doesn't start with that continue using nsISerializable.
+      // JSONToPrincipal accepts a *non* base64 encoded string and returns a principal or a null.
+      if (tmpa.startsWith("{")) {
+        principal = Services.scriptSecurityManager.JSONToPrincipal(tmpa);
+      } else {
+        principal = serializationHelper.deserializeObject(principal_b64);
+      }
       principal.QueryInterface(Ci.nsIPrincipal);
       return principal;
     } catch (e) {
       debug(`Failed to deserialize principal_b64 '${principal_b64}' ${e}`);
     }
     if (!fallbackPrincipalCallback) {
-      debug("No principal passed to deserializePrincipal and no fallbackPrincipalCallback");
+      debug(
+        "No principal passed to deserializePrincipal and no fallbackPrincipalCallback"
+      );
       return null;
     }
     return fallbackPrincipalCallback();
   },
 
-  shouldLoadURIInBrowser(browser, uri, multiProcess = true,
-                         flags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE) {
+  shouldLoadURIInBrowser(
+    browser,
+    uri,
+    multiProcess = true,
+    remoteSubframes = false,
+    flags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE
+  ) {
     let currentRemoteType = browser.remoteType;
     let requiredRemoteType;
     let uriObject;
@@ -413,9 +567,13 @@ var E10SUtils = {
       uriObject = Services.uriFixup.createFixupURI(uri, fixupFlags);
       // Note that I had thought that we could set uri = uriObject.spec here, to
       // save on fixup later on, but that changes behavior and breaks tests.
-      requiredRemoteType =
-        this.getRemoteTypeForURIObject(uriObject, multiProcess,
-                                       currentRemoteType, browser.currentURI);
+      requiredRemoteType = this.getRemoteTypeForURIObject(
+        uriObject,
+        multiProcess,
+        remoteSubframes,
+        currentRemoteType,
+        browser.currentURI
+      );
     } catch (e) {
       // createFixupURI throws if it can't create a URI. If that's the case then
       // we still need to pass down the uri because docshell handles this case.
@@ -424,8 +582,10 @@ var E10SUtils = {
 
     let mustChangeProcess = requiredRemoteType != currentRemoteType;
     let newFrameloader = false;
-    if (browser.getAttribute("preloadedState") === "consumed" &&
-        uri != "about:newtab") {
+    if (
+      browser.getAttribute("preloadedState") === "consumed" &&
+      uri != "about:newtab"
+    ) {
       // Leaving about:newtab from a used to be preloaded browser should run the process
       // selecting algorithm again.
       mustChangeProcess = true;
@@ -440,23 +600,37 @@ var E10SUtils = {
     };
   },
 
-  shouldLoadURIInThisProcess(aURI) {
+  shouldLoadURIInThisProcess(aURI, aRemoteSubframes) {
     let remoteType = Services.appinfo.remoteType;
-    return remoteType == this.getRemoteTypeForURIObject(aURI, true, remoteType);
+    return (
+      remoteType ==
+      this.getRemoteTypeForURIObject(
+        aURI,
+        /* remote */ true,
+        aRemoteSubframes,
+        remoteType
+      )
+    );
   },
 
   shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData) {
+    let remoteSubframes = aDocShell.useRemoteSubframes;
+
     // Inner frames should always load in the current process
+    // XXX(nika): Handle shouldLoadURI-triggered process switches for remote
+    // subframes! (bug 1548942)
     if (aDocShell.sameTypeParent) {
       return true;
     }
 
     let webNav = aDocShell.QueryInterface(Ci.nsIWebNavigation);
     let sessionHistory = webNav.sessionHistory;
-    if (!aHasPostData &&
-        Services.appinfo.remoteType == WEB_REMOTE_TYPE &&
-        sessionHistory.count == 1 &&
-        webNav.currentURI.spec == "about:newtab") {
+    if (
+      !aHasPostData &&
+      Services.appinfo.remoteType == WEB_REMOTE_TYPE &&
+      sessionHistory.count == 1 &&
+      webNav.currentURI.spec == "about:newtab"
+    ) {
       // This is possibly a preloaded browser and we're about to navigate away for
       // the first time. On the child side there is no way to tell for sure if that
       // is the case, so let's redirect this request to the parent to decide if a new
@@ -471,9 +645,11 @@ var E10SUtils = {
     //
     // We should never be sending a POST request from the parent process to a
     // http(s) uri, so make sure we switch if we're currently in that process.
-    if (useHttpResponseProcessSelection &&
-        (aURI.scheme == "http" || aURI.scheme == "https") &&
-        Services.appinfo.remoteType != NOT_REMOTE) {
+    if (
+      useHttpResponseProcessSelection &&
+      (aURI.scheme == "http" || aURI.scheme == "https") &&
+      Services.appinfo.remoteType != NOT_REMOTE
+    ) {
       return true;
     }
 
@@ -481,42 +657,67 @@ var E10SUtils = {
     // to change processes, we want to load into a new process so that we can throw
     // this one out. We don't want to move into a new process if we have post data,
     // because we would accidentally throw out that data.
-    if (!aHasPostData &&
-        Services.appinfo.remoteType == LARGE_ALLOCATION_REMOTE_TYPE &&
-        !aDocShell.awaitingLargeAlloc &&
-        aDocShell.isOnlyToplevelInTabGroup) {
+    if (
+      !aHasPostData &&
+      Services.appinfo.remoteType == LARGE_ALLOCATION_REMOTE_TYPE &&
+      !aDocShell.awaitingLargeAlloc &&
+      aDocShell.isOnlyToplevelInTabGroup
+    ) {
       return false;
     }
 
     // Allow history load if loaded in this process before.
     let requestedIndex = sessionHistory.legacySHistory.requestedIndex;
     if (requestedIndex >= 0) {
-      if (sessionHistory.legacySHistory.getEntryAtIndex(requestedIndex).loadedInThisProcess) {
+      if (
+        sessionHistory.legacySHistory.getEntryAtIndex(requestedIndex)
+          .loadedInThisProcess
+      ) {
         return true;
       }
 
       // If not originally loaded in this process allow it if the URI would
       // normally be allowed to load in this process by default.
       let remoteType = Services.appinfo.remoteType;
-      return remoteType ==
-        this.getRemoteTypeForURIObject(aURI, true, remoteType, webNav.currentURI);
+      return (
+        remoteType ==
+        this.getRemoteTypeForURIObject(
+          aURI,
+          true,
+          remoteSubframes,
+          remoteType,
+          webNav.currentURI
+        )
+      );
     }
 
     // If the URI can be loaded in the current process then continue
-    return this.shouldLoadURIInThisProcess(aURI);
+    return this.shouldLoadURIInThisProcess(aURI, remoteSubframes);
   },
 
-  redirectLoad(aDocShell, aURI, aReferrer, aTriggeringPrincipal, aFreshProcess, aFlags, aCsp) {
+  redirectLoad(
+    aDocShell,
+    aURI,
+    aReferrer,
+    aTriggeringPrincipal,
+    aFreshProcess,
+    aFlags,
+    aCsp
+  ) {
     // Retarget the load to the correct process
     let messageManager = aDocShell.messageManager;
-    let sessionHistory = aDocShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory;
+    let sessionHistory = aDocShell.QueryInterface(Ci.nsIWebNavigation)
+      .sessionHistory;
 
     messageManager.sendAsyncMessage("Browser:LoadURI", {
       loadOptions: {
         uri: aURI.spec,
         flags: aFlags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
         referrer: aReferrer ? aReferrer.spec : null,
-        triggeringPrincipal: this.serializePrincipal(aTriggeringPrincipal || Services.scriptSecurityManager.createNullPrincipal({})),
+        triggeringPrincipal: this.serializePrincipal(
+          aTriggeringPrincipal ||
+            Services.scriptSecurityManager.createNullPrincipal({})
+        ),
         csp: aCsp ? this.serializeCSP(aCsp) : null,
         reloadInFreshProcess: !!aFreshProcess,
       },
@@ -528,8 +729,7 @@ var E10SUtils = {
   wrapHandlingUserInput(aWindow, aIsHandling, aCallback) {
     var handlingUserInput;
     try {
-      handlingUserInput = aWindow.windowUtils
-                                 .setHandlingUserInput(aIsHandling);
+      handlingUserInput = aWindow.windowUtils.setHandlingUserInput(aIsHandling);
       aCallback();
     } finally {
       handlingUserInput.destruct();
@@ -566,13 +766,21 @@ var E10SUtils = {
         deserialized = serializationHelper.deserializeObject(referrerInfo_b64);
         deserialized.QueryInterface(Ci.nsIReferrerInfo);
       } catch (e) {
-        debug(`Failed to deserialize referrerInfo_b64 '${referrerInfo_b64}' ${e}`);
+        debug(
+          `Failed to deserialize referrerInfo_b64 '${referrerInfo_b64}' ${e}`
+        );
       }
     }
     return deserialized;
   },
 };
 
-XPCOMUtils.defineLazyGetter(E10SUtils, "SERIALIZED_SYSTEMPRINCIPAL", function() {
-  return E10SUtils.serializePrincipal(Services.scriptSecurityManager.getSystemPrincipal());
-});
+XPCOMUtils.defineLazyGetter(
+  E10SUtils,
+  "SERIALIZED_SYSTEMPRINCIPAL",
+  function() {
+    return E10SUtils.serializePrincipal(
+      Services.scriptSecurityManager.getSystemPrincipal()
+    );
+  }
+);

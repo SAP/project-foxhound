@@ -11,6 +11,13 @@
   height: 100%;
 }
 
+/* Reset the global rotation of the icon done for RTL layout.
+   Computed view is always LTR */
+#sidebar-panel-computedview .theme-twisty:not(.open):dir(rtl),
+#sidebar-panel-computedview .theme-twisty:not([open]):-moz-locale-dir(rtl) {
+  transform: rotate(-90deg);
+}
+
 #computed-container {
   overflow: auto;
   height: 100%;
@@ -41,6 +48,7 @@
 }
 
 #browser-style-checkbox-label {
+  white-space: nowrap;
   padding-inline-start: 5px;
   margin-inline-end: 5px;
 }
@@ -70,7 +78,7 @@
 }
 
 .computed-property-name-container {
-  width: 202px;
+  width: 230px;
 }
 
 .computed-property-value-container {
@@ -103,7 +111,7 @@
   background-repeat: no-repeat;
   background-size: contain;
   -moz-context-properties: fill;
-  fill: var(--theme-body-color-inactive);
+  fill: var(--theme-text-color-inactive);
 }
 
 .computed-other-property-value:dir(rtl)::before {

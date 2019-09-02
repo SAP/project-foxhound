@@ -3231,10 +3231,7 @@ nsNavHistoryResultNode::OnItemChanged(
 
   bool shouldNotify = !mParent || mParent->AreChildrenVisible();
 
-  if (aIsAnnotationProperty) {
-    if (shouldNotify)
-      NOTIFY_RESULT_OBSERVERS(result, NodeAnnotationChanged(this, aProperty));
-  } else if (aProperty.EqualsLiteral("title")) {
+  if (aProperty.EqualsLiteral("title")) {
     // XXX: what should we do if the new title is void?
     mTitle = aNewValue;
     if (shouldNotify)
@@ -3473,6 +3470,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsNavHistoryResult)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mMobilePrefObservers)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mAllBookmarksObservers)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mHistoryObservers)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRefreshParticipants)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsNavHistoryResult)
@@ -3490,6 +3488,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsNavHistoryResult)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMobilePrefObservers)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAllBookmarksObservers)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHistoryObservers)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRefreshParticipants)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsNavHistoryResult)

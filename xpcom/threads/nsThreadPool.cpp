@@ -51,7 +51,8 @@ nsThreadPool::nsThreadPool()
       mIdleThreadTimeout(DEFAULT_IDLE_THREAD_TIMEOUT),
       mIdleCount(0),
       mStackSize(nsIThreadManager::DEFAULT_STACK_SIZE),
-      mShutdown(false) {
+      mShutdown(false),
+      mRegressiveMaxIdleTime(false) {
   LOG(("THRD-P(%p) constructor!!!\n", this));
 }
 
@@ -116,7 +117,9 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
   bool killThread = false;
   {
     MutexAutoLock lock(mMutex);
-    if (mThreads.Count() < (int32_t)mThreadLimit) {
+    if (mShutdown) {
+      killThread = true;
+    } else if (mThreads.Count() < (int32_t)mThreadLimit) {
       mThreads.AppendObject(thread);
     } else {
       killThread = true;  // okay, we don't need this thread anymore
@@ -182,8 +185,10 @@ nsThreadPool::Run() {
       event = mEvents.GetEvent(nullptr, lock);
       if (!event) {
         TimeStamp now = TimeStamp::Now();
-        TimeDuration timeout =
-            TimeDuration::FromMilliseconds(mIdleThreadTimeout);
+        uint32_t idleTimeoutDivider =
+            (mIdleCount && mRegressiveMaxIdleTime) ? mIdleCount : 1;
+        TimeDuration timeout = TimeDuration::FromMilliseconds(
+            static_cast<double>(mIdleThreadTimeout) / idleTimeoutDivider);
 
         // If we are shutting down, then don't keep any idle threads
         if (mShutdown) {
@@ -505,6 +510,26 @@ nsThreadPool::SetIdleThreadTimeout(uint32_t aValue) {
 
   // Do we need to notify any idle threads that their sleep time has shortened?
   if (mIdleThreadTimeout < oldTimeout && mIdleCount > 0) {
+    mEventsAvailable
+        .NotifyAll();  // wake up threads so they observe this change
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsThreadPool::GetIdleThreadTimeoutRegressive(bool* aValue) {
+  *aValue = mRegressiveMaxIdleTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsThreadPool::SetIdleThreadTimeoutRegressive(bool aValue) {
+  MutexAutoLock lock(mMutex);
+  bool oldRegressive = mRegressiveMaxIdleTime;
+  mRegressiveMaxIdleTime = aValue;
+
+  // Would setting regressive timeout effect idle threads?
+  if (mRegressiveMaxIdleTime > oldRegressive && mIdleCount > 1) {
     mEventsAvailable
         .NotifyAll();  // wake up threads so they observe this change
   }

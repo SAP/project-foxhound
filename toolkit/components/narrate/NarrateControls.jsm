@@ -4,14 +4,22 @@
 
 "use strict";
 
-const {VoiceSelect} = ChromeUtils.import("resource://gre/modules/narrate/VoiceSelect.jsm");
-const {Narrator} = ChromeUtils.import("resource://gre/modules/narrate/Narrator.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {AsyncPrefs} = ChromeUtils.import("resource://gre/modules/AsyncPrefs.jsm");
+const { VoiceSelect } = ChromeUtils.import(
+  "resource://gre/modules/narrate/VoiceSelect.jsm"
+);
+const { Narrator } = ChromeUtils.import(
+  "resource://gre/modules/narrate/Narrator.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AsyncPrefs } = ChromeUtils.import(
+  "resource://gre/modules/AsyncPrefs.jsm"
+);
 
 var EXPORTED_SYMBOLS = ["NarrateControls"];
 
-var gStrings = Services.strings.createBundle("chrome://global/locale/narrate.properties");
+var gStrings = Services.strings.createBundle(
+  "chrome://global/locale/narrate.properties"
+);
 
 function NarrateControls(mm, win, languagePromise) {
   this._mm = mm;
@@ -36,27 +44,61 @@ function NarrateControls(mm, win, languagePromise) {
 
   let dropdown = win.document.createElement("ul");
   dropdown.className = "dropdown narrate-dropdown";
-  dropdown.innerHTML =
-    `<li>
-       <button class="dropdown-toggle button narrate-toggle" hidden></button>
-    </li>
-    <li class="dropdown-popup">
-      <div class="narrate-row narrate-control">
-        <button disabled class="narrate-skip-previous"></button>
-        <button class="narrate-start-stop"></button>
-        <button disabled class="narrate-skip-next"></button>
-      </div>
-      <div class="narrate-row narrate-rate">
-        <input class="narrate-rate-input" value="0"
-               step="5" max="100" min="-100" type="range">
-      </div>
-      <div class="narrate-row narrate-voices"></div>
-      <div class="dropdown-arrow"></div>
-    </li>`;
+
+  let toggle = win.document.createElement("li");
+  let toggleButton = win.document.createElement("button");
+  toggleButton.className = "dropdown-toggle button narrate-toggle";
+  toggleButton.hidden = true;
+  dropdown.appendChild(toggle);
+  toggle.appendChild(toggleButton);
+
+  let dropdownList = win.document.createElement("li");
+  dropdownList.className = "dropdown-popup";
+  dropdown.appendChild(dropdownList);
+
+  let narrateControl = win.document.createElement("div");
+  narrateControl.className = "narrate-row narrate-control";
+  dropdownList.appendChild(narrateControl);
+
+  let narrateRate = win.document.createElement("div");
+  narrateRate.className = "narrate-row narrate-rate";
+  dropdownList.appendChild(narrateRate);
+
+  let narrateVoices = win.document.createElement("div");
+  narrateVoices.className = "narrate-row narrate-voices";
+  dropdownList.appendChild(narrateVoices);
+
+  let dropdownArrow = win.document.createElement("div");
+  dropdownArrow.className = "dropdown-arrow";
+  dropdownList.appendChild(dropdownArrow);
+
+  let narrateSkipPrevious = win.document.createElement("button");
+  narrateSkipPrevious.className = "narrate-skip-previous";
+  narrateSkipPrevious.disabled = true;
+  narrateControl.appendChild(narrateSkipPrevious);
+
+  let narrateStartStop = win.document.createElement("button");
+  narrateStartStop.className = "narrate-start-stop";
+  narrateControl.appendChild(narrateStartStop);
+
+  let narrateSkipNext = win.document.createElement("button");
+  narrateSkipNext.className = "narrate-skip-next";
+  narrateSkipNext.disabled = true;
+  narrateControl.appendChild(narrateSkipNext);
+
+  let narrateRateInput = win.document.createElement("input");
+  narrateRateInput.className = "narrate-rate-input";
+  narrateRateInput.setAttribute("value", "0");
+  narrateRateInput.setAttribute("step", "5");
+  narrateRateInput.setAttribute("max", "100");
+  narrateRateInput.setAttribute("min", "-100");
+  narrateRateInput.setAttribute("type", "range");
+  narrateRate.appendChild(narrateRateInput);
 
   for (let [selector, stringID] of Object.entries(elemL10nMap)) {
-    dropdown.querySelector(selector).setAttribute("title",
-      gStrings.GetStringFromName(stringID));
+    dropdown
+      .querySelector(selector)
+      .setAttribute("title", gStrings.GetStringFromName(stringID));
   }
 
   this.narrator = new Narrator(win, languagePromise);
@@ -67,8 +109,9 @@ function NarrateControls(mm, win, languagePromise) {
   this.voiceSelect.element.addEventListener("change", this);
   this.voiceSelect.element.classList.add("voice-select");
   win.speechSynthesis.addEventListener("voiceschanged", this);
-  dropdown.querySelector(".narrate-voices").appendChild(
-    this.voiceSelect.element);
+  dropdown
+    .querySelector(".narrate-voices")
+    .appendChild(this.voiceSelect.element);
 
   dropdown.addEventListener("click", this, true);
 
@@ -115,17 +158,21 @@ NarrateControls.prototype = {
       let win = this._win;
       let voicePrefs = this._getVoicePref();
       let selectedVoice = voicePrefs[language || "default"];
-      let comparer = (new Services.intl.Collator()).compare;
+      let comparer = new Services.intl.Collator().compare;
       let filter = !Services.prefs.getBoolPref("narrate.filter-voices");
-      let options = win.speechSynthesis.getVoices().filter(v => {
-        return filter || !language || v.lang.split("-")[0] == language;
-      }).map(v => {
-        return {
-          label: this._createVoiceLabel(v),
-          value: v.voiceURI,
-          selected: selectedVoice == v.voiceURI,
-        };
-      }).sort((a, b) => comparer(a.label, b.label));
+      let options = win.speechSynthesis
+        .getVoices()
+        .filter(v => {
+          return filter || !language || v.lang.split("-")[0] == language;
+        })
+        .map(v => {
+          return {
+            label: this._createVoiceLabel(v),
+            value: v.voiceURI,
+            selected: selectedVoice == v.voiceURI,
+          };
+        })
+        .sort((a, b) => comparer(a.label, b.label));
 
       if (options.length) {
         options.unshift({
@@ -138,7 +185,8 @@ NarrateControls.prototype = {
 
       let narrateToggle = win.document.querySelector(".narrate-toggle");
       let histogram = Services.telemetry.getKeyedHistogramById(
-        "NARRATE_CONTENT_BY_LANGUAGE_2");
+        "NARRATE_CONTENT_BY_LANGUAGE_2"
+      );
       let initial = !this._voicesInitialized;
       this._voicesInitialized = true;
 
@@ -195,12 +243,15 @@ NarrateControls.prototype = {
         this._updateSpeechControls(true);
         TelemetryStopwatch.start("NARRATE_CONTENT_SPEAKTIME_MS", this);
         let options = { rate: this.rate, voice: this.voice };
-        this.narrator.start(options).catch(err => {
-          Cu.reportError(`Narrate failed: ${err}.`);
-        }).then(() => {
-          this._updateSpeechControls(false);
-          TelemetryStopwatch.finish("NARRATE_CONTENT_SPEAKTIME_MS", this);
-        });
+        this.narrator
+          .start(options)
+          .catch(err => {
+            Cu.reportError(`Narrate failed: ${err}.`);
+          })
+          .then(() => {
+            this._updateSpeechControls(false);
+            TelemetryStopwatch.finish("NARRATE_CONTENT_SPEAKTIME_MS", this);
+          });
       }
     }
   },
@@ -216,8 +267,9 @@ NarrateControls.prototype = {
     dropdown.classList.toggle("speaking", speaking);
 
     let startStopButton = this._doc.querySelector(".narrate-start-stop");
-    startStopButton.title =
-      gStrings.GetStringFromName(speaking ? "stop" : "start");
+    startStopButton.title = gStrings.GetStringFromName(
+      speaking ? "stop" : "start"
+    );
 
     this._doc.querySelector(".narrate-skip-previous").disabled = !speaking;
     this._doc.querySelector(".narrate-skip-next").disabled = !speaking;
@@ -235,14 +287,18 @@ NarrateControls.prototype = {
         // On Linux, the name is usually the unlocalized language name.
         // Use a localized language name, and have the language tag in
         // parenthisis. This is to avoid six languages called "English".
-        return gStrings.formatStringFromName("voiceLabel",
-          [this._getLanguageName(voice.lang) || voice.name, voice.lang], 2);
+        return gStrings.formatStringFromName("voiceLabel", [
+          this._getLanguageName(voice.lang) || voice.name,
+          voice.lang,
+        ]);
       default:
         // On Mac the language is not included in the name, find a localized
         // language name or show the tag if none exists.
         // This is the ideal naming scheme so it is also the "default".
-        return gStrings.formatStringFromName("voiceLabel",
-          [voice.name, this._getLanguageName(voice.lang) || voice.lang], 2);
+        return gStrings.formatStringFromName("voiceLabel", [
+          voice.name,
+          this._getLanguageName(voice.lang) || voice.lang,
+        ]);
     }
   },
 
@@ -275,7 +331,8 @@ NarrateControls.prototype = {
 
   get rate() {
     return this._convertRate(
-      this._doc.querySelector(".narrate-rate-input").value);
+      this._doc.querySelector(".narrate-rate-input").value
+    );
   },
 
   get voice() {

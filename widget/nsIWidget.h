@@ -22,6 +22,7 @@
 #include "nsXULAppAPI.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/layers/APZTypes.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/ZoomConstraints.h"
@@ -51,7 +52,7 @@ class Shmem;
 }
 #endif  // defined(MOZ_WIDGET_ANDROID)
 namespace dom {
-class TabChild;
+class BrowserChild;
 }  // namespace dom
 namespace plugins {
 class PluginWidgetChild;
@@ -79,6 +80,7 @@ class CompositorWidgetInitData;
 namespace wr {
 class DisplayListBuilder;
 class IpcResourceUpdateQueue;
+enum class RenderRoot : uint8_t;
 }  // namespace wr
 }  // namespace mozilla
 
@@ -331,7 +333,7 @@ struct AutoObserverNotifier {
  */
 class nsIWidget : public nsISupports {
  protected:
-  typedef mozilla::dom::TabChild TabChild;
+  typedef mozilla::dom::BrowserChild BrowserChild;
 
  public:
   typedef mozilla::layers::CompositorBridgeChild CompositorBridgeChild;
@@ -341,6 +343,7 @@ class nsIWidget : public nsISupports {
   typedef mozilla::layers::LayerManagerComposite LayerManagerComposite;
   typedef mozilla::layers::LayersBackend LayersBackend;
   typedef mozilla::layers::PLayerTransactionChild PLayerTransactionChild;
+  typedef mozilla::layers::SLGuidAndRenderRoot SLGuidAndRenderRoot;
   typedef mozilla::layers::ScrollableLayerGuid ScrollableLayerGuid;
   typedef mozilla::layers::ZoomConstraints ZoomConstraints;
   typedef mozilla::widget::IMEMessage IMEMessage;
@@ -735,6 +738,14 @@ class nsIWidget : public nsISupports {
   virtual void Resize(double aWidth, double aHeight, bool aRepaint) = 0;
 
   /**
+   * Lock the aspect ratio of a Window
+   *
+   * @param aShouldLock bool
+   *
+   */
+  virtual void LockAspectRatio(bool aShouldLock){};
+
+  /**
    * Move or resize this widget. Any size constraints set for the window by
    * a previous call to SetSizeConstraints will be applied.
    *
@@ -842,16 +853,18 @@ class nsIWidget : public nsISupports {
    */
   virtual bool IsEnabled() const = 0;
 
+  /*
+   * Whether we should request activation of this widget's toplevel window.
+   */
+  enum class Raise {
+    No,
+    Yes,
+  };
+
   /**
    * Request activation of this window or give focus to this widget.
-   *
-   * @param aRaise If true, this function requests activation of this
-   *               widget's toplevel window.
-   *               If false, the appropriate toplevel window (which in
-   *               the case of popups may not be this widget's toplevel
-   *               window) is already active.
    */
-  virtual nsresult SetFocus(bool aRaise = false) = 0;
+  virtual void SetFocus(Raise) = 0;
 
   /**
    * Get this widget's outside dimensions relative to its parent widget. For
@@ -922,6 +935,16 @@ class nsIWidget : public nsISupports {
     // Depending on the backend, overloading this method may be useful if
     // requesting the client offset is expensive.
     return GetClientBounds().Size();
+  }
+
+  /**
+   * Get the size of the bounds of this widget that will be visible when
+   * rendered.
+   *
+   * @return the width and height of the composition size of this widget.
+   */
+  virtual LayoutDeviceIntSize GetCompositionSize() {
+    return GetBounds().Size();
   }
 
   /**
@@ -1335,6 +1358,26 @@ class nsIWidget : public nsISupports {
   virtual LayoutDeviceIntPoint WidgetToScreenOffset() = 0;
 
   /**
+   * The same as WidgetToScreenOffset(), except in the case of
+   * PuppetWidget where this method omits the chrome offset.
+   */
+  virtual LayoutDeviceIntPoint TopLevelWidgetToScreenOffset() {
+    return WidgetToScreenOffset();
+  }
+
+  /**
+   * For a PuppetWidget, returns the transform from the coordinate
+   * space of the PuppetWidget to the coordinate space of the
+   * top-level native widget.
+   *
+   * Identity transform in other cases.
+   */
+  virtual mozilla::LayoutDeviceToLayoutDeviceMatrix4x4
+  WidgetToTopLevelWidgetTransform() {
+    return mozilla::LayoutDeviceToLayoutDeviceMatrix4x4();
+  }
+
+  /**
    * Given the specified client size, return the corresponding window size,
    * which includes the area for the borders and titlebar. This method
    * should work even when the window is not yet visible.
@@ -1368,7 +1411,7 @@ class nsIWidget : public nsISupports {
    */
   virtual void SetConfirmedTargetAPZC(
       uint64_t aInputBlockId,
-      const nsTArray<ScrollableLayerGuid>& aTargets) const = 0;
+      const nsTArray<SLGuidAndRenderRoot>& aTargets) const = 0;
 
   /**
    * Returns true if APZ is in use, false otherwise.
@@ -1635,13 +1678,13 @@ class nsIWidget : public nsISupports {
    * @return true if APZ has been successfully notified
    */
   virtual bool StartAsyncAutoscroll(const ScreenPoint& aAnchorLocation,
-                                    const ScrollableLayerGuid& aGuid) = 0;
+                                    const SLGuidAndRenderRoot& aGuid) = 0;
 
   /**
    * Notify APZ to stop autoscrolling.
    * @param aGuid identifies the scroll frame which is being autoscrolled.
    */
-  virtual void StopAsyncAutoscroll(const ScrollableLayerGuid& aGuid) = 0;
+  virtual void StopAsyncAutoscroll(const SLGuidAndRenderRoot& aGuid) = 0;
 
   // If this widget supports out-of-process compositing, it can override
   // this method to provide additional information to the compositor.
@@ -1873,7 +1916,8 @@ class nsIWidget : public nsISupports {
    * This function is called "Create" to match CreateInstance().
    * The returned widget must still be nsIWidget::Create()d.
    */
-  static already_AddRefed<nsIWidget> CreatePuppetWidget(TabChild* aTabChild);
+  static already_AddRefed<nsIWidget> CreatePuppetWidget(
+      BrowserChild* aBrowserChild);
 
   static already_AddRefed<nsIWidget> CreateHeadlessWidget();
 
@@ -1884,7 +1928,7 @@ class nsIWidget : public nsISupports {
    * nsIWidget's Create to do this.
    */
   static already_AddRefed<nsIWidget> CreatePluginProxyWidget(
-      TabChild* aTabChild, mozilla::plugins::PluginWidgetChild* aActor);
+      BrowserChild* aBrowserChild, mozilla::plugins::PluginWidgetChild* aActor);
 
   /**
    * Reparent this widget's native widget.
@@ -1942,10 +1986,10 @@ class nsIWidget : public nsISupports {
   virtual const SizeConstraints GetSizeConstraints() = 0;
 
   /**
-   * If this is owned by a TabChild, return that.  Otherwise return
+   * If this is owned by a BrowserChild, return that.  Otherwise return
    * null.
    */
-  virtual TabChild* GetOwningTabChild() { return nullptr; }
+  virtual BrowserChild* GetOwningBrowserChild() { return nullptr; }
 
   /**
    * If this isn't directly compositing to its window surface,

@@ -99,19 +99,22 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = [
-  "PanelMultiView",
-  "PanelView",
-];
+var EXPORTED_SYMBOLS = ["PanelMultiView", "PanelView"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(this, "CustomizableUI",
-  "resource:///modules/CustomizableUI.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "CustomizableUI",
+  "resource:///modules/CustomizableUI.jsm"
+);
 
 XPCOMUtils.defineLazyGetter(this, "gBundle", function() {
   return Services.strings.createBundle(
-    "chrome://browser/locale/browser.properties");
+    "chrome://browser/locale/browser.properties"
+  );
 });
 
 /**
@@ -223,33 +226,42 @@ var AssociatedToNode = class {
   async dispatchAsyncEvent(eventName) {
     // Wait for all the previous blockers before dispatching the event.
     let blockersPromise = this._blockersPromise.catch(() => {});
-    return this._blockersPromise = blockersPromise.then(async () => {
+    return (this._blockersPromise = blockersPromise.then(async () => {
       let blockers = new Set();
-      let cancel = this.dispatchCustomEvent(eventName, {
-        addBlocker(promise) {
-          // Any exception in the blocker will cancel the operation.
-          blockers.add(promise.catch(ex => {
-            Cu.reportError(ex);
-            return true;
-          }));
+      let cancel = this.dispatchCustomEvent(
+        eventName,
+        {
+          addBlocker(promise) {
+            // Any exception in the blocker will cancel the operation.
+            blockers.add(
+              promise.catch(ex => {
+                Cu.reportError(ex);
+                return true;
+              })
+            );
+          },
         },
-      }, true);
+        true
+      );
       if (blockers.size) {
         let timeoutPromise = new Promise((resolve, reject) => {
           this.window.setTimeout(reject, BLOCKERS_TIMEOUT_MS);
         });
         try {
-          let results = await Promise.race([Promise.all(blockers),
-                                            timeoutPromise]);
+          let results = await Promise.race([
+            Promise.all(blockers),
+            timeoutPromise,
+          ]);
           cancel = cancel || results.some(result => result === false);
         } catch (ex) {
-          Cu.reportError(new Error(
-            `One of the blockers for ${eventName} timed out.`));
+          Cu.reportError(
+            new Error(`One of the blockers for ${eventName} timed out.`)
+          );
           return true;
         }
       }
       return cancel;
-    });
+    }));
   }
 };
 
@@ -326,12 +338,17 @@ var PanelMultiView = class extends AssociatedToNode {
       return;
     }
 
-    window.addEventListener("unload", () => {
-      for (let panelMultiViewNode of
-           window.document.querySelectorAll("panelmultiview")) {
-        this.forNode(panelMultiViewNode).disconnect();
-      }
-    }, { once: true });
+    window.addEventListener(
+      "unload",
+      () => {
+        for (let panelMultiViewNode of window.document.querySelectorAll(
+          "panelmultiview"
+        )) {
+          this.forNode(panelMultiViewNode).disconnect();
+        }
+      },
+      { once: true }
+    );
 
     gWindowsWithUnloadHandler.add(window);
   }
@@ -349,10 +366,12 @@ var PanelMultiView = class extends AssociatedToNode {
   }
 
   get _screenManager() {
-    if (this.__screenManager)
+    if (this.__screenManager) {
       return this.__screenManager;
-    return this.__screenManager = Cc["@mozilla.org/gfx/screenmanager;1"]
-                                    .getService(Ci.nsIScreenManager);
+    }
+    return (this.__screenManager = Cc[
+      "@mozilla.org/gfx/screenmanager;1"
+    ].getService(Ci.nsIScreenManager));
   }
 
   constructor(node) {
@@ -366,19 +385,21 @@ var PanelMultiView = class extends AssociatedToNode {
 
     PanelMultiView.ensureUnloadHandlerRegistered(this.window);
 
-    let viewContainer = this._viewContainer =
-      this.document.createXULElement("box");
+    let viewContainer = (this._viewContainer = this.document.createXULElement(
+      "box"
+    ));
     viewContainer.classList.add("panel-viewcontainer");
 
-    let viewStack = this._viewStack = this.document.createXULElement("box");
+    let viewStack = (this._viewStack = this.document.createXULElement("box"));
     viewStack.classList.add("panel-viewstack");
     viewContainer.append(viewStack);
 
     let offscreenViewContainer = this.document.createXULElement("box");
     offscreenViewContainer.classList.add("panel-viewcontainer", "offscreen");
 
-    let offscreenViewStack = this._offscreenViewStack =
-      this.document.createXULElement("box");
+    let offscreenViewStack = (this._offscreenViewStack = this.document.createXULElement(
+      "box"
+    ));
     offscreenViewStack.classList.add("panel-viewstack");
     offscreenViewContainer.append(offscreenViewStack);
 
@@ -404,8 +425,9 @@ var PanelMultiView = class extends AssociatedToNode {
 
   disconnect() {
     // Guard against re-entrancy.
-    if (!this.node || !this.connected)
+    if (!this.node || !this.connected) {
       return;
+    }
 
     this._panel.removeEventListener("mousemove", this);
     this._panel.removeEventListener("popupshowing", this);
@@ -413,8 +435,7 @@ var PanelMultiView = class extends AssociatedToNode {
     this._panel.removeEventListener("popupshown", this);
     this._panel.removeEventListener("popuphidden", this);
     this.window.removeEventListener("keydown", this, true);
-    this.node = this._openPopupPromise = this._openPopupCancelCallback =
-      this._viewContainer = this._viewStack = this._transitionDetails = null;
+    this.node = this._openPopupPromise = this._openPopupCancelCallback = this._viewContainer = this._viewStack = this._transitionDetails = null;
   }
 
   /**
@@ -462,7 +483,7 @@ var PanelMultiView = class extends AssociatedToNode {
     // because hidePopup wants to dispatch the "popuphidden" event synchronously
     // even if the panel has not been opened yet.
     let canCancel = true;
-    let cancelCallback = this._openPopupCancelCallback = () => {
+    let cancelCallback = (this._openPopupCancelCallback = () => {
       // If the cancel callback is called and the panel hasn't been prepared
       // yet, cancel showing it. Setting canCancel to false will prevent the
       // popup from opening. If the panel has opened by the time the cancel
@@ -472,7 +493,7 @@ var PanelMultiView = class extends AssociatedToNode {
         canCancel = false;
         this.dispatchCustomEvent("popuphidden");
       }
-    };
+    });
 
     // Create a promise that is resolved with the result of the last call to
     // this method, where errors indicate that the panel was not opened.
@@ -483,7 +504,7 @@ var PanelMultiView = class extends AssociatedToNode {
     // Make the preparation done before showing the panel non-reentrant. The
     // promise created here will be resolved only after the panel preparation is
     // completed, even if a cancellation request is received in the meantime.
-    return this._openPopupPromise = openPopupPromise.then(async wasShown => {
+    return (this._openPopupPromise = openPopupPromise.then(async wasShown => {
       // The panel may have been destroyed in the meantime.
       if (!this.node) {
         return false;
@@ -527,9 +548,13 @@ var PanelMultiView = class extends AssociatedToNode {
           return false;
         }
 
-        if (options && typeof options == "object" && options.triggerEvent &&
-            options.triggerEvent.type == "keypress" &&
-            this.openViews.length) {
+        if (
+          options &&
+          typeof options == "object" &&
+          options.triggerEvent &&
+          options.triggerEvent.type == "keypress" &&
+          this.openViews.length
+        ) {
           // This was opened via the keyboard, so focus the first item.
           this.openViews[0].focusWhenActive = true;
         }
@@ -539,7 +564,7 @@ var PanelMultiView = class extends AssociatedToNode {
         this.dispatchCustomEvent("popuphidden");
         throw ex;
       }
-    });
+    }));
   }
 
   /**
@@ -618,8 +643,10 @@ var PanelMultiView = class extends AssociatedToNode {
     this._showSubView(viewIdOrNode, anchor).catch(Cu.reportError);
   }
   async _showSubView(viewIdOrNode, anchor) {
-    let viewNode = typeof viewIdOrNode == "string" ?
-                   this.document.getElementById(viewIdOrNode) : viewIdOrNode;
+    let viewNode =
+      typeof viewIdOrNode == "string"
+        ? this.document.getElementById(viewIdOrNode)
+        : viewIdOrNode;
     if (!viewNode) {
       Cu.reportError(new Error(`Subview ${viewIdOrNode} doesn't exist.`));
       return;
@@ -644,6 +671,10 @@ var PanelMultiView = class extends AssociatedToNode {
     if (!prevPanelView.active) {
       return;
     }
+    // If prevPanelView._doingKeyboardActivation is true, it will be reset to
+    // false synchronously. Therefore, we must capture it before we use any
+    // "await" statements.
+    let doingKeyboardActivation = prevPanelView._doingKeyboardActivation;
     // Marking the view that is about to scrolled out of the visible area as
     // inactive will prevent re-entrancy and also disable keyboard navigation.
     // From this point onwards, "await" statements can be used safely.
@@ -676,8 +707,9 @@ var PanelMultiView = class extends AssociatedToNode {
       // reset all the properties that may be set on a subview.
       nextPanelView.mainview = false;
       // The header may change based on how the subview was opened.
-      nextPanelView.headerText = viewNode.getAttribute("title") ||
-                                 (anchor && anchor.getAttribute("label"));
+      nextPanelView.headerText =
+        viewNode.getAttribute("title") ||
+        (anchor && anchor.getAttribute("label"));
       // The constrained width of subviews may also vary between panels.
       nextPanelView.minMaxWidth = prevPanelView.knownWidth;
 
@@ -692,6 +724,7 @@ var PanelMultiView = class extends AssociatedToNode {
       }
     }
 
+    nextPanelView.focusWhenActive = doingKeyboardActivation;
     this._activateView(nextPanelView);
   }
 
@@ -731,8 +764,9 @@ var PanelMultiView = class extends AssociatedToNode {
    * Prepares the main view before showing the panel.
    */
   async _showMainView() {
-    let nextPanelView = PanelView.forNode(this.document.getElementById(
-      this.node.getAttribute("mainViewId")));
+    let nextPanelView = PanelView.forNode(
+      this.document.getElementById(this.node.getAttribute("mainViewId"))
+    );
 
     // If the view is already open in another panel, close the panel first.
     let oldPanelMultiViewNode = nextPanelView.node.panelMultiView;
@@ -814,7 +848,7 @@ var PanelMultiView = class extends AssociatedToNode {
     if (panelView.isOpenIn(this)) {
       panelView.active = true;
       if (panelView.focusWhenActive) {
-        panelView.focusFirstNavigableElement();
+        panelView.focusFirstNavigableElement(false, true);
         panelView.focusWhenActive = false;
       }
       panelView.dispatchCustomEvent("ViewShown");
@@ -872,9 +906,9 @@ var PanelMultiView = class extends AssociatedToNode {
     let nextPanelView = PanelView.forNode(viewNode);
     let prevPanelView = PanelView.forNode(previousViewNode);
 
-    let details = this._transitionDetails = {
+    let details = (this._transitionDetails = {
       phase: TRANSITION_PHASES.START,
-    };
+    });
 
     // Set the viewContainer dimensions to make sure only the current view is
     // visible.
@@ -891,8 +925,10 @@ var PanelMultiView = class extends AssociatedToNode {
     if (reverse) {
       // Use the cached size when going back to a previous view, but not when
       // reopening a subview, because its contents may have changed.
-      viewRect = { width: nextPanelView.knownWidth,
-                   height: nextPanelView.knownHeight };
+      viewRect = {
+        width: nextPanelView.knownWidth,
+        height: nextPanelView.knownHeight,
+      };
       nextPanelView.visible = true;
     } else if (viewNode.customRectGetter) {
       // We use a customRectGetter for WebExtensions panels, because they need
@@ -901,7 +937,7 @@ var PanelMultiView = class extends AssociatedToNode {
       // moved around, otherwise the state of the browser would get disrupted.
       let width = prevPanelView.knownWidth;
       let height = prevPanelView.knownHeight;
-      viewRect = Object.assign({height, width}, viewNode.customRectGetter());
+      viewRect = Object.assign({ height, width }, viewNode.customRectGetter());
       nextPanelView.visible = true;
       // Until the header is visible, it has 0 height.
       // Wait for layout before measuring it
@@ -940,21 +976,24 @@ var PanelMultiView = class extends AssociatedToNode {
     details.phase = TRANSITION_PHASES.PREPARE;
 
     // The 'magic' part: build up the amount of pixels to move right or left.
-    let moveToLeft = (this.window.RTL_UI && !reverse) || (!this.window.RTL_UI && reverse);
+    let moveToLeft =
+      (this.window.RTL_UI && !reverse) || (!this.window.RTL_UI && reverse);
     let deltaX = prevPanelView.knownWidth;
     let deepestNode = reverse ? previousViewNode : viewNode;
 
     // With a transition when navigating backwards - user hits the 'back'
     // button - we need to make sure that the views are positioned in a way
     // that a translateX() unveils the previous view from the right direction.
-    if (reverse)
+    if (reverse) {
       this._viewStack.style.marginInlineStart = "-" + deltaX + "px";
+    }
 
     // Set the transition style and listen for its end to clean up and make sure
     // the box sizing becomes dynamic again.
     // Somehow, putting these properties in PanelUI.css doesn't work for newly
     // shown nodes in a XUL parent node.
-    this._viewStack.style.transition = "transform var(--animation-easing-function)" +
+    this._viewStack.style.transition =
+      "transform var(--animation-easing-function)" +
       " var(--panelui-subview-transition-duration)";
     this._viewStack.style.willChange = "transform";
     // Use an outline instead of a border so that the size is not affected.
@@ -980,27 +1019,42 @@ var PanelMultiView = class extends AssociatedToNode {
 
     // Kick off the transition!
     details.phase = TRANSITION_PHASES.TRANSITION;
-    this._viewStack.style.transform = "translateX(" + (moveToLeft ? "" : "-") + deltaX + "px)";
+    this._viewStack.style.transform =
+      "translateX(" + (moveToLeft ? "" : "-") + deltaX + "px)";
 
     await new Promise(resolve => {
       details.resolve = resolve;
-      this._viewContainer.addEventListener("transitionend", details.listener = ev => {
-        // It's quite common that `height` on the view container doesn't need
-        // to transition, so we make sure to do all the work on the transform
-        // transition-end, because that is guaranteed to happen.
-        if (ev.target != this._viewStack || ev.propertyName != "transform")
-          return;
-        this._viewContainer.removeEventListener("transitionend", details.listener);
-        delete details.listener;
-        resolve();
-      });
-      this._viewContainer.addEventListener("transitioncancel", details.cancelListener = ev => {
-        if (ev.target != this._viewStack)
-          return;
-        this._viewContainer.removeEventListener("transitioncancel", details.cancelListener);
-        delete details.cancelListener;
-        resolve();
-      });
+      this._viewContainer.addEventListener(
+        "transitionend",
+        (details.listener = ev => {
+          // It's quite common that `height` on the view container doesn't need
+          // to transition, so we make sure to do all the work on the transform
+          // transition-end, because that is guaranteed to happen.
+          if (ev.target != this._viewStack || ev.propertyName != "transform") {
+            return;
+          }
+          this._viewContainer.removeEventListener(
+            "transitionend",
+            details.listener
+          );
+          delete details.listener;
+          resolve();
+        })
+      );
+      this._viewContainer.addEventListener(
+        "transitioncancel",
+        (details.cancelListener = ev => {
+          if (ev.target != this._viewStack) {
+            return;
+          }
+          this._viewContainer.removeEventListener(
+            "transitioncancel",
+            details.cancelListener
+          );
+          delete details.cancelListener;
+          resolve();
+        })
+      );
     });
 
     // Bail out if the panel was closed during the transition.
@@ -1027,7 +1081,7 @@ var PanelMultiView = class extends AssociatedToNode {
       return;
     }
 
-    let {phase, resolve, listener, cancelListener} = this._transitionDetails;
+    let { phase, resolve, listener, cancelListener } = this._transitionDetails;
     this._transitionDetails = null;
 
     if (phase >= TRANSITION_PHASES.START) {
@@ -1043,12 +1097,18 @@ var PanelMultiView = class extends AssociatedToNode {
     }
     if (phase >= TRANSITION_PHASES.TRANSITION) {
       this._viewStack.style.removeProperty("transform");
-      if (listener)
+      if (listener) {
         this._viewContainer.removeEventListener("transitionend", listener);
-      if (cancelListener)
-        this._viewContainer.removeEventListener("transitioncancel", cancelListener);
-      if (resolve)
+      }
+      if (cancelListener) {
+        this._viewContainer.removeEventListener(
+          "transitioncancel",
+          cancelListener
+        );
+      }
+      if (resolve) {
         resolve();
+      }
     }
   }
 
@@ -1060,11 +1120,14 @@ var PanelMultiView = class extends AssociatedToNode {
     let anchor = this._panel.anchorNode;
     let anchorRect = anchor.getBoundingClientRect();
 
-    let screen = this._screenManager.screenForRect(anchor.screenX,
-                                                   anchor.screenY,
-                                                   anchorRect.width,
-                                                   anchorRect.height);
-    let availTop = {}, availHeight = {};
+    let screen = this._screenManager.screenForRect(
+      anchor.screenX,
+      anchor.screenY,
+      anchorRect.width,
+      anchorRect.height
+    );
+    let availTop = {},
+      availHeight = {};
     screen.GetAvailRect({}, availTop, {}, availHeight);
     let cssAvailTop = availTop.value / screen.defaultCSSScaleFactor;
 
@@ -1096,8 +1159,11 @@ var PanelMultiView = class extends AssociatedToNode {
   handleEvent(aEvent) {
     // Only process actual popup events from the panel or events we generate
     // ourselves, but not from menus being shown from within the panel.
-    if (aEvent.type.startsWith("popup") && aEvent.target != this._panel &&
-                                           aEvent.target != this.node) {
+    if (
+      aEvent.type.startsWith("popup") &&
+      aEvent.target != this._panel &&
+      aEvent.target != this.node
+    ) {
       return;
     }
     switch (aEvent.type) {
@@ -1268,8 +1334,10 @@ var PanelView = class extends AssociatedToNode {
       "subviewbutton subviewbutton-iconic subviewbutton-back";
     backButton.setAttribute("closemenu", "none");
     backButton.setAttribute("tabindex", "0");
-    backButton.setAttribute("aria-label",
-      gBundle.GetStringFromName("panel.back"));
+    backButton.setAttribute(
+      "aria-label",
+      gBundle.GetStringFromName("panel.back")
+    );
     backButton.addEventListener("command", () => {
       // The panelmultiview element may change if the view is reused.
       this.node.panelMultiView.goBack();
@@ -1343,6 +1411,14 @@ var PanelView = class extends AssociatedToNode {
           continue;
         }
 
+        // Ignore content inside a <toolbarbutton>
+        if (
+          element.tagName != "toolbarbutton" &&
+          element.closest("toolbarbutton")
+        ) {
+          continue;
+        }
+
         // Take the label for toolbarbuttons; it only exists on those elements.
         element = element.multilineLabel || element;
 
@@ -1350,9 +1426,13 @@ var PanelView = class extends AssociatedToNode {
         let previous = gMultiLineElementsMap.get(element);
         // We don't need to (re-)apply the workaround for invisible elements or
         // on elements we've seen before and haven't changed in the meantime.
-        if (!bounds.width || !bounds.height ||
-            (previous && element.textContent == previous.textContent &&
-                         bounds.width == previous.bounds.width)) {
+        if (
+          !bounds.width ||
+          !bounds.height ||
+          (previous &&
+            element.textContent == previous.textContent &&
+            bounds.width == previous.bounds.width)
+        ) {
           continue;
         }
 
@@ -1394,44 +1474,98 @@ var PanelView = class extends AssociatedToNode {
 
     // Now we can make all the necessary DOM changes at once.
     for (let { element, bounds } of items) {
-      gMultiLineElementsMap.set(element, { bounds, textContent: element.textContent });
+      gMultiLineElementsMap.set(element, {
+        bounds,
+        textContent: element.textContent,
+      });
       element.style.height = bounds.height + "px";
     }
   }
 
   /**
-   * Array of enabled elements that can be selected with the keyboard. This
-   * means all buttons, menulists, and text links including the back button.
-   *
-   * This list is cached until the view is closed, so elements that become
-   * enabled later may not be navigable.
+   * Determine whether an element can only be navigated to with tab/shift+tab,
+   * not the arrow keys.
    */
-  get _navigableElements() {
-    if (this.__navigableElements) {
-      return this.__navigableElements;
-    }
+  _isNavigableWithTabOnly(element) {
+    let tag = element.localName;
+    return (
+      tag == "menulist" ||
+      tag == "textbox" ||
+      tag == "input" ||
+      tag == "textarea" ||
+      // Allow tab to reach embedded documents.
+      tag == "browser" ||
+      tag == "iframe"
+    );
+  }
 
-    let navigableElements = Array.from(this.node.querySelectorAll(
-      ":-moz-any(button,toolbarbutton,menulist,.text-link,.navigable):not([disabled])"));
-    return this.__navigableElements = navigableElements.filter(element => {
-      // Set the "tabindex" attribute to make sure the element is focusable.
-      if (!element.hasAttribute("tabindex")) {
-        element.setAttribute("tabindex", "0");
+  /**
+   * Make a TreeWalker for keyboard navigation.
+   *
+   * @param {Boolean} arrowKey If `true`, elements only navigable with tab are
+   *        excluded.
+   */
+  _makeNavigableTreeWalker(arrowKey) {
+    let filter = node => {
+      if (node.disabled) {
+        return NodeFilter.FILTER_REJECT;
       }
-      if (element.hasAttribute("disabled")) {
-        return false;
+      let bounds = this._getBoundsWithoutFlushing(node);
+      if (bounds.width == 0 || bounds.height == 0) {
+        return NodeFilter.FILTER_REJECT;
       }
-      let bounds = this._getBoundsWithoutFlushing(element);
-      return bounds.width > 0 && bounds.height > 0;
-    });
+      if (
+        node.tagName == "button" ||
+        node.tagName == "toolbarbutton" ||
+        node.classList.contains("text-link") ||
+        node.classList.contains("navigable") ||
+        (!arrowKey && this._isNavigableWithTabOnly(node))
+      ) {
+        // Set the tabindex attribute to make sure the node is focusable.
+        // Don't do this for browser and iframe elements because this breaks
+        // tabbing behavior. They're already focusable anyway.
+        if (
+          node.tagName != "browser" &&
+          node.tagName != "iframe" &&
+          !node.hasAttribute("tabindex")
+        ) {
+          node.setAttribute("tabindex", "-1");
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+      return NodeFilter.FILTER_SKIP;
+    };
+    return this.document.createTreeWalker(
+      this.node,
+      NodeFilter.SHOW_ELEMENT,
+      filter
+    );
+  }
+
+  /**
+   * Get a TreeWalker which finds elements navigable with tab/shift+tab.
+   */
+  get _tabNavigableWalker() {
+    if (!this.__tabNavigableWalker) {
+      this.__tabNavigableWalker = this._makeNavigableTreeWalker(false);
+    }
+    return this.__tabNavigableWalker;
+  }
+
+  /**
+   * Get a TreeWalker which finds elements navigable with up/down arrow keys.
+   */
+  get _arrowNavigableWalker() {
+    if (!this.__arrowNavigableWalker) {
+      this.__arrowNavigableWalker = this._makeNavigableTreeWalker(true);
+    }
+    return this.__arrowNavigableWalker;
   }
 
   /**
    * Element that is currently selected with the keyboard, or null if no element
    * is selected. Since the reference is held weakly, it can become null or
    * undefined at any time.
-   *
-   * The element is usually, but not necessarily, among the _navigableElements.
    */
   get selectedElement() {
     return this._selectedElement && this._selectedElement.get();
@@ -1447,73 +1581,67 @@ var PanelView = class extends AssociatedToNode {
   /**
    * Focuses and moves keyboard selection to the first navigable element.
    * This is a no-op if there are no navigable elements.
+   *
+   * @param {Boolean} homeKey   `true` if this is for the home key.
+   * @param {Boolean} skipBack   `true` if the Back button should be skipped.
    */
-  focusFirstNavigableElement() {
-    this.selectedElement = this._navigableElements[0];
-    this.focusSelectedElement();
+  focusFirstNavigableElement(homeKey = false, skipBack = false) {
+    // The home key is conceptually similar to the up/down arrow keys.
+    let walker = homeKey
+      ? this._arrowNavigableWalker
+      : this._tabNavigableWalker;
+    walker.currentNode = walker.root;
+    this.selectedElement = walker.firstChild();
+    if (
+      skipBack &&
+      walker.currentNode &&
+      walker.currentNode.classList.contains("subviewbutton-back") &&
+      walker.nextNode()
+    ) {
+      this.selectedElement = walker.currentNode;
+    }
+    this.focusSelectedElement(/* byKey */ true);
   }
 
   /**
    * Focuses and moves keyboard selection to the last navigable element.
    * This is a no-op if there are no navigable elements.
+   *
+   * @param {Boolean} endKey   `true` if this is for the end key.
    */
-  focusLastNavigableElement() {
-    this.selectedElement = this._navigableElements[this._navigableElements.length - 1];
-    this.focusSelectedElement();
+  focusLastNavigableElement(endKey = false) {
+    // The end key is conceptually similar to the up/down arrow keys.
+    let walker = endKey ? this._arrowNavigableWalker : this._tabNavigableWalker;
+    walker.currentNode = walker.root;
+    this.selectedElement = walker.lastChild();
+    this.focusSelectedElement(/* byKey */ true);
   }
 
   /**
    * Based on going up or down, select the previous or next focusable element.
    *
    * @param {Boolean} isDown   whether we're going down (true) or up (false).
+   * @param {Boolean} arrowKey   `true` if this is for the up/down arrow keys.
    *
    * @return {DOMNode} the element we selected.
    */
-  moveSelection(isDown) {
-    let buttons = this._navigableElements;
-    let lastSelected = this.selectedElement;
-    let newButton = null;
-    let maxIdx = buttons.length - 1;
-    if (lastSelected) {
-      let buttonIndex = buttons.indexOf(lastSelected);
-      if (buttonIndex != -1) {
-        // Buttons may get selected whilst the panel is shown, so add an extra
-        // check here.
-        do {
-          buttonIndex = buttonIndex + (isDown ? 1 : -1);
-        } while (buttons[buttonIndex] && buttons[buttonIndex].disabled);
-        if (isDown && buttonIndex > maxIdx)
-          buttonIndex = 0;
-        else if (!isDown && buttonIndex < 0)
-          buttonIndex = maxIdx;
-        newButton = buttons[buttonIndex];
-      } else {
-        // The previously selected item is no longer selectable. Find the next item:
-        let allButtons = lastSelected.closest("panelview").getElementsByTagName("toolbarbutton");
-        let maxAllButtonIdx = allButtons.length - 1;
-        let allButtonIndex = allButtons.indexOf(lastSelected);
-        while (allButtonIndex >= 0 && allButtonIndex <= maxAllButtonIdx) {
-          allButtonIndex++;
-          // Check if the next button is in the list of focusable buttons.
-          buttonIndex = buttons.indexOf(allButtons[allButtonIndex]);
-          if (buttonIndex != -1) {
-            // If it is, just use that button if we were going down, or the previous one
-            // otherwise. If this was the first button, newButton will end up undefined,
-            // which is fine because we'll fall back to using the last button at the
-            // bottom of this method.
-            newButton = buttons[isDown ? buttonIndex : buttonIndex - 1];
-            break;
-          }
-        }
-      }
+  moveSelection(isDown, arrowKey = false) {
+    let walker = arrowKey
+      ? this._arrowNavigableWalker
+      : this._tabNavigableWalker;
+    let oldSel = this.selectedElement;
+    let newSel;
+    if (oldSel) {
+      walker.currentNode = oldSel;
+      newSel = isDown ? walker.nextNode() : walker.previousNode();
     }
-
     // If we couldn't find something, select the first or last item:
-    if (!newButton) {
-      newButton = buttons[isDown ? 0 : maxIdx];
+    if (!newSel) {
+      walker.currentNode = walker.root;
+      newSel = isDown ? walker.firstChild() : walker.lastChild();
     }
-    this.selectedElement = newButton;
-    return newButton;
+    this.selectedElement = newSel;
+    return newSel;
   }
 
   /**
@@ -1538,8 +1666,26 @@ var PanelView = class extends AssociatedToNode {
       return;
     }
 
-    let buttons = this._navigableElements;
-    if (!buttons.length) {
+    let focus = this.document.activeElement;
+    // Make sure the focus is actually inside the panel. (It might not be if
+    // the panel was opened with the mouse.) If it isn't, we don't care
+    // about it for our purposes.
+    // We use Node.compareDocumentPosition because Node.contains doesn't
+    // behave as expected for anonymous content; e.g. the input inside a
+    // textbox.
+    if (
+      focus &&
+      !(
+        this.node.compareDocumentPosition(focus) &
+        Node.DOCUMENT_POSITION_CONTAINED_BY
+      )
+    ) {
+      focus = null;
+    }
+
+    // Some panels contain embedded documents. We can't manage
+    // keyboard navigation within those.
+    if (focus && (focus.tagName == "browser" || focus.tagName == "iframe")) {
       return;
     }
 
@@ -1548,31 +1694,81 @@ var PanelView = class extends AssociatedToNode {
       event.preventDefault();
     };
 
+    // If the focused element is only navigable with tab, it wants the arrow
+    // keys, etc. We shouldn't handle any keys except tab and shift+tab.
+    // We make a function for this for performance reasons: we only want to
+    // check this for keys we potentially care about, not *all* keys.
+    let tabOnly = () => {
+      // We use the real focus rather than this.selectedElement because focus
+      // might have been moved without keyboard navigation (e.g. mouse click)
+      // and this.selectedElement is only updated for keyboard navigation.
+      return focus && this._isNavigableWithTabOnly(focus);
+    };
+
+    // If a context menu is open, we must let it handle all keys.
+    // Normally, this just happens, but because we have a capturing window
+    // keydown listener, our listener takes precedence.
+    // Again, we only want to do this check on demand for performance.
+    let isContextMenuOpen = () => {
+      if (!focus) {
+        return false;
+      }
+      let contextNode = focus.closest("[context]");
+      if (!contextNode) {
+        return false;
+      }
+      let context = contextNode.getAttribute("context");
+      let popup = this.document.getElementById(context);
+      return popup && popup.state == "open";
+    };
+
     let keyCode = event.code;
     switch (keyCode) {
       case "ArrowDown":
       case "ArrowUp":
+        if (tabOnly()) {
+          break;
+        }
+      // Fall-through...
       case "Tab": {
+        if (
+          isContextMenuOpen() ||
+          // Tab in an open menulist should close it.
+          (focus && focus.localName == "menulist" && focus.open)
+        ) {
+          break;
+        }
         stop();
-        let isDown = (keyCode == "ArrowDown") ||
-                     (keyCode == "Tab" && !event.shiftKey);
-        let button = this.moveSelection(isDown);
-        button.focus();
+        let isDown =
+          keyCode == "ArrowDown" || (keyCode == "Tab" && !event.shiftKey);
+        let button = this.moveSelection(isDown, keyCode != "Tab");
+        Services.focus.setFocus(button, Services.focus.FLAG_BYKEY);
         break;
       }
       case "Home":
+        if (tabOnly() || isContextMenuOpen()) {
+          break;
+        }
         stop();
-        this.focusFirstNavigableElement();
+        this.focusFirstNavigableElement(true);
         break;
       case "End":
+        if (tabOnly() || isContextMenuOpen()) {
+          break;
+        }
         stop();
-        this.focusLastNavigableElement();
+        this.focusLastNavigableElement(true);
         break;
       case "ArrowLeft":
       case "ArrowRight": {
+        if (tabOnly() || isContextMenuOpen()) {
+          break;
+        }
         stop();
-        if ((!this.window.RTL_UI && keyCode == "ArrowLeft") ||
-            (this.window.RTL_UI && keyCode == "ArrowRight")) {
+        if (
+          (!this.window.RTL_UI && keyCode == "ArrowLeft") ||
+          (this.window.RTL_UI && keyCode == "ArrowRight")
+        ) {
           this.node.panelMultiView.goBack();
           break;
         }
@@ -1585,20 +1781,36 @@ var PanelView = class extends AssociatedToNode {
         // Fall-through...
       }
       case "Space":
+      case "NumpadEnter":
       case "Enter": {
-        let button = this.selectedElement;
-        if (!button)
+        if (tabOnly() || isContextMenuOpen()) {
           break;
+        }
+        let button = this.selectedElement;
+        if (!button) {
+          break;
+        }
         stop();
 
+        this._doingKeyboardActivation = true;
         // Unfortunately, 'tabindex' doesn't execute the default action, so
         // we explicitly do this here.
-        // We are sending a command event and then a click event.
-        // This is done in order to mimic a "real" mouse click event.
-        // The command event executes the action, then the click event closes the menu.
+        // We are sending a command event, a mousedown event and then a click
+        // event. This is done in order to mimic a "real" mouse click event.
+        // Normally, the command event executes the action, then the click event
+        // closes the menu. However, in some cases (e.g. the Library button),
+        // there is no command event handler and the mousedown event executes the
+        // action instead.
         button.doCommand();
-        let clickEvent = new event.target.ownerGlobal.MouseEvent("click", {"bubbles": true});
-        button.dispatchEvent(clickEvent);
+        let dispEvent = new event.target.ownerGlobal.MouseEvent("mousedown", {
+          bubbles: true,
+        });
+        button.dispatchEvent(dispEvent);
+        dispEvent = new event.target.ownerGlobal.MouseEvent("click", {
+          bubbles: true,
+        });
+        button.dispatchEvent(dispEvent);
+        this._doingKeyboardActivation = false;
         break;
       }
     }
@@ -1606,11 +1818,15 @@ var PanelView = class extends AssociatedToNode {
 
   /**
    * Focus the last selected element in the view, if any.
+   *
+   * @param byKey {Boolean} whether focus was moved by the user pressing a key.
+   *                        Needed to ensure we show focus styles in the right cases.
    */
-  focusSelectedElement() {
+  focusSelectedElement(byKey = false) {
     let selected = this.selectedElement;
     if (selected) {
-      selected.focus();
+      let flag = byKey ? "FLAG_BYKEY" : "FLAG_BYELEMENTFOCUS";
+      Services.focus.setFocus(selected, Services.focus[flag]);
     }
   }
 
@@ -1618,7 +1834,6 @@ var PanelView = class extends AssociatedToNode {
    * Clear all traces of keyboard navigation happening right now.
    */
   clearNavigation() {
-    delete this.__navigableElements;
     let selected = this.selectedElement;
     if (selected) {
       selected.blur();

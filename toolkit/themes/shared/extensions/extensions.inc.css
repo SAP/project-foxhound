@@ -103,6 +103,10 @@
   margin-bottom: 10px;
 }
 
+.html-alert-container {
+  margin-bottom: 0;
+}
+
 .alert-spacer-before {
   -moz-box-flex: 1;
 }
@@ -361,6 +365,8 @@ button.warning {
   max-width: 24px;
   max-height: 24px;
   margin-inline-end: 16px;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .content-inner-container {
@@ -424,6 +430,7 @@ button.warning {
      - message-bar.padding(8)
      - message-bar-icon.computed-width(28) */
   max-width: 628px;
+  min-width: 628px;
 }
 
 .legacy-warning {
@@ -575,22 +582,22 @@ button.warning {
                                     transparent 75%);
 }
 .addon-view[notification="warning"] {
-  --view-highlight-color: #F9F5E5;
+  --view-highlight-color: rgb(208, 176, 47, 0.1);
 }
 
 .addon-view[notification="error"] {
-  --view-highlight-color: #FFE8E9;
+  --view-highlight-color: rgb(255, 0, 13, 0.1);
 }
 
 .addon-view[pending="enable"],
 .addon-view[pending="upgrade"],
 .addon-view[pending="install"] {
-  --view-highlight-color: #EFFAF2;
+  --view-highlight-color: rgb(61, 194, 97, 0.1);
 }
 
 .addon-view[pending="disable"],
 .addon-view[pending="uninstall"] {
-  --view-highlight-color: #F2F2F2;
+  --view-highlight-color: rgb(128, 128, 128, 0.1);
 }
 
 .list > .addon[selected] {
@@ -620,7 +627,7 @@ button.warning {
 .addon[status="uninstalled"] > .container {
   -moz-box-align: center;
   padding: 4px 20px;
-  background-color: #FDFFA8;
+  background-color: rgb(255, 255, 0, 0.1);
   border-radius: 8px;
   font-size: 120%;
 }
@@ -815,7 +822,6 @@ button.warning {
   -moz-box-align: center;
   min-height: 35px;
   line-height: 20px;
-  text-shadow: 0 1px 1px #fefffe;
 }
 
 .inline-options-browser {
@@ -849,7 +855,7 @@ button.warning {
   margin-bottom: 0;
   /* card-width - card-padding - description-margins */
   width: calc(664px - 32px - 11px);
-  color: var(--grey-60);
+  color: var(--in-content-deemphasized-text);
 }
 
 /*** creator ***/
@@ -1003,10 +1009,6 @@ button.warning {
   padding: 2px 4px;
 }
 
-.no-auto-hide .addon-control {
-  display: block !important;
-}
-
 button.button-link {
   -moz-appearance: none;
   background: transparent;
@@ -1062,7 +1064,7 @@ button.button-link:not([disabled="true"]):active:hover {
 /*** info UI for add-ons that have been disabled for being unsigned ***/
 
 #show-disabled-unsigned-extensions:not(:hover) {
-  background-color: #fcf8ed;
+  background-color: rgba(218, 170, 37, 0.05);
 }
 
 #disabled-unsigned-addons-info,

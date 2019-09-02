@@ -15,7 +15,7 @@ const Types = require("../types");
 class ViewportDimension extends PureComponent {
   static get propTypes() {
     return {
-      onResizeViewport: PropTypes.func.isRequired,
+      doResizeViewport: PropTypes.func.isRequired,
       onRemoveDeviceAssociation: PropTypes.func.isRequired,
       viewport: PropTypes.shape(Types.viewport).isRequired,
     };
@@ -103,6 +103,11 @@ class ViewportDimension extends PureComponent {
     const { target } = event;
     target.value = parseInt(target.value, 10) + increment;
     this.onInputChange(event, this.onInputSubmit);
+
+    // Keep this event from having default processing. Since the field is a
+    // number field, default processing would trigger additional manipulations
+    // of the value, and we've already applied the desired amount.
+    event.preventDefault();
   }
 
   onInputKeyUp({ target, keyCode }) {
@@ -121,7 +126,7 @@ class ViewportDimension extends PureComponent {
     const {
       viewport,
       onRemoveDeviceAssociation,
-      onResizeViewport,
+      doResizeViewport,
     } = this.props;
 
     if (!this.state.isWidthValid || !this.state.isHeightValid) {
@@ -143,7 +148,7 @@ class ViewportDimension extends PureComponent {
       onRemoveDeviceAssociation(viewport.id);
     }
 
-    onResizeViewport(viewport.id,
+    doResizeViewport(viewport.id,
       parseInt(this.state.width, 10), parseInt(this.state.height, 10));
   }
 
@@ -162,6 +167,7 @@ class ViewportDimension extends PureComponent {
         className: "text-input viewport-dimension-input" +
                    (this.state.isWidthValid ? "" : " invalid"),
         size: 4,
+        type: "number",
         value: this.state.width,
         onBlur: this.onInputBlur,
         onChange: this.onInputChange,
@@ -179,6 +185,7 @@ class ViewportDimension extends PureComponent {
         className: "text-input viewport-dimension-input" +
                    (this.state.isHeightValid ? "" : " invalid"),
         size: 4,
+        type: "number",
         value: this.state.height,
         onBlur: this.onInputBlur,
         onChange: this.onInputChange,

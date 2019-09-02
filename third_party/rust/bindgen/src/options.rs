@@ -31,7 +31,7 @@ where
                 .help("The default style of code used to generate enums.")
                 .value_name("variant")
                 .default_value("consts")
-                .possible_values(&["consts", "moduleconsts", "bitfield", "rust"])
+                .possible_values(&["consts", "moduleconsts", "bitfield", "rust", "rust_non_exhaustive"])
                 .multiple(false),
             Arg::with_name("bitfield-enum")
                 .long("bitfield-enum")
@@ -129,7 +129,7 @@ where
             Arg::with_name("no-doc-comments")
                 .long("no-doc-comments")
                 .help("Avoid including doc comments in the output, see: \
-                      https://github.com/rust-lang-nursery/rust-bindgen/issues/426"),
+                      https://github.com/rust-lang/rust-bindgen/issues/426"),
             Arg::with_name("no-recursive-whitelist")
                 .long("no-recursive-whitelist")
                 .help("Disable whitelisting types recursively. This will cause \
@@ -203,6 +203,9 @@ where
             Arg::with_name("no-prepend-enum-name")
                 .long("no-prepend-enum-name")
                 .help("Do not prepend the enum name to bitfield or constant variants."),
+            Arg::with_name("no-include-path-detection")
+                .long("no-include-path-detection")
+                .help("Do not try to detect default include paths"),
             Arg::with_name("unstable-rust")
                 .long("unstable-rust")
                 .help("Generate unstable Rust code (deprecated; use --rust-target instead).")
@@ -277,6 +280,10 @@ where
                        Useful when debugging bindgen, using C-Reduce, or when \
                        filing issues. The resulting file will be named \
                        something like `__bindgen.i` or `__bindgen.ii`."),
+            Arg::with_name("no-record-matches")
+                .long("no-record-matches")
+                .help("Do not record matching items in the regex sets. \
+                      This disables reporting of unused items."),
             Arg::with_name("no-rustfmt-bindings")
                 .long("no-rustfmt-bindings")
                 .help("Do not format the generated bindings with rustfmt."),
@@ -315,6 +322,13 @@ where
                 .takes_value(true)
                 .multiple(true)
                 .number_of_values(1),
+            Arg::with_name("enable-function-attribute-detection")
+                .long("enable-function-attribute-detection")
+                .help("Enables detecting unexposed attributes in functions (slow).
+                       Used to generate #[must_use] annotations."),
+            Arg::with_name("use-array-pointers-in-arguments")
+                .long("use-array-pointers-in-arguments")
+                .help("Use `*const [T; size]` instead of `*const T` for C arrays"),
         ]) // .args()
         .get_matches_from(args);
 
@@ -439,8 +453,16 @@ where
         builder = builder.prepend_enum_name(false);
     }
 
+    if matches.is_present("no-include-path-detection") {
+        builder = builder.detect_include_paths(false);
+    }
+
     if matches.is_present("time-phases") {
         builder = builder.time_phases(true);
+    }
+
+    if matches.is_present("use-array-pointers-in-arguments") {
+        builder = builder.array_pointers_in_arguments(true);
     }
 
     if let Some(prefix) = matches.value_of("ctypes-prefix") {
@@ -482,6 +504,10 @@ where
 
     if matches.is_present("enable-cxx-namespaces") {
         builder = builder.enable_cxx_namespaces();
+    }
+
+    if matches.is_present("enable-function-attribute-detection") {
+        builder = builder.enable_function_attribute_detection();
     }
 
     if matches.is_present("disable-name-namespacing") {
@@ -581,6 +607,10 @@ where
 
     if matches.is_present("dump-preprocessed-input") {
         builder.dump_preprocessed_input()?;
+    }
+
+    if matches.is_present("no-record-matches") {
+        builder = builder.record_matches(false);
     }
 
     let no_rustfmt_bindings = matches.is_present("no-rustfmt-bindings");

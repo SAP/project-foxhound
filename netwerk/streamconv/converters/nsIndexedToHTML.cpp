@@ -389,7 +389,7 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
       "    headCells[i].addEventListener(\"click\", rowAction(i), true);\n"
       "  }\n"
       "  if (gUI_showHidden) {\n"
-      "    gRows = Array.slice(gTBody.rows);\n"
+      "    gRows = Array.from(gTBody.rows);\n"
       "    hiddenObjects = gRows.some(row => row.className == "
       "\"hidden-object\");\n"
       "  }\n"
@@ -421,7 +421,7 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
       "}\n"
       "function orderBy(column) {\n"
       "  if (!gRows)\n"
-      "    gRows = Array.slice(gTBody.rows);\n"
+      "    gRows = Array.from(gTBody.rows);\n"
       "  var order;\n"
       "  if (gOrderBy == column) {\n"
       "    order = gTable.getAttribute(\"order\") == \"asc\" ? \"desc\" : "
@@ -525,13 +525,11 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
 
   nsCString htmlEscSpecUtf8;
   nsAppendEscapedHTML(NS_ConvertUTF16toUTF8(unEscapeSpec), htmlEscSpecUtf8);
-  NS_ConvertUTF8toUTF16 htmlEscSpec(htmlEscSpecUtf8);
+  AutoTArray<nsString, 1> formatTitle;
+  CopyUTF8toUTF16(htmlEscSpecUtf8, *formatTitle.AppendElement());
 
   nsAutoString title;
-  const char16_t* formatTitle[] = {htmlEscSpec.get()};
-
-  rv = mBundle->FormatStringFromName(
-      "DirTitle", formatTitle, sizeof(formatTitle) / sizeof(char16_t*), title);
+  rv = mBundle->FormatStringFromName("DirTitle", formatTitle, title);
   if (NS_FAILED(rv)) return rv;
 
   // we want to convert string bundle to NCR
@@ -571,14 +569,6 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
   buffer.AppendLiteral("</head>\n<body dir=\"");
   buffer.Append(direction);
   buffer.AppendLiteral("\">\n<h1>");
-
-  const char16_t* formatHeading[] = {htmlEscSpec.get()};
-
-  rv = mBundle->FormatStringFromName("DirTitle", formatHeading,
-                                     sizeof(formatHeading) / sizeof(char16_t*),
-                                     title);
-  if (NS_FAILED(rv)) return rv;
-
   AppendNonAsciiToNCR(title, buffer);
   buffer.AppendLiteral("</h1>\n");
 

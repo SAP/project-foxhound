@@ -5,11 +5,35 @@
 "use strict";
 
 var Services = require("Services");
-loader.lazyRequireGetter(this, "Utils", "devtools/client/webconsole/utils", true);
-loader.lazyRequireGetter(this, "WebConsoleUI", "devtools/client/webconsole/webconsole-ui", true);
-loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools", true);
-loader.lazyRequireGetter(this, "viewSource", "devtools/client/shared/view-source");
-loader.lazyRequireGetter(this, "openDocLink", "devtools/client/shared/link", true);
+loader.lazyRequireGetter(
+  this,
+  "Utils",
+  "devtools/client/webconsole/utils",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "WebConsoleUI",
+  "devtools/client/webconsole/webconsole-ui",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "gDevTools",
+  "devtools/client/framework/devtools",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "viewSource",
+  "devtools/client/shared/view-source"
+);
+loader.lazyRequireGetter(
+  this,
+  "openDocLink",
+  "devtools/client/shared/link",
+  true
+);
 
 var gHudId = 0;
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -25,18 +49,24 @@ const isMacOS = Services.appinfo.OS === "Darwin";
  */
 class WebConsole {
   /*
-  * @constructor
-  * @param object target
-  *        The target that the web console will connect to.
-  * @param nsIDOMWindow iframeWindow
-  *        The window where the web console UI is already loaded.
-  * @param nsIDOMWindow chromeWindow
-  *        The window of the web console owner.
-  * @param object hudService
-  *        The parent HUD Service
-  * @param bool isBrowserConsole
-  */
-  constructor(target, iframeWindow, chromeWindow, hudService, isBrowserConsole = false) {
+   * @constructor
+   * @param object target
+   *        The target that the web console will connect to.
+   * @param nsIDOMWindow iframeWindow
+   *        The window where the web console UI is already loaded.
+   * @param nsIDOMWindow chromeWindow
+   *        The window of the web console owner.
+   * @param object hudService
+   *        The parent HUD Service
+   * @param bool isBrowserConsole
+   */
+  constructor(
+    target,
+    iframeWindow,
+    chromeWindow,
+    hudService,
+    isBrowserConsole = false
+  ) {
     this.iframeWindow = iframeWindow;
     this.chromeWindow = chromeWindow;
     this.hudId = "hud_" + ++gHudId;
@@ -154,6 +184,9 @@ class WebConsole {
       relatedToCurrent: true,
       inBackground: isMacOS ? e.metaKey : e.ctrlKey,
     });
+    if (e && typeof e.stopPropagation === "function") {
+      e.stopPropagation();
+    }
   }
 
   /**
@@ -165,7 +198,10 @@ class WebConsole {
    *        The line number which should be highlighted.
    */
   viewSource(sourceURL, sourceLine) {
-    this.gViewSourceUtils.viewSource({ URL: sourceURL, lineNumber: sourceLine || 0 });
+    this.gViewSourceUtils.viewSource({
+      URL: sourceURL,
+      lineNumber: sourceLine || 0,
+    });
   }
 
   /**
@@ -200,16 +236,20 @@ class WebConsole {
    *        The URL of the file.
    * @param integer sourceLine
    *        The line number which you want to place the caret.
+   * @param integer sourceColumn
+   *        The column number which you want to place the caret.
    */
-  viewSourceInDebugger(sourceURL, sourceLine) {
+  viewSourceInDebugger(sourceURL, sourceLine, sourceColumn) {
     const toolbox = gDevTools.getToolbox(this.target);
     if (!toolbox) {
-      this.viewSource(sourceURL, sourceLine);
+      this.viewSource(sourceURL, sourceLine, sourceColumn);
       return;
     }
-    toolbox.viewSourceInDebugger(sourceURL, sourceLine).then(() => {
-      this.ui.emit("source-in-debugger-opened");
-    });
+    toolbox
+      .viewSourceInDebugger(sourceURL, sourceLine, sourceColumn)
+      .then(() => {
+        this.ui.emit("source-in-debugger-opened");
+      });
   }
 
   /**
@@ -251,6 +291,18 @@ class WebConsole {
   }
 
   /**
+   * Return the console client to use when interacting with a thread.
+   *
+   * @param {String} thread: The ID of the target thread.
+   * @returns {Object} The console client associated with the thread.
+   */
+  lookupConsoleClient(thread) {
+    const toolbox = gDevTools.getToolbox(this.target);
+    const panel = toolbox.getPanel("jsdebugger");
+    return panel.lookupConsoleClient(thread);
+  }
+
+  /**
    * Given an expression, returns an object containing a new expression, mapped by the
    * parser worker to provide additional feature for the user (top-level await,
    * original languages mapping, …).
@@ -280,27 +332,32 @@ class WebConsole {
       const shouldMapBindings = false;
       const shouldMapAwait = true;
       const res = this.parserService.mapExpression(
-        expression, null, null, shouldMapBindings, shouldMapAwait);
+        expression,
+        null,
+        null,
+        shouldMapBindings,
+        shouldMapAwait
+      );
       return res;
     }
 
     return null;
   }
 
-  /**
-   * A common access point for the client-side parser service that any panel can use.
-   */
   get parserService() {
     if (this._parserService) {
       return this._parserService;
     }
 
-    this._parserService =
-      require("devtools/client/debugger/new/src/workers/parser/index");
+    const {
+      ParserDispatcher,
+    } = require("devtools/client/debugger/src/workers/parser/index");
 
+    this._parserService = new ParserDispatcher();
     this._parserService.start(
-      "resource://devtools/client/debugger/new/dist/parser-worker.js",
-      this.chromeUtilsWindow);
+      "resource://devtools/client/debugger/dist/parser-worker.js",
+      this.chromeUtilsWindow
+    );
     return this._parserService;
   }
 

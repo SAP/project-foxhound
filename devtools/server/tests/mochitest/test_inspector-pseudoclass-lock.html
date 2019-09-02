@@ -7,13 +7,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=
   <meta charset="utf-8">
   <title>Test for Bug </title>
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
   <script type="application/javascript" src="inspector-helpers.js"></script>
   <script type="application/javascript">
 "use strict";
 
-const KNOWN_PSEUDOCLASSES = [":hover", ":active", ":focus", ":focus-within"];
+const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
@@ -65,7 +65,7 @@ function checkChange(change, expectation) {
        `Target should match pseudoclass, '${pseudo}', if enabled (with .matches())`);
   }
 
-  for (const pseudo of KNOWN_PSEUDOCLASSES) {
+  for (const pseudo of PSEUDO_CLASSES) {
     if (!expectation.pseudos.some(expected => pseudo === expected)) {
       ok(!target.hasPseudoClassLock(pseudo), "Don't expect lock: " + pseudo);
       ok(!InspectorUtils.hasPseudoClassLock(target.rawNode(), pseudo),

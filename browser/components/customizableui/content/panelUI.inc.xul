@@ -9,7 +9,7 @@
        position="bottomcenter topright"
        photon="true"
        hidden="true">
-  <panelmultiview mainViewId="widget-overflow-mainView" disablekeynav="true">
+  <panelmultiview mainViewId="widget-overflow-mainView">
     <panelview id="widget-overflow-mainView"
                context="toolbar-context-menu">
       <vbox class="panel-subview-body">
@@ -40,6 +40,11 @@
               label="&customizeMenu.removeExtension.label;"
               contexttype="toolbaritem"
               class="customize-context-removeExtension"/>
+    <menuitem oncommand="ToolbarContextMenu.reportExtensionForContextAction(this.parentElement, 'toolbar_context_menu')"
+              accesskey="&customizeMenu.reportExtension.accesskey;"
+              label="&customizeMenu.reportExtension.label;"
+              contexttype="toolbaritem"
+              class="customize-context-reportExtension"/>
     <menuseparator/>
     <menuitem oncommand="gCustomizeMode.addToPanel(document.popupNode)"
               id="customizationPanelItemContextMenuPin"
@@ -97,54 +102,59 @@
        role="alert">
   <popupnotification id="appMenu-update-available-notification"
                      popupid="update-available"
-                     label="&updateAvailable.header.message;"
-                     buttonlabel="&updateAvailable.acceptButton.label;"
-                     buttonaccesskey="&updateAvailable.acceptButton.accesskey;"
+                     data-lazy-l10n-id="appmenu-update-available"
+                     data-l10n-attrs="buttonlabel, buttonaccesskey, secondarybuttonlabel, secondarybuttonaccesskey"
                      closebuttonhidden="true"
-                     secondarybuttonlabel="&updateAvailable.cancelButton.label;"
-                     secondarybuttonaccesskey="&updateAvailable.cancelButton.accesskey;"
                      dropmarkerhidden="true"
                      checkboxhidden="true"
                      buttonhighlight="true"
                      hidden="true">
     <popupnotificationcontent id="update-available-notification-content" orient="vertical">
-      <description id="update-available-description">&updateAvailable.message;</description>
-      <label id="update-available-whats-new" is="text-link" value="&updateAvailable.whatsnew.label;" />
+      <description id="update-available-description" data-lazy-l10n-id="appmenu-update-available-message"></description>
+      <label id="update-available-whats-new" is="text-link" data-lazy-l10n-id="appmenu-update-whats-new"/>
     </popupnotificationcontent>
   </popupnotification>
 
   <popupnotification id="appMenu-update-manual-notification"
                      popupid="update-manual"
-                     label="&updateManual.header.message;"
-                     buttonlabel="&updateManual.acceptButton.label;"
-                     buttonaccesskey="&updateManual.acceptButton.accesskey;"
+                     data-lazy-l10n-id="appmenu-update-manual"
+                     data-l10n-attrs="buttonlabel, buttonaccesskey, secondarybuttonlabel, secondarybuttonaccesskey"
                      closebuttonhidden="true"
-                     secondarybuttonlabel="&updateManual.cancelButton.label;"
-                     secondarybuttonaccesskey="&updateManual.cancelButton.accesskey;"
                      dropmarkerhidden="true"
                      checkboxhidden="true"
                      buttonhighlight="true"
                      hidden="true">
     <popupnotificationcontent id="update-manual-notification-content" orient="vertical">
-      <description id="update-manual-description">&updateManual.message;</description>
-      <label id="update-manual-whats-new" is="text-link" value="&updateManual.whatsnew.label;" />
+      <description id="update-manual-description" data-lazy-l10n-id="appmenu-update-manual-message"></description>
+      <label id="update-manual-whats-new" is="text-link"  data-lazy-l10n-id="appmenu-update-whats-new"/>
+    </popupnotificationcontent>
+  </popupnotification>
+
+  <popupnotification id="appMenu-update-unsupported-notification"
+                     popupid="update-unsupported"
+                     data-lazy-l10n-id="appmenu-update-unsupported"
+                     data-l10n-attrs="buttonlabel, buttonaccesskey, secondarybuttonlabel, secondarybuttonaccesskey"
+                     closebuttonhidden="true"
+                     dropmarkerhidden="true"
+                     checkboxhidden="true"
+                     buttonhighlight="true"
+                     hidden="true">
+    <popupnotificationcontent id="update-unsupported-notification-content" orient="vertical">
+      <description id="update-unsupported-description" data-lazy-l10n-id="appmenu-update-unsupported-message"></description>
     </popupnotificationcontent>
   </popupnotification>
 
   <popupnotification id="appMenu-update-restart-notification"
                      popupid="update-restart"
-                     label="&updateRestart.header.message2;"
-                     buttonlabel="&updateRestart.acceptButton.label;"
-                     buttonaccesskey="&updateRestart.acceptButton.accesskey;"
+                     data-lazy-l10n-id="appmenu-update-restart"
+                     data-l10n-attrs="buttonlabel, buttonaccesskey, secondarybuttonlabel, secondarybuttonaccesskey"
                      closebuttonhidden="true"
-                     secondarybuttonlabel="&updateRestart.cancelButton.label;"
-                     secondarybuttonaccesskey="&updateRestart.cancelButton.accesskey;"
                      dropmarkerhidden="true"
                      checkboxhidden="true"
                      buttonhighlight="true"
                      hidden="true">
     <popupnotificationcontent id="update-restart-notification-content" orient="vertical">
-      <description id="update-restart-description">&updateRestart.message2;</description>
+      <description id="update-restart-description" data-lazy-l10n-id="appmenu-update-restart-message"></description>
     </popupnotificationcontent>
   </popupnotification>
 
@@ -152,37 +162,36 @@
                      popupid="addon-installed"
                      closebuttonhidden="true"
                      secondarybuttonhidden="true"
-                     buttonlabel="&addonPrivateBrowsing.okButton.label;"
-                     buttonaccesskey="&addonPrivateBrowsing.okButton.accesskey;"
+                     data-lazy-l10n-id="appmenu-addon-private-browsing-installed"
+                     data-l10n-attrs="buttonlabel, buttonaccesskey"
                      dropmarkerhidden="true"
                      checkboxhidden="true"
                      buttonhighlight="true"
                      hidden="true">
     <popupnotificationcontent class="addon-installed-notification-content" orient="vertical">
-      <description>&addonPostInstallMessage.label;</description>
+      <description id="addon-install-description" data-lazy-l10n-id="appmenu-addon-post-install-message">
+        <image data-l10n-name="addon-install-icon" class="addon-addon-icon"></image>
+        <image data-l10n-name="addon-menu-icon" class="addon-toolbar-icon"></image>
+      </description>
       <checkbox id="addon-incognito-checkbox"
-                label="&addonPostInstall.incognito.checkbox.label;"
-                accesskey="&addonPostInstall.incognito.checkbox.accesskey;"/>
+                data-lazy-l10n-id="appmenu-addon-post-install-incognito-checkbox"/>
     </popupnotificationcontent>
   </popupnotification>
 
   <popupnotification id="appMenu-addon-private-browsing-notification"
                      popupid="addon-private-browsing"
-                     label="&addonPrivateBrowsing.header2.label;"
+                     data-lazy-l10n-id="appmenu-addon-private-browsing"
+                     data-l10n-attrs="buttonlabel, buttonaccesskey, secondarybuttonlabel, secondarybuttonaccesskey"
                      closebuttonhidden="true"
                      secondarybuttonhidden="false"
-                     buttonlabel="&addonPrivateBrowsing.manageButton.label;"
-                     buttonaccesskey="&addonPrivateBrowsing.manageButton.accesskey;"
-                     secondarybuttonlabel="&addonPrivateBrowsing.okButton.label;"
-                     secondarybuttonaccesskey="&addonPrivateBrowsing.okButton.accesskey;"
                      dropmarkerhidden="true"
                      checkboxhidden="true"
                      buttonhighlight="true"
                      hidden="true">
     <popupnotificationcontent class="addon-private-browsing-notification-content" orient="vertical">
-      <description>&addonPrivateBrowsing.body2.label;</description>
+      <description id="addon-private-browsing-description" data-lazy-l10n-id="appmenu-addon-private-browsing-message"></description>
       <label id="addon-private-browsing-learn-more"
-             class="text-link" is="text-link">&addonPrivateBrowsing.learnMore.label;</label>
+             class="text-link" is="text-link" data-lazy-l10n-id="appmenu-addon-private-browsing-learn-more"></label>
     </popupnotificationcontent>
   </popupnotification>
 </panel>
@@ -222,30 +231,26 @@
         <toolbarbutton class="panel-banner-item"
                        label-update-available="&updateAvailable.panelUI.label;"
                        label-update-manual="&updateManual.panelUI.label;"
+                       label-update-unsupported="&updateUnsupported.panelUI.label;"
                        label-update-restart="&updateRestart.panelUI.label2;"
                        oncommand="PanelUI._onBannerItemSelected(event)"
                        wrap="true"
                        hidden="true"/>
-        <toolbaritem id="appMenu-fxa-container" class="toolbaritem-combined-buttons sync-ui-item">
-          <hbox id="appMenu-fxa-status"
-                flex="1"
-                defaultlabel="&fxaSignIn.label;"
-                signedinTooltiptext="&fxaSignedIn.tooltip;"
-                tooltiptext="&fxaSignedIn.tooltip;"
-                errorlabel="&fxaSignInError.label;"
-                unverifiedlabel="&fxaUnverified.label;"
-                onclick="if (event.which == 1) gSync.onMenuPanelCommand();">
-            <image id="appMenu-fxa-avatar"/>
-            <toolbarbutton id="appMenu-fxa-label"
-                           class="subviewbutton subviewbutton-iconic"
-                           label="&fxaSignIn.label;"
-                           fxabrandname="&syncBrand.fxAccount.label;"/>
-          </hbox>
-          <toolbarseparator orient="vertical"/>
-          <toolbarbutton id="appMenu-fxa-icon"
+        <toolbaritem id="appMenu-fxa-status"
+                     class="sync-ui-item"
+                     flex="1"
+                     defaultlabel="&fxaSignIn.label;"
+# Despite the name, the tooltip says "Open Sync Preferences" and it is only used when *not* signed in.
+# Bug 1542334 changed the behaviour of the item when signed in so the tooltip was no longer appropriate there.
+                     tooltiptext="&fxaSignedIn.tooltip;"
+                     errorlabel="&fxaSignInError.label;"
+                     unverifiedlabel="&fxaUnverified.label;"
+                     onclick="if (event.which == 1) gSync.onMenuPanelCommand();">
+          <image id="appMenu-fxa-avatar"/>
+          <toolbarbutton id="appMenu-fxa-label"
                          class="subviewbutton subviewbutton-iconic"
-                         onmouseover="gSync.refreshSyncButtonsTooltip();"
-                         oncommand="gSync.doSync();"
+                         label="&fxaSignIn.label;"
+                         fxabrandname="&syncBrand.fxAccount.label;"
                          closemenu="none"/>
         </toolbaritem>
         <toolbarseparator class="sync-ui-item"/>
@@ -330,7 +335,7 @@
         <toolbarbutton id="appMenu-logins-button"
                        class="subviewbutton subviewbutton-iconic"
                        label="&logins.label;"
-                       oncommand="LoginHelper.openPasswordManager(window)"
+                       oncommand="LoginHelper.openPasswordManager(window, { entryPoint: 'mainmenu' })"
                        />
         <toolbarbutton id="appMenu-addons-button"
                        class="subviewbutton subviewbutton-iconic"
@@ -394,6 +399,11 @@
                        label="&webDeveloperMenu.label;"
                        closemenu="none"
                        oncommand="PanelUI.showSubView('PanelUI-developer', this)"/>
+       <toolbarbutton id="appMenu-whatsnew-button"
+                      class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                      hidden="true"
+                      closemenu="none"
+                      oncommand="PanelUI.showSubView('PanelUI-whatsNew', this)"/>
         <toolbarbutton id="appMenu-help-button"
                        class="subviewbutton subviewbutton-iconic subviewbutton-nav"
                        label="&appMenuHelp.label;"
@@ -418,6 +428,8 @@
       <vbox class="panel-subview-body">
         <toolbarbutton id="appMenuViewHistorySidebar"
                        label="&appMenuHistory.viewSidebar.label;"
+                       label-checked="&appMenuHistory.hideSidebar.label;"
+                       label-unchecked="&appMenuHistory.viewSidebar.label;"
                        type="checkbox"
                        class="subviewbutton subviewbutton-iconic"
                        key="key_gotoHistory"
@@ -469,7 +481,9 @@
             <toolbarbutton id="PanelUI-remotetabs-view-sidebar"
                            class="subviewbutton subviewbutton-iconic"
                            label="&appMenuRemoteTabs.sidebar.label;"
-                           oncommand="SidebarUI.toggle('viewTabsSidebar');"/>
+                           label-checked="&appMenuRemoteTabs.hidesidebar.label;"
+                           label-unchecked="&appMenuRemoteTabs.sidebar.label;"
+                           oncommand="SidebarUI.toggle('viewTabsSidebar', this);"/>
             <toolbarbutton id="PanelUI-remotetabs-view-managedevices"
                            class="subviewbutton subviewbutton-iconic"
                            label="&appMenuRemoteTabs.managedevices.label;"
@@ -615,6 +629,10 @@
       <vbox id="PanelUI-developerItems" class="panel-subview-body"/>
     </panelview>
 
+    <panelview id="PanelUI-profiler" flex="1">
+      <iframe id="PanelUI-profilerIframe" className="PanelUI-developer-iframe" />
+    </panelview>
+
     <panelview id="PanelUI-characterEncodingView" flex="1">
       <vbox class="panel-subview-body">
         <vbox id="PanelUI-characterEncodingView-pinned"
@@ -633,34 +651,7 @@
 
     <panelview id="PanelUI-panicView" flex="1"
                descriptionheightworkaround="true">
-      <vbox class="panel-subview-body">
-        <hbox id="PanelUI-panic-timeframe">
-          <image id="PanelUI-panic-timeframe-icon" alt=""/>
-          <vbox flex="1">
-            <description id="PanelUI-panic-mainDesc">&panicButton.view.mainTimeframeDesc;</description>
-            <radiogroup id="PanelUI-panic-timeSpan" aria-labelledby="PanelUI-panic-mainDesc" closemenu="none">
-              <radio id="PanelUI-panic-5min" label="&panicButton.view.5min;" selected="true"
-                     value="5" class="subviewradio"/>
-              <radio id="PanelUI-panic-2hr" label="&panicButton.view.2hr;"
-                     value="2" class="subviewradio"/>
-              <radio id="PanelUI-panic-day" label="&panicButton.view.day;"
-                     value="6" class="subviewradio"/>
-            </radiogroup>
-          </vbox>
-        </hbox>
-        <vbox id="PanelUI-panic-explanations">
-          <label id="PanelUI-panic-actionlist-main-label">&panicButton.view.mainActionDesc;</label>
-
-          <label id="PanelUI-panic-actionlist-windows" class="PanelUI-panic-actionlist">&panicButton.view.deleteTabsAndWindows;</label>
-          <label id="PanelUI-panic-actionlist-cookies" class="PanelUI-panic-actionlist">&panicButton.view.deleteCookies;</label>
-          <label id="PanelUI-panic-actionlist-history" class="PanelUI-panic-actionlist">&panicButton.view.deleteHistory;</label>
-          <label id="PanelUI-panic-actionlist-newwindow" class="PanelUI-panic-actionlist">&panicButton.view.openNewWindow;</label>
-
-          <label id="PanelUI-panic-warning">&panicButton.view.undoWarning;</label>
-        </vbox>
-        <button id="PanelUI-panic-view-button"
-                label="&panicButton.view.forgetButton;"/>
-      </vbox>
+      <!-- This is constructed in CustomizableWidgets.jsm -->
     </panelview>
 
     <panelview id="appMenu-moreView" title="&moreMenu.label;" class="PanelUI-subView">
@@ -728,13 +719,17 @@
           <image class="fxaChooseWhatToSyncDevices"/>
           <label class="PanelUI-fxa-signin-instruction-callout">&fxa.signin.callout.label;</label>
           <label class="PanelUI-fxa-signin-instruction-label">&fxa.signin.description.label;</label>
-          <toolbarbutton class="PanelUI-fxa-signin-button" label="&fxa.signin.button.label;" oncommand="gSync.openFxAEmailFirstPage('fxa_discoverability_native');"/>
+          <toolbarbutton class="PanelUI-fxa-signin-button"
+                         label="&fxa.signin.button.label;"
+                         oncommand="gSync.openFxAEmailFirstPageFromFxaMenu(this);"/>
         </vbox>
         <vbox id="PanelUI-fxa-unverified" class="PanelUI-fxa-unverified-instruction-box">
           <image class="fxaGraphicMail"/>
           <label class="PanelUI-fxa-signin-instruction-callout">&fxa.unverified.callout.label;</label>
           <label class="PanelUI-fxa-signin-instruction-label">&fxa.unverified.description.label;</label>
-          <toolbarbutton class="PanelUI-fxa-signin-button" label="&fxa.unverified.button.label;" oncommand="gSync.openPrefs('fxa_discoverability_native');"/>
+          <toolbarbutton class="PanelUI-fxa-signin-button"
+                         label="&fxa.unverified.button.label;"
+                         oncommand="gSync.openPrefsFromFxaMenu('unver_sync_settings', this);"/>
         </vbox>
         <vbox id="PanelUI-fxa-menu">
           <hbox flex="1" align="center" class="fxa-avatar-subpanel">
@@ -748,28 +743,34 @@
           <toolbarbutton id="PanelUI-fxa-menu-sendtab-button"
                          class="subviewbutton subviewbutton-iconic subviewbutton-nav"
                          closemenu="none"
-                         oncommand="gSync.showSendToDeviceView(this);"/>
+                         oncommand="gSync.showSendToDeviceViewFromFxaMenu(this);"/>
           <toolbarbutton id="PanelUI-fxa-menu-remotetabs-button"
                          class="subviewbutton subviewbutton-iconic subviewbutton-nav"
                          label="&appMenuRemoteTabs.label;"
                          closemenu="none"
-                         oncommand="PanelUI.showSubView('PanelUI-remotetabs', this)"/>
+                         oncommand="gSync.showRemoteTabsFromFxaMenu(this);"/>
           <toolbarbutton id="PanelUI-fxa-menu-view-sidebar"
                          class="subviewbutton subviewbutton-iconic"
                          label="&appMenuRemoteTabs.sidebar.label;"
-                         oncommand="SidebarUI.toggle('viewTabsSidebar');">
+                         oncommand="gSync.showSidebarFromFxaMenu(this);">
             <observes element="sidebar-box" attribute="positionend"/>
           </toolbarbutton>
           <toolbarseparator/>
-          <toolbarbutton class="subviewbutton" label="&fxa.menu.connectAnotherDevice.label;" oncommand="gSync.openConnectAnotherDevice('fxa_discoverability_native');"/>
-          <toolbarbutton class="subviewbutton" label="&fxa.menu.manageAccount.label;" oncommand="gSync.openFxAManagePage('fxa_discoverability_native');"/>
-          <toolbarbutton class="subviewbutton" label="&fxa.menu.syncSettings.label;" oncommand="gSync.openPrefs('fxa_discoverability_native');"/>
+          <toolbarbutton class="subviewbutton"
+                         label="&fxa.menu.connectAnotherDevice2.label;"
+                         oncommand="gSync.openConnectAnotherDeviceFromFxaMenu(this);"/>
+          <toolbarbutton class="subviewbutton"
+                         label="&fxa.menu.manageAccount.label;"
+                         oncommand="gSync.openFxAManagePageFromFxaMenu(this);"/>
+          <toolbarbutton class="subviewbutton"
+                         label="&fxa.menu.syncSettings.label;"
+                         oncommand="gSync.openPrefsFromFxaMenu('sync_settings', this);"/>
           <toolbarseparator/>
           <toolbarbutton id="PanelUI-fxa-menu-syncnow-button"
                          label="&syncSyncNowItem.label;"
                          syncinglabel="&syncSyncNowItemSyncing.label;"
                          class="subviewbutton subviewbutton-iconic"
-                         oncommand="gSync.doSync();"
+                         oncommand="gSync.doSyncFromFxaMenu(this);"
                          closemenu="none"/>
         </vbox>
       </vbox>
@@ -803,6 +804,23 @@
                        label-show="&viewBookmarksToolbar.label;"
                        label-hide="&hideBookmarksToolbar.label;"
                        oncommand="BookmarkingUI.toggleBookmarksToolbar();"/>
+      </vbox>
+    </panelview>
+
+    <panelview id="PanelUI-whatsNew" class="PanelUI-subView">
+      <vbox class="panel-subview-body">
+        <box id="PanelUI-whatsNew-title" class="panel-header">
+          <label/>
+        </box>
+        <toolbaritem id="PanelUI-whatsNew-content"
+                     orient="vertical"
+                     smoothscroll="false"
+                     flatList="true"
+                     tooltip="bhTooltip">
+          <html:div id="PanelUI-whatsNew-message-container">
+            <!-- What's New messages will be rendered here -->
+          </html:div>
+        </toolbaritem>
       </vbox>
     </panelview>
   </panelmultiview>

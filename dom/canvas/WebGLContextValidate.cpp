@@ -8,11 +8,11 @@
 #include <algorithm>
 #include "GLSLANG/ShaderLang.h"
 #include "CanvasUtils.h"
-#include "gfxPrefs.h"
 #include "GLContext.h"
 #include "jsfriendapi.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 #include "nsIObserverService.h"
 #include "nsPrintfCString.h"
 #include "WebGLActiveInfo.h"
@@ -288,9 +288,11 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
     return false;
   }
 
-  mDisableExtensions = gfxPrefs::WebGLDisableExtensions();
-  mLoseContextOnMemoryPressure = gfxPrefs::WebGLLoseContextOnMemoryPressure();
-  mCanLoseContextInForeground = gfxPrefs::WebGLCanLoseContextInForeground();
+  mDisableExtensions = StaticPrefs::webgl_disable_extensions();
+  mLoseContextOnMemoryPressure =
+      StaticPrefs::webgl_lose_context_on_memory_pressure();
+  mCanLoseContextInForeground =
+      StaticPrefs::webgl_can_lose_context_in_foreground();
 
   // These are the default values, see 6.2 State tables in the
   // OpenGL ES 2.0.25 spec.
@@ -411,6 +413,9 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
                                (GLint*)&mGLMaxArrayTextureLayers))
     mGLMaxArrayTextureLayers = 0;
 
+  (void)gl->GetPotentialInteger(LOCAL_GL_MAX_VIEWS_OVR,
+                                (GLint*)&mGLMaxMultiviewViews);
+
   gl->GetUIntegerv(LOCAL_GL_MAX_TEXTURE_IMAGE_UNITS,
                    &mGLMaxFragmentTextureImageUnits);
   gl->GetUIntegerv(LOCAL_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS,
@@ -471,20 +476,8 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
   gl->fGetFloatv(driverPName, mGLAliasedPointSizeRange);
 
   ////////////////
-  bool shouldResistFingerprinting =
-      mCanvasElement ?
-                     // If we're constructed from a canvas element
-          nsContentUtils::ShouldResistFingerprinting(GetOwnerDoc())
-                     :
-                     // If we're constructed from an offscreen canvas
-          (mOffscreenCanvas->GetOwnerGlobal()
-               ? nsContentUtils::ShouldResistFingerprinting(
-                     mOffscreenCanvas->GetOwnerGlobal()->PrincipalOrNull())
-               :
-               // Last resort, just check the global preference
-               nsContentUtils::ShouldResistFingerprinting());
 
-  if (gfxPrefs::WebGLMinCapabilityMode()) {
+  if (StaticPrefs::webgl_min_capability_mode()) {
     bool ok = true;
 
     ok &= RestrictCap(&mGLMaxVertexTextureImageUnits,
@@ -517,7 +510,7 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
     }
 
     mDisableFragHighP = true;
-  } else if (shouldResistFingerprinting) {
+  } else if (ShouldResistFingerprinting()) {
     bool ok = true;
 
     ok &= RestrictCap(&mGLMaxTextureSize, kCommonMaxTextureSize);
@@ -582,9 +575,6 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
     gl->fEnable(LOCAL_GL_TEXTURE_CUBE_MAP_SEAMLESS);
   }
 
-  // Check the shader validator pref
-  mBypassShaderValidation = gfxPrefs::WebGLBypassShaderValidator();
-
   // initialize shader translator
   if (!sh::Initialize()) {
     *out_failReason = {"FEATURE_FAILURE_WEBGL_GLSL",
@@ -631,7 +621,7 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
   // vertex array object (the name zero) is also deprecated. [...]"
   mDefaultVertexArray = WebGLVertexArray::Create(this);
   mDefaultVertexArray->BindVertexArray();
-  mDefaultVertexArray->mAttribs.SetLength(mGLMaxVertexAttribs);
+  mDefaultVertexArray->mAttribs.resize(mGLMaxVertexAttribs);
 
   mPixelStore_FlipY = false;
   mPixelStore_PremultiplyAlpha = false;
@@ -664,7 +654,7 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
 
   mNeedsIndexValidation =
       !gl->IsSupported(gl::GLFeature::robust_buffer_access_behavior);
-  switch (gfxPrefs::WebGLForceIndexValidation()) {
+  switch (StaticPrefs::webgl_force_index_validation()) {
     case -1:
       mNeedsIndexValidation = false;
       break;
@@ -672,14 +662,14 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
       mNeedsIndexValidation = true;
       break;
     default:
-      MOZ_ASSERT(gfxPrefs::WebGLForceIndexValidation() == 0);
+      MOZ_ASSERT(StaticPrefs::webgl_force_index_validation() == 0);
       break;
   }
 
   return true;
 }
 
-bool WebGLContext::ValidateFramebufferTarget(GLenum target) {
+bool WebGLContext::ValidateFramebufferTarget(GLenum target) const {
   bool isValid = true;
   switch (target) {
     case LOCAL_GL_FRAMEBUFFER:

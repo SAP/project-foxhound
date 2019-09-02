@@ -19,9 +19,11 @@ RELEASE_PROJECTS = {
     'mozilla-beta',
     'mozilla-release',
     'mozilla-esr60',
+    'mozilla-esr68',
     'comm-central',
     'comm-beta',
     'comm-esr60',
+    'comm-esr68',
     'oak',
 }
 
@@ -33,6 +35,7 @@ RELEASE_PROMOTION_PROJECTS = {
 } | RELEASE_PROJECTS
 
 _OPTIONAL_ATTRIBUTES = (
+    'artifact_map',
     'artifact_prefix',
     'l10n_chunk',
     'locale',
@@ -43,6 +46,7 @@ _OPTIONAL_ATTRIBUTES = (
     'shipping_product',
     'stub-installer',
     'update-channel',
+    'shippable',
 )
 
 

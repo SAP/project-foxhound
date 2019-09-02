@@ -4,38 +4,43 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
- /**
-  * Check for correct functionality of PlacesUtils.getURLsForContainerNode and
-  * PlacesUtils.hasChildURIs (those helpers share almost all of their code)
-  */
+/**
+ * Check for correct functionality of PlacesUtils.getURLsForContainerNode and
+ * PlacesUtils.hasChildURIs (those helpers share almost all of their code)
+ */
 
 var PU = PlacesUtils;
 var hs = PU.history;
-
 
 add_task(async function test_getURLsForContainerNode_folder() {
   info("*** TEST: folder");
   let bookmarks = await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.toolbarGuid,
-    children: [{
-      // This is the folder we will check for children.
-      title: "folder",
-      type: PlacesUtils.bookmarks.TYPE_FOLDER,
-      // Create a folder and a query node inside it, these should not be considered
-      // uri nodes.
-      children: [{
-        title: "inside folder",
+    children: [
+      {
+        // This is the folder we will check for children.
+        title: "folder",
         type: PlacesUtils.bookmarks.TYPE_FOLDER,
-        children: [{
-          url: "place:sort=1",
-          title: "inside query",
-        }],
-      }],
-    }],
+        // Create a folder and a query node inside it, these should not be considered
+        // uri nodes.
+        children: [
+          {
+            title: "inside folder",
+            type: PlacesUtils.bookmarks.TYPE_FOLDER,
+            children: [
+              {
+                url: "place:sort=1",
+                title: "inside query",
+              },
+            ],
+          },
+        ],
+      },
+    ],
   });
 
   var query = hs.getNewQuery();
-  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid]);
   var options = hs.getNewQueryOptions();
 
   info("Check folder without uri nodes");
@@ -57,25 +62,31 @@ add_task(async function test_getURLsForContainerNode_folder_excludeItems() {
   info("*** TEST: folder in an excludeItems root");
   let bookmarks = await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.toolbarGuid,
-    children: [{
-      // This is the folder we will check for children.
-      title: "folder",
-      type: PlacesUtils.bookmarks.TYPE_FOLDER,
-      // Create a folder and a query node inside it, these should not be considered
-      // uri nodes.
-      children: [{
-        title: "inside folder",
+    children: [
+      {
+        // This is the folder we will check for children.
+        title: "folder",
         type: PlacesUtils.bookmarks.TYPE_FOLDER,
-        children: [{
-          url: "place:sort=1",
-          title: "inside query",
-        }],
-      }],
-    }],
+        // Create a folder and a query node inside it, these should not be considered
+        // uri nodes.
+        children: [
+          {
+            title: "inside folder",
+            type: PlacesUtils.bookmarks.TYPE_FOLDER,
+            children: [
+              {
+                url: "place:sort=1",
+                title: "inside query",
+              },
+            ],
+          },
+        ],
+      },
+    ],
   });
 
   var query = hs.getNewQuery();
-  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid]);
   var options = hs.getNewQueryOptions();
   options.excludeItems = true;
 
@@ -107,18 +118,22 @@ add_task(async function test_getURLsForContainerNode_query() {
   // uri nodes.
   await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.menuGuid,
-    children: [{
-      title: "inside folder",
-      type: PlacesUtils.bookmarks.TYPE_FOLDER,
-      children: [{
-        url: "place:sort=1",
-        title: "inside query",
-      }],
-    }],
+    children: [
+      {
+        title: "inside folder",
+        type: PlacesUtils.bookmarks.TYPE_FOLDER,
+        children: [
+          {
+            url: "place:sort=1",
+            title: "inside query",
+          },
+        ],
+      },
+    ],
   });
 
   var query = hs.getNewQuery();
-  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid]);
   var options = hs.getNewQueryOptions();
 
   info("Check query without uri nodes");
@@ -149,18 +164,22 @@ add_task(async function test_getURLsForContainerNode_query_excludeItems() {
   // uri nodes.
   await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.menuGuid,
-    children: [{
-      title: "inside folder",
-      type: PlacesUtils.bookmarks.TYPE_FOLDER,
-      children: [{
-        url: "place:sort=1",
-        title: "inside query",
-      }],
-    }],
+    children: [
+      {
+        title: "inside folder",
+        type: PlacesUtils.bookmarks.TYPE_FOLDER,
+        children: [
+          {
+            url: "place:sort=1",
+            title: "inside query",
+          },
+        ],
+      },
+    ],
   });
 
   var query = hs.getNewQuery();
-  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid]);
   var options = hs.getNewQueryOptions();
   options.excludeItems = true;
 
@@ -192,18 +211,22 @@ add_task(async function test_getURLsForContainerNode_query_excludeQueries() {
   // uri nodes.
   await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.menuGuid,
-    children: [{
-      title: "inside folder",
-      type: PlacesUtils.bookmarks.TYPE_FOLDER,
-      children: [{
-        url: "place:sort=1",
-        title: "inside query",
-      }],
-    }],
+    children: [
+      {
+        title: "inside folder",
+        type: PlacesUtils.bookmarks.TYPE_FOLDER,
+        children: [
+          {
+            url: "place:sort=1",
+            title: "inside query",
+          },
+        ],
+      },
+    ],
   });
 
   var query = hs.getNewQuery();
-  query.setParents([PlacesUtils.bookmarks.toolbarGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.toolbarGuid]);
   var options = hs.getNewQueryOptions();
   options.expandQueries = false;
 

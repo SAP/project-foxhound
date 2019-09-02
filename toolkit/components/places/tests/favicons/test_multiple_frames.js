@@ -15,8 +15,7 @@ add_task(async function() {
   // Fake window.
   let win = { devicePixelRatio: 1.0 };
   let icoData = readFileData(do_get_file("favicon-multi.ico"));
-  PlacesUtils.favicons.replaceFaviconData(faviconURI, icoData, icoData.length,
-                                          "image/x-icon");
+  PlacesUtils.favicons.replaceFaviconData(faviconURI, icoData, "image/x-icon");
   await setFaviconForPage(pageURI, faviconURI);
 
   for (let size of [16, 32, 64]) {
@@ -31,7 +30,11 @@ add_task(async function() {
     info("Check moz-anno:favicon protocol");
     await compareFavicons(
       Services.io.newFileURI(file),
-      PlacesUtils.urlWithSizeRef(win, PlacesUtils.favicons.getFaviconLinkForIcon(faviconURI).spec, size)
+      PlacesUtils.urlWithSizeRef(
+        win,
+        PlacesUtils.favicons.getFaviconLinkForIcon(faviconURI).spec,
+        size
+      )
     );
 
     info("Check page-icon protocol");

@@ -63,8 +63,10 @@ const Curl = {
 
     // The cURL command is expected to run on the same platform that Firefox runs
     // (it may be different from the inspected page platform).
-    const escapeString = Services.appinfo.OS == "WINNT" ?
-                       utils.escapeStringWin : utils.escapeStringPosix;
+    const escapeString =
+      Services.appinfo.OS == "WINNT"
+        ? utils.escapeStringWin
+        : utils.escapeStringPosix;
 
     // Add URL.
     command.push(escapeString(data.url));
@@ -74,18 +76,30 @@ const Curl = {
 
     // Create post data.
     const postData = [];
-    if (utils.isUrlEncodedRequest(data) ||
-          ["PUT", "POST", "PATCH"].includes(data.method)) {
-      postDataText = data.postDataText;
-      postData.push("--data");
-      postData.push(escapeString(utils.writePostDataTextParams(postDataText)));
-      ignoredHeaders.add("content-length");
-    } else if (multipartRequest) {
+    if (multipartRequest) {
+      // WINDOWS KNOWN LIMITATIONS: Due to the specificity of running curl on
+      // cmd.exe even correctly escaped windows newline \r\n will be
+      // treated by curl as plain local newline. It corresponds in unix
+      // to single \n and that's what curl will send in payload.
+      // It may be particularly hurtful for multipart/form-data payloads
+      // which composed using \n only, not \r\n, may be not parsable for
+      // peers which split parts of multipart payload using \r\n.
       postDataText = data.postDataText;
       postData.push("--data-binary");
       const boundary = utils.getMultipartBoundary(data);
-      const text = utils.removeBinaryDataFromMultipartText(postDataText, boundary);
+      const text = utils.removeBinaryDataFromMultipartText(
+        postDataText,
+        boundary
+      );
       postData.push(escapeString(text));
+      ignoredHeaders.add("content-length");
+    } else if (
+      utils.isUrlEncodedRequest(data) ||
+      ["PUT", "POST", "PATCH"].includes(data.method)
+    ) {
+      postDataText = data.postDataText;
+      postData.push("--data");
+      postData.push(escapeString(utils.writePostDataTextParams(postDataText)));
       ignoredHeaders.add("content-length");
     }
     // curl generates the host header itself based on the given URL
@@ -151,14 +165,18 @@ const CurlUtils = {
     }
 
     postDataText = postDataText.toLowerCase();
-    if (postDataText.includes("content-type: application/x-www-form-urlencoded")) {
+    if (
+      postDataText.includes("content-type: application/x-www-form-urlencoded")
+    ) {
       return true;
     }
 
     const contentType = this.findHeader(data.headers, "content-type");
 
-    return (contentType &&
-      contentType.toLowerCase().includes("application/x-www-form-urlencoded"));
+    return (
+      contentType &&
+      contentType.toLowerCase().includes("application/x-www-form-urlencoded")
+    );
   },
 
   /**
@@ -182,8 +200,9 @@ const CurlUtils = {
 
     const contentType = this.findHeader(data.headers, "content-type");
 
-    return (contentType &&
-      contentType.toLowerCase().includes("multipart/form-data;"));
+    return (
+      contentType && contentType.toLowerCase().includes("multipart/form-data;")
+    );
   },
 
   /**
@@ -280,9 +299,9 @@ const CurlUtils = {
           // The header lines and the binary blob is separated by 2 CRLF's.
           // Add only the headers to the result.
           const headers = part.split("\r\n\r\n")[0];
-          result += boundary + "\r\n" + headers + "\r\n\r\n";
+          result += boundary + headers + "\r\n\r\n";
         } else {
-          result += boundary + "\r\n" + part;
+          result += boundary + part;
         }
       }
     }
@@ -330,7 +349,10 @@ const CurlUtils = {
         continue;
       }
 
-      const header = [line.slice(0, indexOfColon), line.slice(indexOfColon + 1)];
+      const header = [
+        line.slice(0, indexOfColon),
+        line.slice(indexOfColon + 1),
+      ];
       if (header.length != 2) {
         continue;
       }
@@ -350,7 +372,9 @@ const CurlUtils = {
       let code = x.charCodeAt(0);
       if (code < 256) {
         // Add leading zero when needed to not care about the next character.
-        return code < 16 ? "\\x0" + code.toString(16) : "\\x" + code.toString(16);
+        return code < 16
+          ? "\\x0" + code.toString(16)
+          : "\\x" + code.toString(16);
       }
       code = code.toString(16);
       return "\\u" + ("0000" + code).substr(code.length, 4);
@@ -358,12 +382,17 @@ const CurlUtils = {
 
     if (/[^\x20-\x7E]|\'/.test(str)) {
       // Use ANSI-C quoting syntax.
-      return "$\'" + str.replace(/\\/g, "\\\\")
-                        .replace(/\'/g, "\\\'")
-                        .replace(/\n/g, "\\n")
-                        .replace(/\r/g, "\\r")
-                        .replace(/!/g, "\\041")
-                        .replace(/[^\x20-\x7E]/g, escapeCharacter) + "'";
+      return (
+        "$'" +
+        str
+          .replace(/\\/g, "\\\\")
+          .replace(/\'/g, "\\'")
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r")
+          .replace(/!/g, "\\041")
+          .replace(/[^\x20-\x7E]/g, escapeCharacter) +
+        "'"
+      );
     }
 
     // Use single quote syntax.
@@ -387,12 +416,22 @@ const CurlUtils = {
        MS Crt arguments parser won't collapse them.
 
        Replace new line outside of quotes since cmd.exe doesn't let
-       to do it inside.
+       to do it inside. At the same time it gets duplicated,
+       because first newline is consumed by ^.
+       So for quote: `"Text-start\r\ntext-continue"`,
+       we get: `"Text-start"^\r\n\r\n"text-continue"`,
+       where `^\r\n` is just breaking the command, the `\r\n` right
+       after is actual escaped newline.
     */
-    return "\"" + str.replace(/"/g, "\"\"")
-                     .replace(/%/g, "\"%\"")
-                     .replace(/\\/g, "\\\\")
-                     .replace(/[\r\n]+/g, "\"^$&\"") + "\"";
+    return (
+      '"' +
+      str
+        .replace(/"/g, '""')
+        .replace(/%/g, '"%"')
+        .replace(/\\/g, "\\\\")
+        .replace(/[\r\n]{1,2}/g, '"^$&$&"') +
+      '"'
+    );
   },
 };
 

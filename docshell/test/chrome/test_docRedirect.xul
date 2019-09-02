@@ -7,8 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1342989
 <window title="Mozilla Bug 1342989"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <script type="application/javascript">
   <![CDATA[
@@ -72,8 +71,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1342989
   var webNav = Cc["@mozilla.org/appshell/appShellService;1"].
       getService(Ci.nsIAppShellService).createWindowlessBrowser(true);
   let docShell = webNav.docShell;
-  docShell.createAboutBlankContentViewer(
-      Cc["@mozilla.org/systemprincipal;1"].getService(Ci.nsIPrincipal));
+  let system = Cc["@mozilla.org/systemprincipal;1"].getService(Ci.nsIPrincipal);
+  docShell.createAboutBlankContentViewer(system, system);
 
   progressListener.add(docShell, function(success) {
     webNav.close();

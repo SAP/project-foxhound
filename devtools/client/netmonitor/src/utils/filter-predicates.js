@@ -27,10 +27,12 @@ function isCss({ mimeType }) {
 }
 
 function isJs({ mimeType }) {
-  return mimeType && (
-    mimeType.includes("/ecmascript") ||
-    mimeType.includes("/javascript") ||
-    mimeType.includes("/x-javascript"));
+  return (
+    mimeType &&
+    (mimeType.includes("/ecmascript") ||
+      mimeType.includes("/javascript") ||
+      mimeType.includes("/x-javascript"))
+  );
 }
 
 function isXHR(item) {
@@ -40,13 +42,13 @@ function isXHR(item) {
 
 function isFont({ url, mimeType }) {
   // Fonts are a mess.
-  return (mimeType && (
-      mimeType.includes("font/") ||
-      mimeType.includes("/font"))) ||
+  return (
+    (mimeType && (mimeType.includes("font/") || mimeType.includes("/font"))) ||
     url.includes(".eot") ||
     url.includes(".ttf") ||
     url.includes(".otf") ||
-    url.includes(".woff");
+    url.includes(".woff")
+  );
 }
 
 function isImage({ mimeType }) {
@@ -55,15 +57,22 @@ function isImage({ mimeType }) {
 
 function isMedia({ mimeType }) {
   // Not including images.
-  return mimeType && (
-    mimeType.includes("audio/") ||
-    mimeType.includes("video/") ||
-    mimeType.includes("model/") ||
-    mimeType === "application/vnd.apple.mpegurl" ||
-    mimeType === "application/x-mpegurl");
+  return (
+    mimeType &&
+    (mimeType.includes("audio/") ||
+      mimeType.includes("video/") ||
+      mimeType.includes("model/") ||
+      mimeType === "application/vnd.apple.mpegurl" ||
+      mimeType === "application/x-mpegurl")
+  );
 }
 
-function isWS({ requestHeaders, responseHeaders }) {
+function isWS({ requestHeaders, responseHeaders, cause }) {
+  // For the first call, the requestHeaders is not ready(empty),
+  // so checking for cause.type instead (Bug-1454962)
+  if (typeof cause.type === "string" && cause.type === "websocket") {
+    return true;
+  }
   // Detect a websocket upgrade if request has an Upgrade header with value 'websocket'
   if (!requestHeaders || !Array.isArray(requestHeaders.headers)) {
     return false;
@@ -71,16 +80,19 @@ function isWS({ requestHeaders, responseHeaders }) {
 
   // Find the 'upgrade' header.
   let upgradeHeader = requestHeaders.headers.find(header => {
-    return (header.name.toLowerCase() == "upgrade");
+    return header.name.toLowerCase() == "upgrade";
   });
 
   // If no header found on request, check response - mainly to get
   // something we can unit test, as it is impossible to set
   // the Upgrade header on outgoing XHR as per the spec.
-  if (!upgradeHeader && responseHeaders &&
-      Array.isArray(responseHeaders.headers)) {
+  if (
+    !upgradeHeader &&
+    responseHeaders &&
+    Array.isArray(responseHeaders.headers)
+  ) {
     upgradeHeader = responseHeaders.headers.find(header => {
-      return (header.name.toLowerCase() == "upgrade");
+      return header.name.toLowerCase() == "upgrade";
     });
   }
 

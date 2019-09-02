@@ -55,16 +55,19 @@ HTMLIFrameElement::HTMLIFrameElement(
     : nsGenericHTMLFrameElement(std::move(aNodeInfo), aFromParser) {
   // We always need a featurePolicy, even if not exposed.
   mFeaturePolicy = new FeaturePolicy(this);
+
+  nsCOMPtr<nsIPrincipal> origin = GetFeaturePolicyDefaultOrigin();
+  MOZ_ASSERT(origin);
+  mFeaturePolicy->SetDefaultOrigin(origin);
 }
 
 HTMLIFrameElement::~HTMLIFrameElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLIFrameElement)
 
-nsresult HTMLIFrameElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                       nsIContent* aBindingParent) {
-  nsresult rv =
-      nsGenericHTMLFrameElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult HTMLIFrameElement::BindToTree(BindContext& aContext,
+                                       nsINode& aParent) {
+  nsresult rv = nsGenericHTMLFrameElement::BindToTree(aContext, aParent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -81,16 +84,16 @@ bool HTMLIFrameElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                        nsAttrValue& aResult) {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::marginwidth) {
-      return aResult.ParseSpecialIntValue(aValue);
+      return aResult.ParseNonNegativeIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::marginheight) {
-      return aResult.ParseSpecialIntValue(aValue);
+      return aResult.ParseNonNegativeIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::width) {
-      return aResult.ParseSpecialIntValue(aValue);
+      return aResult.ParseHTMLDimension(aValue);
     }
     if (aAttribute == nsGkAtoms::height) {
-      return aResult.ParseSpecialIntValue(aValue);
+      return aResult.ParseHTMLDimension(aValue);
     }
     if (aAttribute == nsGkAtoms::frameborder) {
       return ParseFrameborderValue(aValue, aResult);

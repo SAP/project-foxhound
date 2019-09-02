@@ -21,7 +21,9 @@ namespace CacheFileUtils {
 // This designates the format for the "alt-data" metadata.
 // When the format changes we need to update the version.
 static uint32_t const kAltDataVersion = 1;
-const char *kAltDataKey = "alt-data";
+const char* kAltDataKey = "alt-data";
+
+static uint32_t const kBaseDomainAccessInfoVersion = 1;
 
 namespace {
 
@@ -30,7 +32,7 @@ namespace {
  */
 class KeyParser : protected Tokenizer {
  public:
-  explicit KeyParser(nsACString const &aInput)
+  explicit KeyParser(nsACString const& aInput)
       : Tokenizer(aInput),
         isAnonymous(false)
         // Initialize the cache key to a zero length by default
@@ -98,7 +100,8 @@ class KeyParser : protected Tokenizer {
         break;
       case 'i': {
         // Leaving to be able to read and understand oldformatted entries
-        if (!ReadInteger(&originAttribs.mAppId)) {
+        uint32_t deprecatedAppId = 0;
+        if (!ReadInteger(&deprecatedAppId)) {
           return false;  // not a valid 32-bit integer
         }
         break;
@@ -124,7 +127,7 @@ class KeyParser : protected Tokenizer {
     return ParseTags();
   }
 
-  bool ParseValue(nsACString *result = nullptr) {
+  bool ParseValue(nsACString* result = nullptr) {
     // If at the end, fail since we expect a comma ; value may be empty tho
     if (CheckEOF()) {
       return false;
@@ -165,16 +168,16 @@ class KeyParser : protected Tokenizer {
     return info.forget();
   }
 
-  void URISpec(nsACString &result) { result.Assign(cacheKey); }
+  void URISpec(nsACString& result) { result.Assign(cacheKey); }
 
-  void IdEnhance(nsACString &result) { result.Assign(idEnhance); }
+  void IdEnhance(nsACString& result) { result.Assign(idEnhance); }
 };
 
 }  // namespace
 
-already_AddRefed<nsILoadContextInfo> ParseKey(const nsACString &aKey,
-                                              nsACString *aIdEnhance,
-                                              nsACString *aURISpec) {
+already_AddRefed<nsILoadContextInfo> ParseKey(const nsACString& aKey,
+                                              nsACString* aIdEnhance,
+                                              nsACString* aURISpec) {
   KeyParser parser(aKey);
   RefPtr<LoadContextInfo> info = parser.Parse();
 
@@ -186,7 +189,7 @@ already_AddRefed<nsILoadContextInfo> ParseKey(const nsACString &aKey,
   return info.forget();
 }
 
-void AppendKeyPrefix(nsILoadContextInfo *aInfo, nsACString &_retval) {
+void AppendKeyPrefix(nsILoadContextInfo* aInfo, nsACString& _retval) {
   /**
    * This key is used to salt file hashes.  When form of the key is changed
    * cache entries will fail to find on disk.
@@ -195,7 +198,7 @@ void AppendKeyPrefix(nsILoadContextInfo *aInfo, nsACString &_retval) {
    * Keep the attributes list sorted according their ASCII code.
    */
 
-  OriginAttributes const *oa = aInfo->OriginAttributesPtr();
+  OriginAttributes const* oa = aInfo->OriginAttributesPtr();
   nsAutoCString suffix;
   oa->CreateSuffix(suffix);
   if (!suffix.IsEmpty()) {
@@ -211,8 +214,8 @@ void AppendKeyPrefix(nsILoadContextInfo *aInfo, nsACString &_retval) {
   }
 }
 
-void AppendTagWithValue(nsACString &aTarget, char const aTag,
-                        const nsACString &aValue) {
+void AppendTagWithValue(nsACString& aTarget, char const aTag,
+                        const nsACString& aValue) {
   aTarget.Append(aTag);
 
   // First check the value string to save some memory copying
@@ -232,8 +235,8 @@ void AppendTagWithValue(nsACString &aTarget, char const aTag,
   aTarget.Append(',');
 }
 
-nsresult KeyMatchesLoadContextInfo(const nsACString &aKey,
-                                   nsILoadContextInfo *aInfo, bool *_retval) {
+nsresult KeyMatchesLoadContextInfo(const nsACString& aKey,
+                                   nsILoadContextInfo* aInfo, bool* _retval) {
   nsCOMPtr<nsILoadContextInfo> info = ParseKey(aKey);
 
   if (!info) {
@@ -247,7 +250,7 @@ nsresult KeyMatchesLoadContextInfo(const nsACString &aKey,
 ValidityPair::ValidityPair(uint32_t aOffset, uint32_t aLen)
     : mOffset(aOffset), mLen(aLen) {}
 
-bool ValidityPair::CanBeMerged(const ValidityPair &aOther) const {
+bool ValidityPair::CanBeMerged(const ValidityPair& aOther) const {
   // The pairs can be merged into a single one if the start of one of the pairs
   // is placed anywhere in the validity interval of other pair or exactly after
   // its end.
@@ -258,7 +261,7 @@ bool ValidityPair::IsInOrFollows(uint32_t aOffset) const {
   return mOffset <= aOffset && mOffset + mLen >= aOffset;
 }
 
-bool ValidityPair::LessThan(const ValidityPair &aOther) const {
+bool ValidityPair::LessThan(const ValidityPair& aOther) const {
   if (mOffset < aOther.mOffset) {
     return true;
   }
@@ -270,7 +273,7 @@ bool ValidityPair::LessThan(const ValidityPair &aOther) const {
   return false;
 }
 
-void ValidityPair::Merge(const ValidityPair &aOther) {
+void ValidityPair::Merge(const ValidityPair& aOther) {
   MOZ_ASSERT(CanBeMerged(aOther));
 
   uint32_t offset = std::min(mOffset, aOther.mOffset);
@@ -346,7 +349,7 @@ size_t ValidityMap::SizeOfExcludingThis(
   return mMap.ShallowSizeOfExcludingThis(mallocSizeOf);
 }
 
-ValidityPair &ValidityMap::operator[](uint32_t aIdx) {
+ValidityPair& ValidityMap::operator[](uint32_t aIdx) {
   return mMap.ElementAt(aIdx);
 }
 
@@ -596,12 +599,12 @@ bool CachePerfStats::IsCacheSlow() {
 }
 
 // static
-void CachePerfStats::GetSlowStats(uint32_t *aSlow, uint32_t *aNotSlow) {
+void CachePerfStats::GetSlowStats(uint32_t* aSlow, uint32_t* aNotSlow) {
   *aSlow = sCacheSlowCnt;
   *aNotSlow = sCacheNotSlowCnt;
 }
 
-void FreeBuffer(void *aBuf) {
+void FreeBuffer(void* aBuf) {
 #ifndef NS_FREE_PERMANENT_DATA
   if (CacheObserver::ShuttingDown()) {
     return;
@@ -611,8 +614,8 @@ void FreeBuffer(void *aBuf) {
   free(aBuf);
 }
 
-nsresult ParseAlternativeDataInfo(const char *aInfo, int64_t *_offset,
-                                  nsACString *_type) {
+nsresult ParseAlternativeDataInfo(const char* aInfo, int64_t* _offset,
+                                  nsACString* _type) {
   // The format is: "1;12345,javascript/binary"
   //         <version>;<offset>,<type>
   mozilla::Tokenizer p(aInfo, nullptr, "/");
@@ -649,14 +652,76 @@ nsresult ParseAlternativeDataInfo(const char *aInfo, int64_t *_offset,
   return NS_OK;
 }
 
-void BuildAlternativeDataInfo(const char *aInfo, int64_t aOffset,
-                              nsACString &_retval) {
+void BuildAlternativeDataInfo(const char* aInfo, int64_t aOffset,
+                              nsACString& _retval) {
   _retval.Truncate();
   _retval.AppendInt(kAltDataVersion);
   _retval.Append(';');
   _retval.AppendInt(aOffset);
   _retval.Append(',');
   _retval.Append(aInfo);
+}
+
+nsresult ParseBaseDomainAccessInfo(const char* aInfo, uint32_t aTrID,
+                                   const uint32_t* aSearchSiteID, bool* _found,
+                                   uint16_t* _count) {
+  // The format is: "1;12;339456,490536687,1964820,"
+  //         <version>;<telemetry_report_ID>;<siteID>,<siteID>,
+  mozilla::Tokenizer p(aInfo);
+  uint32_t i = 0;
+  uint16_t siteIDCnt = 0;
+
+  // Check version and telemetry report ID
+  if (!p.ReadInteger(&i) || i != kBaseDomainAccessInfoVersion ||
+      !p.CheckChar(';') || !p.ReadInteger(&i) || i != aTrID ||
+      !p.CheckChar(';')) {
+    LOG(
+        ("ParseBaseDomainAccessInfo() - cannot parse info [info=%s, version=%u,"
+         " trID=%u]",
+         aInfo, kBaseDomainAccessInfoVersion, aTrID));
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  do {
+    if (!p.ReadInteger(&i) || !p.CheckChar(',')) {
+      LOG(
+          ("ParseBaseDomainAccessInfo() - cannot parse site ID [info=%s, "
+           "siteIDCnt=%d]",
+           aInfo, siteIDCnt));
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    // If aSearchSiteID was provided, we don't need the total count of IDs.
+    // Just return true and don't process the rest of data.
+    if (aSearchSiteID && *aSearchSiteID == i) {
+      *_found = true;
+      return NS_OK;
+    }
+
+    ++siteIDCnt;
+  } while (!p.CheckEOF());
+
+  if (_count) {
+    *_count = siteIDCnt;
+  }
+
+  return NS_OK;
+}
+
+void BuildOrAppendBaseDomainAccessInfo(const char* aOldInfo, uint32_t aTrID,
+                                       uint32_t aSiteID, nsACString& _retval) {
+  if (aOldInfo) {
+    _retval.Assign(aOldInfo);
+  } else {
+    _retval.Truncate();
+    _retval.AppendInt(kBaseDomainAccessInfoVersion);
+    _retval.Append(';');
+    _retval.AppendInt(aTrID);
+    _retval.Append(';');
+  }
+
+  _retval.AppendInt(aSiteID);
+  _retval.Append(',');
 }
 
 }  // namespace CacheFileUtils

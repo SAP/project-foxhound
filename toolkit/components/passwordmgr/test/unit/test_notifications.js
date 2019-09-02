@@ -1,12 +1,15 @@
-/*
+/**
  * Tests notifications dispatched when modifying stored logins.
  */
 
-var expectedNotification;
-var expectedData;
+let expectedNotification;
+let expectedData;
 
-var TestObserver = {
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
+let TestObserver = {
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIObserver,
+    Ci.nsISupportsWeakReference,
+  ]),
 
   observe(subject, topic, data) {
     Assert.equal(topic, "passwordmgr-storage-changed");
@@ -21,8 +24,8 @@ var TestObserver = {
       case "modifyLogin":
         Assert.ok(subject instanceof Ci.nsIArray);
         Assert.equal(subject.length, 2);
-        var oldLogin = subject.queryElementAt(0, Ci.nsILoginInfo);
-        var newLogin = subject.queryElementAt(1, Ci.nsILoginInfo);
+        let oldLogin = subject.queryElementAt(0, Ci.nsILoginInfo);
+        let newLogin = subject.queryElementAt(1, Ci.nsILoginInfo);
         Assert.ok(expectedData[0].equals(oldLogin)); // nsILoginInfo.equals()
         Assert.ok(expectedData[1].equals(newLogin));
         break;
@@ -49,18 +52,31 @@ var TestObserver = {
 };
 
 add_task(function test_notifications() {
+  let testnum = 0;
+  let testdesc = "Setup of nsLoginInfo test-users";
+
   try {
-    var testnum = 0;
-    var testdesc = "Setup of nsLoginInfo test-users";
+    let testuser1 = new LoginInfo(
+      "http://testhost1",
+      "",
+      null,
+      "dummydude",
+      "itsasecret",
+      "put_user_here",
+      "put_pw_here"
+    );
 
-    var testuser1 = new LoginInfo("http://testhost1", "", null,
-                                  "dummydude", "itsasecret", "put_user_here", "put_pw_here");
-
-    var testuser2 = new LoginInfo("http://testhost2", "", null,
-                                  "dummydude2", "itsasecret2", "put_user2_here", "put_pw2_here");
+    let testuser2 = new LoginInfo(
+      "http://testhost2",
+      "",
+      null,
+      "dummydude2",
+      "itsasecret2",
+      "put_user2_here",
+      "put_pw2_here"
+    );
 
     Services.obs.addObserver(TestObserver, "passwordmgr-storage-changed");
-
 
     /* ========== 1 ========== */
     testnum = 1;
@@ -124,8 +140,10 @@ add_task(function test_notifications() {
     expectedData = "http://site.com";
     Services.logins.setLoginSavingEnabled("http://site.com", false);
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.assertDisabledHostsEqual(Services.logins.getAllDisabledHosts(),
-                                            ["http://site.com"]);
+    LoginTestUtils.assertDisabledHostsEqual(
+      Services.logins.getAllDisabledHosts(),
+      ["http://site.com"]
+    );
 
     /* ========== 8 ========== */
     testnum++;
@@ -135,8 +153,10 @@ add_task(function test_notifications() {
     expectedData = "http://site.com";
     Services.logins.setLoginSavingEnabled("http://site.com", false);
     Assert.equal(expectedNotification, null);
-    LoginTestUtils.assertDisabledHostsEqual(Services.logins.getAllDisabledHosts(),
-                                            ["http://site.com"]);
+    LoginTestUtils.assertDisabledHostsEqual(
+      Services.logins.getAllDisabledHosts(),
+      ["http://site.com"]
+    );
 
     /* ========== 9 ========== */
     testnum++;
@@ -162,6 +182,8 @@ add_task(function test_notifications() {
 
     LoginTestUtils.clearData();
   } catch (e) {
-    throw new Error("FAILED in test #" + testnum + " -- " + testdesc + ": " + e);
+    throw new Error(
+      "FAILED in test #" + testnum + " -- " + testdesc + ": " + e
+    );
   }
 });

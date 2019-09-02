@@ -39,7 +39,7 @@ namespace ChromeUtils {
    *                          `\d+(\-\d+)?\.fxsnapshot`.
    */
   [Throws]
-  DOMString saveHeapSnapshot(optional HeapSnapshotBoundaries boundaries);
+  DOMString saveHeapSnapshot(optional HeapSnapshotBoundaries boundaries = {});
 
   /**
    * This is the same as saveHeapSnapshot, but with a different return value.
@@ -49,7 +49,7 @@ namespace ChromeUtils {
    *                          `.fxsnapshot`.
    */
   [Throws]
-  DOMString saveHeapSnapshotGetId(optional HeapSnapshotBoundaries boundaries);
+  DOMString saveHeapSnapshotGetId(optional HeapSnapshotBoundaries boundaries = {});
 
   /**
    * Deserialize a core dump into a HeapSnapshot.
@@ -168,7 +168,7 @@ partial namespace ChromeUtils {
    * @param originAttrs       The originAttributes from the caller.
    */
   ByteString
-  originAttributesToSuffix(optional OriginAttributesDictionary originAttrs);
+  originAttributesToSuffix(optional OriginAttributesDictionary originAttrs = {});
 
   /**
    * Returns true if the members of |originAttrs| match the provided members
@@ -178,8 +178,8 @@ partial namespace ChromeUtils {
    * @param pattern           The pattern to use for matching.
    */
   boolean
-  originAttributesMatchPattern(optional OriginAttributesDictionary originAttrs,
-                               optional OriginAttributesPatternDictionary pattern);
+  originAttributesMatchPattern(optional OriginAttributesDictionary originAttrs = {},
+                               optional OriginAttributesPatternDictionary pattern = {});
 
   /**
    * Returns an OriginAttributesDictionary with values from the |origin| suffix
@@ -204,14 +204,14 @@ partial namespace ChromeUtils {
    *                          default values.
    */
   OriginAttributesDictionary
-  fillNonDefaultOriginAttributes(optional OriginAttributesDictionary originAttrs);
+  fillNonDefaultOriginAttributes(optional OriginAttributesDictionary originAttrs = {});
 
   /**
    * Returns true if the 2 OriginAttributes are equal.
    */
   boolean
-  isOriginAttributesEqual(optional OriginAttributesDictionary aA,
-                          optional OriginAttributesDictionary aB);
+  isOriginAttributesEqual(optional OriginAttributesDictionary aA = {},
+                          optional OriginAttributesDictionary aB = {});
 
   /**
    * Loads and compiles the script at the given URL and returns an object
@@ -220,7 +220,7 @@ partial namespace ChromeUtils {
    */
   [NewObject]
   Promise<PrecompiledScript>
-  compileScript(DOMString url, optional CompileScriptOptionsDictionary options);
+  compileScript(DOMString url, optional CompileScriptOptionsDictionary options = {});
 
   /**
    * Returns an optimized QueryInterface method which, when called from
@@ -275,7 +275,7 @@ partial namespace ChromeUtils {
    */
   [Throws]
   void idleDispatch(IdleRequestCallback callback,
-                    optional IdleRequestOptions options);
+                    optional IdleRequestOptions options = {});
 
   /**
    * Synchronously loads and evaluates the js file located at
@@ -363,6 +363,23 @@ partial namespace ChromeUtils {
   Promise<sequence<PerformanceInfoDictionary>> requestPerformanceMetrics();
 
   /**
+   * Set the collection of specific detailed performance timing information.
+   * Selecting 0 for the mask will end existing collection. All metrics that
+   * are chosen will be cleared after updating the mask.
+   *
+   * @param aCollectionMask A bitmask where each bit corresponds to a metric
+   *        to be collected as listed in PerfStats::Metric.
+   */
+  void setPerfStatsCollectionMask(unsigned long long aCollectionMask);
+
+  /**
+   * Collect results of detailed performance timing information.
+   * The output is a JSON string containing performance timings.
+   */
+  [Throws]
+  Promise<DOMString> collectPerfStats();
+
+  /**
   * Returns a Promise containing a sequence of I/O activities
   */
   [Throws]
@@ -395,8 +412,14 @@ partial namespace ChromeUtils {
   [ChromeOnly]
   void resetLastExternalProtocolIframeAllowed();
 
+  /**
+   * Register a new toplevel window global actor. This method may only be
+   * called in the parent process. |name| must be globally unique.
+   *
+   * See JSWindowActor.webidl for WindowActorOptions fields documentation.
+   */
   [ChromeOnly, Throws]
-  void registerWindowActor(DOMString aName, WindowActorOptions aOptions);
+  void registerWindowActor(DOMString aName, optional WindowActorOptions aOptions = {});
 
   [ChromeOnly]
   void unregisterWindowActor(DOMString aName);
@@ -415,7 +438,7 @@ enum ProcType {
  "web",
  "file",
  "extension",
- "privileged",
+ "privilegedabout",
  "webLargeAllocation",
  "gpu",
  "rdd",
@@ -520,14 +543,12 @@ dictionary IOActivityDataDictionary {
  * (3) Update the methods on mozilla::OriginAttributesPattern, including matching.
  */
 dictionary OriginAttributesDictionary {
-  unsigned long appId = 0;
   unsigned long userContextId = 0;
   boolean inIsolatedMozBrowser = false;
   unsigned long privateBrowsingId = 0;
   DOMString firstPartyDomain = "";
 };
 dictionary OriginAttributesPatternDictionary {
-  unsigned long appId;
   unsigned long userContextId;
   boolean inIsolatedMozBrowser;
   unsigned long privateBrowsingId;
@@ -590,50 +611,6 @@ dictionary HeapSnapshotBoundaries {
 dictionary Base64URLEncodeOptions {
   /** Specifies whether the output should be padded with "=" characters. */
   required boolean pad;
-};
-
-dictionary WindowActorOptions {
-  /**
-   * If this is set to `true`, allow this actor to be created for subframes,
-   * and not just toplevel window globals.
-   */
-  boolean allFrames = false;
-
-  /**
-   * If this is set to `true`, allow this actor to be created for window
-   * globals loaded in chrome browsing contexts, such as those used to load the
-   * tabbrowser.
-   */
-  boolean includeChrome = false;
-
-  /** This fields are used for configuring individual sides of the actor. */
-  required WindowActorSidedOptions parent;
-  required WindowActorChildOptions child;
-};
-
-dictionary WindowActorSidedOptions {
-  /** The module path which should be loaded for the actor on this side. */
-  required ByteString moduleURI;
-};
-
-dictionary WindowActorChildOptions : WindowActorSidedOptions {
-  /**
-   * Events which this actor wants to be listening to. When these events fire,
-   * it will trigger actor creation, and then forward the event to the actor.
-   */
-  record<DOMString, AddEventListenerOptions> events;
-
- /**
-  * Array of observer topics to listen to. A observer will be added for each
-  * topic in the list.
-  *
-  * Observers in the list much use the nsGlobalWindowInner object as their topic,
-  * and the events will only be dispatched to the corresponding window actor. If
-  * additional observer notifications are needed with different listening
-  * conditions, please file a bug in DOM requesting support for the subject
-  * required to be added to JS WindowActor objects.
-  **/
-  sequence<ByteString> observers;
 };
 
 enum Base64URLDecodePadding {

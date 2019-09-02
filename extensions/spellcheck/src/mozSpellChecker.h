@@ -51,8 +51,9 @@ class mozSpellChecker final {
    * @param aSuggestions is an array of nsStrings, that represent the
    * suggested replacements for the misspelled word.
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult NextMisspelledWord(nsAString& aWord,
-                              nsTArray<nsString>* aSuggestions);
+                              nsTArray<nsString>& aSuggestions);
 
   /**
    * Checks if a word is misspelled. No document is required to use this method.
@@ -81,6 +82,7 @@ class mozSpellChecker final {
    * word, in the document, with new word when it is true. If
    * false, it will replace the 1st occurrence only!
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult Replace(const nsAString& aOldWord, const nsAString& aNewWord,
                    bool aAllOccurrences);
 
@@ -162,6 +164,7 @@ class mozSpellChecker final {
 
   nsString mCurrentDictionary;
 
+  MOZ_CAN_RUN_SCRIPT
   nsresult SetupDoc(int32_t* outBlockOffset);
 
   nsresult GetCurrentBlockIndex(

@@ -14,7 +14,7 @@
 namespace mozilla {
 namespace gfx {
 
-PathBuilderSkia::PathBuilderSkia(const Matrix &aTransform, const SkPath &aPath,
+PathBuilderSkia::PathBuilderSkia(const Matrix& aTransform, const SkPath& aPath,
                                  FillRule aFillRule)
     : mPath(aPath) {
   SkMatrix matrix;
@@ -34,59 +34,62 @@ void PathBuilderSkia::SetFillRule(FillRule aFillRule) {
   }
 }
 
-void PathBuilderSkia::MoveTo(const Point &aPoint) {
+void PathBuilderSkia::MoveTo(const Point& aPoint) {
   mPath.moveTo(SkFloatToScalar(aPoint.x), SkFloatToScalar(aPoint.y));
+  mCurrentPoint = aPoint;
+  mBeginPoint = aPoint;
 }
 
-void PathBuilderSkia::LineTo(const Point &aPoint) {
+void PathBuilderSkia::LineTo(const Point& aPoint) {
   if (!mPath.countPoints()) {
     MoveTo(aPoint);
   } else {
     mPath.lineTo(SkFloatToScalar(aPoint.x), SkFloatToScalar(aPoint.y));
   }
+  mCurrentPoint = aPoint;
 }
 
-void PathBuilderSkia::BezierTo(const Point &aCP1, const Point &aCP2,
-                               const Point &aCP3) {
+void PathBuilderSkia::BezierTo(const Point& aCP1, const Point& aCP2,
+                               const Point& aCP3) {
   if (!mPath.countPoints()) {
     MoveTo(aCP1);
   }
   mPath.cubicTo(SkFloatToScalar(aCP1.x), SkFloatToScalar(aCP1.y),
                 SkFloatToScalar(aCP2.x), SkFloatToScalar(aCP2.y),
                 SkFloatToScalar(aCP3.x), SkFloatToScalar(aCP3.y));
+  mCurrentPoint = aCP3;
 }
 
-void PathBuilderSkia::QuadraticBezierTo(const Point &aCP1, const Point &aCP2) {
+void PathBuilderSkia::QuadraticBezierTo(const Point& aCP1, const Point& aCP2) {
   if (!mPath.countPoints()) {
     MoveTo(aCP1);
   }
   mPath.quadTo(SkFloatToScalar(aCP1.x), SkFloatToScalar(aCP1.y),
                SkFloatToScalar(aCP2.x), SkFloatToScalar(aCP2.y));
+  mCurrentPoint = aCP2;
 }
 
-void PathBuilderSkia::Close() { mPath.close(); }
+void PathBuilderSkia::Close() {
+  mPath.close();
+  mCurrentPoint = mBeginPoint;
+}
 
-void PathBuilderSkia::Arc(const Point &aOrigin, float aRadius,
+void PathBuilderSkia::Arc(const Point& aOrigin, float aRadius,
                           float aStartAngle, float aEndAngle,
                           bool aAntiClockwise) {
   ArcToBezier(this, aOrigin, Size(aRadius, aRadius), aStartAngle, aEndAngle,
               aAntiClockwise);
 }
 
-Point PathBuilderSkia::CurrentPoint() const {
-  int pointCount = mPath.countPoints();
-  if (!pointCount) {
-    return Point(0, 0);
-  }
-  SkPoint point = mPath.getPoint(pointCount - 1);
-  return Point(SkScalarToFloat(point.fX), SkScalarToFloat(point.fY));
-}
-
 already_AddRefed<Path> PathBuilderSkia::Finish() {
-  return MakeAndAddRef<PathSkia>(mPath, mFillRule);
+  RefPtr<Path> path =
+      MakeAndAddRef<PathSkia>(mPath, mFillRule, mCurrentPoint, mBeginPoint);
+  mCurrentPoint = Point(0.0, 0.0);
+  mBeginPoint = Point(0.0, 0.0);
+  return path.forget();
 }
 
-void PathBuilderSkia::AppendPath(const SkPath &aPath) { mPath.addPath(aPath); }
+void PathBuilderSkia::AppendPath(const SkPath& aPath) { mPath.addPath(aPath); }
 
 already_AddRefed<PathBuilder> PathSkia::CopyToBuilder(
     FillRule aFillRule) const {
@@ -94,12 +97,18 @@ already_AddRefed<PathBuilder> PathSkia::CopyToBuilder(
 }
 
 already_AddRefed<PathBuilder> PathSkia::TransformedCopyToBuilder(
-    const Matrix &aTransform, FillRule aFillRule) const {
-  return MakeAndAddRef<PathBuilderSkia>(aTransform, mPath, aFillRule);
+    const Matrix& aTransform, FillRule aFillRule) const {
+  RefPtr<PathBuilderSkia> builder =
+      MakeAndAddRef<PathBuilderSkia>(aTransform, mPath, aFillRule);
+
+  builder->mCurrentPoint = aTransform.TransformPoint(mCurrentPoint);
+  builder->mBeginPoint = aTransform.TransformPoint(mBeginPoint);
+
+  return builder.forget();
 }
 
-static bool SkPathContainsPoint(const SkPath &aPath, const Point &aPoint,
-                                const Matrix &aTransform) {
+static bool SkPathContainsPoint(const SkPath& aPath, const Point& aPoint,
+                                const Matrix& aTransform) {
   Matrix inverse = aTransform;
   if (!inverse.Invert()) {
     return false;
@@ -109,8 +118,8 @@ static bool SkPathContainsPoint(const SkPath &aPath, const Point &aPoint,
   return aPath.contains(point.fX, point.fY);
 }
 
-bool PathSkia::ContainsPoint(const Point &aPoint,
-                             const Matrix &aTransform) const {
+bool PathSkia::ContainsPoint(const Point& aPoint,
+                             const Matrix& aTransform) const {
   if (!mPath.isFinite()) {
     return false;
   }
@@ -118,9 +127,9 @@ bool PathSkia::ContainsPoint(const Point &aPoint,
   return SkPathContainsPoint(mPath, aPoint, aTransform);
 }
 
-bool PathSkia::StrokeContainsPoint(const StrokeOptions &aStrokeOptions,
-                                   const Point &aPoint,
-                                   const Matrix &aTransform) const {
+bool PathSkia::StrokeContainsPoint(const StrokeOptions& aStrokeOptions,
+                                   const Point& aPoint,
+                                   const Matrix& aTransform) const {
   if (!mPath.isFinite()) {
     return false;
   }
@@ -136,7 +145,7 @@ bool PathSkia::StrokeContainsPoint(const StrokeOptions &aStrokeOptions,
   return SkPathContainsPoint(strokePath, aPoint, aTransform);
 }
 
-Rect PathSkia::GetBounds(const Matrix &aTransform) const {
+Rect PathSkia::GetBounds(const Matrix& aTransform) const {
   if (!mPath.isFinite()) {
     return Rect();
   }
@@ -145,8 +154,8 @@ Rect PathSkia::GetBounds(const Matrix &aTransform) const {
   return aTransform.TransformBounds(bounds);
 }
 
-Rect PathSkia::GetStrokedBounds(const StrokeOptions &aStrokeOptions,
-                                const Matrix &aTransform) const {
+Rect PathSkia::GetStrokedBounds(const StrokeOptions& aStrokeOptions,
+                                const Matrix& aTransform) const {
   if (!mPath.isFinite()) {
     return Rect();
   }
@@ -163,7 +172,7 @@ Rect PathSkia::GetStrokedBounds(const StrokeOptions &aStrokeOptions,
   return aTransform.TransformBounds(bounds);
 }
 
-void PathSkia::StreamToSink(PathSink *aSink) const {
+void PathSkia::StreamToSink(PathSink* aSink) const {
   SkPath::RawIter iter(mPath);
 
   SkPoint points[4];

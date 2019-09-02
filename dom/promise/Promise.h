@@ -75,9 +75,6 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   typedef void (Promise::*MaybeFunc)(JSContext* aCx,
                                      JS::Handle<JS::Value> aValue);
 
-  void MaybeResolve(JSContext* aCx, JS::Handle<JS::Value> aValue);
-  void MaybeReject(JSContext* aCx, JS::Handle<JS::Value> aValue);
-
   // Helpers for using Promise from C++.
   // Most DOM objects are handled already.  To add a new type T, add a
   // ToJSValue overload in ToJSValue.h.
@@ -89,6 +86,9 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
 
   void MaybeResolveWithUndefined();
 
+  void MaybeReject(JS::Handle<JS::Value> aValue) {
+    MaybeSomething(aValue, &Promise::MaybeReject);
+  }
   inline void MaybeReject(nsresult aArg) {
     MOZ_ASSERT(NS_FAILED(aArg));
     MaybeSomething(aArg, &Promise::MaybeReject);
@@ -102,6 +102,9 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   void MaybeReject(const RefPtr<MediaStreamError>& aArg);
 
   void MaybeRejectWithUndefined();
+
+  void MaybeResolveWithClone(JSContext* aCx, JS::Handle<JS::Value> aValue);
+  void MaybeRejectWithClone(JSContext* aCx, JS::Handle<JS::Value> aValue);
 
   // DO NOT USE MaybeRejectBrokenly with in new code.  Promises should be
   // rejected with Error instances.
@@ -117,7 +120,7 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
 
   // WebIDL
 
-  nsIGlobalObject* GetParentObject() const { return mGlobal; }
+  nsIGlobalObject* GetParentObject() const { return GetGlobalObject(); }
 
   // Do the equivalent of Promise.resolve in the compartment of aGlobal.  The
   // compartment of aCx is ignored.  Errors are reported on the ErrorResult; if
@@ -197,9 +200,7 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
 
   void AppendNativeHandler(PromiseNativeHandler* aRunnable);
 
-  JSObject* GlobalJSObject() const;
-
-  JS::Compartment* Compartment() const;
+  nsIGlobalObject* GetGlobalObject() const { return mGlobal; }
 
   // Create a dom::Promise from a given SpiderMonkey Promise object.
   // aPromiseObj MUST be in the compartment of aGlobal's global JS object.
@@ -235,6 +236,9 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
                          eDontPropagateUserInteraction);
 
  private:
+  void MaybeResolve(JSContext* aCx, JS::Handle<JS::Value> aValue);
+  void MaybeReject(JSContext* aCx, JS::Handle<JS::Value> aValue);
+
   template <typename T>
   void MaybeSomething(T&& aArgument, MaybeFunc aFunc) {
     MOZ_ASSERT(PromiseObj());  // It was preserved!

@@ -5,10 +5,6 @@
   min-height: 100vh;
   padding: ($section-spacing + $section-vertical-padding) $base-gutter $base-gutter;
 
-  &.fixed-to-top {
-    display: block;
-  }
-
   &.only-search {
     display: block;
     padding-top: 134px;
@@ -19,17 +15,21 @@
   }
 }
 
-.force-light-theme {
-  --newtab-background-color: #{$grey-10} !important; // sass-lint:disable-line no-important
-  --newtab-text-primary-color: #{$grey-90} !important; // sass-lint:disable-line no-important
-}
-
 main {
   margin: auto;
+  width: $wrapper-default-width;
   // Offset the snippets container so things at the bottom of the page are still
   // visible when snippets are visible. Adjust for other spacing.
   padding-bottom: $snippets-container-height - $section-spacing - $base-gutter;
-  width: $wrapper-default-width;
+
+  section {
+    margin-bottom: $section-spacing;
+    position: relative;
+  }
+
+  .hide-main & {
+    visibility: hidden;
+  }
 
   @media (min-width: $break-point-medium) {
     width: $wrapper-max-width-medium;
@@ -43,15 +43,11 @@ main {
     width: $wrapper-max-width-widest;
   }
 
-  section {
-    margin-bottom: $section-spacing;
-    position: relative;
-  }
+}
 
-  .hide-main & {
-    visibility: hidden;
-  }
-
+.below-search-snippet.withButton {
+  margin: auto;
+  width: 100%;
 }
 
 .ds-outer-wrapper-search-alignment {

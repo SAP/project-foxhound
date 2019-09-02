@@ -66,7 +66,7 @@ info = {'os': unknown,
         'os_version': unknown,
         'bits': unknown,
         'has_sandbox': unknown,
-        'webrender': bool(os.environ.get("MOZ_WEBRENDER", False)),
+        'webrender': False,
         'automation': bool(os.environ.get("MOZ_AUTOMATION", False)),
         }
 (system, node, release, version, machine, processor) = platform.uname()
@@ -144,6 +144,9 @@ if processor in ["i386", "i686"]:
 elif processor.upper() == "AMD64":
     bits = "64bit"
     processor = "x86_64"
+elif processor.upper() == "ARM64":
+    bits = "64bit"
+    processor = "aarch64"
 elif processor == "Power Macintosh":
     processor = "ppc"
 bits = re.search('(\d+)bit', bits).group(1)

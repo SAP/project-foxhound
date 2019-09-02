@@ -113,6 +113,11 @@ interface imgIRequest : nsIRequest
   readonly attribute nsIPrincipal imagePrincipal;
 
   /**
+   * true if the loading of the image required cross-origin redirects.
+   */
+  readonly attribute bool hadCrossOriginRedirects;
+
+  /**
    * Whether the request is multipart (ie, multipart/x-mixed-replace)
    */
   readonly attribute bool multipart;
@@ -163,8 +168,22 @@ interface imgIRequest : nsIRequest
   /**
    * Exactly like startDecoding above except returns whether the current frame
    * of the image is complete or not.
+   *
+   * @param aFlags Flags of the FLAG_* variety. Only FLAG_ASYNC_NOTIFY
+   *               is accepted; all others are ignored.
    */
   [noscript, notxpcom] boolean startDecodingWithResult(in uint32_t aFlags);
+
+  /**
+   * This method triggers decoding for an image, but unlike startDecoding() it
+   * enables the caller to provide more detailed information about the decode
+   * request.
+   *
+   * @param aFlags Flags of the FLAG_* variety.
+   * @return True there is a surface that satisfies the request and it is
+   *         fully decoded, else false.
+   */
+  [noscript, notxpcom] boolean requestDecodeWithResult(in uint32_t aFlags);
 
   /**
    * Locks an image. If the image does not exist yet, locks it once it becomes
@@ -216,20 +235,25 @@ interface imgIRequest : nsIRequest
 
   /**
    * Request loading priority boost to requested category, each category
-   * of request increases priority only one time..
+   * of request increases priority only one time.
    *
    * CATEGORY_FRAME_INIT: increase priority when the imgRequest is associated
    * with an nsImageFrame.
    *
+   * CATEGORY_FRAME_STYLE: increase priority when the imgRequest is for a CSS
+   * background-image, list-style-image, etc. on a ComputedStyle, and a frame
+   * has been assigned this ComputedStyle.
+   *
    * CATEGORY_SIZE_QUERY: increase priority when size decoding is necessary to
-   * determine the layout size of the associated nsImageFrame.
+   * determine the layout size of an associated nsImageFrame.
    *
    * CATEGORY_DISPLAY: increase priority when the image is about to be displayed
    * in the viewport.
    */
-  const uint32_t CATEGORY_FRAME_INIT = 1 << 0;
-  const uint32_t CATEGORY_SIZE_QUERY = 1 << 1;
-  const uint32_t CATEGORY_DISPLAY    = 1 << 2;
+  const uint32_t CATEGORY_FRAME_INIT  = 1 << 0;
+  const uint32_t CATEGORY_FRAME_STYLE = 1 << 1;
+  const uint32_t CATEGORY_SIZE_QUERY  = 1 << 2;
+  const uint32_t CATEGORY_DISPLAY     = 1 << 3;
   void boostPriority(in uint32_t aCategory);
 };
 

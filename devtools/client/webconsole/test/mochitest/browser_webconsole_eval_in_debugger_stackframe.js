@@ -9,13 +9,14 @@
 "use strict";
 /* import-globals-from head.js*/
 
-const TEST_URI = "http://example.com/browser/devtools/client/webconsole/" +
-                 "test/mochitest/test-eval-in-stackframe.html";
+const TEST_URI =
+  "http://example.com/browser/devtools/client/webconsole/" +
+  "test/mochitest/test-eval-in-stackframe.html";
 
 add_task(async function() {
   info("open the console");
   const hud = await openNewTabAndConsole(TEST_URI);
-  const {jsterm} = hud;
+  const { jsterm } = hud;
 
   info("Check `foo` value");
   let onResultMessage = waitForMessage(hud, "globalFooBug783499");
@@ -45,7 +46,7 @@ add_task(async function() {
   await openDebugger();
   await pauseDebugger(dbg);
 
-  const stackFrames = dbg.selectors.getCallStackFrames(dbg.getState());
+  const stackFrames = dbg.selectors.getCallStackFrames();
 
   info("frames added, select the console again");
   await openConsole();
@@ -74,8 +75,15 @@ add_task(async function() {
   ok(true, "`foo + foo3` updated in `firstCall()`");
 
   await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
-    is(content.wrappedJSObject.foo, "globalFooBug783499", "`foo` in content window");
+    is(
+      content.wrappedJSObject.foo,
+      "globalFooBug783499",
+      "`foo` in content window"
+    );
     is(content.wrappedJSObject.foo2, "newFoo", "`foo2` in content window");
-    ok(!content.wrappedJSObject.foo3, "`foo3` was not added to the content window");
+    ok(
+      !content.wrappedJSObject.foo3,
+      "`foo3` was not added to the content window"
+    );
   });
 });

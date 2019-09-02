@@ -106,12 +106,6 @@ else
     AC_PROG_RANLIB
     MOZ_PATH_PROGS(AS, $AS as, $CC)
     AC_CHECK_PROGS(STRIP, strip, :)
-    if test -z "$HOST_CC"; then
-        HOST_CC='$(CC)'
-    fi
-    if test -z "$HOST_CXX"; then
-        HOST_CXX='$(CXX)'
-    fi
 fi
 
 MOZ_TOOL_VARIABLES
@@ -302,8 +296,7 @@ dnl ==============================================================
 MOZ_ARCH_OPTS
 
 dnl ========================================================
-dnl Android libstdc++, placed here so it can use MOZ_ARCH
-dnl computed above.
+dnl Android libstdc++
 dnl ========================================================
 
 MOZ_ANDROID_CPU_ARCH
@@ -413,7 +406,7 @@ case "$host" in
     else
         HOST_CFLAGS="$HOST_CFLAGS -mwindows"
     fi
-    HOST_CFLAGS="$HOST_CFLAGS -DXP_WIN32 -DXP_WIN -DWIN32 -D_WIN32 -D_CRT_SECURE_NO_WARNINGS"
+    HOST_CFLAGS="$HOST_CFLAGS -DXP_WIN -DWIN32 -D_WIN32 -D_CRT_SECURE_NO_WARNINGS"
     HOST_OPTIMIZE_FLAGS="${HOST_OPTIMIZE_FLAGS=-O2}"
     HOST_BIN_SUFFIX=.exe
 
@@ -562,8 +555,6 @@ case "$target" in
         WIN32_GUI_EXE_LDFLAGS=-mwindows
     else
         TARGET_COMPILER_ABI=msvc
-        HOST_CC='$(CC)'
-        HOST_CXX='$(CXX)'
         RANLIB='echo not_ranlib'
         STRIP='echo not_strip'
         PKG_SKIP_STRIP=1
@@ -999,8 +990,6 @@ fi
 dnl Checks for math functions.
 dnl ========================================================
 AC_CHECK_LIB(m, sin)
-AC_CHECK_LIB(m, sincos, AC_DEFINE(HAVE_SINCOS))
-AC_CHECK_LIB(m, __sincos, AC_DEFINE(HAVE___SINCOS))
 
 AC_CACHE_CHECK(
     [for res_ninit()],
@@ -1240,8 +1229,6 @@ if test -n "${MOZ_CONFIGURE_OPTIMIZE_FLAGS}"; then
     MOZ_OPTIMIZE_FLAGS=${MOZ_CONFIGURE_OPTIMIZE_FLAGS}
 fi
 
-MOZ_SET_FRAMEPTR_FLAGS
-
 if test "$COMPILE_ENVIRONMENT"; then
 if test -n "$MOZ_OPTIMIZE"; then
     AC_MSG_CHECKING([for valid optimization flags])
@@ -1270,7 +1257,6 @@ if test -n "$MOZ_OPTIMIZE"; then
 fi
 fi # COMPILE_ENVIRONMENT
 
-AC_SUBST_LIST(MOZ_FRAMEPTR_FLAGS)
 AC_SUBST_LIST(MOZ_OPTIMIZE_FLAGS)
 AC_SUBST_LIST(MOZ_OPTIMIZE_LDFLAGS)
 AC_SUBST_LIST(MOZ_PGO_OPTIMIZE_FLAGS)
@@ -1644,8 +1630,6 @@ dnl JavaScript shell
 dnl ========================================================
 
 MOZ_CHECK_ALLOCATOR
-
-AC_CHECK_FUNCS(localeconv)
 
 AC_SUBST(ac_configure_args)
 

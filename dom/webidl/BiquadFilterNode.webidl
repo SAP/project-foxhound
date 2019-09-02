@@ -30,7 +30,7 @@ dictionary BiquadFilterOptions : AudioNodeOptions {
 };
 
 [Pref="dom.webaudio.enabled",
- Constructor(BaseAudioContext context, optional BiquadFilterOptions options)]
+ Constructor(BaseAudioContext context, optional BiquadFilterOptions options = {})]
 interface BiquadFilterNode : AudioNode {
 
     attribute BiquadFilterType type;
@@ -39,6 +39,7 @@ interface BiquadFilterNode : AudioNode {
     readonly attribute AudioParam Q; // Quality factor
     readonly attribute AudioParam gain; // in Decibels
 
+    [Throws]
     void getFrequencyResponse(Float32Array frequencyHz,
                               Float32Array magResponse,
                               Float32Array phaseResponse);

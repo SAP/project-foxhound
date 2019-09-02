@@ -29,7 +29,7 @@ class SVGStyleElement final : public SVGStyleElementBase,
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
   explicit SVGStyleElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
-  ~SVGStyleElement();
+  ~SVGStyleElement() = default;
 
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override;
@@ -40,10 +40,8 @@ class SVGStyleElement final : public SVGStyleElementBase,
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SVGStyleElement, SVGStyleElementBase)
 
   // nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,
                                 const nsAttrValue* aOldValue,

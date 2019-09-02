@@ -31,7 +31,6 @@ void OptimizationInfo::initNormalOptimizationInfo() {
   rangeAnalysis_ = true;
   reordering_ = true;
   scalarReplacement_ = true;
-  sincos_ = true;
   sink_ = true;
 
   registerAllocator_ = RegisterAllocator_Backtracking;
@@ -73,7 +72,6 @@ void OptimizationInfo::initWasmOptimizationInfo() {
   edgeCaseAnalysis_ = false;
   eliminateRedundantChecks_ = false;
   scalarReplacement_ = false;  // wasm has no objects.
-  sincos_ = false;
   sink_ = false;
 }
 
@@ -93,14 +91,15 @@ uint32_t OptimizationInfo::compilerWarmUpThreshold(JSScript* script,
   // threshold to improve the compilation's type information and hopefully
   // avoid later recompilation.
 
-  if (script->length() > MAX_MAIN_THREAD_SCRIPT_SIZE) {
-    warmUpThreshold *= (script->length() / double(MAX_MAIN_THREAD_SCRIPT_SIZE));
+  if (script->length() > JitOptions.ionMaxScriptSizeMainThread) {
+    warmUpThreshold *=
+        (script->length() / double(JitOptions.ionMaxScriptSizeMainThread));
   }
 
   uint32_t numLocalsAndArgs = NumLocalsAndArgs(script);
-  if (numLocalsAndArgs > MAX_MAIN_THREAD_LOCALS_AND_ARGS) {
+  if (numLocalsAndArgs > JitOptions.ionMaxLocalsAndArgsMainThread) {
     warmUpThreshold *=
-        (numLocalsAndArgs / double(MAX_MAIN_THREAD_LOCALS_AND_ARGS));
+        (numLocalsAndArgs / double(JitOptions.ionMaxLocalsAndArgsMainThread));
   }
 
   if (!pc || JitOptions.eagerIonCompilation()) {

@@ -9,6 +9,7 @@
 #include "GridDimension.h"
 #include "GridLine.h"
 #include "mozilla/dom/GridBinding.h"
+#include "mozilla/dom/GridArea.h"
 #include "nsGridContainerFrame.h"
 
 namespace mozilla {
@@ -47,15 +48,15 @@ GridLine* GridLines::IndexedGetter(uint32_t aIndex, bool& aFound) {
   return mLines[aIndex];
 }
 
-static void AddLineNameIfNotPresent(nsTArray<nsString>& aLineNames,
-                                    const nsString& aName) {
+static void AddLineNameIfNotPresent(nsTArray<RefPtr<nsAtom>>& aLineNames,
+                                    nsAtom* aName) {
   if (!aLineNames.Contains(aName)) {
     aLineNames.AppendElement(aName);
   }
 }
 
-static void AddLineNamesIfNotPresent(nsTArray<nsString>& aLineNames,
-                                     const nsTArray<nsString>& aNames) {
+static void AddLineNamesIfNotPresent(nsTArray<RefPtr<nsAtom>>& aLineNames,
+                                     const nsTArray<RefPtr<nsAtom>>& aNames) {
   for (const auto& name : aNames) {
     AddLineNameIfNotPresent(aLineNames, name);
   }
@@ -116,10 +117,10 @@ void GridLines::SetLineInfo(const ComputedGridTrackInfo* aTrackInfo,
       // problem. We do the work here since this is only run when
       // requested by devtools, and slowness here will not affect
       // normal browsing.
-      const nsTArray<nsString>& possiblyDuplicateLineNames(
-          aLineInfo->mNames.SafeElementAt(i, nsTArray<nsString>()));
+      const nsTArray<RefPtr<nsAtom>>& possiblyDuplicateLineNames(
+          aLineInfo->mNames.SafeElementAt(i, nsTArray<RefPtr<nsAtom>>()));
 
-      nsTArray<nsString> lineNames;
+      nsTArray<RefPtr<nsAtom>> lineNames;
       AddLineNamesIfNotPresent(lineNames, possiblyDuplicateLineNames);
 
       // Add in names from grid areas where this line is used as a boundary.
@@ -154,7 +155,8 @@ void GridLines::SetLineInfo(const ComputedGridTrackInfo* aTrackInfo,
         }
 
         if (haveNameToAdd) {
-          AddLineNameIfNotPresent(lineNames, nameToAdd);
+          RefPtr<nsAtom> name = NS_Atomize(nameToAdd);
+          AddLineNameIfNotPresent(lineNames, name);
         }
       }
 
@@ -209,6 +211,81 @@ void GridLines::SetLineInfo(const ComputedGridTrackInfo* aTrackInfo,
         lastTrackEdge = aTrackInfo->mPositions[i] + aTrackInfo->mSizes[i];
       }
     }
+
+    // Define a function that gets the mLines index for a given line number.
+    // This is necessary since it's possible for a line number to not be
+    // represented in mLines. If this is the case, then return  -1.
+    const int32_t lineCount = mLines.Length();
+    const uint32_t lastLineNumber = mLines[lineCount - 1]->Number();
+    auto IndexForLineNumber =
+        [lineCount, lastLineNumber](uint32_t aLineNumber) -> int32_t {
+      if (lastLineNumber == 0) {
+        // None of the lines have addressable numbers, so none of them can have
+        // aLineNumber
+        return -1;
+      }
+
+      int32_t possibleIndex = (int32_t)aLineNumber - 1;
+      if (possibleIndex < 0 || possibleIndex > lineCount - 1) {
+        // aLineNumber is not represented in mLines.
+        return -1;
+      }
+
+      return possibleIndex;
+    };
+
+    // Post-processing loop for implicit grid areas.
+    for (const auto& area : aAreas) {
+      if (area->Type() == GridDeclaration::Implicit) {
+        // Get the appropriate indexes for the area's start and end lines as
+        // they are represented in mLines.
+        int32_t startIndex =
+            IndexForLineNumber(aIsRow ? area->RowStart() : area->ColumnStart());
+        int32_t endIndex =
+            IndexForLineNumber(aIsRow ? area->RowEnd() : area->ColumnEnd());
+
+        // If both start and end indexes are -1, then stop here since we cannot
+        // reason about the naming for either lines.
+        if (startIndex < 0 && endIndex < 0) {
+          break;
+        }
+
+        // Get the "-start" and "-end" line names of the grid area.
+        nsAutoString startLineName;
+        area->GetName(startLineName);
+        startLineName.AppendLiteral("-start");
+        nsAutoString endLineName;
+        area->GetName(endLineName);
+        endLineName.AppendLiteral("-end");
+
+        // Get the list of existing line names for the start and end of the grid
+        // area. In the case where one of the start or end indexes are -1, use a
+        // dummy line as a substitute for the start/end line.
+        RefPtr<GridLine> dummyLine = new GridLine(this);
+        RefPtr<GridLine> areaStartLine =
+            startIndex > -1 ? mLines[startIndex] : dummyLine;
+        nsTArray<RefPtr<nsAtom>> startLineNames(areaStartLine->Names());
+
+        RefPtr<GridLine> areaEndLine =
+            endIndex > -1 ? mLines[endIndex] : dummyLine;
+        nsTArray<RefPtr<nsAtom>> endLineNames(areaEndLine->Names());
+
+        RefPtr<nsAtom> start = NS_Atomize(startLineName);
+        RefPtr<nsAtom> end = NS_Atomize(endLineName);
+        if (startLineNames.Contains(end) || endLineNames.Contains(start)) {
+          // Add the reversed line names.
+          AddLineNameIfNotPresent(startLineNames, end);
+          AddLineNameIfNotPresent(endLineNames, start);
+        } else {
+          // Add the normal line names.
+          AddLineNameIfNotPresent(startLineNames, start);
+          AddLineNameIfNotPresent(endLineNames, end);
+        }
+
+        areaStartLine->SetLineNames(startLineNames);
+        areaEndLine->SetLineNames(endLineNames);
+      }
+    }
   }
 }
 
@@ -216,7 +293,7 @@ uint32_t GridLines::AppendRemovedAutoFits(
     const ComputedGridTrackInfo* aTrackInfo,
     const ComputedGridLineInfo* aLineInfo, nscoord aLastTrackEdge,
     uint32_t& aRepeatIndex, uint32_t aNumRepeatTracks,
-    uint32_t aNumLeadingTracks, nsTArray<nsString>& aLineNames) {
+    uint32_t aNumLeadingTracks, nsTArray<RefPtr<nsAtom>>& aLineNames) {
   // Check to see if lineNames contains ALL of the before line names.
   bool alreadyHasBeforeLineNames = true;
   for (const auto& beforeName : aLineInfo->mNamesBefore) {
@@ -227,7 +304,7 @@ uint32_t GridLines::AppendRemovedAutoFits(
   }
 
   bool extractedExplicitLineNames = false;
-  nsTArray<nsString> explicitLineNames;
+  nsTArray<RefPtr<nsAtom>> explicitLineNames;
   uint32_t linesAdded = 0;
   while (aRepeatIndex < aNumRepeatTracks &&
          aTrackInfo->mRemovedRepeatTracks[aRepeatIndex]) {

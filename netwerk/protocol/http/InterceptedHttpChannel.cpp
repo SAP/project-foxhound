@@ -1177,6 +1177,15 @@ InterceptedHttpChannel::IsFromCache(bool* value) {
 }
 
 NS_IMETHODIMP
+InterceptedHttpChannel::IsRacing(bool* value) {
+  if (mSynthesizedCacheInfo) {
+    return mSynthesizedCacheInfo->IsRacing(value);
+  }
+  *value = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 InterceptedHttpChannel::GetCacheEntryId(uint64_t* aCacheEntryId) {
   if (mSynthesizedCacheInfo) {
     return mSynthesizedCacheInfo->GetCacheEntryId(aCacheEntryId);

@@ -23,7 +23,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/2D.h"
-#include "gfxPrefs.h"
 
 #ifdef MOZ_ENABLE_SKIA
 #  include "mozilla/gfx/ConvolutionFilter.h"
@@ -112,10 +111,6 @@ class DownscalingFilter final : public SurfaceFilter {
       return rv;
     }
 
-    if (mNext.IsValidPalettedPipe()) {
-      NS_WARNING("Created a downscaler for a paletted surface?");
-      return NS_ERROR_INVALID_ARG;
-    }
     if (mNext.InputSize() == aConfig.mInputSize) {
       NS_WARNING("Created a downscaler, but not downscaling?");
       return NS_ERROR_INVALID_ARG;

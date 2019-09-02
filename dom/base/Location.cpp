@@ -19,8 +19,6 @@
 #include "nsCOMPtr.h"
 #include "nsEscape.h"
 #include "nsIDOMWindow.h"
-#include "mozilla/dom/Document.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsError.h"
 #include "nsReadableUtils.h"
@@ -33,6 +31,8 @@
 #include "mozilla/Components.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Unused.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/LocationBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "ReferrerInfo.h"
@@ -150,15 +150,9 @@ already_AddRefed<nsDocShellLoadState> Location::CheckURL(
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(aURI);
 
   loadState->SetTriggeringPrincipal(triggeringPrincipal);
-
-  // Currently we query the CSP from the triggeringPrincipal, which is the
-  // doc->NodePrincipal() in case there is a doc. In that case we can query
-  // the CSP directly from the doc after Bug 965637. In case there is no doc,
-  // then we also do not need to query the CSP, because only documents can have
-  // a CSP attached.
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  triggeringPrincipal->GetCsp(getter_AddRefs(csp));
-  loadState->SetCsp(csp);
+  if (doc) {
+    loadState->SetCsp(doc->GetCsp());
+  }
 
   if (sourceURI) {
     nsCOMPtr<nsIReferrerInfo> referrerInfo =

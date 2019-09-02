@@ -7,14 +7,6 @@
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
-// This test requires lightweight themes update to be enabled even if the app
-// doesn't support lightweight themes.
-Services.prefs.setBoolPref("lightweightThemes.update.enabled", true);
-
-const {LightweightThemeManager} = ChromeUtils.import("resource://gre/modules/LightweightThemeManager.jsm");
-
-var gInstallDate;
-
 const updateFile = "test_update.json";
 
 const profileDir = gProfD.clone();
@@ -48,7 +40,7 @@ const ADDONS = {
   },
 };
 
-var testserver = createHttpServer({hosts: ["example.com"]});
+var testserver = createHttpServer({ hosts: ["example.com"] });
 testserver.registerDirectory("/data/", do_get_file("data"));
 
 const XPIS = {};
@@ -63,7 +55,7 @@ add_task(async function setup() {
       manifest: {
         name: info.name,
         version: info.version,
-        applications: {gecko: {id: info.id}},
+        applications: { gecko: { id: info.id } },
       },
     });
     testserver.registerFile(`/addons/${name}.xpi`, XPIS[name]);
@@ -98,23 +90,35 @@ add_task(async function test_apply_update() {
 
   let originalSyncGUID = a1.syncGUID;
 
-  prepare_test({
-    "addon1@tests.mozilla.org": [
-      ["onPropertyChanged", ["applyBackgroundUpdates"]],
-    ],
-  });
-  a1.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DISABLE;
-  check_test_completed();
+  await expectEvents(
+    {
+      addonEvents: {
+        "addon1@tests.mozilla.org": [
+          {
+            event: "onPropertyChanged",
+            properties: ["applyBackgroundUpdates"],
+          },
+        ],
+      },
+    },
+    async () => {
+      a1.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DISABLE;
+    }
+  );
 
   a1.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DISABLE;
 
-  prepare_test({}, [
-    "onNewInstall",
-  ]);
-
-  let {updateAvailable: install} = await AddonTestUtils.promiseFindAddonUpdates(a1);
-
-  ensure_test_completed();
+  let install;
+  await expectEvents(
+    {
+      installEvents: [{ event: "onNewInstall" }],
+    },
+    async () => {
+      ({
+        updateAvailable: install,
+      } = await AddonTestUtils.promiseFindAddonUpdates(a1));
+    }
+  );
 
   let installs = await AddonManager.getAllInstalls();
   equal(installs.length, 1);
@@ -127,51 +131,61 @@ add_task(async function test_apply_update() {
   equal(install.releaseNotesURI.spec, "http://example.com/updateInfo.xhtml");
 
   // Verify that another update check returns the same AddonInstall
-  let {updateAvailable: install2} = await AddonTestUtils.promiseFindAddonUpdates(a1);
+  let {
+    updateAvailable: install2,
+  } = await AddonTestUtils.promiseFindAddonUpdates(a1);
 
   installs = await AddonManager.getAllInstalls();
   equal(installs.length, 1);
   equal(installs[0], install);
   equal(install2, install);
 
-  await new Promise(resolve => {
-    prepare_test({}, [
-      "onDownloadStarted",
-      "onDownloadEnded",
-    ], () => {
-      resolve();
-      return false;
-    });
-    install.install();
-  });
+  await expectEvents(
+    {
+      installEvents: [
+        { event: "onDownloadStarted" },
+        { event: "onDownloadEnded", returnValue: false },
+      ],
+    },
+    () => {
+      install.install();
+    }
+  );
 
-  ensure_test_completed();
   equal(install.state, AddonManager.STATE_DOWNLOADED);
 
   // Continue installing the update.
   // Verify that another update check returns no new update
-  let {updateAvailable} = await AddonTestUtils.promiseFindAddonUpdates(install.existingAddon);
+  let { updateAvailable } = await AddonTestUtils.promiseFindAddonUpdates(
+    install.existingAddon
+  );
 
-  ok(!updateAvailable, "Should find no available updates when one is already downloading");
+  ok(
+    !updateAvailable,
+    "Should find no available updates when one is already downloading"
+  );
 
   installs = await AddonManager.getAllInstalls();
   equal(installs.length, 1);
   equal(installs[0], install);
 
-  await new Promise(resolve => {
-    prepare_test({
-      "addon1@tests.mozilla.org": [
-        ["onInstalling", false],
-        "onInstalled",
+  await expectEvents(
+    {
+      addonEvents: {
+        "addon1@tests.mozilla.org": [
+          { event: "onInstalling" },
+          { event: "onInstalled" },
+        ],
+      },
+      installEvents: [
+        { event: "onInstallStarted" },
+        { event: "onInstallEnded" },
       ],
-    }, [
-      "onInstallStarted",
-      "onInstallEnded",
-    ], resolve);
-    install.install();
-  });
-
-  ensure_test_completed();
+    },
+    () => {
+      install.install();
+    }
+  );
 
   await AddonTestUtils.loadAddonsList(true);
 
@@ -191,15 +205,10 @@ add_task(async function test_apply_update() {
   equal(originalSyncGUID, a1.syncGUID);
 
   // Make sure that the extension lastModifiedTime was updated.
-  let testURI = a1.getResourceURI();
-  if (testURI instanceof Ci.nsIJARURI) {
-    testURI = testURI.JARFile;
-  }
-  let testFile = testURI.QueryInterface(Ci.nsIFileURL).file;
+  let testFile = getAddonFile(a1);
   let difference = testFile.lastModifiedTime - startupTime;
   ok(Math.abs(difference) < MAX_TIME_DIFFERENCE);
 
-  clearListeners();
   await a1.uninstall();
 });
 
@@ -273,7 +282,10 @@ add_task(async function test_no_compat() {
   ok(!a3.isCompatibleWith("2", "2"));
 
   let result = await AddonTestUtils.promiseFindAddonUpdates(a3);
-  ok(!result.compatibilityUpdate, "Should not have seen a compatibility update");
+  ok(
+    !result.compatibilityUpdate,
+    "Should not have seen a compatibility update"
+  );
   ok(!result.updateAvailable, "Should not have seen a version update");
 });
 
@@ -288,7 +300,12 @@ add_task(async function test_future_compat() {
   ok(a3.isCompatibleWith("5", "5"));
   ok(!a3.isCompatibleWith("2", "2"));
 
-  let result = await AddonTestUtils.promiseFindAddonUpdates(a3, undefined, "3.0", "3.0");
+  let result = await AddonTestUtils.promiseFindAddonUpdates(
+    a3,
+    undefined,
+    "3.0",
+    "3.0"
+  );
   ok(result.compatibilityUpdate, "Should have seen a compatibility update");
   ok(!result.updateAvailable, "Should not have seen a version update");
 
@@ -324,54 +341,56 @@ add_task(async function test_background_update() {
     },
   });
 
-  let install = await new Promise(resolve => {
-    prepare_test({}, [
-      "onNewInstall",
-      "onDownloadStarted",
-      "onDownloadEnded",
-    ], resolve);
+  function checkInstall(install) {
+    notEqual(install.existingAddon, null);
+    equal(install.existingAddon.id, "addon1@tests.mozilla.org");
+  }
 
-    AddonManagerInternal.backgroundUpdateCheck();
-  });
-
-  notEqual(install.existingAddon, null);
-  equal(install.existingAddon.id, "addon1@tests.mozilla.org");
-
-  await new Promise(resolve => {
-    prepare_test({
-      "addon1@tests.mozilla.org": [
-        ["onInstalling", false],
-        "onInstalled",
+  await expectEvents(
+    {
+      addonEvents: {
+        "addon1@tests.mozilla.org": [
+          { event: "onInstalling" },
+          { event: "onInstalled" },
+        ],
+      },
+      installEvents: [
+        { event: "onNewInstall" },
+        { event: "onDownloadStarted" },
+        { event: "onDownloadEnded", callback: checkInstall },
+        { event: "onInstallStarted" },
+        { event: "onInstallEnded" },
       ],
-    }, [
-      "onInstallStarted",
-      "onInstallEnded",
-    ], resolve);
-  });
+    },
+    () => {
+      AddonManagerInternal.backgroundUpdateCheck();
+    }
+  );
 
   let a1 = await AddonManager.getAddonByID("addon1@tests.mozilla.org");
   notEqual(a1, null);
   equal(a1.version, "2.0");
   equal(a1.releaseNotesURI.spec, "http://example.com/updateInfo.xhtml");
 
-  end_test();
   await a1.uninstall();
 });
 
-const PARAMS = "?" + [
-  "req_version=%REQ_VERSION%",
-  "item_id=%ITEM_ID%",
-  "item_version=%ITEM_VERSION%",
-  "item_maxappversion=%ITEM_MAXAPPVERSION%",
-  "item_status=%ITEM_STATUS%",
-  "app_id=%APP_ID%",
-  "app_version=%APP_VERSION%",
-  "current_app_version=%CURRENT_APP_VERSION%",
-  "app_os=%APP_OS%",
-  "app_abi=%APP_ABI%",
-  "app_locale=%APP_LOCALE%",
-  "update_type=%UPDATE_TYPE%",
-].join("&");
+const PARAMS =
+  "?" +
+  [
+    "req_version=%REQ_VERSION%",
+    "item_id=%ITEM_ID%",
+    "item_version=%ITEM_VERSION%",
+    "item_maxappversion=%ITEM_MAXAPPVERSION%",
+    "item_status=%ITEM_STATUS%",
+    "app_id=%APP_ID%",
+    "app_version=%APP_VERSION%",
+    "current_app_version=%CURRENT_APP_VERSION%",
+    "app_os=%APP_OS%",
+    "app_abi=%APP_ABI%",
+    "app_locale=%APP_LOCALE%",
+    "update_type=%UPDATE_TYPE%",
+  ].join("&");
 
 const PARAM_ADDONS = {
   "addon1@tests.mozilla.org": {
@@ -576,7 +595,7 @@ add_task(async function test_params() {
   let mockBlocklist = await AddonTestUtils.overrideBlocklist(blocklistAddons);
 
   for (let [id, options] of Object.entries(PARAM_ADDONS)) {
-    await promiseInstallWebExtension({manifest: options.manifest});
+    await promiseInstallWebExtension({ manifest: options.manifest });
 
     if (options.initialState) {
       let addon = await AddonManager.getAddonByID(id);
@@ -587,10 +606,16 @@ add_task(async function test_params() {
   let resultsPromise = new Promise(resolve => {
     let results = new Map();
 
-    testserver.registerPathHandler("/data/param_test.json", function(request, response) {
+    testserver.registerPathHandler("/data/param_test.json", function(
+      request,
+      response
+    ) {
       let params = new URLSearchParams(request.queryString);
       let itemId = params.get("item_id");
-      ok(!results.has(itemId), `Should not see a duplicate request for item ${itemId}`);
+      ok(
+        !results.has(itemId),
+        `Should not see a duplicate request for item ${itemId}`
+      );
 
       results.set(itemId, params);
 
@@ -606,7 +631,7 @@ add_task(async function test_params() {
   for (let [id, options] of Object.entries(PARAM_ADDONS)) {
     // Having an onUpdateAvailable callback in the listener automagically adds
     // UPDATE_TYPE_NEWVERSION to the update type flags in the request.
-    let listener = options.compatOnly ? {} : {onUpdateAvailable() {}};
+    let listener = options.compatOnly ? {} : { onUpdateAvailable() {} };
 
     addons.get(id).findUpdates(listener, ...options.updateType);
   }
@@ -664,12 +689,16 @@ add_task(async function test_manifest_compat() {
   // Test that a normal update check won't decrease a targetApplication's
   // maxVersion but an update check for a new application will.
   await AddonTestUtils.promiseFindAddonUpdates(
-    a4, AddonManager.UPDATE_WHEN_PERIODIC_UPDATE);
+    a4,
+    AddonManager.UPDATE_WHEN_PERIODIC_UPDATE
+  );
   ok(a4.isActive, "addon4 is active");
   ok(a4.isCompatible, "addon4 is compatible");
 
   await AddonTestUtils.promiseFindAddonUpdates(
-    a4, AddonManager.UPDATE_WHEN_NEW_APP_INSTALLED);
+    a4,
+    AddonManager.UPDATE_WHEN_NEW_APP_INSTALLED
+  );
   ok(!a4.isActive, "addon4 is not active");
   ok(!a4.isCompatible, "addon4 is not compatible");
 
@@ -716,8 +745,10 @@ add_task(async function test_no_auto_update() {
     listener = {
       onNewInstall(aInstall) {
         let id = aInstall.existingAddon.id;
-        ok((id == "addon1@tests.mozilla.org" || id == "addon8@tests.mozilla.org"),
-           "Saw unexpected onNewInstall for " + id);
+        ok(
+          id == "addon1@tests.mozilla.org" || id == "addon8@tests.mozilla.org",
+          "Saw unexpected onNewInstall for " + id
+        );
       },
 
       onDownloadStarted(aInstall) {
@@ -760,8 +791,10 @@ add_task(async function test_no_auto_update() {
   AddonManager.removeInstallListener(listener);
 
   let a1;
-  [a1, a8] = await AddonManager.getAddonsByIDs(["addon1@tests.mozilla.org",
-                                                "addon8@tests.mozilla.org"]);
+  [a1, a8] = await AddonManager.getAddonsByIDs([
+    "addon1@tests.mozilla.org",
+    "addon8@tests.mozilla.org",
+  ]);
   notEqual(a1, null);
   equal(a1.version, "2.0");
   await a1.uninstall();
@@ -769,153 +802,6 @@ add_task(async function test_no_auto_update() {
   notEqual(a8, null);
   equal(a8.version, "1.0");
   await a8.uninstall();
-});
-
-// Test that background update checks work for lightweight themes
-add_task(async function test_lwt_update() {
-  LightweightThemeManager.currentTheme = {
-    id: "1",
-    version: "1",
-    name: "Test LW Theme",
-    description: "A test theme",
-    author: "Mozilla",
-    homepageURL: "http://example.com/data/index.html",
-    headerURL: "http://example.com/data/header.png",
-    previewURL: "http://example.com/data/preview.png",
-    iconURL: "http://example.com/data/icon.png",
-    updateURL: "http://example.com/data/lwtheme.js",
-  };
-
-  // XXX The lightweight theme manager strips non-https updateURLs so hack it
-  // back in.
-  let themes = JSON.parse(Services.prefs.getCharPref("lightweightThemes.usedThemes"));
-  equal(themes.length, 1);
-  themes[0].updateURL = "http://example.com/data/lwtheme.js";
-  Services.prefs.setCharPref("lightweightThemes.usedThemes", JSON.stringify(themes));
-
-  testserver.registerPathHandler("/data/lwtheme.js", function(request, response) {
-    // Server will specify an expiry in one year.
-    let expiry = new Date();
-    expiry.setFullYear(expiry.getFullYear() + 1);
-    response.setHeader("Expires", expiry.toUTCString(), false);
-    response.write(JSON.stringify({
-      id: "1",
-      version: "2",
-      name: "Updated Theme",
-      description: "A test theme",
-      author: "Mozilla",
-      homepageURL: "http://example.com/data/index2.html",
-      headerURL: "http://example.com/data/header.png",
-      previewURL: "http://example.com/data/preview.png",
-      iconURL: "http://example.com/data/icon2.png",
-      updateURL: "http://example.com/data/lwtheme.js",
-    }));
-  });
-
-  let p1 = await AddonManager.getAddonByID("1@personas.mozilla.org");
-  notEqual(p1, null);
-  equal(p1.version, "1");
-  equal(p1.name, "Test LW Theme");
-  ok(p1.isActive);
-  equal(p1.installDate.getTime(), p1.updateDate.getTime());
-
-  // 5 seconds leeway seems like a lot, but tests can run slow and really if
-  // this is within 5 seconds it is fine. If it is going to be wrong then it
-  // is likely to be hours out at least
-  ok((Date.now() - p1.installDate.getTime()) < 5000);
-
-  gInstallDate = p1.installDate.getTime();
-
-  await new Promise(resolve => {
-    prepare_test({
-      "1@personas.mozilla.org": [
-        ["onInstalling", false],
-        "onInstalled",
-      ],
-    }, [
-      "onExternalInstall",
-    ], resolve);
-
-    AddonManagerInternal.backgroundUpdateCheck();
-  });
-
-  p1 = await AddonManager.getAddonByID("1@personas.mozilla.org");
-  notEqual(p1, null);
-  equal(p1.version, "2");
-  equal(p1.name, "Updated Theme");
-  equal(p1.installDate.getTime(), gInstallDate);
-  ok(p1.installDate.getTime() < p1.updateDate.getTime());
-
-  // 5 seconds leeway seems like a lot, but tests can run slow and really if
-  // this is within 5 seconds it is fine. If it is going to be wrong then it
-  // is likely to be hours out at least
-  ok((Date.now() - p1.updateDate.getTime()) < 5000);
-
-  gInstallDate = p1.installDate.getTime();
-});
-
-// Test that background update checks for lightweight themes do not use the cache
-// The update body from test 7 shouldn't be used since the cache should be bypassed.
-add_task(async function() {
-  // XXX The lightweight theme manager strips non-https updateURLs so hack it
-  // back in.
-  let themes = JSON.parse(Services.prefs.getCharPref("lightweightThemes.usedThemes"));
-  equal(themes.length, 1);
-  themes[0].updateURL = "http://example.com/data/lwtheme.js";
-  Services.prefs.setCharPref("lightweightThemes.usedThemes", JSON.stringify(themes));
-
-  testserver.registerPathHandler("/data/lwtheme.js", function(request, response) {
-    response.write(JSON.stringify({
-      id: "1",
-      version: "3",
-      name: "Updated Theme v.3",
-      description: "A test theme v.3",
-      author: "John Smith",
-      homepageURL: "http://example.com/data/index3.html?v=3",
-      headerURL: "http://example.com/data/header.png?v=3",
-      previewURL: "http://example.com/data/preview.png?v=3",
-      iconURL: "http://example.com/data/icon2.png?v=3",
-      updateURL: "https://example.com/data/lwtheme.js?v=3",
-    }));
-  });
-
-  let p1 = await AddonManager.getAddonByID("1@personas.mozilla.org");
-  notEqual(p1, null);
-  equal(p1.version, "2");
-  equal(p1.name, "Updated Theme");
-  ok(p1.isActive);
-  equal(p1.installDate.getTime(), gInstallDate);
-  ok(p1.installDate.getTime() < p1.updateDate.getTime());
-
-  await new Promise(resolve => {
-    prepare_test({
-      "1@personas.mozilla.org": [
-        ["onInstalling", false],
-        "onInstalled",
-      ],
-    }, [
-      "onExternalInstall",
-    ], resolve);
-
-    AddonManagerInternal.backgroundUpdateCheck();
-  });
-
-  p1 = await AddonManager.getAddonByID("1@personas.mozilla.org");
-  let currentTheme = LightweightThemeManager.currentTheme;
-  notEqual(p1, null);
-  equal(p1.version, "3");
-  equal(p1.name, "Updated Theme v.3");
-  equal(p1.description, "A test theme v.3");
-  info(JSON.stringify(p1));
-  equal(p1.creator.name, "John Smith");
-  equal(p1.homepageURL, "http://example.com/data/index3.html?v=3");
-  equal(p1.screenshots[0].url, "http://example.com/data/preview.png?v=3");
-  equal(p1.iconURL, "http://example.com/data/icon2.png?v=3");
-  equal(currentTheme.headerURL, "http://example.com/data/header.png?v=3");
-  equal(currentTheme.updateURL, "https://example.com/data/lwtheme.js?v=3");
-
-  equal(p1.installDate.getTime(), gInstallDate);
-  ok(p1.installDate.getTime() < p1.updateDate.getTime());
 });
 
 // Test that the update check returns nothing for addons in locked install
@@ -941,7 +827,7 @@ add_task(async function run_test_locked_install() {
   });
   xpi.copyTo(lockedDir, "addon13@tests.mozilla.org.xpi");
 
-  let validAddons = { "system": ["addon13@tests.mozilla.org"] };
+  let validAddons = { system: ["addon13@tests.mozilla.org"] };
   await overrideBuiltIns(validAddons);
 
   await promiseStartupManager();
@@ -950,7 +836,10 @@ add_task(async function run_test_locked_install() {
   notEqual(a13, null);
 
   let result = await AddonTestUtils.promiseFindAddonUpdates(a13);
-  ok(!result.compatibilityUpdate, "Should not have seen a compatibility update");
+  ok(
+    !result.compatibilityUpdate,
+    "Should not have seen a compatibility update"
+  );
   ok(!result.updateAvailable, "Should not have seen a version update");
 
   let installs = await AddonManager.getAllInstalls();

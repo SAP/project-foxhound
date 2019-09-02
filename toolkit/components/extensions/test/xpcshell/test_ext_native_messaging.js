@@ -5,7 +5,16 @@
 /* globals chrome */
 
 const PREF_MAX_READ = "webextensions.native-messaging.max-input-message-bytes";
-const PREF_MAX_WRITE = "webextensions.native-messaging.max-output-message-bytes";
+const PREF_MAX_WRITE =
+  "webextensions.native-messaging.max-output-message-bytes";
+
+const server = createHttpServer({ hosts: ["example.com"] });
+
+server.registerPathHandler("/dummy", (request, response) => {
+  response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html", false);
+  response.write("<!DOCTYPE html><html></html>");
+});
 
 const ECHO_BODY = String.raw`
   import struct
@@ -97,7 +106,7 @@ add_task(async function test_happy_path() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -114,7 +123,7 @@ add_task(async function test_happy_path() {
       what: "unicode string",
     },
     {
-      data: {test: "hello"},
+      data: { test: "hello" },
       what: "simple object",
     },
     {
@@ -122,7 +131,7 @@ add_task(async function test_happy_path() {
         what: "An object with a few properties",
         number: 123,
         bool: true,
-        nested: {what: "another object"},
+        nested: { what: "another object" },
       },
       what: "object with several properties",
     },
@@ -130,9 +139,9 @@ add_task(async function test_happy_path() {
     {
       data: {
         ignoreme: true,
-        _json: {data: "i have a tojson method"},
+        _json: { data: "i have a tojson method" },
       },
-      expected: {data: "i have a tojson method"},
+      expected: { data: "i have a tojson method" },
       what: "object with toJSON() method",
     },
   ];
@@ -167,7 +176,7 @@ async function simpleTest(app) {
   let extension = ExtensionTestUtils.loadExtension({
     background: `(${background})(${JSON.stringify(app)});`,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -197,13 +206,14 @@ if (AppConstants.platform == "win") {
 // Test sendNativeMessage()
 add_task(async function test_sendNativeMessage() {
   async function background() {
-    let MSG = {test: "hello world"};
+    let MSG = { test: "hello world" };
 
     // Check error handling
     await browser.test.assertRejects(
       browser.runtime.sendNativeMessage("nonexistent", MSG),
       /Attempt to postMessage on disconnected port/,
-      "sendNativeMessage() to a nonexistent app failed");
+      "sendNativeMessage() to a nonexistent app failed"
+    );
 
     // Check regular message exchange
     let reply = await browser.runtime.sendNativeMessage("echo", MSG);
@@ -218,7 +228,7 @@ add_task(async function test_sendNativeMessage() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -238,7 +248,11 @@ add_task(async function test_disconnect() {
   function background() {
     let port = browser.runtime.connectNative("echo");
     port.onMessage.addListener((msg, msgPort) => {
-      browser.test.assertEq(port, msgPort, "onMessage handler should receive the port as the second argument");
+      browser.test.assertEq(
+        port,
+        msgPort,
+        "onMessage handler should receive the port as the second argument"
+      );
       browser.test.sendMessage("message", msg);
     });
     port.onDisconnect.addListener(msgPort => {
@@ -255,7 +269,7 @@ add_task(async function test_disconnect() {
       } else if (what == "disconnect") {
         try {
           port.disconnect();
-          browser.test.sendMessage("disconnect-result", {success: true});
+          browser.test.sendMessage("disconnect-result", { success: true });
         } catch (err) {
           browser.test.sendMessage("disconnect-result", {
             success: false,
@@ -270,7 +284,7 @@ add_task(async function test_disconnect() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -323,7 +337,7 @@ add_task(async function test_write_limit() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -331,7 +345,11 @@ add_task(async function test_write_limit() {
   await extension.startup();
 
   let errmsg = await extension.awaitMessage("result");
-  notEqual(errmsg, null, "native postMessage() failed for overly large message");
+  notEqual(
+    errmsg,
+    null,
+    "native postMessage() failed for overly large message"
+  );
 
   await extension.unload();
   await waitForSubprocessExit();
@@ -351,8 +369,15 @@ add_task(async function test_read_limit() {
     const PAYLOAD = "0123456789A";
     let port = browser.runtime.connectNative("echo");
     port.onDisconnect.addListener(msgPort => {
-      browser.test.assertEq(port, msgPort, "onDisconnect handler should receive the port as the first argument");
-      browser.test.assertEq("Native application tried to send a message of 13 bytes, which exceeds the limit of 10 bytes.", port.error && port.error.message);
+      browser.test.assertEq(
+        port,
+        msgPort,
+        "onDisconnect handler should receive the port as the first argument"
+      );
+      browser.test.assertEq(
+        "Native application tried to send a message of 13 bytes, which exceeds the limit of 10 bytes.",
+        port.error && port.error.message
+      );
       browser.test.sendMessage("result", "disconnected");
     });
     port.onMessage.addListener(msg => {
@@ -364,7 +389,7 @@ add_task(async function test_read_limit() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -372,7 +397,11 @@ add_task(async function test_read_limit() {
   await extension.startup();
 
   let result = await extension.awaitMessage("result");
-  equal(result, "disconnected", "native port disconnected on receiving large message");
+  equal(
+    result,
+    "disconnected",
+    "native port disconnected on receiving large message"
+  );
 
   await extension.unload();
   await waitForSubprocessExit();
@@ -384,10 +413,26 @@ add_task(async function test_read_limit() {
 // use native messaging.
 add_task(async function test_ext_permission() {
   function background() {
-    browser.test.assertEq(chrome.runtime.connectNative, undefined, "chrome.runtime.connectNative does not exist without nativeMessaging permission");
-    browser.test.assertEq(browser.runtime.connectNative, undefined, "browser.runtime.connectNative does not exist without nativeMessaging permission");
-    browser.test.assertEq(chrome.runtime.sendNativeMessage, undefined, "chrome.runtime.sendNativeMessage does not exist without nativeMessaging permission");
-    browser.test.assertEq(browser.runtime.sendNativeMessage, undefined, "browser.runtime.sendNativeMessage does not exist without nativeMessaging permission");
+    browser.test.assertEq(
+      chrome.runtime.connectNative,
+      undefined,
+      "chrome.runtime.connectNative does not exist without nativeMessaging permission"
+    );
+    browser.test.assertEq(
+      browser.runtime.connectNative,
+      undefined,
+      "browser.runtime.connectNative does not exist without nativeMessaging permission"
+    );
+    browser.test.assertEq(
+      chrome.runtime.sendNativeMessage,
+      undefined,
+      "chrome.runtime.sendNativeMessage does not exist without nativeMessaging permission"
+    );
+    browser.test.assertEq(
+      browser.runtime.sendNativeMessage,
+      undefined,
+      "browser.runtime.sendNativeMessage does not exist without nativeMessaging permission"
+    );
     browser.test.sendMessage("finished");
   }
 
@@ -407,27 +452,41 @@ add_task(async function test_app_permission() {
   function background() {
     let port = browser.runtime.connectNative("echo");
     port.onDisconnect.addListener(msgPort => {
-      browser.test.assertEq(port, msgPort, "onDisconnect handler should receive the port as the first argument");
-      browser.test.assertEq("No such native application echo", port.error && port.error.message);
+      browser.test.assertEq(
+        port,
+        msgPort,
+        "onDisconnect handler should receive the port as the first argument"
+      );
+      browser.test.assertEq(
+        "No such native application echo",
+        port.error && port.error.message
+      );
       browser.test.sendMessage("result", "disconnected");
     });
     port.onMessage.addListener(msg => {
       browser.test.sendMessage("result", "message");
     });
-    port.postMessage({test: "test"});
+    port.postMessage({ test: "test" });
   }
 
-  let extension = ExtensionTestUtils.loadExtension({
-    background,
-    manifest: {
-      permissions: ["nativeMessaging"],
+  let extension = ExtensionTestUtils.loadExtension(
+    {
+      background,
+      manifest: {
+        permissions: ["nativeMessaging"],
+      },
     },
-  }, "somethingelse@tests.mozilla.org");
+    "somethingelse@tests.mozilla.org"
+  );
 
   await extension.startup();
 
   let result = await extension.awaitMessage("result");
-  equal(result, "disconnected", "connectNative() failed without native app permission");
+  equal(
+    result,
+    "disconnected",
+    "connectNative() failed without native app permission"
+  );
 
   await extension.unload();
 
@@ -448,7 +507,7 @@ add_task(async function test_child_process() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -457,10 +516,21 @@ add_task(async function test_child_process() {
 
   let msg = await extension.awaitMessage("result");
   equal(msg.args.length, 3, "Received two command line arguments");
-  equal(msg.args[1], getPath("info.json"), "Command line argument is the path to the native host manifest");
-  equal(msg.args[2], ID, "Second command line argument is the ID of the calling extension");
-  equal(msg.cwd.replace(/^\/private\//, "/"), OS.Path.join(tmpDir.path, TYPE_SLUG),
-        "Working directory is the directory containing the native appliation");
+  equal(
+    msg.args[1],
+    getPath("info.json"),
+    "Command line argument is the path to the native host manifest"
+  );
+  equal(
+    msg.args[2],
+    ID,
+    "Second command line argument is the ID of the calling extension"
+  );
+  equal(
+    msg.cwd.replace(/^\/private\//, "/"),
+    OS.Path.join(tmpDir.path, TYPE_SLUG),
+    "Working directory is the directory containing the native appliation"
+  );
 
   let exitPromise = waitForSubprocessExit();
   await extension.unload();
@@ -471,17 +541,25 @@ add_task(async function test_stderr() {
   function background() {
     let port = browser.runtime.connectNative("stderr");
     port.onDisconnect.addListener(msgPort => {
-      browser.test.assertEq(port, msgPort, "onDisconnect handler should receive the port as the first argument");
-      browser.test.assertEq(null, port.error, "Normal application exit is not an error");
+      browser.test.assertEq(
+        port,
+        msgPort,
+        "onDisconnect handler should receive the port as the first argument"
+      );
+      browser.test.assertEq(
+        null,
+        port.error,
+        "Normal application exit is not an error"
+      );
       browser.test.sendMessage("finished");
     });
   }
 
-  let {messages} = await promiseConsoleOutput(async function() {
+  let { messages } = await promiseConsoleOutput(async function() {
     let extension = ExtensionTestUtils.loadExtension({
       background,
       manifest: {
-        applications: {gecko: {id: ID}},
+        applications: { gecko: { id: ID } },
         permissions: ["nativeMessaging"],
       },
     });
@@ -493,10 +571,16 @@ add_task(async function test_stderr() {
     await waitForSubprocessExit();
   });
 
-  let lines = STDERR_LINES.map(line => messages.findIndex(msg => msg.message.includes(line)));
+  let lines = STDERR_LINES.map(line =>
+    messages.findIndex(msg => msg.message.includes(line))
+  );
   notEqual(lines[0], -1, "Saw first line of stderr output on the console");
   notEqual(lines[1], -1, "Saw second line of stderr output on the console");
-  notEqual(lines[0], lines[1], "Stderr output lines are separated in the console");
+  notEqual(
+    lines[0],
+    lines[1],
+    "Stderr output lines are separated in the console"
+  );
 });
 
 // Test that calling connectNative() multiple times works
@@ -525,7 +609,7 @@ add_task(async function test_multiple_connects() {
   let extension = ExtensionTestUtils.loadExtension({
     background,
     manifest: {
-      applications: {gecko: {id: ID}},
+      applications: { gecko: { id: ID } },
       permissions: ["nativeMessaging"],
     },
   });
@@ -533,4 +617,61 @@ add_task(async function test_multiple_connects() {
   await extension.startup();
   await extension.awaitFinish("multiple-connect");
   await extension.unload();
+});
+
+// Test that native messaging is always rejected on content scripts
+add_task(async function test_connect_native_from_content_script() {
+  async function testScript() {
+    let port = browser.runtime.connectNative("echo");
+    port.onDisconnect.addListener(msgPort => {
+      browser.test.assertEq(
+        port,
+        msgPort,
+        "onDisconnect handler should receive the port as the first argument"
+      );
+      browser.test.assertEq(
+        "No such native application echo",
+        port.error && port.error.message
+      );
+      browser.test.sendMessage("result", "disconnected");
+    });
+    port.onMessage.addListener(msg => {
+      browser.test.sendMessage("result", "message");
+    });
+    port.postMessage({ test: "test" });
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      content_scripts: [
+        {
+          run_at: "document_end",
+          js: ["test.js"],
+          matches: ["http://example.com/dummy"],
+        },
+      ],
+      applications: { gecko: { id: ID } },
+      permissions: ["nativeMessaging"],
+    },
+    files: {
+      "test.js": testScript,
+    },
+  });
+
+  await extension.startup();
+
+  Services.prefs.setBoolPref(
+    "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer",
+    true
+  );
+  Services.prefs.setBoolPref("security.allow_unsafe_parent_loads", true);
+  await ExtensionTestUtils.loadContentPage("http://example.com/dummy");
+
+  let result = await extension.awaitMessage("result");
+  equal(result, "disconnected", "connectNative() failed from content script");
+
+  await extension.unload();
+
+  let procCount = await getSubprocessCount();
+  equal(procCount, 0, "No child process was started");
 });

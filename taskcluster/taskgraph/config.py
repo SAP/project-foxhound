@@ -7,6 +7,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 import os
 import logging
 import attr
+from six import text_type
 from mozpack import path
 
 from .util.schema import validate_schema, Schema, optionally_keyed_by
@@ -74,6 +75,23 @@ graph_config_schema = Schema({
         Required('release-eme-free-repack'):
             optionally_keyed_by('release-product', 'release-level', 'release-type',
                                 Any(basestring, None)),
+    },
+    Required('workers'): {
+        Required('aliases'): {
+            text_type: {
+                Required('provisioner'): text_type,
+                Required('implementation'): text_type,
+                Required('os'): text_type,
+                Required('worker-type'): optionally_keyed_by('level', text_type),
+            }
+        },
+    },
+    Required('mac-notarization'): {
+        Required('mac-behavior'):
+            optionally_keyed_by('platform', 'release-type',
+                                Any('mac_notarize', 'mac_pkg', 'mac_sign', 'mac_sign_and_pkg')),
+        Required('mac-entitlements'):
+            optionally_keyed_by('platform', 'project', text_type),
     },
 })
 

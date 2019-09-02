@@ -7,6 +7,7 @@
 #include "nsStyleUtil.h"
 #include "nsStyleConsts.h"
 
+#include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "nsIContent.h"
 #include "nsCSSProps.h"
@@ -185,24 +186,6 @@ void nsStyleUtil::AppendBitmaskCSSValue(const nsCSSKTableEntry aTable[],
 }
 
 /* static */
-void nsStyleUtil::AppendAngleValue(const nsStyleCoord& aAngle,
-                                   nsAString& aResult) {
-  MOZ_ASSERT(aAngle.IsAngleValue(), "Should have angle value");
-
-  // Append number.
-  AppendCSSNumber(aAngle.GetAngleValue(), aResult);
-
-  // Append unit.
-  switch (aAngle.GetUnit()) {
-    case eStyleUnit_Degree:
-      aResult.AppendLiteral("deg");
-      break;
-    default:
-      MOZ_ASSERT_UNREACHABLE("unrecognized angle unit");
-  }
-}
-
-/* static */
 void nsStyleUtil::AppendPaintOrderValue(uint8_t aValue, nsAString& aResult) {
   static_assert(
       NS_STYLE_PAINT_ORDER_BITWIDTH * NS_STYLE_PAINT_ORDER_LAST_VALUE <= 8,
@@ -373,31 +356,25 @@ bool nsStyleUtil::ObjectPropsMightCauseOverflow(
 }
 
 /* static */
-bool nsStyleUtil::CSPAllowsInlineStyle(Element* aElement,
-                                       nsIPrincipal* aPrincipal,
-                                       nsIPrincipal* aTriggeringPrincipal,
-                                       nsIURI* aSourceURI, uint32_t aLineNumber,
-                                       uint32_t aColumnNumber,
-                                       const nsAString& aStyleText,
-                                       nsresult* aRv) {
+bool nsStyleUtil::CSPAllowsInlineStyle(
+    Element* aElement, dom::Document* aDocument,
+    nsIPrincipal* aTriggeringPrincipal, uint32_t aLineNumber,
+    uint32_t aColumnNumber, const nsAString& aStyleText, nsresult* aRv) {
   nsresult rv;
 
   if (aRv) {
     *aRv = NS_OK;
   }
 
-  nsIPrincipal* principal = aPrincipal;
-  if (aTriggeringPrincipal &&
-      BasePrincipal::Cast(aTriggeringPrincipal)->OverridesCSP(aPrincipal)) {
-    principal = aTriggeringPrincipal;
-  }
-
   nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = principal->GetCsp(getter_AddRefs(csp));
-
-  if (NS_FAILED(rv)) {
-    if (aRv) *aRv = rv;
-    return false;
+  if (aTriggeringPrincipal && BasePrincipal::Cast(aTriggeringPrincipal)
+                                  ->OverridesCSP(aDocument->NodePrincipal())) {
+    nsCOMPtr<nsIExpandedPrincipal> ep = do_QueryInterface(aTriggeringPrincipal);
+    if (ep) {
+      csp = ep->GetCsp();
+    }
+  } else {
+    csp = aDocument->GetCsp();
   }
 
   if (!csp) {
@@ -433,7 +410,8 @@ void nsStyleUtil::AppendFontSlantStyle(const FontSlantStyle& aStyle,
     auto angle = aStyle.ObliqueAngle();
     if (angle != FontSlantStyle::kDefaultAngle) {
       aOut.AppendLiteral(" ");
-      AppendAngleValue(nsStyleCoord(angle, eStyleUnit_Degree), aOut);
+      AppendCSSNumber(angle, aOut);
+      aOut.AppendLiteral("deg");
     }
   }
 }

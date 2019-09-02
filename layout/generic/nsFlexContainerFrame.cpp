@@ -21,6 +21,7 @@
 #include "gfxContext.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/UniquePtr.h"
 #include "WritingModes.h"
 
@@ -391,20 +392,18 @@ class MOZ_STACK_CLASS nsFlexContainerFrame::FlexboxAxisTracker {
   // this flag, to avoid reflowing our children in bottom-to-top order.)
   bool AreAxesInternallyReversed() const { return mAreAxesInternallyReversed; }
 
- private:
-  // Delete copy-constructor & reassignment operator, to prevent accidental
-  // (unnecessary) copying.
-  FlexboxAxisTracker(const FlexboxAxisTracker&) = delete;
-  FlexboxAxisTracker& operator=(const FlexboxAxisTracker&) = delete;
-
-  // Private because callers shouldn't need to care about physical axes
-  // (but we do internally, to provide one API).
   bool IsMainAxisHorizontal() const {
     // If we're row-oriented, and our writing mode is NOT vertical,
     // or we're column-oriented and our writing mode IS vertical,
     // then our main axis is horizontal. This handles all cases:
     return mIsRowOriented != mWM.IsVertical();
   }
+
+ private:
+  // Delete copy-constructor & reassignment operator, to prevent accidental
+  // (unnecessary) copying.
+  FlexboxAxisTracker(const FlexboxAxisTracker&) = delete;
+  FlexboxAxisTracker& operator=(const FlexboxAxisTracker&) = delete;
 
   // Helpers for constructor which determine the orientation of our axes, based
   // on legacy box properties (-webkit-box-orient, -webkit-box-direction) or
@@ -495,7 +494,7 @@ class nsFlexContainerFrame::FlexItem : public LinkedListElement<FlexItem> {
 
       if (!found) {
         mAscent = mFrame->SynthesizeBaselineBOffsetFromBorderBox(
-            mWM, BaselineSharingGroup::eFirst);
+            mWM, BaselineSharingGroup::First);
       }
     }
     return mAscent;
@@ -624,10 +623,8 @@ class nsFlexContainerFrame::FlexItem : public LinkedListElement<FlexItem> {
     return mFlexShrink * mFlexBaseSize;
   }
 
-  // Returns a LogicalSize representing the flex item's logical intrinsic ratio
-  // (ISize:BSize), as expressed in the *flex container's* writing mode.
-  const LogicalSize& IntrinsicRatio() const { return mIntrinsicRatio; }
-  bool HasIntrinsicRatio() const { return !mIntrinsicRatio.IsAllZero(); }
+  const AspectRatio& IntrinsicRatio() const { return mIntrinsicRatio; }
+  bool HasIntrinsicRatio() const { return !!mIntrinsicRatio; }
 
   // Getters for margin:
   // ===================
@@ -703,7 +700,7 @@ class nsFlexContainerFrame::FlexItem : public LinkedListElement<FlexItem> {
   // resulting "hypothetical main size" (the base size clamped to our
   // main-axis [min,max] sizing constraints).
   void SetFlexBaseSizeAndMainSize(nscoord aNewFlexBaseSize) {
-    MOZ_ASSERT(!mIsFrozen || mFlexBaseSize == NS_INTRINSICSIZE,
+    MOZ_ASSERT(!mIsFrozen || mFlexBaseSize == NS_UNCONSTRAINEDSIZE,
                "flex base size shouldn't change after we're frozen "
                "(unless we're just resolving an intrinsic size)");
     mFlexBaseSize = aNewFlexBaseSize;
@@ -836,6 +833,10 @@ class nsFlexContainerFrame::FlexItem : public LinkedListElement<FlexItem> {
   bool CanMainSizeInfluenceCrossSize(
       const FlexboxAxisTracker& aAxisTracker) const;
 
+  // Gets the block frame that contains the flex item's content.  This is
+  // Frame() itself or one of its descendants.
+  nsBlockFrame* BlockFrame() const;
+
  protected:
   // Helper called by the constructor, to set mNeedsMinSizeAutoResolution:
   void CheckForMinSizeAuto(const ReflowInput& aFlexItemReflowInput,
@@ -845,7 +846,7 @@ class nsFlexContainerFrame::FlexItem : public LinkedListElement<FlexItem> {
   nsIFrame* const mFrame;  // The flex item's frame.
   const float mFlexGrow;
   const float mFlexShrink;
-  const LogicalSize mIntrinsicRatio;
+  const AspectRatio mIntrinsicRatio;
   const nsMargin mBorderPadding;
   nsMargin mMargin;  // non-const because we need to resolve auto margins
 
@@ -1265,19 +1266,25 @@ uint16_t nsFlexContainerFrame::CSSAlignmentForAbsPosChild(
 UniquePtr<FlexItem> nsFlexContainerFrame::GenerateFlexItemForChild(
     nsPresContext* aPresContext, nsIFrame* aChildFrame,
     const ReflowInput& aParentReflowInput,
-    const FlexboxAxisTracker& aAxisTracker) {
-  // Create temporary reflow state just for sizing -- to get hypothetical
+    const FlexboxAxisTracker& aAxisTracker, bool aHasLineClampEllipsis) {
+  // Create temporary reflow input just for sizing -- to get hypothetical
   // main-size and the computed values of min / max main-size property.
-  // (This reflow state will _not_ be used for reflow.)
+  // (This reflow input will _not_ be used for reflow.)
   ReflowInput childRI(
       aPresContext, aParentReflowInput, aChildFrame,
       aParentReflowInput.ComputedSize(aChildFrame->GetWritingMode()));
+  childRI.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
 
   // FLEX GROW & SHRINK WEIGHTS
   // --------------------------
   float flexGrow, flexShrink;
   if (IsLegacyBox(this)) {
-    flexGrow = flexShrink = aChildFrame->StyleXUL()->mBoxFlex;
+    if (GetLineClampValue() != 0) {
+      // Items affected by -webkit-line-clamp are always inflexible.
+      flexGrow = flexShrink = 0;
+    } else {
+      flexGrow = flexShrink = aChildFrame->StyleXUL()->mBoxFlex;
+    }
   } else {
     const nsStylePosition* stylePos = aChildFrame->StylePosition();
     flexGrow = stylePos->mFlexGrow;
@@ -1301,7 +1308,7 @@ UniquePtr<FlexItem> nsFlexContainerFrame::GenerateFlexItemForChild(
 
   // CROSS SIZES (tentative cross size, min/max cross size)
   // ------------------------------------------------------
-  // Grab the cross size from the reflow state. This might be the right value,
+  // Grab the cross size from the reflow input. This might be the right value,
   // or we might resolve it to something else in SizeItemInCrossAxis(); hence,
   // it's tentative. See comment under "Cross Size Determination" for more.
   nscoord tentativeCrossSize = GET_CROSS_COMPONENT_LOGICAL(
@@ -1355,7 +1362,7 @@ UniquePtr<FlexItem> nsFlexContainerFrame::GenerateFlexItemForChild(
       mainMinSize = std::max(mainMinSize, widgetMainMinSize);
       mainMaxSize = std::max(mainMaxSize, widgetMainMinSize);
 
-      if (tentativeCrossSize != NS_INTRINSICSIZE) {
+      if (tentativeCrossSize != NS_UNCONSTRAINEDSIZE) {
         tentativeCrossSize = std::max(tentativeCrossSize, widgetCrossMinSize);
       }
       crossMinSize = std::max(crossMinSize, widgetCrossMinSize);
@@ -1382,7 +1389,8 @@ UniquePtr<FlexItem> nsFlexContainerFrame::GenerateFlexItemForChild(
 
   // Resolve "flex-basis:auto" and/or "min-[width|height]:auto" (which might
   // require us to reflow the item to measure content height)
-  ResolveAutoFlexBasisAndMinSize(aPresContext, *item, childRI, aAxisTracker);
+  ResolveAutoFlexBasisAndMinSize(aPresContext, *item, childRI, aAxisTracker,
+                                 aHasLineClampEllipsis);
   return item;
 }
 
@@ -1416,7 +1424,8 @@ static bool IsCrossSizeDefinite(const ReflowInput& aItemReflowInput,
 // returning the cross min-size, when the cross size is indefinite. (This param
 // should be set IFF the caller intends to resolve the main min-size.) If this
 // param is true, then this function is guaranteed to return a definite value
-// (i.e. not NS_AUTOHEIGHT, excluding cases where huge sizes are involved).
+// (i.e. not NS_UNCONSTRAINEDSIZE, excluding cases where huge sizes are
+// involved).
 //
 // XXXdholbert the min-size behavior here is based on my understanding in
 //   http://lists.w3.org/Archives/Public/www-style/2014Jul/0053.html
@@ -1446,21 +1455,22 @@ static nscoord CrossSizeToUseWithRatio(const FlexItem& aFlexItem,
   }
 
   // Indefinite cross-size.
-  return NS_AUTOHEIGHT;
+  return NS_UNCONSTRAINEDSIZE;
 }
 
 // Convenience function; returns a main-size, given a cross-size and an
 // intrinsic ratio. The caller is responsible for ensuring that the passed-in
-// intrinsic ratio must not have 0 in its cross-axis component (or else we'll
-// divide by 0).
+// intrinsic ratio is not zero.
 static nscoord MainSizeFromAspectRatio(nscoord aCrossSize,
-                                       const LogicalSize& aIntrinsicRatio,
+                                       const AspectRatio& aIntrinsicRatio,
                                        const FlexboxAxisTracker& aAxisTracker) {
-  MOZ_ASSERT(aAxisTracker.GetCrossComponent(aIntrinsicRatio) != 0,
+  MOZ_ASSERT(aIntrinsicRatio,
              "Invalid ratio; will divide by 0! Caller should've checked...");
-  return NSCoordMulDiv(aCrossSize,
-                       aAxisTracker.GetMainComponent(aIntrinsicRatio),
-                       aAxisTracker.GetCrossComponent(aIntrinsicRatio));
+  AspectRatio ratio = aAxisTracker.IsMainAxisHorizontal()
+                          ? aIntrinsicRatio
+                          : aIntrinsicRatio.Inverted();
+
+  return ratio.ApplyTo(aCrossSize);
 }
 
 // Partially resolves "min-[width|height]:auto" and returns the resulting value.
@@ -1483,7 +1493,7 @@ static nscoord PartiallyResolveAutoMinSize(
   // * the used flex-basis, if the computed flex-basis was 'auto':
   // XXXdholbert ('auto' might be renamed to 'main-size'; see bug 1032922)
   if (aItemReflowInput.mStylePosition->mFlexBasis.IsAuto() &&
-      aFlexItem.GetFlexBaseSize() != NS_AUTOHEIGHT) {
+      aFlexItem.GetFlexBaseSize() != NS_UNCONSTRAINEDSIZE) {
     // NOTE: We skip this if the flex base size depends on content & isn't yet
     // resolved. This is OK, because the caller is responsible for computing
     // the min-content height and min()'ing it with the value we return, which
@@ -1505,7 +1515,7 @@ static nscoord PartiallyResolveAutoMinSize(
   // * if the item has an intrinsic aspect ratio, the width (height) calculated
   //   from the aspect ratio and any definite size constraints in the opposite
   //   dimension.
-  if (aAxisTracker.GetCrossComponent(aFlexItem.IntrinsicRatio()) != 0) {
+  if (aFlexItem.IntrinsicRatio()) {
     // We have a usable aspect ratio. (not going to divide by 0)
     const bool useMinSizeIfCrossSizeIsIndefinite = true;
     nscoord crossSizeToUseWithRatio = CrossSizeToUseWithRatio(
@@ -1526,7 +1536,7 @@ static nscoord PartiallyResolveAutoMinSize(
 static bool ResolveAutoFlexBasisFromRatio(
     FlexItem& aFlexItem, const ReflowInput& aItemReflowInput,
     const FlexboxAxisTracker& aAxisTracker) {
-  MOZ_ASSERT(NS_AUTOHEIGHT == aFlexItem.GetFlexBaseSize(),
+  MOZ_ASSERT(NS_UNCONSTRAINEDSIZE == aFlexItem.GetFlexBaseSize(),
              "Should only be called to resolve an 'auto' flex-basis");
   // If the flex item has ...
   //  - an intrinsic aspect ratio,
@@ -1535,13 +1545,13 @@ static bool ResolveAutoFlexBasisFromRatio(
   //  - a definite cross size
   // then the flex base size is calculated from its inner cross size and the
   // flex item’s intrinsic aspect ratio.
-  if (aAxisTracker.GetCrossComponent(aFlexItem.IntrinsicRatio()) != 0) {
+  if (aFlexItem.IntrinsicRatio()) {
     // We have a usable aspect ratio. (not going to divide by 0)
     const bool useMinSizeIfCrossSizeIsIndefinite = false;
     nscoord crossSizeToUseWithRatio = CrossSizeToUseWithRatio(
         aFlexItem, aItemReflowInput, useMinSizeIfCrossSizeIsIndefinite,
         aAxisTracker);
-    if (crossSizeToUseWithRatio != NS_AUTOHEIGHT) {
+    if (crossSizeToUseWithRatio != NS_UNCONSTRAINEDSIZE) {
       // We have a definite cross-size
       nscoord mainSizeFromRatio = MainSizeFromAspectRatio(
           crossSizeToUseWithRatio, aFlexItem.IntrinsicRatio(), aAxisTracker);
@@ -1556,13 +1566,14 @@ static bool ResolveAutoFlexBasisFromRatio(
 // we may want to resolve that in this function, too.
 void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
     nsPresContext* aPresContext, FlexItem& aFlexItem,
-    const ReflowInput& aItemReflowInput,
-    const FlexboxAxisTracker& aAxisTracker) {
+    const ReflowInput& aItemReflowInput, const FlexboxAxisTracker& aAxisTracker,
+    bool aHasLineClampEllipsis) {
   // (Note: We can guarantee that the flex-basis will have already been
   // resolved if the main axis is the same is the same as the item's inline
   // axis. Inline-axis values should always be resolvable without reflow.)
-  const bool isMainSizeAuto = (!aFlexItem.IsInlineAxisMainAxis() &&
-                               NS_AUTOHEIGHT == aFlexItem.GetFlexBaseSize());
+  const bool isMainSizeAuto =
+      (!aFlexItem.IsInlineAxisMainAxis() &&
+       NS_UNCONSTRAINEDSIZE == aFlexItem.GetFlexBaseSize());
 
   const bool isMainMinSizeAuto = aFlexItem.NeedsMinSizeAutoResolution();
 
@@ -1583,7 +1594,7 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
   // cases) we don't know how much the item should stretch yet.
   const ReflowInput* flexContainerRI = aItemReflowInput.mParentReflowInput;
   MOZ_ASSERT(flexContainerRI,
-             "flex item's reflow state should have ptr to container's state");
+             "flex item's reflow input should have ptr to container's state");
   if (NS_STYLE_FLEX_WRAP_NOWRAP == flexContainerRI->mStylePosition->mFlexWrap) {
     // XXXdholbert Maybe this should share logic with ComputeCrossSize()...
     // Alternately, maybe tentative container cross size should be passed down.
@@ -1594,9 +1605,9 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
     // - If it's column-oriented, then "yes", because its cross size is its
     // inline-size which is always definite from its descendants' perspective.
     // - Otherwise (if it's row-oriented), then we check the actual size
-    // and call it definite if it's not NS_AUTOHEIGHT.
+    // and call it definite if it's not NS_UNCONSTRAINEDSIZE.
     if (aAxisTracker.IsColumnOriented() ||
-        containerCrossSize != NS_AUTOHEIGHT) {
+        containerCrossSize != NS_UNCONSTRAINEDSIZE) {
       // Container's cross size is "definite", so we can resolve the item's
       // stretched cross size using that.
       aFlexItem.ResolveStretchedCrossSize(containerCrossSize, aAxisTracker);
@@ -1610,8 +1621,7 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
     // (We'll consider that later, if we need to.)
     resolvedMinSize =
         PartiallyResolveAutoMinSize(aFlexItem, aItemReflowInput, aAxisTracker);
-    if (resolvedMinSize > 0 &&
-        aAxisTracker.GetCrossComponent(aFlexItem.IntrinsicRatio()) == 0) {
+    if (resolvedMinSize > 0 && !aFlexItem.IntrinsicRatio()) {
       // We don't have a usable aspect ratio, so we need to consider our
       // min-content size as another candidate min-size, which we'll have to
       // min() with the current resolvedMinSize.
@@ -1639,7 +1649,7 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
       }
       NS_ASSERTION(!flexBasisNeedsToMeasureContent,
                    "flex-basis:auto should have been resolved in the "
-                   "reflow state, for horizontal flexbox. It shouldn't need "
+                   "reflow input, for horizontal flexbox. It shouldn't need "
                    "special handling here");
     } else {
       // If this item is flexible (in its block axis)...
@@ -1661,7 +1671,7 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
 
       nscoord contentBSize = MeasureFlexItemContentBSize(
           aPresContext, aFlexItem, forceBResizeForMeasuringReflow,
-          *flexContainerRI);
+          aHasLineClampEllipsis, *flexContainerRI);
       if (minSizeNeedsToMeasureContent) {
         resolvedMinSize = std::min(resolvedMinSize, contentBSize);
       }
@@ -1818,24 +1828,27 @@ nsFlexContainerFrame::MeasureAscentAndBSizeForFlexItem(
 
 /* virtual */
 void nsFlexContainerFrame::MarkIntrinsicISizesDirty() {
-  mCachedMinISize = NS_INTRINSIC_WIDTH_UNKNOWN;
-  mCachedPrefISize = NS_INTRINSIC_WIDTH_UNKNOWN;
+  mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
+  mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
 
   nsContainerFrame::MarkIntrinsicISizesDirty();
 }
 
 nscoord nsFlexContainerFrame::MeasureFlexItemContentBSize(
     nsPresContext* aPresContext, FlexItem& aFlexItem,
-    bool aForceBResizeForMeasuringReflow,
+    bool aForceBResizeForMeasuringReflow, bool aHasLineClampEllipsis,
     const ReflowInput& aParentReflowInput) {
-  // Set up a reflow state for measuring the flex item's auto-height:
+  // Set up a reflow input for measuring the flex item's auto-height:
   WritingMode wm = aFlexItem.Frame()->GetWritingMode();
   LogicalSize availSize = aParentReflowInput.ComputedSize(wm);
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
   ReflowInput childRIForMeasuringBSize(aPresContext, aParentReflowInput,
-                                       aFlexItem.Frame(), availSize, nullptr,
+                                       aFlexItem.Frame(), availSize, Nothing(),
                                        ReflowInput::CALLER_WILL_INIT);
   childRIForMeasuringBSize.mFlags.mIsFlexContainerMeasuringBSize = true;
+  childRIForMeasuringBSize.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
+  childRIForMeasuringBSize.mFlags.mApplyLineClamp =
+      childRIForMeasuringBSize.mFlags.mInsideLineClamp || aHasLineClampEllipsis;
   childRIForMeasuringBSize.Init(aPresContext);
 
   if (aFlexItem.IsStretched()) {
@@ -1871,9 +1884,7 @@ FlexItem::FlexItem(ReflowInput& aFlexItemReflowInput, float aFlexGrow,
     : mFrame(aFlexItemReflowInput.mFrame),
       mFlexGrow(aFlexGrow),
       mFlexShrink(aFlexShrink),
-      // We store the intrinsic ratio in the *flex container's* WM:
-      mIntrinsicRatio(aAxisTracker.GetWritingMode(),
-                      mFrame->GetIntrinsicRatio()),
+      mIntrinsicRatio(mFrame->GetIntrinsicRatio()),
       mBorderPadding(aFlexItemReflowInput.ComputedPhysicalBorderPadding()),
       mMargin(aFlexItemReflowInput.ComputedPhysicalMargin()),
       mMainMinSize(aMainMinSize),
@@ -1975,7 +1986,6 @@ FlexItem::FlexItem(nsIFrame* aChildFrame, nscoord aCrossSize,
     : mFrame(aChildFrame),
       mFlexGrow(0.0f),
       mFlexShrink(0.0f),
-      mIntrinsicRatio(aContainerWM),
       // mBorderPadding uses default constructor,
       // mMargin uses default constructor,
       mFlexBaseSize(0),
@@ -2319,7 +2329,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsFlexContainerFrame)
 
-nsContainerFrame* NS_NewFlexContainerFrame(nsIPresShell* aPresShell,
+nsContainerFrame* NS_NewFlexContainerFrame(PresShell* aPresShell,
                                            ComputedStyle* aStyle) {
   return new (aPresShell)
       nsFlexContainerFrame(aStyle, aPresShell->GetPresContext());
@@ -2337,6 +2347,10 @@ nsFlexContainerFrame::~nsFlexContainerFrame() {}
 void nsFlexContainerFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                                 nsIFrame* aPrevInFlow) {
   nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
+
+  if (GetStateBits() & NS_FRAME_FONT_INFLATION_CONTAINER) {
+    AddStateBits(NS_FRAME_FONT_INFLATION_FLOW_ROOT);
+  }
 
   const nsStyleDisplay* styleDisp = Style()->StyleDisplay();
 
@@ -2373,7 +2387,7 @@ nsresult nsFlexContainerFrame::GetFrameName(nsAString& aResult) const {
 
 nscoord nsFlexContainerFrame::GetLogicalBaseline(
     mozilla::WritingMode aWM) const {
-  NS_ASSERTION(mBaselineFromLastReflow != NS_INTRINSIC_WIDTH_UNKNOWN,
+  NS_ASSERTION(mBaselineFromLastReflow != NS_INTRINSIC_ISIZE_UNKNOWN,
                "baseline has not been set");
 
   if (HasAnyStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE)) {
@@ -3356,9 +3370,25 @@ void FlexItem::ResolveStretchedCrossSize(
   stretchedSize = NS_CSS_MINMAX(stretchedSize, mCrossMinSize, mCrossMaxSize);
 
   // Update the cross-size & make a note that it's stretched, so we know to
-  // override the reflow state's computed cross-size in our final reflow.
+  // override the reflow input's computed cross-size in our final reflow.
   SetCrossSize(stretchedSize);
   mIsStretched = true;
+}
+
+static nsBlockFrame* FindFlexItemBlockFrame(nsIFrame* aFrame) {
+  if (nsBlockFrame* block = do_QueryFrame(aFrame)) {
+    return block;
+  }
+  for (nsIFrame* f : aFrame->PrincipalChildList()) {
+    if (nsBlockFrame* block = FindFlexItemBlockFrame(f)) {
+      return block;
+    }
+  }
+  return nullptr;
+}
+
+nsBlockFrame* FlexItem::BlockFrame() const {
+  return FindFlexItemBlockFrame(Frame());
 }
 
 void SingleLineCrossAxisPositionTracker::ResolveAutoMarginsInCrossAxis(
@@ -3734,7 +3764,8 @@ void nsFlexContainerFrame::GenerateFlexLines(
     nsPresContext* aPresContext, const ReflowInput& aReflowInput,
     nscoord aContentBoxMainSize, nscoord aAvailableBSizeForContent,
     const nsTArray<StrutInfo>& aStruts, const FlexboxAxisTracker& aAxisTracker,
-    nscoord aMainGapSize, nsTArray<nsIFrame*>& aPlaceholders, /* out */
+    nscoord aMainGapSize, bool aHasLineClampEllipsis,
+    nsTArray<nsIFrame*>& aPlaceholders, /* out */
     LinkedList<FlexLine>& aLines /* out */) {
   MOZ_ASSERT(aLines.isEmpty(), "Expecting outparam to start out empty");
 
@@ -3833,7 +3864,7 @@ void nsFlexContainerFrame::GenerateFlexLines(
       nextStrutIdx++;
     } else {
       item = GenerateFlexItemForChild(aPresContext, childFrame, aReflowInput,
-                                      aAxisTracker);
+                                      aAxisTracker, aHasLineClampEllipsis);
     }
 
     nscoord itemInnerHypotheticalMainSize = item->GetMainSize();
@@ -3880,7 +3911,7 @@ void nsFlexContainerFrame::GenerateFlexLines(
 }
 
 // Retrieves the content-box main-size of our flex container from the
-// reflow state (specifically, the main-size of *this continuation* of the
+// reflow input (specifically, the main-size of *this continuation* of the
 // flex container).
 nscoord nsFlexContainerFrame::GetMainSizeFromReflowInput(
     const ReflowInput& aReflowInput, const FlexboxAxisTracker& aAxisTracker) {
@@ -3909,9 +3940,30 @@ static nscoord GetLargestLineMainSize(const FlexLine* aFirstLine) {
   return largestLineOuterSize;
 }
 
+/**
+ * Returns true if aFrame or any of its children have the
+ * NS_FRAME_CONTAINS_RELATIVE_BSIZE flag set -- i.e. if any of these frames (or
+ * their descendants) might have a relative-BSize dependency on aFrame (or its
+ * ancestors).
+ */
+static bool FrameHasRelativeBSizeDependency(nsIFrame* aFrame) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
+    return true;
+  }
+  for (nsIFrame::ChildListIterator childLists(aFrame); !childLists.IsDone();
+       childLists.Next()) {
+    for (nsIFrame* childFrame : childLists.CurrentList()) {
+      if (childFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /* Resolves the content-box main-size of a flex container frame,
  * primarily based on:
- * - the "tentative" main size, taken from the reflow state ("tentative"
+ * - the "tentative" main size, taken from the reflow input ("tentative"
  *    because it may be unconstrained or may run off the page).
  * - the available BSize (needed if the main axis is the block axis).
  * - the sizes of our lines of flex items.
@@ -3921,7 +3973,7 @@ static nscoord GetLargestLineMainSize(const FlexLine* aFirstLine) {
  *
  * (Note: This function should be structurally similar to 'ComputeCrossSize()',
  * except that here, the caller has already grabbed the tentative size from the
- * reflow state.)
+ * reflow input.)
  */
 static nscoord ResolveFlexContainerMainSize(
     const ReflowInput& aReflowInput, const FlexboxAxisTracker& aAxisTracker,
@@ -3935,13 +3987,13 @@ static nscoord ResolveFlexContainerMainSize(
     return aTentativeMainSize;
   }
 
-  if (aTentativeMainSize != NS_INTRINSICSIZE) {
+  if (aTentativeMainSize != NS_UNCONSTRAINEDSIZE) {
     // Column-oriented case, with fixed BSize:
     if (aAvailableBSizeForContent == NS_UNCONSTRAINEDSIZE ||
         aTentativeMainSize < aAvailableBSizeForContent) {
       // Not in a fragmenting context, OR no need to fragment because we have
       // more available BSize than we need. Either way, we don't need to clamp.
-      // (Note that the reflow state has already done the appropriate
+      // (Note that the reflow input has already done the appropriate
       // min/max-BSize clamping.)
       return aTentativeMainSize;
     }
@@ -3995,14 +4047,14 @@ nscoord nsFlexContainerFrame::ComputeCrossSize(
   }
 
   nscoord effectiveComputedBSize = GetEffectiveComputedBSize(aReflowInput);
-  if (effectiveComputedBSize != NS_INTRINSICSIZE) {
+  if (effectiveComputedBSize != NS_UNCONSTRAINEDSIZE) {
     // Row-oriented case (cross axis is block-axis), with fixed BSize:
     *aIsDefinite = true;
     if (aAvailableBSizeForContent == NS_UNCONSTRAINEDSIZE ||
         effectiveComputedBSize < aAvailableBSizeForContent) {
       // Not in a fragmenting context, OR no need to fragment because we have
       // more available BSize than we need. Either way, just use our fixed
-      // BSize.  (Note that the reflow state has already done the appropriate
+      // BSize.  (Note that the reflow input has already done the appropriate
       // min/max-BSize clamping.)
       return effectiveComputedBSize;
     }
@@ -4084,7 +4136,7 @@ static nscoord ComputePhysicalAscentFromFlexRelativeAscent(
 void nsFlexContainerFrame::SizeItemInCrossAxis(
     nsPresContext* aPresContext, const FlexboxAxisTracker& aAxisTracker,
     ReflowInput& aChildReflowInput, FlexItem& aItem) {
-  // If cross axis is the item's inline axis, just use ISize from reflow state,
+  // If cross axis is the item's inline axis, just use ISize from reflow input,
   // and don't bother with a full reflow.
   if (aItem.IsInlineAxisCrossAxis()) {
     aItem.SetCrossSize(aChildReflowInput.ComputedISize());
@@ -4208,7 +4260,12 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
     AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
   }
 
-  RenumberList();
+  // Check if there is a -webkit-line-clamp ellipsis somewhere inside at least
+  // one of the flex items, so we can clear the flag before the block frame
+  // re-sets it on the appropriate line during its bsize measuring reflow.
+  bool hasLineClampEllipsis =
+      HasAnyStateBits(NS_STATE_FLEX_HAS_LINE_CLAMP_ELLIPSIS);
+  RemoveStateBits(NS_STATE_FLEX_HAS_LINE_CLAMP_ELLIPSIS);
 
   const FlexboxAxisTracker axisTracker(this, aReflowInput.GetWritingMode());
 
@@ -4267,14 +4324,14 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
   AutoTArray<StrutInfo, 1> struts;
   DoFlexLayout(aPresContext, aDesiredSize, aReflowInput, aStatus,
                contentBoxMainSize, availableBSizeForContent, struts,
-               axisTracker, mainGapSize, crossGapSize);
+               axisTracker, mainGapSize, crossGapSize, hasLineClampEllipsis);
 
   if (!struts.IsEmpty()) {
     // We're restarting flex layout, with new knowledge of collapsed items.
     aStatus.Reset();
     DoFlexLayout(aPresContext, aDesiredSize, aReflowInput, aStatus,
                  contentBoxMainSize, availableBSizeForContent, struts,
-                 axisTracker, mainGapSize, crossGapSize);
+                 axisTracker, mainGapSize, crossGapSize, hasLineClampEllipsis);
   }
 }
 
@@ -4283,7 +4340,7 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
 // nsFrame::ComputeSizeWithIntrinsicDimensions.
 // (We could use this overridden size more broadly, too, but it's probably
 // better to avoid property-table accesses.  So, where possible, we communicate
-// the resolved main-size to the child via modifying its reflow state directly,
+// the resolved main-size to the child via modifying its reflow input directly,
 // instead of using this class.)
 class MOZ_RAII AutoFlexItemMainSizeOverride final {
  public:
@@ -4401,11 +4458,11 @@ nsFlexContainerFrame* nsFlexContainerFrame::GetFlexFrameWithComputedInfo(
       // Hold onto aFrame while we do this, in case reflow destroys it.
       AutoWeakFrame weakFrameRef(aFrame);
 
-      nsIPresShell* shell = flexFrame->PresContext()->PresShell();
+      RefPtr<mozilla::PresShell> presShell = flexFrame->PresShell();
       flexFrame->AddStateBits(NS_STATE_FLEX_GENERATE_COMPUTED_VALUES);
-      shell->FrameNeedsReflow(flexFrame, nsIPresShell::eResize,
-                              NS_FRAME_IS_DIRTY);
-      shell->FlushPendingNotifications(FlushType::Layout);
+      presShell->FrameNeedsReflow(flexFrame, IntrinsicDirty::Resize,
+                                  NS_FRAME_IS_DIRTY);
+      presShell->FlushPendingNotifications(FlushType::Layout);
 
       // Since the reflow may have side effects, get the flex frame
       // again. But if the weakFrameRef is no longer valid, then we
@@ -4489,7 +4546,7 @@ void nsFlexContainerFrame::DoFlexLayout(
     const ReflowInput& aReflowInput, nsReflowStatus& aStatus,
     nscoord aContentBoxMainSize, nscoord aAvailableBSizeForContent,
     nsTArray<StrutInfo>& aStruts, const FlexboxAxisTracker& aAxisTracker,
-    nscoord aMainGapSize, nscoord aCrossGapSize) {
+    nscoord aMainGapSize, nscoord aCrossGapSize, bool aHasLineClampEllipsis) {
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   AutoCleanLinkedList<FlexLine> lines;
@@ -4497,13 +4554,13 @@ void nsFlexContainerFrame::DoFlexLayout(
 
   GenerateFlexLines(aPresContext, aReflowInput, aContentBoxMainSize,
                     aAvailableBSizeForContent, aStruts, aAxisTracker,
-                    aMainGapSize, placeholderKids, lines);
+                    aMainGapSize, aHasLineClampEllipsis, placeholderKids,
+                    lines);
 
   if ((lines.getFirst()->IsEmpty() && !lines.getFirst()->getNext()) ||
       aReflowInput.mStyleDisplay->IsContainLayout()) {
-    // If have no flex items, or if we  are layout contained and
-    // want to behave as if we have none, our parent
-    // should synthesize a baseline if needed.
+    // We have no flex items, or we're layout-contained. So, we have no
+    // baseline, and our parent should synthesize a baseline if needed.
     AddStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE);
   } else {
     RemoveStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE);
@@ -4630,9 +4687,9 @@ void nsFlexContainerFrame::DoFlexLayout(
         if (item->HasIntrinsicRatio()) {
           // For flex items with an aspect ratio, we have to impose an override
           // for the main-size property *before* we even instantiate the reflow
-          // state, in order for aspect ratio calculations to produce the right
-          // cross size in the reflow state. (For other flex items, it's OK
-          // (and cheaper) to impose our main size *after* the reflow state has
+          // input, in order for aspect ratio calculations to produce the right
+          // cross size in the reflow input. (For other flex items, it's OK
+          // (and cheaper) to impose our main size *after* the reflow input has
           // been constructed, since the main size shouldn't influence anything
           // about cross-size measurement until we actually reflow the child.)
           sizeOverride.emplace(*item, aAxisTracker);
@@ -4643,8 +4700,9 @@ void nsFlexContainerFrame::DoFlexLayout(
         availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
         ReflowInput childReflowInput(aPresContext, aReflowInput, item->Frame(),
                                      availSize);
+        childReflowInput.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
         if (!sizeOverride) {
-          // Directly override the computed main-size, by tweaking reflow state:
+          // Directly override the computed main-size, by tweaking reflow input:
           if (item->IsInlineAxisMainAxis()) {
             childReflowInput.SetComputedISize(item->GetMainSize());
           } else {
@@ -4716,8 +4774,9 @@ void nsFlexContainerFrame::DoFlexLayout(
 
   // Recalculate the gap sizes if necessary now that the container size has
   // been determined.
-  if (aReflowInput.ComputedBSize() == NS_INTRINSICSIZE &&
-      aReflowInput.mStylePosition->mRowGap.HasPercent()) {
+  if (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE &&
+      aReflowInput.mStylePosition->mRowGap.IsLengthPercentage() &&
+      aReflowInput.mStylePosition->mRowGap.AsLengthPercentage().HasPercent()) {
     bool rowIsCross = aAxisTracker.IsRowOriented();
     nscoord newBlockGapSize = nsLayoutUtils::ResolveGapToLength(
         aReflowInput.mStylePosition->mRowGap,
@@ -4823,7 +4882,8 @@ void nsFlexContainerFrame::DoFlexLayout(
       const nscoord itemNormalBPos = framePos.B(flexWM);
 
       // Check if we actually need to reflow the item -- if we already reflowed
-      // it with the right size, we can just reposition it as-needed.
+      // it with the right size, and there is no need to do a reflow to clear
+      // out a -webkit-line-clamp ellipsis, we can just reposition it as-needed.
       bool itemNeedsReflow = true;  // (Start out assuming the worst.)
       if (item->HadMeasuringReflow()) {
         LogicalSize finalFlexItemCBSize =
@@ -4834,12 +4894,11 @@ void nsFlexContainerFrame::DoFlexLayout(
         if (finalFlexItemCBSize ==
             LogicalSize(flexWM,
                         item->Frame()->GetContentRectRelativeToSelf().Size())) {
-          // Even if our size hasn't changed, some of our descendants might
-          // care that our bsize is now considered "definite" (whereas it
+          // Even if the child's size hasn't changed, some of its descendants
+          // might care that its bsize is now considered "definite" (whereas it
           // wasn't in our previous "measuring" reflow), if they have a
           // relative bsize.
-          if (!(item->Frame()->GetStateBits() &
-                NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
+          if (!FrameHasRelativeBSizeDependency(item->Frame())) {
             // Item has the correct size (and its children don't care that
             // it's now "definite"). Let's just make sure it's at the right
             // position.
@@ -4856,7 +4915,18 @@ void nsFlexContainerFrame::DoFlexLayout(
       }
       if (itemNeedsReflow) {
         ReflowFlexItem(aPresContext, aAxisTracker, aReflowInput, *item,
-                       framePos, containerSize);
+                       framePos, containerSize, aHasLineClampEllipsis);
+      }
+
+      // If we didn't perform a final reflow of the item, we still have a
+      // -webkit-line-clamp ellipsis hanging around, but we shouldn't have one
+      // any more, we need to clear that now.  We strictly only need to do this
+      // if we didn't do a bsize measuring reflow of the item earlier (since
+      // that is normally when we deal with -webkit-line-clamp ellipses) but
+      // not all flex items need such a reflow.
+      if (!itemNeedsReflow && aHasLineClampEllipsis &&
+          GetLineClampValue() == 0) {
+        item->BlockFrame()->ClearLineClampEllipsis();
       }
 
       // If the item has auto margins, and we were tracking the UsedMargin
@@ -4934,7 +5004,7 @@ void nsFlexContainerFrame::DoFlexLayout(
     if (aReflowInput.AvailableBSize() == NS_UNCONSTRAINEDSIZE ||
         desiredSizeInFlexWM.BSize(flexWM) == 0 ||
         desiredBSizeWithBEndBP <= aReflowInput.AvailableBSize() ||
-        aReflowInput.ComputedBSize() == NS_INTRINSICSIZE) {
+        aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
       // Update desired height to include block-end border/padding
       desiredSizeInFlexWM.BSize(flexWM) = desiredBSizeWithBEndBP;
     } else {
@@ -5016,13 +5086,21 @@ void nsFlexContainerFrame::MoveFlexItemToFinalPosition(
 void nsFlexContainerFrame::ReflowFlexItem(
     nsPresContext* aPresContext, const FlexboxAxisTracker& aAxisTracker,
     const ReflowInput& aReflowInput, const FlexItem& aItem,
-    LogicalPoint& aFramePos, const nsSize& aContainerSize) {
+    LogicalPoint& aFramePos, const nsSize& aContainerSize,
+    bool aHasLineClampEllipsis) {
   WritingMode outerWM = aReflowInput.GetWritingMode();
   WritingMode wm = aItem.Frame()->GetWritingMode();
   LogicalSize availSize = aReflowInput.ComputedSize(wm);
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
   ReflowInput childReflowInput(aPresContext, aReflowInput, aItem.Frame(),
                                availSize);
+  childReflowInput.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
+  // This is the final reflow of this flex item; if we previously had a
+  // -webkit-line-clamp, and we missed our chance to clear the ellipsis
+  // because we didn't need to call MeasureFlexItemContentBSize, we set
+  // mApplyLineClamp to cause it to get cleared here.
+  childReflowInput.mFlags.mApplyLineClamp =
+      !childReflowInput.mFlags.mInsideLineClamp && aHasLineClampEllipsis;
 
   // Keep track of whether we've overriden the child's computed ISize
   // and/or BSize, so we can set its resize flags accordingly.
@@ -5038,11 +5116,11 @@ void nsFlexContainerFrame::ReflowFlexItem(
     didOverrideComputedBSize = true;
   }
 
-  // Override reflow state's computed cross-size if either:
+  // Override reflow input's computed cross-size if either:
   // - the item was stretched (in which case we're imposing a cross size)
   // ...or...
   // - the item it has an aspect ratio (in which case the cross-size that's
-  // currently in the reflow state is based on arithmetic involving a stale
+  // currently in the reflow input is based on arithmetic involving a stale
   // main-size value that we just stomped on above). (Note that we could handle
   // this case using an AutoFlexItemMainSizeOverride, as we do elsewhere; but
   // given that we *already know* the correct cross size to use here, it's
@@ -5127,6 +5205,8 @@ void nsFlexContainerFrame::ReflowPlaceholders(
     LogicalSize availSize = aReflowInput.ComputedSize(wm);
     ReflowInput childReflowInput(aPresContext, aReflowInput, placeholder,
                                  availSize);
+    // No need to set the -webkit-line-clamp related flags when reflowing
+    // a placeholder.
     ReflowOutput childDesiredSize(childReflowInput);
     nsReflowStatus childReflowStatus;
     ReflowChild(placeholder, aPresContext, childDesiredSize, childReflowInput,
@@ -5147,8 +5227,6 @@ void nsFlexContainerFrame::ReflowPlaceholders(
 nscoord nsFlexContainerFrame::IntrinsicISize(gfxContext* aRenderingContext,
                                              IntrinsicISizeType aType) {
   nscoord containerISize = 0;
-  RenumberList();
-
   const nsStylePosition* stylePos = StylePosition();
   const FlexboxAxisTracker axisTracker(this, GetWritingMode());
 
@@ -5204,7 +5282,7 @@ nscoord nsFlexContainerFrame::IntrinsicISize(gfxContext* aRenderingContext,
 /* virtual */
 nscoord nsFlexContainerFrame::GetMinISize(gfxContext* aRenderingContext) {
   DISPLAY_MIN_INLINE_SIZE(this, mCachedMinISize);
-  if (mCachedMinISize == NS_INTRINSIC_WIDTH_UNKNOWN) {
+  if (mCachedMinISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
     mCachedMinISize =
         StyleDisplay()->IsContainSize()
             ? 0
@@ -5217,7 +5295,7 @@ nscoord nsFlexContainerFrame::GetMinISize(gfxContext* aRenderingContext) {
 /* virtual */
 nscoord nsFlexContainerFrame::GetPrefISize(gfxContext* aRenderingContext) {
   DISPLAY_PREF_INLINE_SIZE(this, mCachedPrefISize);
-  if (mCachedPrefISize == NS_INTRINSIC_WIDTH_UNKNOWN) {
+  if (mCachedPrefISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
     mCachedPrefISize =
         StyleDisplay()->IsContainSize()
             ? 0
@@ -5225,4 +5303,18 @@ nscoord nsFlexContainerFrame::GetPrefISize(gfxContext* aRenderingContext) {
   }
 
   return mCachedPrefISize;
+}
+
+uint32_t nsFlexContainerFrame::GetLineClampValue() const {
+  // -webkit-line-clamp should only work on items in flex containers that are
+  // display:-webkit-(inline-)box and -webkit-box-orient:vertical.
+  //
+  // This check makes -webkit-line-clamp work on display:-moz-box too, but
+  // that shouldn't be a big deal.
+  if (!HasAnyStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX) ||
+      StyleXUL()->mBoxOrient != StyleBoxOrient::Vertical) {
+    return 0;
+  }
+
+  return StyleDisplay()->mLineClamp;
 }

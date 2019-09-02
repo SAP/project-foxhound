@@ -17,7 +17,6 @@
 #include "nsPopupSetFrame.h"
 #include "nsGkAtoms.h"
 #include "nsIFrameInlines.h"
-#include "nsIPresShell.h"
 #include "nsDisplayList.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsFrameManager.h"
@@ -43,8 +42,7 @@ using namespace mozilla::layout;
 using namespace mozilla::gfx;
 using namespace mozilla::layers;
 
-nsCanvasFrame* NS_NewCanvasFrame(nsIPresShell* aPresShell,
-                                 ComputedStyle* aStyle) {
+nsCanvasFrame* NS_NewCanvasFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsCanvasFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -440,10 +438,10 @@ void nsDisplayCanvasThemedBackground::Paint(nsDisplayListBuilder* aBuilder,
  *
  * The only reason this can't use nsDisplayGeneric is overriding GetBounds.
  */
-class nsDisplayCanvasFocus : public nsDisplayItem {
+class nsDisplayCanvasFocus : public nsPaintedDisplayItem {
  public:
   nsDisplayCanvasFocus(nsDisplayListBuilder* aBuilder, nsCanvasFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayCanvasFocus);
   }
   virtual ~nsDisplayCanvasFocus() { MOZ_COUNT_DTOR(nsDisplayCanvasFocus); }
@@ -489,12 +487,12 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
         dependentFrame = nullptr;
       }
     }
-    aLists.BorderBackground()->AppendToTop(
-        MakeDisplayItem<nsDisplayCanvasBackgroundColor>(aBuilder, this));
+    aLists.BorderBackground()->AppendNewToTop<nsDisplayCanvasBackgroundColor>(
+        aBuilder, this);
 
     if (isThemed) {
-      aLists.BorderBackground()->AppendToTop(
-          MakeDisplayItem<nsDisplayCanvasThemedBackground>(aBuilder, this));
+      aLists.BorderBackground()
+          ->AppendNewToTop<nsDisplayCanvasThemedBackground>(aBuilder, this);
       return;
     }
 
@@ -550,26 +548,33 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
         {
           DisplayListClipState::AutoSaveRestore bgImageClip(aBuilder);
           bgImageClip.Clear();
-          bgItem =
-              MakeDisplayItem<nsDisplayCanvasBackgroundImage>(aBuilder, bgData);
-          bgItem->SetDependentFrame(aBuilder, dependentFrame);
+          bgItem = MakeDisplayItem<nsDisplayCanvasBackgroundImage>(
+              aBuilder, this, bgData);
+          if (bgItem) {
+            bgItem->SetDependentFrame(aBuilder, dependentFrame);
+          }
         }
-        thisItemList.AppendToTop(
-            nsDisplayFixedPosition::CreateForFixedBackground(aBuilder, this,
-                                                             bgItem, i));
+        if (bgItem) {
+          thisItemList.AppendToTop(
+              nsDisplayFixedPosition::CreateForFixedBackground(aBuilder, this,
+                                                               bgItem, i));
+        }
 
       } else {
         nsDisplayCanvasBackgroundImage* bgItem =
-            MakeDisplayItem<nsDisplayCanvasBackgroundImage>(aBuilder, bgData);
-        bgItem->SetDependentFrame(aBuilder, dependentFrame);
-        thisItemList.AppendToTop(bgItem);
+            MakeDisplayItem<nsDisplayCanvasBackgroundImage>(aBuilder, this,
+                                                            bgData);
+        if (bgItem) {
+          bgItem->SetDependentFrame(aBuilder, dependentFrame);
+          thisItemList.AppendToTop(bgItem);
+        }
       }
 
       if (layers.mLayers[i].mBlendMode != NS_STYLE_BLEND_NORMAL) {
         DisplayListClipState::AutoSaveRestore blendClip(aBuilder);
-        thisItemList.AppendToTop(MakeDisplayItem<nsDisplayBlendMode>(
+        thisItemList.AppendNewToTop<nsDisplayBlendMode>(
             aBuilder, this, &thisItemList, layers.mLayers[i].mBlendMode,
-            thisItemASR, i + 1));
+            thisItemASR, i + 1);
       }
       aLists.BorderBackground()->AppendToTop(&thisItemList);
     }
@@ -612,8 +617,7 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // Only paint the focus if we're visible
   if (!StyleVisibility()->IsVisible()) return;
 
-  aLists.Outlines()->AppendToTop(
-      MakeDisplayItem<nsDisplayCanvasFocus>(aBuilder, this));
+  aLists.Outlines()->AppendNewToTop<nsDisplayCanvasFocus>(aBuilder, this);
 }
 
 void nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
@@ -630,14 +634,9 @@ void nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
   // XXX use the root frame foreground color, but should we find BODY frame
   // for HTML documents?
   nsIFrame* root = mFrames.FirstChild();
-  const nsStyleColor* color = root ? root->StyleColor() : StyleColor();
-  if (!color) {
-    NS_ERROR("current color cannot be found");
-    return;
-  }
-
+  const auto* text = root ? root->StyleText() : StyleText();
   nsCSSRendering::PaintFocus(PresContext(), aDrawTarget, focusRect,
-                             color->mColor);
+                             text->mColor.ToColor());
 }
 
 /* virtual */

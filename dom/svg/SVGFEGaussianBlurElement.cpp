@@ -35,18 +35,20 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFEGaussianBlurElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedString> SVGFEGaussianBlurElement::In1() {
+already_AddRefed<DOMSVGAnimatedString> SVGFEGaussianBlurElement::In1() {
   return mStringAttributes[IN1].ToDOMAnimatedString(this);
 }
 
-already_AddRefed<SVGAnimatedNumber> SVGFEGaussianBlurElement::StdDeviationX() {
+already_AddRefed<DOMSVGAnimatedNumber>
+SVGFEGaussianBlurElement::StdDeviationX() {
   return mNumberPairAttributes[STD_DEV].ToDOMAnimatedNumber(
-      SVGNumberPair::eFirst, this);
+      SVGAnimatedNumberPair::eFirst, this);
 }
 
-already_AddRefed<SVGAnimatedNumber> SVGFEGaussianBlurElement::StdDeviationY() {
+already_AddRefed<DOMSVGAnimatedNumber>
+SVGFEGaussianBlurElement::StdDeviationY() {
   return mNumberPairAttributes[STD_DEV].ToDOMAnimatedNumber(
-      SVGNumberPair::eSecond, this);
+      SVGAnimatedNumberPair::eSecond, this);
 }
 
 void SVGFEGaussianBlurElement::SetStdDeviation(float stdDeviationX,
@@ -61,10 +63,10 @@ FilterPrimitiveDescription SVGFEGaussianBlurElement::GetPrimitiveDescription(
     nsTArray<RefPtr<SourceSurface>>& aInputImages) {
   float stdX = aInstance->GetPrimitiveNumber(SVGContentUtils::X,
                                              &mNumberPairAttributes[STD_DEV],
-                                             SVGNumberPair::eFirst);
+                                             SVGAnimatedNumberPair::eFirst);
   float stdY = aInstance->GetPrimitiveNumber(SVGContentUtils::Y,
                                              &mNumberPairAttributes[STD_DEV],
-                                             SVGNumberPair::eSecond);
+                                             SVGAnimatedNumberPair::eSecond);
   if (stdX < 0 || stdY < 0) {
     return FilterPrimitiveDescription();
   }

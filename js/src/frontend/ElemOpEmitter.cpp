@@ -125,11 +125,11 @@ bool ElemOpEmitter::emitGet() {
 }
 
 bool ElemOpEmitter::prepareForRhs() {
-  MOZ_ASSERT(isSimpleAssignment() || isCompoundAssignment());
-  MOZ_ASSERT_IF(isSimpleAssignment(), state_ == State::Key);
+  MOZ_ASSERT(isSimpleAssignment() || isPropInit() || isCompoundAssignment());
+  MOZ_ASSERT_IF(isSimpleAssignment() || isPropInit(), state_ == State::Key);
   MOZ_ASSERT_IF(isCompoundAssignment(), state_ == State::Get);
 
-  if (isSimpleAssignment()) {
+  if (isSimpleAssignment() || isPropInit()) {
     // For CompoundAssignment, SUPERBASE is already emitted by emitGet.
     if (isSuper()) {
       if (!bce_->emitSuperBase()) {
@@ -147,7 +147,7 @@ bool ElemOpEmitter::prepareForRhs() {
 
 bool ElemOpEmitter::skipObjAndKeyAndRhs() {
   MOZ_ASSERT(state_ == State::Start);
-  MOZ_ASSERT(isSimpleAssignment());
+  MOZ_ASSERT(isSimpleAssignment() || isPropInit());
 
 #ifdef DEBUG
   state_ = State::Rhs;
@@ -195,14 +195,32 @@ bool ElemOpEmitter::emitDelete() {
   return true;
 }
 
-bool ElemOpEmitter::emitAssignment() {
-  MOZ_ASSERT(isSimpleAssignment() || isCompoundAssignment());
+bool ElemOpEmitter::emitAssignment(EmitSetFunctionName emitSetFunName) {
+  MOZ_ASSERT(isSimpleAssignment() || isPropInit() || isCompoundAssignment());
   MOZ_ASSERT(state_ == State::Rhs);
 
+  if (emitSetFunName == EmitSetFunctionName::Yes) {
+    // JSOP_*SETELEM_SUPER has a different stack ordering.
+    MOZ_ASSERT(!isSuper());
+    //              [stack] obj, id, val
+    if (!bce_->emitDupAt(1)) {
+      //            [stack] obj, id, val, id
+      return false;
+    }
+    if (!bce_->emit2(JSOP_SETFUNNAME, uint8_t(FunctionPrefixKind::None))) {
+      //            [stack] obj, id, val
+      return false;
+    }
+  }
+
+  MOZ_ASSERT_IF(isPropInit(), !isSuper());
+
   JSOp setOp =
-      isSuper()
-          ? bce_->sc->strict() ? JSOP_STRICTSETELEM_SUPER : JSOP_SETELEM_SUPER
-          : bce_->sc->strict() ? JSOP_STRICTSETELEM : JSOP_SETELEM;
+      isPropInit()
+          ? JSOP_INITELEM
+          : isSuper() ? bce_->sc->strict() ? JSOP_STRICTSETELEM_SUPER
+                                           : JSOP_SETELEM_SUPER
+                      : bce_->sc->strict() ? JSOP_STRICTSETELEM : JSOP_SETELEM;
   if (!bce_->emitElemOpBase(setOp)) {
     //              [stack] ELEM
     return false;

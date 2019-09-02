@@ -11,6 +11,7 @@
 #include "mozilla/ArenaObjectID.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Likely.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/WritingModes.h"
 #include "nsBidiPresUtils.h"
@@ -75,12 +76,12 @@ nsLineBox::~nsLineBox() {
   Cleanup();
 }
 
-nsLineBox* NS_NewLineBox(nsIPresShell* aPresShell, nsIFrame* aFrame,
+nsLineBox* NS_NewLineBox(PresShell* aPresShell, nsIFrame* aFrame,
                          bool aIsBlock) {
   return new (aPresShell) nsLineBox(aFrame, 1, aIsBlock);
 }
 
-nsLineBox* NS_NewLineBox(nsIPresShell* aPresShell, nsLineBox* aFromLine,
+nsLineBox* NS_NewLineBox(PresShell* aPresShell, nsLineBox* aFromLine,
                          nsIFrame* aFrame, int32_t aCount) {
   nsLineBox* newLine = new (aPresShell) nsLineBox(aFrame, aCount, false);
   newLine->NoteFramesMovedFrom(aFromLine);
@@ -153,11 +154,11 @@ void nsLineBox::NoteFramesMovedFrom(nsLineBox* aFromLine) {
   }
 }
 
-void* nsLineBox::operator new(size_t sz, nsIPresShell* aPresShell) {
+void* nsLineBox::operator new(size_t sz, PresShell* aPresShell) {
   return aPresShell->AllocateByObjectID(eArenaObjectID_nsLineBox, sz);
 }
 
-void nsLineBox::Destroy(nsIPresShell* aPresShell) {
+void nsLineBox::Destroy(PresShell* aPresShell) {
   this->nsLineBox::~nsLineBox();
   aPresShell->FreeByObjectID(eArenaObjectID_nsLineBox, this);
 }
@@ -310,7 +311,7 @@ bool nsLineBox::IsEmpty() const {
        --n, kid = kid->GetNextSibling()) {
     if (!kid->IsEmpty()) return false;
   }
-  if (HasBullet()) {
+  if (HasMarker()) {
     return false;
   }
   return true;
@@ -339,7 +340,7 @@ bool nsLineBox::CachedIsEmpty() {
         break;
       }
     }
-    if (HasBullet()) {
+    if (HasMarker()) {
       result = false;
     }
   }
@@ -352,7 +353,7 @@ bool nsLineBox::CachedIsEmpty() {
 void nsLineBox::DeleteLineList(nsPresContext* aPresContext, nsLineList& aLines,
                                nsIFrame* aDestructRoot, nsFrameList* aFrames,
                                PostDestroyData& aPostDestroyData) {
-  nsIPresShell* shell = aPresContext->PresShell();
+  PresShell* presShell = aPresContext->PresShell();
 
   // Keep our line list and frame list up to date as we
   // remove frames, in case something wants to traverse the
@@ -373,7 +374,7 @@ void nsLineBox::DeleteLineList(nsPresContext* aPresContext, nsLineList& aLines,
     MOZ_DIAGNOSTIC_ASSERT(line == aLines.front(),
                           "destroying child frames messed up our lines!");
     aLines.pop_front();
-    line->Destroy(shell);
+    line->Destroy(presShell);
   }
 }
 

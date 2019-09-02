@@ -105,6 +105,7 @@ class nsToolkitProfileService final : public nsIToolkitProfileService {
   nsresult MaybeMakeDefaultDedicatedProfile(nsIToolkitProfile* aProfile,
                                             bool* aResult);
   bool IsSnapEnvironment();
+  bool UseLegacyProfiles();
   nsresult CreateDefaultProfile(nsIToolkitProfile** aResult);
   void SetNormalDefault(nsIToolkitProfile* aProfile);
 
@@ -137,6 +138,10 @@ class nsToolkitProfileService final : public nsIToolkitProfileService {
   nsINIParser mProfileDB;
   // The section in the profiles db for the current install.
   nsCString mInstallSection;
+  // A legacy install section which may have been generated against an
+  // installation directory with an incorrect case (see bug 1555319). It is only
+  // really held here so that it can be overridden by tests.
+  nsCString mLegacyInstallSection;
   // Whether to start with the selected profile by default.
   bool mStartWithLast;
   // True if during startup it appeared that this is the first run.
@@ -150,7 +155,9 @@ class nsToolkitProfileService final : public nsIToolkitProfileService {
   bool mCreatedAlternateProfile;
   nsString mStartupReason;
   bool mMaybeLockProfile;
-
+  // Holds the current application update channel. This is only really held
+  // so it can be overriden in tests.
+  nsCString mUpdateChannel;
   // Keep track of some attributes of the databases so we can tell if another
   // process has changed them.
   bool mProfileDBExists;

@@ -13,6 +13,7 @@
 #include "mozilla/layers/Effects.h"  // for TexturedEffect, Effect, etc
 #include "mozilla/layers/LayerManagerComposite.h"  // for TexturedEffect, Effect, etc
 #include "mozilla/layers/WebRenderBridgeParent.h"
+#include "mozilla/layers/WebRenderTextureHost.h"
 #include "mozilla/layers/AsyncImagePipelineManager.h"
 #include "nsAString.h"
 #include "nsDebug.h"          // for NS_WARNING, NS_ASSERTION
@@ -162,7 +163,6 @@ void WebRenderImageHost::SetCurrentTextureHost(TextureHost* aTexture) {
   if (aTexture == mCurrentTextureHost.get()) {
     return;
   }
-
   mCurrentTextureHost = aTexture;
 }
 

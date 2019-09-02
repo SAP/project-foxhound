@@ -8,8 +8,10 @@ from __future__ import absolute_import, print_function, unicode_literals
 import os
 import json
 import logging
-
 import time
+import sys
+
+from redo import retry
 import yaml
 
 from . import GECKO
@@ -19,10 +21,12 @@ from .generator import TaskGraphGenerator
 from .parameters import Parameters, get_version, get_app_version
 from .taskgraph import TaskGraph
 from .try_option_syntax import parse_message
+from .util.hg import get_hg_revision_branch, get_hg_commit_message
+from .util.partials import populate_release_history
 from .util.schema import validate_schema, Schema
-from taskgraph.util.hg import get_hg_revision_branch, get_hg_commit_message
-from taskgraph.util.partials import populate_release_history
-from taskgraph.util.yaml import load_yaml
+from .util.taskcluster import get_artifact
+from .util.taskgraph import find_decision_task, find_existing_tasks_from_previous_kinds
+from .util.yaml import load_yaml
 from voluptuous import Required, Optional
 
 
@@ -78,6 +82,11 @@ PER_PROJECT_PARAMETERS = {
         'release_type': 'esr60',
     },
 
+    'mozilla-esr68': {
+        'target_tasks_method': 'mozilla_esr68_tasks',
+        'release_type': 'esr68',
+    },
+
     'comm-central': {
         'target_tasks_method': 'default',
         'release_type': 'nightly',
@@ -90,6 +99,11 @@ PER_PROJECT_PARAMETERS = {
 
     'comm-esr60': {
         'target_tasks_method': 'mozilla_esr60_tasks',
+        'release_type': 'release',
+    },
+
+    'comm-esr68': {
+        'target_tasks_method': 'mozilla_esr68_tasks',
         'release_type': 'release',
     },
 
@@ -106,6 +120,7 @@ PER_PROJECT_PARAMETERS = {
 try_task_config_schema = Schema({
     Required('tasks'): [basestring],
     Optional('templates'): {basestring: object},
+    Optional('disable-pgo'): bool,
 })
 
 
@@ -250,7 +265,7 @@ def get_decision_parameters(config, options):
     parameters['required_signoffs'] = []
     parameters['signoff_urls'] = {}
     parameters['try_mode'] = None
-    parameters['try_task_config'] = None
+    parameters['try_task_config'] = {}
     parameters['try_options'] = None
 
     # owner must be an email, but sometimes (e.g., for ffxbld) it is not, in which
@@ -283,6 +298,9 @@ def get_decision_parameters(config, options):
     if 'DONTBUILD' in commit_message and options['tasks_for'] == 'hg-push':
         parameters['target_tasks_method'] = 'nothing'
 
+    if options.get('include_push_tasks'):
+        get_existing_tasks(options.get('rebuild_kinds', []), parameters, config)
+
     # If the target method is nightly, we should build partials. This means
     # knowing what has been released previously.
     # An empty release_history is fine, it just means no partials will be built
@@ -297,7 +315,7 @@ def get_decision_parameters(config, options):
         task_config_file = os.path.join(os.getcwd(), 'try_task_config.json')
 
     # load try settings
-    if 'try' in project:
+    if 'try' in project and options['tasks_for'] == 'hg-push':
         set_try_config(parameters, task_config_file)
 
     if options.get('optimize_target_tasks') is not None:
@@ -306,6 +324,28 @@ def get_decision_parameters(config, options):
     result = Parameters(**parameters)
     result.check()
     return result
+
+
+def get_existing_tasks(rebuild_kinds, parameters, graph_config):
+    """
+    Find the decision task corresponding to the on-push graph, and return
+    a mapping of labels to task-ids from it. This will skip the kinds specificed
+    by `rebuild_kinds`.
+    """
+    try:
+        decision_task = retry(
+            find_decision_task,
+            args=(parameters, graph_config),
+            attempts=4,
+            sleeptime=5*60,
+        )
+    except Exception:
+        logger.exception("Didn't find existing push task.")
+        sys.exit(1)
+    _, task_graph = TaskGraph.from_json(get_artifact(decision_task, "public/full-task-graph.json"))
+    parameters['existing_tasks'] = find_existing_tasks_from_previous_kinds(
+        task_graph, [decision_task], rebuild_kinds
+    )
 
 
 def set_try_config(parameters, task_config_file):
@@ -382,3 +422,7 @@ def read_artifact(filename):
             return json.load(f)
     else:
         raise TypeError("Don't know how to read {}".format(filename))
+
+
+def rename_artifact(src, dest):
+    os.rename(os.path.join(ARTIFACTS_DIR, src), os.path.join(ARTIFACTS_DIR, dest))

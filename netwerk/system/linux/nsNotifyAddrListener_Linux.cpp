@@ -25,6 +25,7 @@
 #include "mozilla/SHA1.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
+#include "../../base/IPv6Utils.h"
 
 /* a shorter name that better explains what it does */
 #define EINTR_RETRY(x) MOZ_TEMP_FAILURE_RETRY(x)
@@ -44,8 +45,8 @@ NS_IMPL_ISUPPORTS(nsNotifyAddrListener, nsINetworkLinkService, nsIRunnable,
                   nsIObserver)
 
 nsNotifyAddrListener::nsNotifyAddrListener()
-    : mLinkUp(true)  // assume true by default
-      ,
+    : mMutex("nsNotifyAddrListener::mMutex"),
+      mLinkUp(true),  // assume true by default
       mStatusKnown(false),
       mAllowChangedEvent(true),
       mCoalescingActive(false) {
@@ -65,21 +66,21 @@ nsNotifyAddrListener::~nsNotifyAddrListener() {
 }
 
 NS_IMETHODIMP
-nsNotifyAddrListener::GetIsLinkUp(bool *aIsUp) {
+nsNotifyAddrListener::GetIsLinkUp(bool* aIsUp) {
   // XXX This function has not yet been implemented for this platform
   *aIsUp = mLinkUp;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsNotifyAddrListener::GetLinkStatusKnown(bool *aIsUp) {
+nsNotifyAddrListener::GetLinkStatusKnown(bool* aIsUp) {
   // XXX This function has not yet been implemented for this platform
   *aIsUp = mStatusKnown;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsNotifyAddrListener::GetLinkType(uint32_t *aLinkType) {
+nsNotifyAddrListener::GetLinkType(uint32_t* aLinkType) {
   NS_ENSURE_ARG_POINTER(aLinkType);
 
   // XXX This function has not yet been implemented for this platform
@@ -87,23 +88,30 @@ nsNotifyAddrListener::GetLinkType(uint32_t *aLinkType) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsNotifyAddrListener::GetNetworkID(nsACString& aNetworkID) {
+  MutexAutoLock lock(mMutex);
+  aNetworkID = mNetworkId;
+  return NS_OK;
+}
+
 //
-// Figure out the current "network identification" string.
+// Figure out the current IPv4 "network identification" string.
 //
 // It detects the IP of the default gateway in the routing table, then the MAC
 // address of that IP in the ARP table before it hashes that string (to avoid
 // information leakage).
 //
-void nsNotifyAddrListener::calculateNetworkId(void) {
-  const char *kProcRoute = "/proc/net/route"; /* IPv4 routes */
-  const char *kProcArp = "/proc/net/arp";
+static bool ipv4NetworkId(SHA1Sum* sha1) {
+  const char* kProcRoute = "/proc/net/route"; /* IPv4 routes */
+  const char* kProcArp = "/proc/net/arp";
   bool found = false;
 
-  FILE *froute = fopen(kProcRoute, "r");
+  FILE* froute = fopen(kProcRoute, "r");
   if (froute) {
     char buffer[512];
     uint32_t gw = 0;
-    char *l = fgets(buffer, sizeof(buffer), froute);
+    char* l = fgets(buffer, sizeof(buffer), froute);
     if (l) {
       /* skip the title line  */
       while (l) {
@@ -129,7 +137,7 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
       SprintfLiteral(searchfor, "%d.%d.%d.%d", gw & 0xff, (gw >> 8) & 0xff,
                      (gw >> 16) & 0xff, gw >> 24);
 
-      FILE *farp = fopen(kProcArp, "r");
+      FILE* farp = fopen(kProcArp, "r");
       if (farp) {
         l = fgets(buffer, sizeof(buffer), farp);
         while (l) {
@@ -148,28 +156,7 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
               if (gw == searchip) {
                 LOG(("networkid: MAC %s\n", hw));
                 nsAutoCString mac(hw);
-                // This 'addition' could potentially be a
-                // fixed number from the profile or something.
-                nsAutoCString addition("local-rubbish");
-                nsAutoCString output;
-                SHA1Sum sha1;
-                nsCString combined(mac + addition);
-                sha1.update(combined.get(), combined.Length());
-                uint8_t digest[SHA1Sum::kHashSize];
-                sha1.finish(digest);
-                nsCString newString(reinterpret_cast<char *>(digest),
-                                    SHA1Sum::kHashSize);
-                nsresult rv = Base64Encode(newString, output);
-                MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-                LOG(("networkid: id %s\n", output.get()));
-                if (mNetworkId != output) {
-                  // new id
-                  Telemetry::Accumulate(Telemetry::NETWORK_ID, 1);
-                  mNetworkId = output;
-                } else {
-                  // same id
-                  Telemetry::Accumulate(Telemetry::NETWORK_ID, 2);
-                }
+                sha1->update(mac.get(), mac.Length());
                 found = true;
                 break;
               }
@@ -180,9 +167,132 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
       } /* if (farp) */
     }   /* if (gw) */
   }     /* if (froute) */
-  if (!found) {
+  return found;
+}
+
+// Figure out the current IPv6 "network identification" string.
+//
+static bool ipv6NetworkId(SHA1Sum* sha1) {
+  bool found = false;
+  FILE* ifs = fopen("/proc/net/if_inet6", "r");
+  if (ifs) {
+    char buffer[512];
+    char ip6[40];
+    int devnum;
+    int preflen;
+    int scope;
+    int flags;
+    char name[40];
+
+    char* l = fgets(buffer, sizeof(buffer), ifs);
+    // 2a001a28120000090000000000000002 02 40 00 80   eth0
+    // +------------------------------+ ++ ++ ++ ++   ++
+    // |                                |  |  |  |    |
+    // 1                                2  3  4  5    6
+    //
+    // 1. IPv6 address displayed in 32 hexadecimal chars without colons as
+    //    separator
+    //
+    // 2. Netlink device number (interface index) in hexadecimal.
+    //
+    // 3. Prefix length in hexadecimal number of bits
+    //
+    // 4. Scope value (see kernel source include/net/ipv6.h and
+    //    net/ipv6/addrconf.c for more)
+    //
+    // 5. Interface flags (see include/linux/rtnetlink.h and net/ipv6/addrconf.c
+    //    for more)
+    //
+    // 6. Device name
+    //
+    while (l) {
+      memset(ip6, 0, sizeof(ip6));
+      if (6 == sscanf(buffer, "%32[0-9a-f] %02x %02x %02x %02x %31s", ip6,
+                      &devnum, &preflen, &scope, &flags, name)) {
+        unsigned char id6[16];
+        memset(id6, 0, sizeof(id6));
+
+        for (int i = 0; i < 16; i++) {
+          char buf[3];
+          buf[0] = ip6[i * 2];
+          buf[1] = ip6[i * 2 + 1];
+          buf[2] = 0;
+          // convert from hex
+          id6[i] = (unsigned char)strtol(buf, nullptr, 16);
+        }
+
+        if (net::utils::ipv6_scope(id6) == IPV6_SCOPE_GLOBAL) {
+          unsigned char prefix[16];
+          memset(prefix, 0, sizeof(prefix));
+          uint8_t maskit[] = {0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe};
+          int bits = preflen;
+          for (int i = 0; i < 16; i++) {
+            uint8_t mask = (bits >= 8) ? 0xff : maskit[bits];
+            prefix[i] = id6[i] & mask;
+            bits -= 8;
+            if (bits <= 0) {
+              break;
+            }
+          }
+          // We hash the IPv6 prefix and prefix length in order to
+          // differentiate between networks with a different prefix length
+          // For example: 2a00:/16 and 2a00:0/32
+          sha1->update(prefix, 16);
+          sha1->update(&preflen, sizeof(preflen));
+          found = true;
+          LOG(("networkid: found global IPv6 address %s/%d\n", ip6, preflen));
+        }
+      }
+      l = fgets(buffer, sizeof(buffer), ifs);
+    }
+    fclose(ifs);
+  }
+  return found;
+}
+
+// Figure out the "network identification".
+//
+void nsNotifyAddrListener::calculateNetworkId(void) {
+  MOZ_ASSERT(!NS_IsMainThread(), "Must not be called on the main thread");
+  SHA1Sum sha1;
+  bool found4 = ipv4NetworkId(&sha1);
+  bool found6 = ipv6NetworkId(&sha1);
+
+  if (found4 || found6) {
+    // This 'addition' could potentially be a fixed number from the
+    // profile or something.
+    nsAutoCString addition("local-rubbish");
+    nsAutoCString output;
+    sha1.update(addition.get(), addition.Length());
+    uint8_t digest[SHA1Sum::kHashSize];
+    sha1.finish(digest);
+    nsAutoCString newString(reinterpret_cast<char*>(digest),
+                            SHA1Sum::kHashSize);
+    nsresult rv = Base64Encode(newString, output);
+    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
+    LOG(("networkid: id %s\n", output.get()));
+    MutexAutoLock lock(mMutex);
+    if (mNetworkId != output) {
+      // new id
+      if (found4 && !found6) {
+        Telemetry::Accumulate(Telemetry::NETWORK_ID2, 1);  // IPv4 only
+      } else if (!found4 && found6) {
+        Telemetry::Accumulate(Telemetry::NETWORK_ID2, 3);  // IPv6 only
+      } else {
+        Telemetry::Accumulate(Telemetry::NETWORK_ID2, 4);  // Both!
+      }
+      mNetworkId = output;
+    } else {
+      // same id
+      LOG(("Same network id"));
+      Telemetry::Accumulate(Telemetry::NETWORK_ID2, 2);
+    }
+  } else {
     // no id
-    Telemetry::Accumulate(Telemetry::NETWORK_ID, 0);
+    LOG(("No network id"));
+    MutexAutoLock lock(mMutex);
+    mNetworkId.Truncate();
+    Telemetry::Accumulate(Telemetry::NETWORK_ID2, 0);
   }
 }
 
@@ -190,8 +300,8 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
 // Check if there's a network interface available to do networking on.
 //
 void nsNotifyAddrListener::checkLink(void) {
-  struct ifaddrs *list;
-  struct ifaddrs *ifa;
+  struct ifaddrs* list;
+  struct ifaddrs* ifa;
   bool link = false;
   bool prevLinkUp = mLinkUp;
 
@@ -223,15 +333,15 @@ void nsNotifyAddrListener::checkLink(void) {
 }
 
 void nsNotifyAddrListener::OnNetlinkMessage(int aNetlinkSocket) {
-  struct nlmsghdr *nlh;
+  struct nlmsghdr* nlh;
 
   // The buffer size below, (4095) was chosen partly based on testing and
   // partly on existing sample source code using this size. It needs to be
   // large enough to hold the netlink messages from the kernel.
   char buffer[4095];
-  struct rtattr *attr;
+  struct rtattr* attr;
   int attr_len;
-  const struct ifaddrmsg *newifam;
+  const struct ifaddrmsg* newifam;
 
   ssize_t rc = EINTR_RETRY(recv(aNetlinkSocket, buffer, sizeof(buffer), 0));
   if (rc < 0) {
@@ -239,14 +349,14 @@ void nsNotifyAddrListener::OnNetlinkMessage(int aNetlinkSocket) {
   }
   size_t netlink_bytes = rc;
 
-  nlh = reinterpret_cast<struct nlmsghdr *>(buffer);
+  nlh = reinterpret_cast<struct nlmsghdr*>(buffer);
 
   bool networkChange = false;
 
   for (; NLMSG_OK(nlh, netlink_bytes); nlh = NLMSG_NEXT(nlh, netlink_bytes)) {
     char prefixaddr[INET6_ADDRSTRLEN];
     char localaddr[INET6_ADDRSTRLEN];
-    char *addr = nullptr;
+    char* addr = nullptr;
     prefixaddr[0] = localaddr[0] = '\0';
 
     if (NLMSG_DONE == nlh->nlmsg_type) {
@@ -254,7 +364,7 @@ void nsNotifyAddrListener::OnNetlinkMessage(int aNetlinkSocket) {
     }
 
     LOG(("nsNotifyAddrListener::OnNetlinkMessage: new/deleted address\n"));
-    newifam = reinterpret_cast<struct ifaddrmsg *>(NLMSG_DATA(nlh));
+    newifam = reinterpret_cast<struct ifaddrmsg*>(NLMSG_DATA(nlh));
 
     if ((newifam->ifa_family != AF_INET) && (newifam->ifa_family != AF_INET6)) {
       continue;
@@ -266,18 +376,18 @@ void nsNotifyAddrListener::OnNetlinkMessage(int aNetlinkSocket) {
          attr = RTA_NEXT(attr, attr_len)) {
       if (attr->rta_type == IFA_ADDRESS) {
         if (newifam->ifa_family == AF_INET) {
-          struct in_addr *in = (struct in_addr *)RTA_DATA(attr);
+          struct in_addr* in = (struct in_addr*)RTA_DATA(attr);
           inet_ntop(AF_INET, in, prefixaddr, INET_ADDRSTRLEN);
         } else {
-          struct in6_addr *in = (struct in6_addr *)RTA_DATA(attr);
+          struct in6_addr* in = (struct in6_addr*)RTA_DATA(attr);
           inet_ntop(AF_INET6, in, prefixaddr, INET6_ADDRSTRLEN);
         }
       } else if (attr->rta_type == IFA_LOCAL) {
         if (newifam->ifa_family == AF_INET) {
-          struct in_addr *in = (struct in_addr *)RTA_DATA(attr);
+          struct in_addr* in = (struct in_addr*)RTA_DATA(attr);
           inet_ntop(AF_INET, in, localaddr, INET_ADDRSTRLEN);
         } else {
-          struct in6_addr *in = (struct in6_addr *)RTA_DATA(attr);
+          struct in6_addr* in = (struct in6_addr*)RTA_DATA(attr);
           inet_ntop(AF_INET6, in, localaddr, INET6_ADDRSTRLEN);
         }
       }
@@ -294,7 +404,7 @@ void nsNotifyAddrListener::OnNetlinkMessage(int aNetlinkSocket) {
           ("nsNotifyAddrListener::OnNetlinkMessage: a new address "
            "- %s.",
            addr));
-      struct ifaddrmsg *ifam;
+      struct ifaddrmsg* ifam;
       nsCString addrStr;
       addrStr.Assign(addr);
       if (auto entry = mAddressInfo.LookupForAdd(addrStr)) {
@@ -311,7 +421,7 @@ void nsNotifyAddrListener::OnNetlinkMessage(int aNetlinkSocket) {
         }
       } else {
         networkChange = true;
-        ifam = (struct ifaddrmsg *)malloc(sizeof(struct ifaddrmsg));
+        ifam = (struct ifaddrmsg*)malloc(sizeof(struct ifaddrmsg));
         memcpy(ifam, newifam, sizeof(struct ifaddrmsg));
         entry.OrInsert([ifam]() { return ifam; });
       }
@@ -349,7 +459,7 @@ nsNotifyAddrListener::Run() {
   addr.nl_family = AF_NETLINK;
   addr.nl_groups = RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR;
 
-  if (bind(netlinkSocket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+  if (bind(netlinkSocket, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
     // failure!
     EINTR_RETRY(close(netlinkSocket));
     return NS_ERROR_FAILURE;
@@ -394,7 +504,6 @@ nsNotifyAddrListener::Run() {
       double period = (TimeStamp::Now() - mChangeTime).ToMilliseconds();
       if (period >= kNetworkChangeCoalescingPeriod) {
         SendEvent(NS_NETWORK_LINK_DATA_CHANGED);
-        calculateNetworkId();
         mCoalescingActive = false;
         pollWait = -1;  // restore to default
       } else {
@@ -410,8 +519,8 @@ nsNotifyAddrListener::Run() {
 }
 
 NS_IMETHODIMP
-nsNotifyAddrListener::Observe(nsISupports *subject, const char *topic,
-                              const char16_t *data) {
+nsNotifyAddrListener::Observe(nsISupports* subject, const char* topic,
+                              const char16_t* data) {
   if (!strcmp("xpcom-shutdown-threads", topic)) {
     Shutdown();
   }
@@ -485,11 +594,12 @@ nsresult nsNotifyAddrListener::NetworkChanged() {
 /* Sends the given event.  Assumes aEventID never goes out of scope (static
  * strings are ideal).
  */
-nsresult nsNotifyAddrListener::SendEvent(const char *aEventID) {
+nsresult nsNotifyAddrListener::SendEvent(const char* aEventID) {
   if (!aEventID) return NS_ERROR_NULL_POINTER;
 
   LOG(("SendEvent: %s\n", aEventID));
   nsresult rv = NS_OK;
+  calculateNetworkId();
   nsCOMPtr<nsIRunnable> event = new ChangeEvent(this, aEventID);
   if (NS_FAILED(rv = NS_DispatchToMainThread(event)))
     NS_WARNING("Failed to dispatch ChangeEvent");

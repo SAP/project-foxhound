@@ -144,8 +144,6 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::GuardReceiverPolymorphic:
     case MDefinition::Opcode::GuardObjectGroup:
     case MDefinition::Opcode::GuardObjectIdentity:
-    case MDefinition::Opcode::GuardUnboxedExpando:
-    case MDefinition::Opcode::LoadUnboxedExpando:
     case MDefinition::Opcode::LoadSlot:
     case MDefinition::Opcode::StoreSlot:
     case MDefinition::Opcode::InArray:
@@ -181,7 +179,6 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::WasmLoadGlobalCell:
     case MDefinition::Opcode::WasmStoreGlobalVar:
     case MDefinition::Opcode::WasmStoreGlobalCell:
-    case MDefinition::Opcode::WasmLoadRef:
     case MDefinition::Opcode::WasmStoreRef:
     case MDefinition::Opcode::ArrayJoin:
     case MDefinition::Opcode::ArraySlice:

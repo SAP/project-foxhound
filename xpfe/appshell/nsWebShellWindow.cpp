@@ -51,7 +51,6 @@
 #include "nsIScriptSecurityManager.h"
 
 // For calculating size
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 
 #include "nsIBaseWindow.h"
@@ -62,6 +61,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
@@ -100,7 +100,7 @@ NS_INTERFACE_MAP_END_INHERITING(nsXULWindow)
 nsresult nsWebShellWindow::Initialize(
     nsIXULWindow* aParent, nsIXULWindow* aOpener, nsIURI* aUrl,
     int32_t aInitialWidth, int32_t aInitialHeight, bool aIsHiddenWindow,
-    nsITabParent* aOpeningTab, mozIDOMWindowProxy* aOpenerWindow,
+    nsIRemoteTab* aOpeningTab, mozIDOMWindowProxy* aOpenerWindow,
     nsWidgetInitData& widgetInitData) {
   nsresult rv;
   nsCOMPtr<nsIWidget> parentWidget;
@@ -230,7 +230,10 @@ nsresult nsWebShellWindow::Initialize(
     if (nsContentUtils::IsExpandedPrincipal(principal)) {
       principal = nullptr;
     }
-    rv = mDocShell->CreateAboutBlankContentViewer(principal);
+    // Use the subject (or system) principal as the storage principal too until
+    // the new window finishes navigating and gets a real storage principal.
+    rv = mDocShell->CreateAboutBlankContentViewer(principal, principal,
+                                                  /* aCsp = */ nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
     RefPtr<Document> doc = mDocShell->GetDocument();
     NS_ENSURE_TRUE(!!doc, NS_ERROR_FAILURE);
@@ -257,9 +260,10 @@ nsresult nsWebShellWindow::Initialize(
   return rv;
 }
 
-nsIPresShell* nsWebShellWindow::GetPresShell() {
-  if (!mDocShell) return nullptr;
-
+PresShell* nsWebShellWindow::GetPresShell() {
+  if (!mDocShell) {
+    return nullptr;
+  }
   return mDocShell->GetPresShell();
 }
 
@@ -307,7 +311,7 @@ bool nsWebShellWindow::RequestWindowClose(nsIWidget* aWidget) {
                                                 : nullptr);
   nsCOMPtr<EventTarget> eventTarget = do_QueryInterface(window);
 
-  nsCOMPtr<nsIPresShell> presShell = mDocShell->GetPresShell();
+  RefPtr<PresShell> presShell = mDocShell->GetPresShell();
   if (!presShell) {
     mozilla::DebugOnly<bool> dying;
     MOZ_ASSERT(NS_SUCCEEDED(mDocShell->IsBeingDestroyed(&dying)) && dying,
@@ -368,8 +372,7 @@ void nsWebShellWindow::SizeModeChanged(nsSizeMode sizeMode) {
     ourWindow->DispatchCustomEvent(NS_LITERAL_STRING("sizemodechange"));
   }
 
-  nsIPresShell* presShell;
-  if ((presShell = GetPresShell())) {
+  if (PresShell* presShell = GetPresShell()) {
     presShell->GetPresContext()->SizeModeChanged(sizeMode);
   }
 
@@ -734,7 +737,7 @@ nsIXULWindow* nsWebShellWindow::WidgetListenerDelegate::GetXULWindow() {
   return mWebShellWindow->GetXULWindow();
 }
 
-nsIPresShell* nsWebShellWindow::WidgetListenerDelegate::GetPresShell() {
+PresShell* nsWebShellWindow::WidgetListenerDelegate::GetPresShell() {
   return mWebShellWindow->GetPresShell();
 }
 

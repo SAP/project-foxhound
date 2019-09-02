@@ -442,24 +442,25 @@ static inline bool IsInlinableFallback(ICFallbackStub* icEntry) {
 #endif
 
 static inline void* GetStubReturnAddress(JSContext* cx, jsbytecode* pc) {
-  JitRealm* jitRealm = cx->realm()->jitRealm();
+  const BaselineICFallbackCode& code =
+      cx->runtime()->jitRuntime()->baselineICFallbackCode();
 
   if (IsGetPropPC(pc)) {
-    return jitRealm->bailoutReturnAddr(BailoutReturnStub::GetProp);
+    return code.bailoutReturnAddr(BailoutReturnKind::GetProp);
   }
   if (IsSetPropPC(pc)) {
-    return jitRealm->bailoutReturnAddr(BailoutReturnStub::SetProp);
+    return code.bailoutReturnAddr(BailoutReturnKind::SetProp);
   }
   if (IsGetElemPC(pc)) {
-    return jitRealm->bailoutReturnAddr(BailoutReturnStub::GetElem);
+    return code.bailoutReturnAddr(BailoutReturnKind::GetElem);
   }
 
   // This should be a call op of some kind, now.
   MOZ_ASSERT(IsCallPC(pc) && !IsSpreadCallPC(pc));
   if (IsConstructorCallPC(pc)) {
-    return jitRealm->bailoutReturnAddr(BailoutReturnStub::New);
+    return code.bailoutReturnAddr(BailoutReturnKind::New);
   }
-  return jitRealm->bailoutReturnAddr(BailoutReturnStub::Call);
+  return code.bailoutReturnAddr(BailoutReturnKind::Call);
 }
 
 static inline jsbytecode* GetNextNonLoopEntryPc(jsbytecode* pc,
@@ -903,7 +904,7 @@ static bool InitFromBailout(JSContext* cx, size_t frameNo, HandleFunction fun,
   // side. On the caller side this must represent like the function wasn't
   // inlined.
   uint32_t pushedSlots = 0;
-  AutoValueVector savedCallerArgs(cx);
+  RootedValueVector savedCallerArgs(cx);
   bool needToSaveArgs =
       op == JSOP_FUNAPPLY || IsIonInlinableGetterOrSetterPC(pc);
   if (iter.moreFrames() && (op == JSOP_FUNCALL || needToSaveArgs)) {
@@ -1072,7 +1073,7 @@ static bool InitFromBailout(JSContext* cx, size_t frameNo, HandleFunction fun,
 
   const uint32_t pcOff = script->pcToOffset(pc);
   BaselineScript* baselineScript = script->baselineScript();
-  ICScript* icScript = script->icScript();
+  JitScript* jitScript = script->jitScript();
 
 #ifdef DEBUG
   uint32_t expectedDepth;
@@ -1135,7 +1136,7 @@ static bool InitFromBailout(JSContext* cx, size_t frameNo, HandleFunction fun,
       // Not every monitored op has a monitored fallback stub, e.g.
       // JSOP_NEWOBJECT, which always returns the same type for a
       // particular script/pc location.
-      ICEntry& icEntry = icScript->icEntryFromPCOffset(pcOff);
+      ICEntry& icEntry = jitScript->icEntryFromPCOffset(pcOff);
       ICFallbackStub* fallbackStub = icEntry.firstStub()->getChainFallback();
       if (fallbackStub->isMonitoredFallback()) {
         enterMonitorChain = true;
@@ -1152,7 +1153,7 @@ static bool InitFromBailout(JSContext* cx, size_t frameNo, HandleFunction fun,
     builder.setResumeFramePtr(prevFramePtr);
 
     if (enterMonitorChain) {
-      ICEntry& icEntry = icScript->icEntryFromPCOffset(pcOff);
+      ICEntry& icEntry = jitScript->icEntryFromPCOffset(pcOff);
       ICFallbackStub* fallbackStub = icEntry.firstStub()->getChainFallback();
       MOZ_ASSERT(fallbackStub->isMonitoredFallback());
       JitSpew(JitSpew_BaselineBailouts, "      [TYPE-MONITOR CHAIN]");
@@ -1336,7 +1337,7 @@ static bool InitFromBailout(JSContext* cx, size_t frameNo, HandleFunction fun,
 
   // Calculate and write out return address.
   // The icEntry in question MUST have an inlinable fallback stub.
-  ICEntry& icEntry = icScript->icEntryFromPCOffset(pcOff);
+  ICEntry& icEntry = jitScript->icEntryFromPCOffset(pcOff);
   MOZ_ASSERT(IsInlinableFallback(icEntry.firstStub()->getChainFallback()));
 
   RetAddrEntry& retAddrEntry =

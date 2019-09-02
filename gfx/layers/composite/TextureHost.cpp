@@ -36,7 +36,7 @@
 #include "mozilla/Unused.h"
 #include <limits>
 #include "../opengl/CompositorOGL.h"
-#include "gfxPrefs.h"
+
 #include "gfxUtils.h"
 #include "IPDLActor.h"
 
@@ -75,10 +75,10 @@ namespace layers {
  */
 class TextureParent : public ParentActor<PTextureParent> {
  public:
-  explicit TextureParent(HostIPCAllocator* aAllocator, uint64_t aSerial,
-                         const wr::MaybeExternalImageId& aExternalImageId);
+  TextureParent(HostIPCAllocator* aAllocator, uint64_t aSerial,
+                const wr::MaybeExternalImageId& aExternalImageId);
 
-  ~TextureParent();
+  virtual ~TextureParent();
 
   bool Init(const SurfaceDescriptor& aSharedData,
             const ReadLockDescriptor& aReadLock,
@@ -86,12 +86,12 @@ class TextureParent : public ParentActor<PTextureParent> {
 
   void NotifyNotUsed(uint64_t aTransactionId);
 
-  virtual mozilla::ipc::IPCResult RecvRecycleTexture(
+  mozilla::ipc::IPCResult RecvRecycleTexture(
       const TextureFlags& aTextureFlags) final;
 
   TextureHost* GetTextureHost() { return mTextureHost; }
 
-  virtual void Destroy() override;
+  void Destroy() override;
 
   uint64_t GetSerial() const { return mSerial; }
 
@@ -216,6 +216,16 @@ already_AddRefed<TextureHost> TextureHost::Create(
       result = CreateTextureHostD3D11(aDesc, aDeallocator, aBackend, aFlags);
       break;
 #endif
+    case SurfaceDescriptor::TSurfaceDescriptorRecorded: {
+      const SurfaceDescriptorRecorded& desc =
+          aDesc.get_SurfaceDescriptorRecorded();
+      UniquePtr<SurfaceDescriptor> realDesc =
+          aDeallocator->AsCompositorBridgeParentBase()
+              ->LookupSurfaceDescriptorForClientDrawTarget(desc.drawTarget());
+      result = TextureHost::Create(*realDesc, aReadLock, aDeallocator, aBackend,
+                                   aFlags, aExternalImageId);
+      return result.forget();
+    }
     default:
       MOZ_CRASH("GFX: Unsupported Surface type host");
   }
@@ -429,7 +439,7 @@ void TextureHost::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
   }
   AppendToString(aStream, mFlags, " [flags=", "]");
 #ifdef MOZ_DUMP_PAINTING
-  if (gfxPrefs::LayersDumpTexture()) {
+  if (StaticPrefs::layers_dump_texture()) {
     nsAutoCString pfx(aPrefix);
     pfx += "  ";
 
@@ -450,12 +460,6 @@ void TextureHost::Updated(const nsIntRegion* aRegion) {
 TextureSource::TextureSource() : mCompositableCount(0) {}
 
 TextureSource::~TextureSource() {}
-
-const char* TextureSource::Name() const {
-  MOZ_CRASH("GFX: TextureSource without class name");
-  return "TextureSource";
-}
-
 BufferTextureHost::BufferTextureHost(const BufferDescriptor& aDesc,
                                      TextureFlags aFlags)
     : TextureHost(aFlags),
@@ -566,7 +570,7 @@ void BufferTextureHost::CreateRenderTexture(
                                                  texture.forget());
 }
 
-uint32_t BufferTextureHost::NumSubTextures() const {
+uint32_t BufferTextureHost::NumSubTextures() {
   if (GetFormat() == gfx::SurfaceFormat::YUV) {
     return 3;
   }
@@ -580,7 +584,7 @@ void BufferTextureHost::PushResourceUpdates(
   auto method = aOp == TextureHost::ADD_IMAGE
                     ? &wr::TransactionBuilder::AddExternalImage
                     : &wr::TransactionBuilder::UpdateExternalImage;
-  auto bufferType = wr::WrExternalImageBufferType::ExternalBuffer;
+  auto imageType = wr::ExternalImageType::Buffer();
 
   if (GetFormat() != gfx::SurfaceFormat::YUV) {
     MOZ_ASSERT(aImageKeys.length() == 1);
@@ -589,7 +593,7 @@ void BufferTextureHost::PushResourceUpdates(
         GetSize(),
         ImageDataSerializer::ComputeRGBStride(GetFormat(), GetSize().width),
         GetFormat());
-    (aResources.*method)(aImageKeys[0], descriptor, aExtID, bufferType, 0);
+    (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
   } else {
     MOZ_ASSERT(aImageKeys.length() == 3);
 
@@ -600,9 +604,9 @@ void BufferTextureHost::PushResourceUpdates(
     wr::ImageDescriptor cbcrDescriptor(
         desc.cbCrSize(), desc.cbCrStride(),
         SurfaceFormatForColorDepth(desc.colorDepth()));
-    (aResources.*method)(aImageKeys[0], yDescriptor, aExtID, bufferType, 0);
-    (aResources.*method)(aImageKeys[1], cbcrDescriptor, aExtID, bufferType, 1);
-    (aResources.*method)(aImageKeys[2], cbcrDescriptor, aExtID, bufferType, 2);
+    (aResources.*method)(aImageKeys[0], yDescriptor, aExtID, imageType, 0);
+    (aResources.*method)(aImageKeys[1], cbcrDescriptor, aExtID, imageType, 1);
+    (aResources.*method)(aImageKeys[2], cbcrDescriptor, aExtID, imageType, 2);
   }
 }
 
@@ -652,6 +656,10 @@ void TextureHost::ReadUnlock() {
     mReadLock->ReadUnlock();
     mReadLocked = false;
   }
+}
+
+bool TextureHost::NeedsYFlip() const {
+  return bool(mFlags & TextureFlags::ORIGIN_BOTTOM_LEFT);
 }
 
 bool BufferTextureHost::EnsureWrappingTextureSource() {
@@ -740,7 +748,9 @@ static bool IsCompatibleTextureSource(TextureSource* aTexture,
       return aTexture->GetFormat() == rgb.format() &&
              aTexture->GetSize() == rgb.size();
     }
-    default: { return false; }
+    default: {
+      return false;
+    }
   }
 }
 
@@ -865,12 +875,12 @@ gfx::SurfaceFormat BufferTextureHost::GetFormat() const {
   return mFormat;
 }
 
-YUVColorSpace BufferTextureHost::GetYUVColorSpace() const {
+gfx::YUVColorSpace BufferTextureHost::GetYUVColorSpace() const {
   if (mFormat == gfx::SurfaceFormat::YUV) {
     const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
     return desc.yUVColorSpace();
   }
-  return YUVColorSpace::UNKNOWN;
+  return gfx::YUVColorSpace::UNKNOWN;
 }
 
 gfx::ColorDepth BufferTextureHost::GetColorDepth() const {

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/LinkedList.h"
@@ -153,6 +154,7 @@ class WebGLTexture final : public nsWrapperCache,
 
   const auto& Immutable() const { return mImmutable; }
   const auto& BaseMipmapLevel() const { return mBaseMipmapLevel; }
+  const auto& FaceCount() const { return mFaceCount; }
 
   // We can just max this out to 31, which is the number of unsigned bits in
   // GLsizei.
@@ -207,7 +209,6 @@ class WebGLTexture final : public nsWrapperCache,
                                  uint32_t width, uint32_t height,
                                  uint32_t depth,
                                  webgl::ImageInfo** const out_imageInfo);
-  bool ValidateCopyTexImageForFeedback(uint32_t level, GLint layer = 0) const;
 
   bool ValidateUnpack(const webgl::TexUnpackBlob* blob, bool isFunc3D,
                       const webgl::PackingInfo& srcPI) const;
@@ -269,13 +270,15 @@ class WebGLTexture final : public nsWrapperCache,
       case LOCAL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
       case LOCAL_GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
       case LOCAL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
-        return rawTexImageTarget - LOCAL_GL_TEXTURE_CUBE_MAP_POSITIVE_X;
+        return AutoAssertCast(rawTexImageTarget -
+                              LOCAL_GL_TEXTURE_CUBE_MAP_POSITIVE_X);
 
       default:
         return 0;
     }
   }
 
+ public:
   auto& ImageInfoAtFace(uint8_t face, uint32_t level) {
     MOZ_ASSERT(face < mFaceCount);
     MOZ_ASSERT(level < kMaxLevelCount);
@@ -287,7 +290,6 @@ class WebGLTexture final : public nsWrapperCache,
     return const_cast<WebGLTexture*>(this)->ImageInfoAtFace(face, level);
   }
 
- public:
   auto& ImageInfoAt(TexImageTarget texImageTarget, GLint level) {
     const auto& face = FaceForTarget(texImageTarget);
     return ImageInfoAtFace(face, level);
@@ -309,6 +311,7 @@ class WebGLTexture final : public nsWrapperCache,
   void PopulateMipChain(uint32_t maxLevel);
   bool IsMipAndCubeComplete(uint32_t maxLevel, bool ensureInit,
                             bool* out_initFailed) const;
+  void Truncate();
 
   bool IsCubeMap() const { return (mTarget == LOCAL_GL_TEXTURE_CUBE_MAP); }
 };

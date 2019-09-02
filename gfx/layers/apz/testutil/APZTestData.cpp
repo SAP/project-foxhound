@@ -41,6 +41,8 @@ struct APZTestDataToJSConverter {
                ConvertBucket);
     ConvertList(aFrom.mHitResults, aOutTo.mHitResults.Construct(),
                 ConvertHitResult);
+    ConvertMap(aFrom.mAdditionalData, aOutTo.mAdditionalData.Construct(),
+               ConvertAdditionalDataEntry);
   }
 
   static void ConvertBucket(const SequenceNumber& aKey,
@@ -64,6 +66,13 @@ struct APZTestDataToJSConverter {
     ConvertString(aValue, aOutKeyValuePair.mValue.Construct());
   }
 
+  static void ConvertAdditionalDataEntry(
+      const std::string& aKey, const std::string& aValue,
+      dom::AdditionalDataEntry& aOutKeyValuePair) {
+    ConvertString(aKey, aOutKeyValuePair.mKey.Construct());
+    ConvertString(aValue, aOutKeyValuePair.mValue.Construct());
+  }
+
   static void ConvertString(const std::string& aFrom, nsString& aOutTo) {
     aOutTo = NS_ConvertUTF8toUTF16(aFrom.c_str(), aFrom.size());
   }
@@ -78,6 +87,7 @@ struct APZTestDataToJSConverter {
                   "number of bits in uint16_t");
     aOutHitResult.mHitResult.Construct() =
         static_cast<uint16_t>(aResult.result.serialize());
+    aOutHitResult.mLayersId.Construct() = aResult.layersId.mId;
     aOutHitResult.mScrollId.Construct() = aResult.scrollId;
   }
 };

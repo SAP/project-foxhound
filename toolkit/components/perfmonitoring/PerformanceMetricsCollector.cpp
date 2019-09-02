@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
@@ -259,13 +260,14 @@ PerformanceMetricsCollector::RequestMetricsInternal() {
 
   // collecting the current process PerformanceInfo
   PerformanceInfoPromise::All(NS_GetCurrentThread(), localPromises)
-      ->Then(NS_GetCurrentThread(), __func__,
-             [uuid](const nsTArray<mozilla::dom::PerformanceInfo> aResult) {
-               LOG(("[%s] Local CollectPerformanceInfo promise resolved",
-                    nsIDToCString(uuid).get()));
-               DataReceived(uuid, aResult);
-             },
-             [](const nsresult aResult) {});
+      ->Then(
+          NS_GetCurrentThread(), __func__,
+          [uuid](const nsTArray<mozilla::dom::PerformanceInfo> aResult) {
+            LOG(("[%s] Local CollectPerformanceInfo promise resolved",
+                 nsIDToCString(uuid).get()));
+            DataReceived(uuid, aResult);
+          },
+          [](const nsresult aResult) {});
 
   return promise;
 }

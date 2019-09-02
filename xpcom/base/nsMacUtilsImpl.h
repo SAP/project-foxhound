@@ -11,8 +11,12 @@
 #include "nsString.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPtr.h"
 
 using mozilla::Atomic;
+using mozilla::StaticAutoPtr;
+using mozilla::StaticMutex;
 
 class nsMacUtilsImpl final : public nsIMacUtils {
  public:
@@ -21,29 +25,46 @@ class nsMacUtilsImpl final : public nsIMacUtils {
 
   nsMacUtilsImpl() {}
 
-#if defined(MOZ_CONTENT_SANDBOX)
-  static bool GetAppPath(nsCString &aAppPath);
+  // Return the repo directory and the repo object directory respectively.
+  // These should only be used on Mac developer builds to determine the path
+  // to the repo or object directory.
+  static nsresult GetRepoDir(nsIFile** aRepoDir);
+  static nsresult GetObjDir(nsIFile** aObjDir);
 
+#if defined(MOZ_SANDBOX)
+  static bool GetAppPath(nsCString& aAppPath);
 #  ifdef DEBUG
-  static nsAutoCString GetDirectoryPath(const char *aPath);
+  static nsresult GetBloatLogDir(nsCString& aDirectoryPath);
+  static nsresult GetDirectoryPath(const char* aPath,
+                                   nsCString& aDirectoryPath);
 #  endif /* DEBUG */
-#endif   /* MOZ_CONTENT_SANDBOX */
+#endif   /* MOZ_SANDBOX */
 
   static void EnableTCSMIfAvailable();
+  static bool IsTCSMAvailable();
+  static uint32_t GetPhysicalCPUCount();
 
  private:
   ~nsMacUtilsImpl() {}
 
-  nsresult GetArchString(nsAString &aArchString);
+  nsresult GetArchString(nsAString& aArchString);
 
   // A string containing a "-" delimited list of architectures
   // in our binary.
   nsString mBinaryArchs;
 
+#if defined(MOZ_SANDBOX)
+  // Cache the appDir returned from GetAppPath to avoid doing I/O
+  static StaticAutoPtr<nsCString> sCachedAppPath;
+  // For thread safe setting/checking of sCachedAppPath
+  static StaticMutex sCachedAppPathMutex;
+  // Utility method to call ClearOnShutdown() on the main thread
+  static nsresult ClearCachedAppPathOnShutdown();
+#endif
+
   enum TCSMStatus { TCSM_Unknown = 0, TCSM_Available, TCSM_Unavailable };
   static mozilla::Atomic<nsMacUtilsImpl::TCSMStatus> sTCSMStatus;
 
-  static bool IsTCSMAvailable();
   static nsresult EnableTCSM();
 #if defined(DEBUG)
   static bool IsTCSMEnabled();

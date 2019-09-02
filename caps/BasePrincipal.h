@@ -20,6 +20,9 @@ class nsIURI;
 
 class ExpandedPrincipal;
 
+namespace Json {
+class Value;
+}
 namespace mozilla {
 namespace dom {
 class Document;
@@ -67,11 +70,14 @@ class SiteIdentifier {
  */
 class BasePrincipal : public nsJSPrincipals {
  public:
+  // Warning: this enum impacts Principal serialization into JSON format.
+  // Only update if you know exactly what you are doing
   enum PrincipalKind {
-    eNullPrincipal,
+    eNullPrincipal = 0,
     eCodebasePrincipal,
     eExpandedPrincipal,
-    eSystemPrincipal
+    eSystemPrincipal,
+    eKindMax = eSystemPrincipal
   };
 
   explicit BasePrincipal(PrincipalKind aKind);
@@ -106,14 +112,6 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD CheckMayLoad(nsIURI* uri, bool report,
                           bool allowIfInheritsPrincipal) final;
   NS_IMETHOD GetAddonPolicy(nsISupports** aResult) final;
-  NS_IMETHOD GetCsp(nsIContentSecurityPolicy** aCsp) override;
-  NS_IMETHOD SetCsp(nsIContentSecurityPolicy* aCsp) override;
-  NS_IMETHOD EnsureCSP(dom::Document* aDocument,
-                       nsIContentSecurityPolicy** aCSP) override;
-  NS_IMETHOD GetPreloadCsp(nsIContentSecurityPolicy** aPreloadCSP) override;
-  NS_IMETHOD EnsurePreloadCSP(dom::Document* aDocument,
-                              nsIContentSecurityPolicy** aCSP) override;
-  NS_IMETHOD GetCspJSON(nsAString& outCSPinJSON) override;
   NS_IMETHOD GetIsNullPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsCodebasePrincipal(bool* aResult) override;
   NS_IMETHOD GetIsExpandedPrincipal(bool* aResult) override;
@@ -122,12 +120,17 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetOriginAttributes(JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aVal) final;
   NS_IMETHOD GetOriginSuffix(nsACString& aOriginSuffix) final;
-  NS_IMETHOD GetAppId(uint32_t* aAppId) final;
   NS_IMETHOD GetIsInIsolatedMozBrowserElement(
       bool* aIsInIsolatedMozBrowserElement) final;
   NS_IMETHOD GetUserContextId(uint32_t* aUserContextId) final;
   NS_IMETHOD GetPrivateBrowsingId(uint32_t* aPrivateBrowsingId) final;
   NS_IMETHOD GetSiteOrigin(nsACString& aOrigin) override;
+
+  nsresult ToJSON(nsACString& aJSON);
+  static already_AddRefed<BasePrincipal> FromJSON(const nsACString& aJSON);
+  // Method populates a passed Json::Value with serializable fields
+  // which represent all of the fields to deserialize the principal
+  virtual nsresult PopulateJSONObject(Json::Value& aObject);
 
   virtual bool AddonHasPermission(const nsAtom* aPerm);
 
@@ -154,7 +157,6 @@ class BasePrincipal : public nsJSPrincipals {
   const OriginAttributes& OriginAttributesRef() final {
     return mOriginAttributes;
   }
-  uint32_t AppId() const { return mOriginAttributes.mAppId; }
   extensions::WebExtensionPolicy* AddonPolicy();
   uint32_t UserContextId() const { return mOriginAttributes.mUserContextId; }
   uint32_t PrivateBrowsingId() const {
@@ -166,8 +168,8 @@ class BasePrincipal : public nsJSPrincipals {
 
   PrincipalKind Kind() const { return mKind; }
 
-  already_AddRefed<BasePrincipal>
-  CloneStrippingUserContextIdAndFirstPartyDomain();
+  already_AddRefed<BasePrincipal> CloneForcingOriginAttributes(
+      const OriginAttributes& aOriginAttributes);
 
   // If this is an add-on content script principal, returns its AddonPolicy.
   // Otherwise returns null.
@@ -197,18 +199,12 @@ class BasePrincipal : public nsJSPrincipals {
   // (or, if no URI is given, the last allowlist principal).
   nsIPrincipal* PrincipalToInherit(nsIURI* aRequestedURI = nullptr);
 
-  /**
-   * Returns true if this principal's CSP should override a document's CSP for
-   * loads that it triggers. Currently true for system principal, for expanded
-   * principals which subsume the document principal, and add-on codebase
-   * principals regardless of whether they subsume the document principal.
+  /* Returns true if this principal's CSP should override a document's CSP for
+   * loads that it triggers. Currently true for expanded principals which
+   * subsume the document principal, and add-on codebase principals regardless
+   * of whether they subsume the document principal.
    */
   bool OverridesCSP(nsIPrincipal* aDocumentPrincipal) {
-    // SystemPrincipal can override the page's CSP by definition.
-    if (mKind == eSystemPrincipal) {
-      return true;
-    }
-
     // Expanded principals override CSP if and only if they subsume the document
     // principal.
     if (mKind == eExpandedPrincipal) {
@@ -248,9 +244,6 @@ class BasePrincipal : public nsJSPrincipals {
                   const OriginAttributes& aOriginAttributes);
   void FinishInit(BasePrincipal* aOther,
                   const OriginAttributes& aOriginAttributes);
-
-  nsCOMPtr<nsIContentSecurityPolicy> mCSP;
-  nsCOMPtr<nsIContentSecurityPolicy> mPreloadCSP;
 
  private:
   static already_AddRefed<BasePrincipal> CreateCodebasePrincipal(

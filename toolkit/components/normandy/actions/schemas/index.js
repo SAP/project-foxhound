@@ -22,7 +22,8 @@ const ActionSchemas = {
     required: ["slug", "preferences"],
     properties: {
       slug: {
-        description: "Unique identifer for the rollout, used in telemetry and rollbacks",
+        description:
+          "Unique identifer for the rollout, used in telemetry and rollbacks",
         type: "string",
         pattern: "^[a-z0-9\\-_]+$",
       },
@@ -35,8 +36,8 @@ const ActionSchemas = {
           required: ["preferenceName", "value"],
           properties: {
             preferenceName: {
-              "description": "Full dotted-path of the preference being changed",
-              "type": "string",
+              description: "Full dotted-path of the preference being changed",
+              type: "string",
             },
             value: {
               description: "Value to set the preference to",
@@ -66,12 +67,7 @@ const ActionSchemas = {
     $schema: "http://json-schema.org/draft-04/schema#",
     title: "Enroll a user in an opt-out SHIELD study",
     type: "object",
-    required: [
-      "name",
-      "description",
-      "addonUrl",
-      "extensionApiId",
-    ],
+    required: ["name", "description", "addonUrl", "extensionApiId"],
     properties: {
       name: {
         description: "User-facing name of the study",
@@ -90,7 +86,8 @@ const ActionSchemas = {
         minLength: 1,
       },
       extensionApiId: {
-        description: "The record ID of the extension used for Normandy API calls.",
+        description:
+          "The record ID of the extension used for Normandy API calls.",
         type: "integer",
       },
       isEnrollmentPaused: {
@@ -101,13 +98,71 @@ const ActionSchemas = {
     },
   },
 
-  "show-heartbeat": {
-    "$schema": "http://json-schema.org/draft-04/schema#",
-    "title": "Show a Heartbeat survey.",
-    "description": "This action shows a single survey.",
+  "branched-addon-study": {
+    $schema: "http://json-schema.org/draft-04/schema#",
+    title: "Enroll a user in an add-on experiment, with managed branches",
+    type: "object",
+    required: ["slug", "userFacingName", "userFacingDescription", "branches"],
+    properties: {
+      slug: {
+        description: "Machine-readable identifier",
+        type: "string",
+        minLength: 1,
+      },
+      userFacingName: {
+        description: "User-facing name of the study",
+        type: "string",
+        minLength: 1,
+      },
+      userFacingDescription: {
+        description: "User-facing description of the study",
+        type: "string",
+        minLength: 1,
+      },
+      isEnrollmentPaused: {
+        description: "If true, new users will not be enrolled in the study.",
+        type: "boolean",
+        default: false,
+      },
+      branches: {
+        description: "List of experimental branches",
+        type: "array",
+        minItems: 1,
+        items: {
+          type: "object",
+          required: ["slug", "ratio", "extensionApiId"],
+          properties: {
+            slug: {
+              description:
+                "Unique identifier for this branch of the experiment.",
+              type: "string",
+              pattern: "^[A-Za-z0-9\\-_]+$",
+            },
+            ratio: {
+              description:
+                "Ratio of users who should be grouped into this branch.",
+              type: "integer",
+              minimum: 1,
+            },
+            extensionApiId: {
+              description:
+                "The record ID of the add-on uploaded to the Normandy server. May be null, in which case no add-on will be installed.",
+              type: ["number", "null"],
+              default: null,
+            },
+          },
+        },
+      },
+    },
+  },
 
-    "type": "object",
-    "required": [
+  "show-heartbeat": {
+    $schema: "http://json-schema.org/draft-04/schema#",
+    title: "Show a Heartbeat survey.",
+    description: "This action shows a single survey.",
+
+    type: "object",
+    required: [
       "surveyId",
       "message",
       "thanksMessage",
@@ -115,73 +170,82 @@ const ActionSchemas = {
       "learnMoreMessage",
       "learnMoreUrl",
     ],
-    "properties": {
-      "repeatOption": {
-        "type": "string",
-        "enum": ["once", "xdays", "nag"],
-        "description": "Determines how often a prompt is shown executes.",
-        "default": "once",
+    properties: {
+      repeatOption: {
+        type: "string",
+        enum: ["once", "xdays", "nag"],
+        description: "Determines how often a prompt is shown executes.",
+        default: "once",
       },
-      "repeatEvery": {
-        "description": "For repeatOption=xdays, how often (in days) the prompt is displayed.",
-        "default": null,
-        "type": ["number", "null"],
+      repeatEvery: {
+        description:
+          "For repeatOption=xdays, how often (in days) the prompt is displayed.",
+        default: null,
+        type: ["number", "null"],
       },
-      "includeTelemetryUUID": {
-        "type": "boolean",
-        "description": "Include unique user ID in post-answer-url and Telemetry",
-        "default": false,
+      includeTelemetryUUID: {
+        type: "boolean",
+        description: "Include unique user ID in post-answer-url and Telemetry",
+        default: false,
       },
-      "surveyId": {
-        "type": "string",
-        "description": "Slug uniquely identifying this survey in telemetry",
+      surveyId: {
+        type: "string",
+        description: "Slug uniquely identifying this survey in telemetry",
       },
-      "message": {
-        "description": "Message to show to the user",
-        "type": "string",
+      message: {
+        description: "Message to show to the user",
+        type: "string",
       },
-      "engagementButtonLabel": {
-        "description": "Text for the engagement button. If specified, this button will be shown instead of rating stars.",
-        "default": null,
-        "type": ["string", "null"],
+      engagementButtonLabel: {
+        description:
+          "Text for the engagement button. If specified, this button will be shown instead of rating stars.",
+        default: null,
+        type: ["string", "null"],
       },
-      "thanksMessage": {
-        "description": "Thanks message to show to the user after they've rated Firefox",
-        "type": "string",
+      thanksMessage: {
+        description:
+          "Thanks message to show to the user after they've rated Firefox",
+        type: "string",
       },
-      "postAnswerUrl": {
-        "description": "URL to redirect the user to after rating Firefox or clicking the engagement button",
-        "default": null,
-        "type": ["string", "null"],
+      postAnswerUrl: {
+        description:
+          "URL to redirect the user to after rating Firefox or clicking the engagement button",
+        default: null,
+        type: ["string", "null"],
       },
-      "learnMoreMessage": {
-        "description": "Message to show to the user to learn more",
-        "default": null,
-        "type": ["string", "null"],
+      learnMoreMessage: {
+        description: "Message to show to the user to learn more",
+        default: null,
+        type: ["string", "null"],
       },
-      "learnMoreUrl": {
-        "description": "URL to show to the user when they click Learn More",
-        "default": null,
-        "type": ["string", "null"],
+      learnMoreUrl: {
+        description: "URL to show to the user when they click Learn More",
+        default: null,
+        type: ["string", "null"],
       },
     },
   },
 
-  "preference-experiment": {
+  "multiple-preference-experiment": {
     $schema: "http://json-schema.org/draft-04/schema#",
-    title: "Run a feature experiment activated by a preference.",
+    title: "Run a feature experiment activated by a set of preferences.",
     type: "object",
-    required: [
-      "slug",
-      "preferenceName",
-      "preferenceType",
-      "branches",
-    ],
+    required: ["slug", "userFacingName", "userFacingDescription", "branches"],
     properties: {
       slug: {
         description: "Unique identifier for this experiment",
         type: "string",
         pattern: "^[A-Za-z0-9\\-_]+$",
+      },
+      userFacingName: {
+        description: "User-facing name of the experiment",
+        type: "string",
+        minLength: 1,
+      },
+      userFacingDescription: {
+        description: "User-facing description of the experiment",
+        type: "string",
+        minLength: 1,
       },
       experimentDocumentUrl: {
         description: "URL of a document describing the experiment",
@@ -189,23 +253,9 @@ const ActionSchemas = {
         format: "uri",
         default: "",
       },
-      preferenceName: {
-        description: "Full dotted-path of the preference that controls this experiment",
-        type: "string",
-      },
-      preferenceType: {
-        description: "Data type of the preference that controls this experiment",
-        type: "string",
-        enum: ["string", "integer", "boolean"],
-      },
-      preferenceBranchType: {
-        description: "Controls whether the default or user value of the preference is modified",
-        type: "string",
-        enum: ["user", "default"],
-        default: "default",
-      },
       isHighPopulation: {
-        description: "Marks the preference experiment as a high population experiment, that should be excluded from certain types of telemetry",
+        description:
+          "Marks the preference experiment as a high population experiment, that should be excluded from certain types of telemetry",
         type: "boolean",
         default: "false",
       },
@@ -220,14 +270,114 @@ const ActionSchemas = {
         minItems: 1,
         items: {
           type: "object",
-          required: [
-            "slug",
-            "value",
-            "ratio",
-          ],
+          required: ["slug", "ratio", "preferences"],
           properties: {
             slug: {
-              description: "Unique identifier for this branch of the experiment",
+              description:
+                "Unique identifier for this branch of the experiment",
+              type: "string",
+              pattern: "^[A-Za-z0-9\\-_]+$",
+            },
+            ratio: {
+              description:
+                "Ratio of users who should be grouped into this branch",
+              type: "integer",
+              minimum: 1,
+            },
+            preferences: {
+              description:
+                "The set of preferences to be set if this branch is chosen",
+              type: "object",
+              patternProperties: {
+                ".*": {
+                  type: "object",
+                  properties: {
+                    preferenceType: {
+                      description:
+                        "Data type of the preference that controls this experiment",
+                      type: "string",
+                      enum: ["string", "integer", "boolean"],
+                    },
+                    preferenceBranchType: {
+                      description:
+                        "Controls whether the default or user value of the preference is modified",
+                      type: "string",
+                      enum: ["user", "default"],
+                      default: "default",
+                    },
+                    preferenceValue: {
+                      description:
+                        "Value for this preference when this branch is chosen",
+                      type: ["string", "number", "boolean"],
+                    },
+                  },
+                  required: ["preferenceType", "preferenceValue"],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+
+  "single-preference-experiment": {
+    $schema: "http://json-schema.org/draft-04/schema#",
+    title: "Run a feature experiment activated by a preference.",
+    type: "object",
+    required: ["slug", "preferenceName", "preferenceType", "branches"],
+    properties: {
+      slug: {
+        description: "Unique identifier for this experiment",
+        type: "string",
+        pattern: "^[A-Za-z0-9\\-_]+$",
+      },
+      experimentDocumentUrl: {
+        description: "URL of a document describing the experiment",
+        type: "string",
+        format: "uri",
+        default: "",
+      },
+      preferenceName: {
+        description:
+          "Full dotted-path of the preference that controls this experiment",
+        type: "string",
+      },
+      preferenceType: {
+        description:
+          "Data type of the preference that controls this experiment",
+        type: "string",
+        enum: ["string", "integer", "boolean"],
+      },
+      preferenceBranchType: {
+        description:
+          "Controls whether the default or user value of the preference is modified",
+        type: "string",
+        enum: ["user", "default"],
+        default: "default",
+      },
+      isHighPopulation: {
+        description:
+          "Marks the preference experiment as a high population experiment, that should be excluded from certain types of telemetry",
+        type: "boolean",
+        default: "false",
+      },
+      isEnrollmentPaused: {
+        description: "If true, new users will not be enrolled in the study.",
+        type: "boolean",
+        default: false,
+      },
+      branches: {
+        description: "List of experimental branches",
+        type: "array",
+        minItems: 1,
+        items: {
+          type: "object",
+          required: ["slug", "value", "ratio"],
+          properties: {
+            slug: {
+              description:
+                "Unique identifier for this branch of the experiment",
               type: "string",
               pattern: "^[A-Za-z0-9\\-_]+$",
             },
@@ -236,7 +386,8 @@ const ActionSchemas = {
               type: ["string", "number", "boolean"],
             },
             ratio: {
-              description: "Ratio of users who should be grouped into this branch",
+              description:
+                "Ratio of users who should be grouped into this branch",
               type: "integer",
               minimum: 1,
             },

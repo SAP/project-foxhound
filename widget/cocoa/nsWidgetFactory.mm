@@ -44,7 +44,7 @@
 using namespace mozilla;
 using namespace mozilla::widget;
 
-static nsresult nsClipboardConstructor(nsISupports *aOuter, REFNSIID aIID, void **aResult) {
+static nsresult nsClipboardConstructor(nsISupports* aOuter, REFNSIID aIID, void** aResult) {
   nsCOMPtr<nsIClipboard> inst;
 
   *aResult = nullptr;
@@ -81,6 +81,9 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsNativeMenuServiceX)
 
 #include "nsMacDockSupport.h"
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMacDockSupport)
+
+#include "nsMacFinderProgress.h"
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsMacFinderProgress)
 
 #include "nsMacSharingService.h"
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMacSharingService)
@@ -123,6 +126,7 @@ NS_DEFINE_NAMED_CID(NS_IDLE_SERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_SYSTEMALERTSSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_NATIVEMENUSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_MACDOCKSUPPORT_CID);
+NS_DEFINE_NAMED_CID(NS_MACFINDERPROGRESS_CID);
 NS_DEFINE_NAMED_CID(NS_MACSHARINGSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_MACWEBAPPUTILS_CID);
 NS_DEFINE_NAMED_CID(NS_STANDALONENATIVEMENU_CID);
@@ -135,7 +139,7 @@ static const mozilla::Module::CIDEntry kWidgetCIDs[] = {
     {&kNS_COLORPICKER_CID, false, NULL, nsColorPickerConstructor,
      mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_APPSHELL_CID, false, NULL, nsAppShellConstructor,
-     mozilla::Module::ALLOW_IN_GPU_VR_AND_SOCKET_PROCESS},
+     mozilla::Module::ALLOW_IN_GPU_RDD_VR_AND_SOCKET_PROCESS},
     {&kNS_SOUND_CID, false, NULL, nsSoundConstructor, mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_TRANSFERABLE_CID, false, NULL, nsTransferableConstructor},
     {&kNS_HTMLFORMATCONVERTER_CID, false, NULL, nsHTMLFormatConverterConstructor},
@@ -153,6 +157,7 @@ static const mozilla::Module::CIDEntry kWidgetCIDs[] = {
     {&kNS_SYSTEMALERTSSERVICE_CID, false, NULL, OSXNotificationCenterConstructor},
     {&kNS_NATIVEMENUSERVICE_CID, false, NULL, nsNativeMenuServiceXConstructor},
     {&kNS_MACDOCKSUPPORT_CID, false, NULL, nsMacDockSupportConstructor},
+    {&kNS_MACFINDERPROGRESS_CID, false, NULL, nsMacFinderProgressConstructor},
     {&kNS_MACSHARINGSERVICE_CID, false, NULL, nsMacSharingServiceConstructor},
     {&kNS_MACWEBAPPUTILS_CID, false, NULL, nsMacWebAppUtilsConstructor},
     {&kNS_STANDALONENATIVEMENU_CID, false, NULL, nsStandaloneNativeMenuConstructor},
@@ -165,7 +170,7 @@ static const mozilla::Module::ContractIDEntry kWidgetContracts[] = {
     {"@mozilla.org/filepicker;1", &kNS_FILEPICKER_CID, mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/colorpicker;1", &kNS_COLORPICKER_CID, mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/widget/appshell/mac;1", &kNS_APPSHELL_CID,
-     mozilla::Module::ALLOW_IN_GPU_VR_AND_SOCKET_PROCESS},
+     mozilla::Module::ALLOW_IN_GPU_RDD_VR_AND_SOCKET_PROCESS},
     {"@mozilla.org/sound;1", &kNS_SOUND_CID, mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/widget/transferable;1", &kNS_TRANSFERABLE_CID},
     {"@mozilla.org/widget/htmlformatconverter;1", &kNS_HTMLFORMATCONVERTER_CID},
@@ -182,6 +187,7 @@ static const mozilla::Module::ContractIDEntry kWidgetContracts[] = {
     {"@mozilla.org/system-alerts-service;1", &kNS_SYSTEMALERTSSERVICE_CID},
     {"@mozilla.org/widget/nativemenuservice;1", &kNS_NATIVEMENUSERVICE_CID},
     {"@mozilla.org/widget/macdocksupport;1", &kNS_MACDOCKSUPPORT_CID},
+    {"@mozilla.org/widget/macfinderprogress;1", &kNS_MACFINDERPROGRESS_CID},
     {"@mozilla.org/widget/macsharingservice;1", &kNS_MACSHARINGSERVICE_CID},
     {"@mozilla.org/widget/mac-web-app-utils;1", &kNS_MACWEBAPPUTILS_CID},
     {"@mozilla.org/widget/standalonenativemenu;1", &kNS_STANDALONENATIVEMENU_CID},
@@ -200,13 +206,12 @@ static void nsWidgetCocoaModuleDtor() {
   nsAppShellShutdown();
 }
 
-static const mozilla::Module kWidgetModule = {mozilla::Module::kVersion,
-                                              kWidgetCIDs,
-                                              kWidgetContracts,
-                                              NULL,
-                                              NULL,
-                                              nsAppShellInit,
-                                              nsWidgetCocoaModuleDtor,
-                                              mozilla::Module::ALLOW_IN_GPU_VR_AND_SOCKET_PROCESS};
-
-NSMODULE_DEFN(nsWidgetMacModule) = &kWidgetModule;
+extern const mozilla::Module kWidgetModule = {
+    mozilla::Module::kVersion,
+    kWidgetCIDs,
+    kWidgetContracts,
+    NULL,
+    NULL,
+    nsAppShellInit,
+    nsWidgetCocoaModuleDtor,
+    mozilla::Module::ALLOW_IN_GPU_RDD_VR_AND_SOCKET_PROCESS};

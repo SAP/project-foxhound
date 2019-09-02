@@ -80,8 +80,12 @@ already_AddRefed<IDirect3DSurface9> DXGID3D9TextureData::GetD3D9Surface()
 }
 
 bool DXGID3D9TextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
-  aOutDescriptor =
-      SurfaceDescriptorD3D10((WindowsHandle)(mHandle), mFormat, GetSize());
+  // In reality, with D3D9 we will only ever deal with RGBA textures.
+  bool isYUV = mFormat == SurfaceFormat::NV12 ||
+               mFormat == SurfaceFormat::P010 || mFormat == SurfaceFormat::P016;
+  aOutDescriptor = SurfaceDescriptorD3D10(
+      (WindowsHandle)(mHandle), mFormat, GetSize(),
+      isYUV ? gfx::YUVColorSpace::BT601 : gfx::YUVColorSpace::UNKNOWN);
   return true;
 }
 
@@ -177,10 +181,11 @@ D3D9SurfaceImage::GetShareHandle() const { return mShareHandle; }
 
 gfx::IntSize D3D9SurfaceImage::GetSize() const { return mSize; }
 
-TextureClient* D3D9SurfaceImage::GetTextureClient(KnowsCompositor* aForwarder) {
+TextureClient* D3D9SurfaceImage::GetTextureClient(
+    KnowsCompositor* aKnowsCompositor) {
   MOZ_ASSERT(mTextureClient);
   MOZ_ASSERT(mTextureClient->GetAllocator() ==
-             aForwarder->GetTextureForwarder());
+             aKnowsCompositor->GetTextureForwarder());
   return mTextureClient;
 }
 

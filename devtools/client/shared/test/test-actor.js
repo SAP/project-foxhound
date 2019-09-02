@@ -11,14 +11,18 @@
 const { Ci, Cu } = require("chrome");
 const Services = require("Services");
 const {
-  getRect, getAdjustedQuads, getWindowDimensions,
+  getRect,
+  getAdjustedQuads,
+  getWindowDimensions,
 } = require("devtools/shared/layout/utils");
 const defer = require("devtools/shared/defer");
 const {
-  isContentStylesheet,
+  isAuthorStylesheet,
   getCSSStyleRules,
 } = require("devtools/shared/inspector/css-logic");
 const InspectorUtils = require("InspectorUtils");
+const Debugger = require("Debugger");
+const ReplayInspector = require("devtools/server/actors/replay/inspector");
 
 // Set up a dummy environment so that EventUtils works. We need to be careful to
 // pass a window object into each EventUtils method we call rather than having
@@ -30,10 +34,13 @@ EventUtils.parent = {};
 EventUtils._EU_Ci = Ci;
 EventUtils._EU_Cc = Cc;
 /* eslint-disable camelcase */
-Services.scriptloader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", EventUtils);
+Services.scriptloader.loadSubScript(
+  "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
+  EventUtils
+);
 
 const protocol = require("devtools/shared/protocol");
-const {Arg, RetVal} = protocol;
+const { Arg, RetVal } = protocol;
 
 const dumpn = msg => {
   dump(msg + "\n");
@@ -292,13 +299,18 @@ var testSpec = protocol.generateActorSpec({
   },
 });
 
-var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
+var TestActor = (exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
   initialize: function(conn, targetActor, options) {
     this.conn = conn;
     this.targetActor = targetActor;
   },
 
   get content() {
+    // When replaying, the content window is in the replaying process. We can't
+    // use isReplaying here because this actor is loaded into its own sandbox.
+    if (Debugger.recordReplayProcessKind() == "Middleman") {
+      return ReplayInspector.window;
+    }
     return this.targetActor.window;
   },
 
@@ -317,12 +329,24 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
         const str = selector.shift();
         const iframe = document.querySelector(str);
         if (!iframe) {
-          throw new Error("Unable to find element with selector \"" + str + "\"" +
-                          " (full selector:" + fullSelector + ")");
+          throw new Error(
+            'Unable to find element with selector "' +
+              str +
+              '"' +
+              " (full selector:" +
+              fullSelector +
+              ")"
+          );
         }
         if (!iframe.contentWindow) {
-          throw new Error("Iframe selector doesn't target an iframe \"" + str + "\"" +
-                          " (full selector:" + fullSelector + ")");
+          throw new Error(
+            "Iframe selector doesn't target an iframe \"" +
+              str +
+              '"' +
+              " (full selector:" +
+              fullSelector +
+              ")"
+          );
         }
         document = iframe.contentWindow.document;
       }
@@ -330,7 +354,9 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
     }
     const node = document.querySelector(selector);
     if (!node) {
-      throw new Error("Unable to find element with selector \"" + selector + "\"");
+      throw new Error(
+        'Unable to find element with selector "' + selector + '"'
+      );
     }
     return node;
   },
@@ -383,7 +409,7 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
    */
   getSelectorHighlighterBoxNb: function(actorID) {
     const highlighter = this.conn.getActor(actorID);
-    const {_highlighter: h} = highlighter;
+    const { _highlighter: h } = highlighter;
     if (!h || !h._highlighters) {
       return null;
     }
@@ -401,7 +427,7 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
   changeHighlightedNodeWaitForUpdate: function(name, value, actorID) {
     return new Promise(resolve => {
       const highlighter = this.conn.getActor(actorID);
-      const {_highlighter: h} = highlighter;
+      const { _highlighter: h } = highlighter;
 
       h.once("updated", resolve);
 
@@ -416,7 +442,7 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
    */
   waitForHighlighterEvent: function(event, actorID) {
     const highlighter = this.conn.getActor(actorID);
-    const {_highlighter: h} = highlighter;
+    const { _highlighter: h } = highlighter;
 
     return h.once(event);
   },
@@ -430,9 +456,13 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
   waitForEventOnNode: function(eventName, selector) {
     return new Promise(resolve => {
       const node = selector ? this._querySelector(selector) : this.content;
-      node.addEventListener(eventName, function() {
-        resolve();
-      }, {once: true});
+      node.addEventListener(
+        eventName,
+        function() {
+          resolve();
+        },
+        { once: true }
+      );
     });
   },
 
@@ -448,7 +478,7 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
     return new Promise(resolve => {
       if (actorID) {
         const actor = this.conn.getActor(actorID);
-        const {_highlighter: h} = actor;
+        const { _highlighter: h } = actor;
         h.once("updated", resolve);
       } else {
         resolve();
@@ -476,6 +506,20 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
   },
 
   /**
+   * Get the window which mouse events on node should be delivered to.
+   */
+  windowForMouseEvent: function(node) {
+    // When replaying, the node is a proxy for an element in the replaying
+    // process. Use the window which the server is running against, which is
+    // able to receive events. We can't use isReplaying here because this actor
+    // is loaded into its own sandbox.
+    if (Debugger.recordReplayProcessKind() == "Middleman") {
+      return this.targetActor.window;
+    }
+    return node.ownerDocument.defaultView;
+  },
+
+  /**
    * Synthesize a mouse event on an element, after ensuring that it is visible
    * in the viewport. This handler doesn't send a message back. Consumers
    * should listen to specific events on the inspector/highlighter to know when
@@ -491,18 +535,28 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
     const node = this._querySelector(selector);
     node.scrollIntoView();
     if (center) {
-      EventUtils.synthesizeMouseAtCenter(node, options, node.ownerDocument.defaultView);
+      EventUtils.synthesizeMouseAtCenter(
+        node,
+        options,
+        this.windowForMouseEvent(node)
+      );
     } else {
-      EventUtils.synthesizeMouse(node, x, y, options, node.ownerDocument.defaultView);
+      EventUtils.synthesizeMouse(
+        node,
+        x,
+        y,
+        options,
+        this.windowForMouseEvent(node)
+      );
     }
   },
 
   /**
-  * Synthesize a key event for an element. This handler doesn't send a message
-  * back. Consumers should listen to specific events on the inspector/highlighter
-  * to know when the event got synthesized.
-  */
-  synthesizeKey: function({key, options, content}) {
+   * Synthesize a key event for an element. This handler doesn't send a message
+   * back. Consumers should listen to specific events on the inspector/highlighter
+   * to know when the event got synthesized.
+   */
+  synthesizeKey: function({ key, options, content }) {
     EventUtils.synthesizeKey(key, options, this.content);
   },
 
@@ -530,11 +584,15 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
     return new Promise(resolve => {
       // Wait for DOMWindowCreated first, as listening on the current outerwindow
       // doesn't allow receiving test-page-processing-done.
-      this.targetActor.chromeEventHandler.addEventListener("DOMWindowCreated", () => {
-        this.content.addEventListener(
-          "test-page-processing-done", resolve, { once: true }
-        );
-      }, { once: true });
+      this.targetActor.chromeEventHandler.addEventListener(
+        "DOMWindowCreated",
+        () => {
+          this.content.addEventListener("test-page-processing-done", resolve, {
+            once: true,
+          });
+        },
+        { once: true }
+      );
 
       this.content.location = url;
     });
@@ -687,10 +745,14 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
     }
 
     const deferred = defer();
-    this.content.addEventListener("scroll", function(event) {
-      const data = {x: this.content.scrollX, y: this.content.scrollY};
-      deferred.resolve(data);
-    }, {once: true});
+    this.content.addEventListener(
+      "scroll",
+      function(event) {
+        const data = { x: this.content.scrollX, y: this.content.scrollY };
+        deferred.resolve(data);
+      },
+      { once: true }
+    );
 
     this.content[relative ? "scrollBy" : "scrollTo"](x, y);
 
@@ -742,9 +804,11 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
         namespaceURI: node.namespaceURI,
         numChildren: node.children.length,
         numNodes: node.childNodes.length,
-        attributes: [...node.attributes].map(({name, value, namespaceURI}) => {
-          return {name, value, namespaceURI};
-        }),
+        attributes: [...node.attributes].map(
+          ({ name, value, namespaceURI }) => {
+            return { name, value, namespaceURI };
+          }
+        ),
         outerHTML: node.outerHTML,
         innerHTML: node.innerHTML,
         textContent: node.textContent,
@@ -773,7 +837,7 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
       const sheet = domRules[i].parentStyleSheet;
       sheets.push({
         href: sheet.href,
-        isContentSheet: isContentStylesheet(sheet),
+        isContentSheet: isAuthorStylesheet(sheet),
       });
     }
 
@@ -789,7 +853,7 @@ var TestActor = exports.TestActor = protocol.ActorClassWithSpec(testSpec, {
   getWindowDimensions: function() {
     return getWindowDimensions(this.content);
   },
-});
+}));
 
 class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
   constructor(client, toolbox) {
@@ -812,7 +876,9 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
   changeHighlightedNodeWaitForUpdate(name, value, highlighter) {
     /* eslint-enable max-len */
     return super.changeHighlightedNodeWaitForUpdate(
-      name, value, (highlighter || this.toolbox.highlighter).actorID
+      name,
+      value,
+      (highlighter || this.toolbox.highlighter).actorID
     );
   }
 
@@ -825,13 +891,16 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
    */
   getHighlighterNodeAttribute(nodeID, name, highlighter) {
     return this.getHighlighterAttribute(
-      nodeID, name, (highlighter || this.toolbox.highlighter).actorID
+      nodeID,
+      name,
+      (highlighter || this.toolbox.highlighter).actorID
     );
   }
 
   getHighlighterNodeTextContent(nodeID, highlighter) {
     return super.getHighlighterNodeTextContent(
-      nodeID, (highlighter || this.toolbox.highlighter).actorID
+      nodeID,
+      (highlighter || this.toolbox.highlighter).actorID
     );
   }
 
@@ -839,8 +908,10 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
    * Is the highlighter currently visible on the page?
    */
   isHighlighting() {
-    return this.getHighlighterNodeAttribute("box-model-elements", "hidden")
-      .then(value => value === null);
+    return this.getHighlighterNodeAttribute(
+      "box-model-elements",
+      "hidden"
+    ).then(value => value === null);
   }
 
   /**
@@ -860,10 +931,16 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
     for (const boxType of ["content", "padding", "border", "margin"]) {
       const [quad] = regions[boxType];
       for (const point in boxModel[boxType].points) {
-        is(boxModel[boxType].points[point].x, quad[point].x,
-          prefix + boxType + " point " + point + " x coordinate is correct");
-        is(boxModel[boxType].points[point].y, quad[point].y,
-          prefix + boxType + " point " + point + " y coordinate is correct");
+        is(
+          boxModel[boxType].points[point].x,
+          quad[point].x,
+          prefix + boxType + " point " + point + " x coordinate is correct"
+        );
+        is(
+          boxModel[boxType].points[point].y,
+          quad[point].y,
+          prefix + boxType + " point " + point + " y coordinate is correct"
+        );
       }
     }
   }
@@ -872,8 +949,8 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
    * Get the current rect of the border region of the box-model highlighter
    */
   async getSimpleBorderRect(toolbox) {
-    const {border} = await this._getBoxModelStatus(toolbox);
-    const {p1, p2, p4} = border.points;
+    const { border } = await this._getBoxModelStatus(toolbox);
+    const { p1, p2, p4 } = border.points;
 
     return {
       top: p1.y,
@@ -897,7 +974,7 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
     for (const region of ["margin", "border", "padding", "content"]) {
       const points = await this._getPointsForRegion(region);
       const visible = await this._isRegionHidden(region);
-      ret[region] = {points, visible};
+      ret[region] = { points, visible };
     }
 
     ret.guides = {};
@@ -938,7 +1015,7 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
    * @return {Boolean}
    */
   async isNodeRectHighlighted({ left, top, width, height }) {
-    const {visible, border} = await this._getBoxModelStatus();
+    const { visible, border } = await this._getBoxModelStatus();
     let points = border.points;
     if (!visible) {
       return false;
@@ -957,10 +1034,12 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
     points = list;
 
     // Check that each point of the node is within the box model
-    return isInside([left, top], points) &&
-           isInside([right, top], points) &&
-           isInside([right, bottom], points) &&
-           isInside([left, bottom], points);
+    return (
+      isInside([left, top], points) &&
+      isInside([right, top], points) &&
+      isInside([right, bottom], points) &&
+      isInside([left, bottom], points)
+    );
   }
 
   /**
@@ -968,16 +1047,22 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
    * box model highlighter.
    */
   async _getPointsForRegion(region) {
-    const d = await this.getHighlighterNodeAttribute("box-model-" + region, "d");
+    const d = await this.getHighlighterNodeAttribute(
+      "box-model-" + region,
+      "d"
+    );
 
     const polygons = d.match(/M[^M]+/g);
     if (!polygons) {
       return null;
     }
 
-    const points = polygons[0].trim().split(" ").map(i => {
-      return i.replace(/M|L/, "").split(",");
-    });
+    const points = polygons[0]
+      .trim()
+      .split(" ")
+      .map(i => {
+        return i.replace(/M|L/, "").split(",");
+      });
 
     return {
       p1: {
@@ -1004,7 +1089,10 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
    * hidden?
    */
   async _isRegionHidden(region) {
-    const value = await this.getHighlighterNodeAttribute("box-model-" + region, "hidden");
+    const value = await this.getHighlighterNodeAttribute(
+      "box-model-" + region,
+      "hidden"
+    );
     return value !== null;
   }
 
@@ -1038,20 +1126,28 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
     const bGuide = await this._getGuideStatus("bottom");
     const lGuide = await this._getGuideStatus("left");
 
-    if (!tGuide.visible || !rGuide.visible || !bGuide.visible || !lGuide.visible) {
+    if (
+      !tGuide.visible ||
+      !rGuide.visible ||
+      !bGuide.visible ||
+      !lGuide.visible
+    ) {
       return null;
     }
 
     return {
-      p1: {x: lGuide.x1, y: tGuide.y1},
-      p2: {x: +rGuide.x1 + 1, y: tGuide.y1},
-      p3: {x: +rGuide.x1 + 1, y: +bGuide.y1 + 1},
-      p4: {x: lGuide.x1, y: +bGuide.y1 + 1},
+      p1: { x: lGuide.x1, y: tGuide.y1 },
+      p2: { x: +rGuide.x1 + 1, y: tGuide.y1 },
+      p3: { x: +rGuide.x1 + 1, y: +bGuide.y1 + 1 },
+      p4: { x: lGuide.x1, y: +bGuide.y1 + 1 },
     };
   }
 
   waitForHighlighterEvent(event) {
-    return super.waitForHighlighterEvent(event, this.toolbox.highlighter.actorID);
+    return super.waitForHighlighterEvent(
+      event,
+      this.toolbox.highlighter.actorID
+    );
   }
 
   /**
@@ -1066,25 +1162,32 @@ class TestActorFront extends protocol.FrontClassWithSpec(testSpec) {
    */
   async getHighlighterRegionPath(region, highlighter) {
     const d = await this.getHighlighterNodeAttribute(
-      `box-model-${region}`, "d", highlighter
+      `box-model-${region}`,
+      "d",
+      highlighter
     );
     if (!d) {
-      return {d: null};
+      return { d: null };
     }
 
     const polygons = d.match(/M[^M]+/g);
     if (!polygons) {
-      return {d};
+      return { d };
     }
 
     const points = [];
     for (const polygon of polygons) {
-      points.push(polygon.trim().split(" ").map(i => {
-        return i.replace(/M|L/, "").split(",");
-      }));
+      points.push(
+        polygon
+          .trim()
+          .split(" ")
+          .map(i => {
+            return i.replace(/M|L/, "").split(",");
+          })
+      );
     }
 
-    return {d, points};
+    return { d, points };
   }
 }
 exports.TestActorFront = TestActorFront;
@@ -1135,7 +1238,7 @@ function isInside(point, polygon) {
 }
 
 function isLeft(p0, p1, p2) {
-  const l = ((p1[0] - p0[0]) * (p2[1] - p0[1])) -
-          ((p2[0] - p0[0]) * (p1[1] - p0[1]));
+  const l =
+    (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p2[0] - p0[0]) * (p1[1] - p0[1]);
   return l;
 }

@@ -8,7 +8,6 @@
 #include "nsGkAtoms.h"
 #include "nsRect.h"
 #include "nsPresContext.h"
-#include "nsIPresShell.h"
 #include "nsIScrollable.h"
 #include "nsViewManager.h"
 #include "nsITextToSubURI.h"
@@ -19,6 +18,7 @@
 #include "nsNodeInfoManager.h"
 #include "nsContentUtils.h"
 #include "nsDocElementCreatedNotificationRunner.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIPrincipal.h"
@@ -242,11 +242,11 @@ nsresult MediaDocument::CreateSyntheticDocument() {
 
 nsresult MediaDocument::StartLayout() {
   mMayStartLayout = true;
-  nsCOMPtr<nsIPresShell> shell = GetShell();
+  RefPtr<PresShell> presShell = GetPresShell();
   // Don't mess with the presshell if someone has already handled
   // its initial reflow.
-  if (shell && !shell->DidInitialize()) {
-    nsresult rv = shell->Initialize();
+  if (presShell && !presShell->DidInitialize()) {
+    nsresult rv = presShell->Initialize();
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -347,26 +347,25 @@ void MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
       heightStr.AppendInt(aHeight);
       // If we got a filename, display it
       if (!fileStr.IsEmpty()) {
-        const char16_t* formatStrings[4] = {fileStr.get(), typeStr.get(),
-                                            widthStr.get(), heightStr.get()};
+        AutoTArray<nsString, 4> formatStrings = {fileStr, typeStr, widthStr,
+                                                 heightStr};
         mStringBundle->FormatStringFromName(aFormatNames[eWithDimAndFile],
-                                            formatStrings, 4, title);
+                                            formatStrings, title);
       } else {
-        const char16_t* formatStrings[3] = {typeStr.get(), widthStr.get(),
-                                            heightStr.get()};
+        AutoTArray<nsString, 3> formatStrings = {typeStr, widthStr, heightStr};
         mStringBundle->FormatStringFromName(aFormatNames[eWithDim],
-                                            formatStrings, 3, title);
+                                            formatStrings, title);
       }
     } else {
       // If we got a filename, display it
       if (!fileStr.IsEmpty()) {
-        const char16_t* formatStrings[2] = {fileStr.get(), typeStr.get()};
+        AutoTArray<nsString, 2> formatStrings = {fileStr, typeStr};
         mStringBundle->FormatStringFromName(aFormatNames[eWithFile],
-                                            formatStrings, 2, title);
+                                            formatStrings, title);
       } else {
-        const char16_t* formatStrings[1] = {typeStr.get()};
+        AutoTArray<nsString, 1> formatStrings = {typeStr};
         mStringBundle->FormatStringFromName(aFormatNames[eWithNoInfo],
-                                            formatStrings, 1, title);
+                                            formatStrings, title);
       }
     }
   }
@@ -377,12 +376,12 @@ void MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
     SetTitle(title, ignored);
   } else {
     nsAutoString titleWithStatus;
-    const nsPromiseFlatString& status = PromiseFlatString(aStatus);
-    const char16_t* formatStrings[2] = {title.get(), status.get()};
-    mStringBundle->FormatStringFromName("TitleWithStatus", formatStrings, 2,
+    AutoTArray<nsString, 2> formatStrings;
+    formatStrings.AppendElement(title);
+    formatStrings.AppendElement(aStatus);
+    mStringBundle->FormatStringFromName("TitleWithStatus", formatStrings,
                                         titleWithStatus);
-    IgnoredErrorResult ignored;
-    SetTitle(titleWithStatus, ignored);
+    SetTitle(titleWithStatus, IgnoreErrors());
   }
 }
 

@@ -30,12 +30,17 @@
 #include "js/Wrapper.h"
 
 #include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/HashFunctions.h"
+
+#include "nsSerializationHelper.h"
+#include "json/json.h"
+
+#include "nsSerializationHelper.h"
+#include "json/json.h"
 
 using namespace mozilla;
 
@@ -50,12 +55,7 @@ NS_IMPL_CI_INTERFACE_GETTER(ContentPrincipal, nsIPrincipal, nsISerializable)
 
 ContentPrincipal::ContentPrincipal() : BasePrincipal(eCodebasePrincipal) {}
 
-ContentPrincipal::~ContentPrincipal() {
-  // let's clear the principal within the csp to avoid a tangling pointer
-  if (mCSP) {
-    static_cast<nsCSPContext*>(mCSP.get())->clearLoadingPrincipal();
-  }
-}
+ContentPrincipal::~ContentPrincipal() {}
 
 nsresult ContentPrincipal::Init(nsIURI* aCodebase,
                                 const OriginAttributes& aOriginAttributes,
@@ -581,8 +581,18 @@ ContentPrincipal::Read(nsIObjectInputStream* aStream) {
   bool ok = attrs.PopulateFromSuffix(suffix);
   NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
 
-  rv = NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
-  NS_ENSURE_SUCCESS(rv, rv);
+  // Since Bug 965637 we do not serialize the CSP within the
+  // Principal anymore. Nevertheless there might still be
+  // serialized Principals that do have a serialized CSP.
+  // For now, we just read the CSP here but do not actually
+  // consume it. Please note that we deliberately ignore
+  // the return value to avoid CSP deserialization problems.
+  // After Bug 1508939 we will have a new serialization for
+  // Principals which allows us to update the code here.
+  // Additionally, the format for serialized CSPs changed
+  // within Bug 965637 which also can cause failures within
+  // the CSP deserialization code.
+  Unused << NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
 
   nsAutoCString originNoSuffix;
   rv = GenerateOriginNoSuffixFromURI(codebase, originNoSuffix);
@@ -590,13 +600,6 @@ ContentPrincipal::Read(nsIObjectInputStream* aStream) {
 
   rv = Init(codebase, attrs, originNoSuffix);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  mCSP = do_QueryInterface(supports, &rv);
-  // make sure setRequestContext is called after Init(),
-  // to make sure  the principals URI been initalized.
-  if (mCSP) {
-    mCSP->SetRequestContext(nullptr, this);
-  }
 
   // Note: we don't call SetDomain here because we don't need the wrapper
   // recomputation code there (we just created this principal).
@@ -610,30 +613,117 @@ ContentPrincipal::Read(nsIObjectInputStream* aStream) {
 
 NS_IMETHODIMP
 ContentPrincipal::Write(nsIObjectOutputStream* aStream) {
-  NS_ENSURE_STATE(mCodebase);
-  nsresult rv = NS_WriteOptionalCompoundObject(aStream, mCodebase,
-                                               NS_GET_IID(nsIURI), true);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  // Read is used still for legacy principals
+  MOZ_RELEASE_ASSERT(false, "Old style serialization is removed");
+  return NS_OK;
+}
 
-  rv = NS_WriteOptionalCompoundObject(aStream, mDomain, NS_GET_IID(nsIURI),
-                                      true);
-  if (NS_FAILED(rv)) {
-    return rv;
+nsresult ContentPrincipal::PopulateJSONObject(Json::Value& aObject) {
+  nsAutoCString codebase;
+  nsresult rv = mCodebase->GetSpec(codebase);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // We turn each int enum field into a JSON string key of the object
+  // aObject is the inner JSON object that has stringified enum keys
+  // An example aObject might be:
+  //
+  // eCodebase                   eSuffix
+  //    |                           |
+  //  {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}
+  //    |                |          |         |
+  //    -----------------------------         |
+  //         |           |                    |
+  //        Key          ----------------------
+  //                                |
+  //                              Value
+  aObject[std::to_string(eCodebase)] = codebase.get();
+
+  if (mDomain) {
+    nsAutoCString domainStr;
+    rv = mDomain->GetSpec(domainStr);
+    NS_ENSURE_SUCCESS(rv, rv);
+    aObject[std::to_string(eDomain)] = domainStr.get();
   }
 
   nsAutoCString suffix;
   OriginAttributesRef().CreateSuffix(suffix);
-
-  rv = aStream->WriteStringZ(suffix.get());
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = NS_WriteOptionalCompoundObject(
-      aStream, mCSP, NS_GET_IID(nsIContentSecurityPolicy), true);
-  if (NS_FAILED(rv)) {
-    return rv;
+  if (suffix.Length() > 0) {
+    aObject[std::to_string(eSuffix)] = suffix.get();
   }
 
   return NS_OK;
+}
+
+already_AddRefed<BasePrincipal> ContentPrincipal::FromProperties(
+    nsTArray<ContentPrincipal::KeyVal>& aFields) {
+  MOZ_ASSERT(aFields.Length() == eMax + 1, "Must have all the keys");
+  nsresult rv;
+  nsCOMPtr<nsIURI> codebaseURI;
+  nsCOMPtr<nsIURI> domain;
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  OriginAttributes attrs;
+
+  // The odd structure here is to make the code to not compile
+  // if all the switch enum cases haven't been codified
+  for (const auto& field : aFields) {
+    switch (field.key) {
+      case ContentPrincipal::eCodebase:
+        if (!field.valueWasSerialized) {
+          MOZ_ASSERT(
+              false,
+              "Content principals require a codebase URI in serialized JSON");
+          return nullptr;
+        }
+        rv = NS_NewURI(getter_AddRefs(codebaseURI), field.value.get());
+        NS_ENSURE_SUCCESS(rv, nullptr);
+
+        {
+          // Enforce re-parsing about: URIs so that if they change, we
+          // continue to use their new principals correctly.
+          bool isAbout =
+              NS_SUCCEEDED(codebaseURI->SchemeIs("about", &isAbout)) && isAbout;
+          if (isAbout) {
+            nsAutoCString spec;
+            codebaseURI->GetSpec(spec);
+            if (NS_FAILED(NS_NewURI(getter_AddRefs(codebaseURI), spec))) {
+              return nullptr;
+            }
+          }
+        }
+        break;
+      case ContentPrincipal::eDomain:
+        if (field.valueWasSerialized) {
+          rv = NS_NewURI(getter_AddRefs(domain), field.value.get());
+          NS_ENSURE_SUCCESS(rv, nullptr);
+        }
+        break;
+      case ContentPrincipal::eSuffix:
+        if (field.valueWasSerialized) {
+          bool ok = attrs.PopulateFromSuffix(field.value);
+          if (!ok) {
+            return nullptr;
+          }
+        }
+        break;
+    }
+  }
+  nsAutoCString originNoSuffix;
+  rv = ContentPrincipal::GenerateOriginNoSuffixFromURI(codebaseURI,
+                                                       originNoSuffix);
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
+
+  RefPtr<ContentPrincipal> codebase = new ContentPrincipal();
+  rv = codebase->Init(codebaseURI, attrs, originNoSuffix);
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
+
+  codebase->mDomain = domain;
+  if (codebase->mDomain) {
+    codebase->SetHasExplicitDomain();
+  }
+
+  return codebase.forget();
 }

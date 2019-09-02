@@ -23,6 +23,7 @@
 #include "nsServiceManagerUtils.h"
 
 #include "mozilla/LoadInfo.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/MessageEvent.h"
@@ -358,12 +359,12 @@ already_AddRefed<Promise> ServiceWorkerContainer::Register(
   // data.  We perform this late so that we can report the final
   // scope URL in any error message.
   Unused << GetGlobalIfValid(aRv, [&](Document* aDoc) {
-    NS_ConvertUTF8toUTF16 reportScope(cleanedScopeURL);
-    const char16_t* param[] = {reportScope.get()};
-    nsContentUtils::ReportToConsole(
-        nsIScriptError::errorFlag, NS_LITERAL_CSTRING("Service Workers"), aDoc,
-        nsContentUtils::eDOM_PROPERTIES, "ServiceWorkerRegisterStorageError",
-        param, 1);
+    AutoTArray<nsString, 1> param;
+    CopyUTF8toUTF16(cleanedScopeURL, *param.AppendElement());
+    nsContentUtils::ReportToConsole(nsIScriptError::errorFlag,
+                                    NS_LITERAL_CSTRING("Service Workers"), aDoc,
+                                    nsContentUtils::eDOM_PROPERTIES,
+                                    "ServiceWorkerRegisterStorageError", param);
   });
 
   window->NoteCalledRegisterForServiceWorkerScope(cleanedScopeURL);
@@ -629,8 +630,8 @@ nsIGlobalObject* ServiceWorkerContainer::GetGlobalIfValid(
   // from a window with storage disabled.  If these windows can access
   // the registration it increases the chance they can bypass the storage
   // block via postMessage(), etc.
-  auto storageAllowed = nsContentUtils::StorageAllowedForWindow(window);
-  if (NS_WARN_IF(storageAllowed != nsContentUtils::StorageAccess::eAllow)) {
+  auto storageAllowed = StorageAllowedForWindow(window);
+  if (NS_WARN_IF(storageAllowed != StorageAccess::eAllow)) {
     if (aStorageFailureCB) {
       aStorageFailureCB(doc);
     }

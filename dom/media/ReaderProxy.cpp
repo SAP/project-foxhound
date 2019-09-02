@@ -43,8 +43,7 @@ RefPtr<ReaderProxy::AudioDataPromise> ReaderProxy::OnAudioDataRequestCompleted(
     RefPtr<AudioData> aAudio) {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
 
-  aAudio->AdjustForStartTime(StartTime().ToMicroseconds());
-  if (aAudio->mTime.IsValid()) {
+  if (aAudio->AdjustForStartTime(StartTime())) {
     return AudioDataPromise::CreateAndResolve(aAudio.forget(), __func__);
   }
   return AudioDataPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
@@ -77,21 +76,21 @@ RefPtr<ReaderProxy::VideoDataPromise> ReaderProxy::RequestVideoData(
                              ? aTimeThreshold + StartTime()
                              : aTimeThreshold;
 
-  int64_t startTime = StartTime().ToMicroseconds();
+  auto startTime = StartTime();
   return InvokeAsync(mReader->OwnerThread(), mReader.get(), __func__,
                      &MediaFormatReader::RequestVideoData, threshold)
-      ->Then(mOwnerThread, __func__,
-             [startTime](RefPtr<VideoData> aVideo) {
-               aVideo->AdjustForStartTime(startTime);
-               return aVideo->mTime.IsValid()
-                          ? VideoDataPromise::CreateAndResolve(aVideo.forget(),
-                                                               __func__)
-                          : VideoDataPromise::CreateAndReject(
-                                NS_ERROR_DOM_MEDIA_OVERFLOW_ERR, __func__);
-             },
-             [](const MediaResult& aError) {
-               return VideoDataPromise::CreateAndReject(aError, __func__);
-             });
+      ->Then(
+          mOwnerThread, __func__,
+          [startTime](RefPtr<VideoData> aVideo) {
+            return aVideo->AdjustForStartTime(startTime)
+                       ? VideoDataPromise::CreateAndResolve(aVideo.forget(),
+                                                            __func__)
+                       : VideoDataPromise::CreateAndReject(
+                             NS_ERROR_DOM_MEDIA_OVERFLOW_ERR, __func__);
+          },
+          [](const MediaResult& aError) {
+            return VideoDataPromise::CreateAndReject(aError, __func__);
+          });
 }
 
 RefPtr<ReaderProxy::SeekPromise> ReaderProxy::Seek(const SeekTarget& aTarget) {

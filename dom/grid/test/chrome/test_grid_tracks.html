@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 <style>
 body {
@@ -22,7 +22,7 @@ body {
 </style>
 
 <script>
-'use strict';
+"use strict";
 
 SimpleTest.waitForExplicitFinish();
 
@@ -46,8 +46,8 @@ function runTests() {
       "Grid.rows.tracks property has length that matches content."
     );
 
-    if((grid.cols.tracks.length == 4) &&
-       (grid.rows.tracks.length == 2)) {
+    if ((grid.cols.tracks.length == 4) &&
+        (grid.rows.tracks.length == 2)) {
       // test column track position
       is(grid.cols.tracks[1].start, 110, "Grid column track 2 position is as expected.");
 

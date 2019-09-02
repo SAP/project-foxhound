@@ -14,8 +14,9 @@ const { fetchChildren } = require("./actions/accessibles");
  */
 
 class Provider {
-  constructor(accessibles, dispatch) {
+  constructor(accessibles, filtered, dispatch) {
     this.accessibles = accessibles;
+    this.filtered = filtered;
     this.dispatch = dispatch;
   }
 
@@ -26,7 +27,7 @@ class Provider {
    * @returns {Array} arraof of accessible children.
    */
   getChildren(accessible) {
-    if (!accessible || !accessible.actor || accessible.childCount === 0) {
+    if (!accessible || !accessible.actorID || accessible.childCount === 0) {
       return [];
     }
 
@@ -86,6 +87,23 @@ class Provider {
    */
   getType(accessible) {
     return accessible.typeName;
+  }
+
+  /**
+   * Get the depth of the accesible object in the accessibility tree. When the
+   * tree is filtered it is flattened and the level is set to 0. Otherwise use
+   * internal TreeView level.
+   *
+   * @param {Object}   accessible
+   *                   accessible object
+   * @param {Number}   defaultLevel
+   *                   default level provided by the TreeView component.
+   *
+   * @returns {null|Number}
+   *          depth level of the accessible object.
+   */
+  getLevel(accessible, defaultLevel) {
+    return this.filtered ? 0 : defaultLevel;
   }
 }
 

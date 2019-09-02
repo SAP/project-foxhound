@@ -23,7 +23,7 @@
 #include <cairo.h>
 #include <cairo-ft.h>
 
-#if defined(MOZ_CONTENT_SANDBOX) && defined(XP_LINUX)
+#if defined(MOZ_SANDBOX) && defined(XP_LINUX)
 #  include "mozilla/SandboxBroker.h"
 #endif
 
@@ -54,7 +54,7 @@ class nsAutoRefTraits<FcConfig> : public nsPointerRefTraits<FcConfig> {
 // each cairo font created from that font entry contains a
 // FTUserFontDataRef with a refptr to that same FTUserFontData object.
 
-class FTUserFontData {
+class FTUserFontData final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FTUserFontData)
 
@@ -248,7 +248,7 @@ class gfxFontconfigFont : public gfxFT2FontBase {
       gfxFloat aAdjustedSize, gfxFontEntry* aFontEntry,
       const gfxFontStyle* aFontStyle);
 
-  virtual FontType GetType() const override { return FONT_TYPE_FONTCONFIG; }
+  FontType GetType() const override { return FONT_TYPE_FONTCONFIG; }
   virtual FcPattern* GetPattern() const { return mPattern; }
 
   virtual already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
@@ -269,13 +269,18 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
   }
 
   // initialize font lists
-  virtual nsresult InitFontListForPlatform() override;
+  nsresult InitFontListForPlatform() override;
+  void InitSharedFontListForPlatform() override;
 
   void GetFontList(nsAtom* aLangGroup, const nsACString& aGenericFamily,
                    nsTArray<nsString>& aListOfFonts) override;
 
   void ReadSystemFontList(
       InfallibleTArray<mozilla::dom::SystemFontListEntry>* retValue);
+
+  gfxFontEntry* CreateFontEntry(
+      mozilla::fontlist::Face* aFace,
+      const mozilla::fontlist::Family* aFamily) override;
 
   gfxFontEntry* LookupLocalFont(const nsACString& aFontName,
                                 WeightRange aWeightForEntry,
@@ -289,7 +294,8 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
                                  const uint8_t* aFontData,
                                  uint32_t aLength) override;
 
-  bool FindAndAddFamilies(const nsACString& aFamily,
+  bool FindAndAddFamilies(mozilla::StyleGenericFontFamily aGeneric,
+                          const nsACString& aFamily,
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
@@ -301,7 +307,7 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
   FcConfig* GetLastConfig() const { return mLastConfig; }
 
   // override to use fontconfig lookup for generics
-  void AddGenericFonts(mozilla::FontFamilyType aGenericType, nsAtom* aLanguage,
+  void AddGenericFonts(mozilla::StyleGenericFontFamily, nsAtom* aLanguage,
                        nsTArray<FamilyAndGeneric>& aFamilyList) override;
 
   void ClearLangGroupPrefFonts() override;
@@ -321,7 +327,7 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
  protected:
   virtual ~gfxFcPlatformFontList();
 
-#if defined(MOZ_CONTENT_SANDBOX) && defined(XP_LINUX)
+#if defined(MOZ_SANDBOX) && defined(XP_LINUX)
   typedef mozilla::SandboxBroker::Policy SandboxPolicy;
 #else
   // Dummy type just so we can still have a SandboxPolicy* parameter.
@@ -349,8 +355,7 @@ class gfxFcPlatformFontList : public gfxPlatformFontList {
 
   static void CheckFontUpdates(nsITimer* aTimer, void* aThis);
 
-  virtual gfxFontFamily* GetDefaultFontForPlatform(
-      const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
 
   gfxFontFamily* CreateFontFamily(const nsACString& aName) const override;
 

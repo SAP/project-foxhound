@@ -6,13 +6,11 @@
 
 #include "mozilla/dom/TabContext.h"
 #include "mozilla/dom/PTabContext.h"
-#include "mozilla/dom/TabParent.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/StaticPrefs.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
-
-#define NO_APP_ID (nsIScriptSecurityManager::NO_APP_ID)
 
 using namespace mozilla::dom::ipc;
 using namespace mozilla::layout;
@@ -25,7 +23,6 @@ TabContext::TabContext()
       mIsMozBrowserElement(false),
       mChromeOuterWindowID(0),
       mJSPluginID(-1),
-      mShowAccelerators(UIStateChangeType_NoChange),
       mShowFocusRings(UIStateChangeType_NoChange) {}
 
 bool TabContext::IsMozBrowserElement() const { return mIsMozBrowserElement; }
@@ -81,29 +78,20 @@ const nsAString& TabContext::PresentationURL() const {
   return mPresentationURL;
 }
 
-UIStateChangeType TabContext::ShowAccelerators() const {
-  return mShowAccelerators;
-}
-
 UIStateChangeType TabContext::ShowFocusRings() const { return mShowFocusRings; }
 
 bool TabContext::SetTabContext(bool aIsMozBrowserElement,
                                uint64_t aChromeOuterWindowID,
-                               UIStateChangeType aShowAccelerators,
                                UIStateChangeType aShowFocusRings,
                                const OriginAttributes& aOriginAttributes,
                                const nsAString& aPresentationURL) {
   NS_ENSURE_FALSE(mInitialized, false);
-
-  // Veryify that app id matches mAppId passed in originAttributes
-  MOZ_RELEASE_ASSERT(aOriginAttributes.mAppId == NO_APP_ID);
 
   mInitialized = true;
   mIsMozBrowserElement = aIsMozBrowserElement;
   mChromeOuterWindowID = aChromeOuterWindowID;
   mOriginAttributes = aOriginAttributes;
   mPresentationURL = aPresentationURL;
-  mShowAccelerators = aShowAccelerators;
   mShowFocusRings = aShowFocusRings;
   return true;
 }
@@ -123,7 +111,7 @@ IPCTabContext TabContext::AsIPCTabContext() const {
 
   return IPCTabContext(FrameIPCTabContext(
       mOriginAttributes, mIsMozBrowserElement, mChromeOuterWindowID,
-      mPresentationURL, mShowAccelerators, mShowFocusRings));
+      mPresentationURL, mShowFocusRings));
 }
 
 MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
@@ -133,7 +121,6 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
   int32_t jsPluginId = -1;
   OriginAttributes originAttributes;
   nsAutoString presentationURL;
-  UIStateChangeType showAccelerators = UIStateChangeType_NoChange;
   UIStateChangeType showFocusRings = UIStateChangeType_NoChange;
 
   switch (aParams.type()) {
@@ -142,7 +129,8 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
 
       TabContext* context;
       if (ipcContext.opener().type() == PBrowserOrId::TPBrowserParent) {
-        context = TabParent::GetFrom(ipcContext.opener().get_PBrowserParent());
+        context =
+            BrowserParent::GetFrom(ipcContext.opener().get_PBrowserParent());
         if (!context) {
           mInvalidReason =
               "Child is-browser process tried to "
@@ -151,10 +139,10 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
         }
         if (context->IsMozBrowserElement() &&
             !ipcContext.isMozBrowserElement()) {
-          // If the TabParent corresponds to a browser element, then it can only
-          // open other browser elements, for security reasons.  We should have
-          // checked this before calling the TabContext constructor, so this is
-          // a fatal error.
+          // If the BrowserParent corresponds to a browser element, then it can
+          // only open other browser elements, for security reasons.  We should
+          // have checked this before calling the TabContext constructor, so
+          // this is a fatal error.
           mInvalidReason =
               "Child is-browser process tried to "
               "open a non-browser tab.";
@@ -162,7 +150,7 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
         }
       } else if (ipcContext.opener().type() == PBrowserOrId::TPBrowserChild) {
         context =
-            static_cast<TabChild*>(ipcContext.opener().get_PBrowserChild());
+            static_cast<BrowserChild*>(ipcContext.opener().get_PBrowserChild());
       } else if (ipcContext.opener().type() == PBrowserOrId::TTabId) {
         // We should never get here because this PopupIPCTabContext is only
         // used for allocating a new tab id, not for allocating a PBrowser.
@@ -202,7 +190,6 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
       isMozBrowserElement = ipcContext.isMozBrowserElement();
       chromeOuterWindowID = ipcContext.chromeOuterWindowID();
       presentationURL = ipcContext.presentationURL();
-      showAccelerators = ipcContext.showAccelerators();
       showFocusRings = ipcContext.showFocusRings();
       originAttributes = ipcContext.originAttributes();
       break;
@@ -210,7 +197,7 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
     case IPCTabContext::TUnsafeIPCTabContext: {
       // XXXcatalinb: This used *only* by ServiceWorkerClients::OpenWindow.
       // It is meant as a temporary solution until service workers can
-      // provide a TabChild equivalent. Don't allow this on b2g since
+      // provide a BrowserChild equivalent. Don't allow this on b2g since
       // it might be used to escalate privileges.
       if (!StaticPrefs::dom_serviceWorkers_enabled()) {
         mInvalidReason = "ServiceWorkers should be enabled.";
@@ -219,7 +206,9 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
 
       break;
     }
-    default: { MOZ_CRASH(); }
+    default: {
+      MOZ_CRASH();
+    }
   }
 
   bool rv;
@@ -227,8 +216,8 @@ MaybeInvalidTabContext::MaybeInvalidTabContext(const IPCTabContext& aParams)
     rv = mTabContext.SetTabContextForJSPluginFrame(jsPluginId);
   } else {
     rv = mTabContext.SetTabContext(isMozBrowserElement, chromeOuterWindowID,
-                                   showAccelerators, showFocusRings,
-                                   originAttributes, presentationURL);
+                                   showFocusRings, originAttributes,
+                                   presentationURL);
   }
   if (!rv) {
     mInvalidReason = "Couldn't initialize TabContext.";

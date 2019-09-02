@@ -26,11 +26,10 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBDatabaseFileChild.h"
-#include "mozilla/dom/indexedDB/PIndexedDBPermissionRequestChild.h"
-#include "mozilla/dom/ipc/PendingIPCBlobChild.h"
 #include "mozilla/dom/IPCBlobUtils.h"
+#include "mozilla/dom/PendingIPCBlobChild.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/Encoding.h"
@@ -494,27 +493,6 @@ class PermissionRequestMainProcessHelper final : public PermissionRequestBase {
   virtual void OnPromptComplete(PermissionValue aPermissionValue) override;
 };
 
-class PermissionRequestChildProcessActor final
-    : public PIndexedDBPermissionRequestChild {
-  BackgroundFactoryRequestChild* mActor;
-  RefPtr<IDBFactory> mFactory;
-
- public:
-  PermissionRequestChildProcessActor(BackgroundFactoryRequestChild* aActor,
-                                     IDBFactory* aFactory)
-      : mActor(aActor), mFactory(aFactory) {
-    MOZ_ASSERT(aActor);
-    MOZ_ASSERT(aFactory);
-    aActor->AssertIsOnOwningThread();
-  }
-
- protected:
-  ~PermissionRequestChildProcessActor() {}
-
-  virtual mozilla::ipc::IPCResult Recv__delete__(
-      const uint32_t& aPermission) override;
-};
-
 void DeserializeStructuredCloneFiles(
     IDBDatabase* aDatabase,
     const nsTArray<SerializedStructuredCloneFile>& aSerializedFiles,
@@ -544,7 +522,8 @@ void DeserializeStructuredCloneFiles(
           RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(ipcBlob);
           MOZ_ASSERT(blobImpl);
 
-          RefPtr<Blob> blob = Blob::Create(aDatabase->GetOwner(), blobImpl);
+          RefPtr<Blob> blob =
+              Blob::Create(aDatabase->GetOwnerGlobal(), blobImpl);
 
           StructuredCloneFile* file = aFiles.AppendElement();
           MOZ_ASSERT(file);
@@ -632,7 +611,8 @@ void DeserializeStructuredCloneFiles(
           RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(ipcBlob);
           MOZ_ASSERT(blobImpl);
 
-          RefPtr<Blob> blob = Blob::Create(aDatabase->GetOwner(), blobImpl);
+          RefPtr<Blob> blob =
+              Blob::Create(aDatabase->GetOwnerGlobal(), blobImpl);
 
           StructuredCloneFile* file = aFiles.AppendElement();
           MOZ_ASSERT(file);
@@ -855,27 +835,6 @@ class WorkerPermissionRequest final : public PermissionRequestBase {
   virtual void OnPromptComplete(PermissionValue aPermissionValue) override;
 };
 
-// This class is used in the main thread of all child processes.
-class WorkerPermissionRequestChildProcessActor final
-    : public PIndexedDBPermissionRequestChild {
-  RefPtr<WorkerPermissionChallenge> mChallenge;
-
- public:
-  explicit WorkerPermissionRequestChildProcessActor(
-      WorkerPermissionChallenge* aChallenge)
-      : mChallenge(aChallenge) {
-    MOZ_ASSERT(!XRE_IsParentProcess());
-    MOZ_ASSERT(NS_IsMainThread());
-    MOZ_ASSERT(aChallenge);
-  }
-
- protected:
-  ~WorkerPermissionRequestChildProcessActor() {}
-
-  virtual mozilla::ipc::IPCResult Recv__delete__(
-      const uint32_t& aPermission) override;
-};
-
 class WorkerPermissionChallenge final : public Runnable {
  public:
   WorkerPermissionChallenge(WorkerPrivate* aWorkerPrivate,
@@ -985,15 +944,17 @@ class WorkerPermissionChallenge final : public Runnable {
       return permission != PermissionRequestBase::kPermissionPrompt;
     }
 
-    TabChild* tabChild = TabChild::GetFrom(window);
-    MOZ_ASSERT(tabChild);
+    BrowserChild* browserChild = BrowserChild::GetFrom(window);
+    MOZ_ASSERT(browserChild);
 
     IPC::Principal ipcPrincipal(principal);
 
-    auto* actor = new WorkerPermissionRequestChildProcessActor(this);
-    tabChild->SetEventTargetForActor(actor, wp->MainThreadEventTarget());
-    MOZ_ASSERT(actor->GetActorEventTarget());
-    tabChild->SendPIndexedDBPermissionRequestConstructor(actor, ipcPrincipal);
+    RefPtr<WorkerPermissionChallenge> self(this);
+    browserChild->SendIndexedDBPermissionRequest(ipcPrincipal)
+        ->Then(
+            GetCurrentThreadSerialEventTarget(), __func__,
+            [self](const uint32_t& aPermission) { self->OperationCompleted(); },
+            [](const mozilla::ipc::ResponseRejectReason) {});
     return false;
   }
 
@@ -1015,14 +976,6 @@ bool WorkerPermissionOperationCompleted::WorkerRun(
   aWorkerPrivate->AssertIsOnWorkerThread();
   mChallenge->OperationCompleted();
   return true;
-}
-
-mozilla::ipc::IPCResult
-WorkerPermissionRequestChildProcessActor::Recv__delete__(
-    const uint32_t& /* aPermission */) {
-  MOZ_ASSERT(NS_IsMainThread());
-  mChallenge->OperationCompleted();
-  return IPC_OK();
 }
 
 class MOZ_STACK_CLASS AutoSetCurrentFileHandle final {
@@ -1274,7 +1227,8 @@ already_AddRefed<File> ConvertActorToFile(
   RefPtr<BlobImpl> blobImplSnapshot =
       new BlobImplSnapshot(blobImpl, static_cast<IDBFileHandle*>(aFileHandle));
 
-  RefPtr<File> file = File::Create(mutableFile->GetOwner(), blobImplSnapshot);
+  RefPtr<File> file =
+      File::Create(mutableFile->GetOwnerGlobal(), blobImplSnapshot);
   return file.forget();
 }
 
@@ -1418,23 +1372,6 @@ void PermissionRequestMainProcessHelper::OnPromptComplete(
 
   mActor = nullptr;
   mFactory = nullptr;
-}
-
-mozilla::ipc::IPCResult PermissionRequestChildProcessActor::Recv__delete__(
-    const uint32_t& /* aPermission */) {
-  MOZ_ASSERT(mActor);
-  mActor->AssertIsOnOwningThread();
-  MOZ_ASSERT(mFactory);
-
-  MaybeCollectGarbageOnIPCMessage();
-
-  RefPtr<IDBFactory> factory;
-  mFactory.swap(factory);
-
-  mActor->SendPermissionRetry();
-  mActor = nullptr;
-
-  return IPC_OK();
 }
 
 /*******************************************************************************
@@ -1743,7 +1680,8 @@ mozilla::ipc::IPCResult BackgroundFactoryRequestChild::RecvPermissionChallenge(
   }
 
   if (XRE_IsParentProcess()) {
-    nsCOMPtr<nsPIDOMWindowInner> window = mFactory->GetParentObject();
+    nsCOMPtr<nsIGlobalObject> global = mFactory->GetParentObject();
+    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
     MOZ_ASSERT(window);
 
     nsCOMPtr<Element> ownerElement =
@@ -1776,16 +1714,20 @@ mozilla::ipc::IPCResult BackgroundFactoryRequestChild::RecvPermissionChallenge(
     return IPC_OK();
   }
 
-  RefPtr<TabChild> tabChild = mFactory->GetTabChild();
-  MOZ_ASSERT(tabChild);
+  RefPtr<BrowserChild> browserChild = mFactory->GetBrowserChild();
+  MOZ_ASSERT(browserChild);
 
   IPC::Principal ipcPrincipal(principal);
 
-  auto* actor = new PermissionRequestChildProcessActor(this, mFactory);
-
-  tabChild->SetEventTargetForActor(actor, this->GetActorEventTarget());
-  MOZ_ASSERT(actor->GetActorEventTarget());
-  tabChild->SendPIndexedDBPermissionRequestConstructor(actor, ipcPrincipal);
+  browserChild->SendIndexedDBPermissionRequest(ipcPrincipal)
+      ->Then(
+          GetCurrentThreadSerialEventTarget(), __func__,
+          [this](const uint32_t& aPermission) {
+            this->AssertIsOnOwningThread();
+            MaybeCollectGarbageOnIPCMessage();
+            this->SendPermissionRetry();
+          },
+          [](const mozilla::ipc::ResponseRejectReason) {});
 
   return IPC_OK();
 }
@@ -2449,9 +2391,14 @@ mozilla::ipc::IPCResult BackgroundVersionChangeTransactionChild::RecvComplete(
     database->Close();
   }
 
+  RefPtr<IDBOpenDBRequest> request = mOpenDBRequest;
+  MOZ_ASSERT(request);
+
   mTransaction->FireCompleteOrAbortEvents(aResult);
 
-  mOpenDBRequest->SetTransaction(nullptr);
+  request->SetTransaction(nullptr);
+  request = nullptr;
+
   mOpenDBRequest = nullptr;
 
   NoteComplete();
@@ -3070,6 +3017,39 @@ void BackgroundRequestChild::PreprocessHelper::RunOnOwningThread() {
   }
 }
 
+class MemUnmap {
+  uint32_t mSize = 0;
+
+ public:
+  MemUnmap() = default;
+  explicit MemUnmap(uint32_t aSize) : mSize(aSize) {}
+
+  void operator()(uint8_t* aP) {
+    MOZ_ASSERT(mSize);
+    PR_MemUnmap(aP, mSize);
+  }
+};
+
+using UniqueMapping = UniquePtr<uint8_t, MemUnmap>;
+
+static UniqueMapping MapFile(PRFileDesc* aFile, PRFileInfo* aInfo) {
+  if (PR_GetOpenFileInfo(aFile, aInfo) != PR_SUCCESS) {
+    return nullptr;
+  }
+
+  PRFileMap* map = PR_CreateFileMap(aFile, aInfo->size, PR_PROT_READONLY);
+  if (!map) {
+    return nullptr;
+  }
+
+  // PRFileMap objects do not need to be kept alive after the memory has been
+  // mapped, so unconditionally close the PRFileMap, regardless of whether
+  // PR_MemMap succeeds.
+  uint8_t* memory = (uint8_t*)PR_MemMap(map, 0, aInfo->size);
+  PR_CloseFileMap(map);
+  return UniqueMapping(memory, MemUnmap(aInfo->size));
+}
+
 void BackgroundRequestChild::PreprocessHelper::ProcessCurrentStream() {
   MOZ_ASSERT(!IsOnOwningThread());
   MOZ_ASSERT(!mStreams.IsEmpty());
@@ -3091,8 +3071,16 @@ void BackgroundRequestChild::PreprocessHelper::ProcessCurrentStream() {
 
   MOZ_ASSERT(mCurrentBytecodeFileDesc);
 
+  PRFileInfo bytecodeInfo;
+  UniqueMapping bytecodeMapping =
+      MapFile(mCurrentBytecodeFileDesc, &bytecodeInfo);
+  if (NS_WARN_IF(!bytecodeMapping)) {
+    ContinueWithStatus(NS_ERROR_FAILURE);
+    return;
+  }
+
   RefPtr<JS::WasmModule> module =
-      JS::DeserializeWasmModule(mCurrentBytecodeFileDesc, nullptr, 0);
+      JS::DeserializeWasmModule(bytecodeMapping.get(), bytecodeInfo.size);
   if (NS_WARN_IF(!module)) {
     ContinueWithStatus(NS_ERROR_FAILURE);
     return;

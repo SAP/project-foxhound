@@ -9,6 +9,7 @@
 
 #include "nsIScreen.h"
 #include "nsCOMPtr.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/VRDisplayBinding.h"
 
@@ -25,14 +26,12 @@ class VRDisplayClient {
 
   explicit VRDisplayClient(const VRDisplayInfo& aDisplayInfo);
 
-  void UpdateDisplayInfo(const VRDisplayInfo& aDisplayInfo);
+  MOZ_CAN_RUN_SCRIPT void UpdateDisplayInfo(const VRDisplayInfo& aDisplayInfo);
   void UpdateSubmitFrameResult(const VRSubmitFrameResultInfo& aResult);
 
   const VRDisplayInfo& GetDisplayInfo() const { return mDisplayInfo; }
   virtual const VRHMDSensorState& GetSensorState() const;
   void GetSubmitFrameResult(VRSubmitFrameResultInfo& aResult);
-
-  virtual void ZeroSensor();
 
   already_AddRefed<VRDisplayPresentation> BeginPresentation(
       const nsTArray<dom::VRLayer>& aLayers, uint32_t aGroup);
@@ -52,7 +51,7 @@ class VRDisplayClient {
  protected:
   virtual ~VRDisplayClient();
 
-  void FireEvents();
+  MOZ_CAN_RUN_SCRIPT void FireEvents();
   void FireGamepadEvents();
 
   VRDisplayInfo mDisplayInfo;

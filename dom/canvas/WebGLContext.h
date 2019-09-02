@@ -6,6 +6,7 @@
 #ifndef WEBGLCONTEXT_H_
 #define WEBGLCONTEXT_H_
 
+#include <memory>
 #include <stdarg.h>
 
 #include "GLContextTypes.h"
@@ -20,7 +21,9 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/LinkedList.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WeakPtr.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsLayoutUtils.h"
@@ -99,6 +102,7 @@ class MozFramebuffer;
 namespace webgl {
 class AvailabilityRunnable;
 struct CachedDrawFetchLimits;
+struct FbAttachInfo;
 struct FormatInfo;
 class FormatUsageAuthority;
 struct FormatUsageInfo;
@@ -251,6 +255,7 @@ struct TexImageSourceAdapter final : public TexImageSource {
 // --
 
 namespace webgl {
+
 class AvailabilityRunnable final : public Runnable {
  public:
   const RefPtr<WebGLContext> mWebGL;  // Prevent CC
@@ -262,13 +267,50 @@ class AvailabilityRunnable final : public Runnable {
 
   NS_IMETHOD Run() override;
 };
+
+struct BufferAndIndex final {
+  const WebGLBuffer* buffer = nullptr;
+  uint32_t id = -1;
+};
+
+// -
+
+class DynDGpuManager final {
+  static constexpr uint32_t TICK_MS = 3000;
+
+  enum class State {
+    Inactive,
+    Primed,
+    Active,
+  };
+
+  Mutex mMutex;
+  bool mActivityThisTick = false;
+  State mState = State::Inactive;
+  RefPtr<gl::GLContext> mDGpuContext;
+
+ public:
+  static std::shared_ptr<DynDGpuManager> Get();
+
+  DynDGpuManager();
+  ~DynDGpuManager();
+
+  void ReportActivity(const std::shared_ptr<DynDGpuManager>& strong);
+
+ private:
+  void SetState(const MutexAutoLock&, State);
+  void Tick(const std::shared_ptr<DynDGpuManager>& strong);
+  void DispatchTick(const std::shared_ptr<DynDGpuManager>& strong);
+};
+
 }  // namespace webgl
 
 ////////////////////////////////////////////////////////////////////////////////
 
 class WebGLContext : public nsICanvasRenderingContextInternal,
                      public nsSupportsWeakReference,
-                     public nsWrapperCache {
+                     public nsWrapperCache,
+                     public SupportsWeakPtr<WebGLContext> {
   friend class ScopedDrawCallWrapper;
   friend class ScopedDrawWithTransformFeedback;
   friend class ScopedFakeVertexAttrib0;
@@ -321,6 +363,18 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   // Grab a const reference so we can see changes, but can't make changes.
   const decltype(mGL_OnlyClearInDestroyResourcesAndContext)& gl;
 
+ private:
+  std::shared_ptr<webgl::DynDGpuManager> mDynDGpuManager;
+
+  void ReportActivity() const {
+    if (mDynDGpuManager) {
+      mDynDGpuManager->ReportActivity(mDynDGpuManager);
+    }
+  }
+
+ public:
+  void CheckForInactivity();
+
  protected:
   const uint32_t mMaxPerfWarnings;
   mutable uint64_t mNumPerfWarnings;
@@ -343,9 +397,9 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(
       WebGLContext, nsICanvasRenderingContextInternal)
+  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(WebGLContext)
 
   virtual JSObject* WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> givenProto) override = 0;
@@ -369,7 +423,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
   virtual UniquePtr<uint8_t[]> GetImageBuffer(int32_t* out_format) override;
   NS_IMETHOD GetInputStream(const char* mimeType,
-                            const char16_t* encoderOptions,
+                            const nsAString& encoderOptions,
                             nsIInputStream** out_stream) override;
 
   virtual already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot(
@@ -598,11 +652,24 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   void DrawBuffers(const dom::Sequence<GLenum>& buffers);
   void Flush();
   void Finish();
+
+ private:
+  void FramebufferAttach(GLenum target, GLenum attachEnum,
+                         TexTarget reqTexTarget,
+                         const webgl::FbAttachInfo& toAttach) const;
+
+ public:
   void FramebufferRenderbuffer(GLenum target, GLenum attachment,
-                               GLenum rbTarget, WebGLRenderbuffer* rb);
+                               GLenum rbTarget, WebGLRenderbuffer* rb) const;
   void FramebufferTexture2D(GLenum target, GLenum attachment,
                             GLenum texImageTarget, WebGLTexture* tex,
-                            GLint level);
+                            GLint level) const;
+  void FramebufferTextureLayer(GLenum target, GLenum attachment,
+                               WebGLTexture* tex, GLint level,
+                               GLint layer) const;
+  void FramebufferTextureMultiview(GLenum target, GLenum attachment,
+                                   WebGLTexture* texture, GLint level,
+                                   GLint baseViewIndex, GLsizei numViews) const;
 
   void FrontFace(GLenum mode);
   already_AddRefed<WebGLActiveInfo> GetActiveAttrib(const WebGLProgram& prog,
@@ -953,12 +1020,37 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   // -----------------------------------------------------------------------------
   // Buffer Objects (WebGLContextBuffers.cpp)
   void BindBuffer(GLenum target, WebGLBuffer* buffer);
-  void BindBufferBase(GLenum target, GLuint index, WebGLBuffer* buf);
-  void BindBufferRange(GLenum target, GLuint index, WebGLBuffer* buf,
-                       WebGLintptr offset, WebGLsizeiptr size);
 
  private:
-  void BufferDataImpl(GLenum target, size_t dataLen, const uint8_t* data,
+  void BindBufferRangeImpl(GLenum target, GLuint index, WebGLBuffer* buf,
+                           WebGLintptr offset, WebGLsizeiptr size);
+
+ public:
+  void BindBufferBase(GLenum target, GLuint index, WebGLBuffer* buf) {
+    const FuncScope funcScope(*this, "bindBufferBase");
+    if (IsContextLost()) return;
+
+    BindBufferRangeImpl(target, index, buf, 0, 0);
+  }
+
+  void BindBufferRange(GLenum target, GLuint index, WebGLBuffer* buf,
+                       WebGLintptr offset, WebGLsizeiptr size) {
+    const FuncScope funcScope(*this, "bindBufferRange");
+    if (IsContextLost()) return;
+
+    if (!ValidateNonNegative("offset", offset) ||
+        !ValidateNonNegative("size", size)) {
+      return;
+    }
+    if (buf && !size) {
+      ErrorInvalidValue("Size must be non-zero for non-null buffer.");
+      return;
+    }
+    BindBufferRangeImpl(target, index, buf, offset, size);
+  }
+
+ private:
+  void BufferDataImpl(GLenum target, uint64_t dataLen, const uint8_t* data,
                       GLenum usage);
 
  public:
@@ -972,7 +1064,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
  private:
   void BufferSubDataImpl(GLenum target, WebGLsizeiptr dstByteOffset,
-                         size_t srcDataLen, const uint8_t* srcData);
+                         uint64_t srcDataLen, const uint8_t* srcData);
 
  public:
   void BufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,
@@ -1001,6 +1093,26 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   WebGLRefPtr<WebGLBuffer>& GetBufferSlotByTarget(GLenum target);
   WebGLRefPtr<WebGLBuffer>& GetBufferSlotByTargetIndexed(GLenum target,
                                                          GLuint index);
+
+  // -
+
+  void GenErrorIllegalUse(GLenum useTarget, uint32_t useId, GLenum boundTarget,
+                          uint32_t boundId) const;
+
+  bool ValidateBufferForNonTf(const WebGLBuffer&, GLenum nonTfTarget,
+                              uint32_t nonTfId) const;
+
+  bool ValidateBufferForNonTf(const WebGLBuffer* const nonTfBuffer,
+                              const GLenum nonTfTarget,
+                              const uint32_t nonTfId = -1) const {
+    if (!nonTfBuffer) return true;
+    return ValidateBufferForNonTf(*nonTfBuffer, nonTfTarget, nonTfId);
+  }
+
+  bool ValidateBuffersForTf(const WebGLTransformFeedback&,
+                            const webgl::LinkedProgramInfo&) const;
+  bool ValidateBuffersForTf(
+      const std::vector<webgl::BufferAndIndex>& tfBuffers) const;
 
   // -----------------------------------------------------------------------------
   // Queries (WebGL2ContextQueries.cpp)
@@ -1491,9 +1603,8 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
   mutable GLenum mWebGLError;
 
-  bool mBypassShaderValidation;
-
-  webgl::ShaderValidator* CreateShaderValidator(GLenum shaderType) const;
+  std::unique_ptr<webgl::ShaderValidator> CreateShaderValidator(
+      GLenum shaderType) const;
 
   // some GL constants
   uint32_t mGLMaxTextureUnits = 0;
@@ -1535,6 +1646,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   uint32_t mGLMaxCubeMapTextureSize = 0;
   uint32_t mGLMax3DTextureSize = 0;
   uint32_t mGLMaxArrayTextureLayers = 0;
+  uint32_t mGLMaxMultiviewViews = 1;
   uint32_t mGLMaxRenderbufferSize = 0;
 
  public:
@@ -1740,7 +1852,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   //////
  public:
   bool ValidateObjectAllowDeleted(const char* const argName,
-                                  const WebGLContextBoundObject& object) {
+                                  const WebGLContextBoundObject& object) const {
     if (!object.IsCompatibleWithContext(this)) {
       ErrorInvalidOperation(
           "%s: Object from different WebGL context (or older"
@@ -1754,7 +1866,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
   bool ValidateObject(const char* const argName,
                       const WebGLDeletableObject& object,
-                      const bool isShaderOrProgram = false) {
+                      const bool isShaderOrProgram = false) const {
     if (!ValidateObjectAllowDeleted(argName, object)) return false;
 
     if (isShaderOrProgram) {
@@ -1791,8 +1903,10 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
   // Program and Shader are incomplete, so we can't inline the conversion to
   // WebGLDeletableObject here.
-  bool ValidateObject(const char* const argName, const WebGLProgram& object);
-  bool ValidateObject(const char* const argName, const WebGLShader& object);
+  bool ValidateObject(const char* const argName,
+                      const WebGLProgram& object) const;
+  bool ValidateObject(const char* const argName,
+                      const WebGLShader& object) const;
 
   ////
 
@@ -1823,7 +1937,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   WebGLRefPtr<WebGLProgram> mCurrentProgram;
   RefPtr<const webgl::LinkedProgramInfo> mActiveProgramLinkInfo;
 
-  bool ValidateFramebufferTarget(GLenum target);
+  bool ValidateFramebufferTarget(GLenum target) const;
   bool ValidateInvalidateFramebuffer(GLenum target,
                                      const dom::Sequence<GLenum>& attachments,
                                      ErrorResult* const out_rv,
@@ -1837,6 +1951,10 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   WebGLRefPtr<WebGLTransformFeedback> mBoundTransformFeedback;
   WebGLRefPtr<WebGLVertexArray> mBoundVertexArray;
 
+ public:
+  const auto& BoundReadFb() const { return mBoundReadFramebuffer; }
+
+ protected:
   LinkedList<WebGLBuffer> mBuffers;
   LinkedList<WebGLFramebuffer> mFramebuffers;
   LinkedList<WebGLProgram> mPrograms;
@@ -1985,6 +2103,8 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
   // --
 
+  bool ShouldResistFingerprinting() const;
+
  public:
   void LoseOldestWebGLContextIfLimitExceeded();
   void UpdateLastUseIndex();
@@ -2072,44 +2192,32 @@ bool ValidateTexImageTarget(WebGLContext* webgl, uint8_t funcDims,
                             TexImageTarget* const out_texImageTarget,
                             WebGLTexture** const out_tex);
 
-class ScopedUnpackReset final : public gl::ScopedGLWrapper<ScopedUnpackReset> {
-  friend struct gl::ScopedGLWrapper<ScopedUnpackReset>;
-
+class ScopedUnpackReset final {
  private:
   const WebGLContext* const mWebGL;
 
  public:
   explicit ScopedUnpackReset(const WebGLContext* webgl);
-
- private:
-  void UnwrapImpl();
+  ~ScopedUnpackReset();
 };
 
-class ScopedFBRebinder final : public gl::ScopedGLWrapper<ScopedFBRebinder> {
-  friend struct gl::ScopedGLWrapper<ScopedFBRebinder>;
-
+class ScopedFBRebinder final {
  private:
   const WebGLContext* const mWebGL;
 
  public:
-  explicit ScopedFBRebinder(const WebGLContext* const webgl)
-      : ScopedGLWrapper<ScopedFBRebinder>(webgl->gl), mWebGL(webgl) {}
-
- private:
-  void UnwrapImpl();
+  explicit ScopedFBRebinder(const WebGLContext* const webgl) : mWebGL(webgl) {}
+  ~ScopedFBRebinder();
 };
 
-class ScopedLazyBind final : public gl::ScopedGLWrapper<ScopedLazyBind> {
-  friend struct gl::ScopedGLWrapper<ScopedLazyBind>;
-
+class ScopedLazyBind final {
+ private:
+  gl::GLContext* const mGL;
   const GLenum mTarget;
-  const WebGLBuffer* const mBuf;
 
  public:
   ScopedLazyBind(gl::GLContext* gl, GLenum target, const WebGLBuffer* buf);
-
- private:
-  void UnwrapImpl();
+  ~ScopedLazyBind();
 };
 
 ////

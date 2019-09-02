@@ -153,13 +153,14 @@ public class GeckoApplication extends Application
             return;
         }
 
-        // Restarting, so let Restarter kill us.
+        // Actually restarting the Processs / Application.
         final Context context = GeckoAppShell.getApplicationContext();
-        final Intent intent = new Intent();
-        intent.setClass(context, Restarter.class)
-              .putExtra("pid", Process.myPid())
-              .putExtra(Intent.EXTRA_INTENT, restartIntent);
-        context.startService(intent);
+        final Intent intent = new Intent()
+                .setClassName(context, AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS)
+                .putExtra("didRestart", true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        context.startActivity(intent);
+        Process.killProcess(Process.myPid());
     }
 
     /**
@@ -209,19 +210,15 @@ public class GeckoApplication extends Application
                 db.expireHistory(getContentResolver(), BrowserContract.ExpirePriority.NORMAL);
             }
         });
-
-        GeckoNetworkManager.getInstance().stop();
     }
 
     public void onApplicationForeground() {
         if (mIsInitialResume) {
             GeckoBatteryManager.getInstance().start(this);
-            GeckoNetworkManager.getInstance().start(this);
             mIsInitialResume = false;
         } else if (mPausedGecko) {
             GeckoThread.onResume();
             mPausedGecko = false;
-            GeckoNetworkManager.getInstance().start(this);
         }
 
         mInBackground = false;
@@ -940,6 +937,7 @@ public class GeckoApplication extends Application
         if (GeckoPreferences.PREFS_SYSTEM_FONT_SIZE.equals(key)) {
             final boolean enabled = prefs.getBoolean(GeckoPreferences.PREFS_SYSTEM_FONT_SIZE, false);
             getRuntime().getSettings().setAutomaticFontSizeAdjustment(enabled);
+            getRuntime().getSettings().setFontInflationEnabled(enabled);
         }
     }
 }

@@ -11,7 +11,7 @@
 use crate::gecko_bindings::structs::{self, PseudoStyleType};
 use crate::properties::longhands::display::computed_value::T as Display;
 use crate::properties::{ComputedValues, PropertyFlags};
-use crate::selector_parser::{NonTSPseudoClass, PseudoElementCascadeType, SelectorImpl};
+use crate::selector_parser::{PseudoElementCascadeType, SelectorImpl};
 use crate::str::{starts_with_ignore_ascii_case, string_as_ascii_lowercase};
 use crate::string_cache::Atom;
 use crate::values::serialize_atom_identifier;
@@ -30,19 +30,20 @@ impl ::selectors::parser::PseudoElement for PseudoElement {
     // ::slotted() should support all tree-abiding pseudo-elements, see
     // https://drafts.csswg.org/css-scoping/#slotted-pseudo
     // https://drafts.csswg.org/css-pseudo-4/#treelike
+    #[inline]
     fn valid_after_slotted(&self) -> bool {
         matches!(
             *self,
-            PseudoElement::Before | PseudoElement::After | PseudoElement::Placeholder
+            PseudoElement::Before |
+                PseudoElement::After |
+                PseudoElement::Marker |
+                PseudoElement::Placeholder
         )
     }
 
-    fn supports_pseudo_class(&self, pseudo_class: &NonTSPseudoClass) -> bool {
-        if !self.supports_user_action_state() {
-            return false;
-        }
-
-        return pseudo_class.is_safe_user_action_state();
+    #[inline]
+    fn accepts_state_pseudo_classes(&self) -> bool {
+        self.supports_user_action_state()
     }
 }
 
@@ -109,6 +110,18 @@ impl PseudoElement {
         *self == PseudoElement::After
     }
 
+    /// Whether this pseudo-element is the ::marker pseudo.
+    #[inline]
+    pub fn is_marker(&self) -> bool {
+        *self == PseudoElement::Marker
+    }
+
+    /// Whether this pseudo-element is the ::selection pseudo.
+    #[inline]
+    pub fn is_selection(&self) -> bool {
+        *self == PseudoElement::Selection
+    }
+
     /// Whether this pseudo-element is ::first-letter.
     #[inline]
     pub fn is_first_letter(&self) -> bool {
@@ -169,17 +182,25 @@ impl PseudoElement {
     /// Property flag that properties must have to apply to this pseudo-element.
     #[inline]
     pub fn property_restriction(&self) -> Option<PropertyFlags> {
-        match *self {
-            PseudoElement::FirstLetter => Some(PropertyFlags::APPLIES_TO_FIRST_LETTER),
-            PseudoElement::FirstLine => Some(PropertyFlags::APPLIES_TO_FIRST_LINE),
-            PseudoElement::Placeholder => Some(PropertyFlags::APPLIES_TO_PLACEHOLDER),
-            _ => None,
-        }
+        Some(match *self {
+            PseudoElement::FirstLetter => PropertyFlags::APPLIES_TO_FIRST_LETTER,
+            PseudoElement::FirstLine => PropertyFlags::APPLIES_TO_FIRST_LINE,
+            PseudoElement::Placeholder => PropertyFlags::APPLIES_TO_PLACEHOLDER,
+            PseudoElement::Cue => PropertyFlags::APPLIES_TO_CUE,
+            PseudoElement::Marker
+                if unsafe { structs::StaticPrefs::sVarCache_layout_css_marker_restricted } =>
+            {
+                PropertyFlags::APPLIES_TO_MARKER
+            },
+            _ => return None,
+        })
     }
 
     /// Whether this pseudo-element should actually exist if it has
     /// the given styles.
     pub fn should_exist(&self, style: &ComputedValues) -> bool {
+        debug_assert!(self.is_eager());
+
         if style.get_box().clone_display() == Display::None {
             return false;
         }

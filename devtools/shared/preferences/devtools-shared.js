@@ -38,11 +38,12 @@ pref("devtools.debugger.remote-websocket", false);
 // Force debugger server binding on the loopback interface
 pref("devtools.debugger.force-local", true);
 
-// Limit for intercepted response bodies (1 MB)
+// Limit for intercepted request and response bodies (1 MB)
 // Possible values:
 // 0 => the response body has no limit
 // n => represents max number of bytes stored
 pref("devtools.netmonitor.responseBodyLimit", 1048576);
+pref("devtools.netmonitor.requestBodyLimit", 1048576);
 
 // DevTools default color unit
 pref("devtools.defaultColorUnit", "authored");
@@ -64,3 +65,12 @@ pref("devtools.remote.adb.extensionURL", "https://ftp.mozilla.org/pub/mozilla.or
 
 // URL of the remote JSON catalog used for device simulation
 pref("devtools.devices.url", "https://code.cdn.mozilla.net/devices/devices.json");
+
+// Enable Inactive CSS detection. This preference is used both by the client and the
+// server.
+// TODO: clarify the feature detection strategy for this feature. Bug 1552116.
+#if defined(NIGHTLY_BUILD)
+pref("devtools.inspector.inactive.css.enabled", true);
+#else
+pref("devtools.inspector.inactive.css.enabled", false);
+#endif

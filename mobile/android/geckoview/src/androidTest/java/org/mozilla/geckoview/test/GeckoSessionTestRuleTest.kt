@@ -19,6 +19,7 @@ import android.support.test.runner.AndroidJUnit4
 import org.hamcrest.Matchers.*
 import org.junit.Assert.fail
 import org.junit.Assume.assumeThat
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -62,10 +63,20 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     }
 
     @Test(expected = UiThreadUtils.TimeoutException::class)
-    @TimeoutMillis(1000)
+    @TimeoutMillis(2000)
     fun noPendingCallbacks() {
         // Make sure we don't have unexpected pending callbacks at the start of a test.
-        sessionRule.waitUntilCalled(object : Callbacks.All {})
+        sessionRule.waitUntilCalled(object : Callbacks.All {
+            // There may be extraneous onSessionStateChange and onHistoryStateChange calls
+            // after a test, so ignore the first received.
+            @AssertCalled(count = 2)
+            override fun onSessionStateChange(session: GeckoSession, state: GeckoSession.SessionState) {
+            }
+
+            @AssertCalled(count = 2)
+            override fun onHistoryStateChange(session: GeckoSession, historyList: GeckoSession.HistoryDelegate.HistoryList) {
+            }
+        })
     }
 
     @Test fun includesAllCallbacks() {
@@ -180,6 +191,10 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
             override fun onProgressChange(session: GeckoSession, progress: Int) {
                 counter++
             }
+
+            override fun onSessionStateChange(session: GeckoSession, state: GeckoSession.SessionState) {
+                counter++
+            }
         })
 
         assertThat("Callback count should be correct", counter, equalTo(1))
@@ -249,6 +264,10 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
             }
 
             override fun onProgressChange(session: GeckoSession, progress: Int) {
+                counter++
+            }
+
+            override fun onSessionStateChange(session: GeckoSession, state: GeckoSession.SessionState) {
                 counter++
             }
         })
@@ -958,12 +977,22 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     }
 
     @Test(expected = UiThreadUtils.TimeoutException::class)
-    @TimeoutMillis(1000)
+    @TimeoutMillis(2000)
     @ClosedSessionAtStart
     fun noPendingCallbacks_withSpecificSession() {
         sessionRule.createOpenSession()
         // Make sure we don't have unexpected pending callbacks after opening a session.
-        sessionRule.waitUntilCalled(object : Callbacks.All {})
+        sessionRule.waitUntilCalled(object : Callbacks.All {
+            // There may be extraneous onSessionStateChange and onHistoryStateChange calls
+            // after a test, so ignore the first received.
+            @AssertCalled(count = 2)
+            override fun onSessionStateChange(session: GeckoSession, state: GeckoSession.SessionState) {
+            }
+
+            @AssertCalled(count = 2)
+            override fun onHistoryStateChange(session: GeckoSession, historyList: GeckoSession.HistoryDelegate.HistoryList) {
+            }
+        })
     }
 
     @Test fun waitForPageStop_withSpecificSession() {

@@ -32,6 +32,7 @@ StackingContextHelper::StackingContextHelper(
       mIsPreserve3D(aParams.transform_style == wr::TransformStyle::Preserve3D),
       mRasterizeLocally(aParams.mRasterizeLocally ||
                         aParentSC.mRasterizeLocally) {
+  mOrigin = aParentSC.mOrigin + aBounds.TopLeft();
   // Compute scale for fallback rendering. We don't try to guess a scale for 3d
   // transformed items
   gfx::Matrix transform2d;
@@ -43,9 +44,10 @@ StackingContextHelper::StackingContextHelper(
 
     int32_t apd = aContainerFrame->PresContext()->AppUnitsPerDevPixel();
     nsRect r = LayoutDevicePixel::ToAppUnits(aBounds, apd);
-    mScale = FrameLayerBuilder::ChooseScale(aContainerFrame, aContainerItem, r,
-                                            1.f, 1.f, mInheritedTransform,
-                                            /* aCanDraw2D = */ true);
+    mScale = FrameLayerBuilder::ChooseScale(
+        aContainerFrame, aContainerItem, r, aParentSC.mScale.width,
+        aParentSC.mScale.height, mInheritedTransform,
+        /* aCanDraw2D = */ true);
 
     if (aParams.mAnimated) {
       mSnappingSurfaceTransform =

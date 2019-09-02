@@ -28,15 +28,27 @@ extern crate audioipc_client;
 #[cfg(feature = "cubeb-remoting")]
 extern crate audioipc_server;
 extern crate env_logger;
-extern crate u2fhid;
+extern crate authenticator;
 extern crate gkrust_utils;
 extern crate log;
+#[cfg(feature = "new_cert_storage")]
+extern crate cert_storage;
 extern crate cosec;
 extern crate rsdparsa_capi;
+#[cfg(feature = "new_xulstore")]
+extern crate xulstore;
 #[cfg(feature = "spidermonkey_rust")]
 extern crate jsrust_shared;
+#[cfg(feature = "bitsdownload")]
+extern crate bitsdownload;
+extern crate storage;
+#[cfg(feature = "moz_places")]
+extern crate bookmark_sync;
+extern crate shift_or_euc_c;
 
 extern crate arrayvec;
+
+extern crate audio_thread_priority;
 
 use std::boxed::Box;
 use std::env;

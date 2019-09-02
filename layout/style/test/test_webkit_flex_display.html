@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1274096
 -->
 <head>
   <title>Test for Bug 1274096</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -21,9 +21,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1274096
 /** Test for Bug 1274096 **/
 
 SimpleTest.waitForExplicitFinish();
-SpecialPowers.pushPrefEnv(
-  {"set": [["layout.css.prefixes.webkit", true]]}
-).then(runTest);
+runTest();
 
 function runTest() {
   testValue("display", "-webkit-flex", "flex");

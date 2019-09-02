@@ -10,10 +10,17 @@
 #include "nsAppShell.h"
 #include "nsIXPConnect.h"
 #include "nsJSUtils.h"
+#include "js/Warnings.h"  // JS::WarnUTF8
 #include "xpcpublic.h"
 
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ScriptSettings.h"
+
+// Disable the C++ 2a warning. See bug #1509926
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wc++2a-compat"
+#endif
 
 namespace mozilla {
 namespace widget {
@@ -290,7 +297,7 @@ nsresult BoxData(const nsAString& aEvent, JSContext* aCx, JS::HandleValue aData,
 
   NS_ConvertUTF16toUTF8 event(aEvent);
   if (JS_IsExceptionPending(aCx)) {
-    JS_ReportWarningUTF8(aCx, "Error dispatching %s", event.get());
+    JS::WarnUTF8(aCx, "Error dispatching %s", event.get());
   } else {
     JS_ReportErrorUTF8(aCx, "Invalid event data for %s", event.get());
   }
@@ -397,7 +404,7 @@ nsresult UnboxArrayPrimitive(JSContext* aCx, const jni::Object::LocalRef& aData,
   JNIEnv* const env = aData.Env();
   const ArrayType jarray = ArrayType(aData.Get());
   JNIType* const array = (env->*GetElements)(jarray, nullptr);
-  JS::AutoValueVector elements(aCx);
+  JS::RootedVector<JS::Value> elements(aCx);
 
   if (NS_WARN_IF(!array)) {
     env->ExceptionClear();
@@ -560,7 +567,7 @@ nsresult UnboxData(jni::String::Param aEvent, JSContext* aCx,
 
   nsCString event = aEvent->ToCString();
   if (JS_IsExceptionPending(aCx)) {
-    JS_ReportWarningUTF8(aCx, "Error dispatching %s", event.get());
+    JS::WarnUTF8(aCx, "Error dispatching %s", event.get());
   } else {
     JS_ReportErrorUTF8(aCx, "Invalid event data for %s", event.get());
   }
@@ -572,16 +579,15 @@ class JavaCallbackDelegate final : public nsIAndroidEventCallback {
 
   virtual ~JavaCallbackDelegate() {}
 
-  NS_IMETHOD Call(JS::HandleValue aData,
+  NS_IMETHOD Call(JSContext* aCx, JS::HandleValue aData,
                   void (java::EventCallback::*aCall)(jni::Object::Param)
                       const) {
     MOZ_ASSERT(NS_IsMainThread());
-    AutoJSContext cx;
 
     jni::Object::LocalRef data(jni::GetGeckoThreadEnv());
-    nsresult rv = BoxData(NS_LITERAL_STRING("callback"), cx, aData, data,
+    nsresult rv = BoxData(NS_LITERAL_STRING("callback"), aCx, aData, data,
                           /* ObjectOnly */ false);
-    NS_ENSURE_SUCCESS(rv, JS_IsExceptionPending(cx) ? NS_OK : rv);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     dom::AutoNoJSAPI nojsapi;
 
@@ -595,12 +601,12 @@ class JavaCallbackDelegate final : public nsIAndroidEventCallback {
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHOD OnSuccess(JS::HandleValue aData) override {
-    return Call(aData, &java::EventCallback::SendSuccess);
+  NS_IMETHOD OnSuccess(JS::HandleValue aData, JSContext* aCx) override {
+    return Call(aCx, aData, &java::EventCallback::SendSuccess);
   }
 
-  NS_IMETHOD OnError(JS::HandleValue aData) override {
-    return Call(aData, &java::EventCallback::SendError);
+  NS_IMETHOD OnError(JS::HandleValue aData, JSContext* aCx) override {
+    return Call(aCx, aData, &java::EventCallback::SendError);
   }
 };
 
@@ -617,7 +623,8 @@ class NativeCallbackDelegateSupport final
   const nsCOMPtr<nsIGlobalObject> mGlobalObject;
 
   void Call(jni::Object::Param aData,
-            nsresult (nsIAndroidEventCallback::*aCall)(JS::HandleValue)) {
+            nsresult (nsIAndroidEventCallback::*aCall)(JS::HandleValue,
+                                                       JSContext*)) {
     MOZ_ASSERT(NS_IsMainThread());
 
     // Use either the attached window's realm or a default realm.
@@ -630,8 +637,7 @@ class NativeCallbackDelegateSupport final
                             &data, /* BundleOnly */ false);
     NS_ENSURE_SUCCESS_VOID(rv);
 
-    dom::AutoNoJSAPI nojsapi;
-    rv = (mCallback->*aCall)(data);
+    rv = (mCallback->*aCall)(data, jsapi.cx());
     NS_ENSURE_SUCCESS_VOID(rv);
   }
 
@@ -806,6 +812,10 @@ EventDispatcher::Dispatch(JS::HandleValue aEvent, JS::HandleValue aData,
 
   jni::Object::LocalRef data(jni::GetGeckoThreadEnv());
   nsresult rv = BoxData(event, aCx, aData, data, /* ObjectOnly */ true);
+  // Keep XPConnect from overriding the JSContext exception with one
+  // based on the nsresult.
+  //
+  // XXXbz Does xpconnect still do that?  Needs to be checked/tested.
   NS_ENSURE_SUCCESS(rv, JS_IsExceptionPending(aCx) ? NS_OK : rv);
 
   dom::AutoNoJSAPI nojsapi;
@@ -1032,3 +1042,7 @@ nsresult EventDispatcher::UnboxBundle(JSContext* aCx, jni::Object::Param aData,
 
 }  // namespace widget
 }  // namespace mozilla
+
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif

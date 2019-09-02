@@ -205,10 +205,6 @@
             android:permission="android.permission.BIND_JOB_SERVICE">
         </service>
 
-        <activity android:name="org.mozilla.gecko.trackingprotection.TrackingProtectionPrompt"
-                  android:launchMode="singleTop"
-                  android:theme="@style/OverlayActivity" />
-
         <activity android:name="org.mozilla.gecko.promotion.SimpleHelperUI"
                   android:launchMode="singleTop"
                   android:theme="@style/OverlayActivity" />
@@ -268,11 +264,6 @@
                 <action android:name="com.android.vending.INSTALL_REFERRER" />
             </intent-filter>
         </receiver>
-
-        <service android:name="org.mozilla.gecko.Restarter"
-                 android:exported="false"
-                 android:process="@MANGLED_ANDROID_PACKAGE_NAME@.Restarter">
-        </service>
 
         <service android:name="org.mozilla.gecko.media.MediaControlService"
                  android:exported="false"

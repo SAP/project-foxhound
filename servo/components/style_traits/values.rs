@@ -75,6 +75,16 @@ where
     }
 }
 
+impl ToCss for crate::owned_str::OwnedStr {
+    #[inline]
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        serialize_string(self, dest)
+    }
+}
+
 impl ToCss for str {
     #[inline]
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
@@ -441,7 +451,7 @@ macro_rules! define_css_keyword_enum {
     (pub enum $name:ident { $($variant:ident = $css:expr,)+ }) => {
         #[allow(missing_docs)]
         #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-        #[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq, ToShmem)]
         pub enum $name {
             $($variant),+
         }
@@ -497,7 +507,7 @@ pub mod specified {
 
     /// Whether to allow negative lengths or not.
     #[repr(u8)]
-    #[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, PartialOrd, ToShmem)]
     pub enum AllowedNumericType {
         /// Allow all kind of numeric values.
         All,

@@ -163,9 +163,8 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  *
  *    Each non-syntactic object used as a qualified variables object needs to
  *    enclose a non-syntactic LexicalEnvironmentObject to hold 'let' and
- *    'const' bindings. There is a bijection per compartment between the
- *    non-syntactic variables objects and their non-syntactic
- *    LexicalEnvironmentObjects.
+ *    'const' bindings. There is a bijection per realm between the non-syntactic
+ *    variables objects and their non-syntactic LexicalEnvironmentObjects.
  *
  *    Does not hold 'var' bindings.
  *
@@ -409,8 +408,8 @@ class ModuleEnvironmentObject : public EnvironmentObject {
 
   static ModuleEnvironmentObject* create(JSContext* cx,
                                          HandleModuleObject module);
-  ModuleObject& module();
-  IndirectBindingMap& importBindings();
+  ModuleObject& module() const;
+  IndirectBindingMap& importBindings() const;
 
   bool createImportBinding(JSContext* cx, HandleAtom importName,
                            HandleModuleObject module, HandleAtom exportName);
@@ -420,7 +419,7 @@ class ModuleEnvironmentObject : public EnvironmentObject {
   bool lookupImport(jsid name, ModuleEnvironmentObject** envOut,
                     Shape** shapeOut);
 
-  void fixEnclosingEnvironmentAfterCompartmentMerge(GlobalObject& global);
+  void fixEnclosingEnvironmentAfterRealmMerge(GlobalObject& global);
 
  private:
   static bool lookupProperty(JSContext* cx, HandleObject obj, HandleId id,
@@ -439,7 +438,8 @@ class ModuleEnvironmentObject : public EnvironmentObject {
   static bool deleteProperty(JSContext* cx, HandleObject obj, HandleId id,
                              ObjectOpResult& result);
   static bool newEnumerate(JSContext* cx, HandleObject obj,
-                           AutoIdVector& properties, bool enumerableOnly);
+                           MutableHandleIdVector properties,
+                           bool enumerableOnly);
 };
 
 typedef Rooted<ModuleEnvironmentObject*> RootedModuleEnvironmentObject;
@@ -617,7 +617,7 @@ class NonSyntacticVariablesObject : public EnvironmentObject {
 };
 
 extern bool CreateNonSyntacticEnvironmentChain(JSContext* cx,
-                                               JS::AutoObjectVector& envChain,
+                                               JS::HandleObjectVector envChain,
                                                MutableHandleObject env,
                                                MutableHandleScope scope);
 
@@ -950,7 +950,7 @@ class DebugEnvironments {
    * The map from live frames which have optimized-away environments to the
    * corresponding debug environments.
    */
-  typedef HashMap<MissingEnvironmentKey, ReadBarrieredDebugEnvironmentProxy,
+  typedef HashMap<MissingEnvironmentKey, WeakHeapPtrDebugEnvironmentProxy,
                   MissingEnvironmentKey, ZoneAllocPolicy>
       MissingEnvironmentMap;
   MissingEnvironmentMap missingEnvs;
@@ -963,9 +963,8 @@ class DebugEnvironments {
    * debugger lazy updates of liveEnvs need only fill in the new
    * environments.
    */
-  typedef GCHashMap<ReadBarriered<JSObject*>, LiveEnvironmentVal,
-                    MovableCellHasher<ReadBarriered<JSObject*>>,
-                    ZoneAllocPolicy>
+  typedef GCHashMap<WeakHeapPtr<JSObject*>, LiveEnvironmentVal,
+                    MovableCellHasher<WeakHeapPtr<JSObject*>>, ZoneAllocPolicy>
       LiveEnvironmentMap;
   LiveEnvironmentMap liveEnvs;
 
@@ -1141,7 +1140,7 @@ inline bool IsFrameInitialEnvironment(AbstractFramePtr frame,
 }
 
 extern bool CreateObjectsForEnvironmentChain(JSContext* cx,
-                                             AutoObjectVector& chain,
+                                             HandleObjectVector chain,
                                              HandleObject terminatingEnv,
                                              MutableHandleObject envObj);
 

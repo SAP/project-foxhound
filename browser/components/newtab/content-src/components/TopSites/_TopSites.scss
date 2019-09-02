@@ -1,5 +1,5 @@
 $top-sites-size: $grid-unit;
-$top-sites-border-radius: 6px;
+$top-sites-border-radius: 4px;
 $top-sites-title-height: 30px;
 $top-sites-vertical-space: 8px;
 $screenshot-size: cover;
@@ -406,10 +406,6 @@ $hover-transition-duration: 150ms;
       font-size: 13px;
       margin-top: 4px;
       cursor: pointer;
-
-      &:hover {
-        text-decoration: underline;
-      }
     }
 
     .custom-image-input-container {

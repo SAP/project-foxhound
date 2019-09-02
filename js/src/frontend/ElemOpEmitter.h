@@ -128,6 +128,7 @@ class MOZ_STACK_CLASS ElemOpEmitter {
     PostDecrement,
     PreDecrement,
     SimpleAssignment,
+    PropInit,
     CompoundAssignment
   };
   enum class ObjKind { Super, Other };
@@ -172,6 +173,7 @@ class MOZ_STACK_CLASS ElemOpEmitter {
   // |              +--------+                                  |
   // |                                      +-------------------+
   // | [SimpleAssignment]                   |
+  // | [PropInit]                           |
   // |                        prepareForRhs v  +-----+
   // +--------------------->+-------------->+->| Rhs |-+
   // |                      ^                  +-----+ |
@@ -219,6 +221,8 @@ class MOZ_STACK_CLASS ElemOpEmitter {
     return kind_ == Kind::SimpleAssignment;
   }
 
+  MOZ_MUST_USE bool isPropInit() const { return kind_ == Kind::PropInit; }
+
   MOZ_MUST_USE bool isDelete() const { return kind_ == Kind::Delete; }
 
   MOZ_MUST_USE bool isCompoundAssignment() const {
@@ -252,7 +256,8 @@ class MOZ_STACK_CLASS ElemOpEmitter {
 
   MOZ_MUST_USE bool emitDelete();
 
-  MOZ_MUST_USE bool emitAssignment();
+  enum class EmitSetFunctionName : bool { No, Yes };
+  MOZ_MUST_USE bool emitAssignment(EmitSetFunctionName emitSetFunName);
 
   MOZ_MUST_USE bool emitIncDec();
 };

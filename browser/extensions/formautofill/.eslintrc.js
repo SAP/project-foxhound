@@ -22,24 +22,6 @@ module.exports = {
       "requireReturnDescription": false,
     }],
 
-    // Forbid spaces inside the square brackets of array literals.
-    "array-bracket-spacing": ["error", "never"],
-
-    // Forbid spaces inside the curly brackets of object literals.
-    "object-curly-spacing": ["error", "never"],
-
-    // No space padding in parentheses
-    "space-in-parens": ["error", "never"],
-
-    // Require braces around blocks that start a new line
-    "curly": ["error", "all"],
-
-    // Two space indent
-    "indent-legacy": ["error", 2, {"SwitchCase": 1}],
-
-    // Always require parenthesis for new calls
-    "new-parens": "error",
-
     // No expressions where a statement is expected
     "no-unused-expressions": "error",
 
@@ -58,14 +40,6 @@ module.exports = {
     // Warn about cyclomatic complexity in functions.
     "complexity": ["error", {"max": 26}],
 
-    // Enforce dots on the next line with property name.
-    "dot-location": ["error", "property"],
-
-    // Maximum length of a line.
-    // This should be 100 but too many lines were longer than that so set a
-    // conservative upper bound for now.
-    "max-len": ["error", 140],
-
     // Maximum depth callbacks can be nested.
     "max-nested-callbacks": ["error", 4],
 
@@ -78,9 +52,6 @@ module.exports = {
     // Disallow use of multiline strings (use template strings instead).
     "no-multi-str": "error",
 
-    // Disallow multiple empty lines.
-    "no-multiple-empty-lines": ["error", {"max": 2}],
-
     // Disallow usage of __proto__ property.
     "no-proto": "error",
 
@@ -88,15 +59,8 @@ module.exports = {
     // single line of code to have only one easily predictable effect.
     "no-return-assign": "error",
 
-    // Disallow throwing literals (eg. throw "error" instead of
-    // throw new Error("error")).
-    "no-throw-literal": "error",
-
     // Require use of the second argument for parseInt().
     "radix": "error",
-
-    // Enforce spacing after semicolons.
-    "semi-spacing": ["error", {"before": false, "after": true}],
 
     // Require "use strict" to be defined globally in the script.
     "strict": ["error", "global"],
@@ -107,4 +71,14 @@ module.exports = {
     // Disallow function or variable declarations in nested blocks
     "no-inner-declarations": "error",
   },
+
+  "overrides": [{
+    "files": "test/unit/head.js",
+    "rules": {
+      "no-unused-vars": ["error", {
+        "args": "none",
+        "vars": "local",
+      }],
+    },
+  }],
 };

@@ -5,14 +5,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741666
 -->
 <head>
   <title>Test for Bug 741666</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=741666">Mozilla Bug 741666</a>
 <p id="display"></p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script class="testbody" type="application/javascript">
@@ -88,7 +88,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
   return windowUtils.sendTouchEvent(aType,
                                     ids, xs, ys, rxs, rys,
                                     rotations, forces,
-                                    ids.length, aModifiers, 0);
+                                    aModifiers, 0);
 }
 
 function touchEvent(aOptions) {
@@ -133,15 +133,15 @@ function testPreventDefault(name) {
   });
 
   // test touchstart event fires correctly
-  var checkTouches = checkEvent(event, "touches");
+  var checkTouchesEvent = checkEvent(event, "touches");
   var checkTargetTouches = checkEvent(event, "targetTouches");
 
   /* This is the heart of the test. Verify that the touch event
      looks correct both in and outside of a setTimeout */
   window.addEventListener("touchstart", function(firedEvent) {
-    checkTouches(firedEvent, true);
+    checkTouchesEvent(firedEvent, true);
     setTimeout(function() {
-      checkTouches(firedEvent, true);
+      checkTouchesEvent(firedEvent, true);
       checkTargetTouches(firedEvent, true);
 
       event.touches = [];

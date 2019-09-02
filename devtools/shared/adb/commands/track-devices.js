@@ -110,7 +110,10 @@ class TrackDevicesCommand extends EventEmitter {
       });
 
       // Fire events if needed.
-      const deviceIds = new Set([...this._devices.keys(), ...newDevices.keys()]);
+      const deviceIds = new Set([
+        ...this._devices.keys(),
+        ...newDevices.keys(),
+      ]);
       for (const deviceId of deviceIds) {
         const currentStatus = this._devices.get(deviceId);
         const newStatus = newDevices.get(deviceId);
@@ -123,16 +126,23 @@ class TrackDevicesCommand extends EventEmitter {
   }
 
   _disconnectAllDevices() {
-    for (const [deviceId, status] of this._devices.entries()) {
-      if (status !== ADB_STATUS_OFFLINE) {
-        this.emit("device-disconnected", deviceId);
+    if (this._devices.size === 0) {
+      // If no devices were detected, fire an event to let consumer resume.
+      this.emit("no-devices-detected");
+    } else {
+      for (const [deviceId, status] of this._devices.entries()) {
+        if (status !== ADB_STATUS_OFFLINE) {
+          this.emit("device-disconnected", deviceId);
+        }
       }
     }
     this._devices = new Map();
   }
 
   _fireConnectionEventIfNeeded(deviceId, currentStatus, newStatus) {
-    const isCurrentOnline = !!(currentStatus && currentStatus !== ADB_STATUS_OFFLINE);
+    const isCurrentOnline = !!(
+      currentStatus && currentStatus !== ADB_STATUS_OFFLINE
+    );
     const isNewOnline = !!(newStatus && newStatus !== ADB_STATUS_OFFLINE);
 
     if (isCurrentOnline === isNewOnline) {

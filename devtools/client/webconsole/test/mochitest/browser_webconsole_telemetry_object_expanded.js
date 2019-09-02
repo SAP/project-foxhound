@@ -11,14 +11,14 @@ const TEST_URI = `data:text/html,<meta charset=utf8><script>
   console.log("test message", [1,2,3]);
 </script>`;
 
-const OPTOUT = Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTOUT;
+const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 
 add_task(async function() {
   // Let's reset the counts.
   Services.telemetry.clearEvents();
 
   // Ensure no events have been logged
-  const snapshot = Services.telemetry.snapshotEvents(OPTOUT, true);
+  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
   ok(!snapshot.parent, "No events have been logged for the main process");
 
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -57,12 +57,13 @@ add_task(async function() {
 
 function getObjectExpandedEventsExtra() {
   // Retrieve and clear telemetry events.
-  const snapshot = Services.telemetry.snapshotEvents(OPTOUT, true);
+  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
 
-  const events = snapshot.parent.filter(event =>
-    event[1] === "devtools.main" &&
-    event[2] === "object_expanded" &&
-    event[3] === "webconsole"
+  const events = snapshot.parent.filter(
+    event =>
+      event[1] === "devtools.main" &&
+      event[2] === "object_expanded" &&
+      event[3] === "webconsole"
   );
 
   // Since we already know we have the correct event, we only return the `extra` field

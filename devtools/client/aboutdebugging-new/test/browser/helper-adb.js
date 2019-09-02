@@ -10,8 +10,10 @@ async function checkAdbNotRunning() {
   const { check } = require("devtools/shared/adb/adb-running-checker");
   const isAdbAlreadyRunning = await check();
   if (isAdbAlreadyRunning) {
-    throw new Error("The ADB process is already running on this machine, it should be " +
-      "stopped before running this test");
+    throw new Error(
+      "The ADB process is already running on this machine, it should be " +
+        "stopped before running this test"
+    );
   }
 }
 /* exported checkAdbNotRunning */
@@ -29,10 +31,14 @@ async function waitForAdbStart() {
 }
 /* exported waitForAdbStart */
 
+// Attempt to stop ADB. Will only work if ADB was started by the current Firefox instance.
 // Returns a promise that resolves when the adb process is no longer running.
-async function waitForAdbStop() {
-  info("Wait for ADB to stop");
+async function stopAdbProcess() {
+  info("Attempt to stop ADB");
   const { adbProcess } = require("devtools/shared/adb/adb-process");
+  await adbProcess.stop();
+
+  info("Wait for ADB to stop");
   const { check } = require("devtools/shared/adb/adb-running-checker");
   return asyncWaitUntil(async () => {
     const isProcessReady = adbProcess.ready;
@@ -40,4 +46,4 @@ async function waitForAdbStop() {
     return !isProcessReady && !isRunning;
   });
 }
-/* exported waitForAdbStop */
+/* exported stopAdbProcess */

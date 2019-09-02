@@ -8,8 +8,8 @@
 #define mozilla_dom_SVGImageElement_h
 
 #include "nsImageLoadingContent.h"
-#include "nsSVGLength2.h"
-#include "SVGString.h"
+#include "SVGAnimatedLength.h"
+#include "SVGAnimatedString.h"
 #include "SVGGeometryElement.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 
@@ -56,9 +56,14 @@ class SVGImageElement : public SVGImageElementBase,
                                 const nsAttrValue* aOldValue,
                                 nsIPrincipal* aSubjectPrincipal,
                                 bool aNotify) override;
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
+  bool IsNodeOfType(uint32_t aFlags) const override {
+    // <imag> is not really a SVGGeometryElement, we should
+    // ignore eSHAPE flag accepted by SVGGeometryElement.
+    return SVGGraphicsElement::IsNodeOfType(aFlags);
+  }
+
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent) override;
 
   virtual EventStates IntrinsicState() const override;
 
@@ -81,36 +86,41 @@ class SVGImageElement : public SVGImageElementBase,
   void MaybeLoadSVGImage();
 
   // WebIDL
-  already_AddRefed<SVGAnimatedLength> X();
-  already_AddRefed<SVGAnimatedLength> Y();
-  already_AddRefed<SVGAnimatedLength> Width();
-  already_AddRefed<SVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
   already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
-  already_AddRefed<SVGAnimatedString> Href();
+  already_AddRefed<DOMSVGAnimatedString> Href();
 
   void SetDecoding(const nsAString& aDecoding, ErrorResult& aError) {
     SetAttr(nsGkAtoms::decoding, aDecoding, aError);
   }
   void GetDecoding(nsAString& aValue);
 
+  already_AddRefed<Promise> Decode(ErrorResult& aRv);
+
+  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
+
  protected:
   nsresult LoadSVGImage(bool aForce, bool aNotify);
 
   virtual LengthAttributesInfo GetLengthInfo() override;
-  virtual SVGAnimatedPreserveAspectRatio* GetPreserveAspectRatio() override;
+  virtual SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio()
+      override;
   virtual StringAttributesInfo GetStringInfo() override;
 
   // Override for nsImageLoadingContent.
   nsIContent* AsContent() override { return this; }
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  nsSVGLength2 mLengthAttributes[4];
+  SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
 
   enum { HREF, XLINK_HREF };
-  SVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 };
 

@@ -23,19 +23,20 @@ LoadContext::LoadContext(nsIPrincipal* aPrincipal,
       mNestedFrameId(0),
       mIsContent(true),
       mUseRemoteTabs(false),
-      mUseTrackingProtection(false)
+      mUseRemoteSubframes(false),
+      mUseTrackingProtection(false),
 #ifdef DEBUG
-      ,
-      mIsNotNull(true)
+      mIsNotNull(true),
 #endif
-{
-  mOriginAttributes = aPrincipal->OriginAttributesRef();
+      mOriginAttributes(aPrincipal->OriginAttributesRef()) {
   if (!aOptionalBase) {
     return;
   }
 
   MOZ_ALWAYS_SUCCEEDS(aOptionalBase->GetIsContent(&mIsContent));
   MOZ_ALWAYS_SUCCEEDS(aOptionalBase->GetUseRemoteTabs(&mUseRemoteTabs));
+  MOZ_ALWAYS_SUCCEEDS(
+      aOptionalBase->GetUseRemoteSubframes(&mUseRemoteSubframes));
   MOZ_ALWAYS_SUCCEEDS(
       aOptionalBase->GetUseTrackingProtection(&mUseTrackingProtection));
 }
@@ -122,6 +123,24 @@ LoadContext::GetUseRemoteTabs(bool* aUseRemoteTabs) {
 
 NS_IMETHODIMP
 LoadContext::SetRemoteTabs(bool aUseRemoteTabs) {
+  MOZ_ASSERT(mIsNotNull);
+
+  // We shouldn't need this on parent...
+  return NS_ERROR_UNEXPECTED;
+}
+
+NS_IMETHODIMP
+LoadContext::GetUseRemoteSubframes(bool* aUseRemoteSubframes) {
+  MOZ_ASSERT(mIsNotNull);
+
+  NS_ENSURE_ARG_POINTER(aUseRemoteSubframes);
+
+  *aUseRemoteSubframes = mUseRemoteSubframes;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadContext::SetRemoteSubframes(bool aUseRemoteSubframes) {
   MOZ_ASSERT(mIsNotNull);
 
   // We shouldn't need this on parent...

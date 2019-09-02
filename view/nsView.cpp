@@ -11,6 +11,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Poison.h"
+#include "mozilla/PresShell.h"
 #include "nsIWidget.h"
 #include "nsViewManager.h"
 #include "nsIFrame.h"
@@ -56,8 +57,9 @@ nsView::nsView(nsViewManager* aViewManager, nsViewVisibility aVisibility)
 }
 
 void nsView::DropMouseGrabbing() {
-  nsIPresShell* presShell = mViewManager->GetPresShell();
-  if (presShell) presShell->ClearMouseCaptureOnView(this);
+  if (mViewManager->GetPresShell()) {
+    PresShell::ClearMouseCaptureOnView(this);
+  }
 }
 
 nsView::~nsView() {
@@ -765,9 +767,9 @@ void nsView::List(FILE* out, int32_t aIndent) const {
             nonclientBounds.Y(), windowBounds.Width(), windowBounds.Height());
   }
   nsRect brect = GetBounds();
-  fprintf(out, "{%d,%d,%d,%d}", brect.X(), brect.Y(), brect.Width(),
-          brect.Height());
-  fprintf(out, " z=%d vis=%d frame=%p <\n", mZIndex, mVis,
+  fprintf(out, "{%d,%d,%d,%d} @ %d,%d", brect.X(), brect.Y(), brect.Width(),
+          brect.Height(), mPosX, mPosY);
+  fprintf(out, " flags=%x z=%d vis=%d frame=%p <\n", mVFlags, mZIndex, mVis,
           static_cast<void*>(mFrame));
   for (nsView* kid = mFirstChild; kid; kid = kid->GetNextSibling()) {
     NS_ASSERTION(kid->GetParent() == this, "incorrect parent");
@@ -924,9 +926,7 @@ static bool IsPopupWidget(nsIWidget* aWidget) {
   return (aWidget->WindowType() == eWindowType_popup);
 }
 
-nsIPresShell* nsView::GetPresShell() {
-  return GetViewManager()->GetPresShell();
-}
+PresShell* nsView::GetPresShell() { return GetViewManager()->GetPresShell(); }
 
 bool nsView::WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y) {
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
@@ -954,7 +954,7 @@ bool nsView::WindowResized(nsIWidget* aWidget, int32_t aWidth,
 
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
     if (pm) {
-      nsIPresShell* presShell = mViewManager->GetPresShell();
+      PresShell* presShell = mViewManager->GetPresShell();
       if (presShell && presShell->GetDocument()) {
         pm->AdjustPopupsOnWindowChange(presShell);
       }
@@ -1006,38 +1006,40 @@ void nsView::DidPaintWindow() {
 void nsView::DidCompositeWindow(mozilla::layers::TransactionId aTransactionId,
                                 const TimeStamp& aCompositeStart,
                                 const TimeStamp& aCompositeEnd) {
-  nsIPresShell* presShell = mViewManager->GetPresShell();
-  if (presShell) {
-    nsAutoScriptBlocker scriptBlocker;
+  PresShell* presShell = mViewManager->GetPresShell();
+  if (!presShell) {
+    return;
+  }
 
-    nsPresContext* context = presShell->GetPresContext();
-    nsRootPresContext* rootContext = context->GetRootPresContext();
-    if (rootContext) {
-      rootContext->NotifyDidPaintForSubtree(aTransactionId, aCompositeEnd);
-    }
+  nsAutoScriptBlocker scriptBlocker;
 
-    // If the two timestamps are identical, this was likely a fake composite
-    // event which wouldn't be terribly useful to display.
-    if (aCompositeStart == aCompositeEnd) {
-      return;
-    }
+  nsPresContext* context = presShell->GetPresContext();
+  nsRootPresContext* rootContext = context->GetRootPresContext();
+  if (rootContext) {
+    rootContext->NotifyDidPaintForSubtree(aTransactionId, aCompositeEnd);
+  }
 
-    nsIDocShell* docShell = context->GetDocShell();
-    RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
+  // If the two timestamps are identical, this was likely a fake composite
+  // event which wouldn't be terribly useful to display.
+  if (aCompositeStart == aCompositeEnd) {
+    return;
+  }
 
-    if (timelines && timelines->HasConsumer(docShell)) {
-      timelines->AddMarkerForDocShell(
-          docShell, MakeUnique<CompositeTimelineMarker>(
-                        aCompositeStart, MarkerTracingType::START));
-      timelines->AddMarkerForDocShell(
-          docShell, MakeUnique<CompositeTimelineMarker>(
-                        aCompositeEnd, MarkerTracingType::END));
-    }
+  nsIDocShell* docShell = context->GetDocShell();
+  RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
+
+  if (timelines && timelines->HasConsumer(docShell)) {
+    timelines->AddMarkerForDocShell(
+        docShell, MakeUnique<CompositeTimelineMarker>(
+                      aCompositeStart, MarkerTracingType::START));
+    timelines->AddMarkerForDocShell(
+        docShell, MakeUnique<CompositeTimelineMarker>(aCompositeEnd,
+                                                      MarkerTracingType::END));
   }
 }
 
 void nsView::RequestRepaint() {
-  nsIPresShell* presShell = mViewManager->GetPresShell();
+  PresShell* presShell = mViewManager->GetPresShell();
   if (presShell) {
     presShell->ScheduleViewManagerFlush();
   }

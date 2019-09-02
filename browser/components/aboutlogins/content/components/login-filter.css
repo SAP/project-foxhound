@@ -1,0 +1,26 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  display: flex;
+}
+
+.filter[type="text"] {
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.4;
+
+  background-image: url("chrome://global/skin/icons/search.svg");
+  background-position: 4px 50%;
+  background-repeat: no-repeat;
+  background-size: 16px;
+  flex: auto;
+  margin: 0;
+  padding: 4px 0;
+  padding-inline-start: 28px;
+}
+
+.filter:focus-within {
+  fill-opacity: 0.9;
+}

@@ -52,10 +52,12 @@ interface nsIEditor  : nsISupports
 
   readonly attribute Selection selection;
 
+  [can_run_script]
   void setAttributeOrEquivalent(in Element element,
                                 in AString sourceAttrName,
                                 in AString sourceAttrValue,
                                 in boolean aSuppressTransaction);
+  [can_run_script]
   void removeAttributeOrEquivalent(in Element element,
                                    in AString sourceAttrName,
                                    in boolean aSuppressTransaction);
@@ -100,6 +102,7 @@ interface nsIEditor  : nsISupports
    *                      doubt, pass eStrip -- eNoStrip is only for if you're
    *                      about to insert text or similar right after.
    */
+  [can_run_script]
   void deleteSelection(in short action, in short stripWrappers);
 
 
@@ -112,11 +115,13 @@ interface nsIEditor  : nsISupports
   readonly attribute boolean documentModified;
 
   /** Sets the current 'Save' document character set */
+  [can_run_script]  // setter only
   attribute ACString documentCharacterSet;
 
   /** to be used ONLY when we need to override the doc's modification
     * state (such as when it's saved).
     */
+  [can_run_script]
   void resetModificationCount();
 
   /** Gets the modification count of the document we are editing.
@@ -130,6 +135,7 @@ interface nsIEditor  : nsISupports
     * @param  aModCount  the number of modifications by which
     *                    to increase or decrease the count
     */
+  [can_run_script]
   void incrementModificationCount(in long aModCount);
 
   /* ------------ Transaction methods -------------- */
@@ -145,6 +151,7 @@ interface nsIEditor  : nsISupports
     *
     * @param aTxn the transaction to execute
     */
+  [can_run_script]
   void doTransaction(in nsITransaction txn);
 
 
@@ -216,6 +223,7 @@ interface nsIEditor  : nsISupports
     * Calls to beginTransaction can be nested, as long as endTransaction
     * is called once per beginTransaction.
     */
+  [can_run_script]
   void endTransaction();
 
   /**
@@ -263,6 +271,7 @@ interface nsIEditor  : nsISupports
     * What about mixed selections?
     * What are the clipboard formats?
     */
+  [can_run_script]
   void cut();
 
   /** Can we cut? True if the doc is modifiable, and we have a non-
@@ -289,7 +298,7 @@ interface nsIEditor  : nsISupports
     * the selected text (if any)
     */
   [can_run_script]
-  void paste(in long aSelectionType);
+  void paste(in long aClipboardType);
 
   /** Paste the text in |aTransferable| at the cursor position, replacing the
     * selected text (if any).
@@ -300,11 +309,12 @@ interface nsIEditor  : nsISupports
   /** Can we paste? True if the doc is modifiable, and we have
     * pasteable data in the clipboard.
     */
-  boolean canPaste(in long aSelectionType);
+  boolean canPaste(in long aClipboardType);
 
   /* ------------ Selection methods -------------- */
 
   /** sets the document selection to the entire contents of the document */
+  [can_run_script]
   void selectAll();
 
   /**
@@ -335,6 +345,7 @@ interface nsIEditor  : nsISupports
    * @param aAttribute  the string representation of the attribute to set
    * @param aValue      the value to set aAttribute to
    */
+  [can_run_script]
   void setAttribute(in Element aElement, in AString attributestr,
                     in AString attvalue);
 
@@ -359,6 +370,7 @@ interface nsIEditor  : nsISupports
    * @param aElement      the content element to operate on
    * @param aAttribute    the string representation of the attribute to get
    */
+  [can_run_script]
   void removeAttribute(in Element aElement,
                        in AString aAttribute);
 
@@ -372,6 +384,7 @@ interface nsIEditor  : nsISupports
    * @param aSourceElement the source element to copy attributes from
    * @exception NS_ERROR_NULL_POINTER at least one of the elements is null
    */
+  [can_run_script]
   void cloneAttribute(in AString aAttribute,
                       in Element aDestElement, in Element aSourceElement);
 
@@ -385,6 +398,7 @@ interface nsIEditor  : nsISupports
    * @param aDestNode     the destination element to operate on
    * @param aSourceNode   the source element to copy attributes from
    */
+  [can_run_script]
   void cloneAttributes(in Element aDestElement, in Element aSourceElement);
 
   /**
@@ -397,6 +411,7 @@ interface nsIEditor  : nsISupports
    *                  0=first child, 1=second child, etc.
    *                  any number > number of current children = last child
    */
+  [can_run_script]
   void insertNode(in Node node,
                   in Node parent,
                   in long aPosition);
@@ -412,6 +427,7 @@ interface nsIEditor  : nsISupports
    * @param aNewLeftNode         [OUT] the new node resulting from the split,
    *                             becomes aExistingRightNode's previous sibling.
    */
+  [can_run_script]
   void splitNode(in Node existingRightNode,
                  in long offset,
                  out Node newLeftNode);
@@ -426,6 +442,7 @@ interface nsIEditor  : nsISupports
    *                      of the same type.  However, a text node can be
    *                      merged only with another text node.
    */
+  [can_run_script]
   void joinNodes(in Node leftNode,
                  in Node rightNode,
                  in Node parent);
@@ -434,6 +451,7 @@ interface nsIEditor  : nsISupports
    * deleteNode removes aChild from aParent.
    * @param aChild    The node to delete
    */
+  [can_run_script]
   void deleteNode(in Node child);
 
   /**

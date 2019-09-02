@@ -18,12 +18,9 @@
 #include "nsDOMCSSDeclaration.h"
 #include "nsStringFwd.h"
 
-class nsCSSValue;
 struct nsCSSRect;
 struct nsTimingFunction;
 struct RawServoDeclarationBlock;
-
-using RawGeckoGfxMatrix4x4 = mozilla::gfx::Float[16];
 
 namespace mozilla {
 
@@ -110,7 +107,7 @@ class ServoCSSParser {
    */
   static bool ParseTransformIntoMatrix(const nsAString& aValue,
                                        bool& aContains3DTransform,
-                                       RawGeckoGfxMatrix4x4& aResult);
+                                       gfx::Matrix4x4& aResult);
 
   /**
    * Parse a font shorthand for FontFaceSet matching, so we only care about

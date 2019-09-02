@@ -13,11 +13,14 @@
 
 #include <stdint.h>
 
+#include "js/MemoryFunctions.h"  // JS_FOR_EACH_PUBLIC_MEMORY_USE
+
 namespace js {
 namespace gc {
 
-// Mark colors to pass to markIfUnmarked.
-enum class MarkColor : uint32_t { Black = 0, Gray };
+// Mark colors. Order is important here: the greater value the 'more marked' a
+// cell is.
+enum class MarkColor : uint8_t { Gray = 1, Black = 2 };
 
 // The phases of an incremental GC.
 #define GCSTATES(D) \
@@ -87,6 +90,57 @@ enum class ZealMode {
 };
 
 } /* namespace gc */
+
+#define JS_FOR_EACH_INTERNAL_MEMORY_USE(_) \
+  _(ArrayBufferContents)                   \
+  _(StringContents)                        \
+  _(ObjectElements)                        \
+  _(ObjectSlots)                           \
+  _(ScriptPrivateData)                     \
+  _(LazyScriptData)                        \
+  _(MapObjectTable)                        \
+  _(BigIntDigits)                          \
+  _(ScopeData)                             \
+  _(WeakMapObject)                         \
+  _(ShapeKids)                             \
+  _(ShapeCache)                            \
+  _(ModuleBindingMap)                      \
+  _(BaselineScript)                        \
+  _(IonScript)                             \
+  _(ArgumentsData)                         \
+  _(RareArgumentsData)                     \
+  _(RegExpStatics)                         \
+  _(RegExpSharedBytecode)                  \
+  _(TypedArrayElements)                    \
+  _(TypeDescrTraceList)                    \
+  _(NativeIterator)                        \
+  _(JitScript)                             \
+  _(ObjectGroupAddendum)                   \
+  _(ScriptDebugScript)                     \
+  _(BreakpointSite)                        \
+  _(ForOfPIC)                              \
+  _(ForOfPICStub)                          \
+  _(WasmInstanceExports)                   \
+  _(WasmInstanceScopes)                    \
+  _(WasmInstanceGlobals)                   \
+  _(WasmInstanceInstance)                  \
+  _(WasmMemoryObservers)                   \
+  _(WasmGlobalCell)                        \
+  _(WasmResolveResponseClosure)            \
+  _(WasmModule)                            \
+  _(WasmTableTable)                        \
+  _(FileObjectFile)
+
+#define JS_FOR_EACH_MEMORY_USE(_)  \
+  JS_FOR_EACH_PUBLIC_MEMORY_USE(_) \
+  JS_FOR_EACH_INTERNAL_MEMORY_USE(_)
+
+enum class MemoryUse : uint8_t {
+#define DEFINE_MEMORY_USE(Name) Name,
+  JS_FOR_EACH_MEMORY_USE(DEFINE_MEMORY_USE)
+#undef DEFINE_MEMORY_USE
+};
+
 } /* namespace js */
 
 #endif /* gc_GCEnum_h */

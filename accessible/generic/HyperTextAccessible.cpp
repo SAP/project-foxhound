@@ -37,6 +37,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TextEditor.h"
 #include "gfxSkipChars.h"
 #include <algorithm>
@@ -1271,12 +1272,13 @@ nsresult HyperTextAccessible::SetSelectionRange(int32_t aStartPos,
 
   // Set up the selection.
   for (int32_t idx = domSel->RangeCount() - 1; idx > 0; idx--)
-    domSel->RemoveRange(*domSel->GetRangeAt(idx), IgnoreErrors());
+    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
+        *domSel->GetRangeAt(idx), IgnoreErrors());
   SetSelectionBoundsAt(0, aStartPos, aEndPos);
 
   // Make sure it is visible
   domSel->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
-                         nsIPresShell::ScrollAxis(), nsIPresShell::ScrollAxis(),
+                         ScrollAxis(), ScrollAxis(),
                          dom::Selection::SCROLL_FOR_CARET_MOVE |
                              dom::Selection::SCROLL_OVERFLOW_HIDDEN);
 
@@ -1417,7 +1419,7 @@ int32_t HyperTextAccessible::CaretLineNumber() {
 LayoutDeviceIntRect HyperTextAccessible::GetCaretRect(nsIWidget** aWidget) {
   *aWidget = nullptr;
 
-  RefPtr<nsCaret> caret = mDoc->PresShell()->GetCaret();
+  RefPtr<nsCaret> caret = mDoc->PresShellPtr()->GetCaret();
   NS_ENSURE_TRUE(caret, LayoutDeviceIntRect());
 
   bool isVisible = caret->IsVisible();
@@ -1570,11 +1572,12 @@ bool HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
   // If this is not a new range, notify selection listeners that the existing
   // selection range has changed. Otherwise, just add the new range.
   if (aSelectionNum != static_cast<int32_t>(rangeCount)) {
-    domSel->RemoveRange(*range, IgnoreErrors());
+    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
+                                                           IgnoreErrors());
   }
 
   IgnoredErrorResult err;
-  domSel->AddRange(*range, err);
+  domSel->AddRangeAndSelectFramesAndNotifyListeners(*range, err);
 
   if (!err.Failed()) {
     // Changing the direction of the selection assures that the caret
@@ -1594,7 +1597,8 @@ bool HyperTextAccessible::RemoveFromSelection(int32_t aSelectionNum) {
       aSelectionNum >= static_cast<int32_t>(domSel->RangeCount()))
     return false;
 
-  domSel->RemoveRange(*domSel->GetRangeAt(aSelectionNum), IgnoreErrors());
+  domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
+      *domSel->GetRangeAt(aSelectionNum), IgnoreErrors());
   return true;
 }
 
@@ -1645,8 +1649,7 @@ void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
         int16_t vPercent = offsetPointY * 100 / size.height;
 
         nsresult rv = nsCoreUtils::ScrollSubstringTo(
-            frame, range, nsIPresShell::ScrollAxis(vPercent),
-            nsIPresShell::ScrollAxis(hPercent));
+            frame, range, ScrollAxis(vPercent), ScrollAxis(hPercent));
         if (NS_FAILED(rv)) return;
 
         initialScrolled = true;
@@ -1847,10 +1850,10 @@ nsresult HyperTextAccessible::ContentToRenderedOffset(
   NS_ASSERTION(aFrame->GetPrevContinuation() == nullptr,
                "Call on primary frame only");
 
-  nsIFrame::RenderedText text = aFrame->GetRenderedText(
-      aContentOffset, aContentOffset + 1,
-      nsIFrame::TextOffsetType::OFFSETS_IN_CONTENT_TEXT,
-      nsIFrame::TrailingWhitespace::DONT_TRIM_TRAILING_WHITESPACE);
+  nsIFrame::RenderedText text =
+      aFrame->GetRenderedText(aContentOffset, aContentOffset + 1,
+                              nsIFrame::TextOffsetType::OffsetsInContentText,
+                              nsIFrame::TrailingWhitespace::DontTrim);
   *aRenderedOffset = text.mOffsetWithinNodeRenderedText;
 
   return NS_OK;
@@ -1870,10 +1873,10 @@ nsresult HyperTextAccessible::RenderedToContentOffset(
   NS_ASSERTION(aFrame->GetPrevContinuation() == nullptr,
                "Call on primary frame only");
 
-  nsIFrame::RenderedText text = aFrame->GetRenderedText(
-      aRenderedOffset, aRenderedOffset + 1,
-      nsIFrame::TextOffsetType::OFFSETS_IN_RENDERED_TEXT,
-      nsIFrame::TrailingWhitespace::DONT_TRIM_TRAILING_WHITESPACE);
+  nsIFrame::RenderedText text =
+      aFrame->GetRenderedText(aRenderedOffset, aRenderedOffset + 1,
+                              nsIFrame::TextOffsetType::OffsetsInRenderedText,
+                              nsIFrame::TrailingWhitespace::DontTrim);
   *aContentOffset = text.mOffsetWithinNodeText;
 
   return NS_OK;

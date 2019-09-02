@@ -10,7 +10,7 @@
 #include "nsString.h"
 
 #include "OpenVRSession.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 
 #if defined(XP_WIN)
 #  include <d3d11.h>
@@ -19,8 +19,13 @@
 #  include "mozilla/gfx/MacIOSurface.h"
 #endif
 
+#if !defined(XP_WIN)
+#  include <sys/stat.h>  // for umask()
+#endif
+
 #include "mozilla/dom/GamepadEventTypes.h"
 #include "mozilla/dom/GamepadBinding.h"
+#include "binding/OpenVRCosmosBinding.h"
 #include "binding/OpenVRKnucklesBinding.h"
 #include "binding/OpenVRViveBinding.h"
 #if defined(XP_WIN)  // Windows Mixed Reality is only available in Windows.
@@ -53,13 +58,11 @@ namespace {
 
 // This is for controller action file writer.
 struct StringWriteFunc : public JSONWriteFunc {
-  nsAString& mBuffer;  // This struct must not outlive this buffer
+  nsACString& mBuffer;  // This struct must not outlive this buffer
 
-  explicit StringWriteFunc(nsAString& buffer) : mBuffer(buffer) {}
+  explicit StringWriteFunc(nsACString& buffer) : mBuffer(buffer) {}
 
-  void Write(const char* aStr) override {
-    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr));
-  }
+  void Write(const char* aStr) override { mBuffer.Append(aStr); }
 };
 
 class ControllerManifestFile {
@@ -72,7 +75,8 @@ class ControllerManifestFile {
   }
 
   bool IsExisting() {
-    if (mFileName.IsEmpty() || !std::ifstream(mFileName.BeginReading())) {
+    if (mFileName.IsEmpty() ||
+        !std::ifstream(mFileName.BeginReading()).good()) {
       return false;
     }
     return true;
@@ -97,6 +101,7 @@ class ControllerManifestFile {
 
 // We wanna keep these temporary files existing
 // until Firefox is closed instead of following OpenVRSession's lifetime.
+StaticRefPtr<ControllerManifestFile> sCosmosBindingFile;
 StaticRefPtr<ControllerManifestFile> sKnucklesBindingFile;
 StaticRefPtr<ControllerManifestFile> sViveBindingFile;
 #if defined(XP_WIN)
@@ -172,13 +177,60 @@ void UpdateButton(VRControllerState& aState,
 }
 
 bool FileIsExisting(const nsCString& aPath) {
-  if (aPath.IsEmpty() || !std::ifstream(aPath.BeginReading())) {
+  if (aPath.IsEmpty() || !std::ifstream(aPath.BeginReading()).good()) {
     return false;
   }
   return true;
 }
 
 };  // anonymous namespace
+
+#if defined(XP_WIN)
+bool GenerateTempFileName(nsCString& aPath) {
+  TCHAR tempPathBuffer[MAX_PATH];
+  TCHAR tempFileName[MAX_PATH];
+
+  // Gets the temp path env string (no guarantee it's a valid path).
+  DWORD dwRetVal = GetTempPath(MAX_PATH, tempPathBuffer);
+  if (dwRetVal > MAX_PATH || (dwRetVal == 0)) {
+    NS_WARNING("OpenVR - Creating temp path failed.");
+    return false;
+  }
+
+  // Generates a temporary file name.
+  UINT uRetVal = GetTempFileName(tempPathBuffer,  // directory for tmp files
+                                 TEXT("mozvr"),   // temp file name prefix
+                                 0,               // create unique name
+                                 tempFileName);   // buffer for name
+  if (uRetVal == 0) {
+    NS_WARNING("OpenVR - Creating temp file failed.");
+    return false;
+  }
+
+  aPath.Assign(NS_ConvertUTF16toUTF8(tempFileName));
+  return true;
+}
+#else
+bool GenerateTempFileName(nsCString& aPath) {
+  const char tmp[] = "/tmp/mozvrXXXXXX";
+  char fileName[PATH_MAX];
+
+  strcpy(fileName, tmp);
+  const mode_t prevMask = umask(S_IXUSR | S_IRWXO | S_IRWXG);
+  const int fd = mkstemp(fileName);
+  umask(prevMask);
+  if (fd == -1) {
+    NS_WARNING(nsPrintfCString("OpenVR - Creating temp file failed: %s",
+                               strerror(errno))
+                   .get());
+    return false;
+  }
+  close(fd);
+
+  aPath.Assign(fileName);
+  return true;
+}
+#endif  // defined(XP_WIN)
 
 OpenVRSession::OpenVRSession()
     : VRSession(),
@@ -200,7 +252,7 @@ OpenVRSession::~OpenVRSession() {
 }
 
 bool OpenVRSession::Initialize(mozilla::gfx::VRSystemState& aSystemState) {
-  if (!gfxPrefs::VREnabled() || !gfxPrefs::VROpenVREnabled()) {
+  if (!StaticPrefs::dom_vr_enabled() || !StaticPrefs::dom_vr_openvr_enabled()) {
     return false;
   }
   if (mVRSystem != nullptr) {
@@ -256,8 +308,8 @@ bool OpenVRSession::Initialize(mozilla::gfx::VRSystemState& aSystemState) {
     return false;
   }
 
-  if (gfxPrefs::VROpenVRActionInputEnabled()) {
-    SetupContollerActions();
+  if (StaticPrefs::dom_vr_openvr_action_input() && !SetupContollerActions()) {
+    return false;
   }
 
   NS_DispatchToMainThread(NS_NewRunnableFunction(
@@ -267,31 +319,37 @@ bool OpenVRSession::Initialize(mozilla::gfx::VRSystemState& aSystemState) {
   return true;
 }
 
-void OpenVRSession::SetupContollerActions() {
+bool OpenVRSession::SetupContollerActions() {
+  if (!vr::VRInput()) {
+    NS_WARNING("OpenVR - vr::VRInput() is null.");
+    return false;
+  }
+
   // Check if this device binding file has been created.
   // If it didn't exist yet, create a new temp file.
   nsCString controllerAction;
   nsCString viveManifest;
   nsCString WMRManifest;
   nsCString knucklesManifest;
+  nsCString cosmosManifest;
 
-  if (gfxPrefs::VRProcessEnabled()) {
+  // Getting / Generating manifest file paths.
+  if (StaticPrefs::dom_vr_process_enabled()) {
     VRParent* vrParent = VRProcessChild::GetVRParent();
     nsCString output;
 
     if (vrParent->GetOpenVRControllerActionPath(&output)) {
       controllerAction = output;
-    } else {
-      controllerAction = std::tmpnam(nullptr);
     }
 
     if (vrParent->GetOpenVRControllerManifestPath(OpenVRControllerType::Vive,
                                                   &output)) {
       viveManifest = output;
-    } else {
-      viveManifest = std::tmpnam(nullptr);
     }
-    if (!FileIsExisting(viveManifest)) {
+    if (!viveManifest.Length() || !FileIsExisting(viveManifest)) {
+      if (!GenerateTempFileName(viveManifest)) {
+        return false;
+      }
       OpenVRViveBinding viveBinding;
       std::ofstream viveBindingFile(viveManifest.BeginReading());
       if (viveBindingFile.is_open()) {
@@ -304,10 +362,11 @@ void OpenVRSession::SetupContollerActions() {
     if (vrParent->GetOpenVRControllerManifestPath(OpenVRControllerType::WMR,
                                                   &output)) {
       WMRManifest = output;
-    } else {
-      WMRManifest = std::tmpnam(nullptr);
     }
-    if (!FileIsExisting(WMRManifest)) {
+    if (!WMRManifest.Length() || !FileIsExisting(WMRManifest)) {
+      if (!GenerateTempFileName(WMRManifest)) {
+        return false;
+      }
       OpenVRWMRBinding WMRBinding;
       std::ofstream WMRBindingFile(WMRManifest.BeginReading());
       if (WMRBindingFile.is_open()) {
@@ -316,14 +375,14 @@ void OpenVRSession::SetupContollerActions() {
       }
     }
 #endif
-
     if (vrParent->GetOpenVRControllerManifestPath(
             OpenVRControllerType::Knuckles, &output)) {
       knucklesManifest = output;
-    } else {
-      knucklesManifest = std::tmpnam(nullptr);
     }
-    if (!FileIsExisting(knucklesManifest)) {
+    if (!knucklesManifest.Length() || !FileIsExisting(knucklesManifest)) {
+      if (!GenerateTempFileName(knucklesManifest)) {
+        return false;
+      }
       OpenVRKnucklesBinding knucklesBinding;
       std::ofstream knucklesBindingFile(knucklesManifest.BeginReading());
       if (knucklesBindingFile.is_open()) {
@@ -331,14 +390,28 @@ void OpenVRSession::SetupContollerActions() {
         knucklesBindingFile.close();
       }
     }
+    if (vrParent->GetOpenVRControllerManifestPath(
+            OpenVRControllerType::Cosmos, &output)) {
+      cosmosManifest = output;
+    }
+    if (!cosmosManifest.Length() || !FileIsExisting(cosmosManifest)) {
+      if (!GenerateTempFileName(cosmosManifest)) {
+        return false;
+      }
+      OpenVRCosmosBinding cosmosBinding;
+      std::ofstream cosmosBindingFile(cosmosManifest.BeginReading());
+      if (cosmosBindingFile.is_open()) {
+        cosmosBindingFile << cosmosBinding.binding;
+        cosmosBindingFile.close();
+      }
+    }
   } else {
+    // Without using VR process
     if (!sControllerActionFile) {
       sControllerActionFile = ControllerManifestFile::CreateManifest();
       NS_DispatchToMainThread(NS_NewRunnableFunction(
           "ClearOnShutdown ControllerManifestFile",
           []() { ClearOnShutdown(&sControllerActionFile); }));
-
-      sControllerActionFile->SetFileName(std::tmpnam(nullptr));
     }
     controllerAction = sControllerActionFile->GetFileName();
 
@@ -349,7 +422,11 @@ void OpenVRSession::SetupContollerActions() {
                                  []() { ClearOnShutdown(&sViveBindingFile); }));
     }
     if (!sViveBindingFile->IsExisting()) {
-      sViveBindingFile->SetFileName(std::tmpnam(nullptr));
+      nsCString viveBindingPath;
+      if (!GenerateTempFileName(viveBindingPath)) {
+        return false;
+      }
+      sViveBindingFile->SetFileName(viveBindingPath.BeginReading());
       OpenVRViveBinding viveBinding;
       std::ofstream viveBindingFile(sViveBindingFile->GetFileName());
       if (viveBindingFile.is_open()) {
@@ -366,7 +443,11 @@ void OpenVRSession::SetupContollerActions() {
           []() { ClearOnShutdown(&sKnucklesBindingFile); }));
     }
     if (!sKnucklesBindingFile->IsExisting()) {
-      sKnucklesBindingFile->SetFileName(std::tmpnam(nullptr));
+      nsCString knucklesBindingPath;
+      if (!GenerateTempFileName(knucklesBindingPath)) {
+        return false;
+      }
+      sKnucklesBindingFile->SetFileName(knucklesBindingPath.BeginReading());
       OpenVRKnucklesBinding knucklesBinding;
       std::ofstream knucklesBindingFile(sKnucklesBindingFile->GetFileName());
       if (knucklesBindingFile.is_open()) {
@@ -376,6 +457,26 @@ void OpenVRSession::SetupContollerActions() {
     }
     knucklesManifest = sKnucklesBindingFile->GetFileName();
 
+    if (!sCosmosBindingFile) {
+      sCosmosBindingFile = ControllerManifestFile::CreateManifest();
+      NS_DispatchToMainThread(NS_NewRunnableFunction(
+          "ClearOnShutdown ControllerManifestFile",
+          []() { ClearOnShutdown(&sCosmosBindingFile); }));
+    }
+    if (!sCosmosBindingFile->IsExisting()) {
+      nsCString cosmosBindingPath;
+      if (!GenerateTempFileName(cosmosBindingPath)) {
+        return false;
+      }
+      sCosmosBindingFile->SetFileName(cosmosBindingPath.BeginReading());
+      OpenVRCosmosBinding cosmosBinding;
+      std::ofstream cosmosBindingFile(sCosmosBindingFile->GetFileName());
+      if (cosmosBindingFile.is_open()) {
+        cosmosBindingFile << cosmosBinding.binding;
+        cosmosBindingFile.close();
+      }
+    }
+    cosmosManifest = sCosmosBindingFile->GetFileName();
 #if defined(XP_WIN)
     if (!sWMRBindingFile) {
       sWMRBindingFile = ControllerManifestFile::CreateManifest();
@@ -384,7 +485,11 @@ void OpenVRSession::SetupContollerActions() {
                                  []() { ClearOnShutdown(&sWMRBindingFile); }));
     }
     if (!sWMRBindingFile->IsExisting()) {
-      sWMRBindingFile->SetFileName(std::tmpnam(nullptr));
+      nsCString WMRBindingPath;
+      if (!GenerateTempFileName(WMRBindingPath)) {
+        return false;
+      }
+      sWMRBindingFile->SetFileName(WMRBindingPath.BeginReading());
       OpenVRWMRBinding WMRBinding;
       std::ofstream WMRBindingFile(sWMRBindingFile->GetFileName());
       if (WMRBindingFile.is_open()) {
@@ -395,7 +500,9 @@ void OpenVRSession::SetupContollerActions() {
     WMRManifest = sWMRBindingFile->GetFileName();
 #endif
   }
+  // End of Getting / Generating manifest file paths.
 
+  // Setup controller actions.
   ControllerInfo leftContollerInfo;
   leftContollerInfo.mActionPose =
       ControllerAction("/actions/firefox/in/LHand_pose", "pose");
@@ -443,6 +550,8 @@ void OpenVRSession::SetupContollerActions() {
       "/actions/firefox/in/LHand_finger_ring_value", "vector1");
   leftContollerInfo.mActionFingerPinky_Value = ControllerAction(
       "/actions/firefox/in/LHand_finger_pinky_value", "vector1");
+  leftContollerInfo.mActionBumper_Pressed =
+      ControllerAction("/actions/firefox/in/LHand_bumper_pressed", "boolean");
 
   ControllerInfo rightContollerInfo;
   rightContollerInfo.mActionPose =
@@ -491,221 +600,241 @@ void OpenVRSession::SetupContollerActions() {
       "/actions/firefox/in/RHand_finger_ring_value", "vector1");
   rightContollerInfo.mActionFingerPinky_Value = ControllerAction(
       "/actions/firefox/in/RHand_finger_pinky_value", "vector1");
+  rightContollerInfo.mActionBumper_Pressed =
+      ControllerAction("/actions/firefox/in/RHand_bumper_pressed", "boolean");
 
   mControllerHand[OpenVRHand::Left] = leftContollerInfo;
   mControllerHand[OpenVRHand::Right] = rightContollerInfo;
 
-  if (FileIsExisting(controllerAction)) {
-    return;
-  }
+  if (!controllerAction.Length() || !FileIsExisting(controllerAction)) {
+    if (!GenerateTempFileName(controllerAction)) {
+      return false;
+    }
+    nsCString actionData;
+    JSONWriter actionWriter(MakeUnique<StringWriteFunc>(actionData));
+    actionWriter.Start();
 
-  nsAutoString actionData;
-  JSONWriter actionWriter(MakeUnique<StringWriteFunc>(actionData));
-  actionWriter.Start();
-
-  actionWriter.StringProperty("version",
-                              "0.1.0");  // TODO: adding a version check.
-  // "default_bindings": []
-  actionWriter.StartArrayProperty("default_bindings");
-  actionWriter.StartObjectElement();
-  actionWriter.StringProperty("controller_type", "vive_controller");
-  actionWriter.StringProperty("binding_url", viveManifest.BeginReading());
-  actionWriter.EndObject();
-  actionWriter.StartObjectElement();
-  actionWriter.StringProperty("controller_type", "knuckles");
-  actionWriter.StringProperty("binding_url", knucklesManifest.BeginReading());
-  actionWriter.EndObject();
+    actionWriter.StringProperty("version",
+                                "0.1.0");  // TODO: adding a version check.
+    // "default_bindings": []
+    actionWriter.StartArrayProperty("default_bindings");
+    actionWriter.StartObjectElement();
+    actionWriter.StringProperty("controller_type", "vive_controller");
+    actionWriter.StringProperty("binding_url", viveManifest.BeginReading());
+    actionWriter.EndObject();
+    actionWriter.StartObjectElement();
+    actionWriter.StringProperty("controller_type", "knuckles");
+    actionWriter.StringProperty("binding_url", knucklesManifest.BeginReading());
+    actionWriter.EndObject();
+    actionWriter.StartObjectElement();
+    actionWriter.StringProperty("controller_type", "vive_cosmos_controller");
+    actionWriter.StringProperty("binding_url", cosmosManifest.BeginReading());
+    actionWriter.EndObject();
 #if defined(XP_WIN)
-  actionWriter.StartObjectElement();
-  actionWriter.StringProperty("controller_type", "holographic_controller");
-  actionWriter.StringProperty("binding_url", WMRManifest.BeginReading());
-  actionWriter.EndObject();
+    actionWriter.StartObjectElement();
+    actionWriter.StringProperty("controller_type", "holographic_controller");
+    actionWriter.StringProperty("binding_url", WMRManifest.BeginReading());
+    actionWriter.EndObject();
 #endif
-  actionWriter.EndArray();  // End "default_bindings": []
+    actionWriter.EndArray();  // End "default_bindings": []
 
-  // "actions": [] Action paths must take the form: "/actions/<action
-  // set>/in|out/<action>"
-  actionWriter.StartArrayProperty("actions");
+    // "actions": [] Action paths must take the form: "/actions/<action
+    // set>/in|out/<action>"
+    actionWriter.StartArrayProperty("actions");
 
-  for (auto& controller : mControllerHand) {
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty("name",
-                                controller.mActionPose.name.BeginReading());
-    actionWriter.StringProperty("type",
-                                controller.mActionPose.type.BeginReading());
-    actionWriter.EndObject();
+    for (auto& controller : mControllerHand) {
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty("name",
+                                  controller.mActionPose.name.BeginReading());
+      actionWriter.StringProperty("type",
+                                  controller.mActionPose.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionTrackpad_Analog.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionTrackpad_Analog.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionTrackpad_Analog.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionTrackpad_Analog.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionTrackpad_Pressed.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionTrackpad_Pressed.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionTrackpad_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionTrackpad_Pressed.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionTrackpad_Touched.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionTrackpad_Touched.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionTrackpad_Touched.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionTrackpad_Touched.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionTrigger_Value.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionTrigger_Value.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionTrigger_Value.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionTrigger_Value.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionGrip_Pressed.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionGrip_Pressed.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionGrip_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionGrip_Pressed.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionGrip_Touched.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionGrip_Touched.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionGrip_Touched.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionGrip_Touched.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionMenu_Pressed.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionMenu_Pressed.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionMenu_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionMenu_Pressed.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionMenu_Touched.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionMenu_Touched.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionMenu_Touched.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionMenu_Touched.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionSystem_Pressed.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionSystem_Pressed.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionSystem_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionSystem_Pressed.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionSystem_Touched.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionSystem_Touched.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionSystem_Touched.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionSystem_Touched.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionA_Pressed.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionA_Pressed.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionA_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionA_Pressed.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionA_Touched.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionA_Touched.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionA_Touched.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionA_Touched.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionB_Pressed.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionB_Pressed.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionB_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionB_Pressed.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionB_Touched.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionB_Touched.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionB_Touched.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionB_Touched.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionThumbstick_Analog.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionThumbstick_Analog.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionThumbstick_Analog.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionThumbstick_Analog.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionThumbstick_Pressed.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionThumbstick_Pressed.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionThumbstick_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionThumbstick_Pressed.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionThumbstick_Touched.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionThumbstick_Touched.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionThumbstick_Touched.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionThumbstick_Touched.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionFingerIndex_Value.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionFingerIndex_Value.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionFingerIndex_Value.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionFingerIndex_Value.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionFingerMiddle_Value.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionFingerMiddle_Value.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionFingerMiddle_Value.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionFingerMiddle_Value.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionFingerRing_Value.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionFingerRing_Value.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionFingerRing_Value.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionFingerRing_Value.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty(
-        "name", controller.mActionFingerPinky_Value.name.BeginReading());
-    actionWriter.StringProperty(
-        "type", controller.mActionFingerPinky_Value.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionFingerPinky_Value.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionFingerPinky_Value.type.BeginReading());
+      actionWriter.EndObject();
 
-    actionWriter.StartObjectElement();
-    actionWriter.StringProperty("name",
-                                controller.mActionHaptic.name.BeginReading());
-    actionWriter.StringProperty("type",
-                                controller.mActionHaptic.type.BeginReading());
-    actionWriter.EndObject();
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty(
+          "name", controller.mActionBumper_Pressed.name.BeginReading());
+      actionWriter.StringProperty(
+          "type", controller.mActionBumper_Pressed.type.BeginReading());
+      actionWriter.EndObject();
+
+      actionWriter.StartObjectElement();
+      actionWriter.StringProperty("name",
+                                  controller.mActionHaptic.name.BeginReading());
+      actionWriter.StringProperty("type",
+                                  controller.mActionHaptic.type.BeginReading());
+      actionWriter.EndObject();
+    }
+    actionWriter.EndArray();  // End "actions": []
+    actionWriter.End();
+
+    std::ofstream actionfile(controllerAction.BeginReading());
+    nsCString actionResult(actionData.get());
+    if (actionfile.is_open()) {
+      actionfile << actionResult.get();
+      actionfile.close();
+    }
   }
-  actionWriter.EndArray();  // End "actions": []
-  actionWriter.End();
 
-  std::ofstream actionfile(controllerAction.BeginReading());
-  nsCString actionResult(NS_ConvertUTF16toUTF8(actionData.get()));
-  if (actionfile.is_open()) {
-    actionfile << actionResult.get();
-    actionfile.close();
+  vr::EVRInputError err = vr::VRInput()->SetActionManifestPath(controllerAction.BeginReading());
+  if (err != vr::VRInputError_None) {
+    NS_WARNING("OpenVR - SetActionManifestPath failed.");
+    return false;
   }
-
-  vr::VRInput()->SetActionManifestPath(controllerAction.BeginReading());
+  // End of setup controller actions.
 
   // Notify the parent process these manifest files are already been recorded.
-  if (gfxPrefs::VRProcessEnabled()) {
+  if (StaticPrefs::dom_vr_process_enabled()) {
     NS_DispatchToMainThread(NS_NewRunnableFunction(
         "SendOpenVRControllerActionPathToParent",
-        [controllerAction, viveManifest, WMRManifest, knucklesManifest]() {
+        [controllerAction, viveManifest, WMRManifest, knucklesManifest,
+         cosmosManifest]() {
           VRParent* vrParent = VRProcessChild::GetVRParent();
           Unused << vrParent->SendOpenVRControllerActionPathToParent(
               controllerAction);
@@ -715,8 +844,14 @@ void OpenVRSession::SetupContollerActions() {
               OpenVRControllerType::WMR, WMRManifest);
           Unused << vrParent->SendOpenVRControllerManifestPathToParent(
               OpenVRControllerType::Knuckles, knucklesManifest);
+          Unused << vrParent->SendOpenVRControllerManifestPathToParent(
+              OpenVRControllerType::Cosmos, cosmosManifest);
         }));
+  } else {
+    sControllerActionFile->SetFileName(controllerAction.BeginReading());
   }
+
+  return true;
 }
 
 #if defined(XP_WIN)
@@ -1065,6 +1200,9 @@ void OpenVRSession::EnumerateControllers(VRSystemState& aState) {
             mControllerHand[handIndex]
                 .mActionFingerPinky_Value.name.BeginReading(),
             &mControllerHand[handIndex].mActionFingerPinky_Value.handle);
+         vr::VRInput()->GetActionHandle(
+            mControllerHand[handIndex].mActionBumper_Pressed.name.BeginReading(),
+            &mControllerHand[handIndex].mActionBumper_Pressed.handle);
 
         nsCString deviceId;
         GetControllerDeviceId(deviceType, originInfo.trackedDeviceIndex,
@@ -1236,7 +1374,8 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
   // value. In order to not affect the current VR content, we add a workaround
   // for yAxis.
   const float yAxisInvert = (mIsWindowsMR) ? -1.0f : 1.0f;
-  const float triggerThreshold = gfxPrefs::VRControllerTriggerThreshold();
+  const float triggerThreshold =
+      StaticPrefs::dom_vr_controller_trigger_threshold();
 
   for (uint32_t stateIndex = 0; stateIndex < kVRControllerMaxCount;
        ++stateIndex) {
@@ -1281,7 +1420,6 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       } else {
         controllerState.buttonPressed &= ~mask;
       }
-
       if (mControllerHand[stateIndex].mActionTrackpad_Touched.handle &&
           vr::VRInput()->GetDigitalActionData(
               mControllerHand[stateIndex].mActionTrackpad_Touched.handle,
@@ -1324,7 +1462,6 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       } else {
         controllerState.buttonPressed &= ~mask;
       }
-
       if (mControllerHand[stateIndex].mActionGrip_Touched.handle &&
           vr::VRInput()->GetDigitalActionData(
               mControllerHand[stateIndex].mActionGrip_Touched.handle,
@@ -1356,7 +1493,6 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       } else {
         controllerState.buttonPressed &= ~mask;
       }
-
       if (mControllerHand[stateIndex].mActionMenu_Touched.handle &&
           vr::VRInput()->GetDigitalActionData(
               mControllerHand[stateIndex].mActionMenu_Touched.handle,
@@ -1388,7 +1524,6 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       } else {
         controllerState.buttonPressed &= ~mask;
       }
-
       if (mControllerHand[stateIndex].mActionSystem_Touched.handle &&
           vr::VRInput()->GetDigitalActionData(
               mControllerHand[stateIndex].mActionSystem_Touched.handle,
@@ -1435,6 +1570,7 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       }
       ++buttonIdx;
     }
+
     // Button 5: B
     if (mControllerHand[stateIndex].mActionB_Pressed.handle &&
         vr::VRInput()->GetDigitalActionData(
@@ -1450,7 +1586,6 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       } else {
         controllerState.buttonPressed &= ~mask;
       }
-
       if (mControllerHand[stateIndex].mActionB_Touched.handle &&
           vr::VRInput()->GetDigitalActionData(
               mControllerHand[stateIndex].mActionB_Touched.handle, &actionData,
@@ -1466,6 +1601,7 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       }
       ++buttonIdx;
     }
+
     // Axis 2 3: Thumbstick
     // Button 6: Thumbstick
     if (mControllerHand[stateIndex].mActionThumbstick_Analog.handle &&
@@ -1479,7 +1615,6 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       controllerState.axisValue[axisIdx] = analogData.y * yAxisInvert;
       ++axisIdx;
     }
-
     if (mControllerHand[stateIndex].mActionThumbstick_Pressed.handle &&
         vr::VRInput()->GetDigitalActionData(
             mControllerHand[stateIndex].mActionThumbstick_Pressed.handle,
@@ -1487,13 +1622,13 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
             vr::k_ulInvalidInputValueHandle) == vr::VRInputError_None &&
         actionData.bActive) {
       bPressed = actionData.bState;
+      mask = (1ULL << buttonIdx);
       controllerState.triggerValue[buttonIdx] = bPressed ? 1.0 : 0.0f;
       if (bPressed) {
         controllerState.buttonPressed |= mask;
       } else {
         controllerState.buttonPressed &= ~mask;
       }
-
       if (mControllerHand[stateIndex].mActionThumbstick_Touched.handle &&
           vr::VRInput()->GetDigitalActionData(
               mControllerHand[stateIndex].mActionThumbstick_Touched.handle,
@@ -1509,6 +1644,25 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       }
       ++buttonIdx;
     }
+
+    // Button 7: Bumper (Cosmos only)
+    if (mControllerHand[stateIndex].mActionBumper_Pressed.handle &&
+        vr::VRInput()->GetDigitalActionData(
+            mControllerHand[stateIndex].mActionBumper_Pressed.handle, &actionData,
+            sizeof(actionData),
+            vr::k_ulInvalidInputValueHandle) == vr::VRInputError_None &&
+        actionData.bActive) {
+      bPressed = actionData.bState;
+      mask = (1ULL << buttonIdx);
+      controllerState.triggerValue[buttonIdx] = bPressed ? 1.0 : 0.0f;
+      if (bPressed) {
+        controllerState.buttonPressed |= mask;
+      } else {
+        controllerState.buttonPressed &= ~mask;
+      }
+      ++buttonIdx;
+    }
+
     // Button 7: Finger index
     if (mControllerHand[stateIndex].mActionFingerIndex_Value.handle &&
         vr::VRInput()->GetAnalogActionData(
@@ -1519,6 +1673,7 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       UpdateTrigger(controllerState, buttonIdx, analogData.x, triggerThreshold);
       ++buttonIdx;
     }
+
     // Button 8: Finger middle
     if (mControllerHand[stateIndex].mActionFingerMiddle_Value.handle &&
         vr::VRInput()->GetAnalogActionData(
@@ -1529,6 +1684,7 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       UpdateTrigger(controllerState, buttonIdx, analogData.x, triggerThreshold);
       ++buttonIdx;
     }
+
     // Button 9: Finger ring
     if (mControllerHand[stateIndex].mActionFingerRing_Value.handle &&
         vr::VRInput()->GetAnalogActionData(
@@ -1539,6 +1695,7 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
       UpdateTrigger(controllerState, buttonIdx, analogData.x, triggerThreshold);
       ++buttonIdx;
     }
+
     // Button 10: Finger pinky
     if (mControllerHand[stateIndex].mActionFingerPinky_Value.handle &&
         vr::VRInput()->GetAnalogActionData(
@@ -1562,7 +1719,8 @@ void OpenVRSession::UpdateControllerButtonsObsolete(VRSystemState& aState) {
   // value. In order to not affect the current VR content, we add a workaround
   // for yAxis.
   const float yAxisInvert = (mIsWindowsMR) ? -1.0f : 1.0f;
-  const float triggerThreshold = gfxPrefs::VRControllerTriggerThreshold();
+  const float triggerThreshold =
+      StaticPrefs::dom_vr_controller_trigger_threshold();
 
   for (uint32_t stateIndex = 0; stateIndex < kVRControllerMaxCount;
        stateIndex++) {
@@ -1832,6 +1990,9 @@ void OpenVRSession::GetControllerDeviceId(
       if (deviceId.Find("knuckles") != kNotFound) {
         aId.AssignLiteral("OpenVR Knuckles");
         isFound = true;
+      } else if (deviceId.Find("vive_cosmos_controller") != kNotFound) {
+        aId.AssignLiteral("OpenVR Cosmos");
+        isFound = true;
       }
       requiredBufferLen = mVRSystem->GetStringTrackedDeviceProperty(
           aDeviceIndex, ::vr::Prop_SerialNumber_String, charBuf, 128, &err);
@@ -1864,7 +2025,7 @@ void OpenVRSession::StartFrame(mozilla::gfx::VRSystemState& aSystemState) {
   UpdateHeadsetPose(aSystemState);
   UpdateEyeParameters(aSystemState);
 
-  if (gfxPrefs::VROpenVRActionInputEnabled()) {
+  if (StaticPrefs::dom_vr_openvr_action_input()) {
     EnumerateControllers(aSystemState);
 
     vr::VRActiveActionSet_t actionSet = {0};
@@ -2076,7 +2237,7 @@ void OpenVRSession::HapticTimerCallback(nsITimer* aTimer, void* aClosure) {
    */
   OpenVRSession* self = static_cast<OpenVRSession*>(aClosure);
 
-  if (gfxPrefs::VROpenVRActionInputEnabled()) {
+  if (StaticPrefs::dom_vr_openvr_action_input()) {
     self->UpdateHaptics();
   } else {
     self->UpdateHapticsObsolete();

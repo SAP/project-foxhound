@@ -215,6 +215,7 @@ else
 endif
 	cp -RL $(DEPTH)/_tests/gtest $(PKG_STAGE)
 	cp $(topsrcdir)/testing/gtest/rungtests.py $(PKG_STAGE)/gtest
+	cp $(topsrcdir)/testing/gtest/remotegtests.py $(PKG_STAGE)/gtest
 	cp $(DIST)/bin/dependentlibs.list.gtest $(PKG_STAGE)/gtest
 	cp $(DEPTH)/mozinfo.json $(PKG_STAGE)/gtest
 
@@ -224,7 +225,11 @@ stage-android: make-stage-dir
 	$(NSINSTALL) -D $(DEPTH)/_tests/reftest/hyphenation
 	$(NSINSTALL) $(wildcard $(topsrcdir)/intl/locales/*/hyphenation/*.dic) $(DEPTH)/_tests/reftest/hyphenation
 
+ifdef MOZ_COPY_PDBS
+CPP_UNIT_TEST_BINS=$(filter-out $(wildcard $(DIST)/cppunittests/*.pdb), $(wildcard $(DIST)/cppunittests/*))
+else
 CPP_UNIT_TEST_BINS=$(wildcard $(DIST)/cppunittests/*)
+endif
 
 stage-cppunittests: make-stage-dir
 	$(NSINSTALL) -D $(PKG_STAGE)/cppunittest
@@ -233,10 +238,16 @@ ifdef STRIP_COMPILED_TESTS
 else
 	cp -RL $(CPP_UNIT_TEST_BINS) $(PKG_STAGE)/cppunittest
 endif
+ifdef MOZ_COPY_PDBS
+	cp -RL $(addsuffix .pdb,$(basename $(CPP_UNIT_TEST_BINS))) $(PKG_STAGE)/cppunittest
+endif
 ifdef STRIP_COMPILED_TESTS
 	$(OBJCOPY) $(or $(STRIP_FLAGS),--strip-unneeded) $(DIST)/bin/jsapi-tests$(BIN_SUFFIX) $(PKG_STAGE)/cppunittest/jsapi-tests$(BIN_SUFFIX)
 else
 	cp -RL $(DIST)/bin/jsapi-tests$(BIN_SUFFIX) $(PKG_STAGE)/cppunittest
+endif
+ifdef MOZ_COPY_PDBS
+	cp -RL $(DIST)/bin/jsapi-tests.pdb $(PKG_STAGE)/cppunittest
 endif
 
 stage-steeplechase: make-stage-dir

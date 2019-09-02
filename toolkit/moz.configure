@@ -250,7 +250,7 @@ add_old_configure_assignment('MOZ_X11', True, when=toolkit_gtk)
 # Wayland support
 # ==============================================================
 wayland_headers = pkg_check_modules(
-    'MOZ_WAYLAND', 'gtk+-wayland-3.0 >= 3.10 xkbcommon >= 0.4.1',
+    'MOZ_WAYLAND', 'gtk+-wayland-3.0 >= 3.10 xkbcommon >= 0.4.1 libdrm >= 2.4',
     allow_missing=depends(full_toolkit)(lambda t: t == 'cairo-gtk3'),
     when=depends(full_toolkit)(lambda t: t in ('cairo-gtk3', 'cairo-gtk3-wayland')))
 
@@ -443,11 +443,14 @@ def av1(value):
 
 @depends(target, nasm_version, when=av1 & compile_environment)
 def dav1d_asm(target, nasm_version):
-    if target.os != 'Android' and target.cpu in ('x86', 'x86_64'):
-        if nasm_version < '2.13':
-            die('nasm 2.13 or greater is required for AV1 support. '
-                'Either install nasm or add --disable-av1 to your configure options.')
-        return True
+    if target.os != 'Android':
+        if target.cpu == 'aarch64':
+            return True
+        elif target.cpu in ('x86', 'x86_64'):
+            if nasm_version < '2.13':
+                die('nasm 2.13 or greater is required for AV1 support. '
+                    'Either install nasm or add --disable-av1 to your configure options.')
+            return True
 
 
 set_config('MOZ_DAV1D_ASM', dav1d_asm)
@@ -637,6 +640,23 @@ def check_places_and_android_history(places, android_history):
     if places and android_history:
         die('Cannot use MOZ_ANDROID_HISTORY alongside MOZ_PLACES.')
 
+
+option(env='MOZ_TELEMETRY_REPORTING', default=mozilla_official,
+       help='Enable telemetry reporting')
+
+set_define('MOZ_TELEMETRY_REPORTING', True, when='MOZ_TELEMETRY_REPORTING')
+add_old_configure_assignment(
+    'MOZ_TELEMETRY_REPORTING', True, when='MOZ_TELEMETRY_REPORTING')
+
+
+@depends('MOZ_TELEMETRY_REPORTING', milestone.is_nightly, fennec_nightly)
+def telemetry_on_by_default(reporting, is_nightly, fennec_nightly):
+    return reporting and (is_nightly or fennec_nightly)
+
+
+set_define('MOZ_TELEMETRY_ON_BY_DEFAULT', True, when=telemetry_on_by_default)
+
+
 # gpsd support
 # ==============================================================
 option('--enable-gpsd', env='MOZ_GPSD',
@@ -678,37 +698,14 @@ id_and_secret_keyfile('Leanplum SDK')
 simple_keyfile('Pocket API')
 
 
-# WebRender integration
+# WebRender Debugger integration
 # ==============================================================
 
-option('--enable-webrender', nargs='?', choices=('build',),
-       help='Include WebRender in the build and/or enable it at runtime')
+option('--enable-webrender-debugger',
+       help='Build the websocket debug server in WebRender')
 
-@depends('--enable-webrender')
-def webrender(value):
-    build_webrender = None
-    enable_webrender = None
-
-    if value.origin == 'default':
-        # if nothing is specified, default to building
-        build_webrender = True
-    elif len(value) and value[0] == 'build':
-        # if explicitly set to 'build', then we build but don't enable
-        build_webrender = True
-    elif bool(value):
-        # if set to true, then build and enable
-        build_webrender = True
-        enable_webrender = True
-
-    # in all other cases, don't build it or enable it (defaults are fine)
-    return namespace(
-        build = build_webrender,
-        enable = enable_webrender,
-    )
-
-set_config('MOZ_BUILD_WEBRENDER', webrender.build)
-set_define('MOZ_BUILD_WEBRENDER', webrender.build)
-set_config('MOZ_ENABLE_WEBRENDER', webrender.enable)
+set_config('MOZ_WEBRENDER_DEBUGGER',
+           depends_if('--enable-webrender-debugger')(lambda _: True))
 
 # SIMD acceleration for Rust code (currently just encoding_rs)
 # ==============================================================
@@ -716,14 +713,11 @@ set_config('MOZ_ENABLE_WEBRENDER', webrender.enable)
 option('--enable-rust-simd', env='MOZ_RUST_SIMD',
        help='Enable explicit SIMD in Rust code.')
 
-@depends('--enable-rust-simd', target, rustc_info)
-def rust_simd(value, target, rustc_info):
-    # As of 2018-06-05, the simd crate only works on aarch64,
-    # armv7, x86 and x86_64.
+@depends('--enable-rust-simd', target)
+def rust_simd(value, target):
+    # As of 2019-03-04, the simd-accel feature of encoding_rs has not
+    # been properly set up outside aarch64, armv7, x86 and x86_64.
     if target.cpu in ('aarch64', 'arm', 'x86', 'x86_64') and value:
-        if rustc_info and rustc_info.version >= Version('1.33.0'):
-            die('--enable-rust-simd does not work with Rust 1.33 or later. '
-                'See https://bugzilla.mozilla.org/show_bug.cgi?id=1521249 .')
         return True
 
 set_config('MOZ_RUST_SIMD', rust_simd)
@@ -916,19 +910,26 @@ add_old_configure_assignment('FT2_CFLAGS',
                              ft2_info.cflags)
 
 
-# CDP remote agent
+# Remote agent (part of CDP based remote protocol)
 # ==============================================================
 #
+# See https://firefox-source-docs.mozilla.org/remote/ for more.
 # The source code lives under ../remote.
 
-option('--enable-cdp', help='Enable CDP-based remote agent')
+@depends(target, milestone)
+def remote_default(target, milestone):
+    return target.os != 'Android' and milestone.is_nightly
 
-@depends('--enable-cdp')
+option('--disable-cdp', default=remote_default,
+       help='{Enable|Disable} remote agent')
+
+@depends('--disable-cdp')
 def remote(value):
     if value:
         return True
 
 set_config('ENABLE_REMOTE_AGENT', remote)
+set_define('ENABLE_REMOTE_AGENT', remote)
 
 
 # Marionette remote protocol
@@ -938,9 +939,9 @@ set_config('ENABLE_REMOTE_AGENT', remote)
 # automation, and testing purposes throughout Gecko, Firefox, and Fennec.
 # Marionette lives in ../testing/marionette.
 #
-# Marionette is not really a toolkit feature, as much as a Gecko engine
-# feature.  But it is enabled based on the toolkit (and target), so here
-# it lives.
+# Marionette is not really a toolkit feature, as much as a Gecko
+# engine feature.  But it is enabled based on the toolkit, so here it
+# lives.
 #
 # It also backs ../testing/geckodriver, which is Mozilla's WebDriver
 # implementation.
@@ -948,18 +949,10 @@ set_config('ENABLE_REMOTE_AGENT', remote)
 # For more information, see
 # https://developer.mozilla.org/en-US/docs/Mozilla/QA/Marionette.
 
-@depends(target)
-def marionette(target):
-    """Enable Marionette by default, except on Android."""
-    if target.os != 'Android':
-        return True
+option('--disable-marionette',
+       help='Disable Marionette remote protocol')
 
-imply_option('--enable-marionette', marionette, reason='Not Android')
-
-option('--enable-marionette',
-       help='Enable Marionette remote protocol')
-
-@depends('--enable-marionette')
+@depends('--disable-marionette')
 def marionette(value):
     if value:
         return True
@@ -1166,8 +1159,12 @@ def midl_flags(c_compiler, target, toolchain_search_path):
             'aarch64': 'arm64',
         }[target.cpu]
         flags = ['-env', env]
-        # Ideally, we'd use ['-cpp_cmd', c_compiler.compiler], but clang-cl
-        # currently doesn't work as a preprocessor for midl, so we need to
+
+        if c_compiler.version >= '8':
+            return flags + ['-cpp_cmd', c_compiler.compiler]
+
+        # clang-cl didn't work as a preprocessor for midl before version 8
+        # so we need to find cl if we use an older version.
         # find cl. https://bugs.llvm.org/show_bug.cgi?id=40140
         cl = find_program('cl', paths=toolchain_search_path)
         if not cl:
@@ -1264,6 +1261,20 @@ set_config('MOZ_MAINTENANCE_SERVICE',
            depends_if('--enable-maintenance-service',
                       when=target_is_windows)(lambda _: True))
 
+# BITS download (Windows only)
+# ==============================================================
+
+option('--enable-bits-download',
+       when=target_is_windows, default=target_is_windows,
+       help='{Enable|Disable} building BITS download support')
+
+set_define('MOZ_BITS_DOWNLOAD',
+           depends_if('--enable-bits-download',
+                      when=target_is_windows)(lambda _: True))
+set_config('MOZ_BITS_DOWNLOAD',
+           depends_if('--enable-bits-download',
+                      when=target_is_windows)(lambda _: True))
+
 # Bundled fonts on desktop platform
 # ==============================================================
 
@@ -1273,7 +1284,7 @@ def bundled_fonts_default(target):
 
 @depends(build_project)
 def allow_bundled_fonts(project):
-    return project == 'browser'
+    return project == 'browser' or project == 'comm/mail'
 
 option('--enable-bundled-fonts', default=bundled_fonts_default,
        when=allow_bundled_fonts,
@@ -1285,7 +1296,7 @@ set_define('MOZ_BUNDLED_FONTS',
 # Verify MAR signatures
 # ==============================================================
 
-option('--enable-verify-mar', help='Enable verifying MAR signatures')
+option('--disable-verify-mar', help='Disable verifying MAR signatures')
 
 set_define('MOZ_VERIFY_MAR_SIGNATURE',
            depends_if('--enable-verify-mar')(lambda _: True))
@@ -1528,6 +1539,8 @@ with only_when(compile_environment):
         flags = None
         if target.kernel == 'WINNT' and target.cpu == 'x86':
             flags = ['-DPIC', '-DWIN32']
+        elif target.kernel == 'WINNT' and target.cpu == 'aarch64':
+            flags = ['-DPIC', '-DWIN64']
         elif target.cpu == 'x86_64':
             if target.kernel == 'Darwin':
                 flags = ['-D__x86_64__', '-DPIC', '-DMACHO']
@@ -1564,7 +1577,8 @@ with only_when(compile_environment | artifact_builds):
     def ffvpx(yasm_has_avx2, libav_fft, vpx_as_flags, target):
         enable = flac_only = use_yasm = False
         flags = []
-        if target.cpu in ('x86', 'x86_64'):
+        if target.cpu in ('x86', 'x86_64') or \
+                target.cpu == 'aarch64' and target.kernel == 'WINNT':
             enable = True
             if libav_fft and libav_fft.flags:
                 use_yasm = True
@@ -1573,6 +1587,8 @@ with only_when(compile_environment | artifact_builds):
                     if target.cpu == 'x86':
                         # 32-bit windows need to prefix symbols with an underscore.
                         flags.extend(('-DPREFIX', '-Pconfig_win32.asm'))
+                    elif target.cpu == 'aarch64':
+                        use_yasm = False
                     else:
                         flags.append('-Pconfig_win64.asm')
                 elif target.kernel == 'Darwin':
@@ -1697,3 +1713,39 @@ def has_remote(toolkit):
 
 set_config('MOZ_HAS_REMOTE', has_remote)
 set_define('MOZ_HAS_REMOTE', has_remote)
+
+
+# new XULStore implementation
+# ==============================================================
+
+@depends(milestone)
+def new_xulstore(milestone):
+    if milestone.is_nightly:
+        return True
+
+set_config('MOZ_NEW_XULSTORE', True, when=new_xulstore)
+set_define('MOZ_NEW_XULSTORE', True, when=new_xulstore)
+
+
+# new Notification Store implementation
+# ==============================================================
+
+@depends(milestone)
+def new_notification_store(milestone):
+    if milestone.is_nightly:
+        return True
+
+set_config('MOZ_NEW_NOTIFICATION_STORE', True, when=new_notification_store)
+set_define('MOZ_NEW_NOTIFICATION_STORE', True, when=new_notification_store)
+
+
+# new Cert Storage implementation
+# ==============================================================
+
+@depends(milestone)
+def new_cert_storage(milestone):
+    if milestone.is_nightly:
+        return True
+
+set_config('MOZ_NEW_CERT_STORAGE', True, when=new_cert_storage)
+set_define('MOZ_NEW_CERT_STORAGE', True, when=new_cert_storage)

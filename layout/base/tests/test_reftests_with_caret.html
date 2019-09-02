@@ -2,9 +2,9 @@
 <html>
 <head>
   <title>Reftests with caret drawing</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <style>
     iframe {
@@ -111,6 +111,22 @@ var tests = [
     [ 'bug613807-1.html' , 'bug613807-1-ref.html' ] ,
     [ 'bug1082486-1.html', 'bug1082486-1-ref.html'] ,
     [ 'bug1082486-2.html', 'bug1082486-2-ref.html'] ,
+    // The following test cases uses mouse events. We need to make
+    // AccessibleCaret unhide for them.
+    function() {SpecialPowers.pushPrefEnv({'set': [['layout.accessiblecaret.hide_carets_for_mouse_input', false]]}, nextTest);} ,
+    [ 'bug1516963-1.html', 'bug1516963-1-ref.html'] ,
+    [ 'bug1516963-2.html', 'bug1516963-2-ref.html'] ,
+    [ 'bug1516963-3.html', 'bug1516963-3-ref.html'] ,
+    [ 'bug1516963-4.html', 'bug1516963-4-ref.html'] ,
+    [ 'bug1516963-5.html', 'bug1516963-5-ref.html'] ,
+    [ 'bug1516963-6.html', 'bug1516963-6-ref.html'] ,
+    [ 'bug1550869-1a.html', 'bug1550869-1-ref.html'] ,
+    [ 'bug1550869-1b.html', 'bug1550869-1-ref.html'] ,
+    [ 'bug1550869-2a.html', 'bug1550869-2-ref.html'] ,
+    [ 'bug1550869-2b.html', 'bug1550869-2-ref.html'] ,
+    [ 'bug1550869-2c.html', 'bug1550869-2-ref.html'] ,
+    [ 'bug1550869-2d.html', 'bug1550869-2-ref.html'] ,
+    function() {SpecialPowers.pushPrefEnv({'clear': [['layout.accessiblecaret.hide_carets_for_mouse_input']]}, nextTest);} ,
     // The following test cases are all involving with one sending
     // synthesizeKey(), the other without. They fail when accessiblecaret
     // is enabled. Test them with the preference off.
@@ -219,6 +235,9 @@ var tests = [
     [ 'bug1518339-2.html' , 'bug1518339-2-ref.html' ] ,
     [ 'bug1524266-1.html' , 'bug1524266-1-ref.html' ] ,
     function() {SpecialPowers.pushPrefEnv({'clear': [['layout.accessiblecaret.enabled_on_touch']]}, nextTest);} ,
+    function() {SpecialPowers.pushPrefEnv({'set': [['accessibility.browsewithcaret', true]]}, nextTest);} ,
+    [ 'bug1529492-1.html' , 'bug1529492-1-ref.html' ] ,
+    function() {SpecialPowers.pushPrefEnv({'clear': [['accessibility.browsewithcaret']]}, nextTest);} ,
 ];
 
 if (!navigator.appVersion.includes("Android")) {

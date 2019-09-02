@@ -33,9 +33,11 @@ using namespace mozilla::layers;
 using namespace mozilla::media;
 using namespace mozilla::dom;
 
-VP8TrackEncoder::VP8TrackEncoder(TrackRate aTrackRate,
+VP8TrackEncoder::VP8TrackEncoder(RefPtr<DriftCompensator> aDriftCompensator,
+                                 TrackRate aTrackRate,
                                  FrameDroppingMode aFrameDroppingMode)
-    : VideoTrackEncoder(aTrackRate, aFrameDroppingMode),
+    : VideoTrackEncoder(std::move(aDriftCompensator), aTrackRate,
+                        aFrameDroppingMode),
       mVPXContext(new vpx_codec_ctx_t()),
       mVPXImageWrapper(new vpx_image_t()) {
   MOZ_COUNT_CTOR(VP8TrackEncoder);
@@ -231,7 +233,9 @@ nsresult VP8TrackEncoder::GetEncodedPartitions(EncodedFrameContainer& aData) {
                                  pkt->data.frame.sz);
         break;
       }
-      default: { break; }
+      default: {
+        break;
+      }
     }
     // End of frame
     if ((pkt->data.frame.flags & VPX_FRAME_IS_FRAGMENT) == 0) {
@@ -495,7 +499,10 @@ nsresult VP8TrackEncoder::GetEncodedTrack(EncodedFrameContainer& aData) {
       }
       // Get the encoded data from VP8 encoder.
       rv = GetEncodedPartitions(aData);
-      NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
+      if (rv != NS_OK && rv != NS_ERROR_NOT_AVAILABLE) {
+        VP8LOG(LogLevel::Error, "GetEncodedPartitions failed.");
+        return NS_ERROR_FAILURE;
+      }
     } else {
       // SKIP_FRAME
       // Extend the duration of the last encoded data in aData
@@ -542,12 +549,21 @@ nsresult VP8TrackEncoder::GetEncodedTrack(EncodedFrameContainer& aData) {
     mEncodingComplete = true;
     // Bug 1243611, keep calling vpx_codec_encode and vpx_codec_get_cx_data
     // until vpx_codec_get_cx_data return null.
-    do {
+    while (true) {
       if (vpx_codec_encode(mVPXContext, nullptr, mEncodedTimestamp, 0, 0,
                            VPX_DL_REALTIME)) {
         return NS_ERROR_FAILURE;
       }
-    } while (NS_SUCCEEDED(GetEncodedPartitions(aData)));
+      nsresult rv = GetEncodedPartitions(aData);
+      if (rv == NS_ERROR_NOT_AVAILABLE) {
+        // End-of-stream
+        break;
+      }
+      if (rv != NS_OK) {
+        // Error
+        return NS_ERROR_FAILURE;
+      }
+    }
   }
 
   return NS_OK;

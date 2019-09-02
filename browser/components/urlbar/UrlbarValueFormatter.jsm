@@ -6,7 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarValueFormatter"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
@@ -31,6 +33,12 @@ class UrlbarValueFormatter {
     // This is used only as an optimization to avoid removing formatting in
     // the _remove* format methods when no formatting is actually applied.
     this._formattingApplied = false;
+
+    this.window.addEventListener("resize", this);
+  }
+
+  uninit() {
+    this.window.removeEventListener("resize", this);
   }
 
   get inputField() {
@@ -39,7 +47,10 @@ class UrlbarValueFormatter {
 
   get scheme() {
     return this.document.getAnonymousElementByAttribute(
-      this.urlbarInput.textbox, "anonid", "scheme");
+      this.urlbarInput.textbox,
+      "anonid",
+      "scheme"
+    );
   }
 
   update() {
@@ -54,14 +65,12 @@ class UrlbarValueFormatter {
     // Apply new formatting.  Formatter methods should return true if they
     // successfully formatted the value and false if not.  We apply only
     // one formatter at a time, so we stop at the first successful one.
-    this._formattingApplied =
-      this._formatURL() ||
-      this._formatSearchAlias();
+    this._formattingApplied = this._formatURL() || this._formatSearchAlias();
   }
 
-  ensureFormattedHostVisible(urlMetaData) {
+  _ensureFormattedHostVisible(urlMetaData) {
     // Used to avoid re-entrance in the requestAnimationFrame callback.
-    let instance = this._formatURLInstance = {};
+    let instance = (this._formatURLInstance = {});
 
     // Make sure the host is always visible. Since it is aligned on
     // the first strong directional character, we set scrollLeft
@@ -83,8 +92,10 @@ class UrlbarValueFormatter {
       }
       let { url, preDomain, domain } = urlMetaData;
       let directionality = this.window.windowUtils.getDirectionFromText(domain);
-      if (directionality == this.window.windowUtils.DIRECTION_RTL &&
-          url[preDomain.length + domain.length] != "\u200E") {
+      if (
+        directionality == this.window.windowUtils.DIRECTION_RTL &&
+        url[preDomain.length + domain.length] != "\u200E"
+      ) {
         this.inputField.scrollLeft = this.inputField.scrollLeftMax;
       }
     });
@@ -98,18 +109,21 @@ class UrlbarValueFormatter {
     let url = this.inputField.value;
 
     // Get the URL from the fixup service:
-    let flags = Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
-                Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+    let flags =
+      Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
+      Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
     let uriInfo;
     try {
       uriInfo = Services.uriFixup.getFixupURIInfo(url, flags);
     } catch (ex) {}
     // Ignore if we couldn't make a URI out of this, the URI resulted in a search,
     // or the URI has a non-http(s)/ftp protocol.
-    if (!uriInfo ||
-        !uriInfo.fixedURI ||
-        uriInfo.keywordProviderName ||
-        !["http", "https", "ftp"].includes(uriInfo.fixedURI.scheme)) {
+    if (
+      !uriInfo ||
+      !uriInfo.fixedURI ||
+      uriInfo.keywordProviderName ||
+      !["http", "https", "ftp"].includes(uriInfo.fixedURI.scheme)
+    ) {
       return null;
     }
 
@@ -127,7 +141,9 @@ class UrlbarValueFormatter {
     // This RegExp is not a perfect match, and for specially crafted URLs it may
     // get the host wrong; for safety reasons we will later compare the found
     // host with the one that will actually be loaded.
-    let matchedURL = url.match(/^(([a-z]+:\/\/)(?:[^\/#?]+@)?)(\S+?)(?::\d+)?\s*(?:[\/#?]|$)/);
+    let matchedURL = url.match(
+      /^(([a-z]+:\/\/)(?:[^\/#?]+@)?)(\S+?)(?::\d+)?\s*(?:[\/#?]|$)/
+    );
     if (!matchedURL) {
       return null;
     }
@@ -138,7 +154,9 @@ class UrlbarValueFormatter {
     // the fixed URI and apply highlight to that one instead.
     let replaceUrl = false;
     try {
-      replaceUrl = Services.io.newURI("http://" + domain).displayHost != uriInfo.fixedURI.displayHost;
+      replaceUrl =
+        Services.io.newURI("http://" + domain).displayHost !=
+        uriInfo.fixedURI.displayHost;
     } catch (ex) {
       return null;
     }
@@ -166,11 +184,9 @@ class UrlbarValueFormatter {
       return;
     }
     let controller = this.urlbarInput.editor.selectionController;
-    let strikeOut =
-      controller.getSelection(controller.SELECTION_URLSTRIKEOUT);
+    let strikeOut = controller.getSelection(controller.SELECTION_URLSTRIKEOUT);
     strikeOut.removeAllRanges();
-    let selection =
-      controller.getSelection(controller.SELECTION_URLSECONDARY);
+    let selection = controller.getSelection(controller.SELECTION_URLSECONDARY);
     selection.removeAllRanges();
     this._formatScheme(controller.SELECTION_URLSTRIKEOUT, true);
     this._formatScheme(controller.SELECTION_URLSECONDARY, true);
@@ -192,15 +208,24 @@ class UrlbarValueFormatter {
       return false;
     }
 
-    let { url, uriInfo, preDomain, schemeWSlashes, domain, trimmedLength } = urlMetaData;
+    let {
+      url,
+      uriInfo,
+      preDomain,
+      schemeWSlashes,
+      domain,
+      trimmedLength,
+    } = urlMetaData;
     // We strip http, so we should not show the scheme box for it.
     if (!UrlbarPrefs.get("trimURLs") || schemeWSlashes != "http://") {
       this.scheme.value = schemeWSlashes;
-      this.inputField.style.setProperty("--urlbar-scheme-size",
-                                        schemeWSlashes.length + "ch");
+      this.inputField.style.setProperty(
+        "--urlbar-scheme-size",
+        schemeWSlashes.length + "ch"
+      );
     }
 
-    this.ensureFormattedHostVisible(urlMetaData);
+    this._ensureFormattedHostVisible(urlMetaData);
 
     if (!UrlbarPrefs.get("formatting.enabled")) {
       return false;
@@ -214,15 +239,18 @@ class UrlbarValueFormatter {
     let textNode = editor.rootElement.firstChild;
 
     // Strike out the "https" part if mixed active content is loaded.
-    if (this.urlbarInput.getAttribute("pageproxystate") == "valid" &&
-        url.startsWith("https:") &&
-        this.window.gBrowser.securityUI.state &
-          Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT) {
+    if (
+      this.urlbarInput.getAttribute("pageproxystate") == "valid" &&
+      url.startsWith("https:") &&
+      this.window.gBrowser.securityUI.state &
+        Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT
+    ) {
       let range = this.document.createRange();
       range.setStart(textNode, 0);
       range.setEnd(textNode, 5);
-      let strikeOut =
-        controller.getSelection(controller.SELECTION_URLSTRIKEOUT);
+      let strikeOut = controller.getSelection(
+        controller.SELECTION_URLSTRIKEOUT
+      );
       strikeOut.addRange(range);
       this._formatScheme(controller.SELECTION_URLSTRIKEOUT);
     }
@@ -233,8 +261,9 @@ class UrlbarValueFormatter {
       baseDomain = Services.eTLD.getBaseDomainFromHost(uriInfo.fixedURI.host);
       if (!domain.endsWith(baseDomain)) {
         // getBaseDomainFromHost converts its resultant to ACE.
-        let IDNService = Cc["@mozilla.org/network/idn-service;1"]
-                         .getService(Ci.nsIIDNService);
+        let IDNService = Cc["@mozilla.org/network/idn-service;1"].getService(
+          Ci.nsIIDNService
+        );
         baseDomain = IDNService.convertACEtoUTF8(baseDomain);
       }
     } catch (e) {}
@@ -304,14 +333,17 @@ class UrlbarValueFormatter {
     let value = textNode.textContent;
     let trimmedValue = value.trim();
 
-    if (!trimmedValue.startsWith("@") ||
-        (this.urlbarInput.popup || this.urlbarInput.view)
-          .oneOffSearchButtons.selectedButton) {
+    if (
+      !trimmedValue.startsWith("@") ||
+      (this.urlbarInput.popup || this.urlbarInput.view).oneOffSearchButtons
+        .selectedButton
+    ) {
       return false;
     }
 
-    let alias = UrlbarPrefs.get("quantumbar") ? this._getSearchAlias() :
-                this._getSearchAliasAwesomebar();
+    let alias = UrlbarPrefs.get("quantumbar")
+      ? this._getSearchAlias()
+      : this._getSearchAliasAwesomebar();
     if (!alias) {
       return false;
     }
@@ -355,9 +387,11 @@ class UrlbarValueFormatter {
     // them as the alternate colors.  Otherwise, allow setColors to swap
     // them, which we can do by passing "currentColor".  See
     // nsTextPaintStyle::GetHighlightColors for details.
-    if (this.document.documentElement.querySelector(":-moz-lwtheme") ||
-        (AppConstants.platform == "win" &&
-         this.window.matchMedia("(-moz-windows-default-theme: 0)").matches)) {
+    if (
+      this.document.documentElement.querySelector(":-moz-lwtheme") ||
+      (AppConstants.platform == "win" &&
+        this.window.matchMedia("(-moz-windows-default-theme: 0)").matches)
+    ) {
       // non-default theme(s)
       selection.setColors(fg, bg, "currentColor", "currentColor");
     } else {
@@ -376,8 +410,10 @@ class UrlbarValueFormatter {
     // around the previously selected result in _selectedResult.
     this._selectedResult =
       this.urlbarInput.view.selectedResult || this._selectedResult;
-    if (this._selectedResult &&
-        this._selectedResult.type == UrlbarUtils.RESULT_TYPE.SEARCH) {
+    if (
+      this._selectedResult &&
+      this._selectedResult.type == UrlbarUtils.RESULT_TYPE.SEARCH
+    ) {
       return this._selectedResult.payload.keyword || null;
     }
     return null;
@@ -394,8 +430,9 @@ class UrlbarValueFormatter {
     // popup is closed is zero, however, which is why we also check the previous
     // selected index.
     let itemIndex =
-      popup.selectedIndex < 0 ? popup._previousSelectedIndex :
-      popup.selectedIndex;
+      popup.selectedIndex < 0
+        ? popup._previousSelectedIndex
+        : popup.selectedIndex;
     if (itemIndex < 0) {
       return null;
     }
@@ -416,5 +453,35 @@ class UrlbarValueFormatter {
       return null;
     }
     return action.params.alias || null;
+  }
+
+  /**
+   * Passes DOM events to the _on_<event type> methods.
+   * @param {Event} event
+   *   DOM event.
+   */
+  handleEvent(event) {
+    let methodName = "_on_" + event.type;
+    if (methodName in this) {
+      this[methodName](event);
+    } else {
+      throw new Error("Unrecognized UrlbarValueFormatter event: " + event.type);
+    }
+  }
+
+  _on_resize(event) {
+    if (event.target != this.window) {
+      return;
+    }
+    // Make sure the host remains visible in the input field when the window is
+    // resized.  We don't want to hurt resize performance though, so do this
+    // only after resize events have stopped and a small timeout has elapsed.
+    if (this._resizeThrottleTimeout) {
+      this.window.clearTimeout(this._resizeThrottleTimeout);
+    }
+    this._resizeThrottleTimeout = this.window.setTimeout(() => {
+      this._resizeThrottleTimeout = null;
+      this._ensureFormattedHostVisible();
+    }, 100);
   }
 }

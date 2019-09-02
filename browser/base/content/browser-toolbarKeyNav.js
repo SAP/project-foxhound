@@ -26,8 +26,9 @@ ToolbarKeyboardNavigator = {
   kToolbars: [CustomizableUI.AREA_NAVBAR, CustomizableUI.AREA_BOOKMARKS],
 
   _isButton(aElem) {
-    return aElem.tagName == "toolbarbutton" ||
-      aElem.getAttribute("role") == "button";
+    return (
+      aElem.tagName == "toolbarbutton" || aElem.getAttribute("role") == "button"
+    );
   },
 
   // Get a TreeWalker which includes only controls which should be keyboard
@@ -37,22 +38,27 @@ ToolbarKeyboardNavigator = {
       return aRoot._toolbarKeyNavWalker;
     }
 
-    let filter = (aNode) => {
+    let filter = aNode => {
       if (aNode.tagName == "toolbartabstop") {
         return NodeFilter.FILTER_ACCEPT;
       }
 
       // Special case for the "View site information" button, which isn't
       // actionable in some cases but is still visible.
-      if (aNode.id == "identity-box" &&
-          document.getElementById("urlbar").getAttribute("pageproxystate") ==
-          "invalid") {
+      if (
+        aNode.id == "identity-box" &&
+        document.getElementById("urlbar").getAttribute("pageproxystate") ==
+          "invalid"
+      ) {
         return NodeFilter.FILTER_REJECT;
       }
 
       // Skip invisible or disabled elements.
-      if (aNode.hidden || aNode.disabled
-          || aNode.style.visibility == "hidden") {
+      if (
+        aNode.hidden ||
+        aNode.disabled ||
+        aNode.style.visibility == "hidden"
+      ) {
         return NodeFilter.FILTER_REJECT;
       }
       // This width check excludes the overflow button when there's no overflow.
@@ -66,8 +72,11 @@ ToolbarKeyboardNavigator = {
       }
       return NodeFilter.FILTER_SKIP;
     };
-    aRoot._toolbarKeyNavWalker = document.createTreeWalker(aRoot,
-      NodeFilter.SHOW_ELEMENT, filter);
+    aRoot._toolbarKeyNavWalker = document.createTreeWalker(
+      aRoot,
+      NodeFilter.SHOW_ELEMENT,
+      filter
+    );
     return aRoot._toolbarKeyNavWalker;
   },
 
@@ -111,8 +120,9 @@ ToolbarKeyboardNavigator = {
     // We could remove tabindex now, but even though the button keeps DOM
     // focus, a11y gets confused because the button reports as not being
     // focusable. This results in weirdness if the user switches windows and
-    // then switches back. Instead, remove tabindex when the button loses
-    // focus.
+    // then switches back. It also means that focus can't be restored to the
+    // button when a panel is closed. Instead, remove tabindex when the button
+    // loses focus.
     aButton.addEventListener("blur", this);
   },
 
@@ -120,6 +130,11 @@ ToolbarKeyboardNavigator = {
     if (document.activeElement == aEvent.target) {
       // This event was fired because the user switched windows. This button
       // will get focus again when the user returns.
+      return;
+    }
+    if (aEvent.target.getAttribute("open") == "true") {
+      // The button activated a panel. The button should remain
+      // focusable so that focus can be restored when the panel closes.
       return;
     }
     aEvent.target.removeEventListener("blur", this);
@@ -179,8 +194,13 @@ ToolbarKeyboardNavigator = {
 
   _onKeyDown(aEvent) {
     let focus = document.activeElement;
-    if (aEvent.altKey || aEvent.controlKey || aEvent.metaKey ||
-        aEvent.shiftKey || !this._isButton(focus)) {
+    if (
+      aEvent.altKey ||
+      aEvent.controlKey ||
+      aEvent.metaKey ||
+      aEvent.shiftKey ||
+      !this._isButton(focus)
+    ) {
       return;
     }
 
@@ -201,8 +221,10 @@ ToolbarKeyboardNavigator = {
 
   _onKeyPress(aEvent) {
     let focus = document.activeElement;
-    if ((aEvent.key != "Enter" && aEvent.key != " ") ||
-        !this._isButton(focus)) {
+    if (
+      (aEvent.key != "Enter" && aEvent.key != " ") ||
+      !this._isButton(focus)
+    ) {
       return;
     }
 
@@ -216,13 +238,15 @@ ToolbarKeyboardNavigator = {
       // Command events have their own keyboard handling: keypress for enter
       // and keyup for space. We rely on that behavior, since there's no way
       // for us to reliably know what events a button handles.
-      focus.dispatchEvent(new MouseEvent("click", {
-        bubbles: true,
-        ctrlKey: aEvent.ctrlKey,
-        altKey: aEvent.altKey,
-        shiftKey: aEvent.shiftKey,
-        metaKey: aEvent.metaKey,
-      }));
+      focus.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          ctrlKey: aEvent.ctrlKey,
+          altKey: aEvent.altKey,
+          shiftKey: aEvent.shiftKey,
+          metaKey: aEvent.metaKey,
+        })
+      );
     }
     // We deliberately don't call aEvent.preventDefault() here so that enter
     // will trigger a command event handler if appropriate.
@@ -245,5 +269,4 @@ ToolbarKeyboardNavigator = {
         break;
     }
   },
-
 };

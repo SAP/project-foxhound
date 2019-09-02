@@ -15,6 +15,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/EffectCompositor.h"  // For EffectCompositor::CascadeLevel
 #include "mozilla/LinkedList.h"
+#include "mozilla/PostRestyleMode.h"
 #include "mozilla/TimeStamp.h"             // for TimeStamp, TimeDuration
 #include "mozilla/dom/AnimationBinding.h"  // for AnimationPlayState
 #include "mozilla/dom/AnimationEffect.h"
@@ -50,15 +51,7 @@ class Animation : public DOMEventTargetHelper,
 
  public:
   explicit Animation(nsIGlobalObject* aGlobal)
-      : DOMEventTargetHelper(aGlobal),
-        mPlaybackRate(1.0),
-        mAnimationIndex(sNextAnimationIndex++),
-        mCachedChildIndex(-1),
-        mPendingState(PendingState::NotPending),
-        mFinishedAtLastComposeStyle(false),
-        mIsRelevant(false),
-        mFinishedIsResolved(false),
-        mSyncWithGeometricAnimations(false) {}
+      : DOMEventTargetHelper(aGlobal), mAnimationIndex(sNextAnimationIndex++) {}
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Animation, DOMEventTargetHelper)
@@ -119,15 +112,16 @@ class Animation : public DOMEventTargetHelper,
 
   bool Pending() const { return mPendingState != PendingState::NotPending; }
   virtual bool PendingFromJS() const { return Pending(); }
+  AnimationReplaceState ReplaceState() const { return mReplaceState; }
 
   virtual Promise* GetReady(ErrorResult& aRv);
   Promise* GetFinished(ErrorResult& aRv);
 
   IMPL_EVENT_HANDLER(finish);
   IMPL_EVENT_HANDLER(cancel);
+  IMPL_EVENT_HANDLER(remove);
 
-  void Cancel();
-  virtual void CancelFromStyle() { CancelNoUpdate(); }
+  void Cancel(PostRestyleMode aPostRestyle = PostRestyleMode::IfNeeded);
 
   void Finish(ErrorResult& aRv);
 
@@ -146,6 +140,9 @@ class Animation : public DOMEventTargetHelper,
 
   void UpdatePlaybackRate(double aPlaybackRate);
   void Reverse(ErrorResult& aRv);
+
+  void Persist();
+  void CommitStyles(ErrorResult& aRv);
 
   bool IsRunningOnCompositor() const;
 
@@ -329,6 +326,25 @@ class Animation : public DOMEventTargetHelper,
   bool IsRelevant() const { return mIsRelevant; }
   void UpdateRelevance();
 
+  // https://drafts.csswg.org/web-animations-1/#replaceable-animation
+  bool IsReplaceable() const;
+
+  /**
+   * Returns true if this Animation satisfies the requirements for being
+   * removed when it is replaced.
+   *
+   * Returning true does not imply this animation _should_ be removed.
+   * Determining that depends on the other effects in the same EffectSet to
+   * which this animation's effect, if any, contributes.
+   */
+  bool IsRemovable() const;
+
+  /**
+   * Make this animation's target effect no-longer part of the effect stack
+   * while preserving its timing information.
+   */
+  void Remove();
+
   /**
    * Returns true if this Animation has a lower composite order than aOther.
    */
@@ -366,6 +382,8 @@ class Animation : public DOMEventTargetHelper,
                     const nsCSSPropertyIDSet& aPropertiesToSkip);
 
   void NotifyEffectTimingUpdated();
+  void NotifyEffectPropertiesUpdated();
+  void NotifyEffectTargetUpdated();
   void NotifyGeometricAnimationsStartingThisFrame();
 
   /**
@@ -428,7 +446,7 @@ class Animation : public DOMEventTargetHelper,
 
   virtual void UpdateTiming(SeekFlag aSeekFlag, SyncNotifyFlag aSyncNotifyFlag);
   void UpdateFinishedState(SeekFlag aSeekFlag, SyncNotifyFlag aSyncNotifyFlag);
-  void UpdateEffect();
+  void UpdateEffect(PostRestyleMode aPostRestyle);
   /**
    * Flush all pending styles other than throttled animation styles (e.g.
    * animations running on the compositor).
@@ -481,6 +499,9 @@ class Animation : public DOMEventTargetHelper,
     return GetCurrentTimeForHoldTime(Nullable<TimeDuration>());
   }
 
+  void ScheduleReplacementCheck();
+  void MaybeScheduleReplacementCheck();
+
   // Earlier side of the elapsed time range reported in CSS Animations and CSS
   // Transitions events.
   //
@@ -527,7 +548,7 @@ class Animation : public DOMEventTargetHelper,
   Nullable<TimeDuration> mHoldTime;             // Animation timescale
   Nullable<TimeDuration> mPendingReadyTime;     // Timeline timescale
   Nullable<TimeDuration> mPreviousCurrentTime;  // Animation timescale
-  double mPlaybackRate;
+  double mPlaybackRate = 1.0;
   Maybe<double> mPendingPlaybackRate;
 
   // A Promise that is replaced on each call to Play()
@@ -554,7 +575,7 @@ class Animation : public DOMEventTargetHelper,
 
   // While ordering Animation objects for event dispatch, the index of the
   // target node in its parent may be cached in mCachedChildIndex.
-  int32_t mCachedChildIndex;
+  int32_t mCachedChildIndex = -1;
 
   // Indicates if the animation is in the pending state (and what state it is
   // waiting to enter when it finished pending). We use this rather than
@@ -563,23 +584,28 @@ class Animation : public DOMEventTargetHelper,
   // from the PendingAnimationTracker while it is waiting for the next tick
   // (see TriggerOnNextTick for details).
   enum class PendingState : uint8_t { NotPending, PlayPending, PausePending };
-  PendingState mPendingState;
+  PendingState mPendingState = PendingState::NotPending;
 
-  bool mFinishedAtLastComposeStyle;
+  // Handling of this animation's target effect when filling while finished.
+  AnimationReplaceState mReplaceState = AnimationReplaceState::Active;
+
+  bool mFinishedAtLastComposeStyle = false;
+  bool mWasReplaceableAtLastTick = false;
+
   // Indicates that the animation should be exposed in an element's
   // getAnimations() list.
-  bool mIsRelevant;
+  bool mIsRelevant = false;
 
   // True if mFinished is resolved or would be resolved if mFinished has
   // yet to be created. This is not set when mFinished is rejected since
   // in that case mFinished is immediately reset to represent a new current
   // finished promise.
-  bool mFinishedIsResolved;
+  bool mFinishedIsResolved = false;
 
   // True if this animation was triggered at the same time as one or more
   // geometric animations and hence we should run any transform animations on
   // the main thread.
-  bool mSyncWithGeometricAnimations;
+  bool mSyncWithGeometricAnimations = false;
 
   RefPtr<MicroTaskRunnable> mFinishNotificationTask;
 

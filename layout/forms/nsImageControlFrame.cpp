@@ -5,13 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsImageFrame.h"
+
+#include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "nsIFormControlFrame.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsCheckboxRadioFrame.h"
 #include "nsLayoutUtils.h"
-#include "mozilla/MouseEvents.h"
 #include "nsIContent.h"
 
 using namespace mozilla;
@@ -71,7 +73,7 @@ void nsImageControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsImageFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-nsIFrame* NS_NewImageControlFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewImageControlFrame(PresShell* aPresShell,
                                   ComputedStyle* aStyle) {
   return new (aPresShell)
       nsImageControlFrame(aStyle, aPresShell->GetPresContext());
@@ -136,7 +138,7 @@ nsresult nsImageControlFrame::HandleEvent(nsPresContext* aPresContext,
   *aEventStatus = nsEventStatus_eIgnore;
 
   if (aEvent->mMessage == eMouseUp &&
-      aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+      aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
     // Store click point for HTMLInputElement::SubmitNamesValues
     // Do this on MouseUp because the specs don't say and that's what IE does
     nsIntPoint* lastClickPoint = static_cast<nsIntPoint*>(

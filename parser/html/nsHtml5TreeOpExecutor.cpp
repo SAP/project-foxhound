@@ -7,6 +7,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Likely.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/nsCSPService.h"
 
 #include "GeckoProfiler.h"
@@ -28,7 +29,6 @@
 #include "nsIContentViewer.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIHTMLDocument.h"
 #include "nsINestedURI.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptError.h"
@@ -111,9 +111,7 @@ nsHtml5TreeOpExecutor::nsHtml5TreeOpExecutor()
       mSuppressEOF(false),
       mReadingFromStage(false),
       mStreamParser(nullptr),
-      mPreloadedURLs(23)  // Mean # of preloadable resources per page on dmoz
-      ,
-      mSpeculationReferrerPolicy(mozilla::net::RP_Unset),
+      mPreloadedURLs(23),  // Mean # of preloadable resources per page on dmoz
       mStarted(false),
       mRunFlushLoopOnStack(false),
       mCallContinueInterruptedParsingIfEnabled(false),
@@ -170,21 +168,22 @@ nsHtml5TreeOpExecutor::DidBuildModel(bool aTerminated) {
   // forced termination.
   DidBuildModelImpl(aTerminated || NS_FAILED(IsBroken()));
 
-  if (!mLayoutStarted) {
-    // We never saw the body, and layout never got started. Force
-    // layout *now*, to get an initial reflow.
+  bool destroying = true;
+  if (mDocShell) {
+    mDocShell->IsBeingDestroyed(&destroying);
+  }
 
-    // NOTE: only force the layout if we are NOT destroying the
-    // docshell. If we are destroying it, then starting layout will
-    // likely cause us to crash, or at best waste a lot of time as we
-    // are just going to tear it down anyway.
-    bool destroying = true;
-    if (mDocShell) {
-      mDocShell->IsBeingDestroyed(&destroying);
-    }
+  if (!destroying) {
+    mDocument->TriggerInitialDocumentTranslation();
 
-    if (!destroying) {
-      mDocument->TriggerInitialDocumentTranslation();
+    if (!mLayoutStarted) {
+      // We never saw the body, and layout never got started. Force
+      // layout *now*, to get an initial reflow.
+
+      // NOTE: only force the layout if we are NOT destroying the
+      // docshell. If we are destroying it, then starting layout will
+      // likely cause us to crash, or at best waste a lot of time as we
+      // are just going to tear it down anyway.
       nsContentSink::StartLayout(false);
     }
   }
@@ -809,8 +808,8 @@ void nsHtml5TreeOpExecutor::MaybeComplainAboutCharset(const char* aMsgId,
   nsContentUtils::ReportToConsole(
       aError ? nsIScriptError::errorFlag : nsIScriptError::warningFlag,
       NS_LITERAL_CSTRING("HTML parser"), mDocument,
-      nsContentUtils::eHTMLPARSER_PROPERTIES, aMsgId, nullptr, 0, nullptr,
-      EmptyString(), aLineNumber);
+      nsContentUtils::eHTMLPARSER_PROPERTIES, aMsgId, nsTArray<nsString>(),
+      nullptr, EmptyString(), aLineNumber);
 }
 
 void nsHtml5TreeOpExecutor::ComplainAboutBogusProtocolCharset(Document* aDoc) {
@@ -829,8 +828,8 @@ void nsHtml5TreeOpExecutor::MaybeComplainAboutDeepTree(uint32_t aLineNumber) {
   mAlreadyComplainedAboutDeepTree = true;
   nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, NS_LITERAL_CSTRING("HTML parser"), mDocument,
-      nsContentUtils::eHTMLPARSER_PROPERTIES, "errDeepTree", nullptr, 0,
-      nullptr, EmptyString(), aLineNumber);
+      nsContentUtils::eHTMLPARSER_PROPERTIES, "errDeepTree",
+      nsTArray<nsString>(), nullptr, EmptyString(), aLineNumber);
 }
 
 nsHtml5Parser* nsHtml5TreeOpExecutor::GetParser() {
@@ -953,8 +952,17 @@ net::ReferrerPolicy nsHtml5TreeOpExecutor::GetPreloadReferrerPolicy(
     const nsAString& aReferrerPolicy) {
   net::ReferrerPolicy referrerPolicy =
       net::AttributeReferrerPolicyFromString(aReferrerPolicy);
-  return referrerPolicy != net::RP_Unset ? referrerPolicy
-                                         : mSpeculationReferrerPolicy;
+  return GetPreloadReferrerPolicy(referrerPolicy);
+}
+
+net::ReferrerPolicy nsHtml5TreeOpExecutor::GetPreloadReferrerPolicy(
+    ReferrerPolicy aReferrerPolicy) {
+  if (aReferrerPolicy != net::RP_Unset) {
+    return aReferrerPolicy;
+  }
+
+  return static_cast<net::ReferrerPolicy>(
+      mDocument->GetPreloadReferrerInfo()->GetReferrerPolicy());
 }
 
 void nsHtml5TreeOpExecutor::PreloadScript(
@@ -966,12 +974,9 @@ void nsHtml5TreeOpExecutor::PreloadScript(
   if (!uri) {
     return;
   }
-  net::ReferrerPolicy referrerPolicy = aReferrerPolicy != net::RP_Unset
-                                           ? aReferrerPolicy
-                                           : mSpeculationReferrerPolicy;
-  mDocument->ScriptLoader()->PreloadURI(uri, aCharset, aType, aCrossOrigin,
-                                        aIntegrity, aScriptFromHead, aAsync,
-                                        aDefer, aNoModule, referrerPolicy);
+  mDocument->ScriptLoader()->PreloadURI(
+      uri, aCharset, aType, aCrossOrigin, aIntegrity, aScriptFromHead, aAsync,
+      aDefer, aNoModule, GetPreloadReferrerPolicy(aReferrerPolicy));
 }
 
 void nsHtml5TreeOpExecutor::PreloadStyle(const nsAString& aURL,
@@ -1041,24 +1046,9 @@ void nsHtml5TreeOpExecutor::SetSpeculationBase(const nsAString& aURL) {
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to create a URI");
 }
 
-void nsHtml5TreeOpExecutor::SetSpeculationReferrerPolicy(
-    const nsAString& aReferrerPolicy) {
-  // Specs says:
-  // - Let value be the result of stripping leading and trailing whitespace from
-  // the value of element's content attribute.
-  // - If value is not the empty string, then:
-  if (aReferrerPolicy.IsEmpty()) {
-    return;
-  }
-
-  ReferrerPolicy policy =
-      mozilla::net::ReferrerPolicyFromString(aReferrerPolicy);
-  // Specs says:
-  // - If policy is not the empty string, then set element's node document's
-  // referrer policy to policy
-  if (policy != mozilla::net::RP_Unset) {
-    SetSpeculationReferrerPolicy(policy);
-  }
+void nsHtml5TreeOpExecutor::UpdateReferrerInfoFromMeta(
+    const nsAString& aMetaReferrer) {
+  mDocument->UpdateReferrerInfoFromMeta(aMetaReferrer, true);
 }
 
 void nsHtml5TreeOpExecutor::AddSpeculationCSP(const nsAString& aCSP) {
@@ -1068,11 +1058,13 @@ void nsHtml5TreeOpExecutor::AddSpeculationCSP(const nsAString& aCSP) {
 
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  nsIPrincipal* principal = mDocument->NodePrincipal();
-  nsCOMPtr<nsIContentSecurityPolicy> preloadCsp;
-  nsresult rv =
-      principal->EnsurePreloadCSP(mDocument, getter_AddRefs(preloadCsp));
-  NS_ENSURE_SUCCESS_VOID(rv);
+  nsresult rv = NS_OK;
+  nsCOMPtr<nsIContentSecurityPolicy> preloadCsp = mDocument->GetPreloadCsp();
+  if (!preloadCsp) {
+    preloadCsp = new nsCSPContext();
+    rv = preloadCsp->SetRequestContextWithDocument(mDocument);
+    NS_ENSURE_SUCCESS_VOID(rv);
+  }
 
   // please note that meta CSPs and CSPs delivered through a header need
   // to be joined together.
@@ -1082,15 +1074,11 @@ void nsHtml5TreeOpExecutor::AddSpeculationCSP(const nsAString& aCSP) {
       true);  // delivered through the meta tag
   NS_ENSURE_SUCCESS_VOID(rv);
 
+  nsPIDOMWindowInner* inner = mDocument->GetInnerWindow();
+  if (inner) {
+    inner->SetPreloadCsp(preloadCsp);
+  }
   mDocument->ApplySettingsFromCSP(true);
-}
-
-void nsHtml5TreeOpExecutor::SetSpeculationReferrerPolicy(
-    ReferrerPolicy aReferrerPolicy) {
-  // Record "speculated" referrer policy locally and thread through the
-  // speculation phase.  The actual referrer policy will be set by
-  // HTMLMetaElement::BindToTree().
-  mSpeculationReferrerPolicy = aReferrerPolicy;
 }
 
 #ifdef DEBUG_NS_HTML5_TREE_OP_EXECUTOR_FLUSH

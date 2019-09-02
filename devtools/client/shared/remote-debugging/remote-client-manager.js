@@ -4,13 +4,9 @@
 
 "use strict";
 
-/* connection types for remote clients */
-const CONNECTION_TYPES = {
-  NETWORK: "network",
-  THIS_FIREFOX: "this-firefox",
-  UNKNOWN: "unknown",
-  USB: "usb",
-};
+const {
+  CONNECTION_TYPES,
+} = require("devtools/client/shared/remote-debugging/constants");
 
 /**
  * This class is designed to be a singleton shared by all DevTools to get access to
@@ -19,6 +15,7 @@ const CONNECTION_TYPES = {
 class RemoteClientManager {
   constructor() {
     this._clients = new Map();
+    this._runtimeInfoMap = new Map();
     this._onClientClosed = this._onClientClosed.bind(this);
   }
 
@@ -30,11 +27,16 @@ class RemoteClientManager {
    * @param {String} type
    *        Remote runtime type (see devtools/client/aboutdebugging-new/src/types).
    * @param {DebuggerClient} client
+   * @param {Object} runtimeInfo
+   *        See runtimeInfo type from client/aboutdebugging-new/src/types/runtime.js
    */
-  setClient(id, type, client) {
+  setClient(id, type, client, runtimeInfo) {
     const key = this._getKey(id, type);
     this._clients.set(key, client);
-    client.addOneTimeListener("closed", this._onClientClosed);
+    if (runtimeInfo) {
+      this._runtimeInfoMap.set(key, runtimeInfo);
+    }
+    client.once("closed", this._onClientClosed);
   }
 
   // See JSDoc for id, type from setClient.
@@ -72,8 +74,18 @@ class RemoteClientManager {
    * using getRemoteId.
    */
   getClientByRemoteId(remoteId) {
-    const key = decodeURIComponent(remoteId);
+    const key = this._getKeyByRemoteId(remoteId);
     return this._clients.get(key);
+  }
+
+  /**
+   * Retrieve the runtime info for a remote id. To display metadata about a runtime, such
+   * as name, device name, version... this runtimeInfo should be used rather than calling
+   * APIs on the client.
+   */
+  getRuntimeInfoByRemoteId(remoteId) {
+    const key = this._getKeyByRemoteId(remoteId);
+    return this._runtimeInfoMap.get(key);
   }
 
   /**
@@ -81,31 +93,36 @@ class RemoteClientManager {
    * using getRemoteId.
    */
   getConnectionTypeByRemoteId(remoteId) {
-    if (!remoteId) {
-      return CONNECTION_TYPES.THIS_FIREFOX;
+    const key = this._getKeyByRemoteId(remoteId);
+    for (const type of Object.values(CONNECTION_TYPES)) {
+      if (key.endsWith(type)) {
+        return type;
+      }
     }
-
-    const key = decodeURIComponent(remoteId);
-    const type = this._getType(key);
-    return Object.values(CONNECTION_TYPES).includes(type)
-      ? type
-      : CONNECTION_TYPES.UNKNOWN;
+    return CONNECTION_TYPES.UNKNOWN;
   }
 
   _getKey(id, type) {
     return id + "-" + type;
   }
 
-  _getType(key) {
-    const chunks = key.split("-");
-    return chunks[chunks.length - 1];
+  _getKeyByRemoteId(remoteId) {
+    if (!remoteId) {
+      // If no remote id was provided, return the key corresponding to the local
+      // this-firefox runtime.
+      const { THIS_FIREFOX } = CONNECTION_TYPES;
+      return this._getKey(THIS_FIREFOX, THIS_FIREFOX);
+    }
+
+    return decodeURIComponent(remoteId);
   }
 
   _removeClientByKey(key) {
     const client = this._clients.get(key);
     if (client) {
-      client.removeListener("closed", this._onClientClosed);
+      client.off("closed", this._onClientClosed);
       this._clients.delete(key);
+      this._runtimeInfoMap.delete(key);
     }
   }
 
@@ -126,5 +143,4 @@ class RemoteClientManager {
 // Expose a singleton of RemoteClientManager.
 module.exports = {
   remoteClientManager: new RemoteClientManager(),
-  CONNECTION_TYPES,
 };

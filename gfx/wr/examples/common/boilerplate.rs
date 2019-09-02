@@ -27,7 +27,7 @@ impl Notifier {
 }
 
 impl RenderNotifier for Notifier {
-    fn clone(&self) -> Box<RenderNotifier> {
+    fn clone(&self) -> Box<dyn RenderNotifier> {
         Box::new(Notifier {
             events_proxy: self.events_proxy.clone(),
         })
@@ -80,26 +80,26 @@ pub trait Example {
         api: &RenderApi,
         builder: &mut DisplayListBuilder,
         txn: &mut Transaction,
-        framebuffer_size: FramebufferIntSize,
+        device_size: DeviceIntSize,
         pipeline_id: PipelineId,
         document_id: DocumentId,
     );
     fn on_event(
         &mut self,
-        winit::WindowEvent,
-        &RenderApi,
-        DocumentId,
+        _: winit::WindowEvent,
+        _: &RenderApi,
+        _: DocumentId,
     ) -> bool {
         false
     }
     fn get_image_handlers(
         &mut self,
-        _gl: &gl::Gl,
-    ) -> (Option<Box<webrender::ExternalImageHandler>>,
-          Option<Box<webrender::OutputImageHandler>>) {
+        _gl: &dyn gl::Gl,
+    ) -> (Option<Box<dyn webrender::ExternalImageHandler>>,
+          Option<Box<dyn webrender::OutputImageHandler>>) {
         (None, None)
     }
-    fn draw_custom(&mut self, _gl: &gl::Gl) {
+    fn draw_custom(&mut self, _gl: &dyn gl::Gl) {
     }
 }
 
@@ -160,17 +160,23 @@ pub fn main_wrapper<E: Example>(
         ..options.unwrap_or(webrender::RendererOptions::default())
     };
 
-    let framebuffer_size = {
+    let device_size = {
         let size = window
             .get_inner_size()
             .unwrap()
             .to_physical(device_pixel_ratio as f64);
-        FramebufferIntSize::new(size.width as i32, size.height as i32)
+        DeviceIntSize::new(size.width as i32, size.height as i32)
     };
     let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
-    let (mut renderer, sender) = webrender::Renderer::new(gl.clone(), notifier, opts, None).unwrap();
+    let (mut renderer, sender) = webrender::Renderer::new(
+        gl.clone(),
+        notifier,
+        opts,
+        None,
+        device_size,
+    ).unwrap();
     let api = sender.create_api();
-    let document_id = api.add_document(framebuffer_size, 0);
+    let document_id = api.add_document(device_size, 0);
 
     let (external, output) = example.get_image_handlers(&*gl);
 
@@ -184,7 +190,7 @@ pub fn main_wrapper<E: Example>(
 
     let epoch = Epoch(0);
     let pipeline_id = PipelineId(0, 0);
-    let layout_size = framebuffer_size.to_f32() / euclid::TypedScale::new(device_pixel_ratio);
+    let layout_size = device_size.to_f32() / euclid::TypedScale::new(device_pixel_ratio);
     let mut builder = DisplayListBuilder::new(pipeline_id, layout_size);
     let mut txn = Transaction::new();
 
@@ -192,7 +198,7 @@ pub fn main_wrapper<E: Example>(
         &api,
         &mut builder,
         &mut txn,
-        framebuffer_size,
+        device_size,
         pipeline_id,
         document_id,
     );
@@ -244,11 +250,11 @@ pub fn main_wrapper<E: Example>(
                 ),
                 winit::VirtualKeyCode::G => debug_flags.toggle(DebugFlags::GPU_CACHE_DBG),
                 winit::VirtualKeyCode::Key1 => txn.set_document_view(
-                    framebuffer_size.into(),
+                    device_size.into(),
                     1.0
                 ),
                 winit::VirtualKeyCode::Key2 => txn.set_document_view(
-                    framebuffer_size.into(),
+                    device_size.into(),
                     2.0
                 ),
                 winit::VirtualKeyCode::M => api.notify_memory_pressure(),
@@ -285,7 +291,7 @@ pub fn main_wrapper<E: Example>(
                 &api,
                 &mut builder,
                 &mut txn,
-                framebuffer_size,
+                device_size,
                 pipeline_id,
                 document_id,
             );
@@ -301,7 +307,7 @@ pub fn main_wrapper<E: Example>(
         api.send_transaction(document_id, txn);
 
         renderer.update();
-        renderer.render(framebuffer_size).unwrap();
+        renderer.render(device_size).unwrap();
         let _ = renderer.flush_pipeline_info();
         example.draw_custom(&*gl);
         window.swap_buffers().ok();

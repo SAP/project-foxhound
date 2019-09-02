@@ -18,12 +18,12 @@
 #include "nsIDOMWindowUtils.h"
 #include "nsIDocShell.h"
 #include "nsIHttpChannel.h"
-#include "nsIPresShell.h"
 #include "nsIURI.h"
 #include "nsPIDOMWindow.h"
 #include "nsPresContext.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 
 namespace mozilla {
 
@@ -147,7 +147,7 @@ class ThumbnailHelper final
       return nullptr;
     }
 
-    nsCOMPtr<nsIPresShell> presShell = presContext->PresShell();
+    RefPtr<PresShell> presShell = presContext->PresShell();
     RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
     MOZ_ASSERT(context);  // checked the draw target above
 
@@ -159,10 +159,10 @@ class ThumbnailHelper final
                           nsPresContext::CSSPixelsToAppUnits(aPageRect.y),
                           nsPresContext::CSSPixelsToAppUnits(aPageRect.width),
                           nsPresContext::CSSPixelsToAppUnits(aPageRect.height));
-    const uint32_t renderDocFlags =
-        nsIPresShell::RENDER_IGNORE_VIEWPORT_SCROLLING |
-        nsIPresShell::RENDER_DOCUMENT_RELATIVE |
-        nsIPresShell::RENDER_DRAWWINDOW_NOT_FLUSHING;
+    const RenderDocumentFlags renderDocFlags =
+        RenderDocumentFlags::IgnoreViewportScrolling |
+        RenderDocumentFlags::DocumentRelative |
+        RenderDocumentFlags::DrawWindowNotFlushing;
     const nscolor bgColor = NS_RGB(255, 255, 255);
 
     if (NS_FAILED(presShell->RenderDocument(drawRect, renderDocFlags, bgColor,

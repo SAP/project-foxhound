@@ -50,6 +50,7 @@ fuzz=0
 fuzz_tls=0
 fuzz_oss=0
 no_local_nspr=0
+sslkeylogfile=1
 
 gyp_params=(--depth="$cwd" --generator-output=".")
 ninja_params=()
@@ -94,7 +95,7 @@ while [ $# -gt 0 ]; do
         --sancov=?*) enable_sancov "${1#*=}" ;;
         --emit-llvm) gyp_params+=(-Demit_llvm=1 -Dsign_libs=0) ;;
         --no-zdefs) gyp_params+=(-Dno_zdefs=1) ;;
-        --test) gyp_params+=(-Dtest_build=1) ;;
+        --static) gyp_params+=(-Dstatic_libs=1) ;;
         --ct-verif) gyp_params+=(-Dct_verif=1) ;;
         --nspr) nspr_clean; rebuild_nspr=1 ;;
         --with-nspr=?*) set_nspr_path "${1#*=}"; no_local_nspr=1 ;;
@@ -103,6 +104,7 @@ while [ $# -gt 0 ]; do
         --enable-fips) gyp_params+=(-Ddisable_fips=0) ;;
         --enable-libpkix) gyp_params+=(-Ddisable_libpkix=0) ;;
         --mozpkix-only) gyp_params+=(-Dmozpkix_only=1 -Ddisable_tests=1 -Dsign_libs=0) ;;
+        --disable-keylog) sslkeylogfile=0 ;;
 	-D*) gyp_params+=("$1") ;;
         *) show_help; exit 2 ;;
     esac
@@ -116,6 +118,8 @@ if [ "$opt_build" = 1 ]; then
 else
     target=Debug
 fi
+
+gyp_params+=(-Denable_sslkeylogfile="$sslkeylogfile")
 
 # Do special setup.
 if [ "$fuzz" = 1 ]; then

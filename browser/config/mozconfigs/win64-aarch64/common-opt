@@ -14,8 +14,6 @@ ac_add_options --with-mozilla-api-keyfile=${WORKSPACE}/mozilla-desktop-geoloc-ap
 # Needed to enable breakpad in application.ini
 export MOZILLA_OFFICIAL=1
 
-export MOZ_TELEMETRY_REPORTING=1
-
 . $topsrcdir/build/win64-aarch64/mozconfig.vs-latest
 
 # Package js shell.
@@ -23,4 +21,10 @@ export MOZ_PACKAGE_JSSHELL=1
 
 if test -n "$MOZ_ARTIFACT_TASK_WIN32_OPT"; then
   ac_add_options --enable-eme=widevine
+fi
+
+# Temporary signal to toolchain.configure that our compiler is patched to
+# support CFG, until such support can be assumed.
+if test -z "$USE_ARTIFACT"; then
+  ac_add_options --enable-hardening
 fi

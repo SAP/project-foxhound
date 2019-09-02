@@ -22,6 +22,8 @@ use lmdb::{
     DatabaseFlags,
     Environment,
     EnvironmentBuilder,
+    Error,
+    Info,
     Stat,
 };
 
@@ -194,16 +196,78 @@ impl Rkv {
     /// Otherwise if the environment has the `NO_SYNC` flag set the flushes will be omitted,
     /// and with `MAP_ASYNC` they will be asynchronous.
     pub fn sync(&self, force: bool) -> Result<(), StoreError> {
-        self.env.sync(force).map_err(|e| e.into())
+        self.env.sync(force).map_err(Into::into)
     }
 
-    /// Retrieves statistics about this environment.
+    /// Retrieve statistics about this environment.
+    ///
+    /// It includes:
+    ///   * Page size in bytes
+    ///   * B-tree depth
+    ///   * Number of internal (non-leaf) pages
+    ///   * Number of leaf pages
+    ///   * Number of overflow pages
+    ///   * Number of data entries
     pub fn stat(&self) -> Result<Stat, StoreError> {
-        self.env.stat().map_err(|e| e.into())
+        self.env.stat().map_err(Into::into)
+    }
+
+    /// Retrieve information about this environment.
+    ///
+    /// It includes:
+    ///   * Map size in bytes
+    ///   * The last used page number
+    ///   * The last transaction ID
+    ///   * Max number of readers allowed
+    ///   * Number of readers in use
+    pub fn info(&self) -> Result<Info, StoreError> {
+        self.env.info().map_err(Into::into)
+    }
+
+    /// Retrieve the load ratio (# of used pages / total pages) about this environment.
+    ///
+    /// With the formular: (last_page_no - freelist_pages) / total_pages
+    pub fn load_ratio(&self) -> Result<f32, StoreError> {
+        let stat = self.stat()?;
+        let info = self.info()?;
+        let freelist = self.env.freelist()?;
+
+        let last_pgno = info.last_pgno() + 1; // pgno is 0 based.
+        let total_pgs = info.map_size() / stat.page_size() as usize;
+        if freelist > last_pgno {
+            return Err(StoreError::LmdbError(Error::Corrupted));
+        }
+        let used_pgs = last_pgno - freelist;
+        Ok(used_pgs as f32 / total_pgs as f32)
+    }
+
+    /// Sets the size of the memory map to use for the environment.
+    ///
+    /// This can be used to resize the map when the environment is already open.
+    /// You can also use `Rkv::environment_builder()` to set the map size during
+    /// the `Rkv` initialization.
+    ///
+    /// Note:
+    ///
+    /// * No active transactions allowed when performing resizing in this process.
+    ///   It's up to the consumer to enforce that.
+    ///
+    /// * The size should be a multiple of the OS page size. Any attempt to set
+    ///   a size smaller than the space already consumed by the environment will
+    ///   be silently changed to the current size of the used space.
+    ///
+    /// * In the multi-process case, once a process resizes the map, other
+    ///   processes need to either re-open the environment, or call set_map_size
+    ///   with size 0 to update the environment. Otherwise, new transaction creation
+    ///   will fail with `LmdbError::MapResized`.
+    pub fn set_map_size(&self, size: usize) -> Result<(), StoreError> {
+        self.env.set_map_size(size).map_err(Into::into)
     }
 }
 
-#[allow(clippy::cyclomatic_complexity)]
+// TODO: change this back to `clippy::cognitive_complexity` when Clippy stable
+// deprecates `clippy::cyclomatic_complexity`.
+#[allow(clippy::complexity)]
 #[cfg(test)]
 mod tests {
     use byteorder::{
@@ -223,6 +287,9 @@ mod tests {
 
     use super::*;
     use crate::*;
+
+    // The default size is 1MB.
+    const DEFAULT_SIZE: usize = 1024 * 1024;
 
     /// We can't open a directory that doesn't exist.
     #[test]
@@ -308,7 +375,7 @@ mod tests {
         // https://github.com/LMDB/lmdb/blob/26c7df88e44e31623d0802a564f24781acdefde3/libraries/liblmdb/mdb.c#L729
         // sets the default map size to 1,048,576 bytes, i.e. 1MiB.
         //
-        1024 * 1024 + 1 /* 1,048,576 + 1 bytes, i.e. 1MiB + 1 byte */
+        DEFAULT_SIZE + 1 /* 1,048,576 + 1 bytes, i.e. 1MiB + 1 byte */
     }
 
     #[test]
@@ -455,6 +522,35 @@ mod tests {
     }
 
     #[test]
+    fn test_single_store_clear() {
+        let root = Builder::new().prefix("test_single_store_clear").tempdir().expect("tempdir");
+        fs::create_dir_all(root.path()).expect("dir created");
+        let k = Rkv::new(root.path()).expect("new succeeded");
+
+        let sk: SingleStore = k.open_single("sk", StoreOptions::create()).expect("opened");
+
+        {
+            let mut writer = k.write().expect("writer");
+            sk.put(&mut writer, "foo", &Value::I64(1234)).expect("wrote");
+            sk.put(&mut writer, "bar", &Value::Bool(true)).expect("wrote");
+            sk.put(&mut writer, "baz", &Value::Str("héllo, yöu")).expect("wrote");
+            writer.commit().expect("committed");
+        }
+
+        {
+            let mut writer = k.write().expect("writer");
+            sk.clear(&mut writer).expect("cleared");
+            writer.commit().expect("committed");
+        }
+
+        {
+            let r = k.read().unwrap();
+            let iter = sk.iter_start(&r).expect("iter");
+            assert_eq!(iter.count(), 0);
+        }
+    }
+
+    #[test]
     fn test_multi_put_get_del() {
         let root = Builder::new().prefix("test_multi_put_get_del").tempdir().expect("tempdir");
         fs::create_dir_all(root.path()).expect("dir created");
@@ -488,6 +584,39 @@ mod tests {
         multistore.delete_all(&mut writer, "str3").unwrap();
         assert_eq!(multistore.get_first(&writer, "str3").unwrap(), None);
         writer.commit().unwrap();
+    }
+
+    #[test]
+    fn test_multiple_store_clear() {
+        let root = Builder::new().prefix("test_multiple_store_clear").tempdir().expect("tempdir");
+        fs::create_dir_all(root.path()).expect("dir created");
+        let k = Rkv::new(root.path()).expect("new succeeded");
+
+        let multistore = k.open_multi("multistore", StoreOptions::create()).expect("opened");
+
+        {
+            let mut writer = k.write().expect("writer");
+            multistore.put(&mut writer, "str1", &Value::Str("str1 foo")).unwrap();
+            multistore.put(&mut writer, "str1", &Value::Str("str1 bar")).unwrap();
+            multistore.put(&mut writer, "str2", &Value::Str("str2 foo")).unwrap();
+            multistore.put(&mut writer, "str2", &Value::Str("str2 bar")).unwrap();
+            multistore.put(&mut writer, "str3", &Value::Str("str3 foo")).unwrap();
+            multistore.put(&mut writer, "str3", &Value::Str("str3 bar")).unwrap();
+            writer.commit().expect("committed");
+        }
+
+        {
+            let mut writer = k.write().expect("writer");
+            multistore.clear(&mut writer).expect("cleared");
+            writer.commit().expect("committed");
+        }
+
+        {
+            let r = k.read().unwrap();
+            assert_eq!(multistore.get_first(&r, "str1").expect("read"), None);
+            assert_eq!(multistore.get_first(&r, "str2").expect("read"), None);
+            assert_eq!(multistore.get_first(&r, "str3").expect("read"), None);
+        }
     }
 
     #[test]
@@ -530,7 +659,7 @@ mod tests {
         // Open the same store for read while the reader is in progress will panic
         let store: Result<SingleStore, StoreError> = k.open_single("sk", StoreOptions::default());
         match store {
-            Err(StoreError::OpenAttemptedDuringTransaction(_thread_id)) => assert!(true),
+            Err(StoreError::OpenAttemptedDuringTransaction(_thread_id)) => (),
             _ => panic!("should panic"),
         }
     }
@@ -711,7 +840,7 @@ mod tests {
 
     #[test]
     fn test_stat() {
-        let root = Builder::new().prefix("test_sync").tempdir().expect("tempdir");
+        let root = Builder::new().prefix("test_stat").tempdir().expect("tempdir");
         fs::create_dir_all(root.path()).expect("dir created");
         let k = Rkv::new(root.path()).expect("new succeeded");
         for i in 0..5 {
@@ -727,6 +856,84 @@ mod tests {
         assert_eq!(k.stat().expect("stat").entries(), 5);
         assert_eq!(k.stat().expect("stat").branch_pages(), 0);
         assert_eq!(k.stat().expect("stat").leaf_pages(), 1);
+    }
+
+    #[test]
+    fn test_info() {
+        let root = Builder::new().prefix("test_info").tempdir().expect("tempdir");
+        fs::create_dir_all(root.path()).expect("dir created");
+        let k = Rkv::new(root.path()).expect("new succeeded");
+        let sk: SingleStore = k.open_single("sk", StoreOptions::create()).expect("opened");
+        let mut writer = k.write().expect("writer");
+
+        sk.put(&mut writer, "foo", &Value::Str("bar")).expect("wrote");
+        writer.commit().expect("commited");
+
+        let info = k.info().expect("info");
+
+        // The default size is 1MB.
+        assert_eq!(info.map_size(), DEFAULT_SIZE);
+        // Should greater than 0 after the write txn.
+        assert!(info.last_pgno() > 0);
+        // A txn to open_single + a txn to write.
+        assert_eq!(info.last_txnid(), 2);
+        // The default max readers is 126.
+        assert_eq!(info.max_readers(), 126);
+        assert_eq!(info.num_readers(), 0);
+
+        // A new reader should increment the reader counter.
+        let _reader = k.read().expect("reader");
+        let info = k.info().expect("info");
+
+        assert_eq!(info.num_readers(), 1);
+    }
+
+    #[test]
+    fn test_load_ratio() {
+        let root = Builder::new().prefix("test_load_ratio").tempdir().expect("tempdir");
+        fs::create_dir_all(root.path()).expect("dir created");
+        let k = Rkv::new(root.path()).expect("new succeeded");
+        let sk: SingleStore = k.open_single("sk", StoreOptions::create()).expect("opened");
+        let mut writer = k.write().expect("writer");
+        sk.put(&mut writer, "foo", &Value::Str("bar")).expect("wrote");
+        writer.commit().expect("commited");
+
+        let ratio = k.load_ratio().expect("ratio");
+        assert!(ratio > 0.0_f32 && ratio < 1.0_f32);
+
+        // Put data to database should increase the load ratio.
+        let mut writer = k.write().expect("writer");
+        sk.put(&mut writer, "bar", &Value::Str(&"more-than-4KB".repeat(1000))).expect("wrote");
+        writer.commit().expect("commited");
+        let new_ratio = k.load_ratio().expect("ratio");
+        assert!(new_ratio > ratio);
+
+        // Clear the database so that all the used pages should go to freelist, hence the ratio
+        // should decrease.
+        let mut writer = k.write().expect("writer");
+        sk.clear(&mut writer).expect("clear");
+        writer.commit().expect("commited");
+        let after_clear_ratio = k.load_ratio().expect("ratio");
+        assert!(after_clear_ratio < new_ratio);
+    }
+
+    #[test]
+    fn test_set_map_size() {
+        let root = Builder::new().prefix("test_size_map_size").tempdir().expect("tempdir");
+        fs::create_dir_all(root.path()).expect("dir created");
+        let k = Rkv::new(root.path()).expect("new succeeded");
+        let sk: SingleStore = k.open_single("sk", StoreOptions::create()).expect("opened");
+
+        assert_eq!(k.info().expect("info").map_size(), DEFAULT_SIZE);
+
+        k.set_map_size(2 * DEFAULT_SIZE).expect("resized");
+
+        // Should be able to write.
+        let mut writer = k.write().expect("writer");
+        sk.put(&mut writer, "foo", &Value::Str("bar")).expect("wrote");
+        writer.commit().expect("commited");
+
+        assert_eq!(k.info().expect("info").map_size(), 2 * DEFAULT_SIZE);
     }
 
     #[test]

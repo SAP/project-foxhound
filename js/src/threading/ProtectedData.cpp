@@ -7,6 +7,7 @@
 #include "threading/ProtectedData.h"
 
 #include "gc/Heap.h"
+#include "gc/Zone.h"
 #include "vm/HelperThreads.h"
 #include "vm/JSContext.h"
 
@@ -43,6 +44,14 @@ void CheckThreadLocal::check() const {
   MOZ_ASSERT_IF(cx->isMainThreadContext(),
                 CurrentThreadCanAccessRuntime(cx->runtime()));
   MOZ_ASSERT(id == ThisThread::GetId());
+}
+
+void CheckContextLocal::check() const {
+  JSContext* cx = TlsContext.get();
+  MOZ_ASSERT(cx);
+  MOZ_ASSERT_IF(cx->isMainThreadContext(),
+                CurrentThreadCanAccessRuntime(cx->runtime()));
+  MOZ_ASSERT(cx_ == cx);
 }
 
 template <AllowedHelperThread Helper>

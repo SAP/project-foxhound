@@ -21,6 +21,10 @@
 #  include "ChildProfilerController.h"
 #endif
 
+#ifdef MOZ_WEBRTC
+#  include "mozilla/net/WebrtcProxyChannelChild.h"
+#endif
+
 namespace mozilla {
 namespace net {
 
@@ -46,6 +50,12 @@ SocketProcessChild::~SocketProcessChild() {
 SocketProcessChild* SocketProcessChild::GetSingleton() {
   return sSocketProcessChild;
 }
+
+#if defined(XP_MACOSX)
+extern "C" {
+void CGSShutdownServerConnections();
+};
+#endif
 
 bool SocketProcessChild::Init(base::ProcessId aParentPid,
                               const char* aParentBuildID, MessageLoop* aIOLoop,
@@ -74,6 +84,12 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
   }
 
   SetThisProcessName("Socket Process");
+#if defined(XP_MACOSX)
+  // Close all current connections to the WindowServer. This ensures that the
+  // Activity Monitor will not label the socket process as "Not responding"
+  // because it's not running a native event loop. See bug 1384336.
+  CGSShutdownServerConnections();
+#endif  // XP_MACOSX
   return true;
 }
 
@@ -168,6 +184,26 @@ void SocketProcessChild::DestroySocketProcessBridgeParent(ProcessId aId) {
   MOZ_ASSERT(NS_IsMainThread());
 
   mSocketProcessBridgeParentMap.Remove(aId);
+}
+
+PWebrtcProxyChannelChild* SocketProcessChild::AllocPWebrtcProxyChannelChild(
+    const PBrowserOrId& browser) {
+  // We don't allocate here: instead we always use IPDL constructor that takes
+  // an existing object
+  MOZ_ASSERT_UNREACHABLE(
+      "AllocPWebrtcProxyChannelChild should not be called on"
+      " socket child");
+  return nullptr;
+}
+
+bool SocketProcessChild::DeallocPWebrtcProxyChannelChild(
+    PWebrtcProxyChannelChild* aActor) {
+#ifdef MOZ_WEBRTC
+  WebrtcProxyChannelChild* child =
+      static_cast<WebrtcProxyChannelChild*>(aActor);
+  child->ReleaseIPDLReference();
+#endif
+  return true;
 }
 
 }  // namespace net

@@ -19,6 +19,8 @@ sys.path.insert(1, os.path.dirname(sys.path[0]))
 
 import mozinfo
 
+import mozharness
+
 from mozharness.base.script import PreScriptAction
 from mozharness.base.log import INFO, ERROR
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
@@ -30,14 +32,17 @@ from mozharness.mozilla.testing.codecoverage import (
     code_coverage_config_options
 )
 
+scripts_path = os.path.abspath(os.path.dirname(os.path.dirname(mozharness.__file__)))
+external_tools_path = os.path.join(scripts_path, 'external_tools')
+
 
 class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
     config_options = [
-        [["--e10s"],
-         {"action": "store_true",
+        [["--disable-e10s"],
+         {"action": "store_false",
           "dest": "e10s",
-          "default": False,
-          "help": "Run tests with multiple processes. (Desktop builds only)",
+          "default": True,
+          "help": "Run tests without multiple processes (e10s). (Desktop builds only)",
           }],
         [["--single-stylo-traversal"],
          {"action": "store_true",
@@ -49,13 +54,7 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
          {"action": "store_true",
           "dest": "enable_webrender",
           "default": False,
-          "help": "Tries to enable the WebRender compositor.",
-          }],
-        [["--disable-webrender"],
-         {"action": "store_true",
-          "dest": "disable_webrender",
-          "default": False,
-          "help": "Force-disables the WebRender compositor.",
+          "help": "Enable the WebRender compositor in Gecko.",
           }],
         [["--base"],
          {"action": "store_true",
@@ -68,7 +67,14 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
           "dest": "dmd",
           "default": False,
           "help": "Runs tests with DMD enabled.",
+          }],
+        [["--tp6"],
+         {"action": "store_true",
+          "dest": "tp6",
+          "default": False,
+          "help": "Runs tests with the tp6 pageset.",
           }]
+
     ] + testing_config_options + copy.deepcopy(code_coverage_config_options)
 
     error_list = [
@@ -162,7 +168,8 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
                                           'marionette_errorsummary.log')
 
         runtime_testvars = {'webRootDir': self.webroot_dir,
-                            'resultsDir': self.results_dir}
+                            'resultsDir': self.results_dir,
+                            'bin': self.binary_path}
 
         # Check if this is a DMD build and if so enable it.
         dmd_enabled = False
@@ -188,6 +195,12 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
 
             env['DMD'] = "--mode=dark-matter --stacks=full"
 
+        runtime_testvars['tp6'] = self.config['tp6']
+        if self.config['tp6']:
+            # mitmproxy needs path to mozharness when installing the cert, and tooltool
+            env['SCRIPTSPATH'] = scripts_path
+            env['EXTERNALTOOLSPATH'] = external_tools_path
+
         runtime_testvars_path = os.path.join(self.awsy_path, 'runtime-testvars.json')
         runtime_testvars_file = open(runtime_testvars_path, 'wb')
         runtime_testvars_file.write(json.dumps(runtime_testvars, indent=2))
@@ -195,12 +208,16 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
 
         cmd = ['marionette']
 
+        test_vars_file = None
         if self.config['test_about_blank']:
-            cmd.append("--testvars=%s" % os.path.join(self.awsy_path, "conf",
-                                                      "base-testvars.json"))
+            test_vars_file = "base-testvars.json"
         else:
-            cmd.append("--testvars=%s" % os.path.join(self.awsy_path, "conf", "testvars.json"))
+            if self.config['tp6']:
+                test_vars_file = "tp6-testvars.json"
+            else:
+                test_vars_file = "testvars.json"
 
+        cmd.append("--testvars=%s" % os.path.join(self.awsy_path, "conf", test_vars_file))
         cmd.append("--testvars=%s" % runtime_testvars_path)
         cmd.append("--log-raw=-")
         cmd.append("--log-errorsummary=%s" % error_summary_file)
@@ -219,12 +236,18 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
             prefs_file = "base-prefs.json"
         else:
             test_file = os.path.join(self.awsy_libdir, 'test_memory_usage.py')
-            prefs_file = "prefs.json"
+            if self.config['tp6']:
+                prefs_file = "tp6-prefs.json"
+            else:
+                prefs_file = "prefs.json"
 
         cmd.append("--preferences=%s" % os.path.join(self.awsy_path, "conf", prefs_file))
         if dmd_enabled:
             cmd.append("--pref=security.sandbox.content.level:0")
         cmd.append(test_file)
+
+        if self.config['enable_webrender']:
+            cmd.append('--enable-webrender')
 
         if self.config['single_stylo_traversal']:
             env['STYLO_THREADS'] = '1'
@@ -233,15 +256,6 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
 
         # TODO: consider getting rid of this as stylo is enabled by default
         env['STYLO_FORCE_ENABLED'] = '1'
-
-        if self.config['enable_webrender']:
-            env['MOZ_WEBRENDER'] = '1'
-            env['MOZ_ACCELERATED'] = '1'
-
-        # Allow explicitly disabling webrender, so that we don't run WR on non-QR
-        # test platforms just because they run on qualified hardware.
-        if self.config['disable_webrender']:
-            env['MOZ_WEBRENDER'] = '0'
 
         env['MOZ_UPLOAD_DIR'] = dirs['abs_blob_upload_dir']
         if not os.path.isdir(env['MOZ_UPLOAD_DIR']):

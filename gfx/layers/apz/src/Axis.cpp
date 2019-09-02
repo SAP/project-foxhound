@@ -23,7 +23,6 @@
 #include "nsPrintfCString.h"                // for nsPrintfCString
 #include "nsThreadUtils.h"                  // for NS_DispatchToMainThread, etc
 #include "nscore.h"                         // for NS_IMETHOD
-#include "gfxPrefs.h"                       // for the preferences
 
 #define AXIS_LOG(...)
 // #define AXIS_LOG(...) printf_stderr("AXIS: " __VA_ARGS__)
@@ -65,9 +64,13 @@ void Axis::UpdateWithTouchAtDevicePoint(ParentLayerCoord aPos,
 
   mPos = aPos;
 
+  AXIS_LOG("%p|%s got position %f\n", mAsyncPanZoomController, Name(),
+           mPos.value);
   if (Maybe<float> newVelocity =
-          mVelocityTracker->AddPosition(aPos, aTimestampMs, mAxisLocked)) {
-    mVelocity = *newVelocity;
+          mVelocityTracker->AddPosition(aPos, aTimestampMs)) {
+    mVelocity = mAxisLocked ? 0 : *newVelocity;
+    AXIS_LOG("%p|%s velocity from tracker is %f\n", mAsyncPanZoomController,
+             Name(), mVelocity);
   }
 }
 
@@ -237,15 +240,20 @@ void Axis::EndTouch(uint32_t aTimestampMs) {
   // mVelocityQueue is controller-thread only
   APZThreadUtils::AssertOnControllerThread();
 
-  mAxisLocked = false;
   // If the velocity tracker wasn't able to compute a velocity, zero out
   // the velocity to make sure we don't get a fling based on some old and
-  // no-longer-relevant value of mVelocity.
-  if (Maybe<float> velocity = mVelocityTracker->ComputeVelocity(aTimestampMs)) {
+  // no-longer-relevant value of mVelocity. Also if the axis is locked then
+  // just reset the velocity to 0 since we don't need any velocity to carry
+  // into the fling.
+  if (mAxisLocked) {
+    mVelocity = 0;
+  } else if (Maybe<float> velocity =
+                 mVelocityTracker->ComputeVelocity(aTimestampMs)) {
     mVelocity = *velocity;
   } else {
     mVelocity = 0;
   }
+  mAxisLocked = false;
   AXIS_LOG("%p|%s ending touch, computed velocity %f\n",
            mAsyncPanZoomController, Name(), mVelocity);
 }

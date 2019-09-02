@@ -28,6 +28,7 @@ def Libxul(name, output_category=None):
         'msimg32.dll',
         'netapi32.dll',
         'secur32.dll',
+        'urlmon.dll',
         'wininet.dll',
         'winspool.drv'
     ]
@@ -47,7 +48,7 @@ def Libxul(name, output_category=None):
     if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['ACCESSIBILITY']:
         LOCAL_INCLUDES += ['!/accessible/interfaces/gecko/']
 
-    if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CC_TYPE'] not in ('clang', 'gcc'):
+    if CONFIG['OS_ARCH'] == 'WINNT':
         LOCAL_INCLUDES += [
             '/widget/windows',
             '/xpcom/base',
@@ -58,16 +59,9 @@ def Libxul(name, output_category=None):
         # and config/version.mk would lift the $(srcdir)
         RCINCLUDE = '$(DEPTH)/toolkit/library/xulrunner.rc'
 
-    # BFD ld doesn't create multiple PT_LOADs as usual when an unknown section
-    # exists. Using an implicit linker script to make it fold that section in
-    # .data.rel.ro makes it create multiple PT_LOADs. That implicit linker
-    # script however makes gold misbehave, first because it doesn't like that
-    # the linker script is given after crtbegin.o, and even past that, replaces
-    # the default section rules with those from the script instead of
-    # supplementing them. Which leads to a lib with a huge load of sections.
-    if CONFIG['OS_TARGET'] not in ('OpenBSD', 'WINNT') and \
-            CONFIG['LINKER_KIND'] == 'bfd':
-        LDFLAGS += [TOPSRCDIR + '/toolkit/library/StaticXULComponents.ld']
+    # Show a breakdown of linker time. (Too verbose for local builds.)
+    if CONFIG['CC_TYPE'] == 'clang-cl' and not CONFIG['DEVELOPER_OPTIONS']:
+        LDFLAGS += ['-time']
 
     Libxul_defines()
 
@@ -203,6 +197,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     OS_LIBS += [
         'crypt32',
         'shell32',
+        'ntdll',
         'ole32',
         'version',
         'winspool',
@@ -377,3 +372,21 @@ if CONFIG['COMPILE_ENVIRONMENT']:
 # This library is entirely composed of Rust code, and needs to come after
 # all the C++ code so any possible C++ -> Rust calls can be resolved.
 USE_LIBS += ['gkrust']
+
+# The buildid is refreshed on every (incremental) build. But we want to avoid
+# rebuilding libxul every time, so instead of having a source file that
+# #include's buildid.h, which would have a dependency on it, and that would
+# thus trigger make to rebuild everything, we generate a source with the
+# buildid hard coded in it. Then we make that source file depend on all the
+# objects files that constitute libxul, so that if any of the files linked into
+# libxul is rebuilt, we refresh the buildid and link it into libxul.
+SOURCES += ['!buildid.cpp']
+GENERATED_FILES += ['buildid.cpp']
+GENERATED_FILES['buildid.cpp'].script = 'gen_buildid.py'
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
+    libxul_list = 'XUL'
+else:
+    libxul_list = '%sxul_%s' % (
+        CONFIG['DLL_PREFIX'], CONFIG['DLL_SUFFIX'].lstrip('.').replace('.','_'))
+GENERATED_FILES['buildid.cpp'].inputs = ['!%s.list' % libxul_list]
+

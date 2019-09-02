@@ -101,7 +101,7 @@ bool JSEventHandler::IsBlackForCC() {
   // We can claim to be black if all the things we reference are
   // effectively black already.
   return !mTypedHandler.HasEventHandler() ||
-         !mTypedHandler.Ptr()->HasGrayCallable();
+         mTypedHandler.Ptr()->IsBlackForCC();
 }
 
 nsresult JSEventHandler::HandleEvent(Event* aEvent) {
@@ -154,8 +154,8 @@ nsresult JSEventHandler::HandleEvent(Event* aEvent) {
         mTypedHandler.OnErrorEventHandler();
     ErrorResult rv;
     JS::Rooted<JS::Value> retval(RootingCx());
-    handler->Call(mTarget, msgOrEvent, fileName, lineNumber, columnNumber,
-                  error, &retval, rv);
+    handler->Call(target, msgOrEvent, fileName, lineNumber, columnNumber, error,
+                  &retval, rv);
     if (rv.Failed()) {
       return rv.StealNSResult();
     }
@@ -173,7 +173,7 @@ nsresult JSEventHandler::HandleEvent(Event* aEvent) {
         mTypedHandler.OnBeforeUnloadEventHandler();
     ErrorResult rv;
     nsString retval;
-    handler->Call(mTarget, *aEvent, retval, rv);
+    handler->Call(target, *aEvent, retval, rv);
     if (rv.Failed()) {
       return rv.StealNSResult();
     }
@@ -202,7 +202,7 @@ nsresult JSEventHandler::HandleEvent(Event* aEvent) {
   ErrorResult rv;
   RefPtr<EventHandlerNonNull> handler = mTypedHandler.NormalEventHandler();
   JS::Rooted<JS::Value> retval(RootingCx());
-  handler->Call(mTarget, *aEvent, &retval, rv);
+  handler->Call(target, *aEvent, &retval, rv);
   if (rv.Failed()) {
     return rv.StealNSResult();
   }

@@ -79,7 +79,7 @@ _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_L10N = [
 # with a beetmover patch in https://github.com/mozilla-releng/beetmoverscript/.
 # See example in bug 1348286
 UPSTREAM_ARTIFACT_UNSIGNED_PATHS = _compile_regex_mapping({
-    r'^(linux(|64)|macosx64)(|-devedition)-nightly$':
+    r'^(linux(|64)|macosx64)(|-devedition)-(nightly|shippable)$':
         _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_EN_US + [
             'host/bin/mar',
             'host/bin/mbsdiff',
@@ -96,12 +96,12 @@ UPSTREAM_ARTIFACT_UNSIGNED_PATHS = _compile_regex_mapping({
                     "host/bin/mar.exe",
                     "host/bin/mbsdiff.exe",
                 ]),
-    r'^win(32|64(|-aarch64))(|-devedition)-nightly$':
+    r'^win(32|64(|-aarch64))(|-devedition)-(nightly|shippable)$':
         _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_EN_US + [
             'host/bin/mar.exe',
             'host/bin/mbsdiff.exe',
         ],
-    r'^(linux(|64)|macosx64|win(32|64))(|-devedition)-nightly-l10n$':
+    r'^(linux(|64)|macosx64|win(32|64))(|-devedition)-(nightly|shippable)-l10n$':
         _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_L10N,
 })
 
@@ -110,9 +110,10 @@ UPSTREAM_ARTIFACT_UNSIGNED_PATHS = _compile_regex_mapping({
 # with a beetmover patch in https://github.com/mozilla-releng/beetmoverscript/.
 # See example in bug 1348286
 UPSTREAM_ARTIFACT_SIGNED_PATHS = _compile_regex_mapping({
-    r'^linux(|64)(|-devedition|-asan-reporter)-nightly(|-l10n)$':
+    r'^linux(|64)(|-devedition|-asan-reporter)-(nightly|shippable)(|-l10n)$':
         ['target.tar.bz2', 'target.tar.bz2.asc'],
-    r'^win(32|64)(|-aarch64)(|-devedition|-asan-reporter)-nightly(|-l10n)$': ['target.zip'],
+    r'^win(32|64)(|-aarch64)(|-devedition|-asan-reporter)-(nightly|shippable)(|-l10n)$':
+        ['target.zip'],
 })
 
 # Until bug 1331141 is fixed, if you are adding any new artifacts here that
@@ -357,7 +358,7 @@ def make_task_worker(config, jobs):
         locale = job["attributes"].get("locale")
         platform = job["attributes"]["build_platform"]
 
-        if should_use_artifact_map(platform, config.params['project']):
+        if should_use_artifact_map(platform):
             upstream_artifacts = generate_beetmover_upstream_artifacts(
                 config, job, platform, locale)
         else:
@@ -372,7 +373,7 @@ def make_task_worker(config, jobs):
             'upstream-artifacts': upstream_artifacts,
         }
 
-        if should_use_artifact_map(platform, config.params['project']):
+        if should_use_artifact_map(platform):
             worker['artifact-map'] = generate_beetmover_artifact_map(
                 config, job, platform=platform, locale=locale)
 
@@ -411,7 +412,7 @@ def make_partials_artifacts(config, jobs):
         partials_info = get_partials_info_from_params(
             config.params.get('release_history'), balrog_platform, locale)
 
-        if should_use_artifact_map(platform, config.params['project']):
+        if should_use_artifact_map(platform):
             job['worker']['artifact-map'].extend(
                 generate_beetmover_partials_artifact_map(
                     config, job, partials_info, platform=platform, locale=locale))

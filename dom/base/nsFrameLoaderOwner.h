@@ -7,12 +7,15 @@
 #ifndef nsFrameLoaderOwner_h_
 #define nsFrameLoaderOwner_h_
 
+#include "nsISupports.h"
+
 class nsFrameLoader;
 namespace mozilla {
 class ErrorResult;
 namespace dom {
+class BrowsingContext;
 struct RemotenessOptions;
-}
+}  // namespace dom
 }  // namespace mozilla
 
 // IID for the FrameLoaderOwner interface
@@ -38,6 +41,8 @@ class nsFrameLoaderOwner : public nsISupports {
   already_AddRefed<nsFrameLoader> GetFrameLoader();
   void SetFrameLoader(nsFrameLoader* aNewFrameLoader);
 
+  already_AddRefed<mozilla::dom::BrowsingContext> GetBrowsingContext();
+
   // Destroy (if it exists) and recreate our frameloader, based on new
   // remoteness requirements. This should follow the same path as
   // tabbrowser.js's updateBrowserRemoteness, including running the same logic
@@ -46,6 +51,11 @@ class nsFrameLoaderOwner : public nsISupports {
   // DOM.
   void ChangeRemoteness(const mozilla::dom::RemotenessOptions& aOptions,
                         mozilla::ErrorResult& rv);
+
+ private:
+  bool UseRemoteSubframes();
+  bool ShouldPreserveBrowsingContext(
+      const mozilla::dom::RemotenessOptions& aOptions);
 
  protected:
   virtual ~nsFrameLoaderOwner() = default;

@@ -89,7 +89,7 @@ ParseNode* ParseNode::appendOrCreateList(ParseNodeKind kind, ParseNode* left,
     }
   }
 
-  ListNode* list = handler->new_<ListNode>(kind, JSOP_NOP, left);
+  ListNode* list = handler->new_<ListNode>(kind, left);
   if (!list) {
     return nullptr;
   }
@@ -105,6 +105,12 @@ const ParseNode::TypeCode ParseNode::typeCodeTable[] = {
 };
 
 #ifdef DEBUG
+
+const size_t ParseNode::sizeTable[] = {
+#  define NODE_SIZE(_name, type) sizeof(type),
+    FOR_EACH_PARSE_NODE_KIND(NODE_SIZE)
+#  undef NODE_SIZE
+};
 
 static const char* const parseNodeNames[] = {
 #  define STRINGIFY(name, _type) #  name,
@@ -166,7 +172,7 @@ void NullaryNode::dumpImpl(GenericPrinter& out, int indent) {
       break;
 
     default:
-      out.printf("(%s)", parseNodeNames[size_t(getKind())]);
+      out.printf("(%s)", parseNodeNames[getKindAsIndex()]);
   }
 }
 
@@ -184,15 +190,15 @@ void NumericLiteral::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void BigIntLiteral::dumpImpl(GenericPrinter& out, int indent) {
-  out.printf("(%s)", parseNodeNames[size_t(getKind())]);
+  out.printf("(%s)", parseNodeNames[getKindAsIndex()]);
 }
 
 void RegExpLiteral::dumpImpl(GenericPrinter& out, int indent) {
-  out.printf("(%s)", parseNodeNames[size_t(getKind())]);
+  out.printf("(%s)", parseNodeNames[getKindAsIndex()]);
 }
 
 void LoopControlStatement::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s", name);
   if (label()) {
     out.printf(" ");
@@ -202,7 +208,7 @@ void LoopControlStatement::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void UnaryNode::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s ", name);
   indent += strlen(name) + 2;
   DumpParseTree(kid(), out, indent);
@@ -226,7 +232,7 @@ void BinaryNode::dumpImpl(GenericPrinter& out, int indent) {
     return;
   }
 
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s ", name);
   indent += strlen(name) + 2;
   DumpParseTree(left(), out, indent);
@@ -236,7 +242,7 @@ void BinaryNode::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void TernaryNode::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s ", name);
   indent += strlen(name) + 2;
   DumpParseTree(kid1(), out, indent);
@@ -248,7 +254,7 @@ void TernaryNode::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void FunctionNode::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s ", name);
   indent += strlen(name) + 2;
   DumpParseTree(body(), out, indent);
@@ -256,7 +262,7 @@ void FunctionNode::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void ModuleNode::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s ", name);
   indent += strlen(name) + 2;
   DumpParseTree(body(), out, indent);
@@ -264,7 +270,7 @@ void ModuleNode::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void ListNode::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s [", name);
   if (ParseNode* listHead = head()) {
     indent += strlen(name) + 3;
@@ -309,10 +315,6 @@ void NameNode::dumpImpl(GenericPrinter& out, int indent) {
     case ParseNodeKind::PropertyNameExpr:
       if (!atom()) {
         out.put("#<null name>");
-      } else if (getOp() == JSOP_GETARG && atom()->length() == 0) {
-        // Dump destructuring parameter.
-        static const char ZeroLengthName[] = "(#<zero-length name>)";
-        out.put(ZeroLengthName);
       } else {
         JS::AutoCheckCannotGC nogc;
         if (atom()->hasLatin1Chars()) {
@@ -329,7 +331,7 @@ void NameNode::dumpImpl(GenericPrinter& out, int indent) {
     }
 
     default: {
-      const char* name = parseNodeNames[size_t(getKind())];
+      const char* name = parseNodeNames[getKindAsIndex()];
       out.printf("(%s)", name);
       return;
     }
@@ -337,7 +339,7 @@ void NameNode::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void LabeledStatement::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s ", name);
   atom()->dumpCharsNoNewline(out);
   out.printf(" ");
@@ -347,7 +349,7 @@ void LabeledStatement::dumpImpl(GenericPrinter& out, int indent) {
 }
 
 void LexicalScopeNode::dumpImpl(GenericPrinter& out, int indent) {
-  const char* name = parseNodeNames[size_t(getKind())];
+  const char* name = parseNodeNames[getKindAsIndex()];
   out.printf("(%s [", name);
   int nameIndent = indent + strlen(name) + 3;
   if (!isEmptyScope()) {
@@ -423,6 +425,9 @@ void FunctionBox::trace(JSTracer* trc) {
   if (enclosingScope_) {
     TraceRoot(trc, &enclosingScope_, "funbox-enclosingScope");
   }
+  if (explicitName_) {
+    TraceRoot(trc, &explicitName_, "funbox-explicitName");
+  }
 }
 
 bool js::frontend::IsAnonymousFunctionDefinition(ParseNode* pn) {
@@ -432,7 +437,7 @@ bool js::frontend::IsAnonymousFunctionDefinition(ParseNode* pn) {
   // 14.4.8 (Generatoression).
   // 14.6.8 (AsyncFunctionExpression)
   if (pn->is<FunctionNode>() &&
-      !pn->as<FunctionNode>().funbox()->function()->explicitName()) {
+      !pn->as<FunctionNode>().funbox()->explicitName()) {
     return true;
   }
 

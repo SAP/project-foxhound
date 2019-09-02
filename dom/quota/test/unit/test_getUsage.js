@@ -5,63 +5,62 @@
 
 var testGenerator = testSteps();
 
-function* testSteps()
-{
+function* testSteps() {
   const origins = [
     {
       origin: "http://example.com",
       persisted: false,
-      usage: 49152
+      usage: 49152,
     },
 
     {
       origin: "http://localhost",
       persisted: false,
-      usage: 147456
+      usage: 147456,
     },
 
     {
       origin: "http://www.mozilla.org",
       persisted: true,
-      usage: 98304
-    }
+      usage: 98304,
+    },
   ];
 
   const allOrigins = [
     {
       origin: "chrome",
       persisted: false,
-      usage: 147456
+      usage: 147456,
     },
 
     {
       origin: "http://example.com",
       persisted: false,
-      usage: 49152
+      usage: 49152,
     },
 
     {
       origin: "http://localhost",
       persisted: false,
-      usage: 147456
+      usage: 147456,
     },
 
     {
       origin: "http://www.mozilla.org",
       persisted: true,
-      usage: 98304
-    }
+      usage: 98304,
+    },
   ];
 
-  function verifyResult(result, origins) {
+  function verifyResult(result, expectedOrigins) {
     ok(result instanceof Array, "Got an array object");
-    ok(result.length == origins.length, "Correct number of elements");
+    ok(result.length == expectedOrigins.length, "Correct number of elements");
 
     info("Sorting elements");
 
     result.sort(function(a, b) {
-      let originA = a.origin
-      let originB = b.origin
+      let originA = a.origin;
+      let originB = b.origin;
 
       if (originA < originB) {
         return -1;
@@ -76,7 +75,7 @@ function* testSteps()
 
     for (let i = 0; i < result.length; i++) {
       let a = result[i];
-      let b = origins[i];
+      let b = expectedOrigins[i];
       ok(a.origin == b.origin, "Origin equals");
       ok(a.persisted == b.persisted, "Persisted equals");
       ok(a.usage == b.usage, "Usage equals");

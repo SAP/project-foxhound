@@ -20,29 +20,36 @@ function run_test() {
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-stack",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_pause_frame();
-                           });
+    attachTestTabAndResume(gClient, "test-stack", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_pause_frame();
+    });
   });
   do_test_pending();
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     Assert.ok(!!packet.frame);
     Assert.ok(!!packet.frame.actor);
     Assert.equal(packet.frame.displayName, "stopMe");
-    gThreadClient.resume(function() {
+    gThreadClient.resume().then(function() {
       finishClient(gClient);
     });
   });
 
-  gDebuggee.eval("(" + function() {
-    function stopMe() {
-      debugger;
-    }
-    stopMe();
-  } + ")()");
+  gDebuggee.eval(
+    "(" +
+      function() {
+        function stopMe() {
+          debugger;
+        }
+        stopMe();
+      } +
+      ")()"
+  );
 }

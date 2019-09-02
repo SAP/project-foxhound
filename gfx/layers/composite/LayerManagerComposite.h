@@ -19,6 +19,7 @@
 #include "mozilla/gfx/Point.h"  // for IntSize
 #include "mozilla/gfx/Rect.h"   // for Rect
 #include "mozilla/gfx/Types.h"  // for SurfaceFormat
+#include "mozilla/layers/CompositionRecorder.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/Effects.h"  // for EffectChain
 #include "mozilla/layers/LayersMessages.h"
@@ -77,30 +78,28 @@ static const int kVisualWarningDuration = 150;  // ms
 class HostLayerManager : public LayerManager {
  public:
   HostLayerManager();
-  ~HostLayerManager();
+  virtual ~HostLayerManager();
 
-  virtual bool BeginTransactionWithTarget(gfxContext* aTarget,
-                                          const nsCString& aURL) override {
+  bool BeginTransactionWithTarget(gfxContext* aTarget,
+                                  const nsCString& aURL) override {
     MOZ_CRASH("GFX: Use BeginTransactionWithDrawTarget");
   }
 
-  virtual bool EndEmptyTransaction(
-      EndTransactionFlags aFlags = END_DEFAULT) override {
+  bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT) override {
     MOZ_CRASH("GFX: Use EndTransaction(aTimeStamp)");
     return false;
   }
 
-  virtual void EndTransaction(
-      DrawPaintedLayerCallback aCallback, void* aCallbackData,
-      EndTransactionFlags aFlags = END_DEFAULT) override {
+  void EndTransaction(DrawPaintedLayerCallback aCallback, void* aCallbackData,
+                      EndTransactionFlags aFlags = END_DEFAULT) override {
     MOZ_CRASH("GFX: Use EndTransaction(aTimeStamp)");
   }
 
-  virtual int32_t GetMaxTextureSize() const override {
+  int32_t GetMaxTextureSize() const override {
     MOZ_CRASH("GFX: Call on compositor, not LayerManagerComposite");
   }
 
-  virtual void GetBackendName(nsAString& name) override {
+  void GetBackendName(nsAString& name) override {
     MOZ_CRASH("GFX: Shouldn't be called for composited layer manager");
   }
 
@@ -118,7 +117,7 @@ class HostLayerManager : public LayerManager {
   virtual void SetDiagnosticTypes(DiagnosticTypes aDiagnostics) {}
   virtual void InvalidateAll() = 0;
 
-  virtual HostLayerManager* AsHostLayerManager() override { return this; }
+  HostLayerManager* AsHostLayerManager() override { return this; }
   virtual LayerManagerMLGPU* AsLayerManagerMLGPU() { return nullptr; }
 
   void ExtractImageCompositeNotifications(
@@ -200,6 +199,10 @@ class HostLayerManager : public LayerManager {
     mCompositorBridgeID = aID;
   }
 
+  void SetCompositionRecorder(already_AddRefed<CompositionRecorder> aRecorder) {
+    mCompositionRecorder = aRecorder;
+  }
+
  protected:
   bool mDebugOverlayWantsNextFrame;
   nsTArray<ImageCompositeNotificationInfo> mImageCompositeNotifications;
@@ -213,6 +216,7 @@ class HostLayerManager : public LayerManager {
   bool mWindowOverlayChanged;
   TimeDuration mLastPaintTime;
   TimeStamp mRenderStartTime;
+  RefPtr<CompositionRecorder> mCompositionRecorder = nullptr;
 
   // Render time for the current composition.
   TimeStamp mCompositionTime;
@@ -239,9 +243,9 @@ class LayerManagerComposite final : public HostLayerManager {
 
  public:
   explicit LayerManagerComposite(Compositor* aCompositor);
-  ~LayerManagerComposite();
+  virtual ~LayerManagerComposite();
 
-  virtual void Destroy() override;
+  void Destroy() override;
 
   /**
    * Sets the clipping region for this layer manager. This is important on
@@ -259,13 +263,11 @@ class LayerManagerComposite final : public HostLayerManager {
   /**
    * LayerManager implementation.
    */
-  virtual LayerManagerComposite* AsLayerManagerComposite() override {
-    return this;
-  }
+  LayerManagerComposite* AsLayerManagerComposite() override { return this; }
 
   void UpdateRenderBounds(const gfx::IntRect& aRect) override;
 
-  virtual bool BeginTransaction(const nsCString& aURL) override;
+  bool BeginTransaction(const nsCString& aURL) override;
   void BeginTransactionWithDrawTarget(gfx::DrawTarget* aTarget,
                                       const gfx::IntRect& aRect) override;
   void EndTransaction(const TimeStamp& aTimeStamp,
@@ -276,28 +278,28 @@ class LayerManagerComposite final : public HostLayerManager {
     MOZ_CRASH("GFX: Use EndTransaction(aTimeStamp)");
   }
 
-  virtual void SetRoot(Layer* aLayer) override { mRoot = aLayer; }
+  void SetRoot(Layer* aLayer) override { mRoot = aLayer; }
 
   // XXX[nrc]: never called, we should move this logic to ClientLayerManager
   // (bug 946926).
-  virtual bool CanUseCanvasLayerForSize(const gfx::IntSize& aSize) override;
+  bool CanUseCanvasLayerForSize(const gfx::IntSize& aSize) override;
 
-  virtual void ClearCachedResources(Layer* aSubtree = nullptr) override;
+  void ClearCachedResources(Layer* aSubtree = nullptr) override;
 
-  virtual already_AddRefed<PaintedLayer> CreatePaintedLayer() override;
-  virtual already_AddRefed<ContainerLayer> CreateContainerLayer() override;
-  virtual already_AddRefed<ImageLayer> CreateImageLayer() override;
-  virtual already_AddRefed<ColorLayer> CreateColorLayer() override;
-  virtual already_AddRefed<CanvasLayer> CreateCanvasLayer() override;
-  virtual already_AddRefed<RefLayer> CreateRefLayer() override;
+  already_AddRefed<PaintedLayer> CreatePaintedLayer() override;
+  already_AddRefed<ContainerLayer> CreateContainerLayer() override;
+  already_AddRefed<ImageLayer> CreateImageLayer() override;
+  already_AddRefed<ColorLayer> CreateColorLayer() override;
+  already_AddRefed<CanvasLayer> CreateCanvasLayer() override;
+  already_AddRefed<RefLayer> CreateRefLayer() override;
 
-  virtual bool AreComponentAlphaLayersEnabled() override;
+  bool AreComponentAlphaLayersEnabled() override;
 
-  virtual already_AddRefed<DrawTarget> CreateOptimalMaskDrawTarget(
+  already_AddRefed<DrawTarget> CreateOptimalMaskDrawTarget(
       const IntSize& aSize) override;
 
-  virtual const char* Name() const override { return ""; }
-  virtual bool IsCompositingToScreen() const override;
+  const char* Name() const override { return ""; }
+  bool IsCompositingToScreen() const override;
 
   bool AlwaysScheduleComposite() const override;
 
@@ -325,7 +327,8 @@ class LayerManagerComposite final : public HostLayerManager {
   void PostProcessLayers(Layer* aLayer, nsIntRegion& aOpaqueRegion,
                          LayerIntRegion& aVisibleRegion,
                          const Maybe<RenderTargetIntRect>& aRenderTargetClip,
-                         const Maybe<ParentLayerIntRect>& aClipFromAncestors);
+                         const Maybe<ParentLayerIntRect>& aClipFromAncestors,
+                         bool aCanContributeOpaque);
 
   /**
    * RAII helper class to add a mask effect with the compositable from
@@ -371,18 +374,18 @@ class LayerManagerComposite final : public HostLayerManager {
   bool AsyncPanZoomEnabled() const override;
 
  public:
-  virtual TextureFactoryIdentifier GetTextureFactoryIdentifier() override {
+  TextureFactoryIdentifier GetTextureFactoryIdentifier() override {
     return mCompositor->GetTextureFactoryIdentifier();
   }
-  virtual LayersBackend GetBackendType() override {
+  LayersBackend GetBackendType() override {
     return mCompositor ? mCompositor->GetBackendType()
                        : LayersBackend::LAYERS_NONE;
   }
-  virtual void SetDiagnosticTypes(DiagnosticTypes aDiagnostics) override {
+  void SetDiagnosticTypes(DiagnosticTypes aDiagnostics) override {
     mCompositor->SetDiagnosticTypes(aDiagnostics);
   }
 
-  virtual void InvalidateAll() override {
+  void InvalidateAll() override {
     AddInvalidRegion(nsIntRegion(mRenderBounds));
   }
 
@@ -490,7 +493,7 @@ class HostLayer {
   }
   HostLayerManager* GetLayerManager() const { return mCompositorManager; }
 
-  virtual ~HostLayer() {}
+  virtual ~HostLayer() = default;
 
   virtual LayerComposite* GetFirstChildComposite() { return nullptr; }
 
@@ -589,9 +592,9 @@ class LayerComposite : public HostLayer {
 
   virtual ~LayerComposite();
 
-  virtual void SetLayerManager(HostLayerManager* aManager) override;
+  void SetLayerManager(HostLayerManager* aManager) override;
 
-  virtual LayerComposite* GetFirstChildComposite() override { return nullptr; }
+  LayerComposite* GetFirstChildComposite() override { return nullptr; }
 
   /* Do NOT call this from the generic LayerComposite destructor.  Only from the
    * concrete class destructor
@@ -611,7 +614,7 @@ class LayerComposite : public HostLayer {
   virtual void RenderLayer(const gfx::IntRect& aClipRect,
                            const Maybe<gfx::Polygon>& aGeometry) = 0;
 
-  virtual bool SetCompositableHost(CompositableHost*) override {
+  bool SetCompositableHost(CompositableHost*) override {
     // We must handle this gracefully, see bug 967824
     NS_WARNING(
         "called SetCompositableHost for a layer type not accepting a "

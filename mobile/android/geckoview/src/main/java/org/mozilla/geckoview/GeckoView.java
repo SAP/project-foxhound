@@ -32,6 +32,7 @@ import android.support.annotation.Nullable;
 import android.support.annotation.UiThread;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.KeyEvent;
@@ -52,12 +53,12 @@ public class GeckoView extends FrameLayout {
     private static final String LOGTAG = "GeckoView";
     private static final boolean DEBUG = false;
 
-    protected final Display mDisplay = new Display();
-    protected GeckoSession mSession;
-    protected GeckoRuntime mRuntime;
+    protected final @NonNull Display mDisplay = new Display();
+    protected @Nullable GeckoSession mSession;
+    protected @Nullable GeckoRuntime mRuntime;
     private boolean mStateSaved;
 
-    protected SurfaceView mSurfaceView;
+    protected @Nullable SurfaceView mSurfaceView;
 
     private boolean mIsResettingFocus;
 
@@ -101,12 +102,16 @@ public class GeckoView extends FrameLayout {
         private GeckoDisplay mDisplay;
         private boolean mValid;
 
+        private int mClippingHeight;
+
         public void acquire(final GeckoDisplay display) {
             mDisplay = display;
 
             if (!mValid) {
                 return;
             }
+
+            setVerticalClipping(mClippingHeight);
 
             // Tell display there is already a surface.
             onGlobalLayout();
@@ -166,6 +171,14 @@ public class GeckoView extends FrameLayout {
 
         public boolean shouldPinOnScreen() {
             return mDisplay != null ? mDisplay.shouldPinOnScreen() : false;
+        }
+
+        public void setVerticalClipping(final int clippingHeight) {
+            mClippingHeight = clippingHeight;
+
+            if (mDisplay != null) {
+                mDisplay.setVerticalClipping(clippingHeight);
+            }
         }
 
         /**
@@ -253,6 +266,21 @@ public class GeckoView extends FrameLayout {
         return mDisplay.shouldPinOnScreen();
     }
 
+    /**
+     * Update the amount of vertical space that is clipped or visibly obscured in the bottom portion
+     * of the view. Tells gecko where to put bottom fixed elements so they are fully visible.
+     *
+     * Optional call. The display's visible vertical space has changed. Must be
+     * called on the application main thread.
+     *
+     * @param clippingHeight The height of the bottom clipped space in screen pixels.
+     */
+    public void setVerticalClipping(final int clippingHeight) {
+        ThreadUtils.assertOnUiThread();
+
+        mDisplay.setVerticalClipping(clippingHeight);
+    }
+
     /* package */ void setActive(final boolean active) {
         if (mSession != null) {
             mSession.setActive(active);
@@ -263,6 +291,9 @@ public class GeckoView extends FrameLayout {
      * Unsets the current session from this instance and returns it, if any. You must call
      * this before {@link #setSession(GeckoSession)} if there is already an open session
      * set for this instance.
+     *
+     * Note: this method does not close the session and the session remains active. The
+     * caller is responsible for calling {@link GeckoSession#close()} when appropriate.
      *
      * @return The {@link GeckoSession} that was set for this instance. May be null.
      */
@@ -410,7 +441,7 @@ public class GeckoView extends FrameLayout {
     }
 
     @AnyThread
-    public @NonNull EventDispatcher getEventDispatcher() {
+    /* package */ @NonNull EventDispatcher getEventDispatcher() {
         return mSession.getEventDispatcher();
     }
 
@@ -426,14 +457,14 @@ public class GeckoView extends FrameLayout {
 
     @Override
     public void onAttachedToWindow() {
-        if (mSession == null) {
-            setSession(new GeckoSession(), GeckoRuntime.getDefault(getContext()));
+        if (mSession != null && mRuntime != null) {
+            if (!mSession.isOpen()) {
+                mSession.open(mRuntime);
+            }
+            mRuntime.orientationChanged();
+        } else {
+            Log.w(LOGTAG, "No GeckoSession attached to this GeckoView instance. Call setSession to attach a GeckoSession to this instance.");
         }
-
-        if (!mSession.isOpen()) {
-            mSession.open(mRuntime);
-        }
-        mRuntime.orientationChanged();
 
         super.onAttachedToWindow();
     }

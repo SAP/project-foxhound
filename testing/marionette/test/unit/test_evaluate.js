@@ -1,5 +1,9 @@
-const {element, WebElement} = ChromeUtils.import("chrome://marionette/content/element.js");
-const {evaluate} = ChromeUtils.import("chrome://marionette/content/evaluate.js");
+const { element, WebElement } = ChromeUtils.import(
+  "chrome://marionette/content/element.js"
+);
+const { evaluate } = ChromeUtils.import(
+  "chrome://marionette/content/evaluate.js"
+);
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const XBLNS = "http://www.mozilla.org/xbl";
@@ -16,8 +20,12 @@ class Element {
     }
   }
 
-  get nodeType() { return 1; }
-  get ELEMENT_NODE() { return 1; }
+  get nodeType() {
+    return 1;
+  }
+  get ELEMENT_NODE() {
+    return 1;
+  }
 }
 
 class DOMElement extends Element {
@@ -69,52 +77,73 @@ add_test(function test_toJSON_types() {
   deepEqual([], evaluate.toJSON([]));
 
   // elements
-  ok(WebElement.isReference(evaluate.toJSON(domEl, seenEls)));
-  ok(WebElement.isReference(evaluate.toJSON(svgEl, seenEls)));
-  ok(WebElement.isReference(evaluate.toJSON(xulEl, seenEls)));
-  ok(WebElement.isReference(evaluate.toJSON(xblEl, seenEls)));
+  ok(evaluate.toJSON(domEl, seenEls) instanceof WebElement);
+  ok(evaluate.toJSON(svgEl, seenEls) instanceof WebElement);
+  ok(evaluate.toJSON(xulEl, seenEls) instanceof WebElement);
+  ok(evaluate.toJSON(xblEl, seenEls) instanceof WebElement);
 
   // toJSON
-  equal("foo", evaluate.toJSON({toJSON() { return "foo"; }}));
+  equal(
+    "foo",
+    evaluate.toJSON({
+      toJSON() {
+        return "foo";
+      },
+    })
+  );
 
   // arbitrary object
-  deepEqual({foo: "bar"}, evaluate.toJSON({foo: "bar"}));
+  deepEqual({ foo: "bar" }, evaluate.toJSON({ foo: "bar" }));
 
   run_next_test();
 });
 
-
 add_test(function test_toJSON_sequences() {
-  let input = [null, true, [], domEl, {toJSON() { return "foo"; }}, {bar: "baz"}];
+  let input = [
+    null,
+    true,
+    [],
+    domEl,
+    {
+      toJSON() {
+        return "foo";
+      },
+    },
+    { bar: "baz" },
+  ];
   let actual = evaluate.toJSON(input, seenEls);
 
   equal(null, actual[0]);
   equal(true, actual[1]);
   deepEqual([], actual[2]);
-  ok(WebElement.isReference(actual[3]));
+  ok(actual[3] instanceof WebElement);
   equal("foo", actual[4]);
-  deepEqual({bar: "baz"}, actual[5]);
+  deepEqual({ bar: "baz" }, actual[5]);
 
   run_next_test();
 });
 
 add_test(function test_toJSON_objects() {
   let input = {
-    "null": null,
-    "boolean": true,
-    "array": [],
-    "webElement": domEl,
-    "toJSON": {toJSON() { return "foo"; }},
-    "object": {"bar": "baz"},
+    null: null,
+    boolean: true,
+    array: [],
+    webElement: domEl,
+    toJSON: {
+      toJSON() {
+        return "foo";
+      },
+    },
+    object: { bar: "baz" },
   };
   let actual = evaluate.toJSON(input, seenEls);
 
   equal(null, actual.null);
   equal(true, actual.boolean);
   deepEqual([], actual.array);
-  ok(WebElement.isReference(actual.webElement));
+  ok(actual.webElement instanceof WebElement);
   equal("foo", actual.toJSON);
-  deepEqual({"bar": "baz"}, actual.object);
+  deepEqual({ bar: "baz" }, actual.object);
 
   run_next_test();
 });
@@ -146,7 +175,7 @@ add_test(function test_isCyclic_array() {
 add_test(function test_isCyclic_arrayInObject() {
   let arr = [];
   arr.push(arr);
-  ok(evaluate.isCyclic({arr}));
+  ok(evaluate.isCyclic({ arr }));
 
   run_next_test();
 });

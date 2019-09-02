@@ -20,7 +20,8 @@
 #include "mozilla/ReentrantMonitor.h"    // for ReentrantMonitor, etc
 #include "mozilla/ipc/MessageChannel.h"  // for MessageChannel, etc
 #include "mozilla/ipc/Transport.h"       // for Transport
-#include "mozilla/gfx/Point.h"           // for IntSize
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/gfx/Point.h"  // for IntSize
 #include "mozilla/layers/AsyncCanvasRenderer.h"
 #include "mozilla/media/MediaSystemResourceManager.h"  // for MediaSystemResourceManager
 #include "mozilla/media/MediaSystemResourceManagerChild.h"  // for MediaSystemResourceManagerChild
@@ -91,7 +92,7 @@ struct CompositableTransaction {
   bool mFinished;
 };
 
-struct AutoEndTransaction {
+struct AutoEndTransaction final {
   explicit AutoEndTransaction(CompositableTransaction* aTxn) : mTxn(aTxn) {}
   ~AutoEndTransaction() { mTxn->End(); }
   CompositableTransaction* mTxn;
@@ -99,7 +100,8 @@ struct AutoEndTransaction {
 
 void ImageBridgeChild::UseTextures(
     CompositableClient* aCompositable,
-    const nsTArray<TimedTextureClient>& aTextures) {
+    const nsTArray<TimedTextureClient>& aTextures,
+    const Maybe<wr::RenderRoot>& aRenderRoot) {
   MOZ_ASSERT(aCompositable);
   MOZ_ASSERT(aCompositable->GetIPCHandle());
   MOZ_ASSERT(aCompositable->IsConnected());
@@ -134,30 +136,37 @@ void ImageBridgeChild::UseComponentAlphaTextures(
 
 void ImageBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
     TextureClient* aClient) {
-  // Wait ReleaseCompositableRef only when TextureFlags::RECYCLE is set on
-  // ImageBridge.
-  if (!aClient || !(aClient->GetFlags() & TextureFlags::RECYCLE)) {
+  if (!aClient) {
     return;
   }
+  // Wait ReleaseCompositableRef only when TextureFlags::RECYCLE or
+  // TextureFlags::WAIT_HOST_USAGE_END is set on ImageBridge.
+  bool waitNotifyNotUsed =
+      aClient->GetFlags() & TextureFlags::RECYCLE ||
+      aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END;
+  if (!waitNotifyNotUsed) {
+    return;
+  }
+
   aClient->SetLastFwdTransactionId(GetFwdTransactionId());
-  mTexturesWaitingRecycled.emplace(aClient->GetSerial(), aClient);
+  mTexturesWaitingNotifyNotUsed.emplace(aClient->GetSerial(), aClient);
 }
 
 void ImageBridgeChild::NotifyNotUsed(uint64_t aTextureId,
                                      uint64_t aFwdTransactionId) {
-  auto it = mTexturesWaitingRecycled.find(aTextureId);
-  if (it != mTexturesWaitingRecycled.end()) {
+  auto it = mTexturesWaitingNotifyNotUsed.find(aTextureId);
+  if (it != mTexturesWaitingNotifyNotUsed.end()) {
     if (aFwdTransactionId < it->second->GetLastFwdTransactionId()) {
       // Released on host side, but client already requested newer use texture.
       return;
     }
-    mTexturesWaitingRecycled.erase(it);
+    mTexturesWaitingNotifyNotUsed.erase(it);
   }
 }
 
-void ImageBridgeChild::CancelWaitForRecycle(uint64_t aTextureId) {
+void ImageBridgeChild::CancelWaitForNotifyNotUsed(uint64_t aTextureId) {
   MOZ_ASSERT(InImageBridgeChildThread());
-  mTexturesWaitingRecycled.erase(aTextureId);
+  mTexturesWaitingNotifyNotUsed.erase(aTextureId);
 }
 
 // Singleton
@@ -213,7 +222,7 @@ void ImageBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
   }
 }
 
-void ImageBridgeChild::DeallocPImageBridgeChild() { this->Release(); }
+void ImageBridgeChild::ActorDealloc() { this->Release(); }
 
 void ImageBridgeChild::CreateImageClientSync(SynchronousTask* aTask,
                                              RefPtr<ImageClient>* result,
@@ -246,7 +255,7 @@ ImageBridgeChild::ImageBridgeChild(uint32_t aNamespace)
 ImageBridgeChild::~ImageBridgeChild() { delete mTxn; }
 
 void ImageBridgeChild::MarkShutDown() {
-  mTexturesWaitingRecycled.clear();
+  mTexturesWaitingNotifyNotUsed.clear();
 
   mCanSend = false;
 }
@@ -321,7 +330,7 @@ void ImageBridgeChild::UpdateImageClient(RefPtr<ImageContainer> aContainer) {
   }
 
   BeginTransaction();
-  client->UpdateImage(aContainer, Layer::CONTENT_OPAQUE);
+  client->UpdateImage(aContainer, Layer::CONTENT_OPAQUE, Nothing());
   EndTransaction();
 }
 
@@ -360,7 +369,8 @@ void ImageBridgeChild::UpdateAsyncCanvasRendererNow(
   }
 
   BeginTransaction();
-  aWrapper->GetCanvasClient()->Updated();
+  // TODO wr::RenderRoot::Unknown
+  aWrapper->GetCanvasClient()->Updated(wr::RenderRoot::Default);
   EndTransaction();
 }
 
@@ -625,6 +635,17 @@ void ImageBridgeChild::UpdateTextureFactoryIdentifier(
   bool disablingWebRender =
       GetCompositorBackendType() == LayersBackend::LAYERS_WR &&
       aIdentifier.mParentBackend != LayersBackend::LAYERS_WR;
+
+  // Do not update TextureFactoryIdentifier if aIdentifier is going to disable
+  // WebRender, but gecko is still using WebRender. Since gecko uses different
+  // incompatible ImageHost and TextureHost between WebRender and non-WebRender.
+  //
+  // Even when WebRender is still in use, if non-accelerated widget is opened,
+  // aIdentifier disables WebRender at ImageBridgeChild.
+  if (disablingWebRender && gfxVars::UseWebRender()) {
+    return;
+  }
+
   // D3DTexture might become obsolte. To prevent to use obsoleted D3DTexture,
   // drop all ImageContainers' ImageClients.
 
@@ -942,7 +963,8 @@ bool ImageBridgeChild::DestroyInTransaction(const CompositableHandle& aHandle) {
 }
 
 void ImageBridgeChild::RemoveTextureFromCompositable(
-    CompositableClient* aCompositable, TextureClient* aTexture) {
+    CompositableClient* aCompositable, TextureClient* aTexture,
+    const Maybe<wr::RenderRoot>& aRenderRoot) {
   MOZ_ASSERT(CanSend());
   MOZ_ASSERT(aTexture);
   MOZ_ASSERT(aTexture->IsSharedWithCompositor());

@@ -14,6 +14,7 @@
 #include "mozilla/Variant.h"
 
 #include <stddef.h>
+#include <utility>
 
 #include "gc/Barrier.h"
 #include "gc/NurseryAwareHashMap.h"
@@ -23,22 +24,110 @@
 
 namespace js {
 
+// A key in a WrapperMap, a compartment's map from entities in other
+// compartments to the local values the compartment's own code must use to refer
+// to them.
+//
+// WrapperMaps have a complex key type because, in addition to mapping JSObjects
+// to their cross-compartment wrappers, they must also map non-atomized
+// JSStrings to their copies in the local compartment, and debuggee entities
+// (objects, scripts, etc.) to their representative objects in the Debugger API.
 class CrossCompartmentKey {
  public:
-  enum DebuggerObjectKind : uint8_t {
-    DebuggerSource,
-    DebuggerEnvironment,
-    DebuggerObject,
-    DebuggerWasmScript,
-    DebuggerWasmSource
+  // [SMDOC] Cross-compartment wrapper map entries for Debugger API objects
+  //
+  // The Debugger API creates objects like Debugger.Object, Debugger.Script,
+  // Debugger.Environment, etc. to refer to things in the debuggee. Each
+  // Debugger gets at most one Debugger.Mumble for each referent:
+  // Debugger.Mumbles are unique per referent per Debugger.
+  //
+  // Since a Debugger and its debuggee must be in different compartments, a
+  // Debugger.Mumble's pointer to its referent is a cross-compartment edge, from
+  // the debugger's compartment into the debuggee compartment. Like any other
+  // sort of cross-compartment edge, the GC needs to be able to find all of
+  // these edges readily.
+  //
+  // Our solution is to treat Debugger.Mumble objects as wrappers stored in
+  // JSCompartment::crossCompartmentWrappers, where the GC already looks when it
+  // needs to find any other sort of cross-compartment edges. This also meshes
+  // nicely with existing sanity checks that trace the heap looking for
+  // cross-compartment edges and check that each one has an entry in the right
+  // wrapper map.
+  //
+  // That approach means that a given referent may have multiple entries in the
+  // wrapper map: its ordinary cross-compartment wrapper, and then any
+  // Debugger.Mumbles referring to it. If there are multiple Debuggers in a
+  // compartment, each needs its own Debugger.Mumble for the referent, and each
+  // of those needs its own entry in the WrapperMap. And some referents may have
+  // more than one type of Debugger.Mumble that can refer to them: for example,
+  // a WasmInstanceObject can be the referent of both a Debugger.Script and a
+  // Debugger.Source.
+  //
+  // Hence, to look up a Debugger.Mumble in the WrapperMap, we need a key that
+  // includes 1) the referent, 2) the Debugger to which the Mumble belongs, and
+  // 3) the specific type of Mumble we're looking for. Since mozilla::Variant
+  // distinguishes alternatives by type only, we include a distinct type in
+  // WrappedType for each sort of Debugger.Mumble.
+  //
+  // But Debugger wrapper table entries are more than just wrapper entries with
+  // fancy keys. Whereas an ordinary cross-compartment wrapper ensures that the
+  // wrapper's zone is swept no later than the referent's (but possibly
+  // earlier), a debugger cross-compartment entry forces the debuggee's and
+  // debugger's zones to be swept together: they are placed in the same sweep
+  // group. This is necessary to make some of Debugger's nice GC properties work
+  // out.
+
+  // Common structure for all Debugger.Mumble keys.
+  template <typename Referent>
+  struct Debuggee {
+    Debuggee(NativeObject* debugger, Referent* referent)
+        : debugger(debugger), referent(referent) {}
+
+    bool operator==(const Debuggee& other) const {
+      return debugger == other.debugger && referent == other.referent;
+    }
+
+    bool operator!=(const Debuggee& other) const { return !(*this == other); }
+
+    NativeObject* debugger;
+    Referent* referent;
   };
-  using DebuggerAndObject =
-      mozilla::Tuple<NativeObject*, JSObject*, DebuggerObjectKind>;
-  using DebuggerAndScript = mozilla::Tuple<NativeObject*, JSScript*>;
-  using DebuggerAndLazyScript = mozilla::Tuple<NativeObject*, LazyScript*>;
-  using WrappedType =
-      mozilla::Variant<JSObject*, JSString*, DebuggerAndScript,
-                       DebuggerAndLazyScript, DebuggerAndObject>;
+
+  // Key under which we find debugger's Debugger.Object referring to referent.
+  struct DebuggeeObject : Debuggee<JSObject> {
+    DebuggeeObject(NativeObject* debugger, JSObject* referent)
+        : Debuggee(debugger, referent) {}
+  };
+
+  // Keys under which we find Debugger.Scripts.
+  using DebuggeeJSScript = Debuggee<JSScript>;
+  using DebuggeeWasmScript = Debuggee<NativeObject>;  // WasmInstanceObject
+  using DebuggeeLazyScript = Debuggee<LazyScript>;
+
+  // Key under which we find debugger's Debugger.Environment referring to
+  // referent.
+  struct DebuggeeEnvironment : Debuggee<JSObject> {
+    DebuggeeEnvironment(NativeObject* debugger, JSObject* referent)
+        : Debuggee(debugger, referent) {}
+  };
+
+  // Key under which we find debugger's Debugger.Source referring to referent.
+  struct DebuggeeSource : Debuggee<NativeObject> {
+    DebuggeeSource(NativeObject* debugger, NativeObject* referent)
+        : Debuggee(debugger, referent) {}
+  };
+
+  // Key under which we find debugger's Debugger.Frame for the generator call
+  // whose AbstractGeneratorObject is referent.
+  struct DebuggeeFrameGenerator : Debuggee<NativeObject> {
+    DebuggeeFrameGenerator(NativeObject* debugger, NativeObject* referent)
+        : Debuggee(debugger, referent) {}
+  };
+
+  using WrappedType = mozilla::Variant<JSObject*, JSString*, DebuggeeObject,
+                                       DebuggeeJSScript, DebuggeeWasmScript,
+                                       DebuggeeLazyScript, DebuggeeEnvironment,
+                                       DebuggeeSource, DebuggeeFrameGenerator>;
 
   explicit CrossCompartmentKey(JSObject* obj) : wrapped(obj) {
     MOZ_RELEASE_ASSERT(obj);
@@ -49,22 +138,24 @@ class CrossCompartmentKey {
   explicit CrossCompartmentKey(const JS::Value& v)
       : wrapped(v.isString() ? WrappedType(v.toString())
                              : WrappedType(&v.toObject())) {}
-  explicit CrossCompartmentKey(NativeObject* debugger, JSObject* obj,
-                               DebuggerObjectKind kind)
-      : wrapped(DebuggerAndObject(debugger, obj, kind)) {
-    MOZ_RELEASE_ASSERT(debugger);
-    MOZ_RELEASE_ASSERT(obj);
-  }
-  explicit CrossCompartmentKey(NativeObject* debugger, JSScript* script)
-      : wrapped(DebuggerAndScript(debugger, script)) {
-    MOZ_RELEASE_ASSERT(debugger);
-    MOZ_RELEASE_ASSERT(script);
-  }
-  explicit CrossCompartmentKey(NativeObject* debugger, LazyScript* lazyScript)
-      : wrapped(DebuggerAndLazyScript(debugger, lazyScript)) {
-    MOZ_RELEASE_ASSERT(debugger);
-    MOZ_RELEASE_ASSERT(lazyScript);
-  }
+
+  // For most debuggee keys, we must let the caller choose the key type
+  // themselves. But for JSScript and LazyScript, there is only one key type
+  // that makes sense, so we provide an overloaded constructor.
+  explicit CrossCompartmentKey(DebuggeeObject&& key)
+      : wrapped(std::move(key)) {}
+  explicit CrossCompartmentKey(DebuggeeSource&& key)
+      : wrapped(std::move(key)) {}
+  explicit CrossCompartmentKey(DebuggeeEnvironment&& key)
+      : wrapped(std::move(key)) {}
+  explicit CrossCompartmentKey(DebuggeeWasmScript&& key)
+      : wrapped(std::move(key)) {}
+  explicit CrossCompartmentKey(DebuggeeFrameGenerator&& key)
+      : wrapped(std::move(key)) {}
+  explicit CrossCompartmentKey(NativeObject* debugger, JSScript* referent)
+      : wrapped(DebuggeeJSScript(debugger, referent)) {}
+  explicit CrossCompartmentKey(NativeObject* debugger, LazyScript* referent)
+      : wrapped(DebuggeeLazyScript(debugger, referent)) {}
 
   bool operator==(const CrossCompartmentKey& other) const {
     return wrapped == other.wrapped;
@@ -82,71 +173,78 @@ class CrossCompartmentKey {
     return wrapped.as<T>();
   }
 
+ private:
+  template <typename F>
+  struct ApplyToWrappedMatcher {
+    F f_;
+    explicit ApplyToWrappedMatcher(F f) : f_(f) {}
+    auto operator()(JSObject*& obj) { return f_(&obj); }
+    auto operator()(JSString*& str) { return f_(&str); }
+    template <typename Referent>
+    auto operator()(Debuggee<Referent>& dbg) {
+      return f_(&dbg.referent);
+    }
+  };
+
+  template <typename F>
+  struct ApplyToDebuggerMatcher {
+    F f_;
+    explicit ApplyToDebuggerMatcher(F f) : f_(f) {}
+
+    using ReturnType = decltype(f_(static_cast<NativeObject**>(nullptr)));
+    ReturnType operator()(JSObject*& obj) { return ReturnType(); }
+    ReturnType operator()(JSString*& str) { return ReturnType(); }
+    template <typename Referent>
+    ReturnType operator()(Debuggee<Referent>& dbg) {
+      return f_(&dbg.debugger);
+    }
+  };
+
+ public:
   template <typename F>
   auto applyToWrapped(F f) {
-    struct WrappedMatcher {
-      F f_;
-      explicit WrappedMatcher(F f) : f_(f) {}
-      auto match(JSObject*& obj) { return f_(&obj); }
-      auto match(JSString*& str) { return f_(&str); }
-      auto match(DebuggerAndScript& tpl) { return f_(&mozilla::Get<1>(tpl)); }
-      auto match(DebuggerAndLazyScript& tpl) {
-        return f_(&mozilla::Get<1>(tpl));
-      }
-      auto match(DebuggerAndObject& tpl) { return f_(&mozilla::Get<1>(tpl)); }
-    } matcher(f);
-    return wrapped.match(matcher);
+    return wrapped.match(ApplyToWrappedMatcher<F>(f));
   }
 
   template <typename F>
   auto applyToDebugger(F f) {
-    using ReturnType = decltype(f(static_cast<NativeObject**>(nullptr)));
-    struct DebuggerMatcher {
-      F f_;
-      explicit DebuggerMatcher(F f) : f_(f) {}
-      ReturnType match(JSObject*& obj) { return ReturnType(); }
-      ReturnType match(JSString*& str) { return ReturnType(); }
-      ReturnType match(DebuggerAndScript& tpl) {
-        return f_(&mozilla::Get<0>(tpl));
-      }
-      ReturnType match(DebuggerAndLazyScript& tpl) {
-        return f_(&mozilla::Get<0>(tpl));
-      }
-      ReturnType match(DebuggerAndObject& tpl) {
-        return f_(&mozilla::Get<0>(tpl));
-      }
-    } matcher(f);
-    return wrapped.match(matcher);
+    return wrapped.match(ApplyToDebuggerMatcher<F>(f));
   }
+
+  struct IsDebuggerKeyMatcher {
+    bool operator()(JSObject* const& obj) { return false; }
+    bool operator()(JSString* const& str) { return false; }
+    template <typename Referent>
+    bool operator()(Debuggee<Referent> const& dbg) {
+      return true;
+    }
+  };
+
+  bool isDebuggerKey() const { return wrapped.match(IsDebuggerKeyMatcher()); }
 
   JS::Compartment* compartment() {
     return applyToWrapped([](auto tp) { return (*tp)->maybeCompartment(); });
   }
 
+  JS::Zone* zone() {
+    return applyToWrapped([](auto tp) { return (*tp)->zone(); });
+  }
+
   struct Hasher : public DefaultHasher<CrossCompartmentKey> {
     struct HashFunctor {
-      HashNumber match(JSObject* obj) {
+      HashNumber operator()(JSObject* obj) {
         return DefaultHasher<JSObject*>::hash(obj);
       }
-      HashNumber match(JSString* str) {
+      HashNumber operator()(JSString* str) {
         return DefaultHasher<JSString*>::hash(str);
       }
-      HashNumber match(const DebuggerAndScript& tpl) {
-        return DefaultHasher<NativeObject*>::hash(mozilla::Get<0>(tpl)) ^
-               DefaultHasher<JSScript*>::hash(mozilla::Get<1>(tpl));
-      }
-      HashNumber match(const DebuggerAndLazyScript& tpl) {
-        return DefaultHasher<NativeObject*>::hash(mozilla::Get<0>(tpl)) ^
-               DefaultHasher<LazyScript*>::hash(mozilla::Get<1>(tpl));
-      }
-      HashNumber match(const DebuggerAndObject& tpl) {
-        return DefaultHasher<NativeObject*>::hash(mozilla::Get<0>(tpl)) ^
-               DefaultHasher<JSObject*>::hash(mozilla::Get<1>(tpl)) ^
-               (mozilla::Get<2>(tpl) << 5);
+      template <typename Referent>
+      HashNumber operator()(const Debuggee<Referent>& dbg) {
+        return mozilla::HashGeneric(dbg.debugger, dbg.referent);
       }
     };
     static HashNumber hash(const CrossCompartmentKey& key) {
-      return key.wrapped.match(HashFunctor());
+      return key.wrapped.addTagToHash(key.wrapped.match(HashFunctor()));
     }
 
     static bool match(const CrossCompartmentKey& l,
@@ -165,6 +263,8 @@ class CrossCompartmentKey {
 
  private:
   CrossCompartmentKey() = delete;
+  explicit CrossCompartmentKey(WrappedType&& wrapped)
+      : wrapped(std::move(wrapped)) {}
   WrappedType wrapped;
 };
 
@@ -492,12 +592,16 @@ class JS::Compartment {
                                const js::CrossCompartmentKey& wrapped,
                                const js::Value& wrapper);
 
+  js::WrapperMap::Ptr lookupWrapper(const js::CrossCompartmentKey& key) const {
+    return crossCompartmentWrappers.lookup(key);
+  }
+
   js::WrapperMap::Ptr lookupWrapper(const js::Value& wrapped) const {
-    return crossCompartmentWrappers.lookup(js::CrossCompartmentKey(wrapped));
+    return lookupWrapper(js::CrossCompartmentKey(wrapped));
   }
 
   js::WrapperMap::Ptr lookupWrapper(JSObject* obj) const {
-    return crossCompartmentWrappers.lookup(js::CrossCompartmentKey(obj));
+    return lookupWrapper(js::CrossCompartmentKey(obj));
   }
 
   void removeWrapper(js::WrapperMap::Ptr p) {

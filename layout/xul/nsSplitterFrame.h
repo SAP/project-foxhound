@@ -16,7 +16,11 @@
 
 class nsSplitterFrameInner;
 
-nsIFrame* NS_NewSplitterFrame(nsIPresShell* aPresShell,
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
+nsIFrame* NS_NewSplitterFrame(mozilla::PresShell* aPresShell,
                               mozilla::ComputedStyle* aStyle);
 
 class nsSplitterFrame final : public nsBoxFrame {
@@ -51,6 +55,7 @@ class nsSplitterFrame final : public nsBoxFrame {
                                  nsEventStatus* aEventStatus,
                                  bool aControlHeld) override;
 
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD HandleDrag(nsPresContext* aPresContext,
                         mozilla::WidgetGUIEvent* aEvent,
                         nsEventStatus* aEventStatus) override;

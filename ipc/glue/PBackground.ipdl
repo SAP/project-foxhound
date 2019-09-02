@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PAsmJSCacheEntry;
 include protocol PBackgroundIDBFactory;
 include protocol PBackgroundIndexedDBUtils;
 include protocol PBackgroundSDBConnection;
@@ -30,6 +29,7 @@ include protocol PRemoteWorker;
 include protocol PRemoteWorkerService;
 include protocol PSharedWorker;
 include protocol PTemporaryIPCBlob;
+include protocol PFileCreator;
 include protocol PMessagePort;
 include protocol PCameras;
 include protocol PMIDIManager;
@@ -63,18 +63,11 @@ include "mozilla/layers/LayersMessageUtils.h";
 using mozilla::dom::cache::Namespace
   from "mozilla/dom/cache/Types.h";
 
-using mozilla::dom::asmjscache::OpenMode
-  from "mozilla/dom/asmjscache/AsmJSCache.h";
-
-using mozilla::dom::asmjscache::WriteParams
-  from "mozilla/dom/asmjscache/AsmJSCache.h";
-
 namespace mozilla {
 namespace ipc {
 
 sync protocol PBackground
 {
-  manages PAsmJSCacheEntry;
   manages PBackgroundIDBFactory;
   manages PBackgroundIndexedDBUtils;
   manages PBackgroundSDBConnection;
@@ -102,6 +95,7 @@ sync protocol PBackground
   manages PRemoteWorkerService;
   manages PSharedWorker;
   manages PTemporaryIPCBlob;
+  manages PFileCreator;
   manages PMessagePort;
   manages PCameras;
   manages PMIDIManager;
@@ -185,10 +179,6 @@ parent:
 
   async MessagePortForceClose(nsID uuid, nsID destinationUuid, uint32_t sequenceId);
 
-  async PAsmJSCacheEntry(OpenMode openMode,
-                         WriteParams write,
-                         PrincipalInfo principalInfo);
-
   async PQuota();
 
   async ShutdownQuotaManager();
@@ -208,6 +198,10 @@ parent:
                       MessagePortIdentifier portIdentifier);
 
   async PTemporaryIPCBlob();
+
+  async PFileCreator(nsString aFullPath, nsString aType, nsString aName,
+                     int64_t? lastModified, bool aExistenceCheck,
+                     bool aIsFromNsIFile);
 
   async PClientManager();
 
@@ -240,6 +234,7 @@ child:
   async PPendingIPCBlob(IPCBlob blob);
 
   async PRemoteWorker(RemoteWorkerData data);
+
 both:
   // PIPCBlobInputStream is created on the parent side only if the child starts
   // a migration.

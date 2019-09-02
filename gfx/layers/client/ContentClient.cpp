@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/ContentClient.h"
-#include "BasicLayers.h"            // for BasicLayerManager
-#include "gfxContext.h"             // for gfxContext, etc
-#include "gfxPlatform.h"            // for gfxPlatform
-#include "gfxEnv.h"                 // for gfxEnv
-#include "gfxPrefs.h"               // for gfxPrefs
+#include "BasicLayers.h"  // for BasicLayerManager
+#include "gfxContext.h"   // for gfxContext, etc
+#include "gfxPlatform.h"  // for gfxPlatform
+#include "gfxEnv.h"       // for gfxEnv
+
 #include "gfxPoint.h"               // for IntSize, gfxPoint
 #include "gfxUtils.h"               // for gfxUtils
 #include "ipc/ShadowLayers.h"       // for ShadowLayerForwarder
@@ -506,8 +506,7 @@ RefPtr<RotatedBuffer> ContentClientBasic::CreateBuffer(gfxContentType aType,
     RefPtr<gfxASurface> surf = new gfxWindowsSurface(
         size, aType == gfxContentType::COLOR ? gfxImageFormat::X8R8G8B8_UINT32
                                              : gfxImageFormat::A8R8G8B8_UINT32);
-    drawTarget =
-        gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(surf, size);
+    drawTarget = gfxPlatform::CreateDrawTargetForSurface(surf, size);
   }
 #endif
 
@@ -715,7 +714,8 @@ void ContentClientRemoteBuffer::Updated(const nsIntRegion& aRegionToDraw,
     t->mTextureClient = remoteBuffer->GetClient();
     IntSize size = remoteBuffer->GetClient()->GetSize();
     t->mPictureRect = nsIntRect(0, 0, size.width, size.height);
-    GetForwarder()->UseTextures(this, textures);
+
+    GetForwarder()->UseTextures(this, textures, Nothing());
   }
 
   // This forces a synchronous transaction, so we can swap buffers now

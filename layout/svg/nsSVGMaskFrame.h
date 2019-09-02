@@ -17,8 +17,12 @@
 
 class gfxContext;
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
 class nsSVGMaskFrame final : public nsSVGContainerFrame {
-  friend nsIFrame* NS_NewSVGMaskFrame(nsIPresShell* aPresShell,
+  friend nsIFrame* NS_NewSVGMaskFrame(mozilla::PresShell* aPresShell,
                                       ComputedStyle* aStyle);
 
   typedef mozilla::gfx::Matrix Matrix;
@@ -39,20 +43,17 @@ class nsSVGMaskFrame final : public nsSVGContainerFrame {
     nsIFrame* maskedFrame;
     const gfxMatrix& toUserSpace;
     float opacity;
-    Matrix* maskTransform;
     mozilla::StyleMaskMode maskMode;
     imgDrawingParams& imgParams;
 
     explicit MaskParams(gfxContext* aCtx, nsIFrame* aMaskedFrame,
                         const gfxMatrix& aToUserSpace, float aOpacity,
-                        Matrix* aMaskTransform,
                         mozilla::StyleMaskMode aMaskMode,
                         imgDrawingParams& aImgParams)
         : ctx(aCtx),
           maskedFrame(aMaskedFrame),
           toUserSpace(aToUserSpace),
           opacity(aOpacity),
-          maskTransform(aMaskTransform),
           maskMode(aMaskMode),
           imgParams(aImgParams) {}
   };

@@ -19,10 +19,11 @@ class VideoBridgeChild final : public PVideoBridgeChild,
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoBridgeChild, override);
 
-  static void Startup();
+  static void StartupForGPUProcess();
   static void Shutdown();
 
-  static VideoBridgeChild* GetSingleton();
+  static VideoBridgeChild* GetSingletonToParentProcess();
+  static VideoBridgeChild* GetSingletonToGPUProcess();
 
   // PVideoBridgeChild
   PTextureChild* AllocPTextureChild(const SurfaceDescriptor& aSharedData,
@@ -33,7 +34,7 @@ class VideoBridgeChild final : public PVideoBridgeChild,
   bool DeallocPTextureChild(PTextureChild* actor);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  void DeallocPVideoBridgeChild() override;
+  void ActorDealloc() override;
 
   // ISurfaceAllocator
   bool AllocUnsafeShmem(size_t aSize,
@@ -55,7 +56,7 @@ class VideoBridgeChild final : public PVideoBridgeChild,
   // ClientIPCAllocator
   base::ProcessId GetParentPid() const override { return OtherPid(); }
   MessageLoop* GetMessageLoop() const override { return mMessageLoop; }
-  void CancelWaitForRecycle(uint64_t aTextureId) override {
+  void CancelWaitForNotifyNotUsed(uint64_t aTextureId) override {
     MOZ_ASSERT(false, "NO RECYCLING HERE");
   }
 
@@ -64,9 +65,12 @@ class VideoBridgeChild final : public PVideoBridgeChild,
 
   bool CanSend() { return mCanSend; }
 
+  static void OpenToParentProcess(Endpoint<PVideoBridgeChild>&& aEndpoint);
+  static void OpenToGPUProcess(Endpoint<PVideoBridgeChild>&& aEndpoint);
+
  private:
   VideoBridgeChild();
-  ~VideoBridgeChild();
+  virtual ~VideoBridgeChild();
 
   RefPtr<VideoBridgeChild> mIPDLSelfRef;
   MessageLoop* mMessageLoop;

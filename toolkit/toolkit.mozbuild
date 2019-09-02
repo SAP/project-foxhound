@@ -87,7 +87,6 @@ if CONFIG['COMPILE_ENVIRONMENT']:
     ]
 
 DIRS += [
-    '/extensions/cookie',
     '/extensions/permissions',
 ]
 
@@ -132,6 +131,7 @@ if CONFIG['MOZ_JPROF']:
 
 DIRS += [
     '/tools/code-coverage',
+    '/tools/performance',
     '/tools/power',
     '/tools/profiler',
 ]
@@ -168,9 +168,10 @@ if CONFIG['ENABLE_MARIONETTE']:
     DIRS += [
         '/testing/firefox-ui',
         '/testing/marionette',
+        '/toolkit/components/telemetry/tests/marionette',
     ]
 
-if CONFIG['ENABLE_GECKODRIVER'] and not CONFIG['MOZ_TSAN']:
+if CONFIG['ENABLE_GECKODRIVER'] and not CONFIG['MOZ_TSAN'] and not CONFIG['FUZZING_INTERFACES']:
     DIRS += ['/testing/geckodriver']
 
 DIRS += [

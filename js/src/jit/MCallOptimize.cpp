@@ -24,6 +24,7 @@
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
+#include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "vm/ArgumentsObject.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/JSObject.h"
@@ -37,13 +38,13 @@
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/StringObject-inl.h"
-#include "vm/UnboxedObject-inl.h"
 
 using mozilla::ArrayLength;
 using mozilla::AssertedCast;
 using mozilla::Maybe;
 
-using JS::DoubleNaNValue;
+using JS::RegExpFlag;
+using JS::RegExpFlags;
 using JS::TrackedOutcome;
 
 namespace js {
@@ -224,7 +225,7 @@ IonBuilder::InliningResult IonBuilder::inlineNativeCall(CallInfo& callInfo,
     return InliningStatus_NotInlined;
   }
 
-  bool isWasmCall = target->isWasmOptimized();
+  bool isWasmCall = target->isWasmWithJitEntry();
   if (!isWasmCall &&
       (!target->hasJitInfo() ||
        target->jitInfo()->type() != JSJitInfo::InlinableNative)) {
@@ -625,7 +626,7 @@ IonBuilder::InliningResult IonBuilder::inlineNativeGetter(CallInfo& callInfo,
   }
 
   // Try to optimize RegExp getters.
-  RegExpFlag mask = NoFlags;
+  RegExpFlags mask = RegExpFlag::NoFlags;
   if (RegExpObject::isOriginalFlagGetter(native, &mask)) {
     const Class* clasp = thisTypes->getKnownClass(constraints());
     if (clasp != &RegExpObject::class_) {
@@ -636,7 +637,7 @@ IonBuilder::InliningResult IonBuilder::inlineNativeGetter(CallInfo& callInfo,
         MLoadFixedSlot::New(alloc(), thisArg, RegExpObject::flagsSlot());
     current->add(flags);
     flags->setResultType(MIRType::Int32);
-    MConstant* maskConst = MConstant::New(alloc(), Int32Value(mask));
+    MConstant* maskConst = MConstant::New(alloc(), Int32Value(mask.value()));
     current->add(maskConst);
     MBitAnd* maskedFlag = MBitAnd::New(alloc(), flags, maskConst);
     maskedFlag->setInt32Specialization();
@@ -911,7 +912,7 @@ IonBuilder::InliningResult IonBuilder::inlineArrayPopShift(
       OBJECT_FLAG_SPARSE_INDEXES | OBJECT_FLAG_LENGTH_OVERFLOW |
       OBJECT_FLAG_ITERATED | OBJECT_FLAG_NON_EXTENSIBLE_ELEMENTS;
 
-  MDefinition* obj = convertUnboxedObjects(callInfo.thisArg());
+  MDefinition* obj = callInfo.thisArg();
   TemporaryTypeSet* thisTypes = obj->resultTypeSet();
   if (!thisTypes) {
     return InliningStatus_NotInlined;
@@ -1019,7 +1020,7 @@ IonBuilder::InliningResult IonBuilder::inlineArrayPush(CallInfo& callInfo) {
     return InliningStatus_NotInlined;
   }
 
-  MDefinition* obj = convertUnboxedObjects(callInfo.thisArg());
+  MDefinition* obj = callInfo.thisArg();
   for (uint32_t i = 0; i < callInfo.argc(); i++) {
     MDefinition* value = callInfo.getArg(i);
     if (PropertyWriteNeedsTypeBarrier(alloc(), constraints(), current, &obj,
@@ -1144,7 +1145,7 @@ IonBuilder::InliningResult IonBuilder::inlineArraySlice(CallInfo& callInfo) {
     return InliningStatus_NotInlined;
   }
 
-  MDefinition* obj = convertUnboxedObjects(callInfo.thisArg());
+  MDefinition* obj = callInfo.thisArg();
 
   // Ensure |this| and result are objects.
   if (getInlineReturnType() != MIRType::Object) {
@@ -1906,121 +1907,6 @@ IonBuilder::InliningResult IonBuilder::inlineStringObject(CallInfo& callInfo) {
   return InliningStatus_Inlined;
 }
 
-IonBuilder::InliningResult IonBuilder::inlineConstantStringSplitString(
-    CallInfo& callInfo) {
-  if (!callInfo.getArg(0)->isConstant()) {
-    return InliningStatus_NotInlined;
-  }
-
-  if (!callInfo.getArg(1)->isConstant()) {
-    return InliningStatus_NotInlined;
-  }
-
-  MConstant* strval = callInfo.getArg(0)->toConstant();
-  if (strval->type() != MIRType::String) {
-    return InliningStatus_NotInlined;
-  }
-
-  MConstant* sepval = callInfo.getArg(1)->toConstant();
-  if (strval->type() != MIRType::String) {
-    return InliningStatus_NotInlined;
-  }
-
-  // Check if exist a template object in stub.
-  JSString* stringStr = nullptr;
-  JSString* stringSep = nullptr;
-  ArrayObject* templateObject = nullptr;
-  if (!inspector->isOptimizableConstStringSplit(pc, &stringStr, &stringSep,
-                                                &templateObject)) {
-    return InliningStatus_NotInlined;
-  }
-
-  MOZ_ASSERT(stringStr);
-  MOZ_ASSERT(stringSep);
-  MOZ_ASSERT(templateObject);
-
-  if (strval->toString() != stringStr) {
-    return InliningStatus_NotInlined;
-  }
-
-  if (sepval->toString() != stringSep) {
-    return InliningStatus_NotInlined;
-  }
-
-  // Check if |templateObject| is valid.
-  TypeSet::ObjectKey* retType = TypeSet::ObjectKey::get(templateObject);
-  if (retType->unknownProperties()) {
-    return InliningStatus_NotInlined;
-  }
-
-  HeapTypeSetKey key = retType->property(JSID_VOID);
-  if (!key.maybeTypes()) {
-    return InliningStatus_NotInlined;
-  }
-
-  if (!key.maybeTypes()->hasType(TypeSet::StringType())) {
-    return InliningStatus_NotInlined;
-  }
-
-  uint32_t initLength = templateObject->length();
-  if (templateObject->getDenseInitializedLength() != initLength) {
-    return InliningStatus_NotInlined;
-  }
-
-  Vector<MConstant*, 0, SystemAllocPolicy> arrayValues;
-  for (uint32_t i = 0; i < initLength; i++) {
-    Value str = templateObject->getDenseElement(i);
-    MOZ_ASSERT(str.toString()->isAtom());
-    MConstant* value = MConstant::New(alloc().fallible(), str, constraints());
-    if (!value) {
-      return abort(AbortReason::Alloc);
-    }
-    if (!TypeSetIncludes(key.maybeTypes(), value->type(),
-                         value->resultTypeSet())) {
-      return InliningStatus_NotInlined;
-    }
-
-    if (!arrayValues.append(value)) {
-      return abort(AbortReason::Alloc);
-    }
-  }
-  callInfo.setImplicitlyUsedUnchecked();
-
-  TemporaryTypeSet::DoubleConversion conversion =
-      getInlineReturnTypeSet()->convertDoubleElements(constraints());
-  if (conversion == TemporaryTypeSet::AlwaysConvertToDoubles) {
-    return InliningStatus_NotInlined;
-  }
-
-  MOZ_TRY(jsop_newarray(templateObject, initLength));
-
-  MDefinition* array = current->peek(-1);
-
-  if (!initLength) {
-    MOZ_TRY(resumeAfter(array->toNewArray()));
-    return InliningStatus_Inlined;
-  }
-
-  // Store all values, no need to initialize the length after each as
-  // jsop_initelem_array is doing because we do not expect to bailout
-  // because the memory is supposed to be allocated by now.
-  for (uint32_t i = 0; i < initLength; i++) {
-    if (!alloc().ensureBallast()) {
-      return abort(AbortReason::Alloc);
-    }
-
-    MConstant* value = arrayValues[i];
-    current->add(value);
-
-    MOZ_TRY(
-        initializeArrayElement(array, i, value, /* addResumePoint = */ false));
-  }
-
-  MInstruction* setLength = setInitializedLength(array, initLength);
-  MOZ_TRY(resumeAfter(setLength));
-  return InliningStatus_Inlined;
-}
-
 IonBuilder::InliningResult IonBuilder::inlineStringSplitString(
     CallInfo& callInfo) {
   MOZ_ASSERT(!callInfo.constructing());
@@ -2035,13 +1921,6 @@ IonBuilder::InliningResult IonBuilder::inlineStringSplitString(
 
   if (sepArg->type() != MIRType::String) {
     return InliningStatus_NotInlined;
-  }
-
-  IonBuilder::InliningStatus resultConstStringSplit;
-  MOZ_TRY_VAR(resultConstStringSplit,
-              inlineConstantStringSplitString(callInfo));
-  if (resultConstStringSplit != InliningStatus_NotInlined) {
-    return resultConstStringSplit;
   }
 
   JSContext* cx = TlsContext.get();
@@ -2935,8 +2814,7 @@ IonBuilder::InliningResult IonBuilder::inlineObjectToString(
 
   // Try to constant fold some common cases.
   if (const Class* knownClass = types->getKnownClass(constraints())) {
-    if (knownClass == &PlainObject::class_ ||
-        knownClass == &UnboxedPlainObject::class_) {
+    if (knownClass == &PlainObject::class_) {
       pushConstant(StringValue(names().objectObject));
       return InliningStatus_Inlined;
     }
@@ -4317,7 +4195,7 @@ IonBuilder::InliningResult IonBuilder::inlineConstructTypedObject(
 
 IonBuilder::InliningResult IonBuilder::inlineWasmCall(CallInfo& callInfo,
                                                       JSFunction* target) {
-  MOZ_ASSERT(target->isWasmOptimized());
+  MOZ_ASSERT(target->isWasmWithJitEntry());
 
   // Don't inline wasm constructors.
   if (callInfo.constructing()) {
@@ -4341,11 +4219,8 @@ IonBuilder::InliningResult IonBuilder::inlineWasmCall(CallInfo& callInfo,
   // Check that the function doesn't take or return non-compatible JS
   // argument types before adding nodes to the MIR graph, otherwise they'd be
   // dead code.
-  if (sig.hasI64ArgOrRet() || sig.temporarilyUnsupportedAnyRef()
-#ifdef WASM_CODEGEN_DEBUG
-      || !JitOptions.enableWasmIonFastCalls
-#endif
-  ) {
+  if (sig.hasI64ArgOrRet() || sig.temporarilyUnsupportedAnyRef() ||
+      !JitOptions.enableWasmIonFastCalls) {
     return InliningStatus_NotInlined;
   }
 
@@ -4389,6 +4264,7 @@ IonBuilder::InliningResult IonBuilder::inlineWasmCall(CallInfo& callInfo,
         break;
       case wasm::ValType::I64:
       case wasm::ValType::AnyRef:
+      case wasm::ValType::FuncRef:
       case wasm::ValType::Ref:
         MOZ_CRASH("impossible per above check");
       case wasm::ValType::NullRef:

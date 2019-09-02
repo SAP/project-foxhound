@@ -22,11 +22,6 @@ body {
   color: var(--theme-body-color);
 }
 
-::-moz-selection {
-  background-color: var(--theme-selection-background);
-  color: var(--theme-selection-color);
-}
-
 .theme-selected,
 .CodeMirror-hint-active {
   background-color: var(--theme-selection-background);
@@ -76,7 +71,7 @@ body {
 .variable-or-property .token-number,
 .variable-or-property[return] > .title > .name,
 .variable-or-property[scope] > .title > .name {
-  color: #6B89FF;
+  color: #709AFF;
 }
 
 .CodeMirror-Tern-completion-number:before {
@@ -129,7 +124,7 @@ body {
 .cm-s-mozilla .cm-string-2,
 .variable-or-property .token-string,
 .CodeMirror-Tern-farg {
-  color: #6B89FF;
+  color: #709AFF;
 }
 
 .CodeMirror-Tern-completion-string:before,
@@ -184,7 +179,7 @@ body {
 }
 
 .CodeMirror.cm-s-mozilla  pre {
-  color: var(--theme-content-color1);
+  color: var(--theme-text-color-strong);
 }
 
 .cm-s-mozilla .cm-operator {
@@ -193,7 +188,7 @@ body {
 
 .cm-s-mozilla .cm-variable-3,
 .cm-s-mozilla .cm-special {
-  color: var(--theme-content-color1);
+  color: var(--theme-text-color-strong);
 }
 
 .cm-s-mozilla .CodeMirror-lines .CodeMirror-cursor {

@@ -25,6 +25,7 @@ namespace layers {
 
 class TextureHost;
 class DataTextureSource;
+class BasicCompositor;
 class Compositor;
 class CompositorOGL;
 
@@ -86,6 +87,10 @@ class TextureSourceProvider {
   // return null.
   virtual Compositor* AsCompositor() { return nullptr; }
 
+  // If this provider is also a BasicCompositor, return the compositor.
+  // Otherwise return nullptr.
+  virtual BasicCompositor* AsBasicCompositor() { return nullptr; }
+
   // If this provider is also a CompositorOGL, return the compositor. Otherwise
   // return nullptr.
   virtual CompositorOGL* AsCompositorOGL() { return nullptr; }
@@ -105,7 +110,7 @@ class TextureSourceProvider {
   virtual bool IsValid() const = 0;
 
  public:
-  class MOZ_STACK_CLASS AutoReadUnlockTextures {
+  class MOZ_STACK_CLASS AutoReadUnlockTextures final {
    public:
     explicit AutoReadUnlockTextures(TextureSourceProvider* aProvider)
         : mProvider(aProvider) {}

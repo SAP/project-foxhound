@@ -704,6 +704,7 @@ static const TransportSecurityPreload kPublicKeyPinningPreloadList[] = {
   { "chrome-devtools-frontend.appspot.com", true, false, false, -1, &kPinset_google_root_pems },
   { "chrome.com", true, false, false, -1, &kPinset_google_root_pems },
   { "chrome.google.com", true, false, false, -1, &kPinset_google_root_pems },
+  { "chromereporting-pa.googleapis.com", true, false, false, -1, &kPinset_google_root_pems },
   { "chromiumbugs.appspot.com", true, false, false, -1, &kPinset_google_root_pems },
   { "chromiumcodereview.appspot.com", true, false, false, -1, &kPinset_google_root_pems },
   { "cl.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
@@ -716,6 +717,7 @@ static const TransportSecurityPreload kPublicKeyPinningPreloadList[] = {
   { "codereview.appspot.com", true, false, false, -1, &kPinset_google_root_pems },
   { "codereview.chromium.org", true, false, false, -1, &kPinset_google_root_pems },
   { "contributor.google.com", true, false, false, -1, &kPinset_google_root_pems },
+  { "corp.goog", true, false, false, -1, &kPinset_google_root_pems },
   { "cr.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
   { "crash-reports-xpsp2.mozilla.com", false, false, true, 11, &kPinset_mozilla_services },
   { "crash-reports.mozilla.com", false, false, true, 10, &kPinset_mozilla_services },
@@ -755,7 +757,7 @@ static const TransportSecurityPreload kPublicKeyPinningPreloadList[] = {
   { "firefox.com", true, true, true, 15, &kPinset_mozilla_services },
   { "fj.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
   { "fr.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
-  { "g.co", true, false, false, -1, &kPinset_google_root_pems },
+  { "g.co", false, false, false, -1, &kPinset_google_root_pems },
   { "g4w.co", true, false, false, -1, &kPinset_google_root_pems },
   { "ggpht.com", true, false, false, -1, &kPinset_google_root_pems },
   { "gl.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
@@ -1131,6 +1133,7 @@ static const TransportSecurityPreload kPublicKeyPinningPreloadList[] = {
   { "withyoutube.com", true, false, false, -1, &kPinset_google_root_pems },
   { "www.dropbox.com", true, false, false, -1, &kPinset_dropbox },
   { "www.facebook.com", true, false, false, -1, &kPinset_facebook },
+  { "www.g.co", false, false, false, -1, &kPinset_google_root_pems },
   { "www.gmail.com", false, false, false, -1, &kPinset_google_root_pems },
   { "www.googlegroups.com", true, false, false, -1, &kPinset_google_root_pems },
   { "www.googlemail.com", false, false, false, -1, &kPinset_google_root_pems },
@@ -1149,8 +1152,8 @@ static const TransportSecurityPreload kPublicKeyPinningPreloadList[] = {
   { "zh.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
 };
 
-// Pinning Preload List Length = 486;
+// Pinning Preload List Length = 489;
 
 static const int32_t kUnknownId = -1;
 
-static const PRTime kPreloadPKPinsExpirationTime = INT64_C(1565872303274000);
+static const PRTime kPreloadPKPinsExpirationTime = INT64_C(1575291762630000);

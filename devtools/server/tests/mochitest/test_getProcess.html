@@ -6,7 +6,7 @@ Bug 1060093 - Test DebuggerServer.getProcess
 <head>
   <meta charset="utf-8">
   <title>Mozilla Bug</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 <body>
@@ -57,7 +57,7 @@ function runTests() {
   function listProcess() {
     // Call listProcesses in order to start receiving new process notifications
     client.mainRoot.on("processListChanged", function listener() {
-      client.removeListener("processListChanged", listener);
+      client.off("processListChanged", listener);
       ok(true, "Received processListChanged event");
       getProcess();
     });

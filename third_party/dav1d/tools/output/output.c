@@ -93,8 +93,10 @@ int output_open(MuxerContext **const c_out,
         }
         if (i == num_muxers) {
             fprintf(stderr, "Failed to find muxer named \"%s\"\n", name);
-            return -ENOPROTOOPT;
+            return DAV1D_ERR(ENOPROTOOPT);
         }
+    } else if (!strcmp(filename, "/dev/null")) {
+        impl = muxers[0];
     } else {
         const char *ext = find_extension(filename);
         if (!ext) {
@@ -109,13 +111,13 @@ int output_open(MuxerContext **const c_out,
         }
         if (i == num_muxers) {
             fprintf(stderr, "Failed to find muxer for extension \"%s\"\n", ext);
-            return -ENOPROTOOPT;
+            return DAV1D_ERR(ENOPROTOOPT);
         }
     }
 
     if (!(c = malloc(sizeof(MuxerContext) + impl->priv_data_size))) {
         fprintf(stderr, "Failed to allocate memory\n");
-        return -ENOMEM;
+        return DAV1D_ERR(ENOMEM);
     }
     c->impl = impl;
     c->data = (MuxerPriv *) &c[1];

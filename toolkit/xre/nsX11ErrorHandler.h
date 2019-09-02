@@ -5,6 +5,7 @@
 
 #ifdef MOZ_X11
 #  include <X11/Xlib.h>
+#  include "X11UndefineNone.h"  // Unset some macros defined by X.h included by Xlib.h
 
 /**
  * InstallX11ErrorHandler is not suitable for processes running with GTK3 as
@@ -13,5 +14,5 @@
  **/
 void InstallX11ErrorHandler();
 
-extern "C" int X11Error(Display *display, XErrorEvent *event);
+extern "C" int X11Error(Display* display, XErrorEvent* event);
 #endif

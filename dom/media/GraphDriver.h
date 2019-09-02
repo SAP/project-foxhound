@@ -12,6 +12,7 @@
 #include "AudioSegment.h"
 #include "SelfRef.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/dom/AudioContext.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticPtr.h"
 
@@ -151,12 +152,6 @@ class GraphDriver {
   GraphDriver* PreviousDriver();
   void SetPreviousDriver(GraphDriver* aPreviousDriver);
 
-  /**
-   * If we are running a real time graph, get the current time stamp to schedule
-   * video frames. This has to be reimplemented by real time drivers.
-   */
-  virtual TimeStamp GetCurrentTimeStamp() { return mCurrentTimeStamp; }
-
   GraphTime IterationEnd() { return mIterationEnd; }
 
   virtual AudioCallbackDriver* AsAudioCallbackDriver() { return nullptr; }
@@ -210,10 +205,6 @@ class GraphDriver {
   // The MediaStreamGraphImpl associated with this driver.
   const RefPtr<MediaStreamGraphImpl> mGraphImpl;
 
-  // This is used on the main thread (during initialization), and the graph
-  // thread. No monitor needed because we know the graph thread does not run
-  // during the initialization.
-  TimeStamp mCurrentTimeStamp;
   // This is non-null only when this driver has recently switched from an other
   // driver, and has not cleaned it up yet (for example because the audio stream
   // is currently calling the callback during initialization).
@@ -297,6 +288,7 @@ class SystemClockDriver : public ThreadedDriver {
   // Those are only modified (after initialization) on the graph thread. The
   // graph thread does not run during the initialization.
   TimeStamp mInitialTimeStamp;
+  TimeStamp mCurrentTimeStamp;
   TimeStamp mLastTimeStamp;
 
   // This is true if this SystemClockDriver runs the graph because we could not
@@ -314,7 +306,6 @@ class OfflineClockDriver : public ThreadedDriver {
   virtual ~OfflineClockDriver();
   TimeDuration WaitInterval() override;
   MediaTime GetIntervalForIteration() override;
-  TimeStamp GetCurrentTimeStamp() override;
   OfflineClockDriver* AsOfflineClockDriver() override { return this; }
 
  private:
@@ -324,13 +315,16 @@ class OfflineClockDriver : public ThreadedDriver {
 
 struct StreamAndPromiseForOperation {
   StreamAndPromiseForOperation(MediaStream* aStream, void* aPromise,
-                               dom::AudioContextOperation aOperation);
+                               dom::AudioContextOperation aOperation,
+                               dom::AudioContextOperationFlags aFlags);
   RefPtr<MediaStream> mStream;
   void* mPromise;
   dom::AudioContextOperation mOperation;
+  dom::AudioContextOperationFlags mFlags;
 };
 
-enum AsyncCubebOperation { INIT, SHUTDOWN };
+enum class AsyncCubebOperation { INIT, REVIVE, SHUTDOWN };
+enum class AudioInputType { Unknown, Voice };
 
 /**
  * This is a graph driver that is based on callback functions called by the
@@ -362,7 +356,8 @@ class AudioCallbackDriver : public GraphDriver,
  public:
   /** If aInputChannelCount is zero, then this driver is output-only. */
   AudioCallbackDriver(MediaStreamGraphImpl* aGraphImpl,
-                      uint32_t aInputChannelCount);
+                      uint32_t aInputChannelCount,
+                      AudioInputType aAudioInputType);
   virtual ~AudioCallbackDriver();
 
   void Start() override;
@@ -410,11 +405,19 @@ class AudioCallbackDriver : public GraphDriver,
 
   uint32_t InputChannelCount() { return mInputChannelCount; }
 
+  AudioInputType InputDevicePreference() {
+    if (mInputDevicePreference == CUBEB_DEVICE_PREF_VOICE) {
+      return AudioInputType::Voice;
+    }
+    return AudioInputType::Unknown;
+  }
+
   /* Enqueue a promise that is going to be resolved when a specific operation
    * occurs on the cubeb stream. */
   void EnqueueStreamAndPromiseForOperation(
       MediaStream* aStream, void* aPromise,
-      dom::AudioContextOperation aOperation);
+      dom::AudioContextOperation aOperation,
+      dom::AudioContextOperationFlags aFlags);
 
   std::thread::id ThreadId() { return mAudioThreadId.load(); }
 
@@ -510,12 +513,12 @@ class AudioCallbackDriver : public GraphDriver,
   const RefPtr<SharedThreadPool> mInitShutdownThread;
   /* This must be accessed with the graph monitor held. */
   AutoTArray<StreamAndPromiseForOperation, 1> mPromisesForOperation;
+  cubeb_device_pref mInputDevicePreference;
   /* This is used to signal adding the mixer callback on first run
    * of audio callback. This is atomic because it is touched from different
    * threads, the audio callback thread and the state change thread. However,
    * the order of the threads does not allow concurent access. */
   Atomic<bool> mAddedMixer;
-
   /* Contains the id of the audio thread for as long as the callback
    * is taking place, after that it is reseted to an invalid value. */
   std::atomic<std::thread::id> mAudioThreadId;

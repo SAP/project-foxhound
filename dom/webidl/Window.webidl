@@ -84,7 +84,7 @@ typedef OfflineResourceList ApplicationCache;
   [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
   void postMessage(any message, DOMString targetOrigin, optional sequence<object> transfer = []);
   [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
-  void postMessage(any message, optional WindowPostMessageOptions options);
+  void postMessage(any message, optional WindowPostMessageOptions options = {});
 
   // also has obsolete members
 };
@@ -171,11 +171,11 @@ partial interface Window {
 
   // viewport scrolling
   void scroll(unrestricted double x, unrestricted double y);
-  void scroll(optional ScrollToOptions options);
+  void scroll(optional ScrollToOptions options = {});
   void scrollTo(unrestricted double x, unrestricted double y);
-  void scrollTo(optional ScrollToOptions options);
+  void scrollTo(optional ScrollToOptions options = {});
   void scrollBy(unrestricted double x, unrestricted double y);
-  void scrollBy(optional ScrollToOptions options);
+  void scrollBy(optional ScrollToOptions options = {});
   // mozScrollSnap is used by chrome to perform scroll snapping after the
   // user performs actions that may affect scroll position
   // mozScrollSnap is deprecated, to be replaced by a web accessible API, such
@@ -243,12 +243,12 @@ partial interface Window {
   /**
    * Method for scrolling this window by a number of lines.
    */
-  void                      scrollByLines(long numLines, optional ScrollOptions options);
+  void                      scrollByLines(long numLines, optional ScrollOptions options = {});
 
   /**
    * Method for scrolling this window by a number of pages.
    */
-  void                      scrollByPages(long numPages, optional ScrollOptions options);
+  void                      scrollByPages(long numPages, optional ScrollOptions options = {});
 
   /**
    * Method for sizing this window to the content in the window.
@@ -396,6 +396,7 @@ partial interface Window {
 };
 #endif
 
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
 callback PromiseDocumentFlushedCallback = any ();
 
 // Mozilla extensions for Chrome windows.
@@ -546,7 +547,7 @@ Window implements WindowOrWorkerGlobalScope;
 partial interface Window {
   [Throws, Func="nsGlobalWindowInner::IsRequestIdleCallbackEnabled"]
   unsigned long requestIdleCallback(IdleRequestCallback callback,
-                                    optional IdleRequestOptions options);
+                                    optional IdleRequestOptions options = {});
   [Func="nsGlobalWindowInner::IsRequestIdleCallbackEnabled"]
   void          cancelIdleCallback(unsigned long handle);
 };
@@ -575,6 +576,23 @@ partial interface Window {
    */
   [Func="IsChromeOrXBLOrUAWidget"]
   sequence<DOMString> getRegionalPrefsLocales();
+
+  /**
+   * Returns a list of locales that the web content would know from the user.
+   *
+   * One of the fingerprinting technique is to recognize users from their locales
+   * exposed to web content. For those components that would be fingerprintable
+   * from the locale should call this API instead of |getRegionalPrefsLocales()|.
+   *
+   * If the pref is set to spoof locale setting, this function will return the
+   * spoofed locale, otherwise it returns what |getRegionalPrefsLocales()| returns.
+   *
+   * This API always returns at least one locale.
+   *
+   * Example: ["en-US"]
+   */
+  [Func="IsChromeOrXBLOrUAWidget"]
+  sequence<DOMString> getWebExposedLocales();
 
   /**
    * Getter funcion for IntlUtils, which provides helper functions for

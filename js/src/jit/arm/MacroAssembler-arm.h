@@ -858,6 +858,8 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   }
   void unboxDouble(const ValueOperand& src, FloatRegister dest);
   void unboxDouble(const Address& src, FloatRegister dest);
+  void unboxDouble(const BaseIndex& src, FloatRegister dest);
+
   void unboxValue(const ValueOperand& src, AnyRegister dest, JSValueType type);
   void unboxPrivate(const ValueOperand& src, Register dest);
 
@@ -1060,6 +1062,11 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
     loadValue(dest.toAddress(), val);
   }
   void loadValue(const BaseIndex& addr, ValueOperand val);
+
+  // Like loadValue but guaranteed to not use LDRD or LDM instructions (these
+  // don't support unaligned accesses).
+  void loadUnalignedValue(const Address& src, ValueOperand dest);
+
   void tagValue(JSValueType type, Register payload, ValueOperand dest);
 
   void pushValue(ValueOperand val);

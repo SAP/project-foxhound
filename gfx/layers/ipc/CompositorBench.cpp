@@ -10,8 +10,8 @@
 #  include "mozilla/gfx/2D.h"
 #  include "mozilla/layers/Compositor.h"
 #  include "mozilla/layers/Effects.h"
+#  include "mozilla/StaticPrefs.h"
 #  include "mozilla/TimeStamp.h"
-#  include "gfxPrefs.h"
 #  include <math.h>
 #  include "GeckoProfiler.h"
 
@@ -33,7 +33,7 @@ class BenchTest {
  public:
   BenchTest(const char* aTestName) : mTestName(aTestName) {}
 
-  virtual ~BenchTest() {}
+  virtual ~BenchTest() = default;
 
   virtual void Setup(Compositor* aCompositor, size_t aStep) {}
   virtual void Teardown(Compositor* aCompositor) {}
@@ -335,7 +335,7 @@ static void RunCompositorBench(Compositor* aCompositor,
 
 void CompositorBench(Compositor* aCompositor, const gfx::IntRect& aScreenRect) {
   static bool sRanBenchmark = false;
-  bool wantBenchmark = gfxPrefs::LayersBenchEnabled();
+  bool wantBenchmark = StaticPrefs::layers_bench_enabled();
   if (wantBenchmark && !sRanBenchmark) {
     RunCompositorBench(aCompositor, aScreenRect);
   }

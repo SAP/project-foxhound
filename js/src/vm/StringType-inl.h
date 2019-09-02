@@ -13,13 +13,13 @@
 #include "mozilla/Range.h"
 
 #include "gc/Allocator.h"
-#include "gc/FreeOp.h"
 #include "gc/Marking.h"
 #include "gc/StoreBuffer.h"
 #include "js/UniquePtr.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 
+#include "gc/FreeOp-inl.h"
 #include "gc/StoreBuffer-inl.h"
 
 namespace js {
@@ -277,6 +277,8 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
 MOZ_ALWAYS_INLINE void JSFlatString::init(const char16_t* chars,
                                           size_t length) {
   setLengthAndFlags(length, INIT_FLAT_FLAGS);
+  // Check that the new buffer is located in the StringBufferArena
+  checkStringCharsArena(chars);
   d.s.u2.nonInlineCharsTwoByte = chars;
 
   // TaintFox
@@ -286,6 +288,8 @@ MOZ_ALWAYS_INLINE void JSFlatString::init(const char16_t* chars,
 MOZ_ALWAYS_INLINE void JSFlatString::init(const JS::Latin1Char* chars,
                                           size_t length) {
   setLengthAndFlags(length, INIT_FLAT_FLAGS | LATIN1_CHARS_BIT);
+  // Check that the new buffer is located in the StringBufferArena
+  checkStringCharsArena(chars);
   d.s.u2.nonInlineCharsLatin1 = chars;
 
   // TaintFox
@@ -323,6 +327,10 @@ MOZ_ALWAYS_INLINE JSFlatString* JSFlatString::new_(
       }
       return nullptr;
     }
+  } else {
+    // This can happen off the main thread for the atoms zone.
+    cx->zone()->addCellMemory(str, (length + 1) * sizeof(CharT),
+                              js::MemoryUse::StringContents);
   }
 
   str->init(chars.release(), length);
@@ -435,7 +443,12 @@ MOZ_ALWAYS_INLINE JSExternalString* JSExternalString::new_(
     return nullptr;
   }
   str->init(chars, length, fin);
-  cx->updateMallocCounter((length + 1) * sizeof(char16_t));
+  size_t nbytes = (length + 1) * sizeof(char16_t);
+  cx->updateMallocCounter(nbytes);
+
+  MOZ_ASSERT(str->isTenured());
+  js::AddCellMemory(str, nbytes, js::MemoryUse::StringContents);
+
   return str;
 }
 
@@ -450,7 +463,6 @@ inline JSLinearString* js::StaticStrings::getUnitStringForElement(
   if (c < UNIT_STATIC_LIMIT) {
     return getUnit(c);
   }
-
   return js::NewInlineString<CanGC>(cx, mozilla::Range<const char16_t>(&c, 1));
 }
 
@@ -474,11 +486,18 @@ inline void JSFlatString::finalize(js::FreeOp* fop) {
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_ATOM);
 
   if (!isInline()) {
-    fop->free_(nonInlineCharsRaw());
+    fop->free_(this, nonInlineCharsRaw(), allocSize(),
+               js::MemoryUse::StringContents);
   }
+}
 
-  // TaintFox
-  finalizeTaint();
+inline size_t JSFlatString::allocSize() const {
+  MOZ_ASSERT(!isInline());
+
+  size_t charSize =
+      hasLatin1Chars() ? sizeof(JS::Latin1Char) : sizeof(char16_t);
+  size_t count = isExtensible() ? asExtensible().capacity() : length();
+  return (count + 1) * charSize;
 }
 
 inline void JSFatInlineString::finalize(js::FreeOp* fop) {
@@ -486,19 +505,6 @@ inline void JSFatInlineString::finalize(js::FreeOp* fop) {
   MOZ_ASSERT(isInline());
 
   // Nothing to do.
-  // TaintFox
-  finalizeTaint();
-}
-
-inline void JSAtom::finalize(js::FreeOp* fop) {
-  MOZ_ASSERT(JSString::isAtom());
-  MOZ_ASSERT(JSString::isFlat());
-  MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::ATOM);
-
-  if (!isInline()) {
-    fop->free_(nonInlineCharsRaw());
-  }
-
   // TaintFox
   finalizeTaint();
 }
@@ -516,10 +522,12 @@ inline void JSExternalString::finalize(js::FreeOp* fop) {
   if (!JSString::isExternal()) {
     // This started out as an external string, but was turned into a
     // non-external string by JSExternalString::ensureFlat.
-    MOZ_ASSERT(isFlat());
-    fop->free_(nonInlineCharsRaw());
+    asFlat().finalize(fop);
     return;
   }
+
+  size_t nbytes = (length() + 1) * sizeof(char16_t);
+  js::RemoveCellMemory(this, nbytes, js::MemoryUse::StringContents);
 
   const JSStringFinalizer* fin = externalFinalizer();
   fin->finalize(fin, const_cast<char16_t*>(rawTwoByteChars()));

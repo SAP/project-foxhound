@@ -14,9 +14,12 @@ var EXPORTED_SYMBOLS = [
   "UrlbarProvider",
   "UrlbarQueryContext",
   "UrlbarUtils",
+  "SkippableTimer",
 ];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
@@ -66,6 +69,8 @@ var UrlbarUtils = {
   },
 
   // Defines UrlbarResult types.
+  // If you add new result types, consider checking if consumers of
+  // "urlbar-user-start-navigation" need update as well.
   RESULT_TYPE: {
     // An open tab.
     // Payload: { icon, url, userContextId }
@@ -91,6 +96,8 @@ var UrlbarUtils = {
   // can return results from more than one source. This is used by the
   // ProvidersManager to decide which providers must be queried and which
   // results can be returned.
+  // If you add new source types, consider checking if consumers of
+  // "urlbar-user-start-navigation" need update as well.
   RESULT_SOURCE: {
     BOOKMARKS: 1,
     HISTORY: 2,
@@ -106,18 +113,39 @@ var UrlbarUtils = {
     SEARCH_GLASS: "chrome://browser/skin/search-glass.svg",
   },
 
+  // The number of results by which Page Up/Down move the selection.
+  PAGE_UP_DOWN_DELTA: 5,
+
   // IME composition states.
   COMPOSITION: {
     NONE: 1,
     COMPOSING: 2,
     COMMIT: 3,
+    CANCELED: 4,
   },
 
-  // This defines possible reasons for canceling a query.
-  CANCEL_REASON: {
-    // 1 is intentionally left in case we want a none/undefined/other later.
-    BLUR: 2,
+  // Limit the length of titles and URLs we display so layout doesn't spend too
+  // much time building text runs.
+  MAX_TEXT_LENGTH: 255,
+
+  // Search results with keywords and empty queries are called "keyword offers".
+  // When the user selects a keyword offer, the keyword followed by a space is
+  // put in the input as a hint that the user can search using the keyword.
+  // Depending on the use case, keyword-offer results can show or not show the
+  // keyword itself.
+  KEYWORD_OFFER: {
+    NONE: 0,
+    SHOW: 1,
+    HIDE: 2,
   },
+
+  // UnifiedComplete's autocomplete results store their titles and tags together
+  // in their comments.  This separator is used to separate them.  When we
+  // rewrite UnifiedComplete for quantumbar, we should stop using this old hack
+  // and store titles and tags separately.  It's important that this be a
+  // character that no title would ever have.  We use \x1F, the non-printable
+  // unit separator.
+  TITLE_TAGS_SEPARATOR: "\x1F",
 
   /**
    * Adds a url to history as long as it isn't in a private browsing window,
@@ -127,11 +155,15 @@ var UrlbarUtils = {
    * @param {nsIDomWindow} window The window from where the url is being added.
    */
   addToUrlbarHistory(url, window) {
-    if (!PrivateBrowsingUtils.isWindowPrivate(window) &&
-        url &&
-        !url.includes(" ") &&
-        !/[\x00-\x1F]/.test(url)) // eslint-disable-line no-control-regex
+    if (
+      !PrivateBrowsingUtils.isWindowPrivate(window) &&
+      url &&
+      !url.includes(" ") &&
+      // eslint-disable-next-line no-control-regex
+      !/[\x00-\x1F]/.test(url)
+    ) {
       PlacesUIUtils.markPageAsTyped(url);
+    }
   },
 
   /**
@@ -155,12 +187,15 @@ var UrlbarUtils = {
       return { url, postData, mayInheritPrincipal };
     }
 
+    await Services.search.init();
     let engine = Services.search.getEngineByAlias(keyword);
     if (engine) {
       let submission = engine.getSubmission(param, null, "keyword");
-      return { url: submission.uri.spec,
-               postData: submission.postData,
-               mayInheritPrincipal };
+      return {
+        url: submission.uri.spec,
+        postData: submission.postData,
+        mayInheritPrincipal,
+      };
     }
 
     // A corrupt Places database could make this throw, breaking navigation
@@ -177,10 +212,11 @@ var UrlbarUtils = {
     }
 
     try {
-      [url, postData] =
-        await BrowserUtils.parseUrlAndPostData(entry.url.href,
-                                               entry.postData,
-                                               param);
+      [url, postData] = await BrowserUtils.parseUrlAndPostData(
+        entry.url.href,
+        entry.postData,
+        param
+      );
       if (postData) {
         postData = this.getPostDataStream(postData);
       }
@@ -202,23 +238,28 @@ var UrlbarUtils = {
    * @param {string} [type] The encoding type.
    * @returns {nsIInputStream} An input stream of the wrapped post data.
    */
-  getPostDataStream(postDataString,
-                    type = "application/x-www-form-urlencoded") {
-    let dataStream = Cc["@mozilla.org/io/string-input-stream;1"]
-                       .createInstance(Ci.nsIStringInputStream);
+  getPostDataStream(
+    postDataString,
+    type = "application/x-www-form-urlencoded"
+  ) {
+    let dataStream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+      Ci.nsIStringInputStream
+    );
     dataStream.data = postDataString;
 
-    let mimeStream = Cc["@mozilla.org/network/mime-input-stream;1"]
-                       .createInstance(Ci.nsIMIMEInputStream);
+    let mimeStream = Cc[
+      "@mozilla.org/network/mime-input-stream;1"
+    ].createInstance(Ci.nsIMIMEInputStream);
     mimeStream.addHeader("Content-Type", type);
     mimeStream.setData(dataStream);
     return mimeStream.QueryInterface(Ci.nsIInputStream);
   },
 
   /**
-   * Returns a list of all the token substring matches in a string.  Each match
-   * in the list is a tuple: [matchIndex, matchLength].  matchIndex is the index
-   * in the string of the match, and matchLength is the length of the match.
+   * Returns a list of all the token substring matches in a string.  Matching is
+   * case insensitive.  Each match in the returned list is a tuple: [matchIndex,
+   * matchLength].  matchIndex is the index in the string of the match, and
+   * matchLength is the length of the match.
    *
    * @param {array} tokens The tokens to search for.
    * @param {string} str The string to match against.
@@ -231,14 +272,15 @@ var UrlbarUtils = {
    *          The array is sorted by match indexes ascending.
    */
   getTokenMatches(tokens, str) {
+    str = str.toLocaleLowerCase();
     // To generate non-overlapping ranges, we start from a 0-filled array with
     // the same length of the string, and use it as a collision marker, setting
     // 1 where a token matches.
     let hits = new Array(str.length).fill(0);
-    for (let token of tokens) {
+    for (let { lowerCaseValue } of tokens) {
       // Ideally we should never hit the empty token case, but just in case
-      // the value check protects us from an infinite loop.
-      for (let index = 0, needle = token.value; index >= 0 && needle;) {
+      // the `needle` check protects us from an infinite loop.
+      for (let index = 0, needle = lowerCaseValue; index >= 0 && needle; ) {
         index = str.indexOf(needle, index);
         if (index >= 0) {
           hits.fill(1, index, index + needle.length);
@@ -249,9 +291,10 @@ var UrlbarUtils = {
     // Starting from the collision array, generate [start, len] tuples
     // representing the ranges to be highlighted.
     let ranges = [];
-    for (let index = hits.indexOf(1); index >= 0 && index < hits.length;) {
+    for (let index = hits.indexOf(1); index >= 0 && index < hits.length; ) {
       let len = 0;
-      for (let j = index; j < hits.length && hits[j]; ++j, ++len);
+      // eslint-disable-next-line no-empty
+      for (let j = index; j < hits.length && hits[j]; ++j, ++len) {}
       ranges.push([index, len]);
       // Move to the next 1.
       index = hits.indexOf(1, index + len);
@@ -270,21 +313,24 @@ var UrlbarUtils = {
       case UrlbarUtils.RESULT_TYPE.URL:
       case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
       case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
-        return {url: result.payload.url, postData: null};
+        return { url: result.payload.url, postData: null };
       case UrlbarUtils.RESULT_TYPE.KEYWORD:
         return {
           url: result.payload.url,
-          postData: result.payload.postData ?
-            this.getPostDataStream(result.payload.postData) : null,
+          postData: result.payload.postData
+            ? this.getPostDataStream(result.payload.postData)
+            : null,
         };
       case UrlbarUtils.RESULT_TYPE.SEARCH: {
         const engine = Services.search.getEngineByName(result.payload.engine);
         let [url, postData] = this.getSearchQueryUrl(
-          engine, result.payload.suggestion || result.payload.query);
-        return {url, postData};
+          engine,
+          result.payload.suggestion || result.payload.query
+        );
+        return { url, postData };
       }
     }
-    return {url: null, postData: null};
+    return { url: null, postData: null };
   },
 
   /**
@@ -332,9 +378,15 @@ var UrlbarUtils = {
     }
 
     try {
-      let uri = urlOrEngine instanceof Ci.nsIURI ? urlOrEngine
-                                                  : Services.io.newURI(urlOrEngine);
-      Services.io.speculativeConnect(uri, window.gBrowser.contentPrincipal, null);
+      let uri =
+        urlOrEngine instanceof Ci.nsIURI
+          ? urlOrEngine
+          : Services.io.newURI(urlOrEngine);
+      Services.io.speculativeConnect(
+        uri,
+        window.gBrowser.contentPrincipal,
+        null
+      );
     } catch (ex) {
       // Can't setup speculative connection for this url, just ignore it.
     }
@@ -362,6 +414,35 @@ var UrlbarUtils = {
     }
     return pasteData;
   },
+
+  async addToInputHistory(url, input) {
+    await PlacesUtils.withConnectionWrapper("addToInputHistory", db => {
+      // use_count will asymptotically approach the max of 10.
+      return db.executeCached(
+        `
+        INSERT OR REPLACE INTO moz_inputhistory
+        SELECT h.id, IFNULL(i.input, :input), IFNULL(i.use_count, 0) * .9 + 1
+        FROM moz_places h
+        LEFT JOIN moz_inputhistory i ON i.place_id = h.id AND i.input = :input
+        WHERE url_hash = hash(:url) AND url = :url
+      `,
+        { url, input }
+      );
+    });
+  },
+
+  /**
+   * Whether the passed-in input event is paste event.
+   * @param {DOMEvent} event an input DOM event.
+   * @returns {boolean} Whether the event is a paste event.
+   */
+  isPasteEvent(event) {
+    return (
+      event.inputType &&
+      (event.inputType.startsWith("insertFromPaste") ||
+        event.inputType == "insertFromYank")
+    );
+  },
 };
 
 XPCOMUtils.defineLazyGetter(UrlbarUtils.ICON, "DEFAULT", () => {
@@ -382,38 +463,45 @@ class UrlbarQueryContext {
    * @param {string} options.searchString
    *   The string the user entered in autocomplete. Could be the empty string
    *   in the case of the user opening the popup via the mouse.
-   * @param {number} options.lastKey
-   *   The last key the user entered (as a key code). Could be null if the search
-   *   was started via the mouse.
    * @param {boolean} options.isPrivate
    *   Set to true if this query was started from a private browsing window.
    * @param {number} options.maxResults
    *   The maximum number of results that will be displayed for this query.
-   * @param {boolean} options.enableAutofill
-   *   Whether or not to include autofill results.
+   * @param {boolean} options.allowAutofill
+   *   Whether or not to allow providers to include autofill results.
+   * @param {number} options.userContextId
+   *   The container id where this context was generated, if any.
    */
   constructor(options = {}) {
     this._checkRequiredOptions(options, [
-      "enableAutofill",
+      "allowAutofill",
       "isPrivate",
-      "lastKey",
       "maxResults",
       "searchString",
     ]);
 
     if (isNaN(parseInt(options.maxResults))) {
-      throw new Error(`Invalid maxResults property provided to UrlbarQueryContext`);
+      throw new Error(
+        `Invalid maxResults property provided to UrlbarQueryContext`
+      );
     }
 
-    if (options.providers &&
-        (!Array.isArray(options.providers) || !options.providers.length)) {
+    if (
+      options.providers &&
+      (!Array.isArray(options.providers) || !options.providers.length)
+    ) {
       throw new Error(`Invalid providers list`);
     }
 
-    if (options.sources &&
-        (!Array.isArray(options.sources) || !options.sources.length)) {
+    if (
+      options.sources &&
+      (!Array.isArray(options.sources) || !options.sources.length)
+    ) {
       throw new Error(`Invalid sources list`);
     }
+
+    this.lastResultCount = 0;
+    this.userContextId = options.userContextId;
   }
 
   /**
@@ -426,7 +514,9 @@ class UrlbarQueryContext {
   _checkRequiredOptions(options, optionNames) {
     for (let optionName of optionNames) {
       if (!(optionName in options)) {
-        throw new Error(`Missing or empty ${optionName} provided to UrlbarQueryContext`);
+        throw new Error(
+          `Missing or empty ${optionName} provided to UrlbarQueryContext`
+        );
       }
       this[optionName] = options[optionName];
     }
@@ -477,11 +567,25 @@ class UrlbarProvider {
     throw new Error("Trying to access the base class, must be overridden");
   }
   /**
-   * List of UrlbarUtils.RESULT_SOURCE, representing the data sources used by
-   * the provider.
+   * Whether this provider should be invoked for the given context.
+   * If this method returns false, the providers manager won't start a query
+   * with this provider, to save on resources.
+   * @param {UrlbarQueryContext} queryContext The query context object
+   * @returns {boolean} Whether this provider should be invoked for the search.
    * @abstract
    */
-  get sources() {
+  isActive(queryContext) {
+    throw new Error("Trying to access the base class, must be overridden");
+  }
+  /**
+   * Whether this provider wants to restrict results to just itself.
+   * Other providers won't be invoked, unless this provider doesn't
+   * support the current query.
+   * @param {UrlbarQueryContext} queryContext The query context object
+   * @returns {boolean} Whether this provider wants to restrict results.
+   * @abstract
+   */
+  isRestricting(queryContext) {
     throw new Error("Trying to access the base class, must be overridden");
   }
   /**
@@ -504,5 +608,91 @@ class UrlbarProvider {
    */
   cancelQuery(queryContext) {
     throw new Error("Trying to access the base class, must be overridden");
+  }
+}
+
+/**
+ * Class used to create a timer that can be manually fired, to immediately
+ * invoke the callback, or canceled, as necessary.
+ * Examples:
+ *   let timer = new SkippableTimer();
+ *   // Invokes the callback immediately without waiting for the delay.
+ *   await timer.fire();
+ *   // Cancel the timer, the callback won't be invoked.
+ *   await timer.cancel();
+ *   // Wait for the timer to have elapsed.
+ *   await timer.promise;
+ */
+class SkippableTimer {
+  /**
+   * Creates a skippable timer for the given callback and time.
+   * @param {object} options An object that configures the timer
+   * @param {string} options.name The name of the timer, logged when necessary
+   * @param {function} options.callback To be invoked when requested
+   * @param {number} options.time A delay in milliseconds to wait for
+   * @param {boolean} options.reportErrorOnTimeout If true and the timer times
+   *                  out, an error will be logged with Cu.reportError
+   * @param {logger} options.logger An optional logger
+   */
+  constructor({
+    name = "<anonymous timer>",
+    callback = null,
+    time = 0,
+    reportErrorOnTimeout = false,
+    logger = null,
+  } = {}) {
+    this.name = name;
+    this.logger = logger;
+
+    let timerPromise = new Promise(resolve => {
+      this._timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+      this._timer.initWithCallback(
+        () => {
+          this._log(`Timed out!`, reportErrorOnTimeout);
+          resolve();
+        },
+        time,
+        Ci.nsITimer.TYPE_ONE_SHOT
+      );
+      this._log(`Started`);
+    });
+
+    let firePromise = new Promise(resolve => {
+      this.fire = () => {
+        this._log(`Skipped`);
+        resolve();
+        return this.promise;
+      };
+    });
+
+    this.promise = Promise.race([timerPromise, firePromise]).then(() => {
+      // If we've been canceled, don't call back.
+      if (this._timer && callback) {
+        callback();
+      }
+    });
+  }
+
+  /**
+   * Allows to cancel the timer and the callback won't be invoked.
+   * It is not strictly necessary to await for this, the promise can just be
+   * used to ensure all the internal work is complete.
+   * @returns {promise} Resolved once all the cancelation work is complete.
+   */
+  cancel() {
+    this._log(`Canceling`);
+    this._timer.cancel();
+    delete this._timer;
+    return this.fire();
+  }
+
+  _log(msg, isError = false) {
+    let line = `SkippableTimer :: ${this.name} :: ${msg}`;
+    if (this.logger) {
+      this.logger.debug(line);
+    }
+    if (isError) {
+      Cu.reportError(line);
+    }
   }
 }

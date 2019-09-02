@@ -55,7 +55,7 @@ TimeStamp Client::LastFocusTime() const {
   return mData->state().get_IPCClientWindowState().lastFocusTime();
 }
 
-nsContentUtils::StorageAccess Client::GetStorageAccess() const {
+StorageAccess Client::GetStorageAccess() const {
   ClientState state(ClientState::FromIPC(mData->state()));
   return state.GetStorageAccess();
 }
@@ -150,19 +150,20 @@ already_AddRefed<Promise> Client::Focus(ErrorResult& aRv) {
       MakeRefPtr<DOMMozPromiseRequestHolder<ClientStatePromise>>(mGlobal);
 
   mHandle->Focus()
-      ->Then(mGlobal->EventTargetFor(TaskCategory::Other), __func__,
-             [ipcClientInfo, holder, outerPromise](const ClientState& aResult) {
-               holder->Complete();
-               NS_ENSURE_TRUE_VOID(holder->GetParentObject());
-               RefPtr<Client> newClient = new Client(
-                   holder->GetParentObject(),
-                   ClientInfoAndState(ipcClientInfo, aResult.ToIPC()));
-               outerPromise->MaybeResolve(newClient);
-             },
-             [holder, outerPromise](nsresult aResult) {
-               holder->Complete();
-               outerPromise->MaybeReject(aResult);
-             })
+      ->Then(
+          mGlobal->EventTargetFor(TaskCategory::Other), __func__,
+          [ipcClientInfo, holder, outerPromise](const ClientState& aResult) {
+            holder->Complete();
+            NS_ENSURE_TRUE_VOID(holder->GetParentObject());
+            RefPtr<Client> newClient =
+                new Client(holder->GetParentObject(),
+                           ClientInfoAndState(ipcClientInfo, aResult.ToIPC()));
+            outerPromise->MaybeResolve(newClient);
+          },
+          [holder, outerPromise](nsresult aResult) {
+            holder->Complete();
+            outerPromise->MaybeReject(aResult);
+          })
       ->Track(*holder);
 
   return outerPromise.forget();

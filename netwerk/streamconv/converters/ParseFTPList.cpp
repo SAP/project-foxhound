@@ -27,13 +27,13 @@ using mozilla::IsAsciiLowercaseAlpha;
 
 static const int kMaxFTPListLen = 32768;
 
-static inline int ParsingFailed(struct list_state *state) {
+static inline int ParsingFailed(struct list_state* state) {
   if (state->parsed_one || state->lstyle) /* junk if we fail to parse */
     return '?'; /* this time but had previously parsed successfully */
   return '"';   /* its part of a comment or error message */
 }
 
-void FixupYear(PRExplodedTime *aTime) {
+void FixupYear(PRExplodedTime* aTime) {
   /* if year has only two digits then assume that
      00-79 is 2000-2079
      80-99 is 1980-1999 */
@@ -44,12 +44,12 @@ void FixupYear(PRExplodedTime *aTime) {
   }
 }
 
-int ParseFTPList(const char *line, struct list_state *state,
-                 struct list_result *result, PRTimeParamFn timeParam,
+int ParseFTPList(const char* line, struct list_state* state,
+                 struct list_result* result, PRTimeParamFn timeParam,
                  NowTimeFn nowTimeFn) {
   unsigned int carry_buf_len; /* copy of state->carry_buf_len */
   unsigned int pos;
-  const char *p;
+  const char* p;
 
   if (!line || !state || !result) return 0;
 
@@ -77,8 +77,8 @@ int ParseFTPList(const char *line, struct list_state *state,
   }
 
   if (linelen > 0) {
-    static const char *month_names = "JanFebMarAprMayJunJulAugSepOctNovDec";
-    const char *tokens[16]; /* 16 is more than enough */
+    static const char* month_names = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    const char* tokens[16]; /* 16 is more than enough */
     unsigned int toklen[(sizeof(tokens) / sizeof(tokens[0]))];
     unsigned int linelen_sans_wsp;  // line length sans whitespace
     unsigned int numtoks = 0;
@@ -598,7 +598,7 @@ int ParseFTPList(const char *line, struct list_state *state,
         if ((/*newstyle*/ toklen[tokmarker + 4] == 10 && tokmarker > 1) ||
             (/*oldstyle*/ toklen[tokmarker + 4] != 10 &&
              tokmarker > 2)) { /* have a filetype column */
-          char *dot;
+          char* dot;
           p = &(tokens[0][toklen[0]]);
           memcpy(&dot, &p, sizeof(dot)); /* NASTY! */
           *dot++ = '.';
@@ -780,7 +780,7 @@ int ParseFTPList(const char *line, struct list_state *state,
       p = &(line[toklen[0]]);
       /* \s(\d\d-\d\d-\d\d)\s+(\d\d:\d\d)\s */
       if (numtoks >= 4 && toklen[0] <= 18 && IsAsciiDigit(*tokens[0]) &&
-          (linelen - toklen[0]) >= (53 - 18) && p[18 - 18] == ' ' &&
+          (linelen - toklen[0]) >= (54 - 18) && p[18 - 18] == ' ' &&
           p[34 - 18] == ' ' && p[37 - 18] == '-' && p[40 - 18] == '-' &&
           p[43 - 18] == ' ' && p[45 - 18] == ' ' && p[48 - 18] == ':' &&
           p[51 - 18] == ' ' && IsAsciiDigit(p[35 - 18]) &&
@@ -788,7 +788,8 @@ int ParseFTPList(const char *line, struct list_state *state,
           IsAsciiDigit(p[39 - 18]) && IsAsciiDigit(p[41 - 18]) &&
           IsAsciiDigit(p[42 - 18]) && IsAsciiDigit(p[46 - 18]) &&
           IsAsciiDigit(p[47 - 18]) && IsAsciiDigit(p[49 - 18]) &&
-          IsAsciiDigit(p[50 - 18])) {
+          IsAsciiDigit(p[50 - 18]) &&
+          (linelen_sans_wsp - toklen[0]) > (53 - 18)) {
         lstyle = 'O'; /* OS/2 */
         if (!state->lstyle) {
           for (pos = 1; lstyle && pos < toklen[0]; pos++) {
@@ -1033,8 +1034,8 @@ int ParseFTPList(const char *line, struct list_state *state,
         // Don't care about leading spaces when the date string has different
         // format or when old Hellsoft output was detected.
         {
-          const char *date_start = tokens[tokmarker + 1];
-          const char *date_end = tokens[tokmarker + 3] + toklen[tokmarker + 3];
+          const char* date_start = tokens[tokmarker + 1];
+          const char* date_end = tokens[tokmarker + 3] + toklen[tokmarker + 3];
           if (!is_old_Hellsoft &&
               ((date_end - date_start) == 12 ||
                ((date_end - date_start) == 11 && date_end[1] == ' ')))

@@ -27,11 +27,9 @@ mozilla::ipc::IPCResult ProfilerChild::RecvStart(
     filterArray.AppendElement(params.filters()[i].get());
   }
 
-  profiler_start(params.entries(), params.interval(), params.features(),
-                 filterArray.Elements(), filterArray.Length(),
-                 params.duration().type() == MaybeDuration::Tnull_t
-                     ? mozilla::Nothing()
-                     : mozilla::Some(params.duration().get_double()));
+  profiler_start(PowerOfTwo32(params.entries()), params.interval(),
+                 params.features(), filterArray.Elements(),
+                 filterArray.Length(), params.duration());
 
   return IPC_OK();
 }
@@ -43,12 +41,9 @@ mozilla::ipc::IPCResult ProfilerChild::RecvEnsureStarted(
     filterArray.AppendElement(params.filters()[i].get());
   }
 
-  profiler_ensure_started(params.entries(), params.interval(),
+  profiler_ensure_started(PowerOfTwo32(params.entries()), params.interval(),
                           params.features(), filterArray.Elements(),
-                          filterArray.Length(),
-                          params.duration().type() == MaybeDuration::Tnull_t
-                              ? mozilla::Nothing()
-                              : mozilla::Some(params.duration().get_double()));
+                          filterArray.Length(), params.duration());
 
   return IPC_OK();
 }
@@ -65,6 +60,11 @@ mozilla::ipc::IPCResult ProfilerChild::RecvPause() {
 
 mozilla::ipc::IPCResult ProfilerChild::RecvResume() {
   profiler_resume();
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ProfilerChild::RecvClearAllPages() {
+  profiler_clear_all_pages();
   return IPC_OK();
 }
 

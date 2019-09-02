@@ -114,19 +114,20 @@ nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
                                        InternalRequest* aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
 
+  nsresult rv = NS_OK;
   nsAutoString referrer;
   aRequest->GetReferrer(referrer);
-  net::ReferrerPolicy policy = aRequest->GetReferrerPolicy();
 
-  nsresult rv = NS_OK;
+  net::ReferrerPolicy policy = aRequest->GetReferrerPolicy();
+  nsCOMPtr<nsIReferrerInfo> referrerInfo;
   if (referrer.IsEmpty()) {
     // This is the case request’s referrer is "no-referrer"
-    rv = aChannel->SetReferrerWithPolicy(nullptr, net::RP_No_Referrer);
-    NS_ENSURE_SUCCESS(rv, rv);
+    referrerInfo = new ReferrerInfo(nullptr, net::RP_No_Referrer);
   } else if (referrer.EqualsLiteral(kFETCH_CLIENT_REFERRER_STR)) {
-    rv = nsContentUtils::SetFetchReferrerURIWithPolicy(aPrincipal, aDoc,
-                                                       aChannel, policy);
-    NS_ENSURE_SUCCESS(rv, rv);
+    referrerInfo = ReferrerInfo::CreateForFetch(aPrincipal, aDoc);
+    // In the first step, we should use referrer info from requetInit
+    referrerInfo = static_cast<ReferrerInfo*>(referrerInfo.get())
+                       ->CloneWithNewPolicy(policy);
   } else {
     // From "Determine request's Referrer" step 3
     // "If request's referrer is a URL, let referrerSource be request's
@@ -134,22 +135,25 @@ nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
     nsCOMPtr<nsIURI> referrerURI;
     rv = NS_NewURI(getter_AddRefs(referrerURI), referrer, nullptr, nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = aChannel->SetReferrerWithPolicy(referrerURI, policy);
-    NS_ENSURE_SUCCESS(rv, rv);
+    referrerInfo = new ReferrerInfo(referrerURI, policy);
   }
 
-  nsCOMPtr<nsIURI> referrerURI;
-  Unused << aChannel->GetReferrer(getter_AddRefs(referrerURI));
+  rv = aChannel->SetReferrerInfoWithoutClone(referrerInfo);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> computedReferrer;
+  referrerInfo = aChannel->GetReferrerInfo();
+  if (referrerInfo) {
+    computedReferrer = referrerInfo->GetComputedReferrer();
+  }
 
   // Step 8 https://fetch.spec.whatwg.org/#main-fetch
   // If request’s referrer is not "no-referrer", set request’s referrer to
   // the result of invoking determine request’s referrer.
-  if (referrerURI) {
+  if (computedReferrer) {
     nsAutoCString spec;
-    rv = referrerURI->GetSpec(spec);
+    rv = computedReferrer->GetSpec(spec);
     NS_ENSURE_SUCCESS(rv, rv);
-
     aRequest->SetReferrer(NS_ConvertUTF8toUTF16(spec));
   } else {
     aRequest->SetReferrer(EmptyString());
@@ -361,33 +365,14 @@ class JSStreamConsumer final : public nsIInputStreamCallback {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  static bool Start(nsIInputStream* aStream, JS::StreamConsumer* aConsumer,
-                    nsIGlobalObject* aGlobal, WorkerPrivate* aMaybeWorker) {
-    nsresult rv;
-
-    bool nonBlocking = false;
-    rv = aStream->IsNonBlocking(&nonBlocking);
+  static bool Start(nsCOMPtr<nsIInputStream>&& aStream,
+                    JS::StreamConsumer* aConsumer, nsIGlobalObject* aGlobal,
+                    WorkerPrivate* aMaybeWorker) {
+    nsCOMPtr<nsIAsyncInputStream> asyncStream;
+    nsresult rv = NS_MakeAsyncNonBlockingInputStream(
+        aStream.forget(), getter_AddRefs(asyncStream));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return false;
-    }
-
-    // Use a pipe to create an nsIAsyncInputStream if we don't already have one.
-    nsCOMPtr<nsIAsyncInputStream> asyncStream = do_QueryInterface(aStream);
-    if (!asyncStream || !nonBlocking) {
-      nsCOMPtr<nsIAsyncOutputStream> pipe;
-      rv = NS_NewPipe2(getter_AddRefs(asyncStream), getter_AddRefs(pipe), true,
-                       true);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return false;
-      }
-
-      nsCOMPtr<nsIEventTarget> thread =
-          do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
-
-      rv = NS_AsyncCopy(aStream, pipe, thread, NS_ASYNCCOPY_VIA_WRITESEGMENTS);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return false;
-      }
     }
 
     RefPtr<JSStreamConsumer> consumer;
@@ -553,7 +538,8 @@ bool FetchUtil::StreamResponseToJS(JSContext* aCx, JS::HandleObject aObj,
 
   nsIGlobalObject* global = xpc::NativeGlobal(js::UncheckedUnwrap(aObj));
 
-  if (!JSStreamConsumer::Start(body, aConsumer, global, aMaybeWorker)) {
+  if (!JSStreamConsumer::Start(std::move(body), aConsumer, global,
+                               aMaybeWorker)) {
     return ThrowException(aCx, JSMSG_OUT_OF_MEMORY);
   }
 

@@ -10,7 +10,7 @@
 
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "nsXULAppAPI.h"
 
 #include "History.h"
@@ -561,6 +561,9 @@ class NotifyManyVisitsObservers : public Runnable {
     }
   }
 
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is marked
+  // MOZ_CAN_RUN_SCRIPT.  See bug 1535398.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD Run() override {
     MOZ_ASSERT(NS_IsMainThread(), "This should be called on the main thread");
 
@@ -1442,6 +1445,16 @@ History::History()
       mObservers(VISIT_OBSERVERS_INITIAL_CACHE_LENGTH),
       mRecentlyVisitedURIs(RECENTLY_VISITED_URIS_SIZE) {
   NS_ASSERTION(!gService, "Ruh-roh!  This service has already been created!");
+  if (XRE_IsParentProcess()) {
+    nsCOMPtr<nsIProperties> dirsvc = services::GetDirectoryService();
+    bool haveProfile = false;
+    MOZ_RELEASE_ASSERT(
+        dirsvc &&
+            NS_SUCCEEDED(
+                dirsvc->Has(NS_APP_USER_PROFILE_50_DIR, &haveProfile)) &&
+            haveProfile,
+        "Can't construct history service if there is no profile.");
+  }
   gService = this;
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
@@ -2012,9 +2025,9 @@ History::VisitURI(nsIWidget* aWidget, nsIURI* aURI, nsIURI* aLastVisitedURI,
     SerializeURI(aLastVisitedURI, lastVisitedURI);
 
     NS_ENSURE_ARG(aWidget);
-    TabChild* tabChild = aWidget->GetOwningTabChild();
-    NS_ENSURE_TRUE(tabChild, NS_ERROR_FAILURE);
-    (void)tabChild->SendVisitURI(uri, lastVisitedURI, aFlags);
+    BrowserChild* browserChild = aWidget->GetOwningBrowserChild();
+    NS_ENSURE_TRUE(browserChild, NS_ERROR_FAILURE);
+    (void)browserChild->SendVisitURI(uri, lastVisitedURI, aFlags);
     return NS_OK;
   }
 

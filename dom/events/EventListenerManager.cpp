@@ -18,7 +18,9 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/EventCallbackDebuggerNotification.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTargetBinding.h"
@@ -32,7 +34,6 @@
 #include "mozilla/TimeStamp.h"
 
 #include "EventListenerService.h"
-#include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsDOMCID.h"
@@ -95,19 +96,6 @@ static uint32_t MutationBitForEventType(EventMessage aEventType) {
 }
 
 uint32_t EventListenerManager::sMainThreadCreatedCount = 0;
-
-static bool IsWebkitPrefixSupportEnabled() {
-  static bool sIsWebkitPrefixSupportEnabled;
-  static bool sIsPrefCached = false;
-
-  if (!sIsPrefCached) {
-    sIsPrefCached = true;
-    Preferences::AddBoolVarCache(&sIsWebkitPrefixSupportEnabled,
-                                 "layout.css.prefixes.webkit");
-  }
-
-  return sIsWebkitPrefixSupportEnabled;
-}
 
 EventListenerManagerBase::EventListenerManagerBase()
     : mNoListenerForEvent(eVoidEvent),
@@ -445,9 +433,9 @@ void EventListenerManager::ProcessApzAwareEventListenerAdd() {
   }
 
   if (doc && gfxPlatform::AsyncPanZoomEnabled()) {
-    nsIPresShell* ps = doc->GetShell();
-    if (ps) {
-      nsIFrame* f = ps->GetRootFrame();
+    PresShell* presShell = doc->GetPresShell();
+    if (presShell) {
+      nsIFrame* f = presShell->GetRootFrame();
       if (f) {
         f->SchedulePaint();
       }
@@ -632,7 +620,7 @@ bool EventListenerManager::ListenerCanHandle(const Listener* aListener,
   if (aEvent->mMessage == eUnidentifiedEvent) {
     return aListener->mTypeAtom == aEvent->mSpecifiedEventType;
   }
-  if (MOZ_UNLIKELY(!nsContentUtils::IsUnprefixedFullscreenApiEnabled() &&
+  if (MOZ_UNLIKELY(!StaticPrefs::full_screen_api_unprefix_enabled() &&
                    aEvent->IsTrusted() &&
                    (aEventMessage == eFullscreenChange ||
                     aEventMessage == eFullscreenError))) {
@@ -785,10 +773,7 @@ nsresult EventListenerManager::SetEventHandler(nsAtom* aName,
     }
 
     // Perform CSP check
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    rv = doc->NodePrincipal()->GetCsp(getter_AddRefs(csp));
-    NS_ENSURE_SUCCESS(rv, rv);
-
+    nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp();
     unsigned lineNum = 0;
     unsigned columnNum = 0;
 
@@ -824,7 +809,7 @@ nsresult EventListenerManager::SetEventHandler(nsAtom* aName,
 
   nsIScriptContext* context = global->GetScriptContext();
   NS_ENSURE_TRUE(context, NS_ERROR_FAILURE);
-  NS_ENSURE_STATE(global->GetGlobalJSObject());
+  NS_ENSURE_STATE(global->HasJSGlobal());
 
   Listener* listener = SetEventHandlerInternal(aName, TypedEventHandler(),
                                                aPermitUntrustedEvents);
@@ -958,8 +943,8 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   // mTarget is different from aElement in the <body> case, where mTarget is a
   // Window, and in that case we do not want the scope chain to include the body
   // or the document.
-  JS::AutoObjectVector scopeChain(cx);
-  if (!nsJSUtils::GetScopeChainForElement(cx, element, scopeChain)) {
+  JS::RootedVector<JSObject*> scopeChain(cx);
+  if (!nsJSUtils::GetScopeChainForElement(cx, element, &scopeChain)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -1030,6 +1015,7 @@ nsresult EventListenerManager::HandleEventSubType(Listener* aListener,
   }
 
   if (NS_SUCCEEDED(result)) {
+    EventCallbackDebuggerNotificationGuard dbgGuard(aCurrentTarget, aDOMEvent);
     nsAutoMicroTask mt;
 
     // Event::currentTarget is set in EventDispatcher.
@@ -1050,24 +1036,18 @@ nsresult EventListenerManager::HandleEventSubType(Listener* aListener,
 
 EventMessage EventListenerManager::GetLegacyEventMessage(
     EventMessage aEventMessage) const {
-  // (If we're off-main-thread, we can't check the pref; so we just behave as
-  // if it's disabled.)
-  if (mIsMainThreadELM) {
-    if (IsWebkitPrefixSupportEnabled()) {
-      // webkit-prefixed legacy events:
-      if (aEventMessage == eTransitionEnd) {
-        return eWebkitTransitionEnd;
-      }
-      if (aEventMessage == eAnimationStart) {
-        return eWebkitAnimationStart;
-      }
-      if (aEventMessage == eAnimationEnd) {
-        return eWebkitAnimationEnd;
-      }
-      if (aEventMessage == eAnimationIteration) {
-        return eWebkitAnimationIteration;
-      }
-    }
+  // webkit-prefixed legacy events:
+  if (aEventMessage == eTransitionEnd) {
+    return eWebkitTransitionEnd;
+  }
+  if (aEventMessage == eAnimationStart) {
+    return eWebkitAnimationStart;
+  }
+  if (aEventMessage == eAnimationEnd) {
+    return eWebkitAnimationEnd;
+  }
+  if (aEventMessage == eAnimationIteration) {
+    return eWebkitAnimationIteration;
   }
 
   switch (aEventMessage) {
@@ -1144,8 +1124,11 @@ void EventListenerManager::HandleEventInternal(nsPresContext* aPresContext,
     aEvent->PreventDefault();
   }
 
-  Maybe<nsAutoPopupStatePusher> popupStatePusher;
+  Maybe<AutoHandlingUserInputStatePusher> userInputStatePusher;
+  Maybe<AutoPopupStatePusher> popupStatePusher;
   if (mIsMainThreadELM) {
+    userInputStatePusher.emplace(
+        EventStateManager::IsUserInteractionEvent(aEvent), aEvent);
     popupStatePusher.emplace(
         PopupBlocker::GetEventPopupControlState(aEvent, *aDOMEvent));
   }
@@ -1459,10 +1442,10 @@ bool EventListenerManager::HasListeners() const {
 }
 
 nsresult EventListenerManager::GetListenerInfo(
-    nsCOMArray<nsIEventListenerInfo>* aList) {
+    nsTArray<RefPtr<nsIEventListenerInfo>>& aList) {
   nsCOMPtr<EventTarget> target = mTarget;
   NS_ENSURE_STATE(target);
-  aList->Clear();
+  aList.Clear();
   nsAutoTObserverArray<Listener, 2>::ForwardIterator iter(mListeners);
   while (iter.HasMore()) {
     const Listener& listener = iter.GetNext();
@@ -1509,7 +1492,7 @@ nsresult EventListenerManager::GetListenerInfo(
     RefPtr<EventListenerInfo> info = new EventListenerInfo(
         eventType, callback, callbackGlobal, listener.mFlags.mCapture,
         listener.mFlags.mAllowUntrustedEvents, listener.mFlags.mInSystemGroup);
-    aList->AppendElement(info.forget());
+    aList.AppendElement(info.forget());
   }
   return NS_OK;
 }

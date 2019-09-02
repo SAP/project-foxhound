@@ -13,7 +13,7 @@
 typedef (BufferSource or Blob or USVString) BlobPart;
 
 [Constructor(optional sequence<BlobPart> blobParts,
-             optional BlobPropertyBag options),
+             optional BlobPropertyBag options = {}),
  Exposed=(Window,Worker)]
 interface Blob {
 
@@ -28,6 +28,11 @@ interface Blob {
   Blob slice(optional [Clamp] long long start,
              optional [Clamp] long long end,
              optional DOMString contentType);
+
+  // read from the Blob.
+  [NewObject] ReadableStream stream();
+  [NewObject] Promise<USVString> text();
+  [NewObject] Promise<ArrayBuffer> arrayBuffer();
 };
 
 enum EndingTypes { "transparent", "native" };

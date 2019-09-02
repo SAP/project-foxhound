@@ -11,6 +11,7 @@
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/gfx/StackArray.h"
 #include "mozilla/layers/DiagnosticsD3D11.h"
+#include "mozilla/layers/HelpersD3D11.h"
 #include "mozilla/layers/LayerMLGPU.h"
 #include "mozilla/layers/MemoryReportingMLGPU.h"
 #include "mozilla/layers/ShaderDefinitionsMLGPU.h"
@@ -18,9 +19,10 @@
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
 #include "MLGShaders.h"
+#include "LayersLogging.h"
 #include "TextureD3D11.h"
 #include "gfxConfig.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 
 namespace mozilla {
 namespace layers {
@@ -232,9 +234,9 @@ bool MLGSwapChainD3D11::Initialize(CompositorWidget* aWidget) {
   }
 
   RefPtr<IDXGIFactory2> dxgiFactory2;
-  if (gfxPrefs::Direct3D11UseDoubleBuffering() &&
+  if (gfxVars::UseDoubleBufferingWithCompositor() &&
       SUCCEEDED(dxgiFactory->QueryInterface(dxgiFactory2.StartAssignment())) &&
-      dxgiFactory2 && IsWin10OrLater()) {
+      dxgiFactory2 && XRE_IsGPUProcess()) {
     // DXGI_SCALING_NONE is not available on Windows 7 with the Platform Update:
     // This looks awful for things like the awesome bar and browser window
     // resizing, so we don't use a flip buffer chain here. (Note when using
@@ -243,6 +245,9 @@ bool MLGSwapChainD3D11::Initialize(CompositorWidget* aWidget) {
     // We choose not to run this on platforms earlier than Windows 10 because
     // it appears sometimes this breaks our ability to test ASAP compositing,
     // which breaks Talos.
+    //
+    // When the GPU process is disabled we don't have a compositor window which
+    // can lead to issues with Window re-use so we don't use this.
     DXGI_SWAP_CHAIN_DESC1 desc;
     ::ZeroMemory(&desc, sizeof(desc));
     desc.Width = 0;
@@ -318,7 +323,7 @@ RefPtr<MLGRenderTarget> MLGSwapChainD3D11::AcquireBackBuffer() {
 
   if (!mRT) {
     MLGRenderTargetFlags flags = MLGRenderTargetFlags::Default;
-    if (gfxPrefs::AdvancedLayersEnableDepthBuffer()) {
+    if (StaticPrefs::layers_mlgpu_enable_depth_buffer()) {
       flags |= MLGRenderTargetFlags::ZBuffer;
     }
 
@@ -375,6 +380,8 @@ void MLGSwapChainD3D11::UpdateBackBufferContents(ID3D11Texture2D* aBack) {
 }
 
 bool MLGSwapChainD3D11::ResizeBuffers(const IntSize& aSize) {
+  mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
+
   // We have to clear all references to the old backbuffer before resizing.
   mRT = nullptr;
 

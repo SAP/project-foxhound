@@ -6,9 +6,9 @@
 
 #include "SimpleVelocityTracker.h"
 
-#include "gfxPrefs.h"
 #include "mozilla/ComputedTimingFunction.h"  // for ComputedTimingFunction
-#include "mozilla/StaticPtr.h"               // for StaticAutoPtr
+#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPtr.h"  // for StaticAutoPtr
 
 #define SVT_LOG(...)
 // #define SVT_LOG(...) printf_stderr("SimpleVelocityTracker: " __VA_ARGS__)
@@ -36,8 +36,7 @@ void SimpleVelocityTracker::StartTracking(ParentLayerCoord aPos,
 }
 
 Maybe<float> SimpleVelocityTracker::AddPosition(ParentLayerCoord aPos,
-                                                uint32_t aTimestampMs,
-                                                bool aIsAxisLocked) {
+                                                uint32_t aTimestampMs) {
   if (aTimestampMs <= mVelocitySampleTimeMs + MIN_VELOCITY_SAMPLE_TIME_MS) {
     // See also the comment on MIN_VELOCITY_SAMPLE_TIME_MS.
     // We still update mPos so that the positioning is correct (and we don't run
@@ -51,10 +50,8 @@ Maybe<float> SimpleVelocityTracker::AddPosition(ParentLayerCoord aPos,
     return Nothing();
   }
 
-  float newVelocity = aIsAxisLocked
-                          ? 0.0f
-                          : (float)(mVelocitySamplePos - aPos) /
-                                (float)(aTimestampMs - mVelocitySampleTimeMs);
+  float newVelocity = (float)(mVelocitySamplePos - aPos) /
+                      (float)(aTimestampMs - mVelocitySampleTimeMs);
 
   newVelocity = ApplyFlingCurveToVelocity(newVelocity);
 
@@ -89,7 +86,7 @@ Maybe<float> SimpleVelocityTracker::ComputeVelocity(uint32_t aTimestampMs) {
   int count = 0;
   for (const auto& e : mVelocityQueue) {
     uint32_t timeDelta = (aTimestampMs - e.first);
-    if (timeDelta < gfxPrefs::APZVelocityRelevanceTime()) {
+    if (timeDelta < StaticPrefs::apz_velocity_relevance_time_ms()) {
       count++;
       velocity += e.second;
     }
@@ -106,24 +103,26 @@ void SimpleVelocityTracker::Clear() { mVelocityQueue.Clear(); }
 void SimpleVelocityTracker::AddVelocityToQueue(uint32_t aTimestampMs,
                                                float aVelocity) {
   mVelocityQueue.AppendElement(std::make_pair(aTimestampMs, aVelocity));
-  if (mVelocityQueue.Length() > gfxPrefs::APZMaxVelocityQueueSize()) {
+  if (mVelocityQueue.Length() > StaticPrefs::apz_max_velocity_queue_size()) {
     mVelocityQueue.RemoveElementAt(0);
   }
 }
 
 float SimpleVelocityTracker::ApplyFlingCurveToVelocity(float aVelocity) const {
   float newVelocity = aVelocity;
-  if (gfxPrefs::APZMaxVelocity() > 0.0f) {
+  if (StaticPrefs::apz_max_velocity_inches_per_ms() > 0.0f) {
     bool velocityIsNegative = (newVelocity < 0);
     newVelocity = fabs(newVelocity);
 
-    float maxVelocity = mAxis->ToLocalVelocity(gfxPrefs::APZMaxVelocity());
+    float maxVelocity =
+        mAxis->ToLocalVelocity(StaticPrefs::apz_max_velocity_inches_per_ms());
     newVelocity = std::min(newVelocity, maxVelocity);
 
-    if (gfxPrefs::APZCurveThreshold() > 0.0f &&
-        gfxPrefs::APZCurveThreshold() < gfxPrefs::APZMaxVelocity()) {
-      float curveThreshold =
-          mAxis->ToLocalVelocity(gfxPrefs::APZCurveThreshold());
+    if (StaticPrefs::apz_fling_curve_threshold_inches_per_ms() > 0.0f &&
+        StaticPrefs::apz_fling_curve_threshold_inches_per_ms() <
+            StaticPrefs::apz_max_velocity_inches_per_ms()) {
+      float curveThreshold = mAxis->ToLocalVelocity(
+          StaticPrefs::apz_fling_curve_threshold_inches_per_ms());
       if (newVelocity > curveThreshold) {
         // here, 0 < curveThreshold < newVelocity <= maxVelocity, so we apply
         // the curve

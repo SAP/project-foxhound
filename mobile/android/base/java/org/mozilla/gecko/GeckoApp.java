@@ -95,6 +95,7 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.mozilla.geckoview.GeckoViewBridge;
 import org.mozilla.mozstumbler.service.mainthread.SafeReceiver;
 
 import java.io.File;
@@ -349,7 +350,7 @@ public abstract class GeckoApp extends GeckoActivity
     private volatile HealthRecorder mHealthRecorder;
     private volatile Locale mLastLocale;
 
-    private boolean mShutdownOnDestroy;
+    protected boolean mShutdownOnDestroy;
     private boolean mRestartOnShutdown;
 
     private boolean mWasFirstTabShownAfterActivityUnhidden;
@@ -910,18 +911,6 @@ public abstract class GeckoApp extends GeckoActivity
     }
 
     @Override // GeckoSession.ContentDelegate
-    public void onTitleChange(final GeckoSession session, final String title) {
-    }
-
-    @Override // GeckoSession.ContentDelegate
-    public void onFocusRequest(final GeckoSession session) {
-    }
-
-    @Override // GeckoSession.ContentDelegate
-    public void onCloseRequest(final GeckoSession session) {
-    }
-
-    @Override // GeckoSession.ContentDelegate
     public void onFullScreen(final GeckoSession session, final boolean fullScreen) {
         if (fullScreen) {
             SnackbarBuilder.builder(this)
@@ -930,26 +919,6 @@ public abstract class GeckoApp extends GeckoActivity
         }
         ThreadUtils.assertOnUiThread();
         ActivityUtils.setFullScreen(this, fullScreen);
-    }
-
-    @Override
-    public void onContextMenu(final GeckoSession session,
-                              final int screenX, final int screenY,
-                              final GeckoSession.ContentDelegate.ContextElement element) {
-    }
-
-    @Override
-    public void onExternalResponse(final GeckoSession session, final GeckoSession.WebResponseInfo request) {
-        // Won't happen, as we don't use the GeckoView download support in Fennec
-    }
-
-    @Override
-    public void onCrash(final GeckoSession session) {
-        // Won't happen, as we don't use e10s in Fennec
-    }
-
-    @Override
-    public void onFirstComposite(final GeckoSession session) {
     }
 
     protected void setFullScreen(final boolean fullscreen) {
@@ -1053,7 +1022,13 @@ public abstract class GeckoApp extends GeckoActivity
         // no need to touch that here.
         if (BrowserLocaleManager.getInstance().systemLocaleDidChange()) {
             Log.i(LOGTAG, "System locale changed. Restarting.");
+
+            mIsAbortingAppLaunch = true;
+
+            // Call finish() asap so that other classes would know BrowserApp isFinishing()
             finishAndShutdown(/* restart */ true);
+            super.onCreate(savedInstanceState);
+
             return;
         }
 
@@ -1753,7 +1728,7 @@ public abstract class GeckoApp extends GeckoActivity
             throw new IllegalStateException("Must not call getAppEventDispatcher() until after onCreate()");
         }
 
-        return mLayerView.getEventDispatcher();
+        return GeckoViewBridge.getEventDispatcher(mLayerView);
     }
 
     protected static GeckoProfile getProfile() {
@@ -2150,6 +2125,12 @@ public abstract class GeckoApp extends GeckoActivity
             // This build does not support the Android version of the device:
             // We did not initialize anything, so skip cleaning up.
             super.onDestroy();
+
+            if (mShutdownOnDestroy) {
+                GeckoApplication.shutdown(!mRestartOnShutdown ? null : new Intent(
+                        Intent.ACTION_MAIN, /* uri */ null, getApplicationContext(), getClass()));
+            }
+
             return;
         }
 

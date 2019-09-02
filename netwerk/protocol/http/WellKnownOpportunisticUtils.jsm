@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
-* You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
@@ -14,15 +14,12 @@ function WellKnownOpportunisticUtils() {
 WellKnownOpportunisticUtils.prototype = {
   QueryInterface: ChromeUtils.generateQI([Ci.nsIWellKnownOpportunisticUtils]),
 
-  verify(aJSON, aOrigin, aAlternatePort) {
+  verify(aJSON, aOrigin) {
     try {
-      let obj = JSON.parse(aJSON.toLowerCase());
-      let ports = obj[aOrigin.toLowerCase()]["tls-ports"];
-      if (!ports.includes(aAlternatePort)) {
-        throw "invalid port";
+      let arr = JSON.parse(aJSON.toLowerCase());
+      if (!arr.includes(aOrigin.toLowerCase())) {
+        throw new Error("invalid origin");
       }
-      this.lifetime = obj[aOrigin.toLowerCase()].lifetime;
-      this.mixed = obj[aOrigin.toLowerCase()]["mixed-scheme"];
     } catch (e) {
       return;
     }

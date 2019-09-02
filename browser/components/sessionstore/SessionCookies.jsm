@@ -8,8 +8,11 @@ var EXPORTED_SYMBOLS = ["SessionCookies"];
 
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 
-ChromeUtils.defineModuleGetter(this, "PrivacyLevel",
-  "resource://gre/modules/sessionstore/PrivacyLevel.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrivacyLevel",
+  "resource://gre/modules/sessionstore/PrivacyLevel.jsm"
+);
 
 const MAX_EXPIRY = Number.MAX_SAFE_INTEGER;
 
@@ -51,22 +54,39 @@ var SessionCookiesInternal = {
       let expiry = "expiry" in cookie ? cookie.expiry : MAX_EXPIRY;
       let exists = false;
       try {
-        exists = Services.cookies.cookieExists(cookie.host,
-                                               cookie.path || "",
-                                               cookie.name || "",
-                                               cookie.originAttributes || {});
+        exists = Services.cookies.cookieExists(
+          cookie.host,
+          cookie.path || "",
+          cookie.name || "",
+          cookie.originAttributes || {}
+        );
       } catch (ex) {
-        Cu.reportError(`nsCookieService::CookieExists failed with error '${ex}' for '${JSON.stringify(cookie)}'.`);
+        Cu.reportError(
+          `nsCookieService::CookieExists failed with error '${ex}' for '${JSON.stringify(
+            cookie
+          )}'.`
+        );
       }
       if (!exists) {
         try {
-          Services.cookies.add(cookie.host, cookie.path || "", cookie.name || "",
-                               cookie.value, !!cookie.secure, !!cookie.httponly,
-                               /* isSession = */ true, expiry,
-                               cookie.originAttributes || {},
-                               Ci.nsICookie2.SAMESITE_UNSET);
+          Services.cookies.add(
+            cookie.host,
+            cookie.path || "",
+            cookie.name || "",
+            cookie.value,
+            !!cookie.secure,
+            !!cookie.httponly,
+            /* isSession = */ true,
+            expiry,
+            cookie.originAttributes || {},
+            Ci.nsICookie.SAMESITE_NONE
+          );
         } catch (ex) {
-          Cu.reportError(`nsCookieService::Add failed with error '${ex}' for cookie ${JSON.stringify(cookie)}.`);
+          Cu.reportError(
+            `nsCookieService::Add failed with error '${ex}' for cookie ${JSON.stringify(
+              cookie
+            )}.`
+          );
         }
       }
     }
@@ -120,7 +140,7 @@ var SessionCookiesInternal = {
    * Adds a given cookie to the store.
    */
   _addCookie(cookie) {
-    cookie.QueryInterface(Ci.nsICookie2);
+    cookie.QueryInterface(Ci.nsICookie);
 
     // Store only session cookies, obey the privacy level.
     if (cookie.isSession && PrivacyLevel.canSave(cookie.isSecure)) {
@@ -132,7 +152,7 @@ var SessionCookiesInternal = {
    * Updates a given cookie.
    */
   _updateCookie(cookie) {
-    cookie.QueryInterface(Ci.nsICookie2);
+    cookie.QueryInterface(Ci.nsICookie);
 
     // Store only session cookies, obey the privacy level.
     if (cookie.isSession && PrivacyLevel.canSave(cookie.isSecure)) {
@@ -146,7 +166,7 @@ var SessionCookiesInternal = {
    * Removes a given cookie from the store.
    */
   _removeCookie(cookie) {
-    cookie.QueryInterface(Ci.nsICookie2);
+    cookie.QueryInterface(Ci.nsICookie);
 
     if (cookie.isSession) {
       CookieStore.delete(cookie);
@@ -158,7 +178,7 @@ var SessionCookiesInternal = {
    */
   _removeCookies(cookies) {
     for (let i = 0; i < cookies.length; i++) {
-      this._removeCookie(cookies.queryElementAt(i, Ci.nsICookie2));
+      this._removeCookie(cookies.queryElementAt(i, Ci.nsICookie));
     }
   },
 
@@ -193,10 +213,10 @@ var CookieStore = {
    * Stores a given cookie.
    *
    * @param cookie
-   *        The nsICookie2 object to add to the storage.
+   *        The nsICookie object to add to the storage.
    */
   add(cookie) {
-    let jscookie = {host: cookie.host, value: cookie.value};
+    let jscookie = { host: cookie.host, value: cookie.value };
 
     // Only add properties with non-default values to save a few bytes.
     if (cookie.path) {
@@ -230,7 +250,7 @@ var CookieStore = {
    * Removes a given cookie.
    *
    * @param cookie
-   *        The nsICookie2 object to be removed from storage.
+   *        The nsICookie object to be removed from storage.
    */
   delete(cookie) {
     this._entries.delete(this._getKeyForCookie(cookie));
@@ -256,7 +276,7 @@ var CookieStore = {
    * path, and originAttributes properties.
    *
    * @param cookie
-   *        The nsICookie2 object to compute a key for.
+   *        The nsICookie object to compute a key for.
    * @return string
    */
   _getKeyForCookie(cookie) {

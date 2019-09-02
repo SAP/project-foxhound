@@ -3,7 +3,7 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g. crates.io) dependencies
+# to registry (e.g., crates.io) dependencies
 #
 # If you believe there's an error in this file please file an
 # issue against the rust-lang/cargo repository. If you're
@@ -13,8 +13,9 @@
 [package]
 edition = "2018"
 name = "rkv"
-version = "0.9.3"
+version = "0.9.6"
 authors = ["Richard Newman <rnewman@twinql.com>", "Nan Jiang <najiang@mozilla.com>", "Myk Melez <myk@mykzilla.org>"]
+exclude = ["/tests/envs/*"]
 description = "a simple, humane, typed Rust interface to LMDB"
 homepage = "https://github.com/mozilla/rkv"
 readme = "README.md"
@@ -28,6 +29,12 @@ version = "0.3"
 [dependencies.bincode]
 version = "1.0"
 
+[dependencies.bitflags]
+version = "1"
+
+[dependencies.byteorder]
+version = "1"
+
 [dependencies.failure]
 version = "0.1.2"
 features = ["derive"]
@@ -37,7 +44,7 @@ default_features = false
 version = "1.0.2"
 
 [dependencies.lmdb-rkv]
-version = "0.11.2"
+version = "0.11.4"
 
 [dependencies.ordered-float]
 version = "1.0"

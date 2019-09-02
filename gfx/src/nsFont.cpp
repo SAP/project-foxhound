@@ -21,12 +21,10 @@ using namespace mozilla;
 nsFont::nsFont(const FontFamilyList& aFontlist, nscoord aSize)
     : fontlist(aFontlist), size(aSize) {}
 
-nsFont::nsFont(FontFamilyType aGenericType, nscoord aSize)
+nsFont::nsFont(StyleGenericFontFamily aGenericType, nscoord aSize)
     : fontlist(aGenericType), size(aSize) {}
 
 nsFont::nsFont(const nsFont& aOther) = default;
-
-nsFont::nsFont() {}
 
 nsFont::~nsFont() {}
 
@@ -256,7 +254,7 @@ void nsFont::AddFontFeaturesToStyle(gfxFontStyle* aStyle,
     aStyle->useGrayscaleAntialiasing = true;
   }
 
-  aStyle->fontSmoothingBackgroundColor = fontSmoothingBackgroundColor;
+  aStyle->fontSmoothingBackgroundColor = fontSmoothingBackgroundColor.ToColor();
 }
 
 void nsFont::AddFontVariationsToStyle(gfxFontStyle* aStyle) const {

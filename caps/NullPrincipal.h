@@ -16,12 +16,14 @@
 #include "nsJSPrincipals.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsCOMPtr.h"
-#include "nsIContentSecurityPolicy.h"
 
 #include "mozilla/BasePrincipal.h"
 
 class nsIDocShell;
 class nsIURI;
+namespace Json {
+class Value;
+}
 
 #define NS_NULLPRINCIPAL_CID                         \
   {                                                  \
@@ -48,7 +50,6 @@ class NullPrincipal final : public BasePrincipal {
 
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
   uint32_t GetHashValue() override;
-  NS_IMETHOD SetCsp(nsIContentSecurityPolicy* aCsp) override;
   NS_IMETHOD GetURI(nsIURI** aURI) override;
   NS_IMETHOD GetDomain(nsIURI** aDomain) override;
   NS_IMETHOD SetDomain(nsIURI* aDomain) override;
@@ -81,6 +82,21 @@ class NullPrincipal final : public BasePrincipal {
     aSite.Init(this);
     return NS_OK;
   }
+
+  virtual nsresult PopulateJSONObject(Json::Value& aObject) override;
+
+  // Serializable keys are the valid enum fields the serialization supports
+  enum SerializableKeys { eSpec = 0, eSuffix, eMax = eSuffix };
+  // KeyVal is a lightweight storage that passes
+  // SerializableKeys and values after JSON parsing in the BasePrincipal to
+  // FromProperties
+  struct KeyVal {
+    bool valueWasSerialized;
+    nsCString value;
+    SerializableKeys key;
+  };
+  static already_AddRefed<BasePrincipal> FromProperties(
+      nsTArray<NullPrincipal::KeyVal>& aFields);
 
  protected:
   virtual ~NullPrincipal() = default;

@@ -49,6 +49,11 @@ AdapterDeviceID:
     Graphics adapter name.
   type: string
 
+AdapterDriverVendor:
+  description: >
+    Graphics adapter driver vendor.
+  type: string
+
 AdapterDriverVersion:
   description: >
     Graphics adapter driver version.
@@ -99,9 +104,9 @@ AsyncShutdownTimeout:
 
 AvailablePageFile:
   description: >
-    Windows-only, maximum amount of memory that can be committed.  This
-    annotation is populated with the contents of the MEMORYSTATUSEX's structure
-    ullAvailPageFile field.
+    Windows-only, available commit-space in bytes.  This annotation is computed
+    from the PERFORMANCE_INFORMATION structure by substracting the CommitTotal
+    field from the CommitLimit field.
   type: string
   ping: true
 
@@ -152,6 +157,11 @@ Bug_1086977:
   description: >
     Mac-only annotation which should be present only if Firefox crashed when
     loading a facebook plugin.
+  type: string
+
+Bug_1541161:
+  description: >
+    Dump JS Stack in case loadinfo is null within NewChannelFromURIWithProxyFlagsInternal().
   type: string
 
 BuildID:
@@ -251,6 +261,12 @@ DeviceResetReason:
     Reason why a DirectX device has been reset, Windows only.
   type: string
 
+DOMFissionEnabled:
+  description: >
+    Set to 1 when DOM fission is enabled, and subframes are potentially loaded
+    in a separate process.
+  type: boolean
+
 DOMIPCEnabled:
   description: >
     Set to 1 when a tab is running in a content process
@@ -267,14 +283,6 @@ EventLoopNestingLevel:
     event loop and indicates the nesting level.
   type: integer
   ping: true
-
-ExecutableName:
-  description: >
-    The name of the last executable that was launched via the nsIProcess class.
-    Multiple executables can be launched at the same time from one or more
-    threads so this annotation might not always contain the correct value. To
-    be removed once bug 1386760 is fixed.
-  type: string
 
 ExpectedStreamLen:
   description: >
@@ -358,6 +366,15 @@ IAccessibleConfig:
     Set when something is seriously wrong with the IAccessible configuration in
     the computer's registry. The value is always set to "NoSystemTypeLibOrPS"
   type: string
+
+IndexedDBShutdownTimeout:
+  description: >
+    This annotation is present if IndexedDB shutdown was not finished in time
+    and the browser was crashed instead of waiting for IndexedDB shutdown to
+    finish. The condition that caused the hang is contained in the annotation.
+  type: string
+  content: false
+  ping: true
 
 InstallTime:
   description: >
@@ -457,6 +474,16 @@ IsGarbageCollecting:
   type: boolean
   ping: true
 
+IsWayland:
+  description: >
+    If true then the Wayland windowing system was in use.
+  type: boolean
+
+IsWaylandDRM:
+  description: >
+    If true then the Wayland DRM backend was in use.
+  type: boolean
+
 JavaStackTrace:
   description: >
     Java stack trace, only present on Firefox for Android if we encounter an
@@ -485,6 +512,25 @@ LauncherProcessState:
     match with one of the values in the
     mozilla::LauncherRegistryInfo::EnableState enum
   type: integer
+
+LocalStorageShutdownTimeout:
+  description: >
+    This annotation is present if LocalStorage shutdown was not finished in time
+    and the browser was crashed instead of waiting for LocalStorage shutdown to
+    finish. The condition that caused the hang is contained in the annotation.
+    The condition is constructed by stringifying status of global arrays and
+    hash tables that blocked LocalStorage shutdown (gPrepareDatastoreOps,
+    gDatastores and gLiveDatabases). gDatastores and gLiveDatabases currently
+    only report the number of elements. gPrepareDatastoreOps reports the number
+    of elements and status of individual elements (duplicit entries are removed):
+    "gPrepareDatastoreOps: N (element1, element2, elementN)" where N is the
+    number of elements. Status of individual elements is constructed by taking
+    PrepareDatastoreOp's sanitized origin string, stringified state and
+    stringified nested state. A full example:
+    "gPrepareDatastoreOps: 1 (http://aaa.aaa.aaa*Nesting*DatabaseWorkOpen)"
+  type: string
+  content: false
+  ping: true
 
 LowCommitSpaceEvents:
   description: >
@@ -738,9 +784,9 @@ ThreadIdNameMapping:
 
 TotalPageFile:
   description: >
-    Windows-only, current committed memory limit. This annotation is
-    populated with the contents of the MEMORYSTATUSEX's structure
-    ullTotalPageFile field.
+    Windows-only, maximum amount of memory that can be committed.  This
+    annotation is populated with the contents of the PERFORMANCE_INFORMATION's
+    structure CommitLimit field.
   type: string
   ping: true
 

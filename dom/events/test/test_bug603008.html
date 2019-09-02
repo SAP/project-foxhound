@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=508906
 -->
 <head>
   <title>Test for Bug 603008</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -93,7 +93,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
   return windowUtils.sendTouchEvent(aType,
                                     ids, xs, ys, rxs, rys,
                                     rotations, forces,
-                                    ids.length, aModifiers, 0);
+                                    aModifiers, 0);
 }
 
 function touchEvent(aOptions) {
@@ -407,7 +407,7 @@ function testPreventDefault() {
     aEvent.preventDefault();
   }
 
-  let tests = [
+  let subTests = [
     [{ name: "touchstart", prevent: false },
      { name: "touchmove", prevent: false },
      { name: "touchmove", prevent: false },
@@ -446,9 +446,9 @@ function testPreventDefault() {
       target.removeEventListener(aTest.name, preventFunction);
   }
 
-  for (var i = 0; i < tests.length; i++) {
-    for (var j = 0; j < tests[i].length; j++) {
-      dotest(tests[i][j]);
+  for (var i = 0; i < subTests.length; i++) {
+    for (var j = 0; j < subTests[i].length; j++) {
+      dotest(subTests[i][j]);
     }
   }
 

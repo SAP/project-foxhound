@@ -31,6 +31,8 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/FlushType.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PseudoStyleType.h"
 #include "mozilla/RustCell.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/UniquePtr.h"
@@ -82,7 +84,7 @@ namespace css {
 struct URLValue;
 }  // namespace css
 namespace dom {
-struct AnimationFilter;
+struct GetAnimationsOptions;
 struct ScrollIntoViewOptions;
 struct ScrollToOptions;
 class DOMIntersectionObserver;
@@ -251,7 +253,7 @@ class Element : public FragmentOrElement {
   /**
    * Make focus on this element.
    */
-  virtual void Focus(mozilla::ErrorResult& aError);
+  virtual void Focus(const FocusOptions& aOptions, ErrorResult& aError);
 
   /**
    * Show blur and clear focus.
@@ -458,7 +460,7 @@ class Element : public FragmentOrElement {
     }
   }
 
-  bool GetBindingURL(Document* aDocument, css::URLValue** aResult);
+  mozilla::StyleUrlOrNone GetBindingURL(Document* aDocument);
 
   Directionality GetComputedDirectionality() const;
 
@@ -651,10 +653,9 @@ class Element : public FragmentOrElement {
 
   void UpdateEditableState(bool aNotify) override;
 
-  nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                      nsIContent* aBindingParent) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
-  void UnbindFromTree(bool aDeep = true, bool aNullParent = true) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
   /**
    * Normalizes an attribute name and returns it as a nodeinfo if an attribute
@@ -1173,22 +1174,25 @@ class Element : public FragmentOrElement {
     // If there is already an active capture, ignore this request. This would
     // occur if a splitter, frame resizer, etc had already captured and we don't
     // want to override those.
-    if (!nsIPresShell::GetCapturingContent()) {
-      nsIPresShell::SetCapturingContent(
-          this, CAPTURE_PREVENTDRAG |
-                    (aRetargetToElement ? CAPTURE_RETARGETTOELEMENT : 0));
+    if (!PresShell::GetCapturingContent()) {
+      PresShell::SetCapturingContent(
+          this, CaptureFlags::PreventDragStart |
+                    (aRetargetToElement ? CaptureFlags::RetargetToElement
+                                        : CaptureFlags::None));
     }
   }
 
   void SetCaptureAlways(bool aRetargetToElement) {
-    nsIPresShell::SetCapturingContent(
-        this, CAPTURE_PREVENTDRAG | CAPTURE_IGNOREALLOWED |
-                  (aRetargetToElement ? CAPTURE_RETARGETTOELEMENT : 0));
+    PresShell::SetCapturingContent(
+        this, CaptureFlags::PreventDragStart |
+                  CaptureFlags::IgnoreAllowedState |
+                  (aRetargetToElement ? CaptureFlags::RetargetToElement
+                                      : CaptureFlags::None));
   }
 
   void ReleaseCapture() {
-    if (nsIPresShell::GetCapturingContent() == this) {
-      nsIPresShell::SetCapturingContent(nullptr, 0);
+    if (PresShell::GetCapturingContent() == this) {
+      PresShell::ReleaseCapturingContent();
     }
   }
 
@@ -1242,9 +1246,10 @@ class Element : public FragmentOrElement {
   }
 
  private:
-  void ScrollIntoView(const ScrollIntoViewOptions& aOptions);
+  MOZ_CAN_RUN_SCRIPT void ScrollIntoView(const ScrollIntoViewOptions& aOptions);
 
  public:
+  MOZ_CAN_RUN_SCRIPT
   void ScrollIntoView(const BooleanOrScrollIntoViewOptions& aObject);
   MOZ_CAN_RUN_SCRIPT void Scroll(double aXScroll, double aYScroll);
   MOZ_CAN_RUN_SCRIPT void Scroll(const ScrollToOptions& aOptions);
@@ -1294,6 +1299,21 @@ class Element : public FragmentOrElement {
               : 0;
   }
 
+  MOZ_CAN_RUN_SCRIPT double ClientHeightDouble() {
+    return nsPresContext::AppUnitsToDoubleCSSPixels(
+        GetClientAreaRect().Height());
+  }
+
+  MOZ_CAN_RUN_SCRIPT double ClientWidthDouble() {
+    return nsPresContext::AppUnitsToDoubleCSSPixels(
+        GetClientAreaRect().Width());
+  }
+
+  // This function will return the block size of first line box, no matter if
+  // the box is 'block' or 'inline'. The return unit is pixel. If the element
+  // can't get a primary frame, we will return be zero.
+  double FirstLineBoxBSize() const;
+
   already_AddRefed<Flex> GetAsFlexContainer();
   void GetGridFragments(nsTArray<RefPtr<Grid>>& aResult);
 
@@ -1318,7 +1338,7 @@ class Element : public FragmentOrElement {
   // Note: GetAnimations will flush style while GetAnimationsUnsorted won't.
   // Callers must keep this element alive because flushing style may destroy
   // this element.
-  void GetAnimations(const AnimationFilter& filter,
+  void GetAnimations(const GetAnimationsOptions& aOptions,
                      nsTArray<RefPtr<Animation>>& aAnimations);
   static void GetAnimationsUnsorted(Element* aElement,
                                     PseudoStyleType aPseudoType,
@@ -1362,6 +1382,7 @@ class Element : public FragmentOrElement {
    * @param aFlags      Extra flags for the dispatching event.  The true flags
    *                    will be respected.
    */
+  MOZ_CAN_RUN_SCRIPT
   static nsresult DispatchClickEvent(nsPresContext* aPresContext,
                                      WidgetInputEvent* aSourceEvent,
                                      nsIContent* aTarget, bool aFullDispatch,
@@ -1376,6 +1397,7 @@ class Element : public FragmentOrElement {
    * If aPresContext is nullptr, this does nothing.
    */
   using nsIContent::DispatchEvent;
+  MOZ_CAN_RUN_SCRIPT
   static nsresult DispatchEvent(nsPresContext* aPresContext,
                                 WidgetEvent* aEvent, nsIContent* aTarget,
                                 bool aFullDispatch, nsEventStatus* aStatus);
@@ -1383,6 +1405,14 @@ class Element : public FragmentOrElement {
   bool IsDisplayContents() const {
     return HasServoData() && Servo_Element_IsDisplayContents(this);
   }
+
+  /*
+   * https://html.spec.whatwg.org/#being-rendered
+   *
+   * With a gotcha for display contents:
+   *   https://github.com/whatwg/html/issues/1837
+   */
+  bool IsRendered() const { return GetPrimaryFrame() || IsDisplayContents(); }
 
   const nsAttrValue* GetParsedAttr(const nsAtom* aAttr) const {
     return mAttrs.GetAttr(aAttr);
@@ -1748,15 +1778,11 @@ class Element : public FragmentOrElement {
    *        principal is directly responsible for the attribute change.
    * @param aNotify Whether we plan to notify document observers.
    */
-  // Note that this is inlined so that when subclasses call it it gets
-  // inlined.  Those calls don't go through a vtable.
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,
                                 const nsAttrValue* aOldValue,
                                 nsIPrincipal* aMaybeScriptedPrincipal,
-                                bool aNotify) {
-    return NS_OK;
-  }
+                                bool aNotify);
 
   /**
    * This function shall be called just before the id attribute changes. It will
@@ -1866,6 +1892,7 @@ class Element : public FragmentOrElement {
   /**
    * Handle default actions for link event if the event isn't consumed yet.
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult PostHandleEventForLinks(EventChainPostVisitor& aVisitor);
 
   /**
@@ -1919,7 +1946,7 @@ class Element : public FragmentOrElement {
   EventStates mState;
   // Per-node data managed by Servo.
   //
-  // There should not be data on nodes that are in the flattened tree, or
+  // There should not be data on nodes that are not in the flattened tree, or
   // descendants of display: none elements.
   mozilla::RustCell<ServoNodeData*> mServoData;
 

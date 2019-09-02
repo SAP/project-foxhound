@@ -1,5 +1,5 @@
 /**
- * @fileoverview Defines the environment when in the browser.xul window.
+ * @fileoverview Defines the environment when in the browser.xhtml window.
  *               Imports many globals from various files.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -23,7 +23,7 @@ const rootDir = helpers.rootDir;
 // When updating EXTRA_SCRIPTS or MAPPINGS, be sure to also update the
 // 'support-files' config in `tools/lint/eslint.yml`.
 
-// These are scripts not loaded from browser.xul or global-scripts.inc
+// These are scripts not loaded from browser.xhtml or global-scripts.inc
 // but via other includes.
 const EXTRA_SCRIPTS = [
   "browser/base/content/nsContextMenu.js",
@@ -38,8 +38,8 @@ const extraDefinitions = [
   // Via Components.utils, defineModuleGetter, defineLazyModuleGetters or
   // defineLazyScriptGetter (and map to
   // single) variable.
-  {name: "XPCOMUtils", writable: false},
-  {name: "Task", writable: false},
+  { name: "XPCOMUtils", writable: false },
+  { name: "Task", writable: false },
 ];
 
 // Some files in global-scripts.inc need mapping to specific locations.
@@ -51,13 +51,12 @@ const MAPPINGS = {
   "places-tree.js": "browser/components/places/content/places-tree.js",
 };
 
-const globalScriptsRegExp =
-  /^\s*Services.scriptloader.loadSubScript\(\"(.*?)\", this\);$/;
+const globalScriptsRegExp = /^\s*Services.scriptloader.loadSubScript\(\"(.*?)\", this\);$/;
 
 function getGlobalScriptIncludes(scriptPath) {
   let fileData;
   try {
-    fileData = fs.readFileSync(scriptPath, {encoding: "utf8"});
+    fileData = fs.readFileSync(scriptPath, { encoding: "utf8" });
   } catch (ex) {
     // The file isn't present, so this isn't an m-c repository.
     return null;
@@ -71,9 +70,12 @@ function getGlobalScriptIncludes(scriptPath) {
     let match = line.match(globalScriptsRegExp);
     if (match) {
       let sourceFile = match[1]
-                .replace("chrome://browser/content/search/", "browser/components/search/content/")
-                .replace("chrome://browser/content/", "browser/base/content/")
-                .replace("chrome://global/content/", "toolkit/content/");
+        .replace(
+          "chrome://browser/content/search/",
+          "browser/components/search/content/"
+        )
+        .replace("chrome://browser/content/", "browser/base/content/")
+        .replace("chrome://global/content/", "toolkit/content/");
 
       for (let mapping of Object.getOwnPropertyNames(MAPPINGS)) {
         if (sourceFile.includes(mapping)) {
@@ -110,7 +112,8 @@ function getScriptGlobals() {
     } catch (e) {
       console.error(`Could not load globals from file ${fileName}: ${e}`);
       console.error(
-        `You may need to update the mappings in ${module.filename}`);
+        `You may need to update the mappings in ${module.filename}`
+      );
       throw new Error(`Could not load globals from file ${fileName}: ${e}`);
     }
   }
@@ -133,6 +136,6 @@ function getMozillaCentralItems() {
   };
 }
 
-module.exports = helpers.isMozillaCentralBased() ?
- getMozillaCentralItems() :
- helpers.getSavedEnvironmentItems("browser-window");
+module.exports = helpers.isMozillaCentralBased()
+  ? getMozillaCentralItems()
+  : helpers.getSavedEnvironmentItems("browser-window");

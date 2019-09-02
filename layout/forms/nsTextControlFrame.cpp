@@ -23,7 +23,6 @@
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
-#include "nsIPresShell.h"
 
 #include <algorithm>
 #include "nsRange.h"  //for selection setting helper func
@@ -33,6 +32,7 @@
 #include "nsILayoutHistoryState.h"
 
 #include "nsFocusManager.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/PresState.h"
 #include "nsAttrValueInlines.h"
 #include "mozilla/dom/Selection.h"
@@ -51,8 +51,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsIFrame* NS_NewTextControlFrame(nsIPresShell* aPresShell,
-                                 ComputedStyle* aStyle) {
+nsIFrame* NS_NewTextControlFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell)
       nsTextControlFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -113,7 +112,7 @@ class nsTextControlFrame::nsAnonDivObserver final
 nsTextControlFrame::nsTextControlFrame(ComputedStyle* aStyle,
                                        nsPresContext* aPresContext)
     : nsContainerFrame(aStyle, aPresContext, kClassID),
-      mFirstBaseline(NS_INTRINSIC_WIDTH_UNKNOWN),
+      mFirstBaseline(NS_INTRINSIC_ISIZE_UNKNOWN),
       mEditorHasBeenInitialized(false),
       mIsProcessing(false)
 #ifdef DEBUG
@@ -165,8 +164,9 @@ LogicalSize nsTextControlFrame::CalcIntrinsicSize(
   RefPtr<nsFontMetrics> fontMet =
       nsLayoutUtils::GetFontMetricsForFrame(this, aFontSizeInflation);
 
-  lineHeight = ReflowInput::CalcLineHeight(GetContent(), Style(), PresContext(),
-                                           NS_AUTOHEIGHT, aFontSizeInflation);
+  lineHeight =
+      ReflowInput::CalcLineHeight(GetContent(), Style(), PresContext(),
+                                  NS_UNCONSTRAINEDSIZE, aFontSizeInflation);
   charWidth = fontMet->AveCharWidth();
   charMaxAdvance = fontMet->MaxAdvance();
 
@@ -582,19 +582,22 @@ void nsTextControlFrame::Reflow(nsPresContext* aPresContext,
           aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm));
   aDesiredSize.SetSize(wm, finalSize);
 
-  // Calculate the baseline and store it in mFirstBaseline.
-  nscoord lineHeight = aReflowInput.ComputedBSize();
-  float inflation = nsLayoutUtils::FontSizeInflationFor(this);
-  if (!IsSingleLineTextControl()) {
-    lineHeight = ReflowInput::CalcLineHeight(
-        GetContent(), Style(), PresContext(), NS_AUTOHEIGHT, inflation);
-  }
-  RefPtr<nsFontMetrics> fontMet =
-      nsLayoutUtils::GetFontMetricsForFrame(this, inflation);
-  mFirstBaseline = nsLayoutUtils::GetCenteredFontBaseline(fontMet, lineHeight,
-                                                          wm.IsLineInverted()) +
-                   aReflowInput.ComputedLogicalBorderPadding().BStart(wm);
-  aDesiredSize.SetBlockStartAscent(mFirstBaseline);
+  if (!aReflowInput.mStyleDisplay->IsContainLayout()) {
+    // Calculate the baseline and store it in mFirstBaseline.
+    nscoord lineHeight = aReflowInput.ComputedBSize();
+    float inflation = nsLayoutUtils::FontSizeInflationFor(this);
+    if (!IsSingleLineTextControl()) {
+      lineHeight =
+          ReflowInput::CalcLineHeight(GetContent(), Style(), PresContext(),
+                                      NS_UNCONSTRAINEDSIZE, inflation);
+    }
+    RefPtr<nsFontMetrics> fontMet =
+        nsLayoutUtils::GetFontMetricsForFrame(this, inflation);
+    mFirstBaseline = nsLayoutUtils::GetCenteredFontBaseline(
+                         fontMet, lineHeight, wm.IsLineInverted()) +
+                     aReflowInput.ComputedLogicalBorderPadding().BStart(wm);
+    aDesiredSize.SetBlockStartAscent(mFirstBaseline);
+  }  // else: we're layout-contained, and so we have no baseline.
 
   // overflow handling
   aDesiredSize.SetOverflowAreasToDesiredBounds();
@@ -623,10 +626,10 @@ void nsTextControlFrame::ReflowTextControlChild(
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
 
   ReflowInput kidReflowInput(aPresContext, aReflowInput, aKid, availSize,
-                             nullptr, ReflowInput::CALLER_WILL_INIT);
+                             Nothing(), ReflowInput::CALLER_WILL_INIT);
   // Override padding with our computed padding in case we got it from theming
   // or percentage
-  kidReflowInput.Init(aPresContext, nullptr, nullptr,
+  kidReflowInput.Init(aPresContext, Nothing(), nullptr,
                       &aReflowInput.ComputedPhysicalPadding());
 
   // Set computed width and computed height for the child
@@ -709,7 +712,7 @@ void nsTextControlFrame::SetFocus(bool aOn, bool aRepaint) {
     return;
   }
 
-  nsIPresShell* presShell = PresContext()->GetPresShell();
+  mozilla::PresShell* presShell = PresContext()->GetPresShell();
   RefPtr<nsCaret> caret = presShell->GetCaret();
   if (!caret) {
     return;
@@ -745,9 +748,8 @@ void nsTextControlFrame::SetFocus(bool aOn, bool aRepaint) {
   // document or by the text input/area. Clear any selection in the
   // document since the focus is now on our independent selection.
 
-  nsCOMPtr<nsISelectionController> selcon = do_QueryInterface(presShell);
   RefPtr<Selection> docSel =
-      selcon->GetSelection(nsISelectionController::SELECTION_NORMAL);
+      presShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
   if (!docSel) {
     return;
   }
@@ -836,7 +838,8 @@ nsresult nsTextControlFrame::SetSelectionInternal(
     return err.StealNSResult();
   }
 
-  selection->AddRange(*range, err);  // NOTE: can destroy the world
+  selection->AddRangeAndSelectFramesAndNotifyListeners(
+      *range, err);  // NOTE: can destroy the world
   if (NS_WARN_IF(err.Failed())) {
     return err.StealNSResult();
   }
@@ -890,8 +893,7 @@ nsresult nsTextControlFrame::SelectAllOrCollapseToEndOfText(bool aSelect) {
       child = child->GetPreviousSibling();
       if (child && child->IsText()) {
         rootNode = child;
-        const nsTextFragment* fragment = child->GetText();
-        numChildren = fragment ? fragment->GetLength() : 0;
+        numChildren = child->AsText()->TextDataLength();
       }
     }
   }
@@ -1332,12 +1334,12 @@ nsTextControlFrame::EditorInitializer::Run() {
   // Need to block script to avoid bug 669767.
   nsAutoScriptBlocker scriptBlocker;
 
-  nsCOMPtr<nsIPresShell> shell = mFrame->PresContext()->GetPresShell();
-  bool observes = shell->ObservesNativeAnonMutationsForPrint();
-  shell->ObserveNativeAnonMutationsForPrint(true);
+  RefPtr<mozilla::PresShell> presShell = mFrame->PresShell();
+  bool observes = presShell->ObservesNativeAnonMutationsForPrint();
+  presShell->ObserveNativeAnonMutationsForPrint(true);
   // This can cause the frame to be destroyed (and call Revoke()).
   mFrame->EnsureEditorInitialized();
-  shell->ObserveNativeAnonMutationsForPrint(observes);
+  presShell->ObserveNativeAnonMutationsForPrint(observes);
 
   // The frame can *still* be destroyed even though we have a scriptblocker,
   // bug 682684.

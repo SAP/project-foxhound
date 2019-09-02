@@ -1,4 +1,7 @@
-AntiTracking.runTest("Storage Access API called in a private window",
+/* import-globals-from antitracking_head.js */
+
+AntiTracking.runTest(
+  "Storage Access API called in a private window",
   // blocking callback
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */
@@ -11,7 +14,9 @@ AntiTracking.runTest("Storage Access API called in a private window",
   // cleanup function
   async _ => {
     await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
     });
   },
   [["dom.storage_access.enabled", true]], // extra prefs

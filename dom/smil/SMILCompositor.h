@@ -33,12 +33,11 @@ class SMILCompositor : public PLDHashEntryHdr {
 
   explicit SMILCompositor(KeyTypePointer aKey)
       : mKey(*aKey), mForceCompositing(false) {}
-  SMILCompositor(SMILCompositor&& toMove)
+  SMILCompositor(SMILCompositor&& toMove) noexcept
       : PLDHashEntryHdr(std::move(toMove)),
         mKey(std::move(toMove.mKey)),
         mAnimationFunctions(std::move(toMove.mAnimationFunctions)),
         mForceCompositing(false) {}
-  ~SMILCompositor() {}
 
   // PLDHashEntryHdr methods
   KeyTypeRef GetKey() const { return mKey; }

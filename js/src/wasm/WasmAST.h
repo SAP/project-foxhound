@@ -127,9 +127,11 @@ class AstValType {
     }
   }
 
-  bool isRefType() const {
+#ifdef ENABLE_WASM_GC
+  bool isNarrowType() const {
     return code() == ValType::AnyRef || code() == ValType::Ref;
   }
+#endif
 
   bool isValid() const { return !(which_ == IsValType && !type_.isValid()); }
 
@@ -400,9 +402,7 @@ enum class AstExprKind {
   ComparisonOperator,
   Const,
   ConversionOperator,
-#ifdef ENABLE_WASM_BULKMEM_OPS
   DataOrElemDrop,
-#endif
   Drop,
   ExtraConversionOperator,
   First,
@@ -410,11 +410,9 @@ enum class AstExprKind {
   GetLocal,
   If,
   Load,
-#ifdef ENABLE_WASM_BULKMEM_OPS
   MemFill,
   MemOrTableCopy,
   MemOrTableInit,
-#endif
   MemoryGrow,
   MemorySize,
   Nop,
@@ -430,6 +428,7 @@ enum class AstExprKind {
   StructNarrow,
 #endif
 #ifdef ENABLE_WASM_REFTYPES
+  TableFill,
   TableGet,
   TableGrow,
   TableSet,
@@ -818,7 +817,6 @@ class AstWake : public AstExpr {
   AstExpr& count() const { return *count_; }
 };
 
-#ifdef ENABLE_WASM_BULKMEM_OPS
 class AstMemOrTableCopy : public AstExpr {
   bool isMem_;
   AstRef destTable_;
@@ -916,9 +914,30 @@ class AstMemOrTableInit : public AstExpr {
   AstExpr& src() const { return *src_; }
   AstExpr& len() const { return *len_; }
 };
-#endif
 
 #ifdef ENABLE_WASM_REFTYPES
+class AstTableFill : public AstExpr {
+  AstRef targetTable_;
+  AstExpr* start_;
+  AstExpr* val_;
+  AstExpr* len_;
+
+ public:
+  static const AstExprKind Kind = AstExprKind::TableFill;
+  explicit AstTableFill(AstRef targetTable, AstExpr* start, AstExpr* val,
+                        AstExpr* len)
+      : AstExpr(Kind, ExprType::Void),
+        targetTable_(targetTable),
+        start_(start),
+        val_(val),
+        len_(len) {}
+
+  AstRef& targetTable() { return targetTable_; }
+  AstExpr& start() const { return *start_; }
+  AstExpr& val() const { return *val_; }
+  AstExpr& len() const { return *len_; }
+};
+
 class AstTableGet : public AstExpr {
   AstRef targetTable_;
   AstExpr* index_;
@@ -936,20 +955,20 @@ class AstTableGet : public AstExpr {
 
 class AstTableGrow : public AstExpr {
   AstRef targetTable_;
-  AstExpr* delta_;
   AstExpr* initValue_;
+  AstExpr* delta_;
 
  public:
   static const AstExprKind Kind = AstExprKind::TableGrow;
-  AstTableGrow(AstRef targetTable, AstExpr* delta, AstExpr* initValue)
+  AstTableGrow(AstRef targetTable, AstExpr* initValue, AstExpr* delta)
       : AstExpr(Kind, ExprType::I32),
         targetTable_(targetTable),
-        delta_(delta),
-        initValue_(initValue) {}
+        initValue_(initValue),
+        delta_(delta) {}
 
   AstRef& targetTable() { return targetTable_; }
-  AstExpr& delta() const { return *delta_; }
   AstExpr& initValue() const { return *initValue_; }
+  AstExpr& delta() const { return *delta_; }
 };
 
 class AstTableSet : public AstExpr {

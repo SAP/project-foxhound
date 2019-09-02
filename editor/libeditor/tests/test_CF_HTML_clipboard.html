@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=572642
 -->
 <head>
   <title>Test for Bug 572642</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=572642">Mozilla Bug 572642</a>
@@ -43,7 +43,7 @@ function copyCF_HTML(cfhtml, success, failure) {
     }
 
     var flavors = [CF_HTML];
-    if (!cb.hasDataMatchingFlavors(flavors, flavors.length, cb.kGlobalClipboard)) {
+    if (!cb.hasDataMatchingFlavors(flavors, cb.kGlobalClipboard)) {
       setTimeout(function() { copyCF_HTML_worker(successFn, failureFn); }, 100);
       return;
     }
@@ -141,15 +141,7 @@ function runTest() {
   }, SimpleTest.finish);
 }
 
-var isMac = ("nsILocalFileMac" in SpecialPowers.Ci);
-if (isMac) {
-  SimpleTest.waitForFocus(runTest);
-} else {
-  // This test is not yet supported on non-Mac platforms, see bug 574005.
-  todo(false, "Test not supported on this platform");
-  SimpleTest.finish();
-}
-
+SimpleTest.waitForFocus(runTest);
 </script>
 </pre>
 </body>

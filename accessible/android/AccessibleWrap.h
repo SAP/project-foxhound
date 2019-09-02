@@ -19,7 +19,9 @@ class AccessibleWrap : public Accessible {
   AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~AccessibleWrap();
 
-  virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY  // TODO: Mark this as MOZ_CAN_RUN_SCRIPT
+      virtual nsresult
+      HandleAccEvent(AccEvent* aEvent) override;
 
   virtual void Shutdown() override;
 
@@ -78,6 +80,10 @@ class AccessibleWrap : public Accessible {
                                 double* aMaxVal, double* aStep);
 
   virtual role WrapperRole() { return Role(); }
+
+  void GetTextEquiv(nsString& aText);
+
+  bool HandleLiveRegionEvent(AccEvent* aEvent);
 
   static void GetRoleDescription(role aRole,
                                  nsIPersistentProperties* aAttributes,

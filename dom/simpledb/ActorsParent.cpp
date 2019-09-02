@@ -442,8 +442,8 @@ class QuotaClient final : public mozilla::dom::quota::Client {
 
   nsresult InitOrigin(PersistenceType aPersistenceType,
                       const nsACString& aGroup, const nsACString& aOrigin,
-                      const AtomicBool& aCanceled,
-                      UsageInfo* aUsageInfo) override;
+                      const AtomicBool& aCanceled, UsageInfo* aUsageInfo,
+                      bool aForGetUsage) override;
 
   nsresult GetUsageForOrigin(PersistenceType aPersistenceType,
                              const nsACString& aGroup,
@@ -1152,7 +1152,7 @@ nsresult OpenOp::DatabaseWork() {
   nsCOMPtr<nsIFile> dbDirectory;
   nsresult rv = quotaManager->EnsureOriginIsInitialized(
       PERSISTENCE_TYPE_DEFAULT, mSuffix, mGroup, mOrigin,
-      /* aCreateIfNotExists */ true, getter_AddRefs(dbDirectory));
+      getter_AddRefs(dbDirectory));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1610,7 +1610,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
                                  const nsACString& aGroup,
                                  const nsACString& aOrigin,
                                  const AtomicBool& aCanceled,
-                                 UsageInfo* aUsageInfo) {
+                                 UsageInfo* aUsageInfo, bool aForGetUsage) {
   AssertIsOnIOThread();
 
   if (!aUsageInfo) {

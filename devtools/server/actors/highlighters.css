@@ -27,8 +27,8 @@
 }
 
 :-moz-native-anonymous .highlighter-container {
-  --highlighter-guide-color: #08c;
-  --highlighter-content-color: #87ceeb;
+  --highlighter-guide-color: hsl(200, 100%, 40%);
+  --highlighter-content-color: hsl(197, 71%, 73%);
   --highlighter-bubble-text-color: hsl(216, 33%, 97%);
   --highlighter-bubble-background-color: hsl(214, 13%, 24%);
   --highlighter-bubble-border-color: rgba(255, 255, 255, 0.2);
@@ -39,6 +39,8 @@
   --highlighter-marker-color: #000;
 
   --grey-40: #b1b1b3;
+  --red-40: #ff3b6b;
+  --yellow-60: #d7b600;
 }
 
 /**
@@ -67,12 +69,6 @@
   z-index: 1;
 }
 
-:-moz-native-anonymous .highlighter-container.flexbox {
-  /* Make the flexbox highlighter have a z-index greater than the box-model so
-     it always sits above it. */
-  z-index: 2;
-}
-
 :-moz-native-anonymous .highlighter-container [hidden] {
   display: none;
 }
@@ -85,10 +81,6 @@
 
 :-moz-native-anonymous .box-model-regions {
   opacity: 0.6;
-}
-
-:-moz-native-anonymous .box-model-regions [half-faded] {
-  opacity: 0.5;
 }
 
 /* Box model regions can be faded (see the onlyRegionArea option in
@@ -152,9 +144,6 @@
   text-shadow: none;
 
   border: 1px solid var(--highlighter-bubble-border-color);
-
-  /* The infobar should always be above every other highlighter when it is visible */
-  z-index: 2147483647;
 }
 
 /* Arrows */
@@ -203,6 +192,7 @@
   padding-bottom: 1px;
   display: flex;
   justify-content: center;
+  max-width: 768px;
 }
 
 :-moz-native-anonymous .box-model-infobar-tagname {
@@ -222,11 +212,26 @@
   text-overflow: ellipsis;
 }
 
-:-moz-native-anonymous [class$=infobar-dimensions] {
-  color: var(--highlighter-infobar-color);
+:-moz-native-anonymous [class$=infobar-dimensions],
+:-moz-native-anonymous [class$=infobar-grid-type],
+:-moz-native-anonymous [class$=infobar-flex-type] {
   border-inline-start: 1px solid #5a6169;
   margin-inline-start: 6px;
   padding-inline-start: 6px;
+}
+
+:-moz-native-anonymous [class$=infobar-grid-type]:empty,
+:-moz-native-anonymous [class$=infobar-flex-type]:empty {
+  display: none;
+}
+
+:-moz-native-anonymous [class$=infobar-dimensions] {
+  color: var(--highlighter-infobar-color);
+}
+
+:-moz-native-anonymous [class$=infobar-grid-type],
+:-moz-native-anonymous [class$=infobar-flex-type] {
+  color: var(--grey-40);
 }
 
 /* CSS Grid Highlighter */
@@ -732,6 +737,34 @@
 :-moz-native-anonymous .accessible-infobar-audit .accessible-contrast-ratio-separator:before {
   content: "-";
   margin-inline-start: 3px;
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-text-label:before {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  content: "";
+  margin-inline-end: 4px;
+  vertical-align: -2px;
+  background-image: none;
+  background-position: center;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-text-label.fail:before {
+  background-image: url(chrome://devtools/skin/images/error-small.svg);
+  fill: var(--red-40);
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-text-label.WARNING:before {
+  background-image: url(chrome://devtools/skin/images/alert-small.svg);
+  fill: var(--yellow-60);
+}
+
+:-moz-native-anonymous .accessible-infobar-audit .accessible-text-label.BEST_PRACTICES:before {
+  background-image: url(chrome://devtools/skin/images/info-small.svg);
 }
 
 :-moz-native-anonymous .accessible-infobar-name:not(:empty) {

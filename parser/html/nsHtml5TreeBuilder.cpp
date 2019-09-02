@@ -164,8 +164,7 @@ void nsHtml5TreeBuilder::startTokenization(nsHtml5Tokenizer* self) {
           createStackNode(elementName, elementName->getCamelCaseName(), elt);
       currentPtr++;
       stack[currentPtr] = node;
-      tokenizer->setStateAndEndTagExpectation(nsHtml5Tokenizer::DATA,
-                                              contextName);
+      tokenizer->setState(nsHtml5Tokenizer::DATA);
       mode = FRAMESET_OK;
     } else if (contextNamespace == kNameSpaceID_MathML) {
       nsHtml5ElementName* elementName = nsHtml5ElementName::ELT_MATH;
@@ -180,8 +179,7 @@ void nsHtml5TreeBuilder::startTokenization(nsHtml5Tokenizer* self) {
           createStackNode(elementName, elt, elementName->getName(), false);
       currentPtr++;
       stack[currentPtr] = node;
-      tokenizer->setStateAndEndTagExpectation(nsHtml5Tokenizer::DATA,
-                                              contextName);
+      tokenizer->setState(nsHtml5Tokenizer::DATA);
       mode = FRAMESET_OK;
     } else {
       nsHtml5StackNode* node =
@@ -195,25 +193,20 @@ void nsHtml5TreeBuilder::startTokenization(nsHtml5Tokenizer* self) {
       formPointer = getFormPointerForContext(contextNode);
       if (nsGkAtoms::title == contextName ||
           nsGkAtoms::textarea == contextName) {
-        tokenizer->setStateAndEndTagExpectation(nsHtml5Tokenizer::RCDATA,
-                                                contextName);
+        tokenizer->setState(nsHtml5Tokenizer::RCDATA);
       } else if (nsGkAtoms::style == contextName ||
                  nsGkAtoms::xmp == contextName ||
                  nsGkAtoms::iframe == contextName ||
                  nsGkAtoms::noembed == contextName ||
                  nsGkAtoms::noframes == contextName ||
                  (scriptingEnabled && nsGkAtoms::noscript == contextName)) {
-        tokenizer->setStateAndEndTagExpectation(nsHtml5Tokenizer::RAWTEXT,
-                                                contextName);
+        tokenizer->setState(nsHtml5Tokenizer::RAWTEXT);
       } else if (nsGkAtoms::plaintext == contextName) {
-        tokenizer->setStateAndEndTagExpectation(nsHtml5Tokenizer::PLAINTEXT,
-                                                contextName);
+        tokenizer->setState(nsHtml5Tokenizer::PLAINTEXT);
       } else if (nsGkAtoms::script == contextName) {
-        tokenizer->setStateAndEndTagExpectation(nsHtml5Tokenizer::SCRIPT_DATA,
-                                                contextName);
+        tokenizer->setState(nsHtml5Tokenizer::SCRIPT_DATA);
       } else {
-        tokenizer->setStateAndEndTagExpectation(nsHtml5Tokenizer::DATA,
-                                                contextName);
+        tokenizer->setState(nsHtml5Tokenizer::DATA);
       }
     }
     contextName = nullptr;
@@ -277,7 +270,9 @@ void nsHtml5TreeBuilder::comment(char16_t* buf, int32_t start, int32_t length) {
         appendComment(stack[0]->node, buf, start, length);
         return;
       }
-      default: { break; }
+      default: {
+        break;
+      }
     }
   }
   flushCharacters();
@@ -640,7 +635,9 @@ void nsHtml5TreeBuilder::eof() {
       case AFTER_FRAMESET:
       case AFTER_AFTER_BODY:
       case AFTER_AFTER_FRAMESET:
-      default: { NS_HTML5_BREAK(eofloop); }
+      default: {
+        NS_HTML5_BREAK(eofloop);
+      }
     }
   }
 eofloop_end:;
@@ -730,7 +727,7 @@ starttagloop:
               errHtmlStartTagInForeignContext(name);
               if (!fragment) {
                 while (!isSpecialParentInForeign(stack[currentPtr])) {
-                  pop();
+                  popForeign(-1, -1);
                 }
                 NS_HTML5_CONTINUE(starttagloop);
               }
@@ -1102,11 +1099,11 @@ starttagloop:
           case OBJECT:
           case TABLE:
           case AREA_OR_WBR:
+          case KEYGEN:
           case BR:
           case EMBED:
           case IMG:
           case INPUT:
-          case KEYGEN:
           case HR:
           case TEXTAREA:
           case XMP:
@@ -1344,7 +1341,8 @@ starttagloop:
             }
             case BR:
             case EMBED:
-            case AREA_OR_WBR: {
+            case AREA_OR_WBR:
+            case KEYGEN: {
               reconstructTheActiveFormattingElements();
               MOZ_FALLTHROUGH;
             }
@@ -1370,7 +1368,6 @@ starttagloop:
               NS_HTML5_CONTINUE(starttagloop);
             }
             case IMG:
-            case KEYGEN:
             case INPUT: {
               reconstructTheActiveFormattingElements();
               appendVoidElementToCurrentMayFoster(elementName, attributes,
@@ -1767,8 +1764,7 @@ starttagloop:
             }
           }
           case INPUT:
-          case TEXTAREA:
-          case KEYGEN: {
+          case TEXTAREA: {
             errStartTagWithSelectOpen(name);
             eltPos = findLastInTableScope(nsGkAtoms::select);
             if (eltPos == nsHtml5TreeBuilder::NOT_FOUND_ON_STACK) {
@@ -2130,7 +2126,9 @@ nsHtml5String nsHtml5TreeBuilder::extractCharsetFromContent(
             charsetState = CHARSET_C;
             continue;
           }
-          default: { continue; }
+          default: {
+            continue;
+          }
         }
       }
       case CHARSET_C: {
@@ -2224,7 +2222,9 @@ nsHtml5String nsHtml5TreeBuilder::extractCharsetFromContent(
             charsetState = CHARSET_EQUALS;
             continue;
           }
-          default: { return nullptr; }
+          default: {
+            return nullptr;
+          }
         }
       }
       case CHARSET_EQUALS: {
@@ -2259,7 +2259,9 @@ nsHtml5String nsHtml5TreeBuilder::extractCharsetFromContent(
             end = i;
             NS_HTML5_BREAK(charsetloop);
           }
-          default: { continue; }
+          default: {
+            continue;
+          }
         }
       }
       case CHARSET_DOUBLE_QUOTED: {
@@ -2268,7 +2270,9 @@ nsHtml5String nsHtml5TreeBuilder::extractCharsetFromContent(
             end = i;
             NS_HTML5_BREAK(charsetloop);
           }
-          default: { continue; }
+          default: {
+            continue;
+          }
         }
       }
       case CHARSET_UNQUOTED: {
@@ -2282,7 +2286,9 @@ nsHtml5String nsHtml5TreeBuilder::extractCharsetFromContent(
             end = i;
             NS_HTML5_BREAK(charsetloop);
           }
-          default: { continue; }
+          default: {
+            continue;
+          }
         }
       }
     }
@@ -2358,7 +2364,7 @@ void nsHtml5TreeBuilder::endTag(nsHtml5ElementName* elementName) {
         }
         if (stack[eltPos]->name == name) {
           while (currentPtr >= eltPos) {
-            popForeign(origPos);
+            popForeign(origPos, eltPos);
           }
           NS_HTML5_BREAK(endtagloop);
         }
@@ -2504,7 +2510,9 @@ void nsHtml5TreeBuilder::endTag(nsHtml5ElementName* elementName) {
           case TEMPLATE: {
             break;
           }
-          default: { errStrayEndTag(name); }
+          default: {
+            errStrayEndTag(name);
+          }
         }
         MOZ_FALLTHROUGH;
       }
@@ -2827,6 +2835,7 @@ void nsHtml5TreeBuilder::endTag(nsHtml5ElementName* elementName) {
             break;
           }
           case AREA_OR_WBR:
+          case KEYGEN:
 #ifdef ENABLE_VOID_MENUITEM
           case MENUITEM:
 #endif
@@ -2835,7 +2844,6 @@ void nsHtml5TreeBuilder::endTag(nsHtml5ElementName* elementName) {
           case IMG:
           case IMAGE:
           case INPUT:
-          case KEYGEN:
           case HR:
           case IFRAME:
           case NOEMBED:
@@ -3295,7 +3303,9 @@ void nsHtml5TreeBuilder::generateImpliedEndTagsExceptFor(nsAtom* name) {
         pop();
         continue;
       }
-      default: { return; }
+      default: {
+        return;
+      }
     }
   }
 }
@@ -3313,7 +3323,9 @@ void nsHtml5TreeBuilder::generateImpliedEndTags() {
         pop();
         continue;
       }
-      default: { return; }
+      default: {
+        return;
+      }
     }
   }
 }
@@ -4089,9 +4101,9 @@ void nsHtml5TreeBuilder::pop() {
   node->release(this);
 }
 
-void nsHtml5TreeBuilder::popForeign(int32_t origPos) {
+void nsHtml5TreeBuilder::popForeign(int32_t origPos, int32_t eltPos) {
   nsHtml5StackNode* node = stack[currentPtr];
-  if (origPos != currentPtr) {
+  if (origPos != currentPtr || eltPos != currentPtr) {
     markMalformedIfScript(node->node);
   }
   MOZ_ASSERT(debugOnlyClearLastStackSlot());
@@ -4488,7 +4500,9 @@ bool nsHtml5TreeBuilder::charBufferContainsNonWhitespace() {
       case '\f': {
         continue;
       }
-      default: { return true; }
+      default: {
+        return true;
+      }
     }
   }
   return false;

@@ -17,17 +17,23 @@ from taskgraph.util.schema import (
     resolve_keyed_by,
 )
 from taskgraph.util.taskcluster import get_artifact_prefix
-from taskgraph.util.partners import check_if_partners_enabled
+from taskgraph.util.partners import check_if_partners_enabled, get_partner_config_by_kind
 from taskgraph.util.platforms import archive_format, executable_extension
 from taskgraph.util.workertypes import worker_type_implementation
 from taskgraph.transforms.task import task_description_schema
-from taskgraph.transforms.repackage import PACKAGE_FORMATS
+from taskgraph.transforms.repackage import PACKAGE_FORMATS as PACKAGE_FORMATS_VANILLA
 from voluptuous import Required, Optional
 
 
 def _by_platform(arg):
     return optionally_keyed_by('build-platform', arg)
 
+
+# When repacking the stub installer we need to pass a zip file and package name to the
+# repackage task. This is not needed for vanilla stub but analogous to the full installer.
+PACKAGE_FORMATS = copy.deepcopy(PACKAGE_FORMATS_VANILLA)
+PACKAGE_FORMATS['installer-stub']['inputs']['package'] = 'target-stub{archive_format}'
+PACKAGE_FORMATS['installer-stub']['args'].extend(["--package-name", "{package-name}"])
 
 packaging_description_schema = schema.extend({
     # depname is used in taskref's to identify the taskID of the signed things
@@ -128,8 +134,13 @@ def make_job_description(config, jobs):
 
         attributes['repackage_type'] = 'repackage'
 
-        level = config.params['level']
         repack_id = job['extra']['repack_id']
+
+        partner_config = get_partner_config_by_kind(config, config.kind)
+        partner, subpartner, _ = repack_id.split('/')
+        repack_stub_installer = partner_config[partner][subpartner].get('repack_stub_installer')
+        if build_platform.startswith('win32') and repack_stub_installer:
+            job['package-formats'].append('installer-stub')
 
         repackage_config = []
         for format in job.get('package-formats'):
@@ -168,11 +179,11 @@ def make_job_description(config, jobs):
         }
 
         if build_platform.startswith('win'):
-            worker_type = 'aws-provisioner-v1/gecko-%s-b-win2012' % level
+            worker_type = 'b-win2012'
             run['use-magic-mh-args'] = False
         else:
             if build_platform.startswith('macosx'):
-                worker_type = 'aws-provisioner-v1/gecko-%s-b-linux' % level
+                worker_type = 'b-linux'
             else:
                 raise NotImplementedError(
                     'Unsupported build_platform: "{}"'.format(build_platform)
@@ -182,7 +193,7 @@ def make_job_description(config, jobs):
             worker['docker-image'] = {"in-tree": "debian7-amd64-build"}
 
         worker['artifacts'] = _generate_task_output_files(
-            dep_job, worker_type_implementation(worker_type),
+            dep_job, worker_type_implementation(config.graph_config, worker_type),
             repackage_config, partner=repack_id,
         )
 
@@ -209,7 +220,8 @@ def make_job_description(config, jobs):
             'run': run,
             'fetches': _generate_download_config(dep_job, build_platform,
                                                  signing_task, partner=repack_id,
-                                                 project=config.params["project"]),
+                                                 project=config.params["project"],
+                                                 repack_stub_installer=repack_stub_installer),
         }
 
         if build_platform.startswith('macosx'):
@@ -222,7 +234,7 @@ def make_job_description(config, jobs):
 
 
 def _generate_download_config(task, build_platform, signing_task, partner=None,
-                              project=None):
+                              project=None, repack_stub_installer=False):
     locale_path = '{}/'.format(partner) if partner else ''
 
     if build_platform.startswith('macosx'):
@@ -235,15 +247,22 @@ def _generate_download_config(task, build_platform, signing_task, partner=None,
             ],
         }
     elif build_platform.startswith('win'):
-        return {
-            signing_task: [
+        download_config = [
+            {
+                'artifact': '{}target.zip'.format(locale_path),
+                'extract': False,
+            },
+            '{}setup.exe'.format(locale_path),
+        ]
+        if build_platform.startswith('win32') and repack_stub_installer:
+            download_config.extend([
                 {
-                    'artifact': '{}target.zip'.format(locale_path),
+                    'artifact': '{}target-stub.zip'.format(locale_path),
                     'extract': False,
                 },
-                '{}setup.exe'.format(locale_path),
-            ],
-        }
+                '{}setup-stub.exe'.format(locale_path),
+            ])
+        return {signing_task: download_config}
 
     raise NotImplementedError('Unsupported build_platform: "{}"'.format(build_platform))
 

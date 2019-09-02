@@ -6,10 +6,8 @@
         style="padding: 10px;"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <stack flex="1">
   <label id="topleft" value="Top Left Corner" left="15" top="15"/>
@@ -180,9 +178,8 @@ function* nextTest()
     $("bottomright").removeAttribute("right");
   }
 
-  // Test that a transition occurs when opening or closing the popup. The transition is
-  // disabled on Linux.
-  if (!navigator.platform.includes("Linux")) {
+  // Test that a transition occurs when opening or closing the popup.
+  if (SpecialPowers.getBoolPref("xul.panel-animations.enabled")) {
     function transitionEnded(event) {
       if ($("animatepanel").state != "open") {
         is($("animatepanel").state, "showing", "state is showing during transitionend");
@@ -195,11 +192,11 @@ function* nextTest()
     }
 
     // Check that the transition occurs for an arrow panel with animate="true"
-    window.addEventListener("transitionend", transitionEnded, false);
+    $("animatepanel").addEventListener("transitionend", transitionEnded, false);
     $("animatepanel").openPopup($("topleft"), "after_start", 0, 0, false, false, null, "start");
     is($("animatepanel").state, "showing", "state is showing");
     yield;
-    window.removeEventListener("transitionend", transitionEnded, false);
+    $("animatepanel").removeEventListener("transitionend", transitionEnded);
 
     synthesizeKey("KEY_Escape");
     ok(!animatedPopupHidden, "animated popup not hidden yet");

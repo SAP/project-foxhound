@@ -45,10 +45,12 @@
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
+#include "js/Date.h"
 #include "js/Debug.h"
 #include "js/HashTable.h"
 #include "js/LocaleSensitive.h"
 #include "js/PropertySpec.h"
+#include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "js/StructuredClone.h"
@@ -97,6 +99,8 @@ using mozilla::Maybe;
 
 using JS::AutoStableStringChars;
 using JS::CompileOptions;
+using JS::RegExpFlag;
+using JS::RegExpFlags;
 using JS::SourceOwnership;
 using JS::SourceText;
 
@@ -224,6 +228,15 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+#ifdef ANDROID
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "android", value)) {
+    return false;
+  }
+
 #ifdef JS_CODEGEN_ARM64
   value = BooleanValue(true);
 #else
@@ -239,6 +252,24 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   value = BooleanValue(false);
 #endif
   if (!JS_SetProperty(cx, info, "arm64-simulator", value)) {
+    return false;
+  }
+
+#ifdef JS_CODEGEN_MIPS32
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "mips32", value)) {
+    return false;
+  }
+
+#ifdef JS_CODEGEN_MIPS64
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "mips64", value)) {
     return false;
   }
 
@@ -465,13 +496,14 @@ static bool MinorGC(JSContext* cx, unsigned argc, Value* vp) {
 #define FOR_EACH_GC_PARAM(_)                                                 \
   _("maxBytes", JSGC_MAX_BYTES, true)                                        \
   _("maxMallocBytes", JSGC_MAX_MALLOC_BYTES, true)                           \
+  _("minNurseryBytes", JSGC_MIN_NURSERY_BYTES, true)                         \
   _("maxNurseryBytes", JSGC_MAX_NURSERY_BYTES, true)                         \
   _("gcBytes", JSGC_BYTES, false)                                            \
   _("gcNumber", JSGC_NUMBER, false)                                          \
   _("mode", JSGC_MODE, true)                                                 \
   _("unusedChunks", JSGC_UNUSED_CHUNKS, false)                               \
   _("totalChunks", JSGC_TOTAL_CHUNKS, false)                                 \
-  _("sliceTimeBudget", JSGC_SLICE_TIME_BUDGET, true)                         \
+  _("sliceTimeBudgetMS", JSGC_SLICE_TIME_BUDGET_MS, true)                    \
   _("markStackLimit", JSGC_MARK_STACK_LIMIT, true)                           \
   _("highFrequencyTimeLimit", JSGC_HIGH_FREQUENCY_TIME_LIMIT, true)          \
   _("highFrequencyLowLimit", JSGC_HIGH_FREQUENCY_LOW_LIMIT, true)            \
@@ -482,9 +514,20 @@ static bool MinorGC(JSContext* cx, unsigned argc, Value* vp) {
   _("dynamicHeapGrowth", JSGC_DYNAMIC_HEAP_GROWTH, true)                     \
   _("dynamicMarkSlice", JSGC_DYNAMIC_MARK_SLICE, true)                       \
   _("allocationThreshold", JSGC_ALLOCATION_THRESHOLD, true)                  \
+  _("allocationThresholdFactor", JSGC_ALLOCATION_THRESHOLD_FACTOR, true)     \
+  _("allocationThresholdFactorAvoidInterrupt",                               \
+    JSGC_ALLOCATION_THRESHOLD_FACTOR_AVOID_INTERRUPT, true)                  \
   _("minEmptyChunkCount", JSGC_MIN_EMPTY_CHUNK_COUNT, true)                  \
   _("maxEmptyChunkCount", JSGC_MAX_EMPTY_CHUNK_COUNT, true)                  \
-  _("compactingEnabled", JSGC_COMPACTING_ENABLED, true)
+  _("compactingEnabled", JSGC_COMPACTING_ENABLED, true)                      \
+  _("minLastDitchGCPeriod", JSGC_MIN_LAST_DITCH_GC_PERIOD, true)             \
+  _("nurseryFreeThresholdForIdleCollection",                                 \
+    JSGC_NURSERY_FREE_THRESHOLD_FOR_IDLE_COLLECTION, true)                   \
+  _("nurseryFreeThresholdForIdleCollectionPercent",                          \
+    JSGC_NURSERY_FREE_THRESHOLD_FOR_IDLE_COLLECTION_PERCENT, true)           \
+  _("pretenureThreshold", JSGC_PRETENURE_THRESHOLD, true)                    \
+  _("pretenureGroupThreshold", JSGC_PRETENURE_GROUP_THRESHOLD, true)         \
+  _("zoneAllocDelayKB", JSGC_ZONE_ALLOC_DELAY_KB, true)
 
 static const struct ParamInfo {
   const char* name;
@@ -687,7 +730,8 @@ static bool WasmBulkMemSupported(JSContext* cx, unsigned argc, Value* vp) {
   }
 #  endif
 #else
-  bool isSupported = false;
+  bool isSupported =
+      cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled();
 #endif
   args.rval().setBoolean(isSupported);
   return true;
@@ -894,8 +938,9 @@ static bool WasmExtractCode(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool WasmHasTier2CompilationCompleted(JSContext* cx, unsigned argc,
-                                             Value* vp) {
+enum class Flag { Tier2Complete, Deserialized };
+
+static bool WasmReturnFlag(JSContext* cx, unsigned argc, Value* vp, Flag flag) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   if (!args.get(0).isObject()) {
@@ -910,8 +955,27 @@ static bool WasmHasTier2CompilationCompleted(JSContext* cx, unsigned argc,
     return false;
   }
 
-  args.rval().set(BooleanValue(!module->module().testingTier2Active()));
+  bool b;
+  switch (flag) {
+    case Flag::Tier2Complete:
+      b = !module->module().testingTier2Active();
+      break;
+    case Flag::Deserialized:
+      b = module->module().loggingDeserialized();
+      break;
+  }
+
+  args.rval().set(BooleanValue(b));
   return true;
+}
+
+static bool WasmHasTier2CompilationCompleted(JSContext* cx, unsigned argc,
+                                             Value* vp) {
+  return WasmReturnFlag(cx, argc, vp, Flag::Tier2Complete);
+}
+
+static bool WasmLoadedFromCache(JSContext* cx, unsigned argc, Value* vp) {
+  return WasmReturnFlag(cx, argc, vp, Flag::Deserialized);
 }
 
 static bool IsLazyFunction(JSContext* cx, unsigned argc, Value* vp) {
@@ -1152,6 +1216,81 @@ static bool GCState(JSContext* cx, unsigned argc, Value* vp) {
   return ReturnStringCopy(cx, args, state);
 }
 
+static bool CurrentGC(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (args.length() != 0) {
+    RootedObject callee(cx, &args.callee());
+    ReportUsageErrorASCII(cx, callee, "Too many arguments");
+    return false;
+  }
+
+  RootedObject result(cx, JS_NewPlainObject(cx));
+  if (!result) {
+    return false;
+  }
+
+  js::gc::GCRuntime& gc = cx->runtime()->gc;
+  const char* state = StateName(gc.state());
+
+  RootedString str(cx, JS_NewStringCopyZ(cx, state));
+  if (!str) {
+    return false;
+  }
+  RootedValue val(cx, StringValue(str));
+  if (!JS_DefineProperty(cx, result, "incrementalState", val,
+                         JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  if (gc.state() == js::gc::State::Sweep) {
+    val = Int32Value(gc.getCurrentSweepGroupIndex());
+    if (!JS_DefineProperty(cx, result, "sweepGroup", val, JSPROP_ENUMERATE)) {
+      return false;
+    }
+  }
+
+  val = BooleanValue(gc.isShrinkingGC());
+  if (!JS_DefineProperty(cx, result, "isShrinking", val, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  val = Int32Value(gc.gcNumber());
+  if (!JS_DefineProperty(cx, result, "number", val, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  val = Int32Value(gc.minorGCCount());
+  if (!JS_DefineProperty(cx, result, "minorCount", val, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  val = Int32Value(gc.majorGCCount());
+  if (!JS_DefineProperty(cx, result, "majorCount", val, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  val = BooleanValue(gc.isFullGc());
+  if (!JS_DefineProperty(cx, result, "isFull", val, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  val = BooleanValue(gc.isCompactingGc());
+  if (!JS_DefineProperty(cx, result, "isCompacting", val, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+#  ifdef DEBUG
+  val = Int32Value(gc.marker.queuePos);
+  if (!JS_DefineProperty(cx, result, "queuePos", val, JSPROP_ENUMERATE)) {
+    return false;
+  }
+#  endif
+
+  args.rval().setObject(*result);
+  return true;
+}
+
 static bool DeterministicGC(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1324,7 +1463,7 @@ static bool NondeterministicGetWeakMapKeys(JSContext* cx, unsigned argc,
   return true;
 }
 
-class HasChildTracer : public JS::CallbackTracer {
+class HasChildTracer final : public JS::CallbackTracer {
   RootedValue child_;
   bool found_;
 
@@ -1770,6 +1909,7 @@ static bool SetupOOMFailure(JSContext* cx, bool failAlways, unsigned argc,
   }
 
   if (targetThread == js::THREAD_TYPE_NONE ||
+      targetThread == js::THREAD_TYPE_WORKER ||
       targetThread >= js::THREAD_TYPE_MAX) {
     JS_ReportErrorASCII(cx, "Invalid thread type specified");
     return false;
@@ -2199,7 +2339,7 @@ static bool GetWaitForAllPromise(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
   RootedNativeObject list(cx, &args[0].toObject().as<NativeObject>());
-  AutoObjectVector promises(cx);
+  RootedObjectVector promises(cx);
   uint32_t count = list->getDenseInitializedLength();
   if (!promises.resize(count)) {
     return false;
@@ -2447,8 +2587,11 @@ static bool ReadGeckoProfilingStack(JSContext* cx, unsigned argc, Value* vp) {
     for (uint32_t i = 0; i < nframes; i++) {
       const char* frameKindStr = nullptr;
       switch (frames[i].kind) {
+        case JS::ProfilingFrameIterator::Frame_BaselineInterpreter:
+          frameKindStr = "baseline-interpreter";
+          break;
         case JS::ProfilingFrameIterator::Frame_Baseline:
-          frameKindStr = "baseline";
+          frameKindStr = "baseline-jit";
           break;
         case JS::ProfilingFrameIterator::Frame_Ion:
           frameKindStr = "ion";
@@ -2460,7 +2603,8 @@ static bool ReadGeckoProfilingStack(JSContext* cx, unsigned argc, Value* vp) {
           frameKindStr = "unknown";
       }
 
-      UniqueChars label = DuplicateString(cx, frames[i].label);
+      UniqueChars label =
+          DuplicateStringToArena(js::StringBufferArena, cx, frames[i].label);
       if (!label) {
         return false;
       }
@@ -2660,6 +2804,11 @@ static bool testingFunc_bailAfter(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static constexpr unsigned JitWarmupResetLimit = 20;
+static_assert(JitWarmupResetLimit <=
+                  unsigned(JSScript::MutableFlags::WarmupResets_MASK),
+              "JitWarmupResetLimit exceeds max value");
+
 static bool testingFunc_inJit(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -2676,7 +2825,7 @@ static bool testingFunc_inJit(JSContext* cx, unsigned argc, Value* vp) {
     // succeeds. Note: This script may have be inlined into its caller.
     if (iter.isJSJit()) {
       iter.script()->resetWarmUpResetCounter();
-    } else if (iter.script()->getWarmUpResetCount() >= 20) {
+    } else if (iter.script()->getWarmUpResetCount() >= JitWarmupResetLimit) {
       return ReturnStringCopy(
           cx, args, "Compilation is being repeatedly prevented. Giving up.");
     }
@@ -2704,7 +2853,7 @@ static bool testingFunc_inIon(JSContext* cx, unsigned argc, Value* vp) {
     // succeeds. Note: This script may have be inlined into its caller.
     if (iter.isIon()) {
       iter.script()->resetWarmUpResetCounter();
-    } else if (iter.script()->getWarmUpResetCount() >= 20) {
+    } else if (iter.script()->getWarmUpResetCount() >= JitWarmupResetLimit) {
       return ReturnStringCopy(
           cx, args, "Compilation is being repeatedly prevented. Giving up.");
     }
@@ -2943,7 +3092,10 @@ class CloneBufferObject : public NativeObject {
       return false;
     }
     auto iter = data->Start();
-    data->ReadBytes(iter, buffer.get(), size);
+    if (!data->ReadBytes(iter, buffer.get(), size)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
     JSString* str = JS_NewStringCopyN(cx, buffer.get(), size);
     if (!str) {
       return false;
@@ -2975,7 +3127,10 @@ class CloneBufferObject : public NativeObject {
       return false;
     }
     auto iter = data->Start();
-    data->ReadBytes(iter, buffer.get(), size);
+    if (!data->ReadBytes(iter, buffer.get(), size)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
 
     auto* rawBuffer = buffer.release();
     JSObject* arrayBuffer = JS::NewArrayBufferWithContents(cx, size, rawBuffer);
@@ -3511,7 +3666,8 @@ struct FindPathHandler {
 
     // Record how we reached this node. This is the last edge on a
     // shortest path to this node.
-    EdgeName edgeName = DuplicateString(cx, edge.name.get());
+    EdgeName edgeName =
+        DuplicateStringToArena(js::StringBufferArena, cx, edge.name.get());
     if (!edgeName) {
       return false;
     }
@@ -3898,13 +4054,13 @@ static bool EvalReturningScope(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RootedScript script(cx);
-  if (!JS::CompileForNonSyntacticScope(cx, options, srcBuf, &script)) {
+  RootedScript script(cx, JS::CompileForNonSyntacticScope(cx, options, srcBuf));
+  if (!script) {
     return false;
   }
 
   if (global) {
-    global = CheckedUnwrapDynamic(global, cx);
+    global = CheckedUnwrapDynamic(global, cx, /* stopAtWindowProxy = */ false);
     if (!global) {
       JS_ReportErrorASCII(cx, "Permission denied to access global");
       return false;
@@ -4002,12 +4158,12 @@ static bool ShellCloneAndExecuteScript(JSContext* cx, unsigned argc,
     return false;
   }
 
-  RootedScript script(cx);
-  if (!JS::Compile(cx, options, srcBuf, &script)) {
+  RootedScript script(cx, JS::Compile(cx, options, srcBuf));
+  if (!script) {
     return false;
   }
 
-  global = CheckedUnwrapDynamic(global, cx);
+  global = CheckedUnwrapDynamic(global, cx, /* stopAtWindowProxy = */ false);
   if (!global) {
     JS_ReportErrorASCII(cx, "Permission denied to access global");
     return false;
@@ -4234,10 +4390,13 @@ static void minorGC(JSContext* cx, JSGCStatus status, void* data) {
   }
 }
 
-// Process global, should really be runtime-local. Also, the final one of these
-// is currently leaked, since they are only deleted when changing.
-MajorGC* prevMajorGC = nullptr;
-MinorGC* prevMinorGC = nullptr;
+// Process global, should really be runtime-local.
+static MajorGC majorGCInfo;
+static MinorGC minorGCInfo;
+
+static void enterNullRealm(JSContext* cx, JSGCStatus status, void* data) {
+  JSAutoNullableRealm enterRealm(cx, nullptr);
+}
 
 } /* namespace gcCallback */
 
@@ -4299,28 +4458,10 @@ static bool SetGCCallback(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  if (gcCallback::prevMajorGC) {
-    JS_SetGCCallback(cx, nullptr, nullptr);
-    js_delete<gcCallback::MajorGC>(gcCallback::prevMajorGC);
-    gcCallback::prevMajorGC = nullptr;
-  }
-
-  if (gcCallback::prevMinorGC) {
-    JS_SetGCCallback(cx, nullptr, nullptr);
-    js_delete<gcCallback::MinorGC>(gcCallback::prevMinorGC);
-    gcCallback::prevMinorGC = nullptr;
-  }
-
   if (StringEqualsAscii(action, "minorGC")) {
-    auto info = js_new<gcCallback::MinorGC>();
-    if (!info) {
-      ReportOutOfMemory(cx);
-      return false;
-    }
-
-    info->phases = phases;
-    info->active = true;
-    JS_SetGCCallback(cx, gcCallback::minorGC, info);
+    gcCallback::minorGCInfo.phases = phases;
+    gcCallback::minorGCInfo.active = true;
+    JS_SetGCCallback(cx, gcCallback::minorGC, &gcCallback::minorGCInfo);
   } else if (StringEqualsAscii(action, "majorGC")) {
     if (!JS_GetProperty(cx, opts, "depth", &v)) {
       return false;
@@ -4341,15 +4482,11 @@ static bool SetGCCallback(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    auto info = js_new<gcCallback::MajorGC>();
-    if (!info) {
-      ReportOutOfMemory(cx);
-      return false;
-    }
-
-    info->phases = phases;
-    info->depth = depth;
-    JS_SetGCCallback(cx, gcCallback::majorGC, info);
+    gcCallback::majorGCInfo.phases = phases;
+    gcCallback::majorGCInfo.depth = depth;
+    JS_SetGCCallback(cx, gcCallback::majorGC, &gcCallback::majorGCInfo);
+  } else if (StringEqualsAscii(action, "enterNullRealm")) {
+    JS_SetGCCallback(cx, gcCallback::enterNullRealm, nullptr);
   } else {
     JS_ReportErrorASCII(cx, "Unknown GC callback action");
     return false;
@@ -4358,6 +4495,67 @@ static bool SetGCCallback(JSContext* cx, unsigned argc, Value* vp) {
   args.rval().setUndefined();
   return true;
 }
+
+#ifdef DEBUG
+static bool EnqueueMark(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  auto& queue = cx->runtime()->gc.marker.markQueue;
+
+  if (args.get(0).isString()) {
+    RootedString val(cx, args[0].toString());
+    if (!val->ensureLinear(cx)) {
+      return false;
+    }
+    if (!queue.append(StringValue(val))) {
+      JS_ReportOutOfMemory(cx);
+      return false;
+    }
+  } else if (args.get(0).isObject()) {
+    if (!queue.append(args[0])) {
+      JS_ReportOutOfMemory(cx);
+      return false;
+    }
+  } else {
+    JS_ReportErrorASCII(cx, "Argument must be a string or object");
+    return false;
+  }
+
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool GetMarkQueue(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  auto& queue = cx->runtime()->gc.marker.markQueue.get();
+
+  RootedObject result(cx, JS_NewArrayObject(cx, queue.length()));
+  if (!result) {
+    return false;
+  }
+  for (size_t i = 0; i < queue.length(); i++) {
+    RootedValue val(cx, queue[i]);
+    if (!JS_WrapValue(cx, &val)) {
+      return false;
+    }
+    if (!JS_SetElement(cx, result, i, val)) {
+      return false;
+    }
+  }
+
+  args.rval().setObject(*result);
+  return true;
+}
+
+static bool ClearMarkQueue(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  cx->runtime()->gc.marker.markQueue.clear();
+  args.rval().setUndefined();
+  return true;
+}
+#endif  // DEBUG
 
 static bool GetLcovInfo(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -4374,7 +4572,7 @@ static bool GetLcovInfo(JSContext* cx, unsigned argc, Value* vp) {
       JS_ReportErrorASCII(cx, "Permission denied to access global");
       return false;
     }
-    global = CheckedUnwrapDynamic(global, cx);
+    global = CheckedUnwrapDynamic(global, cx, /* stopAtWindowProxy = */ false);
     if (!global) {
       ReportAccessDenied(cx);
       return false;
@@ -4845,7 +5043,7 @@ static bool ParseRegExp(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RegExpFlag flags = RegExpFlag(0);
+  RegExpFlags flags = RegExpFlag::NoFlags;
   if (!args.get(1).isUndefined()) {
     if (!args.get(1).isString()) {
       ReportUsageErrorASCII(cx, callee,
@@ -4880,9 +5078,7 @@ static bool ParseRegExp(JSContext* cx, unsigned argc, Value* vp) {
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
   irregexp::RegExpCompileData data;
   if (!irregexp::ParsePattern(dummyTokenStream, allocScope.alloc(), pattern,
-                              flags & MultilineFlag, match_only,
-                              flags & UnicodeFlag, flags & IgnoreCaseFlag,
-                              flags & GlobalFlag, flags & StickyFlag, &data)) {
+                              match_only, flags, &data)) {
     return false;
   }
 
@@ -5315,7 +5511,7 @@ static bool ObjectGlobal(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   RootedObject obj(cx, &args[0].toObject());
-  if (IsWrapper(obj)) {
+  if (IsCrossCompartmentWrapper(obj)) {
     args.rval().setNull();
     return true;
   }
@@ -5375,7 +5571,7 @@ static bool GlobalLexicals(JSContext* cx, unsigned argc, Value* vp) {
   Rooted<LexicalEnvironmentObject*> globalLexical(
       cx, &cx->global()->lexicalEnvironment());
 
-  AutoIdVector props(cx);
+  RootedIdVector props(cx);
   if (!GetPropertyKeys(cx, globalLexical, JSITER_HIDDEN, &props)) {
     return false;
   }
@@ -5423,12 +5619,8 @@ JSScript* js::TestingFunctionArgumentToScript(
       return nullptr;
     }
 
-    RootedScript script(cx);
     CompileOptions options(cx);
-    if (!JS::Compile(cx, options, source, &script)) {
-      return nullptr;
-    }
-    return script;
+    return JS::Compile(cx, options, source);
   }
 
   RootedFunction fun(cx, JS_ValueToFunction(cx, v));
@@ -5883,6 +6075,11 @@ gc::ZealModeHelpText),
 "gcstate()",
 "  Report the global GC state."),
 
+    JS_FN_HELP("currentgc", CurrentGC, 0, 0,
+"currentgc()",
+"  Report various information about the currently running incremental GC,\n"
+"  if one is running."),
+
     JS_FN_HELP("deterministicgc", DeterministicGC, 1, 0,
 "deterministicgc(true|false)",
 "  If true, only allow determinstic GCs to run."),
@@ -6030,6 +6227,11 @@ gc::ZealModeHelpText),
 "wasmHasTier2CompilationCompleted(module)",
 "  Returns a boolean indicating whether a given module has finished compiled code for tier2. \n"
 "This will return true early if compilation isn't two-tiered. "),
+
+    JS_FN_HELP("wasmLoadedFromCache", WasmLoadedFromCache, 1, 0,
+"wasmLoadedFromCache(module)",
+"  Returns a boolean indicating whether a given module was deserialized directly from a\n"
+"  cache (as opposed to compiled from bytecode)."),
 
     JS_FN_HELP("wasmReftypesEnabled", WasmReftypesEnabled, 1, 0,
 "wasmReftypesEnabled()",
@@ -6276,6 +6478,38 @@ gc::ZealModeHelpText),
 "  Set the GC callback. action may be:\n"
 "    'minorGC' - run a nursery collection\n"
 "    'majorGC' - run a major collection, nesting up to a given 'depth'\n"),
+
+#ifdef DEBUG
+    JS_FN_HELP("enqueueMark", EnqueueMark, 1, 0,
+"enqueueMark(obj|string)",
+"  Add an object to the queue of objects to mark at the beginning every GC. (Note\n"
+"  that the objects will actually be marked at the beginning of every slice, but\n"
+"  after the first slice they will already be marked so nothing will happen.)\n"
+"  \n"
+"  Instead of an object, a few magic strings may be used:\n"
+"    'yield' - cause the current marking slice to end, as if the mark budget were\n"
+"      exceeded.\n"
+"    'enter-weak-marking-mode' - divide the list into two segments. The items after\n"
+"      this string will not be marked until we enter weak marking mode. Note that weak\n"
+"      marking mode may be entered zero or multiple times for one GC.\n"
+"    'abort-weak-marking-mode' - same as above, but then abort weak marking to fall back\n"
+"      on the old iterative marking code path.\n"
+"    'drain' - fully drain the mark stack before continuing.\n"
+"    'set-color-black' - force everything following in the mark queue to be marked black.\n"
+"    'set-color-gray' - continue with the regular GC until gray marking is possible, then force\n"
+"       everything following in the mark queue to be marked gray.\n"
+"    'unset-color' - stop forcing the mark color."),
+
+    JS_FN_HELP("clearMarkQueue", ClearMarkQueue, 0, 0,
+"clearMarkQueue()",
+"  Cancel the special marking of all objects enqueue with enqueueMark()."),
+
+    JS_FN_HELP("getMarkQueue", GetMarkQueue, 0, 0,
+"getMarkQueue()",
+"  Return the current mark queue set up via enqueueMark calls. Note that all\n"
+"  returned values will be wrapped into the current compartment, so this loses\n"
+"  some fidelity."),
+#endif // DEBUG
 
     JS_FN_HELP("getLcovInfo", GetLcovInfo, 1, 0,
 "getLcovInfo(global)",

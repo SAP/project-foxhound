@@ -51,12 +51,9 @@ class VelocityTracker {
    * Record a new position along this axis, at the given timestamp.
    * Returns the average velocity between the last sample and this one, or
    * or Nothing() if a reasonable average cannot be computed.
-   * If |aIsAxisLocked| is true, no movement is happening along this axis,
-   * and this should be reflected both in the returned instantaneous velocity,
-   * and the internal state maintained for calling ComputeVelocity() later.
    */
-  virtual Maybe<float> AddPosition(ParentLayerCoord aPos, uint32_t aTimestampMs,
-                                   bool aIsAxisLocked) = 0;
+  virtual Maybe<float> AddPosition(ParentLayerCoord aPos,
+                                   uint32_t aTimestampMs) = 0;
   /**
    * Record movement of the dynamic toolbar along this axis by |aDelta|
    * over the given time range. Movement of the dynamic toolbar means
@@ -347,39 +344,35 @@ class Axis {
 class AxisX : public Axis {
  public:
   explicit AxisX(AsyncPanZoomController* mAsyncPanZoomController);
-  virtual ParentLayerCoord GetPointOffset(
+  ParentLayerCoord GetPointOffset(
       const ParentLayerPoint& aPoint) const override;
-  virtual ParentLayerCoord GetRectLength(
-      const ParentLayerRect& aRect) const override;
-  virtual ParentLayerCoord GetRectOffset(
-      const ParentLayerRect& aRect) const override;
-  virtual CSSToParentLayerScale GetScaleForAxis(
+  ParentLayerCoord GetRectLength(const ParentLayerRect& aRect) const override;
+  ParentLayerCoord GetRectOffset(const ParentLayerRect& aRect) const override;
+  CSSToParentLayerScale GetScaleForAxis(
       const CSSToParentLayerScale2D& aScale) const override;
-  virtual ScreenPoint MakePoint(ScreenCoord aCoord) const override;
-  virtual const char* Name() const override;
+  ScreenPoint MakePoint(ScreenCoord aCoord) const override;
+  const char* Name() const override;
   bool CanScrollTo(Side aSide) const;
 
  private:
-  virtual OverscrollBehavior GetOverscrollBehavior() const override;
+  OverscrollBehavior GetOverscrollBehavior() const override;
 };
 
 class AxisY : public Axis {
  public:
   explicit AxisY(AsyncPanZoomController* mAsyncPanZoomController);
-  virtual ParentLayerCoord GetPointOffset(
+  ParentLayerCoord GetPointOffset(
       const ParentLayerPoint& aPoint) const override;
-  virtual ParentLayerCoord GetRectLength(
-      const ParentLayerRect& aRect) const override;
-  virtual ParentLayerCoord GetRectOffset(
-      const ParentLayerRect& aRect) const override;
-  virtual CSSToParentLayerScale GetScaleForAxis(
+  ParentLayerCoord GetRectLength(const ParentLayerRect& aRect) const override;
+  ParentLayerCoord GetRectOffset(const ParentLayerRect& aRect) const override;
+  CSSToParentLayerScale GetScaleForAxis(
       const CSSToParentLayerScale2D& aScale) const override;
-  virtual ScreenPoint MakePoint(ScreenCoord aCoord) const override;
-  virtual const char* Name() const override;
+  ScreenPoint MakePoint(ScreenCoord aCoord) const override;
+  const char* Name() const override;
   bool CanScrollTo(Side aSide) const;
 
  private:
-  virtual OverscrollBehavior GetOverscrollBehavior() const override;
+  OverscrollBehavior GetOverscrollBehavior() const override;
 };
 
 }  // namespace layers

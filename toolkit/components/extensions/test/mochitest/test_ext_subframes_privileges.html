@@ -2,9 +2,8 @@
 <html>
 <head>
   <title>WebExtension test</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -228,6 +227,10 @@ add_task(async function test_webext_background_remote_subframe_privileges() {
       "background-subframe.js": backgroundSubframeScript,
     },
   };
+  // Need remote webextensions to be able to load remote content from a background page.
+  if (!SpecialPowers.getBoolPref("extensions.webextensions.remote", true)) {
+    return;
+  }
   let extension = ExtensionTestUtils.loadExtension(extensionData);
 
   await extension.startup();

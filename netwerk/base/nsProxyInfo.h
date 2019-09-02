@@ -32,12 +32,18 @@ class nsProxyInfo final : public nsIProxyInfo {
   NS_DECL_NSIPROXYINFO
 
   // Cheap accessors for use within Necko
-  const nsCString &Host() { return mHost; }
-  int32_t Port() { return mPort; }
-  const char *Type() { return mType; }
-  uint32_t Flags() { return mFlags; }
-  const nsCString &Username() { return mUsername; }
-  const nsCString &Password() { return mPassword; }
+  const nsCString& Host() const { return mHost; }
+  int32_t Port() const { return mPort; }
+  const char* Type() const { return mType; }
+  uint32_t Flags() const { return mFlags; }
+  const nsCString& Username() const { return mUsername; }
+  const nsCString& Password() const { return mPassword; }
+  const nsCString& ProxyAuthorizationHeader() const {
+    return mProxyAuthorizationHeader;
+  }
+  const nsCString& ConnectionIsolationKey() const {
+    return mConnectionIsolationKey;
+  }
 
   bool IsDirect();
   bool IsHTTP();
@@ -47,7 +53,7 @@ class nsProxyInfo final : public nsIProxyInfo {
  private:
   friend class nsProtocolProxyService;
 
-  explicit nsProxyInfo(const char *type = nullptr)
+  explicit nsProxyInfo(const char* type = nullptr)
       : mType(type),
         mPort(-1),
         mFlags(0),
@@ -57,15 +63,17 @@ class nsProxyInfo final : public nsIProxyInfo {
 
   ~nsProxyInfo() { NS_IF_RELEASE(mNext); }
 
-  const char *mType;  // pointer to statically allocated value
+  const char* mType;  // pointer to statically allocated value
   nsCString mHost;
   nsCString mUsername;
   nsCString mPassword;
+  nsCString mProxyAuthorizationHeader;
+  nsCString mConnectionIsolationKey;
   int32_t mPort;
   uint32_t mFlags;
   uint32_t mResolveFlags;
   uint32_t mTimeout;
-  nsProxyInfo *mNext;
+  nsProxyInfo* mNext;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsProxyInfo, NS_PROXYINFO_IID)

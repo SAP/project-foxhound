@@ -13,6 +13,7 @@
 
 class nsTableCellFrame;
 namespace mozilla {
+class PresShell;
 struct TableCellReflowInput;
 }  // namespace mozilla
 
@@ -55,7 +56,7 @@ class nsTableRowFrame : public nsContainerFrame {
    *
    * @return           the frame that was created
    */
-  friend nsTableRowFrame* NS_NewTableRowFrame(nsIPresShell* aPresShell,
+  friend nsTableRowFrame* NS_NewTableRowFrame(mozilla::PresShell* aPresShell,
                                               ComputedStyle* aStyle);
 
   nsTableRowGroupFrame* GetTableRowGroupFrame() const {
@@ -74,6 +75,11 @@ class nsTableRowFrame : public nsContainerFrame {
 
   virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
+
+  void PaintCellBackgroundsForFrame(nsIFrame* aFrame,
+                                    nsDisplayListBuilder* aBuilder,
+                                    const nsDisplayListSet& aLists,
+                                    const nsPoint& aOffset = nsPoint());
 
   // Implemented in nsTableCellFrame.h, because it needs to know about the
   // nsTableCellFrame class, but we can't include nsTableCellFrame.h here.

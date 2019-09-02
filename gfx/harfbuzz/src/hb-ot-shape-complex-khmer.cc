@@ -164,7 +164,7 @@ struct would_substitute_feature_t
 			 hb_face_t            *face) const
   {
     for (unsigned int i = 0; i < count; i++)
-      if (hb_ot_layout_lookup_would_substitute_fast (face, lookups[i].index, glyphs, glyphs_count, zero_context))
+      if (hb_ot_layout_lookup_would_substitute (face, lookups[i].index, glyphs, glyphs_count, zero_context))
 	return true;
     return false;
   }
@@ -365,7 +365,11 @@ insert_dotted_circles (const hb_ot_shape_plan_t *plan HB_UNUSED,
 		       hb_font_t *font,
 		       hb_buffer_t *buffer)
 {
-  /* Note: This loop is extra overhead, but should not be measurable. */
+  if (unlikely (buffer->flags & HB_BUFFER_FLAG_DO_NOT_INSERT_DOTTED_CIRCLE))
+    return;
+
+  /* Note: This loop is extra overhead, but should not be measurable.
+   * TODO Use a buffer scratch flag to remove the loop. */
   bool has_broken_syllables = false;
   unsigned int count = buffer->len;
   hb_glyph_info_t *info = buffer->info;
@@ -404,7 +408,6 @@ insert_dotted_circles (const hb_ot_shape_plan_t *plan HB_UNUSED,
       ginfo.cluster = buffer->cur().cluster;
       ginfo.mask = buffer->cur().mask;
       ginfo.syllable() = buffer->cur().syllable();
-      /* TODO Set glyph_props? */
 
       /* Insert dottedcircle after possible Repha. */
       while (buffer->idx < buffer->len && buffer->successful &&

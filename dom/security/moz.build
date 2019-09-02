@@ -12,7 +12,6 @@ TEST_DIRS += ['test']
 DIRS += [ 'featurepolicy' ]
 
 EXPORTS.mozilla.dom += [
-    'ContentVerifier.h',
     'CSPEvalChecker.h',
     'FramingChecker.h',
     'nsContentSecurityManager.h',
@@ -34,7 +33,6 @@ EXPORTS += [
 ]
 
 UNIFIED_SOURCES += [
-    'ContentVerifier.cpp',
     'CSPEvalChecker.cpp',
     'FramingChecker.cpp',
     'nsContentSecurityManager.cpp',
@@ -57,6 +55,7 @@ LOCAL_INCLUDES += [
     '/docshell/base',  # for nsDocShell.h
     '/netwerk/base',
     '/netwerk/protocol/data', # for nsDataHandler.h
+    '/netwerk/protocol/http', # for HttpBaseChannel.h
 ]
 
 include('/tools/fuzzing/libfuzzer-config.mozbuild')

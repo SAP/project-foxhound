@@ -1,5 +1,4 @@
 ac_add_options --enable-debug
-ac_add_options --enable-verify-mar
 
 . $topsrcdir/build/mozconfig.stylo
 
@@ -9,9 +8,6 @@ MOZ_AUTOMATION_L10N_CHECK=0
 
 # Needed to enable breakpad in application.ini
 export MOZILLA_OFFICIAL=1
-
-# Enable Telemetry
-export MOZ_TELEMETRY_REPORTING=1
 
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1

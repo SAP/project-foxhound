@@ -959,10 +959,10 @@ public static final ElementName LINE = new ElementName("line", "line",
 // CPPONLY: NS_NewHTMLUnknownElement,
 // CPPONLY: NS_NewSVGLineElement, 
 TreeBuilder.OTHER);
-public static final ElementName MARQUEE = new ElementName("marquee", "marquee",
-    // CPPONLY: NS_NewHTMLMarqueeElement,
-    // CPPONLY: NS_NewSVGUnknownElement,
-    TreeBuilder.MARQUEE_OR_APPLET | SPECIAL | SCOPING);
+public static final ElementName MARQUEE = new ElementName("marquee", "marquee", 
+// CPPONLY: NS_NewHTMLMarqueeElement,
+// CPPONLY: NS_NewSVGUnknownElement, 
+TreeBuilder.MARQUEE_OR_APPLET | SPECIAL | SCOPING);
 public static final ElementName POLYLINE = new ElementName("polyline", "polyline", 
 // CPPONLY: NS_NewHTMLUnknownElement,
 // CPPONLY: NS_NewSVGPolylineElement, 
@@ -1172,9 +1172,9 @@ public static final ElementName MN = new ElementName("mn", "mn",
 // CPPONLY: NS_NewSVGUnknownElement, 
 TreeBuilder.MI_MO_MN_MS_MTEXT | SCOPING_AS_MATHML);
 public static final ElementName KEYGEN = new ElementName("keygen", "keygen", 
-// CPPONLY: NS_NewHTMLSpanElement,
+// CPPONLY: NS_NewHTMLElement,
 // CPPONLY: NS_NewSVGUnknownElement, 
-TreeBuilder.KEYGEN);
+TreeBuilder.KEYGEN | SPECIAL);
 public static final ElementName MAIN = new ElementName("main", "main", 
 // CPPONLY: NS_NewHTMLElement,
 // CPPONLY: NS_NewSVGUnknownElement, 

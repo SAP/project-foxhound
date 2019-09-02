@@ -4,10 +4,15 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const Link = createFactory(require("devtools/client/shared/vendor/react-router-dom").Link);
+const Link = createFactory(
+  require("devtools/client/shared/vendor/react-router-dom").Link
+);
 
 /**
  * This component is used as a wrapper by items in the sidebar.
@@ -22,34 +27,51 @@ class SidebarItem extends PureComponent {
     };
   }
 
+  static get defaultProps() {
+    return {
+      isSelected: false,
+    };
+  }
+
   renderContent() {
     const { children, to } = this.props;
 
     if (to) {
-      return Link(
-        {
-          className: "sidebar-item__link js-sidebar-link",
-          to,
-        },
-        children
-      );
+      const isExternalUrl = /^http/.test(to);
+
+      return isExternalUrl
+        ? dom.a(
+            {
+              className: "sidebar-item__link",
+              href: to,
+              target: "_blank",
+            },
+            children
+          )
+        : Link(
+            {
+              className: "sidebar-item__link qa-sidebar-link",
+              to,
+            },
+            children
+          );
     }
 
     return children;
   }
 
   render() {
-    const {className, isSelected, to } = this.props;
+    const { className, isSelected, to } = this.props;
 
     return dom.li(
       {
-        className: "sidebar-item js-sidebar-item" +
-                   (className ? ` ${className}` : "") +
-                   (isSelected ?
-                      " sidebar-item--selected js-sidebar-item-selected" :
-                      ""
-                   ) +
-                   (to ? " sidebar-item--selectable" : ""),
+        className:
+          "sidebar-item qa-sidebar-item" +
+          (className ? ` ${className}` : "") +
+          (isSelected
+            ? " sidebar-item--selected qa-sidebar-item-selected"
+            : "") +
+          (to ? " sidebar-item--selectable" : ""),
       },
       this.renderContent()
     );

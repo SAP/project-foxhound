@@ -13,6 +13,7 @@
 #include "nsRefreshDriver.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/OffscreenCanvas.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/NotNull.h"
@@ -27,6 +28,7 @@
 class nsDisplayListBuilder;
 
 namespace mozilla {
+class PresShell;
 namespace layers {
 class CanvasLayer;
 class CanvasRenderer;
@@ -56,9 +58,9 @@ class nsICanvasRenderingContextInternal : public nsISupports,
     AddPostRefreshObserverIfNecessary();
   }
 
-  virtual nsIPresShell* GetPresShell() {
+  virtual mozilla::PresShell* GetPresShell() {
     if (mCanvasElement) {
-      return mCanvasElement->OwnerDoc()->GetShell();
+      return mCanvasElement->OwnerDoc()->GetPresShell();
     }
     return nullptr;
   }
@@ -111,7 +113,7 @@ class nsICanvasRenderingContextInternal : public nsISupports,
   // is false, alpha will be discarded and the result will be the image
   // composited on black.
   NS_IMETHOD GetInputStream(const char* mimeType,
-                            const char16_t* encoderOptions,
+                            const nsAString& encoderOptions,
                             nsIInputStream** stream) = 0;
 
   // This gets an Azure SourceSurface for the canvas, this will be a snapshot

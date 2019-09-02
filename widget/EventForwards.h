@@ -11,6 +11,8 @@
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 
+class nsCommandParams;
+
 /**
  * XXX Following enums should be in BasicEvents.h.  However, currently, it's
  *     impossible to use foward delearation for enum.
@@ -202,19 +204,36 @@ inline bool IsDataTransferAvailableOnHTMLEditor(EditorInputType aInputType) {
   }
 }
 
-#define NS_DEFINE_COMMAND(aName, aCommandStr) , Command##aName
-#define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName) , Command##aName
+#define NS_DEFINE_COMMAND(aName, aCommandStr) , aName
+#define NS_DEFINE_COMMAND_WITH_PARAM(aName, aCommandStr, aParam) , aName
+#define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName) , aName
 
-typedef int8_t CommandInt;
-enum Command : CommandInt {
-  CommandDoNothing
+typedef uint8_t CommandInt;
+enum class Command : CommandInt {
+  DoNothing
 
 #include "mozilla/CommandList.h"
 };
 #undef NS_DEFINE_COMMAND
+#undef NS_DEFINE_COMMAND_WITH_PARAM
 #undef NS_DEFINE_COMMAND_NO_EXEC_COMMAND
 
 const char* ToChar(Command aCommand);
+
+/**
+ * Return a command value for aCommandName.
+ * XXX: Is there a better place to put `Command` related methods instead of
+ *      global scope in `mozilla` namespace?
+ *
+ * @param aCommandName          Should be a XUL command name like "cmd_bold"
+ *                              (case sensitive).
+ * @param aCommandparams        Additional parameter value of aCommandName.
+ *                              Can be nullptr, but if aCommandName requires
+ *                              additional parameter and sets this to nullptr,
+ *                              will return Command::DoNothing with warning.
+ */
+Command GetInternalCommand(const char* aCommandName,
+                           const nsCommandParams* aCommandParams = nullptr);
 
 }  // namespace mozilla
 
@@ -261,6 +280,21 @@ class TextRangeArray;
 
 // FontRange.h
 struct FontRange;
+
+enum MouseButton { eNotPressed = -1, eLeft = 0, eMiddle = 1, eRight = 2 };
+
+enum MouseButtonsFlag {
+  eNoButtons = 0x00,
+  eLeftFlag = 0x01,
+  eRightFlag = 0x02,
+  eMiddleFlag = 0x04,
+  // typicall, "back" button being left side of 5-button
+  // mice, see "buttons" attribute document of DOM3 Events.
+  e4thFlag = 0x08,
+  // typicall, "forward" button being right side of 5-button
+  // mice, see "buttons" attribute document of DOM3 Events.
+  e5thFlag = 0x10
+};
 
 }  // namespace mozilla
 

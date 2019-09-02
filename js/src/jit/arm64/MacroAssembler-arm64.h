@@ -10,10 +10,10 @@
 #include "jit/arm64/Assembler-arm64.h"
 #include "jit/arm64/vixl/Debugger-vixl.h"
 #include "jit/arm64/vixl/MacroAssembler-vixl.h"
-
 #include "jit/AtomicOp.h"
 #include "jit/JitFrames.h"
 #include "jit/MoveResolver.h"
+#include "vm/BigIntType.h"  // JS::BigInt
 
 #ifdef _M_ARM64
 #  ifdef move32
@@ -297,6 +297,9 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void loadValue(const BaseIndex& src, ValueOperand val) {
     doBaseIndex(ARMRegister(val.valueReg(), 64), src, vixl::LDR_x);
   }
+  void loadUnalignedValue(const Address& src, ValueOperand dest) {
+    loadValue(src, dest);
+  }
   void tagValue(JSValueType type, Register payload, ValueOperand dest) {
     // This could be cleverer, but the first attempt had bugs.
     Orr(ARMRegister(dest.valueReg(), 64), ARMRegister(payload, 64),
@@ -527,26 +530,55 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   void convertDoubleToInt32(FloatRegister src, Register dest, Label* fail,
                             bool negativeZeroCheck = true) {
-    vixl::UseScratchRegisterScope temps(this);
-    const ARMFPRegister scratch64 = temps.AcquireD();
-
-    ARMFPRegister fsrc(src, 64);
+    ARMFPRegister fsrc64(src, 64);
     ARMRegister dest32(dest, 32);
-    ARMRegister dest64(dest, 64);
 
-    MOZ_ASSERT(!scratch64.Is(fsrc));
+    // ARMv8.3 chips support the FJCVTZS instruction, which handles
+    // exactly this logic.
+    if (CPUHas(vixl::CPUFeatures::kFP, vixl::CPUFeatures::kJSCVT)) {
+      // Convert double to integer, rounding toward zero.
+      // The Z-flag is set iff the conversion is exact. -0 unsets the Z-flag.
+      Fjcvtzs(dest32, fsrc64);
 
-    Fcvtzs(dest32, fsrc);      // Convert, rounding toward zero.
-    Scvtf(scratch64, dest32);  // Convert back, using FPCR rounding mode.
-    Fcmp(scratch64, fsrc);
-    B(fail, Assembler::NotEqual);
+      if (negativeZeroCheck) {
+        B(fail, Assembler::NonZero);
+      } else {
+        Label done;
+        B(&done, Assembler::Zero);  // If conversion was exact, go to end.
 
-    if (negativeZeroCheck) {
-      Label nonzero;
-      Cbnz(dest32, &nonzero);
-      Fmov(dest64, fsrc);
-      Cbnz(dest64, fail);
-      bind(&nonzero);
+        // The conversion was inexact, but the caller intends to allow -0.
+        vixl::UseScratchRegisterScope temps(this);
+        const ARMFPRegister scratch64 = temps.AcquireD();
+        MOZ_ASSERT(!scratch64.Is(fsrc64));
+
+        // Compare fsrc64 to 0.
+        // If fsrc64 == 0 and FJCVTZS conversion was inexact, then fsrc64 is -0.
+        Fmov(scratch64, xzr);
+        Fcmp(scratch64, fsrc64);
+        B(fail, Assembler::NotEqual);  // Pass through -0; fail otherwise.
+
+        bind(&done);
+      }
+    } else {
+      // Older processors use a significantly slower path.
+      ARMRegister dest64(dest, 64);
+
+      vixl::UseScratchRegisterScope temps(this);
+      const ARMFPRegister scratch64 = temps.AcquireD();
+      MOZ_ASSERT(!scratch64.Is(fsrc64));
+
+      Fcvtzs(dest32, fsrc64);    // Convert, rounding toward zero.
+      Scvtf(scratch64, dest32);  // Convert back, using FPCR rounding mode.
+      Fcmp(scratch64, fsrc64);
+      B(fail, Assembler::NotEqual);
+
+      if (negativeZeroCheck) {
+        Label nonzero;
+        Cbnz(dest32, &nonzero);
+        Fmov(dest64, fsrc64);
+        Cbnz(dest64, fail);
+        bind(&nonzero);
+      }
     }
   }
   void convertFloat32ToInt32(FloatRegister src, Register dest, Label* fail,
@@ -694,9 +726,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void align(int alignment) { armbuffer_.align(alignment); }
 
   void haltingAlign(int alignment) {
-    // TODO: Implement a proper halting align.
-    // ARM doesn't have one either.
-    armbuffer_.align(alignment);
+    armbuffer_.align(alignment, vixl::HLT | ImmException(0xBAAD));
   }
   void nopAlign(int alignment) { armbuffer_.align(alignment); }
 
@@ -1296,7 +1326,9 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     move32(src.valueReg(), dest);
   }
   void unboxInt32(const Address& src, Register dest) { load32(src, dest); }
-  void unboxDouble(const Address& src, FloatRegister dest) {
+
+  template <typename T>
+  void unboxDouble(const T& src, FloatRegister dest) {
     loadDouble(src, dest);
   }
   void unboxDouble(const ValueOperand& src, FloatRegister dest) {
@@ -1371,14 +1403,14 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void unboxObjectOrNull(const T& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
     And(ARMRegister(dest, 64), ARMRegister(dest, 64),
-        Operand(~JSVAL_OBJECT_OR_NULL_BIT));
+        Operand(~JS::detail::ValueObjectOrNullBit));
   }
 
   // See comment in MacroAssembler-x64.h.
   void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
     loadPtr(src, dest);
     And(ARMRegister(dest, 64), ARMRegister(dest, 64),
-        Operand(JSVAL_PAYLOAD_MASK_GCTHING));
+        Operand(JS::detail::ValueGCThingPayloadMask));
   }
 
   inline void unboxValue(const ValueOperand& src, AnyRegister dest,
@@ -1505,13 +1537,13 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
   Condition testNumber(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmpTag(tag, ImmTag(JSVAL_UPPER_INCL_TAG_OF_NUMBER_SET));
+    cmpTag(tag, ImmTag(JS::detail::ValueUpperInclNumberTag));
     // Requires unsigned comparison due to cmpTag internals.
     return (cond == Equal) ? BelowOrEqual : Above;
   }
   Condition testGCThing(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmpTag(tag, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+    cmpTag(tag, ImmTag(JS::detail::ValueLowerInclGCThingTag));
     // Requires unsigned comparison due to cmpTag internals.
     return (cond == Equal) ? AboveOrEqual : Below;
   }
@@ -1522,7 +1554,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
   Condition testPrimitive(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmpTag(tag, ImmTag(JSVAL_UPPER_EXCL_TAG_OF_PRIMITIVE_SET));
+    cmpTag(tag, ImmTag(JS::detail::ValueUpperExclPrimitiveTag));
     // Requires unsigned comparison due to cmpTag internals.
     return (cond == Equal) ? Below : AboveOrEqual;
   }
@@ -1889,6 +1921,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   // load: offset to the load instruction obtained by movePatchablePtr().
   void writeDataRelocation(ImmGCPtr ptr, BufferOffset load) {
+    // Raw GC pointer relocations and Value relocations both end up in
+    // Assembler::TraceDataRelocations.
     if (ptr.value) {
       if (gc::IsInsideNursery(ptr.value)) {
         embedsNurseryPointers_ = true;
@@ -1897,6 +1931,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     }
   }
   void writeDataRelocation(const Value& val, BufferOffset load) {
+    // Raw GC pointer relocations and Value relocations both end up in
+    // Assembler::TraceDataRelocations.
     if (val.isGCThing()) {
       gc::Cell* cell = val.toGCThing();
       if (cell && gc::IsInsideNursery(cell)) {
@@ -2075,7 +2111,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     // Bfxil cannot be used with the zero register as a source.
     if (src == rzr) {
       And(ARMRegister(dest, 64), ARMRegister(dest, 64),
-          Operand(JSVAL_TAG_MASK));
+          Operand(JS::detail::ValueTagMask));
     } else {
       Bfxil(ARMRegister(dest, 64), ARMRegister(src, 64), 0, JSVAL_TAG_SHIFT);
     }

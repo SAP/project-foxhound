@@ -207,6 +207,10 @@ html|*#webRTC-previewVideo {
   border-top: 1px solid var(--panel-separator-color);
 }
 
+#webRTC-previewWarning:-moz-locale-dir(rtl) {
+  background-position: calc(100% - .75em) .75em;
+}
+
 #webRTC-previewWarning > .text-link {
   margin-inline-start: 0;
 }
@@ -218,7 +222,9 @@ html|*#webRTC-previewVideo {
 
 .popup-subitem {
   list-style-image: url("chrome://browser/skin/notification-icons/popup-subitem.svg");
-  margin-inline-start: 30px;
+  margin-inline-start: 42px;
+  width: 16px;
+  height: 16px;
 }
 
 .identity-popup-popup-menulist {
@@ -250,6 +256,7 @@ html|*#webRTC-previewVideo {
   list-style-image: url(chrome://mozapps/skin/extensions/extensionGeneric-16.svg);
 }
 
+.install-icon.blocked-permission-icon,
 .popup-notification-icon[popupid="xpinstall-disabled"],
 .popup-notification-icon[popupid="addon-install-blocked"],
 .popup-notification-icon[popupid="addon-install-origin-blocked"] {
@@ -288,10 +295,6 @@ html|*#webRTC-previewVideo {
 .plugin-icon {
   list-style-image: url(chrome://global/skin/plugins/plugin.svg);
   transition: fill 1.5s;
-}
-
-.plugin-icon.blocked-permission-icon {
-  list-style-image: url(chrome://global/skin/plugins/plugin-blocked.svg);
 }
 
 #plugin-icon-badge {
@@ -379,5 +382,10 @@ html|*#webRTC-previewVideo {
 .popup-notification-icon[popupid="update-manual"],
 .popup-notification-icon[popupid="update-restart"] {
   background: #74BF43 url(chrome://browser/skin/notification-icons/update.svg) no-repeat center;
+  border-radius: 50%;
+}
+
+.popup-notification-icon[popupid="update-unsupported"] {
+  background: #FFE900 url(chrome://browser/skin/notification-icons/update.svg) no-repeat center;
   border-radius: 50%;
 }

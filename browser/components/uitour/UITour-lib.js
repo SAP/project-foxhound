@@ -30,14 +30,6 @@ if (typeof Mozilla == "undefined") {
     Mozilla.UITour = {};
   }
 
-  var themeIntervalId = null;
-  function _stopCyclingThemes() {
-    if (themeIntervalId) {
-      clearInterval(themeIntervalId);
-      themeIntervalId = null;
-    }
-  }
-
   function _sendEvent(action, data) {
     var event = new CustomEvent("mozUITour", {
       bubbles: true,
@@ -51,17 +43,21 @@ if (typeof Mozilla == "undefined") {
   }
 
   function _generateCallbackID() {
-    return Math.random().toString(36).replace(/[^a-z]+/g, "");
+    return Math.random()
+      .toString(36)
+      .replace(/[^a-z]+/g, "");
   }
 
   function _waitForCallback(callback) {
     var id = _generateCallbackID();
 
     function listener(event) {
-      if (typeof event.detail != "object")
+      if (typeof event.detail != "object") {
         return;
-      if (event.detail.callbackID != id)
+      }
+      if (event.detail.callbackID != id) {
         return;
+      }
 
       document.removeEventListener("mozUITourResponse", listener);
       callback(event.detail.data);
@@ -73,10 +69,12 @@ if (typeof Mozilla == "undefined") {
 
   var notificationListener = null;
   function _notificationListener(event) {
-    if (typeof event.detail != "object")
+    if (typeof event.detail != "object") {
       return;
-    if (typeof notificationListener != "function")
+    }
+    if (typeof notificationListener != "function") {
       return;
+    }
 
     notificationListener(event.detail.event, event.detail.params);
   }
@@ -162,12 +160,13 @@ if (typeof Mozilla == "undefined") {
     notificationListener = listener;
 
     if (listener) {
-      document.addEventListener("mozUITourNotification",
-                                _notificationListener);
+      document.addEventListener("mozUITourNotification", _notificationListener);
       Mozilla.UITour.ping(callback);
     } else {
-      document.removeEventListener("mozUITourNotification",
-                                   _notificationListener);
+      document.removeEventListener(
+        "mozUITourNotification",
+        _notificationListener
+      );
     }
   };
 
@@ -268,7 +267,14 @@ if (typeof Mozilla == "undefined") {
    *
    * Mozilla.UITour.showInfo('appMenu', 'my title', 'my text', icon, buttons, options);
    */
-  Mozilla.UITour.showInfo = function(target, title, text, icon, buttons, options) {
+  Mozilla.UITour.showInfo = function(
+    target,
+    title,
+    text,
+    icon,
+    buttons,
+    options
+  ) {
     var buttonData = [];
     if (Array.isArray(buttons)) {
       for (var i = 0; i < buttons.length; i++) {
@@ -282,10 +288,12 @@ if (typeof Mozilla == "undefined") {
     }
 
     var closeButtonCallbackID, targetCallbackID;
-    if (options && options.closeButtonCallback)
+    if (options && options.closeButtonCallback) {
       closeButtonCallbackID = _waitForCallback(options.closeButtonCallback);
-    if (options && options.targetCallback)
+    }
+    if (options && options.targetCallback) {
       targetCallbackID = _waitForCallback(options.targetCallback);
+    }
 
     _sendEvent("showInfo", {
       target,
@@ -304,88 +312,6 @@ if (typeof Mozilla == "undefined") {
    */
   Mozilla.UITour.hideInfo = function() {
     _sendEvent("hideInfo");
-  };
-
-  /**
-   * Preview a lightweight-theme applied to the browser UI.
-   *
-   * @see Mozilla.UITour.cycleThemes
-   * @see Mozilla.UITour.resetTheme
-   *
-   * @param {Object} theme - Theme object format expected by `LightweightThemeManager.previewTheme`
-   * @example
-   * var theme = {
-   *   …
-   *   "iconURL":      "https://addons.mozilla.org/_files/…/preview_small.jpg",
-   *   "headerURL":    "https://addons.mozilla.org/_files/….jpg",
-   *   "name":         "My cool theme",
-   *   "author":       "Mozilla",
-   *   "footer":       "https://addons.mozilla.org/_files/….jpg",
-   *   "previewURL":   "https://addons.mozilla.org/_files/…/preview.jpg",
-   *   "updateURL":    "https://versioncheck.addons.mozilla.org/…",
-   *   "accentcolor":  "#000000",
-   *   "header":       "https://addons.mozilla.org/_files/….jpg",
-   *   "version":      "1.0",
-   *   "detailURL":    "https://addons.mozilla.org/firefox/addon/…",
-   *   "textcolor":    "#ffffff",
-   *   "id":           "18066",
-   *   "description":  "My awesome theme.",
-   *   …
-   * };
-   *
-   * Mozilla.UITour.previewTheme(theme);
-   */
-  Mozilla.UITour.previewTheme = function(theme) {
-    _stopCyclingThemes();
-
-    _sendEvent("previewTheme", {
-      theme: JSON.stringify(theme),
-    });
-  };
-
-  /**
-   * Stop previewing and cycling themes, returning to the user's previous theme.
-   * @see Mozilla.UITour.cycleThemes
-   * @see Mozilla.UITour.previewTheme
-   */
-  Mozilla.UITour.resetTheme = function() {
-    _stopCyclingThemes();
-
-    _sendEvent("resetTheme");
-  };
-
-  /**
-   * Cycle between an array of themes using the given delay.
-   *
-   * @see Mozilla.UITour.previewTheme
-   * @see Mozilla.UITour.resetTheme
-   *
-   * @param {Object[]} themes - Array of themes
-   * @param {Number} [delay=Mozilla.UITour.DEFAULT_THEME_CYCLE_DELAY]
-   *                 - Time in milliseconds between rotating themes
-   * @param {Function} callback - Function called at each rotation
-   */
-  Mozilla.UITour.cycleThemes = function(themes, delay, callback) {
-    _stopCyclingThemes();
-
-    if (!delay) {
-      delay = Mozilla.UITour.DEFAULT_THEME_CYCLE_DELAY;
-    }
-
-    function nextTheme() {
-      var theme = themes.shift();
-      themes.push(theme);
-
-      _sendEvent("previewTheme", {
-        theme: JSON.stringify(theme),
-        state: true,
-      });
-
-      callback(theme);
-    }
-
-    themeIntervalId = setInterval(nextTheme, delay);
-    nextTheme();
   };
 
   /**
@@ -418,8 +344,9 @@ if (typeof Mozilla == "undefined") {
    */
   Mozilla.UITour.showMenu = function(name, callback) {
     var showCallbackID;
-    if (callback)
+    if (callback) {
       showCallbackID = _waitForCallback(callback);
+    }
 
     _sendEvent("showMenu", {
       name,
@@ -447,7 +374,6 @@ if (typeof Mozilla == "undefined") {
   Mozilla.UITour.showNewTab = function() {
     _sendEvent("showNewTab");
   };
-
 
   /**
    * @typedef Mozilla.UITour.ConfigurationName

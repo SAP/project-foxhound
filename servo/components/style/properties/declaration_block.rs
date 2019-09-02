@@ -25,6 +25,8 @@ use style_traits::{CssWriter, ParseError, ParsingMode, StyleParseErrorKind, ToCs
 use crate::stylesheets::{CssRuleType, Origin, UrlExtraData};
 use super::*;
 use crate::values::computed::Context;
+use crate::selector_parser::SelectorImpl;
+use selectors::SelectorList;
 
 /// The animation rules.
 ///
@@ -88,7 +90,7 @@ impl Importance {
 
 /// Overridden declarations are skipped.
 #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-#[derive(Clone)]
+#[derive(Clone, ToShmem)]
 pub struct PropertyDeclarationBlock {
     /// The group of declarations, along with their importance.
     ///
@@ -1197,7 +1199,7 @@ where
 pub fn parse_style_attribute(
     input: &str,
     url_data: &UrlExtraData,
-    error_reporter: Option<&ParseErrorReporter>,
+    error_reporter: Option<&dyn ParseErrorReporter>,
     quirks_mode: QuirksMode,
 ) -> PropertyDeclarationBlock {
     let context = ParserContext::new(
@@ -1211,7 +1213,7 @@ pub fn parse_style_attribute(
     );
 
     let mut input = ParserInput::new(input);
-    parse_property_declaration_list(&context, &mut Parser::new(&mut input))
+    parse_property_declaration_list(&context, &mut Parser::new(&mut input), None)
 }
 
 /// Parse a given property declaration. Can result in multiple
@@ -1224,7 +1226,7 @@ pub fn parse_one_declaration_into(
     id: PropertyId,
     input: &str,
     url_data: &UrlExtraData,
-    error_reporter: Option<&ParseErrorReporter>,
+    error_reporter: Option<&dyn ParseErrorReporter>,
     parsing_mode: ParsingMode,
     quirks_mode: QuirksMode
 ) -> Result<(), ()> {
@@ -1238,18 +1240,28 @@ pub fn parse_one_declaration_into(
         None,
     );
 
+    let property_id_for_error_reporting = if context.error_reporting_enabled() {
+        Some(id.clone())
+    } else {
+        None
+    };
+
     let mut input = ParserInput::new(input);
     let mut parser = Parser::new(&mut input);
     let start_position = parser.position();
     parser.parse_entirely(|parser| {
         PropertyDeclaration::parse_into(declarations, id, &context, parser)
     }).map_err(|err| {
-        let location = err.location;
-        let error = ContextualParseError::UnsupportedPropertyDeclaration(
-            parser.slice_from(start_position),
-            err,
-        );
-        context.log_css_error(location, error);
+        if context.error_reporting_enabled() {
+            report_one_css_error(
+                &context,
+                None,
+                None,
+                err,
+                parser.slice_from(start_position),
+                property_id_for_error_reporting,
+            )
+        }
     })
 }
 
@@ -1257,6 +1269,8 @@ pub fn parse_one_declaration_into(
 struct PropertyDeclarationParser<'a, 'b: 'a> {
     context: &'a ParserContext<'b>,
     declarations: &'a mut SourcePropertyDeclaration,
+    /// The last parsed property id if any.
+    last_parsed_property_id: Option<PropertyId>,
 }
 
 
@@ -1286,13 +1300,15 @@ impl<'a, 'b, 'i> DeclarationParser<'i> for PropertyDeclarationParser<'a, 'b> {
         let id = match PropertyId::parse(&name, self.context) {
             Ok(id) => id,
             Err(..) => {
-                return Err(input.new_custom_error(if is_non_mozilla_vendor_identifier(&name) {
-                    StyleParseErrorKind::UnknownVendorProperty
-                } else {
+                self.last_parsed_property_id = None;
+                return Err(input.new_custom_error(
                     StyleParseErrorKind::UnknownProperty(name)
-                }));
+                ));
             }
         };
+        if self.context.error_reporting_enabled() {
+            self.last_parsed_property_id = Some(id.clone());
+        }
         input.parse_until_before(Delimiter::Bang, |input| {
             PropertyDeclaration::parse_into(self.declarations, id, self.context, input)
         })?;
@@ -1306,20 +1322,104 @@ impl<'a, 'b, 'i> DeclarationParser<'i> for PropertyDeclarationParser<'a, 'b> {
     }
 }
 
+type SmallParseErrorVec<'i> = SmallVec<[(ParseError<'i>, &'i str, Option<PropertyId>); 2]>;
+
+fn alias_of_known_property(name: &str) -> Option<PropertyId> {
+    let mut prefixed = String::with_capacity(name.len() + 5);
+    prefixed.push_str("-moz-");
+    prefixed.push_str(name);
+    PropertyId::parse_enabled_for_all_content(&prefixed).ok()
+}
+
+#[cold]
+fn report_one_css_error<'i>(
+    context: &ParserContext,
+    block: Option<&PropertyDeclarationBlock>,
+    selectors: Option<&SelectorList<SelectorImpl>>,
+    mut error: ParseError<'i>,
+    slice: &str,
+    property: Option<PropertyId>,
+) {
+    debug_assert!(context.error_reporting_enabled());
+
+    fn all_properties_in_block(block: &PropertyDeclarationBlock, property: &PropertyId) -> bool {
+        match *property {
+            PropertyId::LonghandAlias(id, _) |
+            PropertyId::Longhand(id) => block.contains(id),
+            PropertyId::ShorthandAlias(id, _) |
+            PropertyId::Shorthand(id) => {
+                id.longhands().all(|longhand| block.contains(longhand))
+            },
+            // NOTE(emilio): We could do this, but it seems of limited utility,
+            // and it's linear on the size of the declaration block, so let's
+            // not.
+            PropertyId::Custom(..) => false,
+        }
+    }
+
+    if let ParseErrorKind::Custom(StyleParseErrorKind::UnknownProperty(ref name)) = error.kind {
+        if is_non_mozilla_vendor_identifier(name) {
+            // If the unrecognized property looks like a vendor-specific property,
+            // silently ignore it instead of polluting the error output.
+            return;
+        }
+        if let Some(alias) = alias_of_known_property(name) {
+            // This is an unknown property, but its -moz-* version is known.
+            // We don't want to report error if the -moz-* version is already
+            // specified.
+            if let Some(block) = block {
+                if all_properties_in_block(block, &alias) {
+                    return;
+                }
+            }
+        }
+    }
+
+    if let Some(ref property) = property {
+        if let Some(block) = block {
+            if all_properties_in_block(block, property) {
+                return;
+            }
+        }
+        error = match *property {
+            PropertyId::Custom(ref c) => StyleParseErrorKind::new_invalid(format!("--{}", c), error),
+            _ => StyleParseErrorKind::new_invalid(property.non_custom_id().unwrap().name(), error),
+        };
+    }
+
+    let location = error.location;
+    let error = ContextualParseError::UnsupportedPropertyDeclaration(slice, error, selectors);
+    context.log_css_error(location, error);
+}
+
+#[cold]
+fn report_css_errors(
+    context: &ParserContext,
+    block: &PropertyDeclarationBlock,
+    selectors: Option<&SelectorList<SelectorImpl>>,
+    errors: &mut SmallParseErrorVec,
+) {
+    for (error, slice, property) in errors.drain() {
+        report_one_css_error(context, Some(block), selectors, error, slice, property)
+    }
+}
 
 /// Parse a list of property declarations and return a property declaration
 /// block.
 pub fn parse_property_declaration_list(
     context: &ParserContext,
     input: &mut Parser,
+    selectors: Option<&SelectorList<SelectorImpl>>
 ) -> PropertyDeclarationBlock {
     let mut declarations = SourcePropertyDeclaration::new();
     let mut block = PropertyDeclarationBlock::new();
     let parser = PropertyDeclarationParser {
-        context: context,
+        context,
+        last_parsed_property_id: None,
         declarations: &mut declarations,
     };
     let mut iter = DeclarationListParser::new(input, parser);
+    let mut errors = SmallParseErrorVec::new();
     while let Some(declaration) = iter.next() {
         match declaration {
             Ok(importance) => {
@@ -1331,17 +1431,17 @@ pub fn parse_property_declaration_list(
             Err((error, slice)) => {
                 iter.parser.declarations.clear();
 
-                // If the unrecognized property looks like a vendor-specific property,
-                // silently ignore it instead of polluting the error output.
-                if let ParseErrorKind::Custom(StyleParseErrorKind::UnknownVendorProperty) = error.kind {
-                    continue;
+                if context.error_reporting_enabled() {
+                    let property = iter.parser.last_parsed_property_id.take();
+                    errors.push((error, slice, property));
                 }
-
-                let location = error.location;
-                let error = ContextualParseError::UnsupportedPropertyDeclaration(slice, error);
-                context.log_css_error(location, error);
             }
         }
     }
+
+    if !errors.is_empty() {
+        report_css_errors(context, &block, selectors, &mut errors)
+    }
+
     block
 }

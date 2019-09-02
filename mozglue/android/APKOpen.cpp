@@ -196,7 +196,8 @@ static mozglueresult loadGeckoLibs() {
   getrusage(RUSAGE_THREAD, &usage1_thread);
   getrusage(RUSAGE_SELF, &usage1);
 
-  gBootstrap = GetBootstrap(getUnpackedLibraryName("libxul.so").get());
+  gBootstrap = GetBootstrap(getUnpackedLibraryName("libxul.so").get(),
+                            LibLoadingStrategy::ReadAhead);
   if (!gBootstrap) {
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad",
                         "Couldn't get a handle to libxul!");
@@ -379,6 +380,11 @@ Java_org_mozilla_gecko_mozglue_GeckoLoader_nativeRun(JNIEnv* jenv, jclass jc,
     gBootstrap->XRE_InitChildProcess(argc - 1, argv, &childData);
   }
 
+#ifdef MOZ_WIDGET_ANDROID
+#  ifdef MOZ_PROFILE_GENERATE
+  gBootstrap->XRE_WriteLLVMProfData();
+#  endif
+#endif
   gBootstrap.reset();
   FreeArgv(argv, argc);
 }

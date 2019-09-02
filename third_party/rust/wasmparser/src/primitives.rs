@@ -13,8 +13,12 @@
  * limitations under the License.
  */
 
+use core::result;
 use std::boxed::Box;
-use std::result;
+use std::fmt;
+
+#[cfg(feature = "std")]
+use std::error::Error;
 
 #[derive(Debug, Copy, Clone)]
 pub struct BinaryReaderError {
@@ -24,10 +28,20 @@ pub struct BinaryReaderError {
 
 pub type Result<T> = result::Result<T, BinaryReaderError>;
 
+#[cfg(feature = "std")]
+impl Error for BinaryReaderError {}
+
+impl fmt::Display for BinaryReaderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} (at offset {})", self.message, self.offset)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CustomSectionKind {
     Unknown,
     Name,
+    Producers,
     SourceMappingURL,
     Reloc,
     Linking,
@@ -35,44 +49,59 @@ pub enum CustomSectionKind {
 
 /// Section code as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/binary/modules.html#sections
+/// [here]: https://webassembly.github.io/spec/core/binary/modules.html#sections
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SectionCode<'a> {
     Custom {
-        name: &'a [u8],
+        name: &'a str,
         kind: CustomSectionKind,
     },
-    Type,     // Function signature declarations
-    Import,   // Import declarations
-    Function, // Function declarations
-    Table,    // Indirect function table and other tables
-    Memory,   // Memory attributes
-    Global,   // Global declarations
-    Export,   // Exports
-    Start,    // Start function declaration
-    Element,  // Elements section
-    Code,     // Function bodies (code)
-    Data,     // Data segments
+    Type,      // Function signature declarations
+    Import,    // Import declarations
+    Function,  // Function declarations
+    Table,     // Indirect function table and other tables
+    Memory,    // Memory attributes
+    Global,    // Global declarations
+    Export,    // Exports
+    Start,     // Start function declaration
+    Element,   // Elements section
+    Code,      // Function bodies (code)
+    Data,      // Data segments
+    DataCount, // Count of passive data segments
 }
 
 /// Types as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/syntax/types.html#types
+/// [here]: https://webassembly.github.io/spec/core/syntax/types.html#types
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Type {
     I32,
     I64,
     F32,
     F64,
+    V128,
     AnyFunc,
     AnyRef,
     Func,
     EmptyBlockType,
 }
 
+/// Either a value type or a function type.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TypeOrFuncType {
+    /// A value type.
+    ///
+    /// When used as the type for a block, this type is the optional result
+    /// type: `[] -> [t?]`.
+    Type(Type),
+
+    /// A function type (referenced as an index into the types section).
+    FuncType(u32),
+}
+
 /// External types as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/syntax/types.html#external-types
+/// [here]: https://webassembly.github.io/spec/core/syntax/types.html#external-types
 #[derive(Debug, Copy, Clone)]
 pub enum ExternalKind {
     Function,
@@ -129,7 +158,7 @@ pub struct MemoryImmediate {
 #[derive(Debug, Copy, Clone)]
 pub struct Naming<'a> {
     pub index: u32,
-    pub name: &'a [u8],
+    pub name: &'a str,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -160,6 +189,7 @@ pub enum RelocType {
 #[derive(Debug)]
 pub struct BrTable<'a> {
     pub(crate) buffer: &'a [u8],
+    pub(crate) cnt: usize,
 }
 
 /// An IEEE binary32 immediate floating point value, represented as a u32
@@ -188,16 +218,27 @@ impl Ieee64 {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct V128(pub(crate) [u8; 16]);
+
+impl V128 {
+    pub fn bytes(&self) -> &[u8; 16] {
+        &self.0
+    }
+}
+
+pub type SIMDLaneIndex = u8;
+
 /// Instructions as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/binary/instructions.html
+/// [here]: https://webassembly.github.io/spec/core/binary/instructions.html
 #[derive(Debug)]
 pub enum Operator<'a> {
     Unreachable,
     Nop,
-    Block { ty: Type },
-    Loop { ty: Type },
-    If { ty: Type },
+    Block { ty: TypeOrFuncType },
+    Loop { ty: TypeOrFuncType },
+    If { ty: TypeOrFuncType },
     Else,
     End,
     Br { relative_depth: u32 },
@@ -384,6 +425,20 @@ pub enum Operator<'a> {
     I64TruncSSatF64,
     I64TruncUSatF64,
 
+    // 0xFC operators
+    // bulk memory https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md
+    MemoryInit { segment: u32 },
+    DataDrop { segment: u32 },
+    MemoryCopy,
+    MemoryFill,
+    TableInit { segment: u32 },
+    ElemDrop { segment: u32 },
+    TableCopy,
+    TableGet { table: u32 },
+    TableSet { table: u32 },
+    TableGrow { table: u32 },
+    TableSize { table: u32 },
+
     // 0xFE operators
     // https://github.com/WebAssembly/threads/blob/master/proposals/threads/Overview.md
     Wake { memarg: MemoryImmediate },
@@ -452,4 +507,149 @@ pub enum Operator<'a> {
     I64AtomicRmw8UCmpxchg { memarg: MemoryImmediate },
     I64AtomicRmw16UCmpxchg { memarg: MemoryImmediate },
     I64AtomicRmw32UCmpxchg { memarg: MemoryImmediate },
+
+    // 0xFD operators
+    // SIMD https://github.com/WebAssembly/simd/blob/master/proposals/simd/BinarySIMD.md
+    V128Load { memarg: MemoryImmediate },
+    V128Store { memarg: MemoryImmediate },
+    V128Const { value: V128 },
+    V8x16Shuffle { lanes: [SIMDLaneIndex; 16] },
+    I8x16Splat,
+    I8x16ExtractLaneS { lane: SIMDLaneIndex },
+    I8x16ExtractLaneU { lane: SIMDLaneIndex },
+    I8x16ReplaceLane { lane: SIMDLaneIndex },
+    I16x8Splat,
+    I16x8ExtractLaneS { lane: SIMDLaneIndex },
+    I16x8ExtractLaneU { lane: SIMDLaneIndex },
+    I16x8ReplaceLane { lane: SIMDLaneIndex },
+    I32x4Splat,
+    I32x4ExtractLane { lane: SIMDLaneIndex },
+    I32x4ReplaceLane { lane: SIMDLaneIndex },
+    I64x2Splat,
+    I64x2ExtractLane { lane: SIMDLaneIndex },
+    I64x2ReplaceLane { lane: SIMDLaneIndex },
+    F32x4Splat,
+    F32x4ExtractLane { lane: SIMDLaneIndex },
+    F32x4ReplaceLane { lane: SIMDLaneIndex },
+    F64x2Splat,
+    F64x2ExtractLane { lane: SIMDLaneIndex },
+    F64x2ReplaceLane { lane: SIMDLaneIndex },
+    I8x16Eq,
+    I8x16Ne,
+    I8x16LtS,
+    I8x16LtU,
+    I8x16GtS,
+    I8x16GtU,
+    I8x16LeS,
+    I8x16LeU,
+    I8x16GeS,
+    I8x16GeU,
+    I16x8Eq,
+    I16x8Ne,
+    I16x8LtS,
+    I16x8LtU,
+    I16x8GtS,
+    I16x8GtU,
+    I16x8LeS,
+    I16x8LeU,
+    I16x8GeS,
+    I16x8GeU,
+    I32x4Eq,
+    I32x4Ne,
+    I32x4LtS,
+    I32x4LtU,
+    I32x4GtS,
+    I32x4GtU,
+    I32x4LeS,
+    I32x4LeU,
+    I32x4GeS,
+    I32x4GeU,
+    F32x4Eq,
+    F32x4Ne,
+    F32x4Lt,
+    F32x4Gt,
+    F32x4Le,
+    F32x4Ge,
+    F64x2Eq,
+    F64x2Ne,
+    F64x2Lt,
+    F64x2Gt,
+    F64x2Le,
+    F64x2Ge,
+    V128Not,
+    V128And,
+    V128Or,
+    V128Xor,
+    V128Bitselect,
+    I8x16Neg,
+    I8x16AnyTrue,
+    I8x16AllTrue,
+    I8x16Shl,
+    I8x16ShrS,
+    I8x16ShrU,
+    I8x16Add,
+    I8x16AddSaturateS,
+    I8x16AddSaturateU,
+    I8x16Sub,
+    I8x16SubSaturateS,
+    I8x16SubSaturateU,
+    I8x16Mul,
+    I16x8Neg,
+    I16x8AnyTrue,
+    I16x8AllTrue,
+    I16x8Shl,
+    I16x8ShrS,
+    I16x8ShrU,
+    I16x8Add,
+    I16x8AddSaturateS,
+    I16x8AddSaturateU,
+    I16x8Sub,
+    I16x8SubSaturateS,
+    I16x8SubSaturateU,
+    I16x8Mul,
+    I32x4Neg,
+    I32x4AnyTrue,
+    I32x4AllTrue,
+    I32x4Shl,
+    I32x4ShrS,
+    I32x4ShrU,
+    I32x4Add,
+    I32x4Sub,
+    I32x4Mul,
+    I64x2Neg,
+    I64x2AnyTrue,
+    I64x2AllTrue,
+    I64x2Shl,
+    I64x2ShrS,
+    I64x2ShrU,
+    I64x2Add,
+    I64x2Sub,
+    F32x4Abs,
+    F32x4Neg,
+    F32x4Sqrt,
+    F32x4Add,
+    F32x4Sub,
+    F32x4Mul,
+    F32x4Div,
+    F32x4Min,
+    F32x4Max,
+    F64x2Abs,
+    F64x2Neg,
+    F64x2Sqrt,
+    F64x2Add,
+    F64x2Sub,
+    F64x2Mul,
+    F64x2Div,
+    F64x2Min,
+    F64x2Max,
+    I32x4TruncSF32x4Sat,
+    I32x4TruncUF32x4Sat,
+    I64x2TruncSF64x2Sat,
+    I64x2TruncUF64x2Sat,
+    F32x4ConvertSI32x4,
+    F32x4ConvertUI32x4,
+    F64x2ConvertSI64x2,
+    F64x2ConvertUI64x2,
+    V8x16Shuffle1,
+    V8x16Shuffle2Imm { lanes: [SIMDLaneIndex; 16] },
 }

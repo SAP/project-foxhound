@@ -80,10 +80,13 @@ class StoreBuffer {
 
     StoreBuffer* owner_;
 
+    JS::GCReason gcReason_;
+
     /* Maximum number of entries before we request a minor GC. */
     const static size_t MaxEntries = 48 * 1024 / sizeof(T);
 
-    explicit MonoTypeBuffer(StoreBuffer* owner) : last_(T()), owner_(owner) {}
+    explicit MonoTypeBuffer(StoreBuffer* owner, JS::GCReason reason)
+        : last_(T()), owner_(owner), gcReason_(reason) {}
 
     void clear() {
       last_ = T();
@@ -117,12 +120,15 @@ class StoreBuffer {
       last_ = T();
 
       if (MOZ_UNLIKELY(stores_.count() > MaxEntries)) {
-        owner_->setAboutToOverflow(T::FullBufferReason);
+        owner_->setAboutToOverflow(gcReason_);
       }
     }
 
     /* Trace the source of all edges in the store buffer. */
     void trace(TenuringTracer& mover);
+
+    template <typename CellType>
+    void traceTyped(TenuringTracer& mover);
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
       return stores_.shallowSizeOfExcludingThis(mallocSizeOf);
@@ -245,6 +251,8 @@ class StoreBuffer {
 
     CellPtrEdge() : edge(nullptr) {}
     explicit CellPtrEdge(Cell** v) : edge(v) {}
+    explicit CellPtrEdge(JSString** v) : edge(reinterpret_cast<Cell**>(v)) {}
+    explicit CellPtrEdge(JSObject** v) : edge(reinterpret_cast<Cell**>(v)) {}
     bool operator==(const CellPtrEdge& other) const {
       return edge == other.edge;
     }
@@ -257,7 +265,8 @@ class StoreBuffer {
       return !nursery.isInside(edge);
     }
 
-    void trace(TenuringTracer& mover) const;
+    template <typename CellType>
+    void traceTyped(TenuringTracer& mover) const;
 
     CellPtrEdge tagged() const {
       return CellPtrEdge((Cell**)(uintptr_t(edge) | 1));
@@ -270,8 +279,6 @@ class StoreBuffer {
     explicit operator bool() const { return edge != nullptr; }
 
     typedef PointerEdgeHasher<CellPtrEdge> Hasher;
-
-    static const auto FullBufferReason = JS::GCReason::FULL_CELL_PTR_BUFFER;
   };
 
   struct ValueEdge {
@@ -305,8 +312,6 @@ class StoreBuffer {
     explicit operator bool() const { return edge != nullptr; }
 
     typedef PointerEdgeHasher<ValueEdge> Hasher;
-
-    static const auto FullBufferReason = JS::GCReason::FULL_VALUE_BUFFER;
   };
 
   struct SlotsEdge {
@@ -388,8 +393,6 @@ class StoreBuffer {
       }
       static bool match(const SlotsEdge& k, const Lookup& l) { return k == l; }
     } Hasher;
-
-    static const auto FullBufferReason = JS::GCReason::FULL_SLOT_BUFFER;
   };
 
   template <typename Buffer, typename Edge>
@@ -417,7 +420,8 @@ class StoreBuffer {
   }
 
   MonoTypeBuffer<ValueEdge> bufferVal;
-  MonoTypeBuffer<CellPtrEdge> bufferCell;
+  MonoTypeBuffer<CellPtrEdge> bufStrCell;
+  MonoTypeBuffer<CellPtrEdge> bufObjCell;
   MonoTypeBuffer<SlotsEdge> bufferSlot;
   WholeCellBuffer bufferWholeCell;
   GenericBuffer bufferGeneric;
@@ -451,8 +455,13 @@ class StoreBuffer {
   /* Insert a single edge into the buffer/remembered set. */
   void putValue(JS::Value* vp) { put(bufferVal, ValueEdge(vp)); }
   void unputValue(JS::Value* vp) { unput(bufferVal, ValueEdge(vp)); }
-  void putCell(Cell** cellp) { put(bufferCell, CellPtrEdge(cellp)); }
-  void unputCell(Cell** cellp) { unput(bufferCell, CellPtrEdge(cellp)); }
+
+  void putCell(JSString** strp) { put(bufStrCell, CellPtrEdge(strp)); }
+  void unputCell(JSString** strp) { unput(bufStrCell, CellPtrEdge(strp)); }
+
+  void putCell(JSObject** strp) { put(bufObjCell, CellPtrEdge(strp)); }
+  void unputCell(JSObject** strp) { unput(bufObjCell, CellPtrEdge(strp)); }
+
   void putSlot(NativeObject* obj, int kind, uint32_t start, uint32_t count) {
     SlotsEdge edge(obj, kind, start, count);
     if (bufferSlot.last_.overlaps(edge)) {
@@ -474,7 +483,10 @@ class StoreBuffer {
 
   /* Methods to trace the source of all edges in the store buffer. */
   void traceValues(TenuringTracer& mover) { bufferVal.trace(mover); }
-  void traceCells(TenuringTracer& mover) { bufferCell.trace(mover); }
+  void traceCells(TenuringTracer& mover) {
+    bufStrCell.traceTyped<JSString>(mover);
+    bufObjCell.traceTyped<JSObject>(mover);
+  }
   void traceSlots(TenuringTracer& mover) { bufferSlot.trace(mover); }
   void traceWholeCells(TenuringTracer& mover) { bufferWholeCell.trace(mover); }
   void traceGenericEntries(JSTracer* trc) { bufferGeneric.trace(trc); }

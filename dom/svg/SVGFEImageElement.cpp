@@ -132,13 +132,12 @@ void SVGFEImageElement::MaybeLoadSVGImage() {
   }
 }
 
-nsresult SVGFEImageElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                       nsIContent* aBindingParent) {
-  nsresult rv =
-      SVGFEImageElementBase::BindToTree(aDocument, aParent, aBindingParent);
+nsresult SVGFEImageElement::BindToTree(BindContext& aContext,
+                                       nsINode& aParent) {
+  nsresult rv = SVGFEImageElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsImageLoadingContent::BindToTree(aDocument, aParent, aBindingParent);
+  nsImageLoadingContent::BindToTree(aContext, aParent);
 
   if (mStringAttributes[HREF].IsExplicitlySet() ||
       mStringAttributes[XLINK_HREF].IsExplicitlySet()) {
@@ -150,9 +149,9 @@ nsresult SVGFEImageElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return rv;
 }
 
-void SVGFEImageElement::UnbindFromTree(bool aDeep, bool aNullParent) {
-  nsImageLoadingContent::UnbindFromTree(aDeep, aNullParent);
-  SVGFEImageElementBase::UnbindFromTree(aDeep, aNullParent);
+void SVGFEImageElement::UnbindFromTree(bool aNullParent) {
+  nsImageLoadingContent::UnbindFromTree(aNullParent);
+  SVGFEImageElementBase::UnbindFromTree(aNullParent);
 }
 
 EventStates SVGFEImageElement::IntrinsicState() const {
@@ -165,7 +164,7 @@ EventStates SVGFEImageElement::IntrinsicState() const {
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFEImageElement)
 
-already_AddRefed<SVGAnimatedString> SVGFEImageElement::Href() {
+already_AddRefed<DOMSVGAnimatedString> SVGFEImageElement::Href() {
   return mStringAttributes[HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
@@ -248,13 +247,6 @@ bool SVGFEImageElement::OutputIsTainted(const nsTArray<bool>& aInputsAreTainted,
     return false;
   }
 
-  uint32_t status;
-  currentRequest->GetImageStatus(&status);
-  if ((status & imgIRequest::STATUS_LOAD_COMPLETE) == 0) {
-    // The load has not completed yet.
-    return false;
-  }
-
   nsCOMPtr<nsIPrincipal> principal;
   rv = currentRequest->GetImagePrincipal(getter_AddRefs(principal));
   if (NS_FAILED(rv) || !principal) {
@@ -284,7 +276,8 @@ SVGFEImageElement::PreserveAspectRatio() {
   return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
 }
 
-SVGAnimatedPreserveAspectRatio* SVGFEImageElement::GetPreserveAspectRatio() {
+SVGAnimatedPreserveAspectRatio*
+SVGFEImageElement::GetAnimatedPreserveAspectRatio() {
   return &mPreserveAspectRatio;
 }
 

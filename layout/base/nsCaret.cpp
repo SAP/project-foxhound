@@ -19,7 +19,6 @@
 #include "nsIFrame.h"
 #include "nsIScrollableFrame.h"
 #include "nsIContent.h"
-#include "nsIPresShell.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsBlockFrame.h"
@@ -29,6 +28,7 @@
 #include "nsMenuPopupFrame.h"
 #include "nsTextFragment.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/dom/Selection.h"
 #include "nsIBidiKeyboard.h"
@@ -117,27 +117,19 @@ nsCaret::nsCaret()
 
 nsCaret::~nsCaret() { StopBlinking(); }
 
-nsresult nsCaret::Init(nsIPresShell* inPresShell) {
-  NS_ENSURE_ARG(inPresShell);
+nsresult nsCaret::Init(PresShell* aPresShell) {
+  NS_ENSURE_ARG(aPresShell);
 
   mPresShell =
-      do_GetWeakReference(inPresShell);  // the presshell owns us, so no addref
+      do_GetWeakReference(aPresShell);  // the presshell owns us, so no addref
   NS_ASSERTION(mPresShell, "Hey, pres shell should support weak refs");
 
   mShowDuringSelection =
       LookAndFeel::GetInt(LookAndFeel::eIntID_ShowCaretDuringSelection,
                           mShowDuringSelection ? 1 : 0) != 0;
 
-  // get the selection from the pres shell, and set ourselves up as a selection
-  // listener
-
-  nsCOMPtr<nsISelectionController> selCon = do_QueryReferent(mPresShell);
-  if (!selCon) {
-    return NS_ERROR_FAILURE;
-  }
-
   RefPtr<Selection> selection =
-      selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
+      aPresShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
   if (!selection) {
     return NS_ERROR_FAILURE;
   }
@@ -314,9 +306,26 @@ nsRect nsCaret::GetGeometryForFrame(nsIFrame* aFrame, int32_t aFrameOffset,
 
   // Clamp the inline-position to be within our scroll frame. If we don't, then
   // it clips us, and we don't appear at all. See bug 335560.
-  nsIFrame* scrollFrame =
-      nsLayoutUtils::GetClosestFrameOfType(aFrame, LayoutFrameType::Scroll);
-  if (scrollFrame) {
+
+  // Find the ancestor scroll frame and determine whether we have any transforms
+  // up the ancestor chain.
+  bool hasTransform = false;
+  nsIFrame* scrollFrame = nullptr;
+  for (nsIFrame* f = aFrame; f; f = f->GetParent()) {
+    if (f->IsScrollFrame()) {
+      scrollFrame = f;
+      break;
+    }
+    if (f->IsTransformed()) {
+      hasTransform = true;
+    }
+  }
+
+  // FIXME(heycam): Skip clamping if we find any transform up the ancestor
+  // chain, since the GetOffsetTo call below doesn't take transforms into
+  // account. We could change this clamping to take transforms into account, but
+  // the clamping seems to be broken anyway; see bug 1539720.
+  if (scrollFrame && !hasTransform) {
     // First, use the scrollFrame to get at the scrollable view that we're in.
     nsIScrollableFrame* sf = do_QueryFrame(scrollFrame);
     nsIFrame* scrolled = sf->GetScrolledFrame();
@@ -573,7 +582,7 @@ void nsCaret::ResetBlinking() {
     mBlinkTimer->Cancel();
   } else {
     nsIEventTarget* target = nullptr;
-    if (nsCOMPtr<nsIPresShell> presShell = do_QueryReferent(mPresShell)) {
+    if (RefPtr<PresShell> presShell = do_QueryReferent(mPresShell)) {
       if (nsCOMPtr<Document> doc = presShell->GetDocument()) {
         target = doc->EventTargetFor(TaskCategory::Other);
       }
@@ -606,8 +615,10 @@ nsresult nsCaret::GetCaretFrameForNodeOffset(
     nsIFrame** aReturnFrame, nsIFrame** aReturnUnadjustedFrame,
     int32_t* aReturnOffset) {
   if (!aFrameSelection) return NS_ERROR_FAILURE;
-  nsIPresShell* presShell = aFrameSelection->GetShell();
-  if (!presShell) return NS_ERROR_FAILURE;
+  PresShell* presShell = aFrameSelection->GetPresShell();
+  if (!presShell) {
+    return NS_ERROR_FAILURE;
+  }
 
   if (!aContentNode || !aContentNode->IsInComposedDoc() ||
       presShell->GetDocument() != aContentNode->GetComposedDoc())

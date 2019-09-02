@@ -13,6 +13,7 @@
 #include "mozilla/layers/SourceSurfaceSharedData.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/StaticPrefs.h"  // for StaticPrefs
 #include "mozilla/SystemGroup.h"  // for SystemGroup
 
 namespace mozilla {
@@ -54,36 +55,39 @@ void SharedSurfacesChild::ImageKeyData::MergeDirtyRect(
   }
 }
 
+SharedSurfacesChild::SharedUserData::SharedUserData(
+    const wr::ExternalImageId& aId)
+    : Runnable("SharedSurfacesChild::SharedUserData"),
+      mId(aId),
+      mShared(false) {}
+
 SharedSurfacesChild::SharedUserData::~SharedUserData() {
+  // We may fail to dispatch during shutdown, and since it would be issued on
+  // the main thread, it releases the runnable instead of leaking it.
   if (mShared || !mKeys.IsEmpty()) {
     if (NS_IsMainThread()) {
       SharedSurfacesChild::Unshare(mId, mShared, mKeys);
     } else {
-      class DestroyRunnable final : public Runnable {
-       public:
-        DestroyRunnable(const wr::ExternalImageId& aId, bool aReleaseId,
-                        nsTArray<ImageKeyData>&& aKeys)
-            : Runnable("SharedSurfacesChild::SharedUserData::DestroyRunnable"),
-              mId(aId),
-              mReleaseId(aReleaseId),
-              mKeys(std::move(aKeys)) {}
-
-        NS_IMETHOD Run() override {
-          SharedSurfacesChild::Unshare(mId, mReleaseId, mKeys);
-          return NS_OK;
-        }
-
-       private:
-        wr::ExternalImageId mId;
-        bool mReleaseId;
-        AutoTArray<ImageKeyData, 1> mKeys;
-      };
-
-      nsCOMPtr<nsIRunnable> task =
-          new DestroyRunnable(mId, mShared, std::move(mKeys));
-      SystemGroup::Dispatch(TaskCategory::Other, task.forget());
+      MOZ_ASSERT_UNREACHABLE("Shared resources not released!");
     }
   }
+}
+
+/* static */
+void SharedSurfacesChild::SharedUserData::Destroy(void* aClosure) {
+  MOZ_ASSERT(aClosure);
+  RefPtr<SharedUserData> data =
+      dont_AddRef(static_cast<SharedUserData*>(aClosure));
+  if (data->mShared || !data->mKeys.IsEmpty()) {
+    SystemGroup::Dispatch(TaskCategory::Other, data.forget());
+  }
+}
+
+NS_IMETHODIMP SharedSurfacesChild::SharedUserData::Run() {
+  SharedSurfacesChild::Unshare(mId, mShared, mKeys);
+  mShared = false;
+  mKeys.Clear();
+  return NS_OK;
 }
 
 wr::ImageKey SharedSurfacesChild::SharedUserData::UpdateKey(
@@ -166,13 +170,6 @@ SourceSurfaceSharedData* SharedSurfacesChild::AsSourceSurfaceSharedData(
 }
 
 /* static */
-void SharedSurfacesChild::DestroySharedUserData(void* aClosure) {
-  MOZ_ASSERT(aClosure);
-  auto data = static_cast<SharedUserData*>(aClosure);
-  delete data;
-}
-
-/* static */
 nsresult SharedSurfacesChild::ShareInternal(SourceSurfaceSharedData* aSurface,
                                             SharedUserData** aUserData) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -192,8 +189,9 @@ nsresult SharedSurfacesChild::ShareInternal(SourceSurfaceSharedData* aSurface,
   SharedUserData* data =
       static_cast<SharedUserData*>(aSurface->GetUserData(&sSharedKey));
   if (!data) {
-    data = new SharedUserData(manager->GetNextExternalImageId());
-    aSurface->AddUserData(&sSharedKey, data, DestroySharedUserData);
+    data =
+        MakeAndAddRef<SharedUserData>(manager->GetNextExternalImageId()).take();
+    aSurface->AddUserData(&sSharedKey, data, SharedUserData::Destroy);
   } else if (!manager->OwnsExternalImageId(data->Id())) {
     // If the id isn't owned by us, that means the bridge was reinitialized, due
     // to the GPU process crashing. All previous mappings have been released.
@@ -480,18 +478,15 @@ nsresult SharedSurfacesChild::UpdateAnimation(ImageContainer* aContainer,
 
 AnimationImageKeyData::AnimationImageKeyData(RenderRootStateManager* aManager,
                                              const wr::ImageKey& aImageKey)
-    : SharedSurfacesChild::ImageKeyData(aManager, aImageKey),
-      mRecycling(false) {}
+    : SharedSurfacesChild::ImageKeyData(aManager, aImageKey) {}
 
 AnimationImageKeyData::AnimationImageKeyData(AnimationImageKeyData&& aOther)
     : SharedSurfacesChild::ImageKeyData(std::move(aOther)),
-      mPendingRelease(std::move(aOther.mPendingRelease)),
-      mRecycling(aOther.mRecycling) {}
+      mPendingRelease(std::move(aOther.mPendingRelease)) {}
 
 AnimationImageKeyData& AnimationImageKeyData::operator=(
     AnimationImageKeyData&& aOther) {
   mPendingRelease = std::move(aOther.mPendingRelease);
-  mRecycling = aOther.mRecycling;
   SharedSurfacesChild::ImageKeyData::operator=(std::move(aOther));
   return *this;
 }
@@ -517,7 +512,7 @@ void SharedSurfacesAnimation::Destroy() {
 
   for (const auto& entry : mKeys) {
     MOZ_ASSERT(!entry.mManager->IsDestroyed());
-    if (entry.mRecycling) {
+    if (StaticPrefs::image_animated_decode_on_demand_recycle()) {
       entry.mManager->DeregisterAsyncAnimation(entry.mImageKey);
     }
     entry.mManager->AddImageKeyForDiscard(entry.mImageKey);
@@ -533,11 +528,7 @@ void SharedSurfacesAnimation::HoldSurfaceForRecycling(
     return;
   }
 
-  if (!aEntry.mRecycling) {
-    aEntry.mManager->RegisterAsyncAnimation(aEntry.mImageKey, this);
-    aEntry.mRecycling = true;
-  }
-
+  MOZ_ASSERT(StaticPrefs::image_animated_decode_on_demand_recycle());
   aEntry.mPendingRelease.AppendElement(aParentSurface);
 }
 
@@ -626,6 +617,10 @@ nsresult SharedSurfacesAnimation::UpdateKey(
 
   if (!found) {
     aKey = aManager->WrBridge()->GetNextImageKey();
+    if (StaticPrefs::image_animated_decode_on_demand_recycle()) {
+      aManager->RegisterAsyncAnimation(aKey, this);
+    }
+
     AnimationImageKeyData data(aManager, aKey);
     HoldSurfaceForRecycling(data, aParentSurface, aSurface);
     mKeys.AppendElement(std::move(data));

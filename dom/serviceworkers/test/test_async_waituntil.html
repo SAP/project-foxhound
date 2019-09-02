@@ -10,7 +10,6 @@
 <head>
   <title>Test for Bug 1263304</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script src="/tests/SimpleTest/AddTask.js"></script>
   <script src="error_reporting_helpers.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
@@ -46,9 +45,9 @@ add_task(async function async_wait_until() {
   var worker;
   let registration = await navigator.serviceWorker.register(
     "async_waituntil_worker.js", { scope: "./"} )
-    .then(function(registration) {
-      worker = registration.installing;
-      return waitForState(worker, 'activated', registration);
+    .then(function(reg) {
+      worker = reg.installing;
+      return waitForState(worker, 'activated', reg);
     });
 
   // The service worker will claim us when it becomes active.

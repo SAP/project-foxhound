@@ -7,6 +7,7 @@
 #include "nsRangeFrame.h"
 
 #include "mozilla/EventStates.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TouchEvents.h"
 
 #include "gfxContext.h"
@@ -17,10 +18,10 @@
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
 #include "nsNameSpaceManager.h"
-#include "nsIPresShell.h"
 #include "nsGkAtoms.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "nsNodeInfoManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/ServoStyleSet.h"
@@ -40,7 +41,7 @@ using namespace mozilla::image;
 
 NS_IMPL_ISUPPORTS(nsRangeFrame::DummyTouchListener, nsIDOMEventListener)
 
-nsIFrame* NS_NewRangeFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewRangeFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsRangeFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -147,10 +148,10 @@ void nsRangeFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
   }
 }
 
-class nsDisplayRangeFocusRing final : public nsDisplayItem {
+class nsDisplayRangeFocusRing final : public nsPaintedDisplayItem {
  public:
   nsDisplayRangeFocusRing(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayRangeFocusRing);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -213,7 +214,7 @@ void nsDisplayRangeFocusRing::Paint(nsDisplayListBuilder* aBuilder,
   MOZ_ASSERT(computedStyle, "We only exist if mOuterFocusStyle is non-null");
 
   PaintBorderFlags flags = aBuilder->ShouldSyncDecodeImages()
-                               ? PaintBorderFlags::SYNC_DECODE_IMAGES
+                               ? PaintBorderFlags::SyncDecodeImages
                                : PaintBorderFlags();
 
   ImgDrawResult result = nsCSSRendering::PaintBorder(
@@ -269,8 +270,7 @@ void nsRangeFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     return;  // the native theme displays its own visual indication of focus
   }
 
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplayRangeFocusRing>(aBuilder, this));
+  aLists.Content()->AppendNewToTop<nsDisplayRangeFocusRing>(aBuilder, this);
 }
 
 void nsRangeFrame::Reflow(nsPresContext* aPresContext,
@@ -295,7 +295,7 @@ void nsRangeFrame::Reflow(nsPresContext* aPresContext,
 
   WritingMode wm = aReflowInput.GetWritingMode();
   nscoord computedBSize = aReflowInput.ComputedBSize();
-  if (computedBSize == NS_AUTOHEIGHT) {
+  if (computedBSize == NS_UNCONSTRAINEDSIZE) {
     computedBSize = 0;
   }
   LogicalSize finalSize(
@@ -339,7 +339,7 @@ void nsRangeFrame::ReflowAnonymousContent(nsPresContext* aPresContext,
   // for our anonymous content:
   nscoord rangeFrameContentBoxWidth = aReflowInput.ComputedWidth();
   nscoord rangeFrameContentBoxHeight = aReflowInput.ComputedHeight();
-  if (rangeFrameContentBoxHeight == NS_AUTOHEIGHT) {
+  if (rangeFrameContentBoxHeight == NS_UNCONSTRAINEDSIZE) {
     rangeFrameContentBoxHeight = 0;
   }
 
@@ -589,8 +589,8 @@ void nsRangeFrame::UpdateForValueChange() {
   }
 
 #ifdef ACCESSIBILITY
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
+  if (nsAccessibilityService* accService =
+          PresShell::GetAccessibilityService()) {
     accService->RangeValueChanged(PresShell(), mContent);
   }
 #endif
@@ -711,7 +711,7 @@ nsresult nsRangeFrame::AttributeChanged(int32_t aNameSpaceID,
         UpdateForValueChange();
       }
     } else if (aAttribute == nsGkAtoms::orient) {
-      PresShell()->FrameNeedsReflow(this, nsIPresShell::eResize,
+      PresShell()->FrameNeedsReflow(this, IntrinsicDirty::Resize,
                                     NS_FRAME_IS_DIRTY);
     }
   }

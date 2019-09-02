@@ -140,7 +140,7 @@ def make_base_task(config, name, description, command):
             'checkout': False,
             'command': command,
         },
-        'worker-type': 'aws-provisioner-v1/gecko-{level}-images',
+        'worker-type': 'images',
         'worker': {
             'chain-of-trust': True,
             'docker-image': {'in-tree': 'fetch'},
@@ -258,7 +258,11 @@ def create_chromium_fetch_task(config, job):
             task,
             cache_type=CACHE_TYPE,
             cache_name=cache_name,
-            digest_data=["revision={}".format(revision), "platform={}".format(platform)],
+            digest_data=[
+                "revision={}".format(revision),
+                "platform={}".format(platform),
+                "artifact_name={}".format(artifact_name),
+            ],
         )
 
     return task

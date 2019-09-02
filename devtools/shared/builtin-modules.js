@@ -23,6 +23,7 @@ const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 // Steal various globals only available in JSM scope (and not Sandbox one)
 const {
   console,
+  DebuggerNotificationObserver,
   DOMPoint,
   DOMQuad,
   DOMRect,
@@ -164,11 +165,18 @@ function defineLazyServiceGetter(object, name, contract, interfaceName) {
  *        An object which acts on behalf of the module to be imported until
  *        the module has been imported.
  */
-function defineLazyModuleGetter(object, name, resource, symbol,
-                                preLambda, postLambda, proxy) {
+function defineLazyModuleGetter(
+  object,
+  name,
+  resource,
+  symbol,
+  preLambda,
+  postLambda,
+  proxy
+) {
   proxy = proxy || {};
 
-  if (typeof (preLambda) === "function") {
+  if (typeof preLambda === "function") {
     preLambda.apply(proxy);
   }
 
@@ -177,7 +185,7 @@ function defineLazyModuleGetter(object, name, resource, symbol,
     try {
       ChromeUtils.import(resource, temp);
 
-      if (typeof (postLambda) === "function") {
+      if (typeof postLambda === "function") {
         postLambda.apply(proxy);
       }
     } catch (ex) {
@@ -229,8 +237,8 @@ function lazyRequireGetter(obj, property, module, destructure) {
 // List of pseudo modules exposed to all devtools modules.
 exports.modules = {
   ChromeUtils,
+  DebuggerNotificationObserver,
   HeapSnapshot,
-  InspectorUtils,
   promise,
   // Expose "chrome" Promise, which aren't related to any document
   // and so are never frozen, even if the browser loader module which
@@ -246,13 +254,17 @@ defineLazyGetter(exports.modules, "Debugger", () => {
   if (global.Debugger) {
     return global.Debugger;
   }
-  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
+  const { addDebuggerToGlobal } = ChromeUtils.import(
+    "resource://gre/modules/jsdebugger.jsm"
+  );
   addDebuggerToGlobal(global);
   return global.Debugger;
 });
 
 defineLazyGetter(exports.modules, "ChromeDebugger", () => {
-  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
+  const { addDebuggerToGlobal } = ChromeUtils.import(
+    "resource://gre/modules/jsdebugger.jsm"
+  );
   addDebuggerToGlobal(debuggerSandbox);
   return debuggerSandbox.Debugger;
 });
@@ -264,13 +276,26 @@ defineLazyGetter(exports.modules, "RecordReplayControl", () => {
   if (global.RecordReplayControl) {
     return global.RecordReplayControl;
   }
-  const { addDebuggerToGlobal } = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
+  const { addDebuggerToGlobal } = ChromeUtils.import(
+    "resource://gre/modules/jsdebugger.jsm"
+  );
   addDebuggerToGlobal(global);
   return global.RecordReplayControl;
 });
 
+defineLazyGetter(exports.modules, "InspectorUtils", () => {
+  if (exports.modules.Debugger.recordReplayProcessKind() == "Middleman") {
+    const ReplayInspector = require("devtools/server/actors/replay/inspector");
+    return ReplayInspector.createInspectorUtils(InspectorUtils);
+  }
+  return InspectorUtils;
+});
+
 defineLazyGetter(exports.modules, "Timer", () => {
-  const {setTimeout, clearTimeout} = require("resource://gre/modules/Timer.jsm");
+  const {
+    setTimeout,
+    clearTimeout,
+  } = require("resource://gre/modules/Timer.jsm");
   // Do not return Cu.import result, as DevTools loader would freeze Timer.jsm globals...
   return {
     setTimeout,
@@ -290,7 +315,6 @@ exports.globals = {
   btoa,
   console,
   CSS,
-  CSSRule,
   // Make sure `define` function exists.  This allows defining some modules
   // in AMD format while retaining CommonJS compatibility through this hook.
   // JSON Viewer needs modules in AMD format, as it currently uses RequireJS
@@ -369,5 +393,17 @@ lazyGlobal("WebSocket", () => {
   return Services.appShell.hiddenDOMWindow.WebSocket;
 });
 lazyGlobal("indexedDB", () => {
-  return require("devtools/shared/indexed-db").createDevToolsIndexedDB(indexedDB);
+  return require("devtools/shared/indexed-db").createDevToolsIndexedDB(
+    indexedDB
+  );
+});
+lazyGlobal("isReplaying", () => {
+  return exports.modules.Debugger.recordReplayProcessKind() == "Middleman";
+});
+lazyGlobal("CSSRule", () => {
+  if (exports.modules.Debugger.recordReplayProcessKind() == "Middleman") {
+    const ReplayInspector = require("devtools/server/actors/replay/inspector");
+    return ReplayInspector.createCSSRule(CSSRule);
+  }
+  return CSSRule;
 });

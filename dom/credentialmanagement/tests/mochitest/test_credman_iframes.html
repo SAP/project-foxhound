@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <head>
   <title>Credential Management: Prohibit use in cross-origin iframes</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <meta charset=utf-8>
 </head>
@@ -46,7 +45,8 @@ function handleEventMessage(event) {
 window.addEventListener("message", handleEventMessage);
 SpecialPowers.pushPrefEnv({"set": [["security.webauth.webauthn", true],
                                    ["security.webauth.webauthn_enable_softtoken", true],
-                                   ["security.webauth.webauthn_enable_usbtoken", false]]},
+                                   ["security.webauth.webauthn_enable_usbtoken", false],
+                                   ["security.webauth.webauthn_enable_android_fido2", false]]},
 function() {
   document.getElementById("frame_top").src = "https://example.com/tests/dom/credentialmanagement/tests/mochitest/frame_credman_iframes.html";
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf8">
   <title>Test for getCachedMessages and Service Workers</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="common.js"></script>
   <!-- Any copyright is dedicated to the Public Domain.
      - http://creativecommons.org/publicdomain/zero/1.0/ -->
@@ -92,7 +92,7 @@ addEventListener("load", startTest);
 
 // This test needs to add tabs that are controlled by a service worker
 // so use some special powers to dig around and find gBrowser
-let {gBrowser} = SpecialPowers._getTopChromeWindow(SpecialPowers.window.get());
+let {gBrowser} = SpecialPowers._getTopChromeWindow(SpecialPowers.window);
 
 SimpleTest.registerCleanupFunction(() => {
   while (gBrowser.tabs.length > 1) {

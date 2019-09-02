@@ -3,25 +3,28 @@ function info(message) {
 }
 
 function ok(test, message) {
-  postMessage({ type: 'ok', test: test, message: message });
+  postMessage({ type: "ok", test: test, message: message });
 }
 
 function is(a, b, message) {
-  postMessage({ type: 'is', test1: a, test2: b, message: message });
+  postMessage({ type: "is", test1: a, test2: b, message: message });
 }
 
 if (self.Notification) {
   var steps = [
-    function (done) {
+    function(done) {
       info("Test notification permission");
       ok(typeof Notification === "function", "Notification constructor exists");
-      ok(Notification.permission === "denied", "Notification.permission is denied.");
+      ok(
+        Notification.permission === "denied",
+        "Notification.permission is denied."
+      );
 
       var n = new Notification("Hello");
       n.onerror = function(e) {
         ok(true, "error called due to permission denied.");
         done();
-      }
+      };
     },
   ];
 
@@ -29,7 +32,7 @@ if (self.Notification) {
     var context = {};
     (function executeRemainingTests(remainingTests) {
       if (!remainingTests.length) {
-        postMessage({type: 'finish'});
+        postMessage({ type: "finish" });
         return;
       }
 
@@ -44,13 +47,13 @@ if (self.Notification) {
         if (nextTest.length === 0) {
           finishTest();
         }
-      } catch (e) {
-        ok(false, "Test threw exception! " + nextTest + " " + e);
+      } catch (ex) {
+        ok(false, "Test threw exception! " + nextTest + " " + ex);
         finishTest();
       }
     })(steps);
-  }
+  };
 } else {
   ok(true, "Notifications are not enabled in workers on the platform.");
-  postMessage({ type: 'finish' });
+  postMessage({ type: "finish" });
 }

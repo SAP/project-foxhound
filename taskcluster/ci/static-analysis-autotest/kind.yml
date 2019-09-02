@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+---
 loader: taskgraph.loader.transform:loader
 
 kind-dependencies:
@@ -40,7 +40,7 @@ jobs:
             job-name: linux64-st-autotest-debug
         treeherder:
             platform: linux64/debug
-        worker-type: aws-provisioner-v1/gecko-t-linux-large
+        worker-type: t-linux-large
         worker:
             docker-image: {in-tree: static-analysis-build}
             env:
@@ -71,7 +71,7 @@ jobs:
         treeherder:
             platform: windows2012-64/debug
             tier: 2
-        worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+        worker-type: b-win2012
         worker:
             env:
                 TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"

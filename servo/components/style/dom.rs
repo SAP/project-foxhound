@@ -346,6 +346,14 @@ pub trait TShadowRoot: Sized + Copy + Clone + PartialEq {
     where
         Self: 'a;
 
+    /// Get the list of shadow parts for this shadow root.
+    fn parts<'a>(&self) -> &[<Self::ConcreteNode as TNode>::ConcreteElement]
+    where
+        Self: 'a,
+    {
+        &[]
+    }
+
     /// Get a list of elements with a given ID in this shadow root, sorted by
     /// tree position.
     ///
@@ -441,6 +449,11 @@ pub trait TElement:
         None
     }
 
+    /// The ::marker pseudo-element of this element, if it exists.
+    fn marker_pseudo_element(&self) -> Option<Self> {
+        None
+    }
+
     /// Execute `f` for each anonymous content child (apart from ::before and
     /// ::after) whose originating element is `self`.
     fn each_anonymous_content_child<F>(&self, _f: F)
@@ -507,6 +520,9 @@ pub trait TElement:
     /// Whether this element has an attribute with a given namespace.
     fn has_attr(&self, namespace: &Namespace, attr: &LocalName) -> bool;
 
+    /// Returns whether this element has a `part` attribute.
+    fn has_part_attr(&self) -> bool;
+
     /// The ID for this element.
     fn id(&self) -> Option<&WeakAtom>;
 
@@ -514,6 +530,13 @@ pub trait TElement:
     fn each_class<F>(&self, callback: F)
     where
         F: FnMut(&Atom);
+
+    /// Internal iterator for the part names of this element.
+    fn each_part<F>(&self, _callback: F)
+    where
+        F: FnMut(&Atom),
+    {
+    }
 
     /// Whether a given element may generate a pseudo-element.
     ///
@@ -637,15 +660,6 @@ pub trait TElement:
         self.unset_dirty_descendants();
     }
 
-    /// Clear all element flags related to dirtiness.
-    ///
-    /// In Gecko, this corresponds to the regular dirty descendants bit, the
-    /// animation-only dirty descendants bit, the lazy frame construction bit,
-    /// and the lazy frame construction descendants bit.
-    unsafe fn clear_dirty_bits(&self) {
-        self.unset_dirty_descendants();
-    }
-
     /// Returns true if this element is a visited link.
     ///
     /// Servo doesn't support visited styles yet.
@@ -765,7 +779,7 @@ pub trait TElement:
     /// Returns the anonymous content for the current element's XBL binding,
     /// given if any.
     ///
-    /// This is used in Gecko for XBL and shadow DOM.
+    /// This is used in Gecko for XBL.
     fn xbl_binding_anonymous_content(&self) -> Option<Self::ConcreteNode> {
         None
     }
@@ -776,11 +790,6 @@ pub trait TElement:
     /// The shadow root which roots the subtree this element is contained in.
     fn containing_shadow(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot>;
 
-    /// XBL hack for style sharing. :(
-    fn has_same_xbl_proto_binding_as(&self, _other: Self) -> bool {
-        true
-    }
-
     /// Return the element which we can use to look up rules in the selector
     /// maps.
     ///
@@ -788,7 +797,7 @@ pub trait TElement:
     /// element-backed pseudo-element, in which case we return the originating
     /// element.
     fn rule_hash_target(&self) -> Self {
-        if self.implemented_pseudo_element().is_some() {
+        if self.is_pseudo_element() {
             self.pseudo_element_originating_element()
                 .expect("Trying to collect rules for a detached pseudo-element")
         } else {
@@ -796,69 +805,48 @@ pub trait TElement:
         }
     }
 
-    /// Implements Gecko's `nsBindingManager::WalkRules`.
-    ///
-    /// Returns whether to cut off the binding inheritance, that is, whether
-    /// document rules should _not_ apply.
-    fn each_xbl_cascade_data<'a, F>(&self, _: F) -> bool
-    where
-        Self: 'a,
-        F: FnMut(&'a CascadeData, QuirksMode),
-    {
-        false
-    }
-
     /// Executes the callback for each applicable style rule data which isn't
     /// the main document's data (which stores UA / author rules).
     ///
     /// The element passed to the callback is the containing shadow host for the
-    /// data if it comes from Shadow DOM, None if it comes from XBL.
+    /// data if it comes from Shadow DOM.
     ///
     /// Returns whether normal document author rules should apply.
     fn each_applicable_non_document_style_rule_data<'a, F>(&self, mut f: F) -> bool
     where
         Self: 'a,
-        F: FnMut(&'a CascadeData, QuirksMode, Option<Self>),
+        F: FnMut(&'a CascadeData, Self),
     {
         use rule_collector::containing_shadow_ignoring_svg_use;
 
-        let mut doc_rules_apply = !self.each_xbl_cascade_data(|data, quirks_mode| {
-            f(data, quirks_mode, None);
-        });
+        let target = self.rule_hash_target();
+        if !target.matches_user_and_author_rules() {
+            return false;
+        }
+
+        let mut doc_rules_apply = true;
 
         // Use the same rules to look for the containing host as we do for rule
         // collection.
-        if let Some(shadow) = containing_shadow_ignoring_svg_use(*self) {
+        if let Some(shadow) = containing_shadow_ignoring_svg_use(target) {
             doc_rules_apply = false;
             if let Some(data) = shadow.style_data() {
-                f(
-                    data,
-                    self.as_node().owner_doc().quirks_mode(),
-                    Some(shadow.host()),
-                );
+                f(data, shadow.host());
             }
         }
 
-        if let Some(shadow) = self.shadow_root() {
+        if let Some(shadow) = target.shadow_root() {
             if let Some(data) = shadow.style_data() {
-                f(
-                    data,
-                    self.as_node().owner_doc().quirks_mode(),
-                    Some(shadow.host()),
-                );
+                f(data, shadow.host());
             }
         }
 
-        let mut current = self.assigned_slot();
+        let mut current = target.assigned_slot();
         while let Some(slot) = current {
             // Slots can only have assigned nodes when in a shadow tree.
             let shadow = slot.containing_shadow().unwrap();
             if let Some(data) = shadow.style_data() {
-                f(
-                    data,
-                    self.as_node().owner_doc().quirks_mode(),
-                    Some(shadow.host()),
-                );
+                f(data, shadow.host());
             }
             current = slot.assigned_slot();
         }
@@ -912,6 +900,13 @@ pub trait TElement:
         hints: &mut V,
     ) where
         V: Push<ApplicableDeclarationBlock>;
+
+    /// Returns element's local name.
+    fn local_name(&self) -> &<SelectorImpl as selectors::parser::SelectorImpl>::BorrowedLocalName;
+
+    /// Returns element's namespace.
+    fn namespace(&self)
+        -> &<SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl;
 }
 
 /// TNode and TElement aren't Send because we want to be careful and explicit

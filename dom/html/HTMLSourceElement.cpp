@@ -7,6 +7,7 @@
 #include "mozilla/dom/HTMLSourceElement.h"
 #include "mozilla/dom/HTMLSourceElementBinding.h"
 
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/ResponsiveImageSelector.h"
@@ -39,8 +40,7 @@ NS_IMPL_ELEMENT_CLONE(HTMLSourceElement)
 
 bool HTMLSourceElement::MatchesCurrentMedia() {
   if (mMediaList) {
-    nsPresContext* pctx = OwnerDoc()->GetPresContext();
-    return pctx && mMediaList->Matches(pctx);
+    return mMediaList->Matches(*OwnerDoc());
   }
 
   // No media specified
@@ -54,10 +54,8 @@ bool HTMLSourceElement::WouldMatchMediaForDocument(const nsAString& aMedia,
     return true;
   }
 
-  nsPresContext* pctx = aDocument->GetPresContext();
-
   RefPtr<MediaList> mediaList = MediaList::Create(aMedia);
-  return pctx && mediaList->Matches(pctx);
+  return mediaList->Matches(*aDocument);
 }
 
 void HTMLSourceElement::UpdateMediaList(const nsAttrValue* aValue) {
@@ -126,13 +124,12 @@ nsresult HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       aNameSpaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
 }
 
-nsresult HTMLSourceElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                       nsIContent* aBindingParent) {
-  nsresult rv =
-      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult HTMLSourceElement::BindToTree(BindContext& aContext,
+                                       nsINode& aParent) {
+  nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (auto* media = HTMLMediaElement::FromNodeOrNull(aParent)) {
+  if (auto* media = HTMLMediaElement::FromNode(aParent)) {
     media->NotifyAddedSource();
   }
 

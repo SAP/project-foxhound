@@ -7,7 +7,7 @@
 #include "nsISupports.idl"
 
 /* NOTE: this interface is completely undesigned, not stable and likely to change */
-[scriptable, uuid(1accd618-4c80-4703-9d29-ecf257d397c8)]
+[scriptable, builtinclass, uuid(1accd618-4c80-4703-9d29-ecf257d397c8)]
 interface nsIGfxInfo : nsISupports
 {
   /*
@@ -20,6 +20,11 @@ interface nsIGfxInfo : nsISupports
   readonly attribute AString cleartypeParameters;
 
   /*
+   * These are non-Android linux-specific
+   */
+  readonly attribute AString windowProtocol;
+
+  /*
    * These are valid across all platforms.
    */
   readonly attribute AString ContentBackend;
@@ -29,7 +34,6 @@ interface nsIGfxInfo : nsISupports
   readonly attribute boolean ContentUsesTiling;
   readonly attribute boolean OffMainThreadPaintEnabled;
   readonly attribute long OffMainThreadPaintWorkerCount;
-  readonly attribute boolean LowEndMachine;
   readonly attribute unsigned long TargetFrameRate;
 
   // XXX: Switch to a list of devices, rather than explicitly numbering them.
@@ -59,6 +63,9 @@ interface nsIGfxInfo : nsISupports
   readonly attribute AString adapterRAM;
   readonly attribute AString adapterRAM2;
 
+  readonly attribute AString adapterDriverVendor;
+  readonly attribute AString adapterDriverVendor2;
+
   readonly attribute AString adapterDriverVersion;
   readonly attribute AString adapterDriverVersion2;
 
@@ -78,10 +85,7 @@ interface nsIGfxInfo : nsISupports
   [implicit_jscontext]
   jsval getMonitors();
 
-  void getFailures(
-               out unsigned long failureCount,
-               [optional, array, size_is(failureCount)] out long indices,
-               [retval, array, size_is(failureCount)] out string failures);
+  Array<ACString> getFailures(out Array<long> indices);
 
   [noscript, notxpcom] void logFailure(in ACString failure);
   /*

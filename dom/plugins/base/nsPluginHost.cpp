@@ -87,7 +87,6 @@
 #include "nsPluginManifestLineReader.h"
 
 #include "nsIWeakReferenceUtils.h"
-#include "nsIPresShell.h"
 #include "nsPluginNativeWindow.h"
 #include "nsIContentPolicy.h"
 #include "nsContentPolicyUtils.h"
@@ -96,6 +95,7 @@
 #include "nsIImageLoadingContent.h"
 #include "mozilla/Preferences.h"
 #include "nsVersionComparator.h"
+#include "ReferrerInfo.h"
 
 #include "mozilla/dom/Promise.h"
 
@@ -268,18 +268,27 @@ class BlocklistPromiseHandler final
     sPendingBlocklistStateRequests--;
     // If this was the only remaining pending request, check if we need to write
     // state and if so update the child processes.
-    if (!sPendingBlocklistStateRequests &&
-        sPluginBlocklistStatesChangedSinceLastWrite) {
-      sPluginBlocklistStatesChangedSinceLastWrite = false;
+    if (!sPendingBlocklistStateRequests) {
+      if (sPluginBlocklistStatesChangedSinceLastWrite) {
+        sPluginBlocklistStatesChangedSinceLastWrite = false;
 
-      RefPtr<nsPluginHost> host = nsPluginHost::GetInst();
-      // Write the changed list to disk:
-      host->WritePluginInfo();
+        RefPtr<nsPluginHost> host = nsPluginHost::GetInst();
+        // Write the changed list to disk:
+        host->WritePluginInfo();
 
-      // We update blocklist info in content processes asynchronously
-      // by just sending a new plugin list to content.
-      host->IncrementChromeEpoch();
-      host->SendPluginsToContent();
+        // We update blocklist info in content processes asynchronously
+        // by just sending a new plugin list to content.
+        host->IncrementChromeEpoch();
+        host->SendPluginsToContent();
+      }
+
+      // Now notify observers that we're done updating plugin state.
+      nsCOMPtr<nsIObserverService> obsService =
+          mozilla::services::GetObserverService();
+      if (obsService) {
+        obsService->NotifyObservers(
+            nullptr, "plugin-blocklist-updates-finished", nullptr);
+      }
     }
   }
 
@@ -358,7 +367,7 @@ nsPluginHost::nsPluginHost()
   if (obsService) {
     obsService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
     if (XRE_IsParentProcess()) {
-      obsService->AddObserver(this, "blocklist-updated", false);
+      obsService->AddObserver(this, "plugin-blocklist-updated", false);
     }
   }
 
@@ -1081,33 +1090,15 @@ void nsPluginHost::GetPlugins(
 
 // FIXME-jsplugins Check users for order of fake v non-fake
 NS_IMETHODIMP
-nsPluginHost::GetPluginTags(uint32_t* aPluginCount, nsIPluginTag*** aResults) {
+nsPluginHost::GetPluginTags(nsTArray<RefPtr<nsIPluginTag>>& aResults) {
   LoadPlugins();
 
-  uint32_t count = 0;
-  uint32_t fakeCount = mFakePlugins.Length();
-  RefPtr<nsPluginTag> plugin = mPlugins;
-  while (plugin != nullptr) {
-    count++;
-    plugin = plugin->mNext;
+  for (nsPluginTag* plugin = mPlugins; plugin; plugin = plugin->mNext) {
+    aResults.AppendElement(plugin);
   }
 
-  *aResults = static_cast<nsIPluginTag**>(
-      moz_xmalloc((fakeCount + count) * sizeof(**aResults)));
-
-  *aPluginCount = count + fakeCount;
-
-  plugin = mPlugins;
-  for (uint32_t i = 0; i < count; i++) {
-    (*aResults)[i] = plugin;
-    NS_ADDREF((*aResults)[i]);
-    plugin = plugin->mNext;
-  }
-
-  for (uint32_t i = 0; i < fakeCount; i++) {
-    (*aResults)[i + count] =
-        static_cast<nsIInternalPluginTag*>(mFakePlugins[i]);
-    NS_ADDREF((*aResults)[i + count]);
+  for (nsIInternalPluginTag* plugin : mFakePlugins) {
+    aResults.AppendElement(plugin);
   }
 
   return NS_OK;
@@ -3094,15 +3085,15 @@ nsresult nsPluginHost::NewPluginURLStream(
   // do not add this internal plugin's channel on the
   // load group otherwise this channel could be canceled
   // form |nsDocShell::OnLinkClickSync| bug 166613
-  rv = NS_NewChannel(getter_AddRefs(channel), url, element,
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS |
-                         nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
-                     nsIContentPolicy::TYPE_OBJECT_SUBREQUEST,
-                     nullptr,  // aPerformanceStorage
-                     nullptr,  // aLoadGroup
-                     listenerPeer,
-                     nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_CLASSIFY_URI |
-                         nsIChannel::LOAD_BYPASS_SERVICE_WORKER);
+  rv = NS_NewChannel(
+      getter_AddRefs(channel), url, element,
+      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS |
+          nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
+      nsIContentPolicy::TYPE_OBJECT_SUBREQUEST,
+      nullptr,  // aPerformanceStorage
+      nullptr,  // aLoadGroup
+      listenerPeer,
+      nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_BYPASS_SERVICE_WORKER);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (doc) {
@@ -3133,11 +3124,12 @@ nsresult nsPluginHost::NewPluginURLStream(
         if (!doc) {
           return NS_ERROR_FAILURE;
         }
-        referer = doc->GetDocumentURI();
+        referer = doc->GetDocumentURIAsReferrer();
         referrerPolicy = doc->GetReferrerPolicy();
       }
-
-      rv = httpChannel->SetReferrerWithPolicy(referer, referrerPolicy);
+      nsCOMPtr<nsIReferrerInfo> referrerInfo =
+          new mozilla::dom::ReferrerInfo(referer, referrerPolicy);
+      rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -3304,7 +3296,7 @@ NS_IMETHODIMP nsPluginHost::Observe(nsISupports* aSubject, const char* aTopic,
       LoadPlugins();
     }
   }
-  if (XRE_IsParentProcess() && !strcmp("blocklist-updated", aTopic)) {
+  if (XRE_IsParentProcess() && !strcmp("plugin-blocklist-updated", aTopic)) {
     // The blocklist has updated. Asynchronously get blocklist state for all
     // items. The promise resolution handler takes care of checking if anything
     // changed, and writing an updated state to file, as well as sending data to

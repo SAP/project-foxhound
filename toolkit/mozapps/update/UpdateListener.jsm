@@ -6,25 +6,36 @@
 
 var EXPORTED_SYMBOLS = ["UpdateListener"];
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { clearTimeout, setTimeout } = ChromeUtils.import(
+  "resource://gre/modules/Timer.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "AppMenuNotifications",
-                               "resource://gre/modules/AppMenuNotifications.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "AppMenuNotifications",
+  "resource://gre/modules/AppMenuNotifications.jsm"
+);
 
-// Setup the hamburger button badges for updates, if enabled.
+const PREF_APP_UPDATE_UNSUPPORTED_URL = "app.update.unsupported.url";
+
+// Setup the hamburger button badges for updates.
 var UpdateListener = {
   timeouts: [],
-
-  get enabled() {
-    return Services.prefs.getBoolPref("app.update.doorhanger", false);
-  },
 
   get badgeWaitTime() {
     return Services.prefs.getIntPref("app.update.badgeWaitTime", 4 * 24 * 3600); // 4 days
   },
 
   init() {
+    // Persist the unsupported notification across sessions. If at some point an
+    // update is found this pref is cleared and the notifcation won't be shown.
+    let url = Services.prefs.getCharPref(PREF_APP_UPDATE_UNSUPPORTED_URL, null);
+    if (url) {
+      this.showUpdateNotification("unsupported", true, true, win =>
+        this.openUnsupportedUpdateUrl(win, url)
+      );
+    }
   },
 
   uninit() {
@@ -42,46 +53,76 @@ var UpdateListener = {
   },
 
   addTimeout(time, callback) {
-    this.timeouts.push(setTimeout(() => {
-      this.clearCallbacks();
-      callback();
-    }, time));
+    this.timeouts.push(
+      setTimeout(() => {
+        this.clearCallbacks();
+        callback();
+      }, time)
+    );
   },
 
   replaceReleaseNotes(doc, update, whatsNewId) {
-    let whatsNewLinkId = Services.prefs.getCharPref(`app.update.link.${whatsNewId}`, "");
+    let whatsNewLinkId = Services.prefs.getCharPref(
+      `app.update.link.${whatsNewId}`,
+      ""
+    );
     if (whatsNewLinkId) {
       let whatsNewLink = doc.getElementById(whatsNewLinkId);
       if (update && update.detailsURL) {
         whatsNewLink.href = update.detailsURL;
       } else {
-        whatsNewLink.href = Services.urlFormatter.formatURLPref("app.update.url.details");
+        whatsNewLink.href = Services.urlFormatter.formatURLPref(
+          "app.update.url.details"
+        );
       }
     }
   },
 
   requestRestart() {
-    let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].
-                     createInstance(Ci.nsISupportsPRBool);
-    Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
+    let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(
+      Ci.nsISupportsPRBool
+    );
+    Services.obs.notifyObservers(
+      cancelQuit,
+      "quit-application-requested",
+      "restart"
+    );
 
     if (!cancelQuit.data) {
-      Services.startup.quit(Services.startup.eAttemptQuit | Services.startup.eRestart);
+      Services.startup.quit(
+        Services.startup.eAttemptQuit | Services.startup.eRestart
+      );
     }
   },
 
   openManualUpdateUrl(win) {
-    let manualUpdateUrl = Services.urlFormatter.formatURLPref("app.update.url.manual");
+    let manualUpdateUrl = Services.urlFormatter.formatURLPref(
+      "app.update.url.manual"
+    );
     win.openURL(manualUpdateUrl);
   },
 
-  showUpdateNotification(type, mainActionDismiss, dismissed, mainAction, beforeShowDoorhanger) {
+  openUnsupportedUpdateUrl(win, detailsURL) {
+    win.openURL(detailsURL);
+  },
+
+  showUpdateNotification(
+    type,
+    mainActionDismiss,
+    dismissed,
+    mainAction,
+    beforeShowDoorhanger
+  ) {
     let action = {
       callback(win, fromDoorhanger) {
         if (fromDoorhanger) {
-          Services.telemetry.getHistogramById("UPDATE_NOTIFICATION_MAIN_ACTION_DOORHANGER").add(type);
+          Services.telemetry
+            .getHistogramById("UPDATE_NOTIFICATION_MAIN_ACTION_DOORHANGER")
+            .add(type);
         } else {
-          Services.telemetry.getHistogramById("UPDATE_NOTIFICATION_MAIN_ACTION_MENU").add(type);
+          Services.telemetry
+            .getHistogramById("UPDATE_NOTIFICATION_MAIN_ACTION_MENU")
+            .add(type);
         }
         mainAction(win);
       },
@@ -90,40 +131,78 @@ var UpdateListener = {
 
     let secondaryAction = {
       callback() {
-        Services.telemetry.getHistogramById("UPDATE_NOTIFICATION_DISMISSED").add(type);
+        Services.telemetry
+          .getHistogramById("UPDATE_NOTIFICATION_DISMISSED")
+          .add(type);
       },
       dismiss: true,
     };
 
-    AppMenuNotifications.showNotification("update-" + type,
-                                          action,
-                                          secondaryAction,
-                                          { dismissed, beforeShowDoorhanger });
+    AppMenuNotifications.showNotification(
+      "update-" + type,
+      action,
+      secondaryAction,
+      { dismissed, beforeShowDoorhanger }
+    );
     if (dismissed) {
-      Services.telemetry.getHistogramById("UPDATE_NOTIFICATION_BADGE_SHOWN").add(type);
+      Services.telemetry
+        .getHistogramById("UPDATE_NOTIFICATION_BADGE_SHOWN")
+        .add(type);
     } else {
-      Services.telemetry.getHistogramById("UPDATE_NOTIFICATION_SHOWN").add(type);
+      Services.telemetry
+        .getHistogramById("UPDATE_NOTIFICATION_SHOWN")
+        .add(type);
     }
   },
 
   showRestartNotification(dismissed) {
-    this.showUpdateNotification("restart", true, dismissed, () => this.requestRestart());
+    this.showUpdateNotification("restart", true, dismissed, () =>
+      this.requestRestart()
+    );
   },
 
   showUpdateAvailableNotification(update, dismissed) {
-    this.showUpdateNotification("available", false, dismissed, () => {
-      let updateService = Cc["@mozilla.org/updates/update-service;1"]
-                          .getService(Ci.nsIApplicationUpdateService);
-      updateService.downloadUpdate(update, true);
-    }, doc => this.replaceReleaseNotes(doc, update, "updateAvailableWhatsNew"));
+    this.showUpdateNotification(
+      "available",
+      false,
+      dismissed,
+      () => {
+        let updateService = Cc[
+          "@mozilla.org/updates/update-service;1"
+        ].getService(Ci.nsIApplicationUpdateService);
+        updateService.downloadUpdate(update, true);
+      },
+      doc => this.replaceReleaseNotes(doc, update, "updateAvailableWhatsNew")
+    );
   },
 
   showManualUpdateNotification(update, dismissed) {
-    this.showUpdateNotification("manual",
-                                false,
-                                dismissed,
-                                win => this.openManualUpdateUrl(win),
-                                doc => this.replaceReleaseNotes(doc, update, "updateManualWhatsNew"));
+    this.showUpdateNotification(
+      "manual",
+      false,
+      dismissed,
+      win => this.openManualUpdateUrl(win),
+      doc => this.replaceReleaseNotes(doc, update, "updateManualWhatsNew")
+    );
+  },
+
+  showUnsupportedUpdateNotification(update, dismissed) {
+    if (!update || !update.detailsURL) {
+      Cu.reportError(
+        "The update for an unsupported notification must have a " +
+          "detailsURL attribute."
+      );
+      return;
+    }
+    let url = update.detailsURL;
+    if (
+      url != Services.prefs.getCharPref(PREF_APP_UPDATE_UNSUPPORTED_URL, null)
+    ) {
+      Services.prefs.setCharPref(PREF_APP_UPDATE_UNSUPPORTED_URL, url);
+      this.showUpdateNotification("unsupported", true, dismissed, win =>
+        this.openUnsupportedUpdateUrl(win, url)
+      );
+    }
   },
 
   handleUpdateError(update, status) {
@@ -138,7 +217,7 @@ var UpdateListener = {
         break;
       case "elevation-attempt-failed":
         this.clearCallbacks();
-        this.showRestartNotification(update, false);
+        this.showRestartNotification(false);
         break;
       case "elevation-attempts-exceeded":
         this.clearCallbacks();
@@ -201,22 +280,30 @@ var UpdateListener = {
         this.clearCallbacks();
         this.showManualUpdateNotification(update, false);
         break;
+      case "unsupported":
+        this.clearCallbacks();
+        this.showUnsupportedUpdateNotification(update, false);
+        break;
     }
   },
 
   observe(subject, topic, status) {
-    if (!this.enabled) {
-      return;
-    }
-
     let update = subject && subject.QueryInterface(Ci.nsIUpdate);
 
     switch (topic) {
       case "update-available":
+        if (status != "unsupported") {
+          // An update check has found an update so clear the unsupported pref
+          // in case it is set.
+          Services.prefs.clearUserPref(PREF_APP_UPDATE_UNSUPPORTED_URL);
+        }
         this.handleUpdateAvailable(update, status);
         break;
       case "update-staged":
       case "update-downloaded":
+        // An update check has found an update and downloaded / staged the
+        // update so clear the unsupported pref in case it is set.
+        Services.prefs.clearUserPref(PREF_APP_UPDATE_UNSUPPORTED_URL);
         this.handleUpdateStagedOrDownloaded(update, status);
         break;
       case "update-error":

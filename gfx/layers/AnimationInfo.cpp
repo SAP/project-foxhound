@@ -8,6 +8,7 @@
 #include "mozilla/LayerAnimationInfo.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/layers/AnimationHelper.h"
+#include "mozilla/layers/CompositorThread.h"
 #include "mozilla/dom/Animation.h"
 #include "nsIContent.h"
 #include "PuppetWidget.h"
@@ -26,6 +27,7 @@ void AnimationInfo::EnsureAnimationsId() {
 }
 
 Animation* AnimationInfo::AddAnimation() {
+  MOZ_ASSERT(!CompositorThreadHolder::IsInCompositorThread());
   // Here generates a new id when the first animation is added and
   // this id is used to represent the animations in this layer.
   EnsureAnimationsId();
@@ -40,6 +42,7 @@ Animation* AnimationInfo::AddAnimation() {
 }
 
 Animation* AnimationInfo::AddAnimationForNextTransaction() {
+  MOZ_ASSERT(!CompositorThreadHolder::IsInCompositorThread());
   MOZ_ASSERT(mPendingAnimations,
              "should have called ClearAnimationsForNextTransaction first");
 
@@ -51,12 +54,12 @@ Animation* AnimationInfo::AddAnimationForNextTransaction() {
 void AnimationInfo::ClearAnimations() {
   mPendingAnimations = nullptr;
 
-  if (mAnimations.IsEmpty() && mAnimationData.IsEmpty()) {
+  if (mAnimations.IsEmpty() && mPropertyAnimationGroups.IsEmpty()) {
     return;
   }
 
   mAnimations.Clear();
-  mAnimationData.Clear();
+  mPropertyAnimationGroups.Clear();
 
   mMutated = true;
 }
@@ -72,11 +75,9 @@ void AnimationInfo::ClearAnimationsForNextTransaction() {
 
 void AnimationInfo::SetCompositorAnimations(
     const CompositorAnimations& aCompositorAnimations) {
-  mAnimations = aCompositorAnimations.animations();
   mCompositorAnimationsId = aCompositorAnimations.id();
-  mAnimationData.Clear();
-  AnimationHelper::SetAnimations(mAnimations, mAnimationData,
-                                 mBaseAnimationStyle);
+  mPropertyAnimationGroups =
+      AnimationHelper::ExtractAnimations(aCompositorAnimations.animations());
 }
 
 bool AnimationInfo::StartPendingAnimations(const TimeStamp& aReadyTime) {
@@ -87,23 +88,21 @@ bool AnimationInfo::StartPendingAnimations(const TimeStamp& aReadyTime) {
 
     // If the animation is doing an async update of its playback rate, then we
     // want to match whatever its current time would be at *aReadyTime*.
-    if (!std::isnan(anim.previousPlaybackRate()) &&
-        anim.startTime().type() == MaybeTimeDuration::TTimeDuration &&
+    if (!std::isnan(anim.previousPlaybackRate()) && anim.startTime().isSome() &&
         !anim.originTime().IsNull() && !anim.isNotPlaying()) {
       TimeDuration readyTime = aReadyTime - anim.originTime();
       anim.holdTime() = dom::Animation::CurrentTimeFromTimelineTime(
-          readyTime, anim.startTime().get_TimeDuration(),
-          anim.previousPlaybackRate());
+          readyTime, anim.startTime().ref(), anim.previousPlaybackRate());
       // Make start time null so that we know to update it below.
-      anim.startTime() = null_t();
+      anim.startTime() = Nothing();
     }
 
     // If the animation is play-pending, resolve the start time.
-    if (anim.startTime().type() == MaybeTimeDuration::Tnull_t &&
-        !anim.originTime().IsNull() && !anim.isNotPlaying()) {
+    if (anim.startTime().isNothing() && !anim.originTime().IsNull() &&
+        !anim.isNotPlaying()) {
       TimeDuration readyTime = aReadyTime - anim.originTime();
-      anim.startTime() = dom::Animation::StartTimeFromTimelineTime(
-          readyTime, anim.holdTime(), anim.playbackRate());
+      anim.startTime() = Some(dom::Animation::StartTimeFromTimelineTime(
+          readyTime, anim.holdTime(), anim.playbackRate()));
       updated = true;
     }
   }
@@ -128,8 +127,10 @@ bool AnimationInfo::ApplyPendingUpdatesForThisTransaction() {
 }
 
 bool AnimationInfo::HasTransformAnimation() const {
+  const nsCSSPropertyIDSet& transformSet =
+      LayerAnimationInfo::GetCSSPropertiesFor(DisplayItemType::TYPE_TRANSFORM);
   for (uint32_t i = 0; i < mAnimations.Length(); i++) {
-    if (mAnimations[i].property() == eCSSProperty_transform) {
+    if (transformSet.HasProperty(mAnimations[i].property())) {
       return true;
     }
   }
@@ -176,12 +177,12 @@ void AnimationInfo::EnumerateGenerationOnFrame(
       // we call the callback function with |Nothing()| for the generation.
       //
       // Note that we need to use nsContentUtils::WidgetForContent() instead of
-      // TabChild::GetFrom(aFrame->PresShell())->WebWidget() because in the case
-      // of child popup content PuppetWidget::mTabChild is the same as the
-      // parent's one, which means mTabChild->IsLayersConnected() check in
-      // PuppetWidget::GetLayerManager queries the parent state, it results the
-      // assertion in the function failure.
-      if (widget->GetOwningTabChild() &&
+      // BrowserChild::GetFrom(aFrame->PresShell())->WebWidget() because in the
+      // case of child popup content PuppetWidget::mBrowserChild is the same as
+      // the parent's one, which means mBrowserChild->IsLayersConnected() check
+      // in PuppetWidget::GetLayerManager queries the parent state, it results
+      // the assertion in the function failure.
+      if (widget->GetOwningBrowserChild() &&
           !static_cast<widget::PuppetWidget*>(widget)->HasLayerManager()) {
         for (auto displayItem : LayerAnimationInfo::sDisplayItemTypes) {
           aCallback(Nothing(), displayItem);

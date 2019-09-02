@@ -19,9 +19,9 @@
 #include "TreeWalker.h"
 #include "xpcAccessibleDocument.h"
 
+#include "nsCommandManager.h"
 #include "nsContentUtils.h"
 #include "nsIMutableArray.h"
-#include "nsICommandManager.h"
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsPIDOMWindow.h"
@@ -30,7 +30,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsImageFrame.h"
 #include "nsIPersistentProperties2.h"
-#include "nsIPresShell.h"
 #include "nsIServiceManager.h"
 #include "nsViewManager.h"
 #include "nsIScrollableFrame.h"
@@ -43,8 +42,9 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TextEditor.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MutationEventBinding.h"
@@ -70,7 +70,8 @@ static const uint32_t kRelationAttrsLen = ArrayLength(kRelationAttrs);
 ////////////////////////////////////////////////////////////////////////////////
 // Constructor/desctructor
 
-DocAccessible::DocAccessible(dom::Document* aDocument, nsIPresShell* aPresShell)
+DocAccessible::DocAccessible(dom::Document* aDocument,
+                             PresShell* aPresShell)
     :  // XXX don't pass a document to the Accessible constructor so that we
        // don't set mDoc until our vtable is fully setup.  If we set mDoc before
        // setting up the vtable we will call Accessible::AddRef() but not the
@@ -293,8 +294,7 @@ void DocAccessible::TakeFocus() const {
   // Focus the document.
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   RefPtr<dom::Element> newFocus;
-  AutoHandlingUserInputStatePusher inputStatePusher(true, nullptr,
-                                                    mDocumentNode);
+  AutoHandlingUserInputStatePusher inputStatePusher(true);
   fm->MoveFocus(mDocumentNode->GetWindow(), nullptr,
                 nsFocusManager::MOVEFOCUS_ROOT, 0, getter_AddRefs(newFocus));
 }
@@ -379,8 +379,9 @@ void DocAccessible::Init() {
 }
 
 void DocAccessible::Shutdown() {
-  if (!mPresShell)  // already shutdown
+  if (!mPresShell) {  // already shutdown
     return;
+  }
 
 #ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocDestroy))
@@ -433,6 +434,9 @@ void DocAccessible::Shutdown() {
   mDependentIDsHashes.Clear();
   mNodeToAccessibleMap.Clear();
 
+  mAnchorJumpElm = nullptr;
+  mInvalidationList.Clear();
+
   for (auto iter = mAccessibleCache.Iter(); !iter.Done(); iter.Next()) {
     Accessible* accessible = iter.Data();
     MOZ_ASSERT(accessible);
@@ -452,7 +456,9 @@ void DocAccessible::Shutdown() {
 
 nsIFrame* DocAccessible::GetFrame() const {
   nsIFrame* root = nullptr;
-  if (mPresShell) root = mPresShell->GetRootFrame();
+  if (mPresShell) {
+    root = mPresShell->GetRootFrame();
+  }
 
   return root;
 }
@@ -466,8 +472,10 @@ nsRect DocAccessible::RelativeBounds(nsIFrame** aRelativeFrame) const {
 
   nsRect bounds;
   while (document) {
-    nsIPresShell* presShell = document->GetShell();
-    if (!presShell) return nsRect();
+    PresShell* presShell = document->GetPresShell();
+    if (!presShell) {
+      return nsRect();
+    }
 
     nsRect scrollPort;
     nsIScrollableFrame* sf = presShell->GetRootScrollFrameAsScrollable();
@@ -503,7 +511,7 @@ nsresult DocAccessible::AddEventListeners() {
   // We want to add a command observer only if the document is content and has
   // an editor.
   if (docShell->ItemType() == nsIDocShellTreeItem::typeContent) {
-    nsCOMPtr<nsICommandManager> commandManager = docShell->GetCommandManager();
+    RefPtr<nsCommandManager> commandManager = docShell->GetCommandManager();
     if (commandManager)
       commandManager->AddCommandObserver(this, "obs_documentCreated");
   }
@@ -531,8 +539,7 @@ nsresult DocAccessible::RemoveEventListeners() {
 
     if (docShell) {
       if (docShell->ItemType() == nsIDocShellTreeItem::typeContent) {
-        nsCOMPtr<nsICommandManager> commandManager =
-            docShell->GetCommandManager();
+        RefPtr<nsCommandManager> commandManager = docShell->GetCommandManager();
         if (commandManager) {
           commandManager->RemoveCommandObserver(this, "obs_documentCreated");
         }
@@ -1057,9 +1064,6 @@ void DocAccessible::ContentStateChanged(dom::Document* aDocument,
   }
 }
 
-void DocAccessible::DocumentStatesChanged(dom::Document* aDocument,
-                                          EventStates aStateMask) {}
-
 void DocAccessible::CharacterDataWillChange(nsIContent* aContent,
                                             const CharacterDataChangeInfo&) {}
 
@@ -1102,7 +1106,9 @@ nsresult DocAccessible::HandleAccEvent(AccEvent* aEvent) {
 // Public members
 
 void* DocAccessible::GetNativeWindow() const {
-  if (!mPresShell) return nullptr;
+  if (!mPresShell) {
+    return nullptr;
+  }
 
   nsViewManager* vm = mPresShell->GetViewManager();
   if (!vm) return nullptr;
@@ -1128,16 +1134,49 @@ Accessible* DocAccessible::GetAccessibleByUniqueIDInSubtree(void* aUniqueID) {
   return nullptr;
 }
 
-Accessible* DocAccessible::GetAccessibleOrContainer(nsINode* aNode,
-                                                    int aARIAHiddenFlag) const {
-  if (!aNode || !aNode->GetComposedDoc()) return nullptr;
+Accessible* DocAccessible::GetAccessibleOrContainer(
+    nsINode* aNode, bool aNoContainerIfPruned) const {
+  if (!aNode || !aNode->GetComposedDoc()) {
+    return nullptr;
+  }
 
-  for (nsINode* currNode = aNode; currNode;
-       currNode = currNode->GetFlattenedTreeParentNode()) {
+  nsINode* currNode = nullptr;
+  if (aNode->IsShadowRoot()) {
+    // This can happen, for example, when called within
+    // SelectionManager::ProcessSelectionChanged due to focusing a direct
+    // child of a shadow root.
+    // GetFlattenedTreeParent works on children of a shadow root, but not the
+    // shadow root itself.
+    const dom::ShadowRoot* shadowRoot = dom::ShadowRoot::FromNode(aNode);
+    currNode = shadowRoot->GetHost();
+    if (!currNode) {
+      return nullptr;
+    }
+  } else {
+    currNode = aNode;
+  }
+
+  MOZ_ASSERT(currNode);
+  for (; currNode; currNode = currNode->GetFlattenedTreeParentNode()) {
     // No container if is inside of aria-hidden subtree.
-    if (aARIAHiddenFlag == eNoContainerIfARIAHidden && currNode->IsElement() &&
+    if (aNoContainerIfPruned && currNode->IsElement() &&
         aria::HasDefinedARIAHidden(currNode->AsElement())) {
       return nullptr;
+    }
+
+    // Check if node is in an unselected deck panel
+    if (aNoContainerIfPruned && currNode->IsXULElement()) {
+      if (nsIFrame* frame = currNode->AsContent()->GetPrimaryFrame()) {
+        nsDeckFrame* deckFrame = do_QueryFrame(frame->GetParent());
+        if (deckFrame && deckFrame->GetSelectedBox() != frame) {
+          // If deck is not a <tabpanels>, return null
+          nsIContent* parentFrameContent = deckFrame->GetContent();
+          if (!parentFrameContent ||
+              !parentFrameContent->IsXULElement(nsGkAtoms::tabpanels)) {
+            return nullptr;
+          }
+        }
+      }
     }
 
     if (Accessible* accessible = GetAccessible(currNode)) {
@@ -1194,9 +1233,9 @@ void DocAccessible::UnbindFromDocument(Accessible* aAccessible) {
   NS_ASSERTION(mAccessibleCache.GetWeak(aAccessible->UniqueID()),
                "Unbinding the unbound accessible!");
 
-  // Fire focus event on accessible having DOM focus if active item was removed
+  // Fire focus event on accessible having DOM focus if last focus was removed
   // from the tree.
-  if (FocusMgr()->IsActiveItem(aAccessible)) {
+  if (FocusMgr()->WasLastFocused(aAccessible)) {
     FocusMgr()->ActiveItemChanged(nullptr);
 #ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eFocus))
@@ -1337,10 +1376,11 @@ void DocAccessible::DoInitialUpdate() {
     mDocFlags |= eTabDocument;
     if (IPCAccessibilityActive()) {
       nsIDocShell* docShell = mDocumentNode->GetDocShell();
-      if (RefPtr<dom::TabChild> tabChild = dom::TabChild::GetFrom(docShell)) {
+      if (RefPtr<dom::BrowserChild> browserChild =
+              dom::BrowserChild::GetFrom(docShell)) {
         DocAccessibleChild* ipcDoc = IPCDoc();
         if (!ipcDoc) {
-          ipcDoc = new DocAccessibleChild(this, tabChild);
+          ipcDoc = new DocAccessibleChild(this, browserChild);
           SetIPCDoc(ipcDoc);
 
 #if defined(XP_WIN)
@@ -1351,12 +1391,12 @@ void DocAccessible::DoInitialUpdate() {
 #else
           int32_t holder = 0, childID = 0;
 #endif
-          tabChild->SendPDocAccessibleConstructor(ipcDoc, nullptr, 0, childID,
-                                                  holder);
+          browserChild->SendPDocAccessibleConstructor(ipcDoc, nullptr, 0,
+                                                      childID, holder);
         }
 
         if (IsRoot()) {
-          tabChild->SetTopLevelDocAccessibleChild(ipcDoc);
+          browserChild->SetTopLevelDocAccessibleChild(ipcDoc);
         }
       }
     }
@@ -1643,8 +1683,7 @@ bool InsertIterator::Next() {
     // what means there's no container. Ignore the insertion too.
     nsIContent* prevNode = mNodes->SafeElementAt(mNodesIdx - 1);
     nsIContent* node = mNodes->ElementAt(mNodesIdx++);
-    Accessible* container = Document()->AccessibleOrTrueContainer(
-        node, DocAccessible::eNoContainerIfARIAHidden);
+    Accessible* container = Document()->AccessibleOrTrueContainer(node, true);
     if (container != Context()) {
       continue;
     }
@@ -2068,8 +2107,11 @@ bool DocAccessible::MoveChild(Accessible* aChild, Accessible* aNewParent,
                               int32_t aIdxInParent) {
   MOZ_ASSERT(aChild, "No child");
   MOZ_ASSERT(aChild->Parent(), "No parent");
-  MOZ_ASSERT(aIdxInParent <= static_cast<int32_t>(aNewParent->ChildCount()),
-             "Wrong insertion point for a moving child");
+  // We can't guarantee MoveChild works correctly for accessibilities storing
+  // children outside mChildren.
+  MOZ_ASSERT(
+      aIdxInParent <= static_cast<int32_t>(aNewParent->mChildren.Length()),
+      "Wrong insertion point for a moving child");
 
   Accessible* curParent = aChild->Parent();
 
@@ -2107,14 +2149,11 @@ bool DocAccessible::MoveChild(Accessible* aChild, Accessible* aNewParent,
     return true;
   }
 
-  MOZ_ASSERT(aIdxInParent <= static_cast<int32_t>(aNewParent->ChildCount()),
-             "Wrong insertion point for a moving child");
-
   // If the child cannot be re-inserted into the tree, then make sure to remove
   // it from its present parent and then shutdown it.
   bool hasInsertionPoint =
-      (aIdxInParent != -1) ||
-      (aIdxInParent <= static_cast<int32_t>(aNewParent->ChildCount()));
+      (aIdxInParent >= 0) &&
+      (aIdxInParent <= static_cast<int32_t>(aNewParent->mChildren.Length()));
 
   TreeMutation rmut(curParent);
   rmut.BeforeRemoval(aChild, hasInsertionPoint && TreeMutation::kNoShutdown);
@@ -2155,7 +2194,7 @@ void DocAccessible::CacheChildrenInSubtree(Accessible* aRoot,
     TreeWalker walker(root);
     while (Accessible* child = walker.Next()) {
       if (child->IsBoundToParent()) {
-        MoveChild(child, root, root->ChildCount());
+        MoveChild(child, root, root->mChildren.Length());
         continue;
       }
 

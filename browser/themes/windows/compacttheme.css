@@ -17,10 +17,10 @@
   /* Prevent accent color overriding the window background for
    * light and dark theme on Aero Basic. This is copied from browser-aero.css. */
   @media (-moz-windows-default-theme) {
-    #main-window {
+    :root {
       background-color: rgb(185,209,234) !important;
     }
-    #main-window:-moz-window-inactive {
+    :root:-moz-window-inactive {
       background-color: rgb(215,228,242) !important;
     }
   }
@@ -31,11 +31,6 @@
     /* Always show light toolbar elements on aero surface. */
     #TabsToolbar {
       color: hsl(240,9%,98%);
-    }
-
-    /* Keep showing the correct color inside the tabs. */
-    .tabbrowser-tab {
-      color: var(--lwt-text-color) !important;
     }
 
     /* Because we're forcing the tabs toolbar to be [brighttext] to
@@ -71,7 +66,7 @@
 @media (-moz-os-version: windows-win7),
        (-moz-os-version: windows-win8) {
   @media (-moz-windows-compositor) {
-    #main-window {
+    :root {
       background: transparent !important;
     }
 
@@ -93,6 +88,7 @@
    * show the tabs toolbar background color inside tabs. */
   .tabbrowser-tab {
     background-color: var(--lwt-accent-color) !important;
+    color: var(--lwt-text-color) !important;
     border-top: 1px solid var(--tabs-border-color);
     background-clip: padding-box;
   }
@@ -124,7 +120,7 @@
       color: InactiveCaptionText;
     }
 
-    #main-window[tabsintitlebar] #main-menubar > menu {
+    :root[tabsintitlebar] #main-menubar > menu {
       color: inherit;
     }
   }

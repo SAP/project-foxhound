@@ -5,11 +5,12 @@
 
 "use strict";
 
-var {Toolbox} = require("devtools/client/framework/toolbox");
-var {LEFT, RIGHT, BOTTOM, WINDOW} = Toolbox.HostType;
+var { Toolbox } = require("devtools/client/framework/toolbox");
+var { LEFT, RIGHT, BOTTOM, WINDOW } = Toolbox.HostType;
 var toolbox, target;
 
-const URL = "data:text/html;charset=utf8,test for opening toolbox in different hosts";
+const URL =
+  "data:text/html;charset=utf8,test for opening toolbox in different hosts";
 
 add_task(async function runTest() {
   info("Create a test tab and open the toolbox");
@@ -84,7 +85,7 @@ async function testWindowHost() {
   const win = Services.wm.getMostRecentWindow("devtools:toolbox");
   ok(win, "toolbox separate window exists");
 
-  const iframe = win.document.getElementById("toolbox-iframe");
+  const iframe = win.document.querySelector(".devtools-toolbox-window-iframe");
   checkToolboxLoaded(iframe);
 }
 

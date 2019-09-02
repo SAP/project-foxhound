@@ -47,7 +47,7 @@ AudioSink::AudioSink(AbstractThread* aThread,
       mFramesParsed(0),
       mIsAudioDataAudible(false),
       mAudioQueue(aAudioQueue) {
-  bool resampling = StaticPrefs::MediaResamplingEnabled();
+  bool resampling = StaticPrefs::media_resampling_enabled();
 
   if (resampling) {
     mOutputRate = 48000;
@@ -96,6 +96,11 @@ TimeUnit AudioSink::GetPosition() {
     TimeUnit pos = TimeUnit::FromMicroseconds(tmp);
     NS_ASSERTION(pos >= mLastGoodPosition,
                  "AudioStream position shouldn't go backward");
+    TimeUnit tmp = mStartTime + pos;
+    if (!tmp.IsValid()) {
+      mErrored = true;
+      return mStartTime + mLastGoodPosition;
+    }
     // Update the last good position when we got a good one.
     if (pos >= mLastGoodPosition) {
       mLastGoodPosition = pos;
@@ -176,7 +181,7 @@ nsresult AudioSink::InitializeAudioStream(const PlaybackParams& aParams) {
   // The layout map used here is already processed by mConverter with
   // mOutputChannels into SMPTE format, so there is no need to worry if
   // StaticPrefs::accessibility_monoaudio_enable() or
-  // StaticPrefs::MediaForcestereoEnabled() is applied.
+  // StaticPrefs::media_forcestereo_enabled() is applied.
   nsresult rv = mAudioStream->Init(mOutputChannels, channelMap, mOutputRate,
                                    aParams.mSink);
   if (NS_FAILED(rv)) {
@@ -380,7 +385,7 @@ void AudioSink::NotifyAudioNeeded() {
     // hardware.
     CheckedInt64 missingFrames = sampleTime - mFramesParsed;
 
-    if (!missingFrames.isValid()) {
+    if (!missingFrames.isValid() || !sampleTime.isValid()) {
       NS_WARNING("Int overflow in AudioSink");
       mErrored = true;
       return;
@@ -493,14 +498,17 @@ uint32_t AudioSink::DrainConverter(uint32_t aMaxFrames) {
   return data->Frames();
 }
 
-nsCString AudioSink::GetDebugInfo() {
+void AudioSink::GetDebugInfo(dom::MediaSinkDebugInfo& aInfo) {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
-  return nsPrintfCString(
-      "AudioSink: StartTime=%" PRId64 " LastGoodPosition=%" PRId64
-      " Playing=%d  OutputRate=%u Written=%" PRId64
-      " Errored=%d PlaybackComplete=%d",
-      mStartTime.ToMicroseconds(), mLastGoodPosition.ToMicroseconds(), mPlaying,
-      mOutputRate, mWritten, bool(mErrored), bool(mPlaybackComplete));
+  aInfo.mAudioSinkWrapper.mAudioSink.mStartTime = mStartTime.ToMicroseconds();
+  aInfo.mAudioSinkWrapper.mAudioSink.mLastGoodPosition =
+      mLastGoodPosition.ToMicroseconds();
+  aInfo.mAudioSinkWrapper.mAudioSink.mIsPlaying = mPlaying;
+  aInfo.mAudioSinkWrapper.mAudioSink.mOutputRate = mOutputRate;
+  aInfo.mAudioSinkWrapper.mAudioSink.mWritten = mWritten;
+  aInfo.mAudioSinkWrapper.mAudioSink.mHasErrored = bool(mErrored);
+  aInfo.mAudioSinkWrapper.mAudioSink.mPlaybackComplete =
+      bool(mPlaybackComplete);
 }
 
 }  // namespace mozilla

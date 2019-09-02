@@ -12,7 +12,7 @@ ${helpers.predefined_type(
     "FontFamily",
     initial_value="computed::FontFamily::serif()",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-family",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -23,7 +23,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontStyle::normal()",
     initial_specified_value="specified::FontStyle::normal()",
     animation_value_type="FontStyle",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-style",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -42,7 +42,7 @@ ${helpers.single_keyword_system(
     gecko_ffi_name="mFont.variantCaps",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-caps",
     custom_consts=font_variant_caps_custom_consts,
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     animation_value_type="discrete",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -53,7 +53,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontWeight::normal()",
     initial_specified_value="specified::FontWeight::normal()",
     animation_value_type="Number",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-weight",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -64,8 +64,8 @@ ${helpers.predefined_type(
     initial_value="computed::FontSize::medium()",
     initial_specified_value="specified::FontSize::medium()",
     animation_value_type="NonNegativeLength",
-    allow_quirks=True,
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    allow_quirks="Yes",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-size",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -77,7 +77,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontSizeAdjust::none()",
     initial_specified_value="specified::FontSizeAdjust::none()",
     animation_value_type="ComputedValue",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-size-adjust",
 )}
 
@@ -87,7 +87,7 @@ ${helpers.predefined_type(
     products="gecko",
     initial_value="specified::FontSynthesis::get_initial_value()",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-synthesis",
 )}
 
@@ -97,7 +97,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontStretch::hundred()",
     initial_specified_value="specified::FontStretch::normal()",
     animation_value_type="Percentage",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-stretch",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -109,7 +109,7 @@ ${helpers.single_keyword_system(
     gecko_ffi_name="mFont.kerning",
     gecko_constant_prefix="NS_FONT_KERNING",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-kerning",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     animation_value_type="discrete",
 )}
 
@@ -120,7 +120,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontVariantAlternates::get_initial_value()",
     initial_specified_value="specified::FontVariantAlternates::get_initial_specified_value()",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-alternates",
 )}
 
@@ -131,7 +131,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontVariantEastAsian::empty()",
     initial_specified_value="specified::FontVariantEastAsian::empty()",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-east-asian",
 )}
 
@@ -142,7 +142,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontVariantLigatures::empty()",
     initial_specified_value="specified::FontVariantLigatures::empty()",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-ligatures",
 )}
 
@@ -153,7 +153,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontVariantNumeric::empty()",
     initial_specified_value="specified::FontVariantNumeric::empty()",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-numeric",
 )}
 
@@ -164,7 +164,7 @@ ${helpers.single_keyword_system(
     gecko_ffi_name="mFont.variantPosition",
     gecko_constant_prefix="NS_FONT_VARIANT_POSITION",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-position",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     animation_value_type="discrete",
 )}
 
@@ -176,7 +176,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::FontFeatureSettings::normal()",
     extra_prefixes="moz:layout.css.prefixes.font-features",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-feature-settings",
 )}
 
@@ -195,7 +195,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontVariationSettings::normal()",
     initial_specified_value="specified::FontVariationSettings::normal()",
     animation_value_type="ComputedValue",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="${variation_spec}",
 )}
 
@@ -207,7 +207,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::FontLanguageOverride::normal()",
     animation_value_type="discrete",
     extra_prefixes="moz:layout.css.prefixes.font-features",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://drafts.csswg.org/css-fonts-3/#propdef-font-language-override",
 )}
 
@@ -219,7 +219,7 @@ ${helpers.single_keyword_system(
     gecko_ffi_name="mFont.opticalSizing",
     gecko_constant_prefix="NS_FONT_OPTICAL_SIZING",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     spec="https://www.w3.org/TR/css-fonts-4/#font-optical-sizing-def",
 )}
 
@@ -326,7 +326,7 @@ ${helpers.predefined_type(
 
         use app_units::Au;
         use cssparser::{Parser, ToCss};
-        use crate::gecko_bindings::structs::FontFamilyType;
+        use crate::values::computed::font::GenericFontFamily;
         use crate::properties::longhands;
         use std::fmt;
         use std::hash::{Hash, Hasher};
@@ -346,7 +346,7 @@ ${helpers.predefined_type(
                          font_optical_sizing""".split()
         %>
         #[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq,
-                 SpecifiedValueInfo, ToCss)]
+                 SpecifiedValueInfo, ToCss, ToShmem)]
         pub enum SystemFont {
             % for font in system_fonts:
                 ${to_camel_case(font)},
@@ -379,7 +379,7 @@ ${helpers.predefined_type(
                 use crate::gecko_bindings::structs::{LookAndFeel_FontID, nsFont};
                 use std::mem;
                 use crate::values::computed::Percentage;
-                use crate::values::computed::font::{FontSize, FontStretch, FontStyle, FontFamilyList};
+                use crate::values::computed::font::{FontFamily, FontSize, FontStretch, FontStyle, FontFamilyList};
                 use crate::values::generics::NonNegative;
 
                 let id = match *self {
@@ -405,13 +405,14 @@ ${helpers.predefined_type(
                 })));
                 let font_style = FontStyle::from_gecko(system.style);
                 let ret = ComputedSystemFont {
-                    font_family: longhands::font_family::computed_value::T(
-                        FontFamilyList(
+                    font_family: FontFamily {
+                        families: FontFamilyList::SharedFontList(
                             unsafe { system.fontlist.mFontlist.mBasePtr.to_safe() }
-                        )
-                    ),
+                        ),
+                        is_system_font: true,
+                    },
                     font_size: FontSize {
-                        size: Au(system.size).into(),
+                        size: cx.maybe_zoom_text(Au(system.size).into()),
                         keyword_info: None
                     },
                     font_weight,
@@ -465,7 +466,7 @@ ${helpers.predefined_type(
                 pub ${name}: longhands::${name}::computed_value::T,
             % endfor
             pub system_font: SystemFont,
-            pub default_font_type: FontFamilyType,
+            pub default_font_type: GenericFontFamily,
         }
 
         impl SystemFont {
@@ -494,8 +495,7 @@ ${helpers.predefined_type(
         // a lot of code with `if product == gecko` conditionals, we have a
         // dummy system font module that does nothing
 
-        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, SpecifiedValueInfo, ToCss)]
-        #[cfg_attr(feature = "servo", derive(MallocSizeOf))]
+        #[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
         /// void enum for system font, can never exist
         pub enum SystemFont {}
         impl SystemFont {
@@ -514,15 +514,15 @@ ${helpers.single_keyword(
     gecko_pref="layout.css.osx-font-smoothing.enabled",
     products="gecko",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/font-smooth)",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER APPLIES_TO_MARKER",
     animation_value_type="discrete",
 )}
 
 ${helpers.predefined_type(
     "-moz-font-smoothing-background-color",
-    "RGBAColor",
-    "RGBA::transparent()",
-    animation_value_type="AnimatedRGBA",
+    "color::MozFontSmoothingBackgroundColor",
+    "computed::color::MozFontSmoothingBackgroundColor::transparent()",
+    animation_value_type="none",
     products="gecko",
     gecko_ffi_name="mFont.fontSmoothingBackgroundColor",
     enabled_in="chrome",

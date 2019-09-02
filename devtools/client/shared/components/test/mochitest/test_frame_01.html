@@ -10,7 +10,7 @@ with optional columns, unknown and non-URL sources.
 <head>
   <meta charset="utf-8">
   <title>Frame component test</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 <body>
@@ -312,6 +312,24 @@ window.onload = async function () {
       shouldLink: true,
       tooltip: "View source in Debugger → https://bugzilla.mozilla.org/original.js:23",
       source: "https://bugzilla.mozilla.org/original.js",
+    });
+
+    // Check when a message comes from a logPoint,
+    // a prefix should render before source
+    await checkFrameComponent({
+      frame: {
+        origin: "logPoint",
+        source: "http://myfile.com/mahscripts.js",
+        line: 55,
+        column: 10,
+      }
+    }, {
+      locationPrefix: "Logpoint @ ",
+      file: "mahscripts.js",
+      line: 55,
+      column: 10,
+      shouldLink: true,
+      tooltip: "View source in Debugger → http://myfile.com/mahscripts.js:55:10",
     });
 
     function checkFrameComponent(input, expected) {

@@ -5,14 +5,15 @@ npm-debug.log
 *.pyc
 *.update.rdf
 .gitignore
+.eslintcache
 
 /.git/
-/bin/prerender.js
-/bin/prerender.js.map
-/data/locales.json
 /dist/
 /logs/
 /node_modules/
+
+# ignore README since it's GitHub specific
+/README.md
 
 # also ignores ping centre tests
 ping-centre/

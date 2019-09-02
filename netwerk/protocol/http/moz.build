@@ -84,6 +84,7 @@ UNIFIED_SOURCES += [
     'HttpChannelParent.cpp',
     'HttpChannelParentListener.cpp',
     'HttpInfo.cpp',
+    'HttpTrafficAnalyzer.cpp',
     'InterceptedChannel.cpp',
     'InterceptedHttpChannel.cpp',
     'nsCORSListenerProxy.cpp',
@@ -156,3 +157,5 @@ if CONFIG['OS_TARGET'] == 'Darwin':
         DEFINES.update(
             HAS_CONNECTX=True,
         )
+
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

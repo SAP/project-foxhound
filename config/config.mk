@@ -133,7 +133,8 @@ endif
 # Enable profile-based feedback
 ifneq (1,$(NO_PROFILE_GUIDED_OPTIMIZE))
 ifdef MOZ_PROFILE_GENERATE
-PGO_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_GEN_CFLAGS) $(COMPUTED_PROFILE_GEN_DYN_CFLAGS))
+PGO_CFLAGS += -DNS_FREE_PERMANENT_DATA=1
+PGO_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_GEN_CFLAGS))
 PGO_LDFLAGS += $(PROFILE_GEN_LDFLAGS)
 ifeq (WINNT,$(OS_ARCH))
 AR_FLAGS += -LTCG
@@ -437,3 +438,8 @@ endif
 endif
 
 PLY_INCLUDE = -I$(MOZILLA_DIR)/other-licenses/ply
+
+# Enable verbose logs when not using `make -s`
+ifeq (,$(findstring s, $(filter-out --%, $(MAKEFLAGS))))
+BUILD_VERBOSE_LOG = 1
+endif

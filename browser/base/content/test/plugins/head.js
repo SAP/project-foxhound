@@ -1,26 +1,38 @@
-var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PromiseUtils",
+  "resource://gre/modules/PromiseUtils.jsm"
+);
+
+XPCOMUtils.defineLazyServiceGetters(this, {
+  uuidGen: ["@mozilla.org/uuid-generator;1", "nsIUUIDGenerator"],
+});
 
 // Various tests in this directory may define gTestBrowser, to use as the
 // default browser under test in some of the functions below.
 /* global gTestBrowser */
 
 /**
-  * Waits a specified number of miliseconds.
-  *
-  * Usage:
-  *    let wait = yield waitForMs(2000);
-  *    ok(wait, "2 seconds should now have elapsed");
-  *
-  * @param aMs the number of miliseconds to wait for
-  * @returns a Promise that resolves to true after the time has elapsed
-  */
+ * Waits a specified number of miliseconds.
+ *
+ * Usage:
+ *    let wait = yield waitForMs(2000);
+ *    ok(wait, "2 seconds should now have elapsed");
+ *
+ * @param aMs the number of miliseconds to wait for
+ * @returns a Promise that resolves to true after the time has elapsed
+ */
 function waitForMs(aMs) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     setTimeout(done, aMs);
     function done() {
       resolve(true);
@@ -55,8 +67,9 @@ function promiseTabLoadEvent(tab, url) {
 
   let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
 
-  if (url)
+  if (url) {
     BrowserTestUtils.loadURI(tab.linkedBrowser, url);
+  }
 
   return loaded;
 }
@@ -82,15 +95,22 @@ function waitForCondition(condition, nextTest, errorMsg, aTries, aWait) {
     }
     tries++;
   }, maxWait);
-  let moveOn = function() { clearInterval(interval); nextTest(); };
+  let moveOn = function() {
+    clearInterval(interval);
+    nextTest();
+  };
 }
 
 // Waits for a conditional function defined by the caller to return true.
 function promiseForCondition(aConditionFn, aMessage, aTries, aWait) {
-  return new Promise((resolve) => {
-    waitForCondition(aConditionFn, resolve,
-                     (aMessage || "Condition didn't pass."),
-                     aTries, aWait);
+  return new Promise(resolve => {
+    waitForCondition(
+      aConditionFn,
+      resolve,
+      aMessage || "Condition didn't pass.",
+      aTries,
+      aWait
+    );
   });
 }
 
@@ -102,8 +122,9 @@ function getTestPlugin(aName) {
 
   // Find the test plugin
   for (let i = 0; i < tags.length; i++) {
-    if (tags[i].name == pluginName)
+    if (tags[i].name == pluginName) {
       return tags[i];
+    }
   }
   ok(false, "Unable to find plugin");
   return null;
@@ -130,8 +151,9 @@ function promiseForPluginInfo(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
   return ContentTask.spawn(browser, aId, async function(contentId) {
     let plugin = content.document.getElementById(contentId);
-    if (!(plugin instanceof Ci.nsIObjectLoadingContent))
+    if (!(plugin instanceof Ci.nsIObjectLoadingContent)) {
       throw new Error("no plugin found");
+    }
     return {
       pluginFallbackType: plugin.pluginFallbackType,
       activated: plugin.activated,
@@ -186,45 +208,130 @@ function clearAllPluginPermissions() {
   while (perms.hasMoreElements()) {
     let perm = perms.getNext();
     if (perm.type.startsWith("plugin")) {
-      info("removing permission:" + perm.principal.origin + " " + perm.type + "\n");
+      info(
+        "removing permission:" + perm.principal.origin + " " + perm.type + "\n"
+      );
       Services.perms.removePermission(perm);
     }
   }
 }
 
-function updateBlocklist(aCallback) {
-  let blocklistNotifier = Cc["@mozilla.org/extensions/blocklist;1"]
-                          .getService(Ci.nsITimerCallback);
-  let observer = function() {
-    Services.obs.removeObserver(observer, "blocklist-updated");
-    SimpleTest.executeSoon(aCallback);
-  };
-  Services.obs.addObserver(observer, "blocklist-updated");
-  blocklistNotifier.notify(null);
-}
+// Ported from AddonTestUtils.jsm
+let JSONBlocklistWrapper = {
+  /**
+   * Load the data from the specified files into the *real* blocklist providers.
+   * Loads using loadBlocklistRawData, which will treat this as an update.
+   *
+   * @param {nsIFile} dir
+   *        The directory in which the files live.
+   * @param {string} prefix
+   *        a prefix for the files which ought to be loaded.
+   *        This method will suffix -extensions.json and -plugins.json
+   *        to the prefix it is given, and attempt to load both.
+   *        Insofar as either exists, their data will be dumped into
+   *        the respective store, and the respective update handlers
+   *        will be called.
+   */
+  async loadBlocklistData(url) {
+    const fullURL = `${url}-plugins.json`;
+    let jsonObj;
+    try {
+      jsonObj = await (await fetch(fullURL)).json();
+    } catch (ex) {
+      ok(false, ex);
+    }
+    info(`Loaded ${fullURL}`);
 
-var _originalTestBlocklistURL = null;
-function setAndUpdateBlocklist(aURL, aCallback) {
-  if (!_originalTestBlocklistURL) {
-    _originalTestBlocklistURL = Services.prefs.getCharPref("extensions.blocklist.url");
-  }
-  Services.prefs.setCharPref("extensions.blocklist.url", aURL);
-  updateBlocklist(aCallback);
-}
+    return this.loadBlocklistRawData({ plugins: jsonObj });
+  },
 
-// A generator that insures a new blocklist is loaded (in both
+  /**
+   * Load the following data into the *real* blocklist providers.
+   * While `overrideBlocklist` replaces the blocklist entirely with a mock
+   * that returns dummy data, this method instead loads data into the actual
+   * blocklist, fires update methods as would happen if this data came from
+   * an actual blocklist update, etc.
+   *
+   * @param {object} data
+   *        An object that can optionally have `extensions` and/or `plugins`
+   *        properties, each being an array of blocklist items.
+   *        This code only uses plugin blocks, that can look something like:
+   *
+   * {
+   *   "matchFilename": "libnptest\\.so|nptest\\.dll|Test\\.plugin",
+   *   "versionRange": [
+   *     {
+   *       "severity": "0",
+   *       "vulnerabilityStatus": "1"
+   *     }
+   *   ],
+   *   "blockID": "p9999"
+   * }
+   *
+   */
+  async loadBlocklistRawData(data) {
+    const bsPass = ChromeUtils.import(
+      "resource://gre/modules/Blocklist.jsm",
+      null
+    );
+    const blocklistMapping = {
+      extensions: bsPass.ExtensionBlocklistRS,
+      plugins: bsPass.PluginBlocklistRS,
+    };
+
+    for (const [dataProp, blocklistObj] of Object.entries(blocklistMapping)) {
+      let newData = data[dataProp];
+      if (!newData) {
+        continue;
+      }
+      if (!Array.isArray(newData)) {
+        throw new Error(
+          "Expected an array of new items to put in the " +
+            dataProp +
+            " blocklist!"
+        );
+      }
+      for (let item of newData) {
+        if (!item.id) {
+          item.id = uuidGen.generateUUID().number.slice(1, -1);
+        }
+        if (!item.last_modified) {
+          item.last_modified = Date.now();
+        }
+      }
+      await blocklistObj.ensureInitialized();
+      let collection = await blocklistObj._client.openCollection();
+      await collection.clear();
+      await collection.loadDump(newData);
+      // We manually call _onUpdate... which is evil, but at the moment kinto doesn't have
+      // a better abstraction unless you want to mock your own http server to do the update.
+      await blocklistObj._onUpdate();
+    }
+  },
+};
+
+// An async helper that insures a new blocklist is loaded (in both
 // processes if applicable).
+var _originalTestBlocklistURL = null;
 async function asyncSetAndUpdateBlocklist(aURL, aBrowser) {
-  info("*** loading new blocklist: " + aURL);
   let doTestRemote = aBrowser ? aBrowser.isRemoteBrowser : false;
   if (!_originalTestBlocklistURL) {
-    _originalTestBlocklistURL = Services.prefs.getCharPref("extensions.blocklist.url");
+    _originalTestBlocklistURL = Services.prefs.getCharPref(
+      "extensions.blocklist.url"
+    );
   }
-  Services.prefs.setCharPref("extensions.blocklist.url", aURL);
-  let localPromise = TestUtils.topicObserved("blocklist-updated");
-  let blocklistNotifier = Cc["@mozilla.org/extensions/blocklist;1"]
-                            .getService(Ci.nsITimerCallback);
-  blocklistNotifier.notify(null);
+  let localPromise = TestUtils.topicObserved("plugin-blocklist-updated");
+  if (Services.prefs.getBoolPref("extensions.blocklist.useXML", true)) {
+    info("*** loading new blocklist: " + aURL + ".xml");
+    Services.prefs.setCharPref("extensions.blocklist.url", aURL + ".xml");
+    let blocklistNotifier = Cc[
+      "@mozilla.org/extensions/blocklist;1"
+    ].getService(Ci.nsITimerCallback);
+    blocklistNotifier.notify(null);
+  } else {
+    info("*** loading blocklist using json: " + aURL);
+    await JSONBlocklistWrapper.loadBlocklistData(aURL);
+  }
   info("*** waiting on local load");
   await localPromise;
   if (doTestRemote) {
@@ -237,20 +344,28 @@ async function asyncSetAndUpdateBlocklist(aURL, aBrowser) {
 
 // Reset back to the blocklist we had at the start of the test run.
 function resetBlocklist() {
-  Services.prefs.setCharPref("extensions.blocklist.url", _originalTestBlocklistURL);
+  Services.prefs.setCharPref(
+    "extensions.blocklist.url",
+    _originalTestBlocklistURL
+  );
 }
 
 // Insure there's a popup notification present. This test does not indicate
 // open state. aBrowser can be undefined.
 function promisePopupNotification(aName, aBrowser) {
-  return new Promise((resolve) => {
-    waitForCondition(() => PopupNotifications.getNotification(aName, aBrowser),
-                     () => {
-      ok(!!PopupNotifications.getNotification(aName, aBrowser),
-         aName + " notification appeared");
+  return new Promise(resolve => {
+    waitForCondition(
+      () => PopupNotifications.getNotification(aName, aBrowser),
+      () => {
+        ok(
+          !!PopupNotifications.getNotification(aName, aBrowser),
+          aName + " notification appeared"
+        );
 
-      resolve();
-    }, "timeout waiting for popup notification " + aName);
+        resolve();
+      },
+      "timeout waiting for popup notification " + aName
+    );
   });
 }
 
@@ -266,7 +381,7 @@ function promisePopupNotification(aName, aBrowser) {
  * @rejects Never.
  */
 function promiseWaitForFocus(aWindow) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     waitForFocus(resolve, aWindow);
   });
 }
@@ -290,9 +405,15 @@ function waitForNotificationBar(notificationID, browser, callback) {
     let notification;
     let notificationBox = gBrowser.getNotificationBox(browser);
     waitForCondition(
-      () => (notification = notificationBox.getNotificationWithValue(notificationID)),
+      () =>
+        (notification = notificationBox.getNotificationWithValue(
+          notificationID
+        )),
       () => {
-        ok(notification, `Successfully got the ${notificationID} notification bar`);
+        ok(
+          notification,
+          `Successfully got the ${notificationID} notification bar`
+        );
         if (callback) {
           callback(notification);
         }
@@ -304,7 +425,7 @@ function waitForNotificationBar(notificationID, browser, callback) {
 }
 
 function promiseForNotificationBar(notificationID, browser) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     waitForNotificationBar(notificationID, browser, resolve);
   });
 }
@@ -321,14 +442,18 @@ function waitForNotificationShown(notification, callback) {
     executeSoon(callback);
     return;
   }
-  PopupNotifications.panel.addEventListener("popupshown", function(e) {
-    callback();
-  }, {once: true});
+  PopupNotifications.panel.addEventListener(
+    "popupshown",
+    function(e) {
+      callback();
+    },
+    { once: true }
+  );
   notification.reshow();
 }
 
 function promiseForNotificationShown(notification) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     waitForNotificationShown(notification, resolve);
   });
 }

@@ -36,17 +36,32 @@
 "use strict";
 
 const { Cu } = require("chrome");
+const ChromeUtils = require("ChromeUtils");
 
-// Get a "Debugger" constructor. Can't call `addDebuggerToGlobal`
-// on the frame script global, so call it on jsdebugger one...
-const global = require("resource://gre/modules/jsdebugger.jsm");
-const {addDebuggerToGlobal} = global;
+const global = Cu.getGlobalForObject(this);
+const { addDebuggerToGlobal } = ChromeUtils.import(
+  "resource://gre/modules/jsdebugger.jsm"
+);
 addDebuggerToGlobal(global);
-const { Debugger } = global;
 
-exports.allocationTracker = function() {
+/**
+ * Start recording JS object allocations.
+ *
+ * @param Object watchGlobal
+ *        One global object to observe. Only allocation made from this global
+ *        will be recorded.
+ * @param Boolean watchAllGlobals
+ *        If true, allocations from everywhere are going to be recorded.
+ * @param Boolean watchAllGlobals
+ *        If true, only allocations made from DevTools contexts are going to be recorded.
+ */
+exports.allocationTracker = function({
+  watchGlobal,
+  watchAllGlobals,
+  watchDevToolsGlobals,
+} = {}) {
   dump("DEVTOOLS ALLOCATION: Start logging allocations\n");
-  let dbg = new Debugger();
+  let dbg = new global.Debugger();
 
   // Enable allocation site tracking, to have the stack for each allocation
   dbg.memory.trackingAllocationSites = true;
@@ -55,16 +70,49 @@ exports.allocationTracker = function() {
   // Bumps the default buffer size, which may prevent recording all the test allocations
   dbg.memory.maxAllocationsLogLength = 5000000;
 
+  let acceptGlobal;
+  if (watchGlobal) {
+    acceptGlobal = () => false;
+    dbg.addDebuggee(watchGlobal);
+  } else if (watchAllGlobals) {
+    acceptGlobal = () => true;
+  } else if (watchDevToolsGlobals) {
+    // Only accept globals related to DevTools
+    acceptGlobal = g => {
+      // self-hosting-global crashes when trying to call unsafeDereference
+      if (g.class == "self-hosting-global") {
+        return false;
+      }
+      const ref = g.unsafeDereference();
+      const location = Cu.getRealmLocation(ref);
+      const accept = !!location.match(/devtools/i);
+      dump(
+        "TRACKER NEW GLOBAL: " + (accept ? "+" : "-") + " : " + location + "\n"
+      );
+      return accept;
+    };
+  }
+
   // Watch all globals
-  dbg.addAllGlobalsAsDebuggees();
+  if (watchAllGlobals || watchDevToolsGlobals) {
+    dbg.addAllGlobalsAsDebuggees();
+
+    for (const g of dbg.getDebuggees()) {
+      if (!acceptGlobal(g)) {
+        dbg.removeDebuggee(g);
+      }
+    }
+  }
 
   // Remove this global to ignore all its object/JS
-  dbg.removeDebuggee(Cu.getGlobalForObject({}));
+  dbg.removeDebuggee(global);
 
   // addAllGlobalsAsDebuggees won't automatically track new ones,
   // so ensure tracking all new globals
   dbg.onNewGlobalObject = function(g) {
-    dbg.addDebuggee(g);
+    if (acceptGlobal(g)) {
+      dbg.addDebuggee(g);
+    }
   };
 
   return {
@@ -159,13 +207,21 @@ exports.allocationTracker = function() {
             });
           return { src, count: item.count, lines };
         });
-      dump("DEVTOOLS ALLOCATION: Javascript object allocations: " + allocations.length +
-           "\n" + JSON.stringify(allocationList, null, 2) + "\n");
+      dump(
+        "DEVTOOLS ALLOCATION: Javascript object allocations: " +
+          allocations.length +
+          "\n" +
+          JSON.stringify(allocationList, null, 2) +
+          "\n"
+      );
     },
 
     logCount() {
-      dump("DEVTOOLS ALLOCATION: Javascript object allocations: " +
-           this.countAllocations() + "\n");
+      dump(
+        "DEVTOOLS ALLOCATION: Javascript object allocations: " +
+          this.countAllocations() +
+          "\n"
+      );
     },
 
     countAllocations() {
@@ -176,6 +232,11 @@ exports.allocationTracker = function() {
 
     flushAllocations() {
       dbg.memory.drainAllocationsLog();
+    },
+
+    stillAllocatedObjects() {
+      const sensus = dbg.memory.takeCensus({ breakdown: { by: "count" } });
+      return sensus.count;
     },
 
     stop() {

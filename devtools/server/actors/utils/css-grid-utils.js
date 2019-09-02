@@ -54,12 +54,19 @@ function getStringifiableDimension(dimension) {
   };
 }
 
-function getStringifiableArea({ columnEnd, columnStart, name, rowEnd, rowStart, type }) {
+function getStringifiableArea({
+  columnEnd,
+  columnStart,
+  name,
+  rowEnd,
+  rowStart,
+  type,
+}) {
   return { columnEnd, columnStart, name, rowEnd, rowStart, type };
 }
 
-function getStringifiableLine({ breadth, names, number, start }) {
-  return { breadth, names, number, start };
+function getStringifiableLine({ breadth, names, number, start, type }) {
+  return { breadth, names, number, start, type };
 }
 
 function getStringifiableTrack({ breadth, start, state, type }) {

@@ -16,14 +16,16 @@ namespace mozilla {
 class RemoteSpellcheckEngineChild
     : public mozilla::PRemoteSpellcheckEngineChild {
  public:
-  explicit RemoteSpellcheckEngineChild(mozSpellChecker *aOwner);
+  explicit RemoteSpellcheckEngineChild(mozSpellChecker* aOwner);
   virtual ~RemoteSpellcheckEngineChild();
 
   RefPtr<GenericPromise> SetCurrentDictionaryFromList(
-      const nsTArray<nsString> &aList);
+      const nsTArray<nsString>& aList);
+
+  RefPtr<CheckWordPromise> CheckWords(const nsTArray<nsString>& aWords);
 
  private:
-  mozSpellChecker *mOwner;
+  mozSpellChecker* mOwner;
 };
 
 }  // namespace mozilla

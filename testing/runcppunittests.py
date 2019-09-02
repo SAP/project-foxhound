@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import with_statement
+from __future__ import absolute_import, print_function, with_statement
 import sys
 import os
 from optparse import OptionParser
@@ -15,6 +15,7 @@ import mozinfo
 import mozcrash
 import mozfile
 import mozlog
+import mozrunner.utils
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
 
@@ -64,7 +65,12 @@ class CPPUnitTests(object):
                      outputTimeout=CPPUnitTests.TEST_PROC_NO_OUTPUT_TIMEOUT)
             proc.wait()
             if proc.output:
-                output = "\n%s" % "\n".join(proc.output)
+                if self.fix_stack:
+                    procOutput = [self.fix_stack(l) for l in proc.output]
+                else:
+                    procOutput = proc.output
+
+                output = "\n%s" % "\n".join(procOutput)
                 self.log.process_output(proc.pid, output, command=[prog])
             if proc.timedOut:
                 message = "timed out after %d seconds" % CPPUnitTests.TEST_PROC_TIMEOUT
@@ -84,7 +90,7 @@ class CPPUnitTests(object):
                 self.log.test_end(basename, status='PASS', expected='PASS')
             return result
 
-    def build_core_environment(self, env={}):
+    def build_core_environment(self, env, enable_webrender):
         """
         Add environment variables likely to be used across all platforms, including remote systems.
         """
@@ -94,9 +100,16 @@ class CPPUnitTests(object):
         env["XPCOM_DEBUG_BREAK"] = "stack-and-abort"
         env["MOZ_CRASHREPORTER_NO_REPORT"] = "1"
         env["MOZ_CRASHREPORTER"] = "1"
+
+        if enable_webrender:
+            env['MOZ_WEBRENDER'] = '1'
+            env['MOZ_ACCELERATED'] = '1'
+        else:
+            env['MOZ_WEBRENDER'] = '0'
+
         return env
 
-    def build_environment(self):
+    def build_environment(self, enable_webrender=False):
         """
         Create and return a dictionary of all the appropriate env variables and values.
         On a remote system, we overload this to set different values and are missing things
@@ -105,7 +118,7 @@ class CPPUnitTests(object):
         if not os.path.isdir(self.xre_path):
             raise Exception("xre_path does not exist: %s", self.xre_path)
         env = dict(os.environ)
-        env = self.build_core_environment(env)
+        env = self.build_core_environment(env, enable_webrender)
         pathvar = ""
         libpath = self.xre_path
         if mozinfo.os == "linux":
@@ -143,7 +156,8 @@ class CPPUnitTests(object):
 
         return env
 
-    def run_tests(self, programs, xre_path, symbols_path=None, interactive=False):
+    def run_tests(self, programs, xre_path, symbols_path=None,
+                  utility_path=None, enable_webrender=False, interactive=False):
         """
         Run a set of C++ unit test programs.
 
@@ -152,14 +166,19 @@ class CPPUnitTests(object):
         * xre_path: A path to a directory containing a XUL Runtime Environment.
         * symbols_path: A path to a directory containing Breakpad-formatted
                         symbol files for producing stack traces on crash.
+        * utility_path: A path to a directory containing utility programs
+                        (xpcshell et al)
 
         Returns True if all test programs exited with a zero status, False
         otherwise.
         """
         self.xre_path = xre_path
         self.log = mozlog.get_default_logger()
+        if utility_path:
+            self.fix_stack = mozrunner.utils.get_stack_fixer_function(
+                utility_path, symbols_path)
         self.log.suite_start(programs, name='cppunittest')
-        env = self.build_environment()
+        env = self.build_environment(enable_webrender)
         pass_count = 0
         fail_count = 0
         for prog in programs:
@@ -196,6 +215,14 @@ class CPPUnittestOptions(OptionParser):
                         action="store", type="string", dest="manifest_path",
                         default=None,
                         help="path to test manifest, if different from the path to test binaries")
+        self.add_option("--utility-path",
+                        action="store", type="string", dest="utility_path",
+                        default=None,
+                        help="path to directory containing utility programs")
+        self.add_option("--enable-webrender",
+                        action="store_true", dest="enable_webrender",
+                        default=False,
+                        help="Enable the WebRender compositor in Gecko")
 
 
 def extract_unittests_from_args(args, environ, manifest_path):
@@ -257,8 +284,10 @@ def run_test_harness(options, args):
     update_mozinfo()
     progs = extract_unittests_from_args(args, mozinfo.info, options.manifest_path)
     options.xre_path = os.path.abspath(options.xre_path)
+    options.utility_path = os.path.abspath(options.utility_path)
     tester = CPPUnitTests()
-    result = tester.run_tests(progs, options.xre_path, options.symbols_path)
+    result = tester.run_tests(progs, options.xre_path, options.symbols_path,
+                              options.utility_path, options.enable_webrender)
 
     return result
 
@@ -268,13 +297,13 @@ def main():
     mozlog.commandline.add_logging_group(parser)
     options, args = parser.parse_args()
     if not args:
-        print >>sys.stderr, """Usage: %s <test binary> [<test binary>...]""" % sys.argv[0]
+        print("""Usage: %s <test binary> [<test binary>...]""" % sys.argv[0], file=sys.stderr)
         sys.exit(1)
     if not options.xre_path:
-        print >>sys.stderr, """Error: --xre-path is required"""
+        print("""Error: --xre-path is required""", file=sys.stderr)
         sys.exit(1)
     if options.manifest_path and len(args) > 1:
-        print >>sys.stderr, "Error: multiple arguments not supported with --test-manifest"
+        print("Error: multiple arguments not supported with --test-manifest", file=sys.stderr)
         sys.exit(1)
     log = mozlog.commandline.setup_logging("cppunittests", options,
                                            {"tbpl": sys.stdout})

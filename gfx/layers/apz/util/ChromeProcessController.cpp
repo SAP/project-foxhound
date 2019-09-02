@@ -8,6 +8,7 @@
 
 #include "MainThreadUtils.h"    // for NS_IsMainThread()
 #include "base/message_loop.h"  // for MessageLoop
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
@@ -17,7 +18,6 @@
 #include "mozilla/layers/DoubleTapToZoom.h"
 #include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIPresShell.h"
 #include "nsLayoutUtils.h"
 #include "nsView.h"
 
@@ -96,7 +96,7 @@ void ChromeProcessController::Destroy() {
   mAPZEventState = nullptr;
 }
 
-nsIPresShell* ChromeProcessController::GetPresShell() const {
+PresShell* ChromeProcessController::GetPresShell() const {
   if (!mWidget) {
     return nullptr;
   }
@@ -107,7 +107,7 @@ nsIPresShell* ChromeProcessController::GetPresShell() const {
 }
 
 dom::Document* ChromeProcessController::GetRootDocument() const {
-  if (nsIPresShell* presShell = GetPresShell()) {
+  if (PresShell* presShell = GetPresShell()) {
     return presShell->GetDocument();
   }
   return nullptr;
@@ -119,9 +119,9 @@ dom::Document* ChromeProcessController::GetRootContentDocument(
   if (!content) {
     return nullptr;
   }
-  nsIPresShell* presShell =
-      APZCCallbackHelper::GetRootContentDocumentPresShellForContent(content);
-  if (presShell) {
+  if (PresShell* presShell =
+          APZCCallbackHelper::GetRootContentDocumentPresShellForContent(
+              content)) {
     return presShell->GetDocument();
   }
   return nullptr;
@@ -141,7 +141,7 @@ void ChromeProcessController::HandleDoubleTap(
   // Root Content Document. Unfortunately that frame does not know about the
   // resolution of the document and so we must remove it before calculating
   // the zoomToRect.
-  nsIPresShell* presShell = document->GetShell();
+  PresShell* presShell = document->GetPresShell();
   const float resolution = presShell->GetResolution();
   CSSPoint point(aPoint.x / resolution, aPoint.y / resolution);
   CSSRect zoomToRect = CalculateRectToZoomTo(document, point);
@@ -151,10 +151,11 @@ void ChromeProcessController::HandleDoubleTap(
   if (APZCCallbackHelper::GetOrCreateScrollIdentifiers(
           document->GetDocumentElement(), &presShellId, &viewId)) {
     APZThreadUtils::RunOnControllerThread(
-        NewRunnableMethod<ScrollableLayerGuid, CSSRect, uint32_t>(
+        NewRunnableMethod<SLGuidAndRenderRoot, CSSRect, uint32_t>(
             "IAPZCTreeManager::ZoomToRect", mAPZCTreeManager,
             &IAPZCTreeManager::ZoomToRect,
-            ScrollableLayerGuid(aGuid.mLayersId, presShellId, viewId),
+            SLGuidAndRenderRoot(aGuid.mLayersId, presShellId, viewId,
+                                wr::RenderRoot::Default),
             zoomToRect, ZoomToRectBehavior::DEFAULT_BEHAVIOR));
   }
 }
@@ -177,7 +178,7 @@ void ChromeProcessController::HandleTap(
     return;
   }
 
-  nsCOMPtr<nsIPresShell> presShell = GetPresShell();
+  RefPtr<PresShell> presShell = GetPresShell();
   if (!presShell) {
     return;
   }
@@ -191,17 +192,17 @@ void ChromeProcessController::HandleTap(
 
   switch (aType) {
     case TapType::eSingleTap:
-      mAPZEventState->ProcessSingleTap(point, scale, aModifiers, aGuid, 1);
+      mAPZEventState->ProcessSingleTap(point, scale, aModifiers, 1);
       break;
     case TapType::eDoubleTap:
       HandleDoubleTap(point, aModifiers, aGuid);
       break;
     case TapType::eSecondTap:
-      mAPZEventState->ProcessSingleTap(point, scale, aModifiers, aGuid, 2);
+      mAPZEventState->ProcessSingleTap(point, scale, aModifiers, 2);
       break;
     case TapType::eLongTap: {
       RefPtr<APZEventState> eventState(mAPZEventState);
-      eventState->ProcessLongTap(presShell, point, scale, aModifiers, aGuid,
+      eventState->ProcessLongTap(presShell, point, scale, aModifiers,
                                  aInputBlockId);
       break;
     }

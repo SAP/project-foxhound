@@ -10,6 +10,7 @@
 #include "ClientState.h"
 #include "mozilla/SystemGroup.h"
 #include "nsContentUtils.h"
+#include "nsFocusManager.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsIDocShell.h"
 #include "nsIDOMChromeWindow.h"
@@ -21,6 +22,8 @@
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowWatcher.h"
+
+#include "mozilla/dom/nsCSPContext.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "FennecJNIWrappers.h"
@@ -169,6 +172,11 @@ nsresult OpenWindow(const ClientOpenWindowArgs& aArgs,
       PrincipalInfoToPrincipal(aArgs.principalInfo());
   MOZ_DIAGNOSTIC_ASSERT(principal);
 
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  if (aArgs.cspInfo().isSome()) {
+    csp = CSPInfoToCSP(aArgs.cspInfo().ref(), nullptr);
+  }
+
   // [[6.1 Open Window]]
   if (XRE_IsContentProcess()) {
     // Let's create a sandbox in order to have a valid JSContext and correctly
@@ -213,6 +221,7 @@ nsresult OpenWindow(const ClientOpenWindowArgs& aArgs,
         // opener anyway, and we _do_ want the returned
         // window.
         /* aForceNoOpener = */ false,
+        /* aForceNoReferrer = */ false,
         /* aLoadInfp = */ nullptr, getter_AddRefs(newWindow));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -247,7 +256,7 @@ nsresult OpenWindow(const ClientOpenWindowArgs& aArgs,
 
   nsCOMPtr<mozIDOMWindowProxy> win;
   rv = bwin->OpenURI(uri, nullptr, nsIBrowserDOMWindow::OPEN_DEFAULTWINDOW,
-                     nsIBrowserDOMWindow::OPEN_NEW, principal,
+                     nsIBrowserDOMWindow::OPEN_NEW, principal, csp,
                      getter_AddRefs(win));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -268,14 +277,10 @@ void WaitForLoad(const ClientOpenWindowArgs& aArgs,
 
   RefPtr<ClientOpPromise::Private> promise = aPromise;
 
-  nsresult rv = nsContentUtils::DispatchFocusChromeEvent(aOuterWindow);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    promise->Reject(rv, __func__);
-    return;
-  }
+  nsFocusManager::FocusWindow(aOuterWindow);
 
   nsCOMPtr<nsIURI> baseURI;
-  rv = NS_NewURI(getter_AddRefs(baseURI), aArgs.baseURL());
+  nsresult rv = NS_NewURI(getter_AddRefs(baseURI), aArgs.baseURL());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     promise->Reject(rv, __func__);
     return;
@@ -302,9 +307,10 @@ void WaitForLoad(const ClientOpenWindowArgs& aArgs,
   }
 
   // Hold the listener alive until the promise settles
-  ref->Then(aOuterWindow->EventTargetFor(TaskCategory::Other), __func__,
-            [listener](const ClientOpResult& aResult) {},
-            [listener](nsresult aResult) {});
+  ref->Then(
+      aOuterWindow->EventTargetFor(TaskCategory::Other), __func__,
+      [listener](const ClientOpResult& aResult) {},
+      [listener](nsresult aResult) {});
 }
 
 #ifdef MOZ_WIDGET_ANDROID

@@ -6,6 +6,8 @@
 interface Principal;
 interface URI;
 interface nsIDocShell;
+interface RemoteTab;
+interface nsITransportSecurityInfo;
 
 [Exposed=Window, ChromeOnly]
 interface WindowGlobalParent {
@@ -17,6 +19,18 @@ interface WindowGlobalParent {
 
   readonly attribute unsigned long long innerWindowId;
   readonly attribute unsigned long long outerWindowId;
+  readonly attribute unsigned long long contentParentId;
+
+  readonly attribute long osPid;
+
+  // A WindowGlobalParent is the root in its process if it has no parent, or its
+  // embedder is in a different process.
+  readonly attribute boolean isProcessRoot;
+
+  // Is the document loaded in this WindowGlobalParent the initial document
+  // implicitly created while "creating a new browsing context".
+  // https://html.spec.whatwg.org/multipage/browsers.html#creating-a-new-browsing-context
+  readonly attribute boolean isInitialDocument;
 
   readonly attribute FrameLoader? rootFrameLoader; // Embedded (browser) only
 
@@ -28,8 +42,31 @@ interface WindowGlobalParent {
 
   static WindowGlobalParent? getByInnerWindowId(unsigned long long innerWindowId);
 
+  /**
+   * Get or create the JSWindowActor with the given name.
+   *
+   * See WindowActorOptions from JSWindowActor.webidl for details on how to
+   * customize actor creation.
+   */
   [Throws]
   JSWindowActorParent getActor(DOMString name);
+
+  [Throws]
+  Promise<unsigned long long> changeFrameRemoteness(
+    BrowsingContext? bc, DOMString remoteType,
+    unsigned long long pendingSwitchId);
+
+  /**
+   * Fetches the securityInfo object for this window. This function will
+   * look for failed and successful channels to find the security info,
+   * thus it will work on regular HTTPS pages as well as certificate
+   * error pages.
+   *
+   * This returns a Promise which resolves to an nsITransportSecurity
+   * object with certificate data or undefined if no security info is available.
+   */
+  [Throws]
+  Promise<nsITransportSecurityInfo> getSecurityInfo();
 };
 
 [Exposed=Window, ChromeOnly]
@@ -42,11 +79,22 @@ interface WindowGlobalChild {
 
   readonly attribute unsigned long long innerWindowId;
   readonly attribute unsigned long long outerWindowId;
+  readonly attribute unsigned long long contentParentId;
+
+  // A WindowGlobalChild is the root in its process if it has no parent, or its
+  // embedder is in a different process.
+  readonly attribute boolean isProcessRoot;
 
   readonly attribute WindowGlobalParent? parentActor; // in-process only
 
   static WindowGlobalChild? getByInnerWindowId(unsigned long long innerWIndowId);
 
+  /**
+   * Get or create the JSWindowActor with the given name.
+   *
+   * See WindowActorOptions from JSWindowActor.webidl for details on how to
+   * customize actor creation.
+   */
   [Throws]
   JSWindowActorChild getActor(DOMString name);
 };

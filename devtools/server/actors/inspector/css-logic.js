@@ -35,20 +35,21 @@ const {
   getBindingElementAndPseudo,
   getCSSStyleRules,
   l10n,
-  isContentStylesheet,
+  isAgentStylesheet,
+  isAuthorStylesheet,
+  isUserStylesheet,
   shortSource,
   FILTER,
   STATUS,
 } = require("devtools/shared/inspector/css-logic");
 const InspectorUtils = require("InspectorUtils");
 
-/**
- * @param {function} isInherited A function that determines if the CSS property
- *                   is inherited.
- */
-function CssLogic(isInherited) {
-  // The cache of examined CSS properties.
-  this._isInherited = isInherited;
+const COMPAREMODE = {
+  BOOLEAN: "bool",
+  INTEGER: "int",
+};
+
+function CssLogic() {
   this._propertyInfos = {};
 }
 
@@ -170,8 +171,7 @@ CssLogic.prototype = {
 
     // Update the CssSheet objects.
     this.forEachSheet(function(sheet) {
-      sheet._sheetAllowed = -1;
-      if (sheet.contentSheet && sheet.sheetAllowed) {
+      if (sheet.authorSheet && sheet.sheetAllowed) {
         ruleCount += sheet.ruleCount;
       }
     }, this);
@@ -180,7 +180,7 @@ CssLogic.prototype = {
 
     // Full update is needed because the this.processMatchedSelectors() method
     // skips UA stylesheets if the filter does not allow such sheets.
-    const needFullUpdate = (oldValue == FILTER.UA || value == FILTER.UA);
+    const needFullUpdate = oldValue == FILTER.UA || value == FILTER.UA;
 
     if (needFullUpdate) {
       this._matchedRules = null;
@@ -210,7 +210,7 @@ CssLogic.prototype = {
 
     let info = this._propertyInfos[property];
     if (!info) {
-      info = new CssPropertyInfo(this, property, this._isInherited);
+      info = new CssPropertyInfo(this, property);
       this._propertyInfos[property] = info;
     }
 
@@ -226,7 +226,10 @@ CssLogic.prototype = {
     this.reset();
 
     // styleSheets isn't an array, but forEach can work on it anyway
-    const styleSheets = InspectorUtils.getAllStyleSheets(this.viewedDocument, true);
+    const styleSheets = InspectorUtils.getAllStyleSheets(
+      this.viewedDocument,
+      true
+    );
     Array.prototype.forEach.call(styleSheets, this._cacheSheet, this);
 
     this._sheetsCached = true;
@@ -258,9 +261,11 @@ CssLogic.prototype = {
 
       // Find import and keyframes rules.
       for (const aDomRule of cssSheet.getCssRules()) {
-        if (aDomRule.type == CSSRule.IMPORT_RULE &&
-            aDomRule.styleSheet &&
-            this.mediaMatches(aDomRule)) {
+        if (
+          aDomRule.type == CSSRule.IMPORT_RULE &&
+          aDomRule.styleSheet &&
+          this.mediaMatches(aDomRule)
+        ) {
           this._cacheSheet(aDomRule.styleSheet);
         } else if (aDomRule.type == CSSRule.KEYFRAMES_RULE) {
           this._keyframesRules.push(aDomRule);
@@ -281,7 +286,7 @@ CssLogic.prototype = {
 
     const sheets = [];
     this.forEachSheet(function(sheet) {
-      if (sheet.contentSheet) {
+      if (sheet.authorSheet) {
         sheets.push(sheet);
       }
     }, this);
@@ -324,10 +329,7 @@ CssLogic.prototype = {
     let sheetFound = false;
 
     if (cacheId in this._sheets) {
-      for (let i = 0, numSheets = this._sheets[cacheId].length;
-           i < numSheets;
-           i++) {
-        sheet = this._sheets[cacheId][i];
+      for (sheet of this._sheets[cacheId]) {
         if (sheet.domSheet === domSheet) {
           if (index != -1) {
             sheet.index = index;
@@ -344,7 +346,7 @@ CssLogic.prototype = {
       }
 
       sheet = new CssSheet(this, domSheet, index);
-      if (sheet.sheetAllowed && sheet.contentSheet) {
+      if (sheet.sheetAllowed && sheet.authorSheet) {
         this._ruleCount += sheet.ruleCount;
       }
 
@@ -437,19 +439,19 @@ CssLogic.prototype = {
     this._matchedSelectors = [];
     this._passId++;
 
-    for (let i = 0; i < this._matchedRules.length; i++) {
-      const rule = this._matchedRules[i][0];
-      const status = this._matchedRules[i][1];
+    for (const matchedRule of this._matchedRules) {
+      const [rule, status, distance] = matchedRule;
 
       rule.selectors.forEach(function(selector) {
-        if (selector._matchId !== this._matchId &&
-           (selector.elementStyle ||
-            this.selectorMatchesElement(rule.domRule,
-                                        selector.selectorIndex))) {
+        if (
+          selector._matchId !== this._matchId &&
+          (selector.inlineStyle ||
+            this.selectorMatchesElement(rule.domRule, selector.selectorIndex))
+        ) {
           selector._matchId = this._matchId;
-          this._matchedSelectors.push([ selector, status ]);
+          this._matchedSelectors.push([selector, status, distance]);
           if (callback) {
-            callback.call(scope, selector, status);
+            callback.call(scope, selector, status, distance);
           }
         }
       }, this);
@@ -477,8 +479,10 @@ CssLogic.prototype = {
       if (InspectorUtils.selectorMatchesElement(element, domRule, idx)) {
         return true;
       }
-    } while ((element = element.parentNode) &&
-             element.nodeType === nodeConstants.ELEMENT_NODE);
+    } while (
+      (element = element.parentNode) &&
+      element.nodeType === nodeConstants.ELEMENT_NODE
+    );
 
     return false;
   },
@@ -501,13 +505,15 @@ CssLogic.prototype = {
     this._matchedRules.some(function(value) {
       const rule = value[0];
       const status = value[1];
-      properties = properties.filter((property) => {
+      properties = properties.filter(property => {
         // We just need to find if a rule has this property while it matches
         // the viewedElement (or its parents).
-        if (rule.getPropertyValue(property) &&
-            (status == STATUS.MATCHED ||
-             (status == STATUS.PARENT_MATCH &&
-              this._isInherited(property)))) {
+        if (
+          rule.getPropertyValue(property) &&
+          (status == STATUS.MATCHED ||
+            (status == STATUS.PARENT_MATCH &&
+              InspectorUtils.isInheritedProperty(property)))
+        ) {
           result[property] = true;
           return false;
         }
@@ -532,6 +538,13 @@ CssLogic.prototype = {
     const filter = this.sourceFilter;
     let sheetIndex = 0;
 
+    // distance is used to tell us how close an ancestor is to an element e.g.
+    //  0: The rule is directly applied to the current element.
+    // -1: The rule is inherited from the current element's first parent.
+    // -2: The rule is inherited from the current element's second parent.
+    // etc.
+    let distance = 0;
+
     this._matchId++;
     this._passId++;
     this._matchedRules = [];
@@ -541,8 +554,8 @@ CssLogic.prototype = {
     }
 
     do {
-      const status = this.viewedElement === element ?
-                   STATUS.MATCHED : STATUS.PARENT_MATCH;
+      const status =
+        this.viewedElement === element ? STATUS.MATCHED : STATUS.PARENT_MATCH;
 
       try {
         domRules = getCSSStyleRules(element);
@@ -552,9 +565,7 @@ CssLogic.prototype = {
       }
 
       // getCSSStyleRules can return null with a shadow DOM element.
-      const numDomRules = domRules ? domRules.length : 0;
-      for (let i = 0; i < numDomRules; i++) {
-        const domRule = domRules[i];
+      for (const domRule of domRules || []) {
         if (domRule.type !== CSSRule.STYLE_RULE) {
           continue;
         }
@@ -565,7 +576,7 @@ CssLogic.prototype = {
           sheet._passId = this._passId;
         }
 
-        if (filter === FILTER.USER && !sheet.contentSheet) {
+        if (filter === FILTER.USER && !sheet.authorSheet) {
           continue;
         }
 
@@ -576,7 +587,7 @@ CssLogic.prototype = {
 
         rule._matchId = this._matchId;
         rule._passId = this._passId;
-        this._matchedRules.push([rule, status]);
+        this._matchedRules.push([rule, status, distance]);
       }
 
       // Add element.style information.
@@ -584,10 +595,14 @@ CssLogic.prototype = {
         const rule = new CssRule(null, { style: element.style }, element);
         rule._matchId = this._matchId;
         rule._passId = this._passId;
-        this._matchedRules.push([rule, status]);
+        this._matchedRules.push([rule, status, distance]);
       }
-    } while ((element = element.parentNode) &&
-              element.nodeType === nodeConstants.ELEMENT_NODE);
+
+      distance--;
+    } while (
+      (element = element.parentNode) &&
+      element.nodeType === nodeConstants.ELEMENT_NODE
+    );
   },
 
   /**
@@ -599,8 +614,10 @@ CssLogic.prototype = {
    */
   mediaMatches: function(domObject) {
     const mediaText = domObject.media.mediaText;
-    return !mediaText ||
-      this.viewedDocument.defaultView.matchMedia(mediaText).matches;
+    return (
+      !mediaText ||
+      this.viewedDocument.defaultView.matchMedia(mediaText).matches
+    );
   },
 };
 
@@ -656,7 +673,7 @@ CssLogic.getSelectors = function(domRule) {
  *
  * @returns {Object}
  *            - {DOMNode} node The non-anonymous node
- *            - {string} pseudo One of ':before', ':after', or null.
+ *            - {string} pseudo One of ':marker', ':before', ':after', or null.
  */
 CssLogic.getBindingElementAndPseudo = getBindingElementAndPseudo;
 
@@ -669,14 +686,16 @@ CssLogic.getBindingElementAndPseudo = getBindingElementAndPseudo;
  * @returns {CSSStyleDeclaration}
  */
 CssLogic.getComputedStyle = function(node) {
-  if (!node ||
-      Cu.isDeadWrapper(node) ||
-      node.nodeType !== nodeConstants.ELEMENT_NODE ||
-      !node.ownerGlobal) {
+  if (
+    !node ||
+    Cu.isDeadWrapper(node) ||
+    node.nodeType !== nodeConstants.ELEMENT_NODE ||
+    !node.ownerGlobal
+  ) {
     return null;
   }
 
-  const {bindingElement, pseudo} = CssLogic.getBindingElementAndPseudo(node);
+  const { bindingElement, pseudo } = CssLogic.getBindingElementAndPseudo(node);
 
   // For reasons that still escape us, pseudo-elements can sometimes be "unattached" (i.e.
   // not have a parentNode defined). This seems to happen when a page is reloaded while
@@ -720,7 +739,7 @@ CssLogic.href = function(sheet) {
 function CssSheet(cssLogic, domSheet, index) {
   this._cssLogic = cssLogic;
   this.domSheet = domSheet;
-  this.index = this.contentSheet ? index : -100 * index;
+  this.index = this.authorSheet ? index : -100 * index;
 
   // Cache of the sheets href. Cached by the getter.
   this._href = null;
@@ -738,23 +757,49 @@ function CssSheet(cssLogic, domSheet, index) {
 
 CssSheet.prototype = {
   _passId: null,
-  _contentSheet: null,
+  _agentSheet: null,
+  _authorSheet: null,
+  _userSheet: null,
 
   /**
-   * Tells if the stylesheet is provided by the browser or not.
+   * Check if the stylesheet is an agent stylesheet (provided by the browser).
    *
-   * @return {boolean} false if this is a browser-provided stylesheet, or true
-   * otherwise.
+   * @return {boolean} true if this is an agent stylesheet, false otherwise.
    */
-  get contentSheet() {
-    if (this._contentSheet === null) {
-      this._contentSheet = isContentStylesheet(this.domSheet);
+  get agentSheet() {
+    if (this._agentSheet === null) {
+      this._agentSheet = isAgentStylesheet(this.domSheet);
     }
-    return this._contentSheet;
+    return this._agentSheet;
   },
 
   /**
-   * Tells if the stylesheet is disabled or not.
+   * Check if the stylesheet is an author stylesheet (provided by the content page).
+   *
+   * @return {boolean} true if this is an author stylesheet, false otherwise.
+   */
+  get authorSheet() {
+    if (this._authorSheet === null) {
+      this._authorSheet = isAuthorStylesheet(this.domSheet);
+    }
+    return this._authorSheet;
+  },
+
+  /**
+   * Check if the stylesheet is a user stylesheet (provided by userChrome.css or
+   * userContent.css).
+   *
+   * @return {boolean} true if this is a user stylesheet, false otherwise.
+   */
+  get userSheet() {
+    if (this._userSheet === null) {
+      this._userSheet = isUserStylesheet(this.domSheet);
+    }
+    return this._userSheet;
+  },
+
+  /**
+   * Check if the stylesheet is disabled or not.
    * @return {boolean} true if this stylesheet is disabled, or false otherwise.
    */
   get disabled() {
@@ -803,11 +848,11 @@ CssSheet.prototype = {
     this._sheetAllowed = true;
 
     const filter = this._cssLogic.sourceFilter;
-    if (filter === FILTER.USER && !this.contentSheet) {
+    if (filter === FILTER.USER && !this.authorSheet) {
       this._sheetAllowed = false;
     }
     if (filter !== FILTER.USER && filter !== FILTER.UA) {
-      this._sheetAllowed = (filter === this.href);
+      this._sheetAllowed = filter === this.href;
     }
 
     return this._sheetAllowed;
@@ -820,9 +865,7 @@ CssSheet.prototype = {
    */
   get ruleCount() {
     try {
-      return this._ruleCount > -1 ?
-        this._ruleCount :
-        this.getCssRules().length;
+      return this._ruleCount > -1 ? this._ruleCount : this.getCssRules().length;
     } catch (e) {
       return 0;
     }
@@ -861,10 +904,7 @@ CssSheet.prototype = {
     let ruleFound = false;
 
     if (cacheId in this._rules) {
-      for (let i = 0, rulesLen = this._rules[cacheId].length;
-           i < rulesLen;
-           i++) {
-        rule = this._rules[cacheId][i];
+      for (rule of this._rules[cacheId]) {
         if (rule.domRule === domRule) {
           ruleFound = true;
           break;
@@ -921,13 +961,17 @@ function CssRule(cssSheet, domRule, element) {
       this.source += " @media " + this.mediaText;
     }
     this.href = this._cssSheet.href;
-    this.contentRule = this._cssSheet.contentSheet;
+    this.authorRule = this._cssSheet.authorSheet;
+    this.userRule = this._cssSheet.userSheet;
+    this.agentRule = this._cssSheet.agentSheet;
   } else if (element) {
-    this._selectors = [ new CssSelector(this, "@element.style", 0) ];
+    this._selectors = [new CssSelector(this, "@element.style", 0)];
     this.line = -1;
     this.source = l10n("rule.sourceElement");
     this.href = "#";
-    this.contentRule = true;
+    this.authorRule = true;
+    this.userRule = false;
+    this.agentRule = false;
     this.sourceElement = element;
   }
 }
@@ -1027,7 +1071,7 @@ CssRule.prototype = {
 function CssSelector(cssRule, selector, index) {
   this.cssRule = cssRule;
   this.text = selector;
-  this.elementStyle = this.text == "@element.style";
+  this.inlineStyle = this.text == "@element.style";
   this._specificity = null;
   this.selectorIndex = index;
 }
@@ -1069,13 +1113,31 @@ CssSelector.prototype = {
   },
 
   /**
-   * Check if the selector comes from a browser-provided stylesheet.
+   * Check if the selector comes from an agent stylesheet (provided by the browser).
    *
-   * @return {boolean} true if the selector comes from a content-provided
-   * stylesheet, or false otherwise.
+   * @return {boolean} true if this is an agent stylesheet, false otherwise.
    */
-  get contentRule() {
-    return this.cssRule.contentRule;
+  get agentRule() {
+    return this.cssRule.agentRule;
+  },
+
+  /**
+   * Check if the selector comes from an author stylesheet (provided by the content page).
+   *
+   * @return {boolean} true if this is an author stylesheet, false otherwise.
+   */
+  get authorRule() {
+    return this.cssRule.authorRule;
+  },
+
+  /**
+   * Check if the selector comes from a user stylesheet (provided by userChrome.css or
+   * userContent.css).
+   *
+   * @return {boolean} true if this is a user stylesheet, false otherwise.
+   */
+  get userRule() {
+    return this.cssRule.userRule;
   },
 
   /**
@@ -1127,7 +1189,7 @@ CssSelector.prototype = {
    * @return {Number} The selector's specificity.
    */
   get specificity() {
-    if (this.elementStyle) {
+    if (this.inlineStyle) {
       // We can't ask specificity from DOMUtils as element styles don't provide
       // CSSStyleRule interface DOMUtils expect. However, specificity of element
       // style is constant, 1,0,0,0 or 0x40000000, just return the constant
@@ -1135,12 +1197,12 @@ CssSelector.prototype = {
       return 0x40000000;
     }
 
-    if (this._specificity) {
-      return this._specificity;
+    if (typeof this._specificity !== "number") {
+      this._specificity = InspectorUtils.getSpecificity(
+        this.cssRule.domRule,
+        this.selectorIndex
+      );
     }
-
-    this._specificity = InspectorUtils.getSpecificity(this.cssRule.domRule,
-                                                      this.selectorIndex);
 
     return this._specificity;
   },
@@ -1161,15 +1223,12 @@ CssSelector.prototype = {
  *
  * @param {CssLogic} cssLogic Reference to the parent CssLogic instance
  * @param {string} property The CSS property we are gathering information for
- * @param {function} isInherited A function that determines if the CSS property
- *                   is inherited.
  * @constructor
  */
-function CssPropertyInfo(cssLogic, property, isInherited) {
+function CssPropertyInfo(cssLogic, property) {
   this._cssLogic = cssLogic;
   this.property = property;
   this._value = "";
-  this._isInherited = isInherited;
 
   // An array holding CssSelectorInfo objects for each of the matched selectors
   // that are inside a CSS rule. Only rules that hold the this.property are
@@ -1189,8 +1248,9 @@ CssPropertyInfo.prototype = {
   get value() {
     if (!this._value && this._cssLogic.computedStyle) {
       try {
-        this._value =
-          this._cssLogic.computedStyle.getPropertyValue(this.property);
+        this._value = this._cssLogic.computedStyle.getPropertyValue(
+          this.property
+        );
       } catch (ex) {
         console.log("Error reading computed style for " + this.property);
         console.log(ex);
@@ -1232,17 +1292,14 @@ CssPropertyInfo.prototype = {
 
     // Sort the selectors by how well they match the given element.
     this._matchedSelectors.sort(function(selectorInfo1, selectorInfo2) {
-      if (selectorInfo1.status > selectorInfo2.status) {
-        return -1;
-      } else if (selectorInfo2.status > selectorInfo1.status) {
-        return 1;
-      }
       return selectorInfo1.compareTo(selectorInfo2);
     });
 
     // Now we know which of the matches is best, we can mark it BEST_MATCH.
-    if (this._matchedSelectors.length > 0 &&
-        this._matchedSelectors[0].status > STATUS.UNMATCHED) {
+    if (
+      this._matchedSelectors.length > 0 &&
+      this._matchedSelectors[0].status > STATUS.UNMATCHED
+    ) {
       this._matchedSelectors[0].status = STATUS.BEST;
     }
   },
@@ -1254,15 +1311,22 @@ CssPropertyInfo.prototype = {
    * @param {CssSelector} selector the matched CssSelector object.
    * @param {STATUS} status the CssSelector match status.
    */
-  _processMatchedSelector: function(selector, status) {
+  _processMatchedSelector: function(selector, status, distance) {
     const cssRule = selector.cssRule;
     const value = cssRule.getPropertyValue(this.property);
-    if (value &&
-        (status == STATUS.MATCHED ||
-         (status == STATUS.PARENT_MATCH &&
-          this._isInherited(this.property)))) {
-      const selectorInfo = new CssSelectorInfo(selector, this.property, value,
-          status);
+    if (
+      value &&
+      (status == STATUS.MATCHED ||
+        (status == STATUS.PARENT_MATCH &&
+          InspectorUtils.isInheritedProperty(this.property)))
+    ) {
+      const selectorInfo = new CssSelectorInfo(
+        selector,
+        this.property,
+        value,
+        status,
+        distance
+      );
       this._matchedSelectors.push(selectorInfo);
     }
   },
@@ -1311,13 +1375,14 @@ CssPropertyInfo.prototype = {
  * @param {STATUS} status The selector match status.
  * @constructor
  */
-function CssSelectorInfo(selector, property, value, status) {
+function CssSelectorInfo(selector, property, value, status, distance) {
   this.selector = selector;
   this.property = property;
   this.status = status;
+  this.distance = distance;
   this.value = value;
   const priority = this.selector.cssRule.getPropertyPriority(this.property);
-  this.important = (priority === "important");
+  this.important = priority === "important";
 }
 
 CssSelectorInfo.prototype = {
@@ -1358,8 +1423,8 @@ CssSelectorInfo.prototype = {
    * @return {boolean} true if the CssSelector comes from element.style, or
    * false otherwise.
    */
-  get elementStyle() {
-    return this.selector.elementStyle;
+  get inlineStyle() {
+    return this.selector.inlineStyle;
   },
 
   /**
@@ -1418,74 +1483,157 @@ CssSelectorInfo.prototype = {
    * @return {boolean} true if the selector comes from a browser-provided
    * stylesheet, or false otherwise.
    */
-  get contentRule() {
-    return this.selector.contentRule;
+  get agentRule() {
+    return this.selector.agentRule;
+  },
+
+  /**
+   * Check if the selector comes from a webpage-provided stylesheet.
+   *
+   * @return {boolean} true if the selector comes from a webpage-provided
+   * stylesheet, or false otherwise.
+   */
+  get authorRule() {
+    return this.selector.authorRule;
+  },
+
+  /**
+   * Check if the selector comes from a user stylesheet (userChrome.css or
+   * userContent.css).
+   *
+   * @return {boolean} true if the selector comes from a webpage-provided
+   * stylesheet, or false otherwise.
+   */
+  get userRule() {
+    return this.selector.userRule;
   },
 
   /**
    * Compare the current CssSelectorInfo instance to another instance, based on
-   * specificity information.
+   * the CSS cascade (see https://www.w3.org/TR/css-cascade-4/#cascading):
    *
-   * @param {CssSelectorInfo} that The instance to compare ourselves against.
-   * @return number -1, 0, 1 depending on how that compares with this.
+   * The cascade sorts declarations according to the following criteria, in
+   * descending order of priority:
+   *
+   * - Rules targetting a node directly must always win over rules targetting an
+   *   ancestor.
+   *
+   * - Origin and Importance
+   *   The origin of a declaration is based on where it comes from and its
+   *   importance is whether or not it is declared !important (see below). For
+   *   our purposes here we can safely ignore Transition declarations and
+   *   Animation declarations.
+   *   The precedence of the various origins is, in descending order:
+   *   - Transition declarations (ignored)
+   *   - Important user agent declarations (User-Agent & !important)
+   *   - Important user declarations (User & !important)
+   *   - Important author declarations (Author & !important)
+   *   - Animation declarations (ignored)
+   *   - Normal author declarations (Author, normal weight)
+   *   - Normal user declarations (User, normal weight)
+   *   - Normal user agent declarations (User-Agent, normal weight)
+   *
+   * - Specificity (see https://www.w3.org/TR/selectors/#specificity)
+   *   - A selector’s specificity is calculated for a given element as follows:
+   *     - count the number of ID selectors in the selector (= A)
+   *     - count the number of class selectors, attributes selectors, and
+   *       pseudo-classes in the selector (= B)
+   *     - count the number of type selectors and pseudo-elements in the
+   *       selector (= C)
+   *     - ignore the universal selector
+   *   - So "UL OL LI.red" has a specificity of a=0 b=1 c=3.
+   *
+   * - Order of Appearance
+   *   - The last declaration in document order wins. For this purpose:
+   *     - Declarations from imported style sheets are ordered as if their style
+   *       sheets were substituted in place of the @import rule.
+   *     - Declarations from style sheets independently linked by the
+   *       originating document are treated as if they were concatenated in
+   *       linking order, as determined by the host document language.
+   *     - Declarations from style attributes are ordered according to the
+   *       document order of the element the style attribute appears on, and are
+   *       all placed after any style sheets.
+   *   - We use three methods to calculate this:
+   *     - Sheet index
+   *     - Rule line
+   *     - Rule column
+   *
+   * @param  {CssSelectorInfo} that
+   *         The instance to compare ourselves against.
+   * @return {Number}
+   *         -1, 0, 1 depending on how that compares with this.
    */
   compareTo: function(that) {
-    if (!this.contentRule && that.contentRule) {
-      return 1;
-    }
-    if (this.contentRule && !that.contentRule) {
-      return -1;
+    let current = null;
+
+    // Rules targetting the node must always win over rules targetting a node's
+    // ancestor.
+    current = this.compare(that, "distance", COMPAREMODE.INTEGER);
+    if (current) {
+      return current;
     }
 
-    if (this.elementStyle && !that.elementStyle) {
-      if (!this.important && that.important) {
-        return 1;
+    if (this.important) {
+      // User-Agent & !important
+      // User & !important
+      // Author & !important
+      for (const propName of ["agentRule", "userRule", "authorRule"]) {
+        current = this.compare(that, propName, COMPAREMODE.BOOLEAN);
+        if (current) {
+          return current;
+        }
       }
-      return -1;
     }
 
-    if (!this.elementStyle && that.elementStyle) {
-      if (this.important && !that.important) {
-        return -1;
+    // Author, normal weight
+    // User, normal weight
+    // User-Agent, normal weight
+    for (const propName of ["authorRule", "userRule", "agentRule"]) {
+      current = this.compare(that, propName, COMPAREMODE.BOOLEAN);
+      if (current) {
+        return current;
       }
-      return 1;
     }
 
-    if (this.important && !that.important) {
-      return -1;
-    }
-    if (that.important && !this.important) {
-      return 1;
-    }
-
-    if (this.specificity > that.specificity) {
-      return -1;
-    }
-    if (that.specificity > this.specificity) {
-      return 1;
-    }
-
-    if (this.sheetIndex > that.sheetIndex) {
-      return -1;
-    }
-    if (that.sheetIndex > this.sheetIndex) {
-      return 1;
+    // Specificity
+    // Sheet index
+    // Rule line
+    // Rule column
+    for (const propName of [
+      "specificity",
+      "sheetIndex",
+      "ruleLine",
+      "ruleColumn",
+    ]) {
+      current = this.compare(that, propName, COMPAREMODE.INTEGER);
+      if (current) {
+        return current;
+      }
     }
 
-    if (this.ruleLine > that.ruleLine) {
-      return -1;
-    }
-    if (that.ruleLine > this.ruleLine) {
-      return 1;
-    }
+    // A rule has been compared against itself so return 0.
+    return 0;
+  },
 
-    if (this.ruleColumn > that.ruleColumn) {
-      return -1;
+  compare: function(that, propertyName, type) {
+    switch (type) {
+      case COMPAREMODE.BOOLEAN:
+        if (this[propertyName] && !that[propertyName]) {
+          return -1;
+        }
+        if (!this[propertyName] && that[propertyName]) {
+          return 1;
+        }
+        break;
+      case COMPAREMODE.INTEGER:
+        if (this[propertyName] > that[propertyName]) {
+          return -1;
+        }
+        if (this[propertyName] < that[propertyName]) {
+          return 1;
+        }
+        break;
     }
-    if (that.ruleColumn > this.ruleColumn) {
-      return 1;
-    }
-
     return 0;
   },
 

@@ -92,7 +92,9 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
       mDecoder->UpdateInputStatus(aTimestamp, aProcessed);
     }
 
-    void HandleOutput(Sample::Param aSample) override {
+    void HandleOutput(Sample::Param aSample,
+                      java::SampleBuffer::Param aBuffer) override {
+      MOZ_ASSERT(!aBuffer, "Video sample should be bufferless");
       // aSample will be implicitly converted into a GlobalRef.
       mDecoder->ProcessOutput(std::move(aSample));
     }
@@ -120,6 +122,12 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
   }
 
   RefPtr<InitPromise> Init() override {
+    BufferInfo::LocalRef bufferInfo;
+    if (NS_FAILED(BufferInfo::New(&bufferInfo)) || !bufferInfo) {
+      return InitPromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
+    }
+    mInputBufferInfo = bufferInfo;
+
     mSurface = GeckoSurface::LocalRef(SurfaceAllocator::AcquireSurface(
         mConfig.mImage.width, mConfig.mImage.height, false));
     if (!mSurface) {
@@ -165,14 +173,19 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
 
   RefPtr<MediaDataDecoder::DecodePromise> Decode(
       MediaRawData* aSample) override {
-    const VideoInfo* config =
-        aSample->mTrackInfo ? aSample->mTrackInfo->GetAsVideoInfo() : &mConfig;
-    MOZ_ASSERT(config);
+    RefPtr<RemoteVideoDecoder> self = this;
+    RefPtr<MediaRawData> sample = aSample;
+    return InvokeAsync(mTaskQueue, __func__, [self, sample]() {
+      const VideoInfo* config = sample->mTrackInfo
+                                    ? sample->mTrackInfo->GetAsVideoInfo()
+                                    : &self->mConfig;
+      MOZ_ASSERT(config);
 
-    InputInfo info(aSample->mDuration.ToMicroseconds(), config->mImage,
-                   config->mDisplay);
-    mInputInfos.Insert(aSample->mTime.ToMicroseconds(), info);
-    return RemoteDataDecoder::Decode(aSample);
+      InputInfo info(sample->mDuration.ToMicroseconds(), config->mImage,
+                     config->mDisplay);
+      self->mInputInfos.Insert(sample->mTime.ToMicroseconds(), info);
+      return self->RemoteDataDecoder::ProcessDecode(sample);
+    });
   }
 
   bool SupportDecoderRecycling() const override {
@@ -234,6 +247,10 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     }
 
     AssertOnTaskQueue();
+    if (GetState() == State::SHUTDOWN) {
+      aSample->Dispose();
+      return;
+    }
 
     UniquePtr<VideoData::Listener> releaseSample(
         new CompositeListener(mJavaDecoder, aSample));
@@ -270,7 +287,7 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     if (ok && (size > 0 || presentationTimeUs >= 0)) {
       RefPtr<layers::Image> img = new SurfaceTextureImage(
           mSurfaceHandle, inputInfo.mImageSize, false /* NOT continuous */,
-          gl::OriginPos::BottomLeft);
+          gl::OriginPos::BottomLeft, mConfig.HasAlpha());
 
       RefPtr<VideoData> v = VideoData::CreateFromImage(
           inputInfo.mDisplaySize, offset,
@@ -325,6 +342,12 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
   }
 
   RefPtr<InitPromise> Init() override {
+    BufferInfo::LocalRef bufferInfo;
+    if (NS_FAILED(BufferInfo::New(&bufferInfo)) || !bufferInfo) {
+      return InitPromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
+    }
+    mInputBufferInfo = bufferInfo;
+
     // Register native methods.
     JavaCallbacksSupport::Init();
 
@@ -346,6 +369,26 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
     return InitPromise::CreateAndResolve(TrackInfo::kAudioTrack, __func__);
   }
 
+  RefPtr<FlushPromise> Flush() override {
+    RefPtr<RemoteAudioDecoder> self = this;
+    return InvokeAsync(mTaskQueue, __func__, [self]() {
+      self->mFirstDemuxedSampleTime.reset();
+      return self->RemoteDataDecoder::ProcessFlush();
+    });
+  }
+
+  RefPtr<DecodePromise> Decode(MediaRawData* aSample) override {
+    RefPtr<RemoteAudioDecoder> self = this;
+    RefPtr<MediaRawData> sample = aSample;
+    return InvokeAsync(mTaskQueue, __func__, [self, sample]() {
+      if (!self->mFirstDemuxedSampleTime) {
+        MOZ_ASSERT(sample->mTime.IsValid());
+        self->mFirstDemuxedSampleTime.emplace(sample->mTime);
+      }
+      return self->RemoteDataDecoder::ProcessDecode(sample);
+    });
+  }
+
  private:
   class CallbacksSupport final : public JavaCallbacksSupport {
    public:
@@ -356,9 +399,11 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
       mDecoder->UpdateInputStatus(aTimestamp, aProcessed);
     }
 
-    void HandleOutput(Sample::Param aSample) override {
+    void HandleOutput(Sample::Param aSample,
+                      java::SampleBuffer::Param aBuffer) override {
+      MOZ_ASSERT(aBuffer, "Audio sample should have buffer");
       // aSample will be implicitly converted into a GlobalRef.
-      mDecoder->ProcessOutput(std::move(aSample));
+      mDecoder->ProcessOutput(std::move(aSample), std::move(aBuffer));
     }
 
     void HandleOutputFormatChanged(MediaFormat::Param aFormat) override {
@@ -388,14 +433,33 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
     RemoteAudioDecoder* mDecoder;
   };
 
+  bool IsSampleTimeSmallerThanFirstDemuxedSampleTime(int64_t aTime) const {
+    return mFirstDemuxedSampleTime->ToMicroseconds() > aTime;
+  }
+
+  bool ShouldDiscardSample(int64_t aSession) const {
+    AssertOnTaskQueue();
+    // HandleOutput() runs on Android binder thread pool and could be preempted
+    // by RemoteDateDecoder task queue. That means ProcessOutput() could be
+    // scheduled after ProcessShutdown() or ProcessFlush(). We won't need the
+    // sample which is returned after calling Shutdown() and Flush(). We can
+    // check mFirstDemuxedSampleTime to know whether the Flush() has been
+    // called, becasue it would be reset in Flush().
+    return GetState() == State::SHUTDOWN || !mFirstDemuxedSampleTime ||
+           mSession != aSession;
+  }
+
   // Param and LocalRef are only valid for the duration of a JNI method call.
   // Use GlobalRef as the parameter type to keep the Java object referenced
   // until running.
-  void ProcessOutput(Sample::GlobalRef&& aSample) {
+  void ProcessOutput(Sample::GlobalRef&& aSample,
+                     SampleBuffer::GlobalRef&& aBuffer) {
     if (!mTaskQueue->IsCurrentThreadIn()) {
-      nsresult rv = mTaskQueue->Dispatch(NewRunnableMethod<Sample::GlobalRef&&>(
-          "RemoteAudioDecoder::ProcessOutput", this,
-          &RemoteAudioDecoder::ProcessOutput, std::move(aSample)));
+      nsresult rv = mTaskQueue->Dispatch(
+          NewRunnableMethod<Sample::GlobalRef&&, SampleBuffer::GlobalRef&&>(
+              "RemoteAudioDecoder::ProcessOutput", this,
+              &RemoteAudioDecoder::ProcessOutput, std::move(aSample),
+              std::move(aBuffer)));
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
       Unused << rv;
       return;
@@ -403,13 +467,19 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
 
     AssertOnTaskQueue();
 
+    if (ShouldDiscardSample(aSample->Session()) || !aBuffer->IsValid()) {
+      aSample->Dispose();
+      return;
+    }
+
     RenderOrReleaseOutput autoRelease(mJavaDecoder, aSample);
 
     BufferInfo::LocalRef info = aSample->Info();
     MOZ_ASSERT(info);
 
-    int32_t flags;
+    int32_t flags = 0;
     bool ok = NS_SUCCEEDED(info->Flags(&flags));
+    bool isEOS = !!(flags & MediaCodec::BUFFER_FLAG_END_OF_STREAM);
 
     int32_t offset;
     ok &= NS_SUCCEEDED(info->Offset(&offset));
@@ -420,7 +490,9 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
     int32_t size;
     ok &= NS_SUCCEEDED(info->Size(&size));
 
-    if (!ok) {
+    if (!ok ||
+        (IsSampleTimeSmallerThanFirstDemuxedSampleTime(presentationTimeUs) &&
+         !isEOS)) {
       Error(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__));
       return;
     }
@@ -439,7 +511,7 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
       }
 
       jni::ByteBuffer::LocalRef dest = jni::ByteBuffer::New(audio.get(), size);
-      aSample->WriteToByteBuffer(dest);
+      aBuffer->WriteToByteBuffer(dest, offset, size);
 
       RefPtr<AudioData> data =
           new AudioData(0, TimeUnit::FromMicroseconds(presentationTimeUs),
@@ -448,7 +520,7 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
       UpdateOutputStatus(std::move(data));
     }
 
-    if ((flags & MediaCodec::BUFFER_FLAG_END_OF_STREAM) != 0) {
+    if (isEOS) {
       DrainComplete();
     }
   }
@@ -472,6 +544,7 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
 
   int32_t mOutputChannels;
   int32_t mOutputSampleRate;
+  Maybe<TimeUnit> mFirstDemuxedSampleTime;
 };
 
 already_AddRefed<MediaDataDecoder> RemoteDataDecoder::CreateAudioDecoder(
@@ -520,6 +593,7 @@ RemoteDataDecoder::RemoteDataDecoder(MediaData::Type aType,
       mFormat(aFormat),
       mDrmStubId(aDrmStubId),
       mTaskQueue(aTaskQueue),
+      mSession(0),
       mNumPendingInputs(0) {}
 
 RefPtr<MediaDataDecoder::FlushPromise> RemoteDataDecoder::Flush() {
@@ -560,14 +634,10 @@ RefPtr<MediaDataDecoder::DecodePromise> RemoteDataDecoder::Drain() {
       return p;
     }
 
-    BufferInfo::LocalRef bufferInfo;
-    nsresult rv = BufferInfo::New(&bufferInfo);
-    if (NS_FAILED(rv)) {
-      return DecodePromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
-    }
     SetState(State::DRAINING);
-    bufferInfo->Set(0, 0, -1, MediaCodec::BUFFER_FLAG_END_OF_STREAM);
-    mJavaDecoder->Input(nullptr, bufferInfo, nullptr);
+    self->mInputBufferInfo->Set(0, 0, -1,
+                                MediaCodec::BUFFER_FLAG_END_OF_STREAM);
+    mSession = mJavaDecoder->Input(nullptr, self->mInputBufferInfo, nullptr);
     return p;
   });
 }
@@ -658,29 +728,29 @@ static CryptoInfo::LocalRef GetCryptoInfoFromSample(
 
 RefPtr<MediaDataDecoder::DecodePromise> RemoteDataDecoder::Decode(
     MediaRawData* aSample) {
-  MOZ_ASSERT(aSample != nullptr);
-
   RefPtr<RemoteDataDecoder> self = this;
   RefPtr<MediaRawData> sample = aSample;
-  return InvokeAsync(mTaskQueue, __func__, [self, sample]() {
-    jni::ByteBuffer::LocalRef bytes = jni::ByteBuffer::New(
-        const_cast<uint8_t*>(sample->Data()), sample->Size());
+  return InvokeAsync(mTaskQueue, __func__,
+                     [self, sample]() { return self->ProcessDecode(sample); });
+}
 
-    BufferInfo::LocalRef bufferInfo;
-    nsresult rv = BufferInfo::New(&bufferInfo);
-    if (NS_FAILED(rv)) {
-      return DecodePromise::CreateAndReject(
-          MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
-    }
-    bufferInfo->Set(0, sample->Size(), sample->mTime.ToMicroseconds(), 0);
+RefPtr<MediaDataDecoder::DecodePromise> RemoteDataDecoder::ProcessDecode(
+    MediaRawData* aSample) {
+  AssertOnTaskQueue();
+  MOZ_ASSERT(aSample != nullptr);
+  jni::ByteBuffer::LocalRef bytes = jni::ByteBuffer::New(
+      const_cast<uint8_t*>(aSample->Data()), aSample->Size());
 
-    self->SetState(State::DRAINABLE);
-    return self->mJavaDecoder->Input(bytes, bufferInfo,
-                                     GetCryptoInfoFromSample(sample))
-               ? self->mDecodePromise.Ensure(__func__)
-               : DecodePromise::CreateAndReject(
-                     MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
-  });
+  SetState(State::DRAINABLE);
+  mInputBufferInfo->Set(0, aSample->Size(), aSample->mTime.ToMicroseconds(), 0);
+  int64_t session = mJavaDecoder->Input(bytes, mInputBufferInfo,
+                                        GetCryptoInfoFromSample(aSample));
+  if (session == java::CodecProxy::INVALID_SESSION) {
+    return DecodePromise::CreateAndReject(
+        MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
+  }
+  mSession = session;
+  return mDecodePromise.Ensure(__func__);
 }
 
 void RemoteDataDecoder::UpdatePendingInputStatus(PendingOp aOp) {

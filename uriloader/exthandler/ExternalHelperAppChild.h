@@ -16,7 +16,7 @@ class nsIDivertableChannel;
 namespace mozilla {
 namespace dom {
 
-class TabChild;
+class BrowserChild;
 
 class ExternalHelperAppChild : public PExternalHelperAppChild,
                                public nsIStreamListener {
@@ -29,14 +29,15 @@ class ExternalHelperAppChild : public PExternalHelperAppChild,
 
   // Give the listener a real nsExternalAppHandler to complete processing on
   // the child.
-  void SetHandler(nsExternalAppHandler *handler) { mHandler = handler; }
+  void SetHandler(nsExternalAppHandler* handler) { mHandler = handler; }
 
-  mozilla::ipc::IPCResult RecvCancel(const nsresult &aStatus);
+  mozilla::ipc::IPCResult RecvCancel(const nsresult& aStatus);
 
  private:
   virtual ~ExternalHelperAppChild();
-  MOZ_MUST_USE nsresult DivertToParent(nsIDivertableChannel *divertable,
-                                       nsIRequest *request, TabChild *tabChild);
+  MOZ_MUST_USE nsresult DivertToParent(nsIDivertableChannel* divertable,
+                                       nsIRequest* request,
+                                       BrowserChild* browserChild);
 
   RefPtr<nsExternalAppHandler> mHandler;
   nsresult mStatus;

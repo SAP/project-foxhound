@@ -19,6 +19,10 @@ EXPORTS.mozilla.net += [
     'SubstitutingURL.h',
 ]
 
+EXPORTS += [
+    'nsResProtocolHandler.h',
+]
+
 UNIFIED_SOURCES += [
     'ExtensionProtocolHandler.cpp',
     'nsResProtocolHandler.cpp',
@@ -31,4 +35,5 @@ FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
     '/netwerk/base',
+    '/xpcom/base',
 ]

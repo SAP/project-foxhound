@@ -44,6 +44,7 @@ class JSFunction : public js::NativeObject {
     Getter,
     Setter,
     AsmJS, /* function is an asm.js module or exported function */
+    Wasm,  /* function is an exported WebAssembly function */
     FunctionKindLimit
   };
 
@@ -52,7 +53,7 @@ class JSFunction : public js::NativeObject {
     CONSTRUCTOR = 0x0002, /* function that can be called as a constructor */
     EXTENDED = 0x0004,    /* structure is FunctionExtended */
     BOUND_FUN = 0x0008, /* function was created with Function.prototype.bind. */
-    WASM_OPTIMIZED = 0x0010,   /* asm.js/wasm function that has a jit entry */
+    WASM_JIT_ENTRY = 0x0010,   /* the wasm function has a jit entry */
     HAS_GUESSED_ATOM = 0x0020, /* function had no explicit name, but a
                                   name was guessed for it anyway. See
                                   atom_ for more info about this flag. */
@@ -85,6 +86,7 @@ class JSFunction : public js::NativeObject {
     FUNCTION_KIND_MASK = 0x7 << FUNCTION_KIND_SHIFT,
 
     ASMJS_KIND = AsmJS << FUNCTION_KIND_SHIFT,
+    WASM_KIND = Wasm << FUNCTION_KIND_SHIFT,
     ARROW_KIND = Arrow << FUNCTION_KIND_SHIFT,
     METHOD_KIND = Method << FUNCTION_KIND_SHIFT,
     CLASSCONSTRUCTOR_KIND = ClassConstructor << FUNCTION_KIND_SHIFT,
@@ -97,8 +99,7 @@ class JSFunction : public js::NativeObject {
     NATIVE_CLASS_CTOR = NATIVE_FUN | CONSTRUCTOR | CLASSCONSTRUCTOR_KIND,
     ASMJS_CTOR = ASMJS_KIND | NATIVE_CTOR,
     ASMJS_LAMBDA_CTOR = ASMJS_KIND | NATIVE_CTOR | LAMBDA,
-    ASMJS_NATIVE = ASMJS_KIND | NATIVE_FUN,
-    WASM_FUN = NATIVE_FUN | WASM_OPTIMIZED,
+    WASM = WASM_KIND | NATIVE_FUN,
     INTERPRETED_METHOD = INTERPRETED | METHOD_KIND,
     INTERPRETED_CLASS_CONSTRUCTOR =
         INTERPRETED | CLASSCONSTRUCTOR_KIND | CONSTRUCTOR,
@@ -128,11 +129,19 @@ class JSFunction : public js::NativeObject {
                 "FunctionKind doesn't fit into flags_");
 
  private:
-  uint16_t
-      nargs_;      /* number of formal arguments
-                      (including defaults and the rest parameter unlike f.length) */
-  uint16_t flags_; /* bitfield composed of the above Flags enum, as well as the
-                      kind */
+  /*
+   * number of formal arguments
+   * (including defaults and the rest parameter unlike f.length)
+   */
+  uint16_t nargs_;
+
+  /*
+   * Bitfield composed of the above Flags enum, as well as the kind.
+   *
+   * If any of these flags needs to be accessed in off-thread JIT
+   * compilation, copy it to js::jit::WrappedFunction.
+   */
+  uint16_t flags_;
   union U {
     class {
       friend class JSFunction;
@@ -141,9 +150,9 @@ class JSFunction : public js::NativeObject {
         // Information about this function to be used by the JIT, only
         // used if isBuiltinNative(); use the accessor!
         const JSJitInfo* jitInfo_;
-        // asm.js function index, only used if isAsmJSNative().
-        size_t asmJSFuncIndex_;
-        // for wasm, a pointer to a fast jit->wasm table entry.
+        // for wasm/asm.js without a jit entry
+        size_t wasmFuncIndex_;
+        // for wasm that has been given a jit entry
         void** wasmJitEntry_;
       } extra;
     } native;
@@ -248,16 +257,25 @@ class JSFunction : public js::NativeObject {
   bool isConstructor() const { return flags() & CONSTRUCTOR; }
 
   /* Possible attributes of a native function: */
-  bool isAsmJSNative() const { return kind() == AsmJS; }
-  bool isWasmOptimized() const { return (flags() & WASM_OPTIMIZED); }
-  bool isBuiltinNative() const {
-    return isNativeWithCppEntry() && !isAsmJSNative();
+  bool isAsmJSNative() const {
+    MOZ_ASSERT_IF(kind() == AsmJS, isNative());
+    return kind() == AsmJS;
   }
-
-  // May be called from the JIT with the wasmJitEntry_ field.
-  bool isNativeWithJitEntry() const { return isNative() && isWasmOptimized(); }
-  // Must be called from the JIT with the native_ field.
-  bool isNativeWithCppEntry() const { return isNative() && !isWasmOptimized(); }
+  bool isWasm() const {
+    MOZ_ASSERT_IF(kind() == Wasm, isNative());
+    return kind() == Wasm;
+  }
+  bool isWasmWithJitEntry() const {
+    MOZ_ASSERT_IF(flags() & WASM_JIT_ENTRY, isWasm());
+    return flags() & WASM_JIT_ENTRY;
+  }
+  bool isNativeWithJitEntry() const {
+    MOZ_ASSERT_IF(isWasmWithJitEntry(), isNative());
+    return isWasmWithJitEntry();
+  }
+  bool isBuiltinNative() const {
+    return isNative() && !isAsmJSNative() && !isWasm();
+  }
 
   /* Possible attributes of an interpreted function: */
   bool isBoundFunction() const { return flags() & BOUND_FUN; }
@@ -321,9 +339,7 @@ class JSFunction : public js::NativeObject {
   bool hasJitEntry() const { return hasScript() || isNativeWithJitEntry(); }
 
   /* Compound attributes: */
-  bool isBuiltin() const {
-    return isBuiltinNative() || isNativeWithJitEntry() || isSelfHostedBuiltin();
-  }
+  bool isBuiltin() const { return isBuiltinNative() || isSelfHostedBuiltin(); }
 
   bool isNamedLambda() const {
     return isLambda() && displayAtom() && !hasInferredName() &&
@@ -689,7 +705,7 @@ class JSFunction : public js::NativeObject {
   JSNative maybeNative() const { return isInterpreted() ? nullptr : native(); }
 
   void initNative(js::Native native, const JSJitInfo* jitInfo) {
-    MOZ_ASSERT(isNativeWithCppEntry());
+    MOZ_ASSERT(isNative());
     MOZ_ASSERT_IF(jitInfo, isBuiltinNative());
     MOZ_ASSERT(native);
     u.native.func_ = native;
@@ -707,37 +723,35 @@ class JSFunction : public js::NativeObject {
     u.native.extra.jitInfo_ = data;
   }
 
-  // Wasm natives are optimized and have a jit entry.
-  void initWasmNative(js::Native native) {
-    MOZ_ASSERT(isNativeWithJitEntry());
-    MOZ_ASSERT(native);
-    u.native.func_ = native;
-    u.native.extra.wasmJitEntry_ = nullptr;
+  // wasm functions are always natives and either:
+  //  - store a function-index in u.n.extra and can only be called through the
+  //    fun->native() entry point from C++.
+  //  - store a jit-entry code pointer in u.n.extra and can be called by jit
+  //    code directly. C++ callers can still use the fun->native() entry point
+  //    (computing the function index from the jit-entry point).
+  void setWasmFuncIndex(uint32_t funcIndex) {
+    MOZ_ASSERT(isWasm() || isAsmJSNative());
+    MOZ_ASSERT(!isWasmWithJitEntry());
+    MOZ_ASSERT(!u.native.extra.wasmFuncIndex_);
+    u.native.extra.wasmFuncIndex_ = funcIndex;
+  }
+  uint32_t wasmFuncIndex() const {
+    MOZ_ASSERT(isWasm() || isAsmJSNative());
+    MOZ_ASSERT(!isWasmWithJitEntry());
+    return u.native.extra.wasmFuncIndex_;
   }
   void setWasmJitEntry(void** entry) {
-    MOZ_ASSERT(isNativeWithJitEntry());
-    MOZ_ASSERT(entry);
-    MOZ_ASSERT(!u.native.extra.wasmJitEntry_);
+    MOZ_ASSERT(*entry);
+    MOZ_ASSERT(isWasm());
+    MOZ_ASSERT(!isWasmWithJitEntry());
+    flags_ |= WASM_JIT_ENTRY;
     u.native.extra.wasmJitEntry_ = entry;
+    MOZ_ASSERT(isWasmWithJitEntry());
   }
   void** wasmJitEntry() const {
-    MOZ_ASSERT(isNativeWithJitEntry());
+    MOZ_ASSERT(isWasmWithJitEntry());
     MOZ_ASSERT(u.native.extra.wasmJitEntry_);
     return u.native.extra.wasmJitEntry_;
-  }
-
-  // AsmJS functions store the func index in the jitinfo slot, since these
-  // don't have a jit info associated.
-  void setAsmJSIndex(uint32_t funcIndex) {
-    MOZ_ASSERT(isAsmJSNative());
-    MOZ_ASSERT(!isWasmOptimized());
-    MOZ_ASSERT(!u.native.extra.asmJSFuncIndex_);
-    u.native.extra.asmJSFuncIndex_ = funcIndex;
-  }
-  uint32_t asmJSFuncIndex() const {
-    MOZ_ASSERT(isAsmJSNative());
-    MOZ_ASSERT(!isWasmOptimized());
-    return u.native.extra.asmJSFuncIndex_;
   }
 
   bool isDerivedClassConstructor();
@@ -813,6 +827,20 @@ class JSFunction : public js::NativeObject {
   inline void initExtendedSlot(size_t which, const js::Value& val);
   inline void setExtendedSlot(size_t which, const js::Value& val);
   inline const js::Value& getExtendedSlot(size_t which) const;
+
+  /*
+   * Same as `toExtended` and `getExtendedSlot`, but `this` is guaranteed to be
+   * an extended function.
+   *
+   * This function is supposed to be used off-thread, especially the JIT
+   * compilation thread, that cannot access JSFunction.flags_, because of
+   * a race condition.
+   *
+   * See Also: WrappedFunction.isExtended_
+   */
+  inline js::FunctionExtended* toExtendedOffMainThread();
+  inline const js::FunctionExtended* toExtendedOffMainThread() const;
+  inline const js::Value& getExtendedSlotOffMainThread(size_t which) const;
 
   /* Constructs a new type for the function if necessary. */
   static bool setTypeForScriptedFunction(JSContext* cx, js::HandleFunction fun,
@@ -1002,6 +1030,14 @@ inline const js::FunctionExtended* JSFunction::toExtended() const {
   return static_cast<const js::FunctionExtended*>(this);
 }
 
+inline js::FunctionExtended* JSFunction::toExtendedOffMainThread() {
+  return static_cast<js::FunctionExtended*>(this);
+}
+
+inline const js::FunctionExtended* JSFunction::toExtendedOffMainThread() const {
+  return static_cast<const js::FunctionExtended*>(this);
+}
+
 inline void JSFunction::initializeExtended() {
   MOZ_ASSERT(isExtended());
 
@@ -1025,6 +1061,13 @@ inline void JSFunction::setExtendedSlot(size_t which, const js::Value& val) {
 inline const js::Value& JSFunction::getExtendedSlot(size_t which) const {
   MOZ_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
   return toExtended()->extendedSlots[which];
+}
+
+inline const js::Value& JSFunction::getExtendedSlotOffMainThread(
+    size_t which) const {
+  MOZ_ASSERT(which <
+             mozilla::ArrayLength(toExtendedOffMainThread()->extendedSlots));
+  return toExtendedOffMainThread()->extendedSlots[which];
 }
 
 namespace js {

@@ -6,9 +6,9 @@
 
 #include "SVGAnimatedRect.h"
 #include "mozilla/dom/SVGAnimatedRectBinding.h"
-#include "SVGElement.h"
-#include "SVGViewBox.h"
-#include "SVGIRect.h"
+#include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/SVGRect.h"
+#include "SVGAnimatedViewBox.h"
 
 namespace mozilla {
 namespace dom {
@@ -18,18 +18,19 @@ NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(SVGAnimatedRect, mSVGElement)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(SVGAnimatedRect, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(SVGAnimatedRect, Release)
 
-SVGAnimatedRect::SVGAnimatedRect(SVGViewBox* aVal, SVGElement* aSVGElement)
+SVGAnimatedRect::SVGAnimatedRect(SVGAnimatedViewBox* aVal,
+                                 SVGElement* aSVGElement)
     : mVal(aVal), mSVGElement(aSVGElement) {}
 
 SVGAnimatedRect::~SVGAnimatedRect() {
-  SVGViewBox::sSVGAnimatedRectTearoffTable.RemoveTearoff(mVal);
+  SVGAnimatedViewBox::sSVGAnimatedRectTearoffTable.RemoveTearoff(mVal);
 }
 
-already_AddRefed<SVGIRect> SVGAnimatedRect::GetBaseVal() {
+already_AddRefed<SVGRect> SVGAnimatedRect::GetBaseVal() {
   return mVal->ToDOMBaseVal(mSVGElement);
 }
 
-already_AddRefed<SVGIRect> SVGAnimatedRect::GetAnimVal() {
+already_AddRefed<SVGRect> SVGAnimatedRect::GetAnimVal() {
   return mVal->ToDOMAnimVal(mSVGElement);
 }
 

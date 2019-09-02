@@ -53,6 +53,7 @@
 #include "FrameProperties.h"
 #include "LayoutConstants.h"
 #include "mozilla/layout/FrameChildList.h"
+#include "mozilla/AspectRatio.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SmallPointerArray.h"
 #include "mozilla/WritingModes.h"
@@ -97,14 +98,13 @@
 
 class nsAtom;
 class nsPresContext;
-class nsIPresShell;
 class nsView;
 class nsIWidget;
 class nsISelectionController;
 class nsBoxLayoutState;
 class nsBoxLayout;
 class nsILineIterator;
-class nsDisplayItem;
+class nsDisplayItemBase;
 class nsDisplayListBuilder;
 class nsDisplayListSet;
 class nsDisplayList;
@@ -130,6 +130,7 @@ namespace mozilla {
 
 enum class PseudoStyleType : uint8_t;
 class EventStates;
+class PresShell;
 struct ReflowInput;
 class ReflowOutput;
 class ServoRestyleState;
@@ -168,7 +169,7 @@ class Selection;
 namespace mozilla {
 
 enum class LayoutFrameType : uint8_t {
-#define FRAME_TYPE(ty_) ty_,
+#define FRAME_TYPE(ty_, ...) ty_,
 #include "mozilla/FrameTypeList.h"
 #undef FRAME_TYPE
 };
@@ -451,38 +452,33 @@ enum nsBidiDirection {
 namespace mozilla {
 
 // https://drafts.csswg.org/css-align-3/#baseline-sharing-group
-enum BaselineSharingGroup {
+enum class BaselineSharingGroup {
   // NOTE Used as an array index so must be 0 and 1.
-  eFirst = 0,
-  eLast = 1,
+  First = 0,
+  Last = 1,
 };
 
 // Loosely: https://drafts.csswg.org/css-align-3/#shared-alignment-context
 enum class AlignmentContext {
-  eInline,
-  eTable,
-  eFlexbox,
-  eGrid,
+  Inline,
+  Table,
+  Flexbox,
+  Grid,
 };
 
 /*
- * For replaced elements only. Gets the intrinsic dimensions of this element.
- * The dimensions may only be one of the following two types:
- *
- *   eStyleUnit_Coord   - a length in app units
- *   eStyleUnit_None    - the element has no intrinsic size in this dimension
+ * For replaced elements only. Gets the intrinsic dimensions of this element,
+ * which can be specified on a per-axis basis.
  */
 struct IntrinsicSize {
-  nsStyleCoord width, height;
+  Maybe<nscoord> width;
+  Maybe<nscoord> height;
 
-  IntrinsicSize() : width(eStyleUnit_None), height(eStyleUnit_None) {}
-  IntrinsicSize(const IntrinsicSize& rhs)
-      : width(rhs.width), height(rhs.height) {}
-  IntrinsicSize& operator=(const IntrinsicSize& rhs) {
-    width = rhs.width;
-    height = rhs.height;
-    return *this;
-  }
+  IntrinsicSize() = default;
+
+  IntrinsicSize(nscoord aWidth, nscoord aHeight)
+      : width(Some(aWidth)), height(Some(aHeight)) {}
+
   bool operator==(const IntrinsicSize& rhs) {
     return width == rhs.width && height == rhs.height;
   }
@@ -612,7 +608,7 @@ class nsIFrame : public nsQueryFrame {
 
   nsPresContext* PresContext() const { return mPresContext; }
 
-  nsIPresShell* PresShell() const { return PresContext()->PresShell(); }
+  mozilla::PresShell* PresShell() const { return PresContext()->PresShell(); }
 
   /**
    * Called to initialize the frame. This is called immediately after creating
@@ -850,7 +846,8 @@ class nsIFrame : public nsQueryFrame {
   virtual void SetAdditionalComputedStyle(int32_t aIndex,
                                           ComputedStyle* aComputedStyle) = 0;
 
-  already_AddRefed<ComputedStyle> ComputeSelectionStyle() const;
+  already_AddRefed<ComputedStyle> ComputeSelectionStyle(
+      int16_t aSelectionStatus) const;
 
   /**
    * Accessor functions for geometric parent.
@@ -1153,7 +1150,7 @@ class nsIFrame : public nsQueryFrame {
 
   nsPoint GetPositionIgnoringScrolling() const;
 
-  typedef AutoTArray<nsDisplayItem*, 4> DisplayItemArray;
+  typedef AutoTArray<nsDisplayItemBase*, 4> DisplayItemArray;
 
 #define NS_DECLARE_FRAME_PROPERTY_WITH_DTOR(prop, type, dtor)              \
   static const mozilla::FramePropertyDescriptor<type>* prop() {            \
@@ -1465,7 +1462,7 @@ class nsIFrame : public nsQueryFrame {
    * Return true if the frame has a CSS2 'vertical-align' baseline.
    * If it has, then the returned baseline is the distance from the block-
    * axis border-box start edge.
-   * @note This method should only be used in AlignmentContext::eInline
+   * @note This method should only be used in AlignmentContext::Inline
    * contexts.
    * @note The returned value is only valid when reflow is not needed.
    * @note You should only call this on frames with a WM that's parallel to aWM.
@@ -1826,15 +1823,18 @@ class nsIFrame : public nsQueryFrame {
    * @param aStyleEffects:  If the caller has this->StyleEffects(), providing
    *   it here will improve performance.
    *
-   * @param aEffectSet: This function may need to look up EffectSet property.
-   *   If a caller already have one, pass it in can save property look up
-   *   time; otherwise, just leave it as nullptr.
+   * @param aEffectSetForOpacity: This function may need to look up the
+   *   EffectSet for opacity animations on this frame.
+   *   If the caller already has looked up this EffectSet, it may pass it in to
+   *   save an extra property lookup.
    */
-  bool Extend3DContext(const nsStyleDisplay* aStyleDisplay,
-                       const nsStyleEffects* aStyleEffects,
-                       mozilla::EffectSet* aEffectSet = nullptr) const;
-  bool Extend3DContext(mozilla::EffectSet* aEffectSet = nullptr) const {
-    return Extend3DContext(StyleDisplay(), StyleEffects(), aEffectSet);
+  bool Extend3DContext(
+      const nsStyleDisplay* aStyleDisplay, const nsStyleEffects* aStyleEffects,
+      mozilla::EffectSet* aEffectSetForOpacity = nullptr) const;
+  bool Extend3DContext(
+      mozilla::EffectSet* aEffectSetForOpacity = nullptr) const {
+    return Extend3DContext(StyleDisplay(), StyleEffects(),
+                           aEffectSetForOpacity);
   }
 
   /**
@@ -2128,12 +2128,10 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Flow member functions
    */
-  virtual nsIFrame* GetPrevInFlowVirtual() const = 0;
-  nsIFrame* GetPrevInFlow() const { return GetPrevInFlowVirtual(); }
+  virtual nsIFrame* GetPrevInFlow() const = 0;
   virtual void SetPrevInFlow(nsIFrame*) = 0;
 
-  virtual nsIFrame* GetNextInFlowVirtual() const = 0;
-  nsIFrame* GetNextInFlow() const { return GetNextInFlowVirtual(); }
+  virtual nsIFrame* GetNextInFlow() const = 0;
   virtual void SetNextInFlow(nsIFrame*) = 0;
 
   /**
@@ -2154,9 +2152,15 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Mark any stored intrinsic width information as dirty (requiring
    * re-calculation).  Note that this should generally not be called
-   * directly; nsPresShell::FrameNeedsReflow will call it instead.
+   * directly; PresShell::FrameNeedsReflow() will call it instead.
    */
   virtual void MarkIntrinsicISizesDirty() = 0;
+
+  /**
+   * Make this frame and all descendants dirty (if not already).
+   * Exceptions: XULBoxFrame and TableColGroupFrame children.
+   */
+  void MarkSubtreeDirty();
 
   /**
    * Get the min-content intrinsic inline size of the frame.  This must be
@@ -2372,15 +2376,14 @@ class nsIFrame : public nsQueryFrame {
   virtual mozilla::IntrinsicSize GetIntrinsicSize() = 0;
 
   /**
-   * Get the intrinsic ratio of this element, or nsSize(0,0) if it has
-   * no intrinsic ratio.  The intrinsic ratio is the ratio of the
-   * height/width of a box with an intrinsic size or the intrinsic
-   * aspect ratio of a scalable vector image without an intrinsic size.
+   * Get the intrinsic ratio of this element, or a default-constructed
+   * AspectRatio if it has no intrinsic ratio.
    *
-   * Either one of the sides may be zero, indicating a zero or infinite
-   * ratio.
+   * The intrinsic ratio is the ratio of the width/height of a box with an
+   * intrinsic size or the intrinsic aspect ratio of a scalable vector image
+   * without an intrinsic size.
    */
-  virtual nsSize GetIntrinsicRatio() = 0;
+  virtual mozilla::AspectRatio GetIntrinsicRatio() = 0;
 
   /**
    * Bit-flags to pass to ComputeSize in |aFlags| parameter.
@@ -2618,20 +2621,19 @@ class nsIFrame : public nsQueryFrame {
   };
   enum class TextOffsetType {
     // Passed-in start and end offsets are within the content text.
-    OFFSETS_IN_CONTENT_TEXT,
+    OffsetsInContentText,
     // Passed-in start and end offsets are within the rendered text.
-    OFFSETS_IN_RENDERED_TEXT
+    OffsetsInRenderedText,
   };
   enum class TrailingWhitespace {
-    TRIM_TRAILING_WHITESPACE,
+    Trim,
     // Spaces preceding a caret at the end of a line should not be trimmed
-    DONT_TRIM_TRAILING_WHITESPACE
+    DontTrim,
   };
   virtual RenderedText GetRenderedText(
       uint32_t aStartOffset = 0, uint32_t aEndOffset = UINT32_MAX,
-      TextOffsetType aOffsetType = TextOffsetType::OFFSETS_IN_CONTENT_TEXT,
-      TrailingWhitespace aTrimTrailingWhitespace =
-          TrailingWhitespace::TRIM_TRAILING_WHITESPACE) {
+      TextOffsetType aOffsetType = TextOffsetType::OffsetsInContentText,
+      TrailingWhitespace aTrimTrailingWhitespace = TrailingWhitespace::Trim) {
     return RenderedText();
   }
 
@@ -2797,12 +2799,22 @@ class nsIFrame : public nsQueryFrame {
     return sLayoutFrameTypes[uint8_t(mClass)];
   }
 
-#define FRAME_TYPE(name_)                             \
-  bool Is##name_##Frame() const {                     \
-    return Type() == mozilla::LayoutFrameType::name_; \
+#ifdef __GNUC__
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wtype-limits"
+#endif
+
+#define FRAME_TYPE(name_, first_class_, last_class_)                 \
+  bool Is##name_##Frame() const {                                    \
+    return uint8_t(mClass) >= uint8_t(ClassID::first_class_##_id) && \
+           uint8_t(mClass) <= uint8_t(ClassID::last_class_##_id);    \
   }
 #include "mozilla/FrameTypeList.h"
 #undef FRAME_TYPE
+
+#ifdef __GNUC__
+#  pragma GCC diagnostic pop
+#endif
 
   /**
    * Returns a transformation matrix that converts points in this frame's
@@ -3803,8 +3815,8 @@ class nsIFrame : public nsQueryFrame {
    * Flag a child PresShell as painted so that it will get its paint count
    * incremented during empty transactions.
    */
-  void AddPaintedPresShell(nsIPresShell* shell) {
-    PaintedPresShellList()->AppendElement(do_GetWeakReference(shell));
+  void AddPaintedPresShell(mozilla::PresShell* aPresShell) {
+    PaintedPresShellList()->AppendElement(do_GetWeakReference(aPresShell));
   }
 
   /**
@@ -3813,20 +3825,19 @@ class nsIFrame : public nsQueryFrame {
    */
   void UpdatePaintCountForPaintedPresShells() {
     for (nsWeakPtr& item : *PaintedPresShellList()) {
-      nsCOMPtr<nsIPresShell> shell = do_QueryReferent(item);
-      if (shell) {
-        shell->IncrementPaintCount();
+      if (RefPtr<mozilla::PresShell> presShell = do_QueryReferent(item)) {
+        presShell->IncrementPaintCount();
       }
     }
   }
 
   /**
-   * @return true if we painted @aShell during the last repaint.
+   * @return true if we painted @aPresShell during the last repaint.
    */
-  bool DidPaintPresShell(nsIPresShell* aShell) {
+  bool DidPaintPresShell(mozilla::PresShell* aPresShell) {
     for (nsWeakPtr& item : *PaintedPresShellList()) {
-      nsCOMPtr<nsIPresShell> shell = do_QueryReferent(item);
-      if (shell == aShell) {
+      RefPtr<mozilla::PresShell> presShell = do_QueryReferent(item);
+      if (presShell == aPresShell) {
         return true;
       }
     }
@@ -3942,10 +3953,9 @@ class nsIFrame : public nsQueryFrame {
    * of the enumerated values.  If this is an SVG text frame, it returns a value
    * that corresponds to the value of dominant-baseline.  If the
    * vertical-align property has length or percentage value, this returns
-   * eInvalidVerticalAlign.
+   * Nothing().
    */
-  uint8_t VerticalAlignEnum() const;
-  enum { eInvalidVerticalAlign = 0xFF };
+  Maybe<mozilla::StyleVerticalAlignKeyword> VerticalAlignEnum() const;
 
   void CreateOwnLayerIfNeeded(nsDisplayListBuilder* aBuilder,
                               nsDisplayList* aList,
@@ -4012,12 +4022,8 @@ class nsIFrame : public nsQueryFrame {
    * areas, because they're never painted.)
    */
   bool FrameMaintainsOverflow() const {
-    // The IsSVGElement() check below is necessary, because the
-    // NS_STATE_IS_OUTER_SVG bit has conflict in other frames due to lack
-    // of bits.
     return !HasAllStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_IS_NONDISPLAY) &&
-           !(HasAllStateBits(NS_STATE_IS_OUTER_SVG | NS_FRAME_IS_NONDISPLAY) &&
-             GetContent()->IsSVGElement(nsGkAtoms::svg));
+           !(IsSVGOuterSVGFrame() && HasAnyStateBits(NS_FRAME_IS_NONDISPLAY));
   }
 
   /*
@@ -4149,11 +4155,11 @@ class nsIFrame : public nsQueryFrame {
     return mDisplayItemData;
   }
 
-  void AddDisplayItem(nsDisplayItem* aItem);
-  bool RemoveDisplayItem(nsDisplayItem* aItem);
+  void AddDisplayItem(nsDisplayItemBase* aItem);
+  bool RemoveDisplayItem(nsDisplayItemBase* aItem);
   void RemoveDisplayItemDataForDeletion();
   bool HasDisplayItems();
-  bool HasDisplayItem(nsDisplayItem* aItem);
+  bool HasDisplayItem(nsDisplayItemBase* aItem);
   bool HasDisplayItem(uint32_t aKey);
   void DiscardOldItems();
 
@@ -4207,7 +4213,7 @@ class nsIFrame : public nsQueryFrame {
 
   /**
    * To be overridden by frame classes that have a varying IsLeaf() state and
-   * is indicating that with DynamicLeaf in nsFrameIdList.h.
+   * is indicating that with DynamicLeaf in FrameIdList.h.
    * @see IsLeaf()
    */
   virtual bool IsLeafDynamic() const { return false; }
@@ -4559,7 +4565,7 @@ class nsIFrame : public nsQueryFrame {
   static const mozilla::LayoutFrameType sLayoutFrameTypes[
 #define FRAME_ID(...) 1 +
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
       0];
@@ -4573,7 +4579,7 @@ class nsIFrame : public nsQueryFrame {
   static const FrameClassBits sFrameClassBits[
 #define FRAME_ID(...) 1 +
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
       0];
@@ -4590,6 +4596,9 @@ class nsIFrame : public nsQueryFrame {
   enum {TRAVERSE_SUBDOCUMENT_FRAMES = 0x01};
   virtual void List(FILE* out = stderr, const char* aPrefix = "",
                     uint32_t aFlags = 0) const;
+  virtual void ListWithMatchedRules(FILE* out = stderr,
+                                    const char* aPrefix = "") const;
+  void ListMatchedRules(FILE* out, const char* aPrefix) const;
   /**
    * lists the frames beginning from the root frame
    * - calls root frame's List(...)
@@ -4648,9 +4657,9 @@ class MOZ_NONHEAP_CLASS AutoWeakFrame {
 
   operator nsIFrame*() { return mFrame; }
 
-  void Clear(nsIPresShell* aShell) {
-    if (aShell) {
-      aShell->RemoveAutoWeakFrame(this);
+  void Clear(mozilla::PresShell* aPresShell) {
+    if (aPresShell) {
+      aPresShell->RemoveAutoWeakFrame(this);
     }
     mFrame = nullptr;
     mPrev = nullptr;
@@ -4720,9 +4729,9 @@ class MOZ_HEAP_CLASS WeakFrame {
   nsIFrame* operator->() { return mFrame; }
   operator nsIFrame*() { return mFrame; }
 
-  void Clear(nsIPresShell* aShell) {
-    if (aShell) {
-      aShell->RemoveWeakFrame(this);
+  void Clear(mozilla::PresShell* aPresShell) {
+    if (aPresShell) {
+      aPresShell->RemoveWeakFrame(this);
     }
     mFrame = nullptr;
   }

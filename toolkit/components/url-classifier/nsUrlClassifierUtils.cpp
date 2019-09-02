@@ -122,7 +122,7 @@ typedef FetchThreatListUpdatesRequest_ListUpdateRequest ListUpdateRequest;
 typedef FetchThreatListUpdatesRequest_ListUpdateRequest_Constraints Constraints;
 
 static void InitListUpdateRequest(ThreatType aThreatType,
-                                  const char* aStateBase64,
+                                  const nsCString& aStateBase64,
                                   ListUpdateRequest* aListUpdateRequest) {
   aListUpdateRequest->set_threat_type(aThreatType);
   PlatformType platform = GetPlatformType();
@@ -141,9 +141,9 @@ static void InitListUpdateRequest(ThreatType aThreatType,
   aListUpdateRequest->set_allocated_constraints(contraints);
 
   // Only set non-empty state.
-  if (aStateBase64[0] != '\0') {
+  if (!aStateBase64.IsEmpty()) {
     nsCString stateBinary;
-    nsresult rv = Base64Decode(nsDependentCString(aStateBase64), stateBinary);
+    nsresult rv = Base64Decode(aStateBase64, stateBinary);
     if (NS_SUCCEEDED(rv)) {
       aListUpdateRequest->set_state(stateBinary.get(), stateBinary.Length());
     }
@@ -306,9 +306,12 @@ static const struct {
     {"goog-passwordwhite-proto", CSD_WHITELIST},  // 8
 
     // For testing purpose.
-    {"test-phish-proto", SOCIAL_ENGINEERING_PUBLIC},  // 2
-    {"test-unwanted-proto", UNWANTED_SOFTWARE},       // 3
-    {"test-passwordwhite-proto", CSD_WHITELIST},      // 8
+    {"moztest-phish-proto", SOCIAL_ENGINEERING_PUBLIC},  // 2
+    {"test-phish-proto", SOCIAL_ENGINEERING_PUBLIC},     // 2
+    {"moztest-unwanted-proto", UNWANTED_SOFTWARE},       // 3
+    {"test-unwanted-proto", UNWANTED_SOFTWARE},          // 3
+    {"moztest-passwordwhite-proto", CSD_WHITELIST},      // 8
+    {"test-passwordwhite-proto", CSD_WHITELIST},         // 8
 };
 
 NS_IMETHODIMP
@@ -344,7 +347,8 @@ nsUrlClassifierUtils::GetProvider(const nsACString& aTableName,
                                   nsACString& aProvider) {
   MutexAutoLock lock(mProviderDictLock);
   nsCString* provider = nullptr;
-  if (StringBeginsWith(aTableName, NS_LITERAL_CSTRING("test"))) {
+
+  if (IsTestTable(aTableName)) {
     aProvider = NS_LITERAL_CSTRING(TESTING_TABLE_PROVIDER_NAME);
   } else if (mProviderDict.Get(aTableName, &provider)) {
     aProvider = provider ? *provider : EmptyCString();
@@ -392,19 +396,21 @@ nsUrlClassifierUtils::GetProtocolVersion(const nsACString& aProvider,
 }
 
 NS_IMETHODIMP
-nsUrlClassifierUtils::MakeUpdateRequestV4(const char** aListNames,
-                                          const char** aStatesBase64,
-                                          uint32_t aCount,
-                                          nsACString& aRequest) {
+nsUrlClassifierUtils::MakeUpdateRequestV4(
+    const nsTArray<nsCString>& aListNames,
+    const nsTArray<nsCString>& aStatesBase64, nsACString& aRequest) {
   using namespace mozilla::safebrowsing;
+
+  if (aListNames.Length() != aStatesBase64.Length()) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
   FetchThreatListUpdatesRequest r;
   r.set_allocated_client(CreateClientInfo());
 
-  for (uint32_t i = 0; i < aCount; i++) {
-    nsCString listName(aListNames[i]);
+  for (uint32_t i = 0; i < aListNames.Length(); i++) {
     uint32_t threatType;
-    nsresult rv = ConvertListNameToThreatType(listName, &threatType);
+    nsresult rv = ConvertListNameToThreatType(aListNames[i], &threatType);
     if (NS_FAILED(rv)) {
       continue;  // Unknown list name.
     }
@@ -412,7 +418,7 @@ nsUrlClassifierUtils::MakeUpdateRequestV4(const char** aListNames,
       NS_WARNING(
           nsPrintfCString(
               "Threat type %d (%s) is unsupported on current platform: %d",
-              threatType, aListNames[i], GetPlatformType())
+              threatType, aListNames[i].get(), GetPlatformType())
               .get());
       continue;  // Some threat types are not available on some platforms.
     }
@@ -436,12 +442,14 @@ nsUrlClassifierUtils::MakeUpdateRequestV4(const char** aListNames,
 }
 
 NS_IMETHODIMP
-nsUrlClassifierUtils::MakeFindFullHashRequestV4(const char** aListNames,
-                                                const char** aListStatesBase64,
-                                                const char** aPrefixesBase64,
-                                                uint32_t aListCount,
-                                                uint32_t aPrefixCount,
-                                                nsACString& aRequest) {
+nsUrlClassifierUtils::MakeFindFullHashRequestV4(
+    const nsTArray<nsCString>& aListNames,
+    const nsTArray<nsCString>& aListStatesBase64,
+    const nsTArray<nsCString>& aPrefixesBase64, nsACString& aRequest) {
+  if (aListNames.Length() != aListStatesBase64.Length()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   FindFullHashesRequest r;
   r.set_allocated_client(CreateClientInfo());
 
@@ -454,17 +462,16 @@ nsUrlClassifierUtils::MakeFindFullHashRequestV4(const char** aListNames,
   PlatformType platform = GetPlatformType();
 
   // 1) Set threat types.
-  for (uint32_t i = 0; i < aListCount; i++) {
+  for (uint32_t i = 0; i < aListNames.Length(); i++) {
     // Add threat types.
     uint32_t threatType;
-    rv = ConvertListNameToThreatType(nsDependentCString(aListNames[i]),
-                                     &threatType);
+    rv = ConvertListNameToThreatType(aListNames[i], &threatType);
     NS_ENSURE_SUCCESS(rv, rv);
     if (!IsAllowedOnCurrentPlatform(threatType)) {
       NS_WARNING(
           nsPrintfCString(
               "Threat type %d (%s) is unsupported on current platform: %d",
-              threatType, aListNames[i], GetPlatformType())
+              threatType, aListNames[i].get(), GetPlatformType())
               .get());
       continue;
     }
@@ -481,7 +488,7 @@ nsUrlClassifierUtils::MakeFindFullHashRequestV4(const char** aListNames,
     // Add client states for index 'i' only when the threat type is available
     // on current platform.
     nsCString stateBinary;
-    rv = Base64Decode(nsDependentCString(aListStatesBase64[i]), stateBinary);
+    rv = Base64Decode(aListStatesBase64[i], stateBinary);
     NS_ENSURE_SUCCESS(rv, rv);
     r.add_client_states(stateBinary.get(), stateBinary.Length());
   }
@@ -493,9 +500,9 @@ nsUrlClassifierUtils::MakeFindFullHashRequestV4(const char** aListNames,
   threatInfo->add_threat_entry_types(URL);
 
   // 4) Set threat entries.
-  for (uint32_t i = 0; i < aPrefixCount; i++) {
+  for (const nsCString& prefix : aPrefixesBase64) {
     nsCString prefixBinary;
-    rv = Base64Decode(nsDependentCString(aPrefixesBase64[i]), prefixBinary);
+    rv = Base64Decode(prefix, prefixBinary);
     threatInfo->add_threat_entries()->set_hash(prefixBinary.get(),
                                                prefixBinary.Length());
   }
@@ -560,13 +567,15 @@ static nsresult AddThreatSourceFromChannel(ThreatHit& aHit,
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
   if (httpChannel) {
-    nsCOMPtr<nsIURI> referrer;
-    rv = httpChannel->GetReferrer(getter_AddRefs(referrer));
-    if (NS_SUCCEEDED(rv) && referrer) {
-      nsCString referrerSpec;
-      rv = GetSpecWithoutSensitiveData(referrer, referrerSpec);
-      NS_ENSURE_SUCCESS(rv, rv);
-      matchingSource->set_referrer(referrerSpec.get());
+    nsCOMPtr<nsIReferrerInfo> referrerInfo = httpChannel->GetReferrerInfo();
+    if (referrerInfo) {
+      nsAutoCString referrerSpec;
+      nsCOMPtr<nsIURI> referrer = referrerInfo->GetComputedReferrer();
+      if (referrer) {
+        rv = GetSpecWithoutSensitiveData(referrer, referrerSpec);
+        NS_ENSURE_SUCCESS(rv, rv);
+        matchingSource->set_referrer(referrerSpec.get());
+      }
     }
   }
 
@@ -775,9 +784,6 @@ nsUrlClassifierUtils::ParseFindFullHashResponseV4(
     aCallback->OnCompleteHashFound(
         nsDependentCString(hash.c_str(), hash.length()), tableNames,
         cacheDurationSec);
-
-    Telemetry::Accumulate(Telemetry::URLCLASSIFIER_POSITIVE_CACHE_DURATION,
-                          cacheDurationSec * PR_MSEC_PER_SEC);
   }
 
   auto minWaitDuration = DurationToMs(r.minimum_wait_duration());
@@ -787,10 +793,6 @@ nsUrlClassifierUtils::ParseFindFullHashResponseV4(
 
   Telemetry::Accumulate(Telemetry::URLCLASSIFIER_COMPLETION_ERROR,
                         hasUnknownThreatType ? UNKNOWN_THREAT_TYPE : SUCCESS);
-
-  Telemetry::Accumulate(Telemetry::URLCLASSIFIER_NEGATIVE_CACHE_DURATION,
-                        negCacheDurationSec * PR_MSEC_PER_SEC);
-
   return NS_OK;
 }
 
@@ -830,15 +832,13 @@ nsresult nsUrlClassifierUtils::ReadProvidersFromPrefs(ProviderDictType& aDict) {
 
   // We've got a pref branch for "browser.safebrowsing.provider.".
   // Enumerate all children prefs and parse providers.
-  uint32_t childCount;
-  char** childArray;
-  rv = prefBranch->GetChildList("", &childCount, &childArray);
+  nsTArray<nsCString> childArray;
+  rv = prefBranch->GetChildList("", childArray);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Collect providers from childArray.
   nsTHashtable<nsCStringHashKey> providers;
-  for (uint32_t i = 0; i < childCount; i++) {
-    nsCString child(childArray[i]);
+  for (auto& child : childArray) {
     auto dotPos = child.FindChar('.');
     if (dotPos < 0) {
       continue;
@@ -848,7 +848,6 @@ nsresult nsUrlClassifierUtils::ReadProvidersFromPrefs(ProviderDictType& aDict) {
 
     providers.PutEntry(provider);
   }
-  NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(childCount, childArray);
 
   // Now we have all providers. Check which one owns |aTableName|.
   // e.g. The owning lists of provider "google" is defined in
@@ -1091,4 +1090,19 @@ bool nsUrlClassifierUtils::SpecialEncode(const nsACString& url,
 
 bool nsUrlClassifierUtils::ShouldURLEscape(const unsigned char c) const {
   return c <= 32 || c == '%' || c >= 127;
+}
+
+// moztest- tables are built-in created in LookupCache, they contain hardcoded
+// url entries in it. moztest tables don't support updates.
+// static
+bool nsUrlClassifierUtils::IsMozTestTable(const nsACString& aTableName) {
+  return StringBeginsWith(aTableName, NS_LITERAL_CSTRING("moztest-"));
+}
+
+// test- tables are used by testcases and can add custom test entries
+// through update API.
+// static
+bool nsUrlClassifierUtils::IsTestTable(const nsACString& aTableName) {
+  return IsMozTestTable(aTableName) ||
+         StringBeginsWith(aTableName, NS_LITERAL_CSTRING("test"));
 }

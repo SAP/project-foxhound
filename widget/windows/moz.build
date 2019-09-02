@@ -19,6 +19,9 @@ EXPORTS += [
 ]
 
 EXPORTS.mozilla += [
+    'ShellHeaderOnlyUtils.h',
+    'UrlmonHeaderOnlyUtils.h',
+    'WindowsConsole.h',
     'WinHeaderOnlyUtils.h',
 ]
 
@@ -75,6 +78,7 @@ UNIFIED_SOURCES += [
     'WidgetTraceEvent.cpp',
     'WinCompositorWindowThread.cpp',
     'WindowHook.cpp',
+    'WindowsConsole.cpp',
     'WinIMEHandler.cpp',
     'WinPointerEvents.cpp',
     'WinTaskbar.cpp',
@@ -154,6 +158,7 @@ CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 
 OS_LIBS += [
     'rpcrt4',
+    'urlmon',
 ]
 
 if CONFIG['CC_TYPE'] == 'clang-cl':

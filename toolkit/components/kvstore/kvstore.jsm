@@ -4,12 +4,11 @@
 
 "use strict";
 
-const gKeyValueService =
-  Cc["@mozilla.org/key-value-service;1"].getService(Ci.nsIKeyValueService);
+const gKeyValueService = Cc["@mozilla.org/key-value-service;1"].getService(
+  Ci.nsIKeyValueService
+);
 
-const EXPORTED_SYMBOLS = [
-  "KeyValueService",
-];
+const EXPORTED_SYMBOLS = ["KeyValueService"];
 
 function promisify(fn, ...args) {
   return new Promise((resolve, reject) => {
@@ -60,6 +59,17 @@ class KeyValueService {
  *     await database.has("foo"); // false
  * ```
  *
+ * You can also call writeMany() to put/delete multiple key/value pairs:
+ *
+ * ```
+ *     await database.writeMany({
+ *       key1: "value1",
+ *       key2: "value2",
+ *       key3: "value3",
+ *       key4: null, // delete
+ *     });
+ * ```
+ *
  * And you can call its enumerate() method to retrieve a KeyValueEnumerator,
  * which is described below.
  */
@@ -72,6 +82,62 @@ class KeyValueDatabase {
     return promisify(this.database.put, key, value);
   }
 
+  /**
+   * Writes multiple key/value pairs to the database.
+   *
+   * Note:
+   *   * Each write could be either put or delete.
+   *   * Given multiple values with the same key, only the last value will be stored.
+   *   * If the same key gets put and deleted for multiple times, the final state
+   *     of that key is subject to the ordering of the put(s) and delete(s).
+   *
+   * @param pairs Pairs could be any of following types:
+   *        * An Object, all its properties and the corresponding values will
+   *          be used as key value pairs. A property with null or undefined indicating
+   *          a deletion.
+   *        * An Array or an iterable whose elements are key-value pairs. such as
+   *          [["key1", "value1"], ["key2", "value2"]]. Use a pair with value null
+   *          to delete a key-value pair, e.g. ["delete-key", null].
+   *        * A Map. A key with null or undefined value indicating a deletion.
+   * @return A promise that is fulfilled when all the key/value pairs are written
+   *         to the database.
+   */
+  writeMany(pairs) {
+    if (!pairs) {
+      throw new Error("writeMany(): unexpected argument.");
+    }
+
+    let entries;
+
+    if (
+      pairs instanceof Map ||
+      pairs instanceof Array ||
+      typeof pairs[Symbol.iterator] === "function"
+    ) {
+      try {
+        // Let Map constructor validate the argument. Note that Map remembers
+        // the original insertion order of the keys, which satisfies the ordering
+        // premise of this function.
+        const map = pairs instanceof Map ? pairs : new Map(pairs);
+        entries = Array.from(map, ([key, value]) => ({ key, value }));
+      } catch (error) {
+        throw new Error("writeMany(): unexpected argument.");
+      }
+    } else if (typeof pairs === "object") {
+      entries = Array.from(Object.entries(pairs), ([key, value]) => ({
+        key,
+        value,
+      }));
+    } else {
+      throw new Error("writeMany(): unexpected argument.");
+    }
+
+    if (entries.length) {
+      return promisify(this.database.writeMany, entries);
+    }
+    return Promise.resolve();
+  }
+
   has(key) {
     return promisify(this.database.has, key);
   }
@@ -82,6 +148,10 @@ class KeyValueDatabase {
 
   delete(key) {
     return promisify(this.database.delete, key);
+  }
+
+  clear() {
+    return promisify(this.database.clear);
   }
 
   async enumerate(from_key, to_key) {
@@ -133,9 +203,9 @@ class KeyValueEnumerator {
     return this.enumerator.getNext();
   }
 
-  * [Symbol.iterator]() {
+  *[Symbol.iterator]() {
     while (this.enumerator.hasMoreElements()) {
-      yield (this.enumerator.getNext());
+      yield this.enumerator.getNext();
     }
   }
 }

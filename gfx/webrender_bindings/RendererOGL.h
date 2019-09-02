@@ -12,6 +12,7 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/webrender/webrender_ffi.h"
+#include "mozilla/webrender/RendererScreenshotGrabber.h"
 
 namespace mozilla {
 
@@ -58,6 +59,7 @@ class RendererOGL {
 
   /// This can be called on the render thread only.
   bool UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
+                       const Maybe<wr::ImageFormat>& aReadbackFormat,
                        const Maybe<Range<uint8_t>>& aReadbackBuffer,
                        bool aHadSlowFrame, RendererStats* aOutStats);
 
@@ -102,14 +104,14 @@ class RendererOGL {
   gl::GLContext* gl() const;
 
  protected:
-  void NotifyWebRenderError(WebRenderError aError);
-
   RefPtr<RenderThread> mThread;
   UniquePtr<RenderCompositor> mCompositor;
   wr::Renderer* mRenderer;
   layers::CompositorBridgeParent* mBridge;
   wr::WindowId mWindowId;
   TimeStamp mFrameStartTime;
+
+  RendererScreenshotGrabber mScreenshotGrabber;
 };
 
 }  // namespace wr

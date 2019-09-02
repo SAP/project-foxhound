@@ -1,13 +1,15 @@
 extern crate nsstring;
 
-use nsstring::{nsCString, nsACString};
+use nsstring::{nsACString, nsCString};
+use std::error::Error;
+use std::fmt;
 
 /// The type of errors in gecko.  Uses a newtype to provide additional type
 /// safety in Rust and #[repr(transparent)] to ensure the same representation
 /// as the C++ equivalent.
 #[repr(transparent)]
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct nsresult(pub u32);
 
 impl nsresult {
@@ -37,6 +39,32 @@ impl nsresult {
         cstr
     }
 }
+
+impl fmt::Display for nsresult {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.error_name())
+    }
+}
+
+impl fmt::Debug for nsresult {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.error_name())
+    }
+}
+
+impl<T, E> From<Result<T, E>> for nsresult
+where
+    E: Into<nsresult>,
+{
+    fn from(result: Result<T, E>) -> nsresult {
+        match result {
+            Ok(_) => NS_OK,
+            Err(e) => e.into(),
+        }
+    }
+}
+
+impl Error for nsresult {}
 
 extern "C" {
     fn Gecko_GetErrorName(rv: nsresult, cstr: *mut nsACString);

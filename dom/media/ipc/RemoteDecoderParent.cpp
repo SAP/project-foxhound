@@ -41,21 +41,25 @@ void RemoteDecoderParent::Destroy() {
 mozilla::ipc::IPCResult RemoteDecoderParent::RecvInit() {
   MOZ_ASSERT(OnManagerThread());
   RefPtr<RemoteDecoderParent> self = this;
-  mDecoder->Init()->Then(mManagerTaskQueue, __func__,
-                         [self](TrackInfo::TrackType aTrack) {
-                           MOZ_ASSERT(aTrack == TrackInfo::kAudioTrack ||
-                                      aTrack == TrackInfo::kVideoTrack);
-                           if (self->mDecoder) {
-                             Unused << self->SendInitComplete(
-                                 aTrack, self->mDecoder->GetDescriptionName(),
-                                 self->mDecoder->NeedsConversion());
-                           }
-                         },
-                         [self](MediaResult aReason) {
-                           if (!self->mDestroyed) {
-                             Unused << self->SendInitFailed(aReason);
-                           }
-                         });
+  mDecoder->Init()->Then(
+      mManagerTaskQueue, __func__,
+      [self](TrackInfo::TrackType aTrack) {
+        MOZ_ASSERT(aTrack == TrackInfo::kAudioTrack ||
+                   aTrack == TrackInfo::kVideoTrack);
+        if (self->mDecoder) {
+          nsCString hardwareReason;
+          bool hardwareAccelerated =
+              self->mDecoder->IsHardwareAccelerated(hardwareReason);
+          Unused << self->SendInitComplete(
+              aTrack, self->mDecoder->GetDescriptionName(), hardwareAccelerated,
+              hardwareReason, self->mDecoder->NeedsConversion());
+        }
+      },
+      [self](MediaResult aReason) {
+        if (!self->mDestroyed) {
+          Unused << self->SendInitFailed(aReason);
+        }
+      });
   return IPC_OK();
 }
 
@@ -76,6 +80,8 @@ mozilla::ipc::IPCResult RemoteDecoderParent::RecvInput(
   data->mTimecode = aData.base().timecode();
   data->mDuration = aData.base().duration();
   data->mKeyframe = aData.base().keyframe();
+  data->mEOS = aData.eos();
+  data->mDiscardPadding = aData.discardPadding();
 
   DeallocShmem(aData.buffer());
 
@@ -137,7 +143,15 @@ mozilla::ipc::IPCResult RemoteDecoderParent::RecvShutdown() {
   MOZ_ASSERT(!mDestroyed);
   MOZ_ASSERT(OnManagerThread());
   if (mDecoder) {
-    mDecoder->Shutdown();
+    RefPtr<RemoteDecoderParent> self = this;
+    mDecoder->Shutdown()->Then(
+        mManagerTaskQueue, __func__,
+        [self](const ShutdownPromise::ResolveOrRejectValue& aValue) {
+          MOZ_ASSERT(aValue.IsResolve());
+          if (!self->mDestroyed) {
+            Unused << self->SendShutdownComplete();
+          }
+        });
   }
   mDecoder = nullptr;
   return IPC_OK();

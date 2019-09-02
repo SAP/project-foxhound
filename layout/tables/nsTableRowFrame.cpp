@@ -3,11 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Maybe.h"
-
 #include "nsTableRowFrame.h"
+
+#include "mozilla/Maybe.h"
+#include "mozilla/PresShell.h"
 #include "nsTableRowGroupFrame.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "mozilla/ComputedStyle.h"
 #include "nsStyleConsts.h"
@@ -33,7 +33,7 @@ struct TableCellReflowInput : public ReflowInput {
                        const ReflowInput& aParentReflowInput, nsIFrame* aFrame,
                        const LogicalSize& aAvailableSpace, uint32_t aFlags = 0)
       : ReflowInput(aPresContext, aParentReflowInput, aFrame, aAvailableSpace,
-                    nullptr, aFlags) {}
+                    Nothing(), aFlags) {}
 
   void FixUp(const LogicalSize& aAvailSpace);
 };
@@ -79,7 +79,7 @@ void nsTableRowFrame::InitChildReflowInput(nsPresContext& aPresContext,
       pCollapseBorder = &collapseBorder;
     }
   }
-  aReflowInput.Init(&aPresContext, nullptr, pCollapseBorder);
+  aReflowInput.Init(&aPresContext, Nothing(), pCollapseBorder);
   aReflowInput.FixUp(aAvailSize);
 }
 
@@ -199,7 +199,7 @@ void nsTableRowFrame::AppendFrames(ChildListID aListID,
                            GetRowIndex());
   }
 
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   tableFrame->SetGeometryDirty();
 }
@@ -244,7 +244,7 @@ void nsTableRowFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
   }
   tableFrame->InsertCells(cellChildren, GetRowIndex(), colIndex);
 
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   tableFrame->SetGeometryDirty();
 }
@@ -261,7 +261,7 @@ void nsTableRowFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
   // Remove the frame and destroy it
   mFrames.DestroyFrame(aOldFrame);
 
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
 
   tableFrame->SetGeometryDirty();
@@ -532,9 +532,42 @@ nscoord nsTableRowFrame::CalcBSize(const ReflowInput& aReflowInput) {
   return GetInitialBSize();
 }
 
+void nsTableRowFrame::PaintCellBackgroundsForFrame(
+    nsIFrame* aFrame, nsDisplayListBuilder* aBuilder,
+    const nsDisplayListSet& aLists, const nsPoint& aOffset) {
+  // Compute background rect by iterating all cell frame.
+  const nsPoint toReferenceFrame = aBuilder->ToReferenceFrame(aFrame);
+  for (nsTableCellFrame* cell = GetFirstCell(); cell;
+       cell = cell->GetNextCell()) {
+    if (!cell->ShouldPaintBackground(aBuilder)) {
+      continue;
+    }
+
+    auto cellRect =
+        cell->GetRectRelativeToSelf() + cell->GetNormalPosition() + aOffset;
+    if (!aBuilder->GetDirtyRect().Intersects(cellRect)) {
+      continue;
+    }
+    cellRect += toReferenceFrame;
+    nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
+        aBuilder, aFrame, cellRect, aLists.BorderBackground(), true, nullptr,
+        aFrame->GetRectRelativeToSelf() + toReferenceFrame, cell);
+  }
+}
+
 void nsTableRowFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                        const nsDisplayListSet& aLists) {
-  nsTableFrame::DisplayGenericTablePart(aBuilder, this, aLists);
+  DisplayOutsetBoxShadow(aBuilder, aLists.BorderBackground());
+
+  PaintCellBackgroundsForFrame(this, aBuilder, aLists);
+
+  DisplayInsetBoxShadow(aBuilder, aLists.BorderBackground());
+
+  DisplayOutline(aBuilder, aLists);
+
+  for (nsIFrame* kid : PrincipalChildList()) {
+    BuildDisplayListForChild(aBuilder, kid, aLists);
+  }
 }
 
 nsIFrame::LogicalSides nsTableRowFrame::GetLogicalSkipSides(
@@ -1370,7 +1403,7 @@ void nsTableRowFrame::InvalidateFrameWithRect(const nsRect& aRect,
 
 /* ----- global methods ----- */
 
-nsTableRowFrame* NS_NewTableRowFrame(nsIPresShell* aPresShell,
+nsTableRowFrame* NS_NewTableRowFrame(PresShell* aPresShell,
                                      ComputedStyle* aStyle) {
   return new (aPresShell) nsTableRowFrame(aStyle, aPresShell->GetPresContext());
 }

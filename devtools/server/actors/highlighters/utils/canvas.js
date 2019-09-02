@@ -14,7 +14,10 @@ const {
   scale,
   translate,
 } = require("devtools/shared/layout/dom-matrix-2d");
-const { getViewportDimensions } = require("devtools/shared/layout/utils");
+const {
+  getCurrentZoom,
+  getViewportDimensions,
+} = require("devtools/shared/layout/utils");
 const { getComputedStyle } = require("./markup");
 
 // A set of utility functions for highlighters that render their content to a <canvas>
@@ -27,8 +30,9 @@ const { getComputedStyle } = require("./markup");
 //
 // This canvas size value is the safest we can use because most GPUs can handle it.
 // It's also far from the maximum canvas memory allocation limit (4096x4096x4 is
-// 67.108.864 bytes, where the limit is 500.000.000 bytes, see:
-// http://searchfox.org/mozilla-central/source/gfx/thebes/gfxPrefs.h#401).
+// 67.108.864 bytes, where the limit is 500.000.000 bytes, see
+// gfx_max_alloc_size_do_not_use_directly in:
+// modules/libpref/init/StaticPrefList.h.
 //
 // Note:
 // Once bug 1232491 lands, we could try to refactor this code to use the values from
@@ -109,7 +113,17 @@ function clearRect(ctx, x1, y1, x2, y2, matrix = identity()) {
  * @param  {String} alignment
  *         The alignment of the rectangle in relation to its position to the grid.
  */
-function drawBubbleRect(ctx, x, y, width, height, radius, margin, arrowSize, alignment) {
+function drawBubbleRect(
+  ctx,
+  x,
+  y,
+  width,
+  height,
+  radius,
+  margin,
+  arrowSize,
+  alignment
+) {
   let angle = 0;
 
   if (alignment === "bottom") {
@@ -195,9 +209,9 @@ function drawLine(ctx, x1, y1, x2, y2, options) {
       x2 = options.extendToBoundaries[2];
     } else {
       y1 = options.extendToBoundaries[1];
-      x1 = (p2[0] - p1[0]) * (y1 - p1[1]) / (p2[1] - p1[1]) + p1[0];
+      x1 = ((p2[0] - p1[0]) * (y1 - p1[1])) / (p2[1] - p1[1]) + p1[0];
       y2 = options.extendToBoundaries[3];
-      x2 = (p2[0] - p1[0]) * (y2 - p1[1]) / (p2[1] - p1[1]) + p1[0];
+      x2 = ((p2[0] - p1[0]) * (y2 - p1[1])) / (p2[1] - p1[1]) + p1[0];
     }
   }
 
@@ -318,7 +332,11 @@ function getBoundsFromPoints(points) {
  *         - {Boolean} hasNodeTransformations
  *           true if the node has transformed and false otherwise.
  */
-function getCurrentMatrix(element, window, { ignoreWritingModeAndTextDirection } = {}) {
+function getCurrentMatrix(
+  element,
+  window,
+  { ignoreWritingModeAndTextDirection } = {}
+) {
   const computedStyle = getComputedStyle(element);
 
   const paddingTop = parseFloat(computedStyle.paddingTop);
@@ -330,8 +348,10 @@ function getCurrentMatrix(element, window, { ignoreWritingModeAndTextDirection }
   const borderBottom = parseFloat(computedStyle.borderBottomWidth);
   const borderLeft = parseFloat(computedStyle.borderLeftWidth);
 
-  const nodeMatrix =
-    getNodeTransformationMatrix(element, window.document.documentElement);
+  const nodeMatrix = getNodeTransformationMatrix(
+    element,
+    window.document.documentElement
+  );
 
   let currentMatrix = identity();
   let hasNodeTransformations = false;
@@ -349,13 +369,25 @@ function getCurrentMatrix(element, window, { ignoreWritingModeAndTextDirection }
   }
 
   // Translate the origin based on the node's padding and border values.
-  currentMatrix = multiply(currentMatrix,
-    translate(paddingLeft + borderLeft, paddingTop + borderTop));
+  currentMatrix = multiply(
+    currentMatrix,
+    translate(paddingLeft + borderLeft, paddingTop + borderTop)
+  );
 
   // Adjust as needed to match the writing mode and text direction of the element.
   const size = {
-    width: element.offsetWidth - borderLeft - borderRight - paddingLeft - paddingRight,
-    height: element.offsetHeight - borderTop - borderBottom - paddingTop - paddingBottom,
+    width:
+      element.offsetWidth -
+      borderLeft -
+      borderRight -
+      paddingLeft -
+      paddingRight,
+    height:
+      element.offsetHeight -
+      borderTop -
+      borderBottom -
+      paddingTop -
+      paddingBottom,
   };
 
   if (!ignoreWritingModeAndTextDirection) {
@@ -376,10 +408,27 @@ function getCurrentMatrix(element, window, { ignoreWritingModeAndTextDirection }
  * @return {String} a Path Description that can be used in svg's <path> element.
  */
 function getPathDescriptionFromPoints(points) {
-  return "M" + points[0].x + "," + points[0].y + " " +
-         "L" + points[1].x + "," + points[1].y + " " +
-         "L" + points[2].x + "," + points[2].y + " " +
-         "L" + points[3].x + "," + points[3].y;
+  return (
+    "M" +
+    points[0].x +
+    "," +
+    points[0].y +
+    " " +
+    "L" +
+    points[1].x +
+    "," +
+    points[1].y +
+    " " +
+    "L" +
+    points[2].x +
+    "," +
+    points[2].y +
+    " " +
+    "L" +
+    points[3].x +
+    "," +
+    points[3].y
+  );
 }
 
 /**
@@ -401,12 +450,7 @@ function getPathDescriptionFromPoints(points) {
  * matrix given.
  */
 function getPointsFromDiagonal(x1, y1, x2, y2, matrix = identity()) {
-  return [
-    [x1, y1],
-    [x2, y1],
-    [x2, y2],
-    [x1, y2],
-  ].map(point => {
+  return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]].map(point => {
     const transformedPoint = apply(matrix, point);
 
     return { x: transformedPoint[0], y: transformedPoint[1] };
@@ -426,15 +470,30 @@ function getPointsFromDiagonal(x1, y1, x2, y2, matrix = identity()) {
  *         corner of the page.
  * @param  {Number} devicePixelRatio
  *         The device pixel ratio.
+ * @param  {Window} [options.zoomWindow]
+ *         Optional window object used to calculate zoom (default = undefined).
  */
-function updateCanvasElement(canvas, canvasPosition, devicePixelRatio) {
-  const { x, y } = canvasPosition;
+function updateCanvasElement(
+  canvas,
+  canvasPosition,
+  devicePixelRatio,
+  { zoomWindow } = {}
+) {
+  let { x, y } = canvasPosition;
   const size = CANVAS_SIZE / devicePixelRatio;
+
+  if (zoomWindow) {
+    const zoom = getCurrentZoom(zoomWindow);
+    x *= zoom;
+    y *= zoom;
+  }
 
   // Resize the canvas taking the dpr into account so as to have crisp lines, and
   // translating it to give the perception that it always covers the viewport.
-  canvas.setAttribute("style",
-    `width: ${size}px; height: ${size}px; transform: translate(${x}px, ${y}px);`);
+  canvas.setAttribute(
+    "style",
+    `width: ${size}px; height: ${size}px; transform: translate(${x}px, ${y}px);`
+  );
   canvas.getCanvasContext("2d").clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 }
 
@@ -455,7 +514,12 @@ function updateCanvasElement(canvas, canvasPosition, devicePixelRatio) {
  *         `window` given.
  * @return {Boolean} true if the <canvas> position was updated and false otherwise.
  */
-function updateCanvasPosition(canvasPosition, scrollPosition, window, windowDimensions) {
+function updateCanvasPosition(
+  canvasPosition,
+  scrollPosition,
+  window,
+  windowDimensions
+) {
   let { x: canvasX, y: canvasY } = canvasPosition;
   const { x: scrollX, y: scrollY } = scrollPosition;
   const cssCanvasSize = CANVAS_SIZE / window.devicePixelRatio;
@@ -482,9 +546,11 @@ function updateCanvasPosition(canvasPosition, scrollPosition, window, windowDime
 
   // Defines the thresholds that triggers the canvas' position to be updated.
   const leftThreshold = scrollX - bufferSizeX;
-  const rightThreshold = scrollX - canvasWidth + viewportSize.width + bufferSizeX;
+  const rightThreshold =
+    scrollX - canvasWidth + viewportSize.width + bufferSizeX;
   const topThreshold = scrollY - bufferSizeY;
-  const bottomThreshold = scrollY - canvasHeight + viewportSize.height + bufferSizeY;
+  const bottomThreshold =
+    scrollY - canvasHeight + viewportSize.height + bufferSizeY;
 
   if (canvasX < rightBoundary && canvasX < rightThreshold) {
     canvasX = Math.min(leftThreshold, rightBoundary);

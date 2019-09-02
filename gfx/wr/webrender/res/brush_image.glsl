@@ -53,7 +53,8 @@ void brush_vs(
     int prim_address,
     RectWithSize prim_rect,
     RectWithSize segment_rect,
-    ivec4 user_data,
+    ivec4 prim_user_data,
+    int segment_user_data,
     mat4 transform,
     PictureTask pic_task,
     int brush_flags,
@@ -69,7 +70,7 @@ void brush_vs(
     vec2 texture_size = vec2(textureSize(sColor0, 0));
 #endif
 
-    ImageResource res = fetch_image_resource(user_data.w);
+    ImageResource res = fetch_image_resource(segment_user_data);
     vec2 uv0 = res.uv_rect.p0;
     vec2 uv1 = res.uv_rect.p1;
 
@@ -122,9 +123,9 @@ void brush_vs(
     vec2 f = (vi.local_pos - local_rect.p0) / local_rect.size;
 
 #ifdef WR_FEATURE_ALPHA_PASS
-    int color_mode = user_data.x & 0xffff;
-    int blend_mode = user_data.x >> 16;
-    int raster_space = user_data.y;
+    int color_mode = prim_user_data.x & 0xffff;
+    int blend_mode = prim_user_data.x >> 16;
+    int raster_space = prim_user_data.y;
 
     if (color_mode == COLOR_MODE_FROM_PASS) {
         color_mode = uMode;
@@ -138,7 +139,7 @@ void brush_vs(
             // Since the screen space UVs specify an arbitrary quad, do
             // a bilinear interpolation to get the correct UV for this
             // local position.
-            f = get_image_quad_uv(user_data.w, f);
+            f = get_image_quad_uv(segment_user_data, f);
             break;
         }
         default:
@@ -164,7 +165,7 @@ void brush_vs(
 #ifdef WR_FEATURE_ALPHA_PASS
     vTileRepeat = repeat.xy;
 
-    float opacity = float(user_data.z) / 65535.0;
+    float opacity = float(prim_user_data.z) / 65535.0;
     switch (blend_mode) {
         case BLEND_MODE_ALPHA:
             image_data.color.a *= opacity;
@@ -209,9 +210,8 @@ void brush_vs(
 
 #ifdef WR_FRAGMENT_SHADER
 
-Fragment brush_fs() {
+vec2 compute_repeated_uvs(float perspective_divisor) {
     vec2 uv_size = vUvBounds.zw - vUvBounds.xy;
-    float perspective_divisor = mix(gl_FragCoord.w, 1.0, vLayerAndPerspective.y);
 
 #ifdef WR_FEATURE_ALPHA_PASS
     // This prevents the uv on the top and left parts of the primitive that was inflated
@@ -232,8 +232,19 @@ Fragment brush_fs() {
         repeated_uv.y = vUvBounds.w;
     }
 #else
-    // Handle horizontal and vertical repetitions.
     vec2 repeated_uv = mod(vUv * perspective_divisor, uv_size) + vUvBounds.xy;
+#endif
+
+    return repeated_uv;
+}
+
+Fragment brush_fs() {
+    float perspective_divisor = mix(gl_FragCoord.w, 1.0, vLayerAndPerspective.y);
+
+#ifdef WR_FEATURE_REPETITION
+    vec2 repeated_uv = compute_repeated_uvs(perspective_divisor);
+#else
+    vec2 repeated_uv = vUv * perspective_divisor + vUvBounds.xy;
 #endif
 
     // Clamp the uvs to avoid sampling artifacts.
@@ -244,7 +255,11 @@ Fragment brush_fs() {
     Fragment frag;
 
 #ifdef WR_FEATURE_ALPHA_PASS
-    float alpha = init_transform_fs(vLocalPos);
+    #ifdef WR_FEATURE_ANTIALIASING
+        float alpha = init_transform_fs(vLocalPos);
+    #else
+        float alpha = 1.0;
+    #endif
     texel.rgb = texel.rgb * vMaskSwizzle.x + texel.aaa * vMaskSwizzle.y;
 
     vec4 alpha_mask = texel * alpha;

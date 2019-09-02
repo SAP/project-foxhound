@@ -11,7 +11,7 @@
 
 // Declare in which spec module and front module a set of types are defined.
 // This array should be sorted by `spec` attribute.
-const Types = exports.__TypesForTests = [
+const Types = (exports.__TypesForTests = [
   {
     types: ["accessible", "accessiblewalker", "accessibility"],
     spec: "devtools/shared/specs/accessibility",
@@ -43,6 +43,11 @@ const Types = exports.__TypesForTests = [
     front: "devtools/shared/fronts/animation",
   },
   {
+    types: ["arraybuffer"],
+    spec: "devtools/shared/specs/array-buffer",
+    front: "devtools/shared/fronts/array-buffer",
+  },
+  {
     types: ["changes"],
     spec: "devtools/shared/specs/changes",
     front: "devtools/shared/fronts/changes",
@@ -51,11 +56,6 @@ const Types = exports.__TypesForTests = [
     types: ["cssProperties"],
     spec: "devtools/shared/specs/css-properties",
     front: "devtools/shared/fronts/css-properties",
-  },
-  {
-    types: ["cssUsage"],
-    spec: "devtools/shared/specs/csscoverage",
-    front: "devtools/shared/fronts/csscoverage",
   },
   {
     types: ["device"],
@@ -171,19 +171,20 @@ const Types = exports.__TypesForTests = [
     spec: "devtools/shared/specs/screenshot",
     front: "devtools/shared/fronts/screenshot",
   },
-  /* Script and source have old fashion client and no front */
-  {
-    types: ["context"],
-    spec: "devtools/shared/specs/script",
-    front: null,
-  },
   {
     types: ["source"],
     spec: "devtools/shared/specs/source",
-    front: null,
+    front: "devtools/shared/fronts/source",
   },
   {
-    types: ["cookies", "localStorage", "sessionStorage", "Cache", "indexedDB", "storage"],
+    types: [
+      "cookies",
+      "localStorage",
+      "sessionStorage",
+      "Cache",
+      "indexedDB",
+      "storage",
+    ],
     spec: "devtools/shared/specs/storage",
     front: "devtools/shared/fronts/storage",
   },
@@ -259,9 +260,19 @@ const Types = exports.__TypesForTests = [
     front: "devtools/shared/fronts/targets/worker",
   },
   {
+    types: ["context"],
+    spec: "devtools/shared/specs/thread",
+    front: "devtools/shared/client/thread-client",
+  },
+  {
     types: ["console"],
     spec: "devtools/shared/specs/webconsole",
     front: "devtools/shared/fronts/webconsole",
+  },
+  {
+    types: ["webSocket"],
+    spec: "devtools/shared/specs/websocket",
+    front: "devtools/shared/fronts/websocket",
   },
   {
     types: ["pushSubscription"],
@@ -278,7 +289,7 @@ const Types = exports.__TypesForTests = [
     spec: "devtools/shared/specs/worker/service-worker-registration",
     front: "devtools/shared/fronts/worker/service-worker-registration",
   },
-];
+]);
 
 const lazySpecs = new Map();
 const lazyFronts = new Map();
@@ -306,7 +317,8 @@ function lazyLoadSpec(type) {
       require(modulePath);
     } catch (e) {
       throw new Error(
-        `Unable to load lazy spec module '${modulePath}' for type '${type}'`);
+        `Unable to load lazy spec module '${modulePath}' for type '${type}'`
+      );
     }
     lazySpecs.delete(type);
     return true;
@@ -331,7 +343,8 @@ function lazyLoadFront(type) {
     } catch (e) {
       throw new Error(
         `Unable to load lazy front module '${modulePath}' for type '${type}'.
-        Error: ${e}`);
+        Error: ${e}`
+      );
     }
     lazyFronts.delete(type);
     return true;

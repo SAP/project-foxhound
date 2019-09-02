@@ -11,6 +11,7 @@
 // Keep others in (case-insensitive) order:
 #include "AutoReferenceChainGuard.h"
 #include "gfxPattern.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/SVGGradientElement.h"
 #include "mozilla/dom/SVGGradientElementBinding.h"
 #include "mozilla/dom/SVGStopElement.h"
@@ -66,8 +67,9 @@ nsresult nsSVGGradientFrame::AttributeChanged(int32_t aNameSpaceID,
 
 uint16_t nsSVGGradientFrame::GetEnumValue(uint32_t aIndex,
                                           nsIContent* aDefault) {
-  const SVGEnum& thisEnum = static_cast<dom::SVGGradientElement*>(GetContent())
-                                ->mEnumAttributes[aIndex];
+  const SVGAnimatedEnumeration& thisEnum =
+      static_cast<dom::SVGGradientElement*>(GetContent())
+          ->mEnumAttributes[aIndex];
 
   if (thisEnum.IsExplicitlySet()) {
     return thisEnum.GetAnimValue();
@@ -219,7 +221,7 @@ static void GetStopInformation(nsIFrame* aStopFrame, float* aOffset,
 
 already_AddRefed<gfxPattern> nsSVGGradientFrame::GetPaintServerPattern(
     nsIFrame* aSource, const DrawTarget* aDrawTarget,
-    const gfxMatrix& aContextMatrix, nsStyleSVGPaint nsStyleSVG::*aFillOrStroke,
+    const gfxMatrix& aContextMatrix, StyleSVGPaint nsStyleSVG::*aFillOrStroke,
     float aGraphicOpacity, imgDrawingParams& aImgParams,
     const gfxRect* aOverrideBounds) {
   uint16_t gradientUnits = GetGradientUnits();
@@ -418,7 +420,7 @@ float nsSVGLinearGradientFrame::GetLengthValue(uint32_t aIndex) {
   // return value should also be non-null.
   MOZ_ASSERT(lengthElement,
              "Got unexpected null element from GetLinearGradientWithLength");
-  const nsSVGLength2& length = lengthElement->mLengthAttributes[aIndex];
+  const SVGAnimatedLength& length = lengthElement->mLengthAttributes[aIndex];
 
   // Object bounding box units are handled by setting the appropriate
   // transform in GetGradientTransform, but we need to handle user
@@ -440,7 +442,7 @@ nsSVGLinearGradientFrame::GetLinearGradientWithLength(
     uint32_t aIndex, dom::SVGLinearGradientElement* aDefault) {
   dom::SVGLinearGradientElement* thisElement =
       static_cast<dom::SVGLinearGradientElement*>(GetContent());
-  const nsSVGLength2& length = thisElement->mLengthAttributes[aIndex];
+  const SVGAnimatedLength& length = thisElement->mLengthAttributes[aIndex];
 
   if (length.IsExplicitlySet()) {
     return thisElement;
@@ -520,7 +522,7 @@ float nsSVGRadialGradientFrame::GetLengthValue(uint32_t aIndex,
 
 float nsSVGRadialGradientFrame::GetLengthValueFromElement(
     uint32_t aIndex, dom::SVGRadialGradientElement& aElement) {
-  const nsSVGLength2& length = aElement.mLengthAttributes[aIndex];
+  const SVGAnimatedLength& length = aElement.mLengthAttributes[aIndex];
 
   // Object bounding box units are handled by setting the appropriate
   // transform in GetGradientTransform, but we need to handle user
@@ -542,7 +544,7 @@ nsSVGRadialGradientFrame::GetRadialGradientWithLength(
     uint32_t aIndex, dom::SVGRadialGradientElement* aDefault) {
   dom::SVGRadialGradientElement* thisElement =
       static_cast<dom::SVGRadialGradientElement*>(GetContent());
-  const nsSVGLength2& length = thisElement->mLengthAttributes[aIndex];
+  const SVGAnimatedLength& length = thisElement->mLengthAttributes[aIndex];
 
   if (length.IsExplicitlySet()) {
     return thisElement;
@@ -575,13 +577,13 @@ already_AddRefed<gfxPattern> nsSVGRadialGradientFrame::CreateGradient() {
     // representation divided by 2 to ensure that we get different cairo
     // fractions
     double dMax = std::max(0.0, r - 1.0 / 128);
-    float dx = fx - cx;
-    float dy = fy - cy;
-    double d = sqrt((dx * dx) + (dy * dy));
+    double dx = fx - cx;
+    double dy = fy - cy;
+    double d = std::sqrt((dx * dx) + (dy * dy));
     if (d > dMax) {
-      double angle = atan2(dy, dx);
-      fx = (float)(dMax * cos(angle)) + cx;
-      fy = (float)(dMax * sin(angle)) + cy;
+      double angle = std::atan2(dy, dx);
+      fx = float(dMax * std::cos(angle)) + cx;
+      fy = float(dMax * std::sin(angle)) + cy;
     }
   }
 
@@ -593,7 +595,7 @@ already_AddRefed<gfxPattern> nsSVGRadialGradientFrame::CreateGradient() {
 // Public functions
 // -------------------------------------------------------------------------
 
-nsIFrame* NS_NewSVGLinearGradientFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewSVGLinearGradientFrame(mozilla::PresShell* aPresShell,
                                        ComputedStyle* aStyle) {
   return new (aPresShell)
       nsSVGLinearGradientFrame(aStyle, aPresShell->GetPresContext());
@@ -601,7 +603,7 @@ nsIFrame* NS_NewSVGLinearGradientFrame(nsIPresShell* aPresShell,
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGLinearGradientFrame)
 
-nsIFrame* NS_NewSVGRadialGradientFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewSVGRadialGradientFrame(mozilla::PresShell* aPresShell,
                                        ComputedStyle* aStyle) {
   return new (aPresShell)
       nsSVGRadialGradientFrame(aStyle, aPresShell->GetPresContext());

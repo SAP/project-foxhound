@@ -9,6 +9,8 @@ import posixpath
 import tempfile
 import shutil
 
+import six
+
 from automation import Automation
 from mozdevice import ADBTimeoutError
 from mozlog import get_default_logger
@@ -25,13 +27,13 @@ class RemoteAutomation(Automation):
 
     def __init__(self, device, appName='', remoteProfile=None, remoteLog=None,
                  processArgs=None):
+        super(RemoteAutomation, self).__init__()
         self.device = device
         self.appName = appName
         self.remoteProfile = remoteProfile
         self.remoteLog = remoteLog
         self.processArgs = processArgs or {}
         self.lastTestSeen = "remoteautomation.py"
-        Automation.__init__(self)
 
     def runApp(self, testURL, env, app, profileDir, extraArgs,
                utilityPath=None, xrePath=None, debuggerInfo=None, symbolsPath=None,
@@ -101,9 +103,6 @@ class RemoteAutomation(Automation):
         env.setdefault('MOZ_IN_AUTOMATION', '1')
 
         # Set WebRTC logging in case it is not set yet.
-        # On Android, environment variables cannot contain ',' so the
-        # standard WebRTC setting for NSPR_LOG_MODULES is not available.
-        # env.setdefault('NSPR_LOG_MODULES', 'signaling:5,mtransport:5,datachannel:5,jsep:5,MediaPipelineFactory:5')  # NOQA: E501
         env.setdefault('R_LOG_LEVEL', '6')
         env.setdefault('R_LOG_DESTINATION', 'stderr')
         env.setdefault('R_LOG_VERBOSE', '1')
@@ -294,7 +293,13 @@ class RemoteAutomation(Automation):
 
         for line in lines:
             # This passes the line to the logger (to be logged or buffered)
-            parsed_messages = self.messageLogger.write(line)
+            if isinstance(line, six.text_type):
+                # if line is unicode - let's encode it to bytes
+                parsed_messages = self.messageLogger.write(line.encode('UTF-8', 'replace'))
+            else:
+                # if line is bytes type, write it as it is
+                parsed_messages = self.messageLogger.write(line)
+
             for message in parsed_messages:
                 if isinstance(message, dict) and message.get('action') == 'test_start':
                     self.lastTestSeen = message['test']

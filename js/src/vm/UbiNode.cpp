@@ -72,7 +72,7 @@ struct CopyToBufferMatcher {
     return i;
   }
 
-  size_t match(JSAtom* atom) {
+  size_t operator()(JSAtom* atom) {
     if (!atom) {
       return 0;
     }
@@ -86,7 +86,7 @@ struct CopyToBufferMatcher {
                                     length);
   }
 
-  size_t match(const char16_t* chars) {
+  size_t operator()(const char16_t* chars) {
     if (!chars) {
       return 0;
     }
@@ -103,9 +103,11 @@ size_t JS::ubi::AtomOrTwoByteChars::copyToBuffer(
 }
 
 struct LengthMatcher {
-  size_t match(JSAtom* atom) { return atom ? atom->length() : 0; }
+  size_t operator()(JSAtom* atom) { return atom ? atom->length() : 0; }
 
-  size_t match(const char16_t* chars) { return chars ? js_strlen(chars) : 0; }
+  size_t operator()(const char16_t* chars) {
+    return chars ? js_strlen(chars) : 0;
+  }
 };
 
 size_t JS::ubi::AtomOrTwoByteChars::length() {
@@ -189,7 +191,7 @@ Value Node::exposeToJS() const {
 
 // A JS::CallbackTracer subclass that adds a Edge to a Vector for each
 // edge on which it is invoked.
-class EdgeVectorTracer : public JS::CallbackTracer {
+class EdgeVectorTracer final : public JS::CallbackTracer {
   // The vector to which we add Edges.
   EdgeVector* vec;
 
@@ -521,6 +523,23 @@ void SetConstructUbiNodeForDOMObjectCallback(JSContext* cx,
                                                               JSObject*)) {
   cx->runtime()->constructUbiNodeForDOMObjectCallback = callback;
 }
+
+JS_PUBLIC_API const char* CoarseTypeToString(CoarseType type) {
+  switch (type) {
+    case CoarseType::Other:
+      return "Other";
+    case CoarseType::Object:
+      return "Object";
+    case CoarseType::Script:
+      return "Script";
+    case CoarseType::String:
+      return "String";
+    case CoarseType::DOMNode:
+      return "DOMNode";
+    default:
+      return "Unknown";
+  }
+};
 
 }  // namespace ubi
 }  // namespace JS

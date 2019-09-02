@@ -2,7 +2,6 @@
 <title>Test for nsSelectionMoveCommands</title>
 <link rel=stylesheet href="/tests/SimpleTest/test.css">
 <script src="/tests/SimpleTest/SimpleTest.js"></script>
-<script src="/tests/SimpleTest/AddTask.js"></script>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=454004">Mozilla Bug 454004</a>
 
 <iframe id="edit" width="200" height="100" src="about:blank"></iframe>
@@ -18,7 +17,7 @@ async function setup() {
   winUtils.advanceTimeAndRefresh(100);
 }
 
-function* runTests() {
+async function* runTests() {
   var e = document.getElementById("edit");
   var doc = e.contentDocument;
   var win = e.contentWindow;
@@ -182,9 +181,9 @@ function* runTests() {
     is(testPageSelectCommand("cmd_selectPageUp", 0), 22 - lineNum, "cmd_selectPageUp");
   };
 
-  yield SpecialPowers.pushPrefEnv({set: [["layout.word_select.eat_space_to_next_word", false]]});
+  await SpecialPowers.pushPrefEnv({set: [["layout.word_select.eat_space_to_next_word", false]]});
   runSelectionTests(body, 1);
-  yield SpecialPowers.pushPrefEnv({set: [["layout.word_select.eat_space_to_next_word", true]]});
+  await SpecialPowers.pushPrefEnv({set: [["layout.word_select.eat_space_to_next_word", true]]});
   runSelectionTests(node(2), 0);
 }
 
@@ -197,7 +196,7 @@ async function testRunner() {
   let curTest = runTests();
   while (true) {
     winUtils.advanceTimeAndRefresh(100);
-    if (curTest.next().done) {
+    if ((await curTest.next()).done) {
       break;
     }
     winUtils.advanceTimeAndRefresh(100);

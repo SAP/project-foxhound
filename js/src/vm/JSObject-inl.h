@@ -9,58 +9,44 @@
 
 #include "vm/JSObject.h"
 
-#include "mozilla/DebugOnly.h"
-
-#include "jsfriendapi.h"
-
-#include "builtin/MapObject.h"
-#include "builtin/TypedObject.h"
-#include "gc/Allocator.h"
-#include "gc/FreeOp.h"
 #include "vm/ArrayObject.h"
-#include "vm/DateObject.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/JSFunction.h"
-#include "vm/NumberObject.h"
 #include "vm/Probes.h"
-#include "vm/StringObject.h"
-#include "vm/TypedArrayObject.h"
 
+#include "gc/FreeOp-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/ObjectKind-inl.h"
-#include "vm/JSAtom-inl.h"
 #include "vm/ObjectOperations-inl.h"  // js::MaybeHasInterestingSymbolProperty
 #include "vm/Realm-inl.h"
-#include "vm/ShapedObject-inl.h"
-#include "vm/TypeInference-inl.h"
 
-namespace js {
-
-// This is needed here for ensureShape() below.
-inline bool MaybeConvertUnboxedObjectToNative(JSContext* cx, JSObject* obj) {
-  if (obj->is<UnboxedPlainObject>()) {
-    return UnboxedPlainObject::convertToNative(cx, obj);
-  }
-  return true;
+MOZ_ALWAYS_INLINE uint32_t js::NativeObject::numDynamicSlots() const {
+  return dynamicSlotsCount(numFixedSlots(), slotSpan(), getClass());
 }
 
-}  // namespace js
+/* static */ MOZ_ALWAYS_INLINE uint32_t js::NativeObject::dynamicSlotsCount(
+    uint32_t nfixed, uint32_t span, const Class* clasp) {
+  if (span <= nfixed) {
+    return 0;
+  }
+  span -= nfixed;
 
-inline js::Shape* JSObject::maybeShape() const {
-  if (!is<js::ShapedObject>()) {
-    return nullptr;
+  // Increase the slots to SLOT_CAPACITY_MIN to decrease the likelihood
+  // the dynamic slots need to get increased again. ArrayObjects ignore
+  // this because slots are uncommon in that case.
+  if (clasp != &ArrayObject::class_ && span <= SLOT_CAPACITY_MIN) {
+    return SLOT_CAPACITY_MIN;
   }
 
-  return as<js::ShapedObject>().shape();
+  uint32_t slots = mozilla::RoundUpPow2(span);
+  MOZ_ASSERT(slots >= span);
+  return slots;
 }
 
-inline js::Shape* JSObject::ensureShape(JSContext* cx) {
-  if (!js::MaybeConvertUnboxedObjectToNative(cx, this)) {
-    return nullptr;
-  }
-  js::Shape* shape = maybeShape();
-  MOZ_ASSERT(shape);
-  return shape;
+/* static */ MOZ_ALWAYS_INLINE uint32_t
+js::NativeObject::dynamicSlotsCount(Shape* shape) {
+  return dynamicSlotsCount(shape->numFixedSlots(), shape->slotSpan(),
+                           shape->getObjectClass());
 }
 
 inline void JSObject::finalize(js::FreeOp* fop) {
@@ -88,21 +74,24 @@ inline void JSObject::finalize(js::FreeOp* fop) {
   }
 
   if (nobj->hasDynamicSlots()) {
-    fop->free_(nobj->slots_);
+    size_t size = nobj->numDynamicSlots() * sizeof(js::HeapSlot);
+    fop->free_(this, nobj->slots_, size, js::MemoryUse::ObjectSlots);
   }
 
   if (nobj->hasDynamicElements()) {
     js::ObjectElements* elements = nobj->getElementsHeader();
+    size_t size = elements->numAllocatedElements() * sizeof(js::HeapSlot);
     if (elements->isCopyOnWrite()) {
       if (elements->ownerObject() == this) {
         // Don't free the elements until object finalization finishes,
         // so that other objects can access these elements while they
         // are themselves finalized.
         MOZ_ASSERT(elements->numShiftedElements() == 0);
-        fop->freeLater(elements);
+        fop->freeLater(this, elements, size, js::MemoryUse::ObjectElements);
       }
     } else {
-      fop->free_(nobj->getUnshiftedElementsHeader());
+      fop->free_(this, nobj->getUnshiftedElementsHeader(), size,
+                 js::MemoryUse::ObjectElements);
     }
   }
 
@@ -216,7 +205,7 @@ static MOZ_ALWAYS_INLINE MOZ_MUST_USE T* SetNewObjectMetadata(JSContext* cx,
 
   // The metadata builder is invoked for each object created on the active
   // thread, except when analysis/compilation is active, to avoid recursion.
-  if (!cx->helperThread()) {
+  if (!cx->isHelperThreadContext()) {
     if (MOZ_UNLIKELY(cx->realm()->hasAllocationMetadataBuilder()) &&
         !cx->zone()->suppressAllocationMetadataBuilder) {
       // Don't collect metadata on objects that represent metadata.
@@ -245,10 +234,7 @@ inline js::GlobalObject& JSObject::nonCCWGlobal() const {
 
 inline bool JSObject::hasAllFlags(js::BaseShape::Flag flags) const {
   MOZ_ASSERT(flags);
-  if (js::Shape* shape = maybeShape()) {
-    return shape->hasAllObjectFlags(flags);
-  }
-  return false;
+  return shape()->hasAllObjectFlags(flags);
 }
 
 inline bool JSObject::nonProxyIsExtensible() const {
@@ -271,19 +257,10 @@ inline bool JSObject::hasUncacheableProto() const {
 }
 
 MOZ_ALWAYS_INLINE bool JSObject::maybeHasInterestingSymbolProperty() const {
-  const js::NativeObject* nobj;
   if (isNative()) {
-    nobj = &as<js::NativeObject>();
-  } else if (is<js::UnboxedPlainObject>()) {
-    nobj = as<js::UnboxedPlainObject>().maybeExpando();
-    if (!nobj) {
-      return false;
-    }
-  } else {
-    return true;
+    return as<js::NativeObject>().hasInterestingSymbol();
   }
-
-  return nobj->hasInterestingSymbol();
+  return true;
 }
 
 inline bool JSObject::staticPrototypeIsImmutable() const {
@@ -397,6 +374,33 @@ MOZ_ALWAYS_INLINE bool ToPropertyKey(JSContext* cx, HandleValue argument,
 inline bool IsInternalFunctionObject(JSObject& funobj) {
   JSFunction& fun = funobj.as<JSFunction>();
   return fun.isInterpreted() && !fun.environment();
+}
+
+inline gc::InitialHeap GetInitialHeap(NewObjectKind newKind,
+                                      const Class* clasp) {
+  if (newKind == NurseryAllocatedProxy) {
+    MOZ_ASSERT(clasp->isProxy());
+    MOZ_ASSERT(clasp->hasFinalize());
+    MOZ_ASSERT(!CanNurseryAllocateFinalizedClass(clasp));
+    return gc::DefaultHeap;
+  }
+  if (newKind != GenericObject) {
+    return gc::TenuredHeap;
+  }
+  if (clasp->hasFinalize() && !CanNurseryAllocateFinalizedClass(clasp)) {
+    return gc::TenuredHeap;
+  }
+  return gc::DefaultHeap;
+}
+
+inline gc::InitialHeap GetInitialHeap(NewObjectKind newKind,
+                                      ObjectGroup* group) {
+  AutoSweepObjectGroup sweep(group);
+  if (group->shouldPreTenure(sweep)) {
+    return gc::TenuredHeap;
+  }
+
+  return GetInitialHeap(newKind, group->clasp());
 }
 
 /*

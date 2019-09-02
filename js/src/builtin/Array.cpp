@@ -48,7 +48,6 @@
 #include "vm/Interpreter-inl.h"
 #include "vm/JSAtom-inl.h"
 #include "vm/NativeObject-inl.h"
-#include "vm/UnboxedObject-inl.h"
 
 using namespace js;
 
@@ -228,7 +227,7 @@ static bool StringIsArrayIndexHelper(const CharT* s, uint32_t length,
   }
 
   uint32_t c = 0, previous = 0;
-  uint32_t index = JS7_UNDEC(*s++);
+  uint32_t index = AsciiDigitToNumber(*s++);
 
   /* Don't allow leading zeros. */
   if (index == 0 && s != end) {
@@ -241,7 +240,7 @@ static bool StringIsArrayIndexHelper(const CharT* s, uint32_t length,
     }
 
     previous = index;
-    c = JS7_UNDEC(*s);
+    c = AsciiDigitToNumber(*s);
     index = 10 * index + c;
   }
 
@@ -451,10 +450,9 @@ bool js::GetElements(JSContext* cx, HandleObject aobj, uint32_t length,
   }
 
   if (aobj->is<TypedArrayObject>()) {
-    TypedArrayObject* typedArray = &aobj->as<TypedArrayObject>();
+    Handle<TypedArrayObject*> typedArray = aobj.as<TypedArrayObject>();
     if (typedArray->length() == length) {
-      typedArray->getElements(vp);
-      return true;
+      return TypedArrayObject::getElements(cx, typedArray, vp);
     }
   }
 
@@ -884,7 +882,7 @@ bool js::ArraySetLength(JSContext* cx, Handle<ArrayObject*> arr, HandleId id,
 
       Vector<uint32_t> indexes(cx);
       {
-        AutoIdVector props(cx);
+        RootedIdVector props(cx);
         if (!GetPropertyKeys(cx, arr, JSITER_OWNONLY | JSITER_HIDDEN, &props)) {
           return false;
         }
@@ -1190,7 +1188,7 @@ static bool array_toSource(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
 
   if (detector.foundCycle()) {
     if (!sb.append("[]")) {
@@ -1450,7 +1448,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 5.
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (sepstr->hasTwoByteChars() && !sb.ensureTwoByteChars()) {
     return false;
   }
@@ -3770,10 +3768,10 @@ static const JSFunctionSpec array_methods[] = {
 
     JS_SELF_HOSTED_FN("fill", "ArrayFill", 3, 0),
 
-    JS_SELF_HOSTED_SYM_FN(iterator, "ArrayValues", 0, 0),
+    JS_SELF_HOSTED_SYM_FN(iterator, "$ArrayValues", 0, 0),
     JS_SELF_HOSTED_FN("entries", "ArrayEntries", 0, 0),
     JS_SELF_HOSTED_FN("keys", "ArrayKeys", 0, 0),
-    JS_SELF_HOSTED_FN("values", "ArrayValues", 0, 0),
+    JS_SELF_HOSTED_FN("values", "$ArrayValues", 0, 0),
 
     /* ES7 additions */
     JS_SELF_HOSTED_FN("includes", "ArrayIncludes", 2, 0),
@@ -3811,7 +3809,7 @@ static const JSFunctionSpec array_static_methods[] = {
     JS_FS_END};
 
 const JSPropertySpec array_static_props[] = {
-    JS_SELF_HOSTED_SYM_GET(species, "ArraySpecies", 0), JS_PS_END};
+    JS_SELF_HOSTED_SYM_GET(species, "$ArraySpecies", 0), JS_PS_END};
 
 static inline bool ArrayConstructorImpl(JSContext* cx, CallArgs& args,
                                         bool isConstructor) {
@@ -4081,10 +4079,9 @@ static MOZ_ALWAYS_INLINE ArrayObject* NewArray(
   }
 
   AutoSetNewObjectMetadata metadata(cx);
-  RootedArrayObject arr(
-      cx, ArrayObject::createArray(
-              cx, allocKind, GetInitialHeap(newKind, &ArrayObject::class_),
-              shape, group, length, metadata));
+  RootedArrayObject arr(cx, ArrayObject::createArray(
+                                cx, allocKind, GetInitialHeap(newKind, group),
+                                shape, group, length, metadata));
   if (!arr) {
     return nullptr;
   }
@@ -4172,7 +4169,7 @@ ArrayObject* js::NewDenseFullyAllocatedArrayWithTemplate(
   RootedObjectGroup group(cx, templateObject->group());
   RootedShape shape(cx, templateObject->as<ArrayObject>().lastProperty());
 
-  gc::InitialHeap heap = GetInitialHeap(GenericObject, &ArrayObject::class_);
+  gc::InitialHeap heap = GetInitialHeap(GenericObject, group);
   Rooted<ArrayObject*> arr(
       cx, ArrayObject::createArray(cx, allocKind, heap, shape, group, length,
                                    metadata));
@@ -4190,9 +4187,10 @@ ArrayObject* js::NewDenseFullyAllocatedArrayWithTemplate(
 }
 
 ArrayObject* js::NewDenseCopyOnWriteArray(JSContext* cx,
-                                          HandleArrayObject templateObject,
-                                          gc::InitialHeap heap) {
+                                          HandleArrayObject templateObject) {
   MOZ_ASSERT(!gc::IsInsideNursery(templateObject));
+
+  gc::InitialHeap heap = GetInitialHeap(GenericObject, templateObject->group());
 
   ArrayObject* arr =
       ArrayObject::createCopyOnWriteArray(cx, heap, templateObject);
@@ -4472,7 +4470,8 @@ void js::ArraySpeciesLookup::initialize(JSContext* cx) {
 }
 
 void js::ArraySpeciesLookup::reset() {
-  AlwaysPoison(this, 0xBB, sizeof(*this), MemCheckKind::MakeUndefined);
+  AlwaysPoison(this, JS_RESET_VALUE_PATTERN, sizeof(*this),
+               MemCheckKind::MakeUndefined);
   state_ = State::Uninitialized;
 }
 

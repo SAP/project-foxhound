@@ -2,7 +2,7 @@
 <meta charset=utf-8>
 <head>
   <title>Test for overriding U2F requests</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="frame_utils.js"></script>
   <script type="text/javascript" src="u2futil.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
@@ -23,6 +23,7 @@
     SpecialPowers.pushPrefEnv({"set": [
       ["security.webauth.u2f", true],
       ["security.webauth.webauthn_enable_softtoken", false],
+      ["security.webauth.webauthn_enable_android_fido2", false],
       ["security.webauth.webauthn_enable_usbtoken", true],
     ]}, () => {
       addEventListener("message", handleEventMessage);

@@ -8,8 +8,9 @@
 
 do_get_profile();
 
-const gCertDB = Cc["@mozilla.org/security/x509certdb;1"]
-                  .getService(Ci.nsIX509CertDB);
+const gCertDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+  Ci.nsIX509CertDB
+);
 
 const PKCS12_FILE = "test_certDB_import/cert_from_windows.pfx";
 const CERT_COMMON_NAME = "test_cert_from_windows";
@@ -30,9 +31,11 @@ var gPrompt = {
   },
 
   promptPassword(dialogTitle, text, password, checkMsg, checkValue) {
-    equal(text,
-          "Please enter your master password.",
-          "password prompt text should be as expected");
+    equal(
+      text,
+      "Please enter your master password.",
+      "password prompt text should be as expected"
+    );
     equal(checkMsg, null, "checkMsg should be null");
     password.value = this.password;
     return this.clickOk;
@@ -54,16 +57,19 @@ function findCertByCommonName(commonName) {
 }
 
 function run_test() {
-  let promptFactoryCID =
-    MockRegistrar.register("@mozilla.org/prompter;1", gPromptFactory);
+  let promptFactoryCID = MockRegistrar.register(
+    "@mozilla.org/prompter;1",
+    gPromptFactory
+  );
 
   registerCleanupFunction(() => {
     MockRegistrar.unregister(promptFactoryCID);
   });
 
   // Set a master password.
-  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"]
-                  .getService(Ci.nsIPK11TokenDB);
+  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
+    Ci.nsIPK11TokenDB
+  );
   let token = tokenDB.getInternalKeyToken();
   token.initPassword("password");
   token.logoutSimple();
@@ -86,7 +92,7 @@ function run_test() {
   let output = do_get_tempdir();
   output.append("output.p12");
   ok(!output.exists(), "output shouldn't exist before exporting PKCS12 file");
-  errorCode = gCertDB.exportPKCS12File(output, 1, [cert], TEST_CERT_PASSWORD);
+  errorCode = gCertDB.exportPKCS12File(output, [cert], TEST_CERT_PASSWORD);
   equal(errorCode, Ci.nsIX509CertDB.Success, "cert should export");
   ok(output.exists(), "output should exist after exporting PKCS12 file");
   output.remove(false /* not a directory; recursive doesn't apply */);
@@ -100,8 +106,12 @@ function run_test() {
   let output2 = do_get_tempdir();
   output2.append("output2.p12");
   ok(!output2.exists(), "output2 shouldn't exist before exporting PKCS12 file");
-  errorCode = gCertDB.exportPKCS12File(output, 1, [cert], TEST_CERT_PASSWORD);
-  equal(errorCode, Ci.nsIX509CertDB.ERROR_PKCS12_BACKUP_FAILED, "cert should not export");
+  errorCode = gCertDB.exportPKCS12File(output, [cert], TEST_CERT_PASSWORD);
+  equal(
+    errorCode,
+    Ci.nsIX509CertDB.ERROR_PKCS12_BACKUP_FAILED,
+    "cert should not export"
+  );
 
   ok(!output2.exists(), "output2 shouldn't exist after failing to export");
 }

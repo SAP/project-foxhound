@@ -8,11 +8,129 @@ exclude: true
 
 <h1> GeckoView API Changelog. </h1>
 
+## v69
+- Modified behavior of ['setAutomaticFontSizeAdjustment'][69.1] so that it no 
+  longer has any effect on ['setFontInflationEnabled'][69.2]
+
+[69.1]: ./GeckoRuntimeSettings.html#setAutomaticFontSizeAdjustment-boolean-
+[69.2]: ./GeckoRuntimeSettings.html#setFontInflationEnabled-boolean-
+
+- [`GeckoSession.setMessageDelegate`][69.2] callers must now specify the
+  [`WebExtension`][69.3] that the [`MessageDelegate`][69.4] will receive
+  messages from.
+
+[69.2]: ../GeckoSession.html#setMessageDelegate-org.mozilla.geckoview.WebExtension-org.mozilla.geckoview.WebExtension.MessageDelegate-java.lang.String-
+[69.3]: ../WebExtension.html
+[69.4]: ../WebExtension.MessageDelegate.html
+[69.7]: ../GeckoSession.ContentDelegate.html#onKill
+
+- Created `onKill` to `ContentDelegate` to differentiate from crashes.
+
 ## v68
 - Added [`GeckoRuntime#configurationChanged`][68.1] to notify the device
   configuration has changed.
 
 [68.1]: ../GeckoRuntime.html#configurationChanged
+
+- Added `onSessionStateChange` to [`ProgressDelegate`][68.2] and removed `saveState`.
+
+[68.2]: ../GeckoSession.ProgressDelegate.html
+
+- Added [`ContentBlocking#AT_CRYPTOMINING`][68.3] for cryptocurrency miner blocking.
+
+[68.3]: ../ContentBlocking.html#AT_CRYPTOMINING
+
+- Added [`ContentBlocking#AT_DEFAULT`][68.4], [`ContentBlocking#AT_STRICT`][68.5],
+  [`ContentBlocking#CB_DEFAULT`][68.6] and [`ContentBlocking#CB_STRICT`][68.7]
+  for clearer app default selections.
+
+[68.4]: ../ContentBlocking.html$AT_DEFAULT
+[68.5]: ../ContentBlocking.html$AT_STRICT
+[68.6]: ../ContentBlocking.html$CB_DEFAULT
+[68.7]: ../ContentBlocking.html$CB_STRICT
+
+- Added [`GeckoSession.SessionState.fromString`][68.8]. This can be used to
+  deserialize a `GeckoSession.SessionState` instance previously serialized to
+  a `String` via `GeckoSession.SessionState.toString`.
+
+[68.8]: ../GeckoSession.SessionState.html#fromString-java.lang.String-
+
+- Added [`GeckoRuntimeSettings#setPreferredColorScheme`][68.9] to override
+  the default color theme for web content ("light" or "dark").
+
+[68.9]: ../GeckoRuntimeSettings.html#setPreferredColorScheme-int-
+
+- Added [`@NonNull`][66.1] or [`@Nullable`][66.2] to all fields.
+
+- [`RuntimeTelemetry#getSnapshots`][68.10] returns a [`JSONObject`][67.22] now.
+
+[68.10]: ../RuntimeTelemetry.html#getSnapshots-boolean-
+
+- Removed all `org.mozilla.gecko` references in the API.
+
+- Added [`ContentBlocking#AT_FINGERPRINTING`][68.11] to block fingerprinting trackers.
+
+[68.11]: ../ContentBlocking.html#AT_FINGERPRINTING
+
+- Added `HistoryItem` and `HistoryList` interfaces and `onHistoryStateChange` to 
+  [`HistoryDelegate`][68.12] and added `gotoHistoryIndex` to [`GeckoSession`][68.13].
+
+[68.12]: ../GeckoSession.HistoryDelegate.html
+[68.13]: ../GeckoSession.html
+
+- [`GeckoView`][65.5] will not create a [`GeckoSession`][65.9] anymore when
+  attached to a window without a session.
+
+- Added [`GeckoRuntimeSettings.Builder#configFilePath`][68.16] to set
+  a path to a configuration file from which GeckoView will read
+  configuration options such as Gecko process arguments, environment
+  variables, and preferences.
+
+[68.16]: ../GeckoRuntimeSettings.Builder.html#configFilePath-java.lang.String-
+
+- Added [`unregisterWebExtension`][68.17] to unregister a web extension.
+
+[68.17]: ../GeckoRuntime.html#unregisterWebExtension-org.mozilla.geckoview.WebExtension-
+
+- Added messaging support for WebExtension. [`setMessageDelegate`][68.18]
+  allows embedders to listen to messages coming from a WebExtension.
+  [`Port`][68.19] allows bidirectional communication between the embedder and
+  the WebExtension.
+
+[68.18]: ./WebExtension.html#setMessageDelegate-org.mozilla.geckoview.WebExtension.MessageDelegate-java.lang.String-
+[68.19]: ./WebExtension.Port.html
+
+- Expose the following prefs in [`GeckoRuntimeSettings`][67.3]:
+  [`setAutoZoomEnabled`][68.20], [`setDoubleTapZoomingEnabled`][68.21],
+  [`setGlMsaaLevel`][68.22].
+
+[68.20]: ./GeckoRuntimeSettings.html#setAutoZoomEnabled-boolean-
+[68.21]: ./GeckoRuntimeSettings.html#setDoubleTapZoomingEnabled-boolean-
+[68.22]: ./GeckoRuntimeSettings.html#setGlMsaaLevel-int-
+
+- Added new constant for requesting external storage Android permissions, [`PERMISSION_PERSISTENT_STORAGE`][68.23]
+
+[68.23]: ../GeckoSession.PermissionDelegate.html#PERMISSION_PERSISTENT_STORAGE
+
+- Added [`setVerticalClipping`][68.23] to [`GeckoDisplay`][68.24] and
+  [`GeckoView`][68.23] to tell Gecko how much of its vertical space is clipped.
+
+[68.23]: ./GeckoView.html#setVerticalClipping-int-
+[68.24]: ./GeckoDisplay.html#setVerticalClipping-int-
+
+- Added [`StorageController`][68.25] API for clearing data.
+
+[68.25]: ../StorageController.html
+
+- Added [`onRecordingStatusChanged`][68.26] to [`MediaDelegate`][68.27] to handle events related to the status of recording devices.
+
+[68.26]: ./GeckoSession.MediaDelegate.html#onRecordingStatusChanged-org.mozilla.geckoview.GeckoSession-org.mozilla.geckoview.GeckoSession.MediaDelegate.RecordingDevice:A-
+[68.27]: ./GeckoSession.MediaDelegate.html
+
+- Removed redundant constants in [`MediaSource`][68.28]
+
+[68.28]: ./GeckoSession.MediaSource.html
+
 
 ## v67
 - Added [`setAutomaticFontSizeAdjustment`][67.2] to
@@ -95,6 +213,11 @@ exclude: true
   `GeckoSession.PromptDelegate.ChoiceCallback.onPopupResult()`
 
 - Added `default` implementations for all non-functional `interface`s.
+
+- Added [`ContentDelegate.onWebAppManifest`][67.22], which will deliver the contents of a parsed
+  and validated Web App Manifest on pages that contain one.
+
+[67.22]: ../GeckoSession.ContentDelegate.html#onWebAppManifest-org.mozilla.geckoview.GeckoSession-org.json.JSONObject
 
 ## v66
 - Removed redundant field `trackingMode` from [`SecurityInformation`][66.6].
@@ -215,4 +338,4 @@ exclude: true
 [65.24]: ../CrashReporter.html#sendCrashReport-android.content.Context-android.os.Bundle-java.lang.String-
 [65.25]: ../GeckoResult.html
 
-[api-version]: e1330c0e7cfa08420041813f07f24a9389020564
+[api-version]: 7b53d1a6703cc7f613de81c422dccdd95b6153fe

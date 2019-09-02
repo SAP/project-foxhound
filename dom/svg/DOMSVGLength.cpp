@@ -10,10 +10,10 @@
 #include "DOMSVGAnimatedLengthList.h"
 #include "nsError.h"
 #include "nsMathUtils.h"
+#include "SVGAnimatedLength.h"
 #include "SVGAnimatedLengthList.h"
 #include "SVGAttrTearoffTable.h"
 #include "SVGLength.h"
-#include "nsSVGLength2.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/FloatingPoint.h"
@@ -24,7 +24,7 @@ namespace mozilla {
 
 namespace dom {
 
-static SVGAttrTearoffTable<nsSVGLength2, DOMSVGLength>
+static SVGAttrTearoffTable<SVGAnimatedLength, DOMSVGLength>
     sBaseSVGLengthTearOffTable, sAnimSVGLengthTearOffTable;
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
@@ -117,7 +117,7 @@ DOMSVGLength::DOMSVGLength()
       mValue(0.0f),
       mVal(nullptr) {}
 
-DOMSVGLength::DOMSVGLength(nsSVGLength2* aVal, SVGElement* aSVGElement,
+DOMSVGLength::DOMSVGLength(SVGAnimatedLength* aVal, SVGElement* aSVGElement,
                            bool aAnimVal)
     : mList(nullptr),
       mListIndex(0),
@@ -149,7 +149,7 @@ void DOMSVGLength::CleanupWeakRefs() {
 
 DOMSVGLength::~DOMSVGLength() { CleanupWeakRefs(); }
 
-already_AddRefed<DOMSVGLength> DOMSVGLength::GetTearOff(nsSVGLength2* aVal,
+already_AddRefed<DOMSVGLength> DOMSVGLength::GetTearOff(SVGAnimatedLength* aVal,
                                                         SVGElement* aSVGElement,
                                                         bool aAnimVal) {
   auto& table =
@@ -212,10 +212,13 @@ float DOMSVGLength::GetValue(ErrorResult& aRv) {
       aRv.Throw(NS_ERROR_FAILURE);
     }
     return value;
-  } else if (mUnit == SVGLength_Binding::SVG_LENGTHTYPE_NUMBER ||
-             mUnit == SVGLength_Binding::SVG_LENGTHTYPE_PX) {
-    return mValue;
   }
+
+  float unitToPx;
+  if (UserSpaceMetrics::ResolveAbsoluteUnit(mUnit, unitToPx)) {
+    return mValue * unitToPx;
+  }
+
   // else [SVGWG issue] Can't convert this length's value to user units
   // ReportToConsole
   aRv.Throw(NS_ERROR_FAILURE);

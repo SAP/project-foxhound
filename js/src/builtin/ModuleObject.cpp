@@ -16,10 +16,12 @@
 #include "gc/FreeOp.h"
 #include "gc/Policy.h"
 #include "gc/Tracer.h"
+#include "js/Modules.h"  // JS::GetModulePrivate, JS::ModuleDynamicImportHook
 #include "js/PropertySpec.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
+#include "vm/ModuleBuilder.h"       // js::ModuleBuilder
 #include "vm/SelfHosting.h"
 
 #include "vm/JSObject-inl.h"
@@ -328,7 +330,7 @@ bool IndirectBindingMap::put(JSContext* cx, HandleId name,
                              HandleId localName) {
   // This object might have been allocated on the background parsing thread in
   // different zone to the final module. Lazily allocate the map so we don't
-  // have to switch its zone when merging compartments.
+  // have to switch its zone when merging realms.
   if (!map_) {
     MOZ_ASSERT(!cx->zone()->createdForHelperThread());
     map_.emplace(cx->zone());
@@ -393,6 +395,8 @@ ModuleNamespaceObject* ModuleNamespaceObject::create(
   SetProxyReservedSlot(object, ExportsSlot, ObjectValue(*exports));
   SetProxyReservedSlot(object, BindingsSlot,
                        PrivateValue(rootedBindings.release()));
+  AddCellMemory(object, sizeof(IndirectBindingMap),
+                MemoryUse::ModuleBindingMap);
 
   return &object->as<ModuleNamespaceObject>();
 }
@@ -410,6 +414,11 @@ IndirectBindingMap& ModuleNamespaceObject::bindings() {
   auto bindings = static_cast<IndirectBindingMap*>(value.toPrivate());
   MOZ_ASSERT(bindings);
   return *bindings;
+}
+
+bool ModuleNamespaceObject::hasBindings() const {
+  // Import bindings may not be present if we hit OOM in initialization.
+  return !GetProxyReservedSlot(this, BindingsSlot).isUndefined();
 }
 
 bool ModuleNamespaceObject::addBinding(JSContext* cx, HandleAtom exportedName,
@@ -638,7 +647,7 @@ bool ModuleNamespaceObject::ProxyHandler::delete_(
 }
 
 bool ModuleNamespaceObject::ProxyHandler::ownPropertyKeys(
-    JSContext* cx, HandleObject proxy, AutoIdVector& props) const {
+    JSContext* cx, HandleObject proxy, MutableHandleIdVector props) const {
   Rooted<ModuleNamespaceObject*> ns(cx, &proxy->as<ModuleNamespaceObject>());
   RootedObject exports(cx, &ns->exports());
   uint32_t count;
@@ -664,13 +673,20 @@ bool ModuleNamespaceObject::ProxyHandler::ownPropertyKeys(
 void ModuleNamespaceObject::ProxyHandler::trace(JSTracer* trc,
                                                 JSObject* proxy) const {
   auto& self = proxy->as<ModuleNamespaceObject>();
-  self.bindings().trace(trc);
+
+  if (self.hasBindings()) {
+    self.bindings().trace(trc);
+  }
 }
 
-void ModuleNamespaceObject::ProxyHandler::finalize(JSFreeOp* fop,
+void ModuleNamespaceObject::ProxyHandler::finalize(JSFreeOp* fopArg,
                                                    JSObject* proxy) const {
+  FreeOp* fop = FreeOp::get(fopArg);
   auto& self = proxy->as<ModuleNamespaceObject>();
-  js_delete(&self.bindings());
+
+  if (self.hasBindings()) {
+    fop->delete_(proxy, &self.bindings(), MemoryUse::ModuleBindingMap);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -743,10 +759,10 @@ ModuleObject* ModuleObject::create(JSContext* cx) {
     return nullptr;
   }
 
-  self->initReservedSlot(ImportBindingsSlot, PrivateValue(bindings));
+  InitReservedSlot(self, ImportBindingsSlot, bindings,
+                   MemoryUse::ModuleBindingMap);
 
-  FunctionDeclarationVector* funDecls =
-      cx->new_<FunctionDeclarationVector>(cx->zone());
+  FunctionDeclarationVector* funDecls = cx->new_<FunctionDeclarationVector>();
   if (!funDecls) {
     return nullptr;
   }
@@ -760,9 +776,10 @@ void ModuleObject::finalize(js::FreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->maybeOnHelperThread());
   ModuleObject* self = &obj->as<ModuleObject>();
   if (self->hasImportBindings()) {
-    fop->delete_(&self->importBindings());
+    fop->delete_(obj, &self->importBindings(), MemoryUse::ModuleBindingMap);
   }
   if (FunctionDeclarationVector* funDecls = self->functionDeclarations()) {
+    // Not tracked as these may move between zones on merge.
     fop->delete_(funDecls);
   }
 }
@@ -905,9 +922,9 @@ inline static void AssertModuleScopesMatch(ModuleObject* module) {
       &module->initialEnvironment().enclosingEnvironment()));
 }
 
-void ModuleObject::fixEnvironmentsAfterCompartmentMerge() {
+void ModuleObject::fixEnvironmentsAfterRealmMerge() {
   AssertModuleScopesMatch(this);
-  initialEnvironment().fixEnclosingEnvironmentAfterCompartmentMerge(
+  initialEnvironment().fixEnclosingEnvironmentAfterRealmMerge(
       script()->global());
   AssertModuleScopesMatch(this);
 }
@@ -1042,8 +1059,10 @@ bool ModuleObject::execute(JSContext* cx, HandleModuleObject self,
   RootedScript script(cx, self->script());
 
   // The top-level script if a module is only ever executed once. Clear the
-  // reference to prevent us keeping this alive unnecessarily.
-  self->setReservedSlot(ScriptSlot, UndefinedValue());
+  // reference at exit to prevent us keeping this alive unnecessarily. This is
+  // kept while executing so it is available to the debugger.
+  auto guardA = mozilla::MakeScopeExit(
+      [&] { self->setReservedSlot(ScriptSlot, UndefinedValue()); });
 
   RootedModuleEnvironmentObject scope(cx, self->environment());
   if (!scope) {
@@ -1392,9 +1411,9 @@ bool ModuleBuilder::processExport(frontend::ParseNode* exportNode) {
     }
 
     case ParseNodeKind::Function: {
-      RootedFunction func(cx_, kid->as<FunctionNode>().funbox()->function());
-      MOZ_ASSERT(!func->isArrow());
-      RootedAtom localName(cx_, func->explicitName());
+      FunctionBox* box = kid->as<FunctionNode>().funbox();
+      MOZ_ASSERT(!box->isArrow());
+      RootedAtom localName(cx_, box->explicitName());
       RootedAtom exportName(
           cx_, isDefault ? cx_->names().default_ : localName.get());
       MOZ_ASSERT_IF(isDefault, localName);
@@ -1458,7 +1477,7 @@ bool ModuleBuilder::processExportObjectBinding(frontend::ListNode* obj) {
 
   for (ParseNode* node : obj->contents()) {
     MOZ_ASSERT(node->isKind(ParseNodeKind::MutateProto) ||
-               node->isKind(ParseNodeKind::Colon) ||
+               node->isKind(ParseNodeKind::PropertyDefinition) ||
                node->isKind(ParseNodeKind::Shorthand) ||
                node->isKind(ParseNodeKind::Spread));
 

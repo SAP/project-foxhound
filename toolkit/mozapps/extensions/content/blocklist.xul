@@ -16,14 +16,13 @@
 
 <dialog windowtype="Addons:Blocklist" title="&blocklist.title;" align="stretch"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        onload="init();" ondialogaccept="return finish(true)"
-                         ondialogcancel="return finish(false)"
+        onload="init();"
         buttons="accept,cancel" style="&blocklist.style;"
         buttonlabelaccept="&blocklist.accept.label;"
         buttonaccesskeyaccept="&blocklist.accept.accesskey;">
 
-  <script type="application/javascript" src="chrome://global/content/globalOverlay.js"/>
-  <script type="application/javascript" src="chrome://mozapps/content/extensions/blocklist.js"/>
+  <script src="chrome://global/content/globalOverlay.js"/>
+  <script src="chrome://mozapps/content/extensions/blocklist.js"/>
 
   <hbox align="stretch" flex="1">
     <vbox pack="start">

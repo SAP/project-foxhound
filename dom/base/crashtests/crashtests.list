@@ -230,7 +230,7 @@ load 1406109-1.html
 load 1411473.html
 load 1413815.html
 load 1419799.html
-skip-if(!browserIsRemote) pref(dom.disable_open_during_load,false) load 1419902.html # skip on non e10s loads, Bug 1419902
+skip-if(!browserIsRemote) skip-if(geckoview&&webrender) pref(dom.disable_open_during_load,false) load 1419902.html # skip on non e10s loads, Bug 1419902. Bug 1563013 for GV+WR
 load 1422883.html
 load 1428053.html
 load 1441029.html
@@ -249,3 +249,5 @@ load 1528675.html
 load structured_clone_container_throws.html
 load xhr_empty_datauri.html
 load xhr_html_nullresponse.html
+load xhr-with-pagehide-1.html
+pref(layout.css.resizeobserver.enabled,true) load 1555786.html

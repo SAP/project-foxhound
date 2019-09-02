@@ -61,10 +61,9 @@ GTK2_VERSION=2.18.0
 GTK3_VERSION=3.4.0
 GDK_VERSION_MAX_ALLOWED=GDK_VERSION_3_4
 W32API_VERSION=3.14
-GCONF_VERSION=1.2.1
 STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.27.2
+SQLITE_VERSION=3.28.0
 
 dnl Set various checks
 dnl ========================================================
@@ -283,16 +282,10 @@ dnl Configure platform-specific CPU architecture compiler options.
 dnl ==============================================================
 if test "$COMPILE_ENVIRONMENT"; then
     MOZ_ARCH_OPTS
-else
-    if test "$OS_TARGET" = Android; then
-        dnl Default Android builds to ARMv7.
-        MOZ_ARCH=armv7-a
-    fi
 fi # COMPILE_ENVIRONMENT
 
 dnl ========================================================
-dnl Android libstdc++, placed here so it can use MOZ_ARCH
-dnl computed above.
+dnl Android libstdc++
 dnl ========================================================
 
 MOZ_ANDROID_CPU_ARCH
@@ -511,7 +504,7 @@ case "$host" in
     else
         HOST_CFLAGS="$HOST_CFLAGS -mwindows"
     fi
-    HOST_CFLAGS="$HOST_CFLAGS -DXP_WIN32 -DXP_WIN -DWIN32 -D_WIN32 -D_CRT_SECURE_NO_WARNINGS"
+    HOST_CFLAGS="$HOST_CFLAGS -DXP_WIN -DWIN32 -D_WIN32 -D_CRT_SECURE_NO_WARNINGS"
     HOST_OPTIMIZE_FLAGS="${HOST_OPTIMIZE_FLAGS=-O2}"
     HOST_BIN_SUFFIX=.exe
 
@@ -1544,7 +1537,7 @@ MOZ_ARG_WITH_BOOL(system-nss,
     _USE_SYSTEM_NSS=1 )
 
 if test -n "$_USE_SYSTEM_NSS"; then
-    AM_PATH_NSS(3.42, [MOZ_SYSTEM_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
+    AM_PATH_NSS(3.45, [MOZ_SYSTEM_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
 fi
 
 NSS_CFLAGS="$NSS_CFLAGS -I${DIST}/include/nss"
@@ -1629,7 +1622,6 @@ if test "$MOZ_IOS"; then
 fi
 MOZ_PREF_EXTENSIONS=1
 MOZ_SPELLCHECK=1
-MOZ_TOOLKIT_SEARCH=1
 MOZ_UNIVERSALCHARDET=1
 MOZ_XUL=1
 MOZ_ZIPWRITER=1
@@ -1637,8 +1629,6 @@ MOZ_NO_SMART_CARDS=
 NECKO_COOKIES=1
 MOZ_USE_NATIVE_POPUP_WINDOWS=
 MOZ_EXCLUDE_HYPHENATION_DICTIONARIES=
-MOZ_CONTENT_SANDBOX=
-MOZ_GMP_SANDBOX=
 MOZ_SANDBOX=1
 MOZ_BINARY_EXTENSIONS=
 MOZ_DEVTOOLS=server
@@ -1727,10 +1717,6 @@ case "$MOZ_BUILD_APP" in
 browser)
   AC_DEFINE(MOZ_PHOENIX)
   ;;
-
-xulrunner)
-  AC_DEFINE(MOZ_XULRUNNER)
-  ;;
 esac
 
 # Graphene is a desktop runtime for running applications with a HTML UI.
@@ -1739,7 +1725,6 @@ if test -n "$MOZ_GRAPHENE"; then
 fi
 
 AC_SUBST(MOZ_PHOENIX)
-AC_SUBST(MOZ_XULRUNNER)
 
 dnl ========================================================
 dnl Ensure Android SDK and build-tools versions depending on
@@ -1915,47 +1900,6 @@ fi
 
 AC_DEFINE_UNQUOTED(MOZ_DISTRIBUTION_ID,"$MOZ_DISTRIBUTION_ID")
 AC_SUBST(MOZ_DISTRIBUTION_ID)
-
-dnl ========================================================
-dnl = GConf support module
-dnl ========================================================
-
-if test "$MOZ_X11"
-then
-    if test "$MOZ_ENABLE_GTK"
-    then
-        MOZ_ENABLE_GCONF=1
-    fi
-
-    dnl ========================================================
-    dnl = GConf support module
-    dnl ========================================================
-    MOZ_ARG_DISABLE_BOOL(gconf,
-    [  --disable-gconf      Disable Gconf support ],
-        MOZ_ENABLE_GCONF=,
-        MOZ_ENABLE_GCONF=1)
-
-    if test "$MOZ_ENABLE_GCONF"
-    then
-        PKG_CHECK_MODULES(MOZ_GCONF, gconf-2.0 >= $GCONF_VERSION gobject-2.0 ,[
-            MOZ_GCONF_LIBS=`$PKG_CONFIG --libs gobject-2.0`
-            MOZ_ENABLE_GCONF=1
-        ],[
-            if test -n "$MOZ_ENABLE_GCONF";
-            then
-                AC_MSG_ERROR([* * * Could not find gconf-2.0 ])
-            else
-                AC_MSG_WARN([Many automated tests will fail with --disable-gconf. See bug 1167201.])
-            fi
-        ])
-    fi
-
-    if test "$MOZ_ENABLE_GCONF"; then
-        AC_DEFINE(MOZ_ENABLE_GCONF)
-    fi
-
-    AC_SUBST(MOZ_ENABLE_GCONF)
-fi
 
 dnl ========================================================
 dnl = libproxy support
@@ -2286,70 +2230,24 @@ MOZ_ARG_DISABLE_BOOL(sandbox,
     MOZ_SANDBOX=,
     MOZ_SANDBOX=1)
 
-dnl ========================================================
-dnl = Content process sandboxing
-dnl ========================================================
-
 case "$OS_TARGET" in
-WINNT)
-    MOZ_CONTENT_SANDBOX=$MOZ_SANDBOX
-    ;;
-Darwin)
-    MOZ_CONTENT_SANDBOX=$MOZ_SANDBOX
-    ;;
+WINNT|Darwin)
+;;
 Linux)
     case $CPU_ARCH in
         x86_64|x86)
-            MOZ_CONTENT_SANDBOX=$MOZ_SANDBOX
+        ;;
+        # Linux sandbox is only available on x86 and x86_64.
+        *)
+            MOZ_SANDBOX=
         ;;
     esac
     ;;
-esac
-
-MOZ_ARG_ENABLE_BOOL(content-sandbox,
-[  --enable-content-sandbox Enable sandboxing support for content-processes
-  --disable-content-sandbox Disable sandboxing support for content-processes],
-    MOZ_CONTENT_SANDBOX=1,
-    MOZ_CONTENT_SANDBOX=)
-
-if test -n "$MOZ_CONTENT_SANDBOX" -a -z "$MOZ_SANDBOX"; then
-    AC_MSG_ERROR([--enable-content-sandbox and --disable-sandbox are conflicting options])
-fi
-
-if test -n "$MOZ_CONTENT_SANDBOX"; then
-    AC_DEFINE(MOZ_CONTENT_SANDBOX)
-fi
-
-AC_SUBST(MOZ_CONTENT_SANDBOX)
-
-dnl ========================================================
-dnl = Gecko Media Plugin sandboxing
-dnl ========================================================
-case $OS_TARGET in
-WINNT)
-    MOZ_GMP_SANDBOX=$MOZ_SANDBOX
-    ;;
-Linux)
-    case $CPU_ARCH in
-    x86_64|x86)
-        MOZ_GMP_SANDBOX=$MOZ_SANDBOX
-        ;;
-    esac
-    ;;
-Darwin)
-    MOZ_GMP_SANDBOX=$MOZ_SANDBOX
-    ;;
-esac
-
-if test -n "$MOZ_GMP_SANDBOX"; then
-    AC_DEFINE(MOZ_GMP_SANDBOX)
-fi
-
-AC_SUBST(MOZ_GMP_SANDBOX)
-
-if test -z "$MOZ_CONTENT_SANDBOX" -a -z "$MOZ_GMP_SANDBOX"; then
+*)
+    # Only enable the sandbox by default on Linux, macOS, and Windows
     MOZ_SANDBOX=
-fi
+;;
+esac
 
 if test -n "$MOZ_SANDBOX"; then
     AC_DEFINE(MOZ_SANDBOX)
@@ -2447,8 +2345,6 @@ if test -n "${MOZ_CONFIGURE_OPTIMIZE_FLAGS}"; then
     MOZ_OPTIMIZE_FLAGS=${MOZ_CONFIGURE_OPTIMIZE_FLAGS}
 fi
 
-MOZ_SET_FRAMEPTR_FLAGS
-
 if test "$COMPILE_ENVIRONMENT"; then
 if test -n "$MOZ_OPTIMIZE"; then
     AC_MSG_CHECKING([for valid C compiler optimization flags])
@@ -2477,7 +2373,6 @@ if test -n "$MOZ_OPTIMIZE"; then
 fi
 fi # COMPILE_ENVIRONMENT
 
-AC_SUBST_LIST(MOZ_FRAMEPTR_FLAGS)
 AC_SUBST_LIST(MOZ_OPTIMIZE_FLAGS)
 AC_SUBST_LIST(MOZ_OPTIMIZE_LDFLAGS)
 AC_SUBST_LIST(MOZ_PGO_OPTIMIZE_FLAGS)
@@ -2998,7 +2893,6 @@ AC_SUBST_LIST(MOZ_DEBUG_LDFLAGS)
 AC_SUBST(WARNINGS_AS_ERRORS)
 AC_SUBST_LIST(WARNINGS_CFLAGS)
 AC_SUBST_SET(MOZ_EXTENSIONS)
-AC_SUBST(MOZ_TOOLKIT_SEARCH)
 
 AC_SUBST(MOZ_UNIVERSALCHARDET)
 AC_SUBST(MOZ_SPELLCHECK)
@@ -3215,15 +3109,6 @@ fi
 AC_SUBST(MOZ_SOURCE_REPO)
 AC_SUBST(MOZ_SOURCE_CHANGESET)
 AC_SUBST(MOZ_INCLUDE_SOURCE_INFO)
-
-if test "$MOZ_TELEMETRY_REPORTING"; then
-    AC_DEFINE(MOZ_TELEMETRY_REPORTING)
-
-    # Enable Telemetry by default for nightly and aurora channels
-    if test -z "$RELEASE_OR_BETA"; then
-      AC_DEFINE(MOZ_TELEMETRY_ON_BY_DEFAULT)
-    fi
-fi
 
 dnl If we have any service that uploads data (and requires data submission
 dnl policy alert), set MOZ_DATA_REPORTING.

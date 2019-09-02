@@ -84,7 +84,7 @@ struct SerializedStructuredCloneBuffer final {
       const SerializedStructuredCloneBuffer& aOther) {
     data.Clear();
     data.initScope(aOther.data.scope());
-    data.Append(aOther.data);
+    MOZ_RELEASE_ASSERT(data.Append(aOther.data), "out of memory");
     return *this;
   }
 
@@ -102,11 +102,6 @@ struct SerializedStructuredCloneBuffer final {
 }  // namespace mozilla
 
 namespace IPC {
-
-/**
- * Maximum size, in bytes, of a single IPC message.
- */
-static const uint32_t MAX_MESSAGE_SIZE = 65536;
 
 /**
  * Generic enum serializer.
@@ -976,18 +971,9 @@ struct ParamTraits<mozilla::Variant<Ts...>> {
   typedef mozilla::Variant<Ts...> paramType;
   using Tag = typename mozilla::detail::VariantTag<Ts...>::Type;
 
-  struct VariantWriter {
-    Message* msg;
-
-    template <class T>
-    void match(const T& t) {
-      WriteParam(msg, t);
-    }
-  };
-
   static void Write(Message* msg, const paramType& param) {
     WriteParam(msg, param.tag);
-    param.match(VariantWriter{msg});
+    param.match([msg](const auto& t) { WriteParam(msg, t); });
   }
 
   // Because VariantReader is a nested struct, we need the dummy template
@@ -1101,6 +1087,25 @@ template <>
 struct ParamTraits<nsILoadInfo::CrossOriginPolicy>
     : EnumSerializer<nsILoadInfo::CrossOriginPolicy,
                      CrossOriginPolicyValidator> {};
+
+// Helper class for reading bitfields.
+// If T has bitfields members, derive ParamTraits<T> from BitfieldHelper<T>.
+template <typename ParamType>
+struct BitfieldHelper {
+  // We need this helper because we can't get the address of a bitfield to
+  // pass directly to ReadParam. So instead we read it into a temporary bool
+  // and set the bitfield using a setter function
+  static bool ReadBoolForBitfield(const Message* aMsg, PickleIterator* aIter,
+                                  ParamType* aResult,
+                                  void (ParamType::*aSetter)(bool)) {
+    bool value;
+    if (ReadParam(aMsg, aIter, &value)) {
+      (aResult->*aSetter)(value);
+      return true;
+    }
+    return false;
+  }
+};
 
 } /* namespace IPC */
 

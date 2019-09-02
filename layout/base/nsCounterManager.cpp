@@ -9,6 +9,8 @@
 #include "nsCounterManager.h"
 
 #include "mozilla/Likely.h"
+#include "mozilla/IntegerRange.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/WritingModes.h"
 #include "nsBulletFrame.h"  // legacy location for list style type to text code
 #include "nsContentUtils.h"
@@ -23,40 +25,54 @@ bool nsCounterUseNode::InitTextFrame(nsGenConList* aList,
                                      nsIFrame* aTextFrame) {
   nsCounterNode::InitTextFrame(aList, aPseudoFrame, aTextFrame);
 
-  nsCounterList* counterList = static_cast<nsCounterList*>(aList);
+  auto* counterList = static_cast<nsCounterList*>(aList);
   counterList->Insert(this);
   aPseudoFrame->AddStateBits(NS_FRAME_HAS_CSS_COUNTER_STYLE);
-  bool dirty = counterList->IsDirty();
-  if (!dirty) {
-    if (counterList->IsLast(this)) {
-      Calc(counterList);
-      nsAutoString contentString;
-      GetText(contentString);
-      aTextFrame->GetContent()->AsText()->SetText(contentString, false);
-    } else {
-      // In all other cases (list already dirty or node not at the end),
-      // just start with an empty string for now and when we recalculate
-      // the list we'll change the value to the right one.
-      counterList->SetDirty();
-      return true;
-    }
+  // If the list is already dirty, or the node is not at the end, just start
+  // with an empty string for now and when we recalculate the list we'll change
+  // the value to the right one.
+  if (counterList->IsDirty()) {
+    return false;
   }
-
+  if (!counterList->IsLast(this)) {
+    counterList->SetDirty();
+    return true;
+  }
+  Calc(counterList, /* aNotify = */ false);
   return false;
+}
+
+bool nsCounterUseNode::InitBullet(nsGenConList* aList, nsIFrame* aBullet) {
+  MOZ_ASSERT(aBullet->IsBulletFrame());
+  MOZ_ASSERT(aBullet->Style()->GetPseudoType() == PseudoStyleType::marker);
+  MOZ_ASSERT(mForLegacyBullet);
+  return InitTextFrame(aList, aBullet, nullptr);
 }
 
 // assign the correct |mValueAfter| value to a node that has been inserted
 // Should be called immediately after calling |Insert|.
-void nsCounterUseNode::Calc(nsCounterList* aList) {
+void nsCounterUseNode::Calc(nsCounterList* aList, bool aNotify) {
   NS_ASSERTION(!aList->IsDirty(), "Why are we calculating with a dirty list?");
   mValueAfter = nsCounterList::ValueBefore(this);
+  if (mText) {
+    nsAutoString contentString;
+    GetText(contentString);
+    mText->SetText(contentString, aNotify);
+  } else if (mForLegacyBullet) {
+    MOZ_ASSERT_IF(mPseudoFrame, mPseudoFrame->IsBulletFrame());
+    if (nsBulletFrame* f = do_QueryFrame(mPseudoFrame)) {
+      f->SetOrdinal(mValueAfter, aNotify);
+    }
+  }
 }
 
 // assign the correct |mValueAfter| value to a node that has been inserted
 // Should be called immediately after calling |Insert|.
 void nsCounterChangeNode::Calc(nsCounterList* aList) {
   NS_ASSERTION(!aList->IsDirty(), "Why are we calculating with a dirty list?");
-  if (mType == RESET) {
+  if (IsContentBasedReset()) {
+    // RecalcAll takes care of this case.
+  } else if (mType == RESET || mType == SET) {
     mValueAfter = mChangeValue;
   } else {
     NS_ASSERTION(mType == INCREMENT, "invalid type");
@@ -156,50 +172,81 @@ void nsCounterList::SetScope(nsCounterNode* aNode) {
 void nsCounterList::RecalcAll() {
   mDirty = false;
 
+  // Setup the scope and calculate the default start value for <ol reversed>.
   for (nsCounterNode* node = First(); node; node = Next(node)) {
     SetScope(node);
-    node->Calc(this);
-
-    if (node->mType == nsCounterNode::USE) {
-      nsCounterUseNode* useNode = node->UseNode();
-      // Null-check mText, since if the frame constructor isn't
-      // batching, we could end up here while the node is being
-      // constructed.
-      if (useNode->mText) {
-        nsAutoString text;
-        useNode->GetText(text);
-        useNode->mText->SetData(text, IgnoreErrors());
-      }
+    if (node->IsContentBasedReset()) {
+      node->mValueAfter = 1;
+    } else if ((node->mType == nsCounterChangeNode::INCREMENT ||
+                node->mType == nsCounterChangeNode::SET) &&
+               node->mScopeStart && node->mScopeStart->IsContentBasedReset()) {
+      ++node->mScopeStart->mValueAfter;
     }
+  }
+
+  for (nsCounterNode* node = First(); node; node = Next(node)) {
+    node->Calc(this, /* aNotify = */ true);
   }
 }
 
-bool nsCounterManager::AddCounterResetsAndIncrements(nsIFrame* aFrame) {
+static bool HasCounters(const nsStyleContent& aStyle) {
+  return aStyle.CounterIncrementCount() || aStyle.CounterResetCount() ||
+         aStyle.CounterSetCount();
+}
+
+bool nsCounterManager::AddCounterChanges(nsIFrame* aFrame) {
+  // For elements with 'display:list-item' we add a default
+  // 'counter-increment:list-item' unless 'counter-increment' already has a
+  // value for 'list-item'.
+  //
+  // https://drafts.csswg.org/css-lists-3/#declaring-a-list-item
+  //
+  // We inherit `display` for some anonymous boxes, but we don't want them to
+  // increment the list-item counter.
+  const bool requiresListItemIncrement =
+      aFrame->StyleDisplay()->mDisplay == StyleDisplay::ListItem &&
+      !aFrame->Style()->IsAnonBox();
+
   const nsStyleContent* styleContent = aFrame->StyleContent();
-  if (!styleContent->CounterIncrementCount() &&
-      !styleContent->CounterResetCount()) {
+
+  if (!requiresListItemIncrement && !HasCounters(*styleContent)) {
     MOZ_ASSERT(!aFrame->HasAnyStateBits(NS_FRAME_HAS_CSS_COUNTER_STYLE));
     return false;
   }
 
   aFrame->AddStateBits(NS_FRAME_HAS_CSS_COUNTER_STYLE);
 
+  bool dirty = false;
   // Add in order, resets first, so all the comparisons will be optimized
   // for addition at the end of the list.
-  int32_t i, i_end;
-  bool dirty = false;
-  for (i = 0, i_end = styleContent->CounterResetCount(); i != i_end; ++i) {
-    dirty |= AddResetOrIncrement(aFrame, i, styleContent->CounterResetAt(i),
-                                 nsCounterChangeNode::RESET);
+  for (int32_t i : IntegerRange(styleContent->CounterResetCount())) {
+    dirty |= AddCounterChangeNode(aFrame, i, styleContent->CounterResetAt(i),
+                                  nsCounterChangeNode::RESET);
   }
-  for (i = 0, i_end = styleContent->CounterIncrementCount(); i != i_end; ++i) {
-    dirty |= AddResetOrIncrement(aFrame, i, styleContent->CounterIncrementAt(i),
-                                 nsCounterChangeNode::INCREMENT);
+  bool hasListItemIncrement = false;
+  for (int32_t i : IntegerRange(styleContent->CounterIncrementCount())) {
+    const nsStyleCounterData& increment = styleContent->CounterIncrementAt(i);
+    hasListItemIncrement |= increment.mCounter == nsGkAtoms::list_item;
+    dirty |= AddCounterChangeNode(aFrame, i, increment,
+                                  nsCounterChangeNode::INCREMENT);
+  }
+  if (requiresListItemIncrement && !hasListItemIncrement) {
+    bool reversed =
+        aFrame->StyleList()->mMozListReversed == StyleMozListReversed::True;
+    nsStyleCounterData listItemIncrement{nsGkAtoms::list_item,
+                                         reversed ? -1 : 1};
+    dirty |=
+        AddCounterChangeNode(aFrame, styleContent->CounterIncrementCount() + 1,
+                             listItemIncrement, nsCounterChangeNode::INCREMENT);
+  }
+  for (int32_t i : IntegerRange(styleContent->CounterSetCount())) {
+    dirty |= AddCounterChangeNode(aFrame, i, styleContent->CounterSetAt(i),
+                                  nsCounterChangeNode::SET);
   }
   return dirty;
 }
 
-bool nsCounterManager::AddResetOrIncrement(
+bool nsCounterManager::AddCounterChangeNode(
     nsIFrame* aFrame, int32_t aIndex, const nsStyleCounterData& aCounterData,
     nsCounterNode::Type aType) {
   nsCounterChangeNode* node =
@@ -222,7 +269,8 @@ bool nsCounterManager::AddResetOrIncrement(
   return false;
 }
 
-nsCounterList* nsCounterManager::CounterListFor(const nsAString& aCounterName) {
+nsCounterList* nsCounterManager::CounterListFor(nsAtom* aCounterName) {
+  MOZ_ASSERT(aCounterName);
   return mNames.LookupForAdd(aCounterName).OrInsert([]() {
     return new nsCounterList();
   });
@@ -261,12 +309,12 @@ bool nsCounterManager::DestroyNodesFor(nsIFrame* aFrame) {
 void nsCounterManager::Dump() {
   printf("\n\nCounter Manager Lists:\n");
   for (auto iter = mNames.Iter(); !iter.Done(); iter.Next()) {
-    printf("Counter named \"%s\":\n", NS_ConvertUTF16toUTF8(iter.Key()).get());
+    printf("Counter named \"%s\":\n", nsAtomCString(iter.Key()).get());
 
     nsCounterList* list = iter.UserData();
     int32_t i = 0;
     for (nsCounterNode* node = list->First(); node; node = list->Next(node)) {
-      const char* types[] = {"RESET", "INCREMENT", "USE"};
+      const char* types[] = {"RESET", "SET", "INCREMENT", "USE"};
       printf(
           "  Node #%d @%p frame=%p index=%d type=%s valAfter=%d\n"
           "       scope-start=%p scope-prev=%p",

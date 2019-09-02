@@ -8,11 +8,13 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #include "nscore.h"
 #include "private/pprio.h"
 #include "prmem.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/MemUtils.h"
 
 #if defined(XP_MACOSX)
 #  include <fcntl.h>
@@ -32,7 +34,9 @@
 #  include <sys/types.h>
 #  include <sys/stat.h>
 #elif defined(XP_WIN)
-#  include <windows.h>
+#  include <nsWindowsHelpers.h>
+#  include <mozilla/NativeNt.h>
+#  include <mozilla/ScopeExit.h>
 #endif
 
 // Functions that are not to be used in standalone glue must be implemented
@@ -355,7 +359,36 @@ void mozilla::ReadAheadLib(mozilla::pathstr_t aFilePath) {
     return;
   }
 #if defined(XP_WIN)
-  ReadAheadFile(aFilePath);
+  if (!CanPrefetchMemory()) {
+    ReadAheadFile(aFilePath);
+    return;
+  }
+  nsAutoHandle fd(CreateFileW(aFilePath, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                              OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN,
+                              nullptr));
+  if (!fd) {
+    return;
+  }
+
+  nsAutoHandle mapping(
+      CreateFileMapping(fd, nullptr, SEC_IMAGE | PAGE_READONLY, 0, 0, nullptr));
+  if (!mapping) {
+    return;
+  }
+
+  PVOID data = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+  if (!data) {
+    return;
+  }
+  auto guard = MakeScopeExit([=]() { UnmapViewOfFile(data); });
+  mozilla::nt::PEHeaders headers(data);
+  Maybe<Span<const uint8_t>> bounds = headers.GetBounds();
+  if (!bounds) {
+    return;
+  }
+
+  PrefetchMemory((uint8_t*)data, bounds->Length());
+
 #elif defined(LINUX) && !defined(ANDROID)
   int fd = open(aFilePath, O_RDONLY);
   if (fd < 0) {

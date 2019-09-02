@@ -97,7 +97,15 @@ BlockReflowInput::BlockReflowInput(const ReflowInput& aReflowInput,
   if (aBlockNeedsFloatManager) {
     mFlags.mBlockNeedsFloatManager = true;
   }
-  mFlags.mCanHaveTextOverflow = css::TextOverflow::CanHaveTextOverflow(mBlock);
+
+  // We need to check mInsideLineClamp here since we are here before the block
+  // has been reflowed, and CanHaveOverflowMarkers() relies on the block's
+  // NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS state bit to know if a -webkit-line-clamp
+  // ellipsis is set on one of the block's lines.  And that state bit is only
+  // set after we do the bsize measuring reflow of the flex item.
+  mFlags.mCanHaveOverflowMarkers =
+      aReflowInput.mFlags.mInsideLineClamp ||
+      css::TextOverflow::CanHaveOverflowMarkers(mBlock);
 
   MOZ_ASSERT(FloatManager(),
              "Float manager should be valid when creating BlockReflowInput!");
@@ -142,7 +150,7 @@ BlockReflowInput::BlockReflowInput(const ReflowInput& aReflowInput,
 }
 
 nscoord BlockReflowInput::ConsumedBSize() {
-  if (mConsumedBSize == NS_INTRINSICSIZE) {
+  if (mConsumedBSize == NS_UNCONSTRAINEDSIZE) {
     mConsumedBSize = mBlock->ConsumedBSize(mReflowInput.GetWritingMode());
   }
 
@@ -206,8 +214,8 @@ static nscoord GetBEndMarginClone(nsIFrame* aFrame,
 }
 
 // Compute the amount of available space for reflowing a block frame
-// at the current Y coordinate. This method assumes that
-// GetAvailableSpace has already been called.
+// at the current block-direction coordinate. This method assumes that
+// GetFloatAvailableSpace has already been called.
 void BlockReflowInput::ComputeBlockAvailSpace(
     nsIFrame* aFrame, const nsFlowAreaRect& aFloatAvailableSpace,
     bool aBlockAvoidsFloats, LogicalRect& aResult) {
@@ -383,7 +391,7 @@ nsFlowAreaRect BlockReflowInput::GetFloatAvailableSpaceForBSize(
  *
  * The reconstruction involves walking backward through the line list to
  * find any collapsed margins preceding the line that would have been in
- * the reflow state's |mPrevBEndMargin| when we reflowed that line in
+ * the reflow input's |mPrevBEndMargin| when we reflowed that line in
  * a full reflow (under the rule in CSS2 that all adjacent vertical
  * margins of blocks collapse).
  */

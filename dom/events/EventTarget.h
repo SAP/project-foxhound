@@ -8,6 +8,7 @@
 #define mozilla_dom_EventTarget_h_
 
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/DebuggerNotificationBinding.h"
 #include "mozilla/dom/Nullable.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
@@ -34,8 +35,6 @@ class EventListener;
 class EventListenerOptionsOrBoolean;
 class EventHandlerNonNull;
 class GlobalObject;
-template <typename>
-struct Nullable;
 class WindowProxyHolder;
 
 // IID for the dom::EventTarget interface
@@ -197,6 +196,11 @@ class EventTarget : public nsISupports, public nsWrapperCache {
    */
   virtual EventListenerManager* GetExistingListenerManager() const = 0;
 
+  virtual Maybe<EventCallbackDebuggerNotificationType>
+  GetDebuggerNotificationType() const {
+    return Nothing();
+  }
+
   // Called from AsyncEventDispatcher to notify it is running.
   virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) {}
 
@@ -248,6 +252,7 @@ class EventTarget : public nsISupports, public nsWrapperCache {
    * @see EventDispatcher.h for documentation about aVisitor.
    * @note Only EventDispatcher should call this method.
    */
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) = 0;
 
  protected:

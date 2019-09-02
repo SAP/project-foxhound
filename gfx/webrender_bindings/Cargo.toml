@@ -4,14 +4,18 @@ version = "0.1.0"
 authors = ["The Mozilla Project Developers"]
 license = "MPL-2.0"
 
+[features]
+webrender_debugger = ["webrender/debugger"]
+
 [dependencies]
 rayon = "1"
+num_cpus = "1.7.0"
 thread_profiler = "0.1.1"
 euclid = { version = "0.19.4", features = ["serde"] }
 app_units = "0.7"
-gleam = "0.6.9"
+gleam = "0.6.14"
 log = "0.4"
-nsstring = { path = "../../xpcom/rust/nsstring" } 
+nsstring = { path = "../../xpcom/rust/nsstring" }
 bincode = "1.0"
 uuid = { version = "0.6", features = ["v4"] }
 fxhash = "0.2.1"
@@ -23,7 +27,7 @@ default-features = false
 features = ["capture", "serialize_program"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
-dwrote = "0.8"
+dwrote = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6"

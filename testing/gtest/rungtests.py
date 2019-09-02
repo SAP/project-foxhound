@@ -21,12 +21,12 @@ log = mozlog.unstructured.getLogger('gtest')
 
 class GTests(object):
     # Time (seconds) to wait for test process to complete
-    TEST_PROC_TIMEOUT = 1200
+    TEST_PROC_TIMEOUT = 2400
     # Time (seconds) in which process will be killed if it produces no output.
     TEST_PROC_NO_OUTPUT_TIMEOUT = 300
 
     def run_gtest(self, prog, xre_path, cwd, symbols_path=None,
-                  utility_path=None):
+                  utility_path=None, enable_webrender=False):
         """
         Run a single C++ unit test program.
 
@@ -44,7 +44,7 @@ class GTests(object):
         Return True if the program exits with a zero status, False otherwise.
         """
         self.xre_path = xre_path
-        env = self.build_environment()
+        env = self.build_environment(enable_webrender)
         log.info("Running gtest")
 
         if cwd and not os.path.isdir(cwd):
@@ -96,6 +96,7 @@ class GTests(object):
         env["XPCOM_DEBUG_BREAK"] = "stack-and-abort"
         env["MOZ_CRASHREPORTER_NO_REPORT"] = "1"
         env["MOZ_CRASHREPORTER"] = "1"
+        env["MOZ_DISABLE_NONLOCAL_CONNECTIONS"] = "1"
         env["MOZ_RUN_GTEST"] = "1"
         # Normally we run with GTest default output, override this to use the TBPL test format.
         env["MOZ_TBPL_PARSER"] = "1"
@@ -109,7 +110,7 @@ class GTests(object):
 
         return env
 
-    def build_environment(self):
+    def build_environment(self, enable_webrender):
         """
         Create and return a dictionary of all the appropriate env variables
         and values. On a remote system, we overload this to set different
@@ -148,6 +149,12 @@ class GTests(object):
                 # This should be |testFail| instead of |info|. See bug 1050891.
                 log.info("gtest | Failed to find ASan symbolizer at %s", llvmsym)
 
+        if enable_webrender:
+            env["MOZ_WEBRENDER"] = "1"
+            env["MOZ_ACCELERATED"] = "1"
+        else:
+            env["MOZ_WEBRENDER"] = "0"
+
         return env
 
 
@@ -174,6 +181,11 @@ class gtestOptions(OptionParser):
                         dest="utility_path",
                         default=None,
                         help="path to a directory containing utility program binaries")
+        self.add_option("--enable-webrender",
+                        action="store_true",
+                        dest="enable_webrender",
+                        default=False,
+                        help="Enable the WebRender compositor in Gecko.")
 
 
 def update_mozinfo():
@@ -208,8 +220,9 @@ def main():
         result = tester.run_gtest(prog, options.xre_path,
                                   options.cwd,
                                   symbols_path=options.symbols_path,
-                                  utility_path=options.utility_path)
-    except Exception, e:
+                                  utility_path=options.utility_path,
+                                  enable_webrender=options.enable_webrender)
+    except Exception as e:
         log.error(str(e))
         result = False
     sys.exit(0 if result else 1)

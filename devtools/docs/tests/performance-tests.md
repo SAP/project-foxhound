@@ -14,15 +14,60 @@ This will run all DAMP tests, you can filter by test name with:
 ```
 This command will run all tests which contains "console" in their name.
 
+### Command line options
+
+#### Running tests only once
+
+```bash
+./mach talos-test --activeTests damp --cycles 1 --tppagecycles 1
+```
+`--cycles` will limit the number of Firefox restart to only one, while
+`--tppagecycles` will limit the number of test re-run in each firefox start to one.
+This is often helpful when debugging one particular subtest.
+
+#### Taking screenshots
+
+```bash
+DEBUG_DEVTOOLS_SCREENSHOTS=1 ./mach talos-test --activeTests damp
+```
+When passing `DEBUG_DEVTOOLS_SCREENSHOTS` env variable, screenshots will be taken after each subtest
+was run. The screenshot will be opened in new tabs and their title
+includes the subtest label. Firefox won't automatically close so that you can view the screenshots.
+
+#### Recording a profile
+
+```bash
+./mach talos-test --activeTests damp --geckoProfile --geckoProfileEntries 100000000
+```
+This will automatically record the tests and open the profile. You may use the following command in order
+to focus on just one subtest run:
+```bash
+./mach talos-test --activeTests damp --subtests custom.webconsole --cycles 1 --tppagecycles 1 --geckoProfile --geckoProfileEntries 100000000
+```
+
 ## How to run it on try?
 
 ```bash
-./mach try -b o -p linux64 -u none -t damp-e10s --rebuild-talos 6
+./mach try -b o -p linux64 -u none -t damp --rebuild-talos 6
 ```
 * Linux appears to build and run quickly, and offers quite stable results over the other OSes.
 The vast majority of performance issues for DevTools are OS agnostic, so it doesn't really matter which one you run them on.
-* "damp-e10s" is the talos bucket in which we run DAMP.
+* "damp" is the talos bucket in which we run DAMP.
 * And 6 is the number of times we run DAMP tests. That's to do averages between all the 6 runs and helps filtering out the noise.
+
+## How to get performance profiles on try?
+
+Once you have a successful try job for `damp`:
+* select this job in treeherder
+* click on the `...` menu in the bottom left
+* select "Create Gecko Profile"
+
+![PerfHerder Create Gecko Profile menu](perfherder-create-gecko-profile.png)
+
+This should start a new damp job called `damp-p`. Once `damp-p` is finished:
+* select the `damp-p` job
+* click on `Job Details` tab
+* click on `open in Firefox Profiler`
 
 ## What does it do?
 
@@ -107,7 +152,7 @@ The [main script](http://searchfox.org/mozilla-central/source/testing/talos/talo
 ## How to see the performance trends?
 
 You can find the dedicated performance dashboard for DevTools at http://firefox-dev.tools/performance-dashboard. You will find links to trend charts for various tools:
-* [Inspector dashboard](firefox-dev.tools/performance-dashboard/tools/inspector.html?days=60&filterstddev=true)
+* [Inspector dashboard](http://firefox-dev.tools/performance-dashboard/tools/inspector.html?days=60&filterstddev=true)
 * [Console dashboard](http://firefox-dev.tools/performance-dashboard/tools/console.html?days=60&filterstddev=true)
 * [Netmonitor dashboard](http://firefox-dev.tools/performance-dashboard/tools/netmonitor.html?days=60&filterstddev=true)
 * [Debugger dashboard](http://firefox-dev.tools/performance-dashboard/tools/debugger.html?days=60&filterstddev=true)

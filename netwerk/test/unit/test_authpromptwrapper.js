@@ -5,7 +5,6 @@
 // - HTTPS
 // - Proxies
 
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 const nsIAuthInformation = Ci.nsIAuthInformation;
 const nsIAuthPromptAdapterFactory = Ci.nsIAuthPromptAdapterFactory;
 
@@ -32,7 +31,7 @@ function run_test() {
 
     flags: nsIAuthInformation.AUTH_HOST,
     authenticationScheme: "basic",
-    realm: "secretrealm"
+    realm: "secretrealm",
   };
 
   const CALLED_PROMPT = 1 << 0;
@@ -48,12 +47,7 @@ function run_test() {
 
     scheme: "http",
 
-    QueryInterface: function authprompt_qi(iid) {
-      if (iid.equals(Ci.nsISupports) ||
-          iid.equals(Ci.nsIAuthPrompt))
-        return this;
-      throw Cr.NS_ERROR_NO_INTERFACE;
-    },
+    QueryInterface: ChromeUtils.generateQI(["nsIAuthPrompt"]),
 
     prompt: function ap1_prompt(title, text, realm, save, defaultText, result) {
       this.called |= CALLED_PROMPT;
@@ -61,9 +55,14 @@ function run_test() {
       return this.rv;
     },
 
-    promptUsernameAndPassword:
-      function ap1_promptUP(title, text, realm, savePW, user, pw)
-    {
+    promptUsernameAndPassword: function ap1_promptUP(
+      title,
+      text,
+      realm,
+      savePW,
+      user,
+      pw
+    ) {
       this.called |= CALLED_PROMPTUP;
       this.doChecks(text, realm);
       user.value = this.user;
@@ -88,23 +87,23 @@ function run_test() {
       } else {
         // Make sure that we show the realm if we have one and that we don't
         // show "" otherwise
-        if (info.realm != "")
+        if (info.realm != "") {
           Assert.notEqual(text.indexOf(info.realm), -1);
-        else
+        } else {
           Assert.equal(text.indexOf('""'), -1);
+        }
         // No explicit port in the URL; message should not contain -1
         // for those cases
         Assert.equal(text.indexOf("-1"), -1);
       }
-    }
+    },
   };
 
-
   // Also have to make up a channel
-  var uri = NetUtil.newURI("http://" + host)
+  var uri = NetUtil.newURI("http://" + host);
   var chan = NetUtil.newChannel({
-    uri: uri,
-    loadUsingSystemPrincipal: true
+    uri,
+    loadUsingSystemPrincipal: true,
   });
 
   function do_tests(expectedRV) {
@@ -205,7 +204,7 @@ function run_test() {
     var uri2 = NetUtil.newURI("ftp://" + host);
     var ftpchan = NetUtil.newChannel({
       uri: uri2,
-      loadUsingSystemPrincipal: true 
+      loadUsingSystemPrincipal: true,
     });
 
     prompt1 = new Prompt1();
@@ -230,4 +229,3 @@ function run_test() {
   do_tests(true);
   do_tests(false);
 }
-

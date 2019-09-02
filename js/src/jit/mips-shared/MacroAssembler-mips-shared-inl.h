@@ -30,6 +30,8 @@ void MacroAssembler::move16SignExtend(Register src, Register dest) {
   ma_seh(dest, src);
 }
 
+void MacroAssembler::loadAbiReturnAddress(Register dest) { movePtr(ra, dest); }
+
 // ===============================================================
 // Logical instructions
 
@@ -636,7 +638,7 @@ void MacroAssembler::branchTestNumber(Condition cond, Register tag,
                                       Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
   Condition actual = cond == Equal ? BelowOrEqual : Above;
-  ma_b(tag, ImmTag(JSVAL_UPPER_INCL_TAG_OF_NUMBER_SET), label, actual);
+  ma_b(tag, ImmTag(JS::detail::ValueUpperInclNumberTag), label, actual);
 }
 
 void MacroAssembler::branchTestBoolean(Condition cond, Register tag,
@@ -737,7 +739,7 @@ void MacroAssembler::branchTestGCThing(Condition cond, const Address& address,
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
   SecondScratchRegisterScope scratch2(*this);
   extractTag(address, scratch2);
-  ma_b(scratch2, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET), label,
+  ma_b(scratch2, ImmTag(JS::detail::ValueLowerInclGCThingTag), label,
        (cond == Equal) ? AboveOrEqual : Below);
 }
 void MacroAssembler::branchTestGCThing(Condition cond, const BaseIndex& address,
@@ -745,14 +747,14 @@ void MacroAssembler::branchTestGCThing(Condition cond, const BaseIndex& address,
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
   SecondScratchRegisterScope scratch2(*this);
   extractTag(address, scratch2);
-  ma_b(scratch2, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET), label,
+  ma_b(scratch2, ImmTag(JS::detail::ValueLowerInclGCThingTag), label,
        (cond == Equal) ? AboveOrEqual : Below);
 }
 
 void MacroAssembler::branchTestPrimitive(Condition cond, Register tag,
                                          Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
-  ma_b(tag, ImmTag(JSVAL_UPPER_EXCL_TAG_OF_PRIMITIVE_SET), label,
+  ma_b(tag, ImmTag(JS::detail::ValueUpperExclPrimitiveTag), label,
        (cond == Equal) ? Below : AboveOrEqual);
 }
 
@@ -783,18 +785,40 @@ void MacroAssembler::branchToComputedAddress(const BaseIndex& addr) {
 
 void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Register rhs,
                                  Register src, Register dest) {
-  MOZ_CRASH();
+  Register scratch = ScratchRegister;
+  MOZ_ASSERT(src != scratch && dest != scratch);
+  cmp32Set(cond, lhs, rhs, scratch);
+  as_movn(dest, src, scratch);
 }
 
 void MacroAssembler::cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,
                                   Register src, Register dest) {
-  MOZ_CRASH();
+  Register scratch = ScratchRegister;
+  MOZ_ASSERT(src != scratch && dest != scratch);
+  cmp32Set(cond, lhs, rhs, scratch);
+  as_movn(dest, src, scratch);
 }
 
 void MacroAssembler::cmp32Move32(Condition cond, Register lhs,
                                  const Address& rhs, Register src,
                                  Register dest) {
-  MOZ_CRASH();
+  SecondScratchRegisterScope scratch2(*this);
+  MOZ_ASSERT(lhs != scratch2 && src != scratch2 && dest != scratch2);
+  load32(rhs, scratch2);
+  cmp32Move32(cond, lhs, scratch2, src, dest);
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs,
+                                 const Address& rhs, const Address& src,
+                                 Register dest) {
+  // This is never used, but must be present to facilitate linking on mips(64).
+  MOZ_CRASH("No known use cases");
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
+                                 const Address& src, Register dest) {
+  // This is never used, but must be present to facilitate linking on mips(64).
+  MOZ_CRASH("No known use cases");
 }
 
 void MacroAssembler::test32LoadPtr(Condition cond, const Address& addr,

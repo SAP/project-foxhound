@@ -10,6 +10,8 @@
 #include "nsString.h"
 #include "mozilla/AntiTrackingCommon.h"
 
+#include <vector>
+
 class nsIChannel;
 class nsIURI;
 
@@ -37,6 +39,10 @@ class UrlClassifierCommon final {
                                     const nsACString& aProvider,
                                     const nsACString& aFullHash);
 
+  static nsresult SetTrackingInfo(nsIChannel* channel,
+                                  const nsTArray<nsCString>& aLists,
+                                  const nsTArray<nsCString>& aFullHashes);
+
   // Use this function only when you are looking for a pairwise whitelist uri
   // with the format: http://toplevel.page/?resource=channel.uri.domain
   static nsresult CreatePairwiseWhiteListURI(nsIChannel* aChannel,
@@ -53,11 +59,32 @@ class UrlClassifierCommon final {
 
   static bool IsTrackingClassificationFlag(uint32_t aFlag);
 
+  static bool IsCryptominingClassificationFlag(uint32_t aFlag);
+
+  // Join the table names in 1 single string.
+  static void TablesToString(const nsTArray<nsCString>& aList,
+                             nsACString& aString);
+
+  struct ClassificationData {
+    nsCString mPrefix;
+    uint32_t mFlag;
+  };
+
+  // Checks if the entries in aList are part of the ClassificationData vector
+  // and it returns the corresponding flags. If none of them is found, the
+  // default flag is returned.
+  static uint32_t TablesToClassificationFlags(
+      const nsTArray<nsCString>& aList,
+      const std::vector<ClassificationData>& aData, uint32_t aDefaultFlag);
+
  private:
   // aBlockedReason must be one of the nsIWebProgressListener state.
   static void NotifyChannelBlocked(nsIChannel* aChannel,
                                    nsIURI* aURIBeingLoaded,
                                    unsigned aBlockedReason);
+
+  static uint32_t TableToClassificationFlag(
+      const nsACString& aTable, const std::vector<ClassificationData>& aData);
 };
 
 }  // namespace net

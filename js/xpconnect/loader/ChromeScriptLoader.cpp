@@ -91,10 +91,12 @@ nsresult AsyncScriptCompiler::Start(
     nsIPrincipal* aPrincipal) {
   mCharset = aOptions.mCharset;
 
-  mOptions.setNoScriptRval(!aOptions.mHasReturnValue)
+  CompileOptions options(aCx);
+  options.setFile(mURL.get())
+      .setNoScriptRval(!aOptions.mHasReturnValue)
       .setCanLazilyParse(aOptions.mLazilyParse);
 
-  if (NS_WARN_IF(!mOptions.setFile(aCx, mURL.get()))) {
+  if (NS_WARN_IF(!mOptions.copy(aCx, options))) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -144,8 +146,8 @@ bool AsyncScriptCompiler::StartCompile(JSContext* aCx) {
     return true;
   }
 
-  Rooted<JSScript*> script(aCx);
-  if (!JS::Compile(aCx, mOptions, srcBuf, &script)) {
+  Rooted<JSScript*> script(aCx, JS::Compile(aCx, mOptions, srcBuf));
+  if (!script) {
     return false;
   }
 
@@ -189,7 +191,7 @@ void AsyncScriptCompiler::Reject(JSContext* aCx) {
   if (JS_GetPendingException(aCx, &value)) {
     JS_ClearPendingException(aCx);
   }
-  mPromise->MaybeReject(aCx, value);
+  mPromise->MaybeReject(value);
 }
 
 void AsyncScriptCompiler::Reject(JSContext* aCx, const char* aMsg) {

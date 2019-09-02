@@ -115,45 +115,32 @@ UrlClassifierFeatureTrackingAnnotation::GetIfNameMatches(
 }
 
 NS_IMETHODIMP
-UrlClassifierFeatureTrackingAnnotation::ProcessChannel(nsIChannel* aChannel,
-                                                       const nsACString& aList,
-                                                       bool* aShouldContinue) {
+UrlClassifierFeatureTrackingAnnotation::ProcessChannel(
+    nsIChannel* aChannel, const nsTArray<nsCString>& aList,
+    const nsTArray<nsCString>& aHashes, bool* aShouldContinue) {
   NS_ENSURE_ARG_POINTER(aChannel);
   NS_ENSURE_ARG_POINTER(aShouldContinue);
 
   // This is not a blocking feature.
   *aShouldContinue = true;
 
-  nsTArray<nsCString> list;
-  Classifier::SplitTables(aList, list);
+  static std::vector<UrlClassifierCommon::ClassificationData>
+      sClassificationData = {
+          {NS_LITERAL_CSTRING("ads-track-"),
+           nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_AD},
+          {NS_LITERAL_CSTRING("analytics-track-"),
+           nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_ANALYTICS},
+          {NS_LITERAL_CSTRING("social-track-"),
+           nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_SOCIAL},
+          {NS_LITERAL_CSTRING("content-track-"),
+           nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_CONTENT},
+      };
 
-  uint32_t flags = 0;
-  for (nsCString& table : list) {
-    if (StringBeginsWith(table, NS_LITERAL_CSTRING("ads-track-"))) {
-      flags |= nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_AD;
-      continue;
-    }
+  uint32_t flags = UrlClassifierCommon::TablesToClassificationFlags(
+      aList, sClassificationData,
+      nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING);
 
-    if (StringBeginsWith(table, NS_LITERAL_CSTRING("analytics-track-"))) {
-      flags |=
-          nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_ANALYTICS;
-      continue;
-    }
-
-    if (StringBeginsWith(table, NS_LITERAL_CSTRING("social-track-"))) {
-      flags |= nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_SOCIAL;
-      continue;
-    }
-
-    if (StringBeginsWith(table, NS_LITERAL_CSTRING("content-track-"))) {
-      flags |= nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING_CONTENT;
-      continue;
-    }
-  }
-
-  if (flags == 0) {
-    flags |= nsIHttpChannel::ClassificationFlags::CLASSIFIED_TRACKING;
-  }
+  UrlClassifierCommon::SetTrackingInfo(aChannel, aList, aHashes);
 
   UrlClassifierCommon::AnnotateChannel(
       aChannel, AntiTrackingCommon::eTrackingAnnotations, flags,

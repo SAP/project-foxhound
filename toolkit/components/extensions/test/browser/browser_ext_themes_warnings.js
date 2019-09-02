@@ -4,9 +4,11 @@
 
 function waitForConsole(task, message) {
   return new Promise(async resolve => {
-    SimpleTest.monitorConsole(resolve, [{
-      message: new RegExp(message),
-    }]);
+    SimpleTest.monitorConsole(resolve, [
+      {
+        message: new RegExp(message),
+      },
+    ]);
     await task();
     SimpleTest.endMonitorConsole();
   });
@@ -29,7 +31,7 @@ add_task(async function test_static_theme() {
     });
     await waitForConsole(
       extension.startup,
-      `Unrecognized theme property found: ${property}.such_property`,
+      `Unrecognized theme property found: ${property}.such_property`
     );
     await extension.unload();
   }
@@ -72,12 +74,18 @@ add_task(async function test_dynamic_theme() {
   await extension.unload();
 });
 
-add_task(async function test_experiment() {
-  Services.prefs.setBoolPref("extensions.legacy.enabled", true);
+add_task(async function test_experiments_enabled() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.legacy.enabled", AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS],
+    ],
+  });
 
-  info("Testing that experiments are handled correctly when legacy pref is enabled");
+  info(
+    "Testing that experiments are handled correctly when legacy pref is enabled"
+  );
 
-  let extension = ExtensionTestUtils.loadExtension({
+  const extension = ExtensionTestUtils.loadExtension({
     manifest: {
       theme: {
         properties: {
@@ -105,11 +113,19 @@ add_task(async function test_experiment() {
   }
   await extension.unload();
 
-  info("Testing that experiments are handled correctly when legacy pref is disabled");
+  await SpecialPowers.popPrefEnv();
+});
 
-  Services.prefs.setBoolPref("extensions.legacy.enabled", false);
+add_task(async function test_experiments_disabled() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.legacy.enabled", false]],
+  });
 
-  extension = ExtensionTestUtils.loadExtension({
+  info(
+    "Testing that experiments are handled correctly when legacy pref is disabled"
+  );
+
+  const extension = ExtensionTestUtils.loadExtension({
     manifest: {
       theme: {
         properties: {
@@ -128,4 +144,5 @@ add_task(async function test_experiment() {
     "This extension is not allowed to run theme experiments"
   );
   await extension.unload();
+  await SpecialPowers.popPrefEnv();
 });

@@ -8,7 +8,6 @@ import json
 import os
 import sys
 
-from buildconfig import substs
 from mozbuild.base import MozbuildObject
 from mozfile import TemporaryDirectory
 from mozhttpd import MozHttpd
@@ -63,12 +62,17 @@ if __name__ == '__main__':
         for path in prefpaths:
             prefs.update(Preferences.read_prefs(path))
 
-        interpolation = {"server": "%s:%d" % httpd.httpd.server_address,
-                         "OOP": "false"}
+        interpolation = {"server": "%s:%d" % httpd.httpd.server_address}
         for k, v in prefs.items():
             if isinstance(v, string_types):
                 v = v.format(**interpolation)
             prefs[k] = Preferences.cast(v)
+
+        # Enforce e10s. This isn't in one of the user.js files because those
+        # are shared with android, which doesn't want this on. We can't
+        # interpolate because the formatting code only works for strings,
+        # and this is a bool pref.
+        prefs["browser.tabs.remote.autostart"] = True
 
         profile = FirefoxProfile(profile=profilePath,
                                  preferences=prefs,
@@ -80,20 +84,12 @@ if __name__ == '__main__':
         env = os.environ.copy()
         env["MOZ_CRASHREPORTER_NO_REPORT"] = "1"
         env["XPCOM_DEBUG_BREAK"] = "warn"
+        # We disable sandboxing to make writing profiling data actually work
+        # Bug 1553850 considers fixing this.
+        env["MOZ_DISABLE_CONTENT_SANDBOX"] = "1"
 
-        # For VC12+, make sure we can find the right bitness of pgort1x0.dll
-        if not substs.get('HAVE_64BIT_BUILD'):
-            for e in ('VS140COMNTOOLS', 'VS120COMNTOOLS'):
-                if e not in env:
-                    continue
-
-                vcdir = os.path.abspath(os.path.join(env[e], '../../VC/bin'))
-                if os.path.exists(vcdir):
-                    env['PATH'] = '%s;%s' % (vcdir, env['PATH'])
-                    break
-
-        # Add MOZ_OBJDIR to the env so that cygprofile.cpp can use it.
-        env["MOZ_OBJDIR"] = build.topobjdir
+        # Ensure different pids write to different files
+        env["LLVM_PROFILE_FILE"] = "default_%p_random_%m.profraw"
 
         # Write to an output file if we're running in automation
         process_args = {}

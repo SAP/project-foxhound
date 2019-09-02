@@ -7,6 +7,7 @@
 #include "ProcessUtils.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 
 namespace mozilla {
 namespace ipc {
@@ -51,6 +52,44 @@ bool SharedPreferenceSerializer::SerializeToSharedMemory() {
   return true;
 }
 
+void SharedPreferenceSerializer::AddSharedPrefCmdLineArgs(
+    mozilla::ipc::GeckoChildProcessHost& procHost,
+    std::vector<std::string>& aExtraOpts) const {
+  // Formats a pointer or pointer-sized-integer as a string suitable for passing
+  // in an arguments list.
+  auto formatPtrArg = [](auto arg) {
+    return nsPrintfCString("%zu", uintptr_t(arg));
+  };
+
+#if defined(XP_WIN)
+  // Record the handle as to-be-shared, and pass it via a command flag. This
+  // works because Windows handles are system-wide.
+  HANDLE prefsHandle = GetSharedMemoryHandle();
+  procHost.AddHandleToShare(prefsHandle);
+  procHost.AddHandleToShare(GetPrefMapHandle().get());
+  aExtraOpts.push_back("-prefsHandle");
+  aExtraOpts.push_back(formatPtrArg(prefsHandle).get());
+  aExtraOpts.push_back("-prefMapHandle");
+  aExtraOpts.push_back(formatPtrArg(GetPrefMapHandle().get()).get());
+#else
+  // In contrast, Unix fds are per-process. So remap the fd to a fixed one that
+  // will be used in the child.
+  // XXX: bug 1440207 is about improving how fixed fds are used.
+  //
+  // Note: on Android, AddFdToRemap() sets up the fd to be passed via a Parcel,
+  // and the fixed fd isn't used. However, we still need to mark it for
+  // remapping so it doesn't get closed in the child.
+  procHost.AddFdToRemap(GetSharedMemoryHandle().fd, kPrefsFileDescriptor);
+  procHost.AddFdToRemap(GetPrefMapHandle().get(), kPrefMapFileDescriptor);
+#endif
+
+  // Pass the lengths via command line flags.
+  aExtraOpts.push_back("-prefsLen");
+  aExtraOpts.push_back(formatPtrArg(GetPrefLength()).get());
+  aExtraOpts.push_back("-prefMapSize");
+  aExtraOpts.push_back(formatPtrArg(GetPrefMapSize()).get());
+}
+
 #ifdef ANDROID
 static int gPrefsFd = -1;
 static int gPrefMapFd = -1;
@@ -71,6 +110,11 @@ SharedPreferenceDeserializer::~SharedPreferenceDeserializer() {
 bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
     char* aPrefsHandleStr, char* aPrefMapHandleStr, char* aPrefsLenStr,
     char* aPrefMapSizeStr) {
+#ifdef XP_WIN
+  MOZ_ASSERT(aPrefsHandleStr && aPrefMapHandleStr, "Can't be null");
+#endif
+  MOZ_ASSERT(aPrefsLenStr && aPrefMapSizeStr, "Can't be null");
+
   // Parses an arg containing a pointer-sized-integer.
   auto parseUIntPtrArg = [](char*& aArg) {
     // ContentParent uses %zu to print a word-sized unsigned integer. So
@@ -85,7 +129,7 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
   };
 
   mPrefsHandle = Some(parseHandleArg(aPrefsHandleStr));
-  if (aPrefsHandleStr[0] != '\0') {
+  if (!aPrefsHandleStr || aPrefsHandleStr[0] != '\0') {
     return false;
   }
 
@@ -94,7 +138,7 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
   // closed.
   FileDescriptor::UniquePlatformHandle handle(
       parseHandleArg(aPrefMapHandleStr));
-  if (aPrefMapHandleStr[0] != '\0') {
+  if (!aPrefMapHandleStr || aPrefMapHandleStr[0] != '\0') {
     return false;
   }
 
@@ -102,12 +146,12 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
 #endif
 
   mPrefsLen = Some(parseUIntPtrArg(aPrefsLenStr));
-  if (aPrefsLenStr[0] != '\0') {
+  if (!aPrefsLenStr || aPrefsLenStr[0] != '\0') {
     return false;
   }
 
   mPrefMapSize = Some(parseUIntPtrArg(aPrefMapSizeStr));
-  if (aPrefMapSizeStr[0] != '\0') {
+  if (!aPrefMapSizeStr || aPrefMapSizeStr[0] != '\0') {
     return false;
   }
 

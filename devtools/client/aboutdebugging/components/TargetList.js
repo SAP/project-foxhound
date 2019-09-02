@@ -9,11 +9,16 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const Services = require("Services");
 
-loader.lazyRequireGetter(this, "DebuggerClient",
-  "devtools/shared/client/debugger-client", true);
+loader.lazyRequireGetter(
+  this,
+  "DebuggerClient",
+  "devtools/shared/client/debugger-client",
+  true
+);
 
 const Strings = Services.strings.createBundle(
-  "chrome://devtools/locale/aboutdebugging.properties");
+  "chrome://devtools/locale/aboutdebugging.properties"
+);
 
 const LocaleCompare = (a, b) => {
   return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
@@ -48,8 +53,14 @@ class TargetList extends Component {
     if (sort) {
       targets = targets.sort(LocaleCompare);
     }
-    targets = targets.map(target => {
-      return targetClass({ client, connect, target, debugDisabled });
+    targets = targets.map((target, index) => {
+      return targetClass({
+        key: target.addonID || target.url || index,
+        client,
+        connect,
+        target,
+        debugDisabled,
+      });
     });
 
     let content = "";
@@ -61,8 +72,11 @@ class TargetList extends Component {
       content = dom.p(null, Strings.GetStringFromName("nothing"));
     }
 
-    return dom.div({ id: this.props.id, className: "targets" },
-      dom.h2(null, this.props.name), content);
+    return dom.div(
+      { id: this.props.id, className: "targets" },
+      dom.h2(null, this.props.name),
+      content
+    );
   }
 }
 

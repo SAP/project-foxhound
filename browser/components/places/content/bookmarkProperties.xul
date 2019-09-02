@@ -17,8 +17,6 @@
 <dialog id="bookmarkproperties"
         buttons="accept, cancel"
         buttoniconaccept="save"
-        ondialogaccept="BookmarkPropertiesPanel.onDialogAccept();"
-        ondialogcancel="BookmarkPropertiesPanel.onDialogCancel();"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         onload="BookmarkPropertiesPanel.onDialogLoad();"
         onunload="BookmarkPropertiesPanel.onDialogUnload();"
@@ -30,16 +28,11 @@
                   src="chrome://browser/locale/places/bookmarkProperties.properties"/>
   </stringbundleset>
 
-  <script type="application/javascript"
-          src="chrome://browser/content/places/editBookmark.js"/>
-  <script type="application/javascript"
-          src="chrome://browser/content/places/bookmarkProperties.js"/>
-  <script type="application/javascript"
-          src="chrome://global/content/globalOverlay.js"/>
-  <script type="application/javascript"
-          src="chrome://browser/content/utilityOverlay.js"/>
-  <script type="application/javascript"
-          src="chrome://browser/content/places/places-tree.js"/>
+  <script src="chrome://browser/content/places/editBookmark.js"/>
+  <script src="chrome://browser/content/places/bookmarkProperties.js"/>
+  <script src="chrome://global/content/globalOverlay.js"/>
+  <script src="chrome://browser/content/utilityOverlay.js"/>
+  <script src="chrome://browser/content/places/places-tree.js"/>
 
 #include editBookmarkPanel.inc.xul
 

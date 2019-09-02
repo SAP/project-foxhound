@@ -7,15 +7,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
+
 #include <string.h>  // strlen
 
 #include "jsapi.h"  // sundry symbols not moved to more-specific headers yet
 #include "jsfriendapi.h"
-#include "jspubtd.h"  // JS::AutoObjectVector
+#include "jspubtd.h"  // JS::RootedObjectVector
 
 #include "js/CompilationAndEvaluation.h"  // JS::CompileFunction
 #include "js/CompileOptions.h"            // JS::CompileOptions
 #include "js/RootingAPI.h"                // JS::Rooted
+#include "js/SourceText.h"                // JS::Source{Ownership,Text}
 #include "js/TypeDecls.h"                 // JSFunction, JSObject
 #include "jsapi-tests/tests.h"
 
@@ -41,13 +44,18 @@ BEGIN_TEST(test_cloneScript) {
   {
     JSAutoRealm a(cx, A);
 
+    JS::SourceText<mozilla::Utf8Unit> srcBuf;
+    CHECK(srcBuf.init(cx, source, mozilla::ArrayLength(source) - 1,
+                      JS::SourceOwnership::Borrowed));
+
     JS::CompileOptions options(cx);
     options.setFileAndLine(__FILE__, 1);
 
     JS::RootedFunction fun(cx);
-    JS::AutoObjectVector emptyScopeChain(cx);
-    CHECK(JS::CompileFunctionUtf8(cx, emptyScopeChain, options, "f", 0, nullptr,
-                                  source, strlen(source), &fun));
+    JS::RootedObjectVector emptyScopeChain(cx);
+    fun = JS::CompileFunction(cx, emptyScopeChain, options, "f", 0, nullptr,
+                              srcBuf);
+    CHECK(fun);
     CHECK(obj = JS_GetFunctionObject(fun));
   }
 
@@ -71,19 +79,6 @@ struct Principals final : public JSPrincipals {
   }
 };
 
-class AutoDropPrincipals {
-  JSContext* cx;
-  JSPrincipals* principals;
-
- public:
-  AutoDropPrincipals(JSContext* cx, JSPrincipals* principals)
-      : cx(cx), principals(principals) {
-    JS_HoldPrincipals(principals);
-  }
-
-  ~AutoDropPrincipals() { JS_DropPrincipals(cx, principals); }
-};
-
 static void DestroyPrincipals(JSPrincipals* principals) {
   auto p = static_cast<Principals*>(principals);
   delete p;
@@ -92,13 +87,11 @@ static void DestroyPrincipals(JSPrincipals* principals) {
 BEGIN_TEST(test_cloneScriptWithPrincipals) {
   JS_InitDestroyPrincipalsCallback(cx, DestroyPrincipals);
 
-  JSPrincipals* principalsA = new Principals();
-  AutoDropPrincipals dropA(cx, principalsA);
-  JSPrincipals* principalsB = new Principals();
-  AutoDropPrincipals dropB(cx, principalsB);
+  JS::AutoHoldPrincipals principalsA(cx, new Principals());
+  JS::AutoHoldPrincipals principalsB(cx, new Principals());
 
-  JS::RootedObject A(cx, createGlobal(principalsA));
-  JS::RootedObject B(cx, createGlobal(principalsB));
+  JS::RootedObject A(cx, createGlobal(principalsA.get()));
+  JS::RootedObject B(cx, createGlobal(principalsB.get()));
 
   CHECK(A);
   CHECK(B);
@@ -112,20 +105,23 @@ BEGIN_TEST(test_cloneScriptWithPrincipals) {
   {
     JSAutoRealm a(cx, A);
 
+    JS::SourceText<mozilla::Utf8Unit> srcBuf;
+    CHECK(srcBuf.init(cx, source, mozilla::ArrayLength(source) - 1,
+                      JS::SourceOwnership::Borrowed));
+
     JS::CompileOptions options(cx);
     options.setFileAndLine(__FILE__, 1);
 
     JS::RootedFunction fun(cx);
-    JS::AutoObjectVector emptyScopeChain(cx);
-    CHECK(JS::CompileFunctionUtf8(cx, emptyScopeChain, options, "f",
-                                  mozilla::ArrayLength(argnames), argnames,
-                                  source, strlen(source), &fun));
+    JS::RootedObjectVector emptyScopeChain(cx);
+    fun = JS::CompileFunction(cx, emptyScopeChain, options, "f",
+                              mozilla::ArrayLength(argnames), argnames, srcBuf);
     CHECK(fun);
 
     JSScript* script;
     CHECK(script = JS_GetFunctionScript(cx, fun));
 
-    CHECK(JS_GetScriptPrincipals(script) == principalsA);
+    CHECK(JS_GetScriptPrincipals(script) == principalsA.get());
     CHECK(obj = JS_GetFunctionObject(fun));
   }
 
@@ -142,7 +138,7 @@ BEGIN_TEST(test_cloneScriptWithPrincipals) {
     JSScript* script;
     CHECK(script = JS_GetFunctionScript(cx, fun));
 
-    CHECK(JS_GetScriptPrincipals(script) == principalsB);
+    CHECK(JS_GetScriptPrincipals(script) == principalsB.get());
 
     JS::RootedValue v(cx);
     JS::RootedValue arg(cx, JS::Int32Value(1));
@@ -154,7 +150,7 @@ BEGIN_TEST(test_cloneScriptWithPrincipals) {
     CHECK(JS_ObjectIsFunction(funobj));
     CHECK(fun = JS_ValueToFunction(cx, v));
     CHECK(script = JS_GetFunctionScript(cx, fun));
-    CHECK(JS_GetScriptPrincipals(script) == principalsB);
+    CHECK(JS_GetScriptPrincipals(script) == principalsB.get());
   }
 
   return true;

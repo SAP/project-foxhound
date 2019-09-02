@@ -17,6 +17,7 @@
 #include "nsDisplayList.h"
 #include "nsContentUtils.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/MouseEventBinding.h"
 
 using namespace mozilla;
@@ -26,7 +27,7 @@ using namespace mozilla;
 //
 // Creates a new TitleBar frame and returns it
 //
-nsIFrame* NS_NewTitleBarFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewTitleBarFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsTitleBarFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -63,7 +64,7 @@ nsresult nsTitleBarFrame::HandleEvent(nsPresContext* aPresContext,
 
   switch (aEvent->mMessage) {
     case eMouseDown: {
-      if (aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+      if (aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
         // titlebar has no effect in non-chrome shells
         nsCOMPtr<nsIDocShellTreeItem> dsti = aPresContext->GetDocShell();
         if (dsti) {
@@ -72,8 +73,8 @@ nsresult nsTitleBarFrame::HandleEvent(nsPresContext* aPresContext,
             mTrackingMouseMove = true;
 
             // start capture.
-            nsIPresShell::SetCapturingContent(GetContent(),
-                                              CAPTURE_IGNOREALLOWED);
+            PresShell::SetCapturingContent(GetContent(),
+                                           CaptureFlags::IgnoreAllowedState);
 
             // remember current mouse coordinates.
             mLastPoint = aEvent->mRefPoint;
@@ -87,12 +88,12 @@ nsresult nsTitleBarFrame::HandleEvent(nsPresContext* aPresContext,
 
     case eMouseUp: {
       if (mTrackingMouseMove &&
-          aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+          aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
         // we're done tracking.
         mTrackingMouseMove = false;
 
         // end capture
-        nsIPresShell::SetCapturingContent(nullptr, 0);
+        PresShell::ReleaseCapturingContent();
 
         *aEventStatus = nsEventStatus_eConsumeNoDefault;
         doDefault = false;
@@ -122,7 +123,7 @@ nsresult nsTitleBarFrame::HandleEvent(nsPresContext* aPresContext,
                             aPresContext->CSSToDevPixelScale();
           menuPopupFrame->MoveTo(RoundedToInt(cssPos), false);
         } else {
-          nsIPresShell* presShell = aPresContext->PresShell();
+          mozilla::PresShell* presShell = aPresContext->PresShell();
           nsPIDOMWindowOuter* window = presShell->GetDocument()->GetWindow();
           if (window) {
             window->MoveBy(nsMoveBy.x, nsMoveBy.y);
@@ -155,7 +156,8 @@ nsresult nsTitleBarFrame::HandleEvent(nsPresContext* aPresContext,
 
 void nsTitleBarFrame::MouseClicked(WidgetMouseEvent* aEvent) {
   // Execute the oncommand event handler.
+  nsCOMPtr<nsIContent> content = mContent;
   nsContentUtils::DispatchXULCommand(
-      mContent, false, nullptr, nullptr, aEvent->IsControl(), aEvent->IsAlt(),
-      aEvent->IsShift(), aEvent->IsMeta(), aEvent->inputSource);
+      content, false, nullptr, nullptr, aEvent->IsControl(), aEvent->IsAlt(),
+      aEvent->IsShift(), aEvent->IsMeta(), aEvent->mInputSource);
 }

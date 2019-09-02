@@ -108,6 +108,13 @@ bool BaselineFrame::pushVarEnvironment(JSContext* cx, HandleScope scope) {
   return js::PushVarEnvironmentObject(cx, scope, this);
 }
 
+void BaselineFrame::setInterpreterPC(jsbytecode* pc) {
+  uint32_t pcOffset = script()->pcToOffset(pc);
+  JitScript* jitScript = script()->jitScript();
+  interpreterPC_ = pc;
+  interpreterICEntry_ = jitScript->interpreterICEntryFromPCOffset(pcOffset);
+}
+
 bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
   mozilla::PodZero(this);
 
@@ -126,6 +133,23 @@ bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
     setReturnValue(fp->returnValue());
   }
 
+  JSContext* cx =
+      fp->script()->runtimeFromMainThread()->mainContextFromOwnThread();
+
+  Activation* interpActivation = cx->activation()->prev();
+  jsbytecode* pc = interpActivation->asInterpreter()->regs().pc;
+  MOZ_ASSERT(fp->script()->containsPC(pc));
+
+  if (!fp->script()->hasBaselineScript()) {
+    // If we don't have a BaselineScript, we are doing OSR into the Baseline
+    // Interpreter. Initialize Baseline Interpreter fields. We can get the pc
+    // from the C++ interpreter's activation, we just have to skip the
+    // JitActivation.
+    flags_ |= BaselineFrame::RUNNING_IN_INTERPRETER;
+    interpreterScript_ = fp->script();
+    setInterpreterPC(pc);
+  }
+
   frameSize_ = BaselineFrame::FramePointerOffset + BaselineFrame::Size() +
                numStackValues * sizeof(Value);
 
@@ -136,26 +160,19 @@ bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
   }
 
   if (fp->isDebuggee()) {
-    JSContext* cx = TlsContext.get();
-
     // For debuggee frames, update any Debugger.Frame objects for the
     // InterpreterFrame to point to the BaselineFrame.
 
-    // The caller pushed a fake return address. ScriptFrameIter, used by the
-    // debugger, wants a valid return address, but it's okay to just pick one.
-    // In debug mode there's always at least one RetAddrEntry (since there are
-    // always debug prologue/epilogue calls).
-    JSJitFrameIter frame(cx->activation()->asJit());
-    MOZ_ASSERT(frame.returnAddress() == nullptr);
-    BaselineScript* baseline = fp->script()->baselineScript();
-    uint8_t* retAddr =
-        baseline->returnAddressForEntry(baseline->retAddrEntry(0));
-    frame.current()->setReturnAddress(retAddr);
+    // The caller pushed a fake (nullptr) return address, so ScriptFrameIter
+    // can't use it to determine the frame's bytecode pc. Set an override pc so
+    // frame iteration can use that.
+    setOverridePc(pc);
 
     if (!Debugger::handleBaselineOsr(cx, fp, this)) {
       return false;
     }
 
+    clearOverridePc();
     setIsDebuggee();
   }
 

@@ -296,9 +296,14 @@ class MediaData {
 
   media::TimeUnit GetEndTime() const { return mTime + mDuration; }
 
-  virtual bool AdjustForStartTime(int64_t aStartTime) {
-    mTime = mTime - media::TimeUnit::FromMicroseconds(aStartTime);
-    return !mTime.IsNegative();
+  // Return true if the adjusted time is valid. Caller should handle error when
+  // the result is invalid.
+  virtual bool AdjustForStartTime(const media::TimeUnit& aStartTime) {
+    mTime -= aStartTime;
+    if (mTime.IsNegative()) {
+      NS_WARNING("Negative start time after time-adjustment!");
+    }
+    return mTime.IsValid();
   }
 
   template <typename ReturnType>
@@ -367,7 +372,9 @@ class AudioData : public MediaData {
   // the audiable data and silent data.
   bool IsAudible() const;
 
-  bool AdjustForStartTime(int64_t aStartTime) override;
+  // Return true if the adjusted time is valid. Caller should handle error when
+  // the result is invalid.
+  bool AdjustForStartTime(const media::TimeUnit& aStartTime) override;
 
   const uint32_t mChannels;
   // The AudioConfig::ChannelLayout map. Channels are ordered as per SMPTE
@@ -408,6 +415,7 @@ class VideoData : public MediaData {
   typedef gfx::IntRect IntRect;
   typedef gfx::IntSize IntSize;
   typedef gfx::ColorDepth ColorDepth;
+  typedef gfx::YUVColorSpace YUVColorSpace;
   typedef layers::ImageContainer ImageContainer;
   typedef layers::Image Image;
   typedef layers::PlanarYCbCrImage PlanarYCbCrImage;

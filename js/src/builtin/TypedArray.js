@@ -87,7 +87,7 @@ function TypedArraySpeciesConstructor(obj) {
 
     // Step 4.
     if (!IsObject(ctor))
-        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT, "object's 'constructor' property");
+        ThrowTypeError(JSMSG_OBJECT_REQUIRED, "object's 'constructor' property");
 
     // Steps 5.
     var s = ctor[std_species];
@@ -351,7 +351,12 @@ function TypedArrayFill(value, start = 0, end = undefined) {
     var len = TypedArrayLength(O);
 
     // Step 4.
-    value = ToNumber(value);
+    var kind = GetTypedArrayKind(O);
+    if (kind === TYPEDARRAY_KIND_BIGINT64 || kind === TYPEDARRAY_KIND_BIGUINT64) {
+        value = ToBigInt(value);
+    } else {
+        value = ToNumber(value);
+    }
 
     // Step 5.
     var relativeStart = ToInteger(start);
@@ -1188,6 +1193,30 @@ function TypedArrayCompareInt(x, y) {
     return 0;
 }
 
+// https://tc39.github.io/proposal-bigint/#sec-%typedarray%.prototype.sort
+// TypedArray SortCompare specialization for BigInt values.
+function TypedArrayCompareBigInt(x, y) {
+    // Step 1.
+    // eslint-disable-next-line valid-typeof
+    assert(typeof x === "bigint" && typeof y === "bigint",
+           "x and y are not BigInts.");
+
+    // Step 2 (Implemented in TypedArraySort).
+
+    // Step 6.
+    if (x < y)
+        return -1;
+
+    // Step 7.
+    if (x > y)
+        return 1;
+
+    // Steps 3-5, 8-9 (Not applicable when sorting BigInt values).
+
+    // Step 10.
+    return 0;
+}
+
 // ES2019 draft rev 8a16cb8d18660a1106faae693f0f39b9f1a30748
 // 22.2.3.26 %TypedArray%.prototype.sort ( comparefn )
 function TypedArraySort(comparefn) {
@@ -1248,6 +1277,9 @@ function TypedArraySort(comparefn) {
             return RadixSort(obj, len, buffer,
                              4 /* nbytes */, true /* signed */, false /* floating */,
                              TypedArrayCompareInt);
+          case TYPEDARRAY_KIND_BIGINT64:
+          case TYPEDARRAY_KIND_BIGUINT64:
+            return QuickSort(obj, len, TypedArrayCompareBigInt);
           case TYPEDARRAY_KIND_FLOAT32:
             return RadixSort(obj, len, buffer,
                              4 /* nbytes */, true /* signed */, true /* floating */,
@@ -1413,7 +1445,10 @@ function TypedArraySubarray(begin, end) {
 }
 
 // ES6 draft rev30 (2014/12/24) 22.2.3.30 %TypedArray%.prototype.values()
-function TypedArrayValues() {
+//
+// Uncloned functions with `$` prefix are allocated as extended function
+// to store the original name in `_SetCanonicalName`.
+function $TypedArrayValues() {
     // Step 1.
     var O = this;
 
@@ -1423,7 +1458,7 @@ function TypedArrayValues() {
     // Step 7.
     return CreateArrayIterator(O, ITEM_KIND_VALUE);
 }
-_SetCanonicalName(TypedArrayValues, "values");
+_SetCanonicalName($TypedArrayValues, "values");
 
 // Proposed for ES7:
 // https://github.com/tc39/Array.prototype.includes/blob/7c023c19a0/spec.md
@@ -1518,10 +1553,31 @@ function TypedArrayStaticFrom(source, mapfn = undefined, thisArg = undefined) {
         // Try to take a fast path when there's no mapper function and the
         // constructor is a built-in TypedArray constructor.
         if (!mapping && IsTypedArrayConstructor(C) && IsObject(source)) {
-            // TODO: Add fast path for TypedArray inputs (bug 1491813).
+            // The source is a TypedArray using the default iterator.
+            if (usingIterator === $TypedArrayValues && IsTypedArray(source) &&
+                ArrayIteratorPrototypeOptimizable())
+            {
+                // Step 7.a.
+                // Omitted but we still need to throw if |source| was detached.
+                GetAttachedArrayBuffer(source);
+
+                // Step 7.b.
+                var len = TypedArrayLength(source);
+
+                // Step 7.c.
+                var targetObj = new C(len);
+
+                // Steps 7.d-f.
+                for (var k = 0; k < len; k++) {
+                    targetObj[k] = source[k];
+                }
+
+                // Step 7.g.
+                return targetObj;
+            }
 
             // The source is a packed array using the default iterator.
-            if (usingIterator === ArrayValues && IsPackedArray(source) &&
+            if (usingIterator === $ArrayValues && IsPackedArray(source) &&
                 ArrayIteratorPrototypeOptimizable())
             {
                 // Steps 7.b-c.
@@ -1621,11 +1677,11 @@ function TypedArrayStaticOf(/*...items*/) {
 }
 
 // ES 2016 draft Mar 25, 2016 22.2.2.4.
-function TypedArraySpecies() {
+function $TypedArraySpecies() {
     // Step 1.
     return this;
 }
-_SetCanonicalName(TypedArraySpecies, "get [Symbol.species]");
+_SetCanonicalName($TypedArraySpecies, "get [Symbol.species]");
 
 // ES2018 draft rev 0525bb33861c7f4e9850f8a222c89642947c4b9c
 // 22.2.2.1.1 Runtime Semantics: IterableToList( items, method )
@@ -1753,18 +1809,18 @@ function IsDetachedBufferThis() {
 }
 
 // ES 2016 draft Mar 25, 2016 24.1.3.3.
-function ArrayBufferSpecies() {
+function $ArrayBufferSpecies() {
     // Step 1.
     return this;
 }
-_SetCanonicalName(ArrayBufferSpecies, "get [Symbol.species]");
+_SetCanonicalName($ArrayBufferSpecies, "get [Symbol.species]");
 
 // Shared memory and atomics proposal (30 Oct 2016)
-function SharedArrayBufferSpecies() {
+function $SharedArrayBufferSpecies() {
     // Step 1.
     return this;
 }
-_SetCanonicalName(SharedArrayBufferSpecies, "get [Symbol.species]");
+_SetCanonicalName($SharedArrayBufferSpecies, "get [Symbol.species]");
 
 // Shared memory and atomics proposal 6.2.1.5.3 (30 Oct 2016)
 // http://tc39.github.io/ecmascript_sharedmem/shmem.html

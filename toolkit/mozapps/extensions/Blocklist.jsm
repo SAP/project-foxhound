@@ -10,27 +10,58 @@
 
 var EXPORTED_SYMBOLS = ["Blocklist"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
-ChromeUtils.defineModuleGetter(this, "AddonManager",
-                               "resource://gre/modules/AddonManager.jsm");
-ChromeUtils.defineModuleGetter(this, "AddonManagerPrivate",
-                               "resource://gre/modules/AddonManager.jsm");
-ChromeUtils.defineModuleGetter(this, "CertUtils",
-                               "resource://gre/modules/CertUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "FileUtils",
-                               "resource://gre/modules/FileUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "UpdateUtils",
-                               "resource://gre/modules/UpdateUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "OS",
-                               "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(this, "ServiceRequest",
-                               "resource://gre/modules/ServiceRequest.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "AddonManager",
+  "resource://gre/modules/AddonManager.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "AddonManagerPrivate",
+  "resource://gre/modules/AddonManager.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "CertUtils",
+  "resource://gre/modules/CertUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "FileUtils",
+  "resource://gre/modules/FileUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "RemoteSettings",
+  "resource://services-settings/remote-settings.js"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "jexlFilterFunc",
+  "resource://services-settings/remote-settings.js"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ServiceRequest",
+  "resource://gre/modules/ServiceRequest.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "UpdateUtils",
+  "resource://gre/modules/UpdateUtils.jsm"
+);
 
-  /**
+/**
 #    The blocklist XML file looks something like this:
 #
 #    <blocklist xmlns="http://www.mozilla.org/2006/addons-blocklist">
@@ -89,45 +120,1166 @@ ChromeUtils.defineModuleGetter(this, "ServiceRequest",
 #    </blocklist>
    */
 
-// The remote settings updater is the new system in charge of fetching remote data
-// securely and efficiently. It will replace the current XML-based system.
-// See Bug 1257565 and Bug 1252456.
-const BlocklistClients = {};
-ChromeUtils.defineModuleGetter(BlocklistClients, "initialize",
-                               "resource://services-common/blocklist-clients.js");
-
-const TOOLKIT_ID                      = "toolkit@mozilla.org";
-const KEY_PROFILEDIR                  = "ProfD";
-const KEY_APPDIR                      = "XCurProcD";
-const FILE_BLOCKLIST                  = "blocklist.xml";
-const PREF_BLOCKLIST_LASTUPDATETIME   = "app.update.lastUpdateTime.blocklist-background-update-timer";
-const PREF_BLOCKLIST_URL              = "extensions.blocklist.url";
-const PREF_BLOCKLIST_ITEM_URL         = "extensions.blocklist.itemURL";
-const PREF_BLOCKLIST_ENABLED          = "extensions.blocklist.enabled";
-const PREF_BLOCKLIST_LAST_MODIFIED    = "extensions.blocklist.lastModified";
-const PREF_BLOCKLIST_LEVEL            = "extensions.blocklist.level";
-const PREF_BLOCKLIST_PINGCOUNTTOTAL   = "extensions.blocklist.pingCountTotal";
+const TOOLKIT_ID = "toolkit@mozilla.org";
+const KEY_PROFILEDIR = "ProfD";
+const KEY_APPDIR = "XCurProcD";
+const FILE_BLOCKLIST = "blocklist.xml";
+const PREF_BLOCKLIST_LASTUPDATETIME =
+  "app.update.lastUpdateTime.blocklist-background-update-timer";
+const PREF_BLOCKLIST_URL = "extensions.blocklist.url";
+const PREF_BLOCKLIST_ITEM_URL = "extensions.blocklist.itemURL";
+const PREF_BLOCKLIST_ENABLED = "extensions.blocklist.enabled";
+const PREF_BLOCKLIST_LAST_MODIFIED = "extensions.blocklist.lastModified";
+const PREF_BLOCKLIST_LEVEL = "extensions.blocklist.level";
+const PREF_BLOCKLIST_PINGCOUNTTOTAL = "extensions.blocklist.pingCountTotal";
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
-const PREF_BLOCKLIST_SUPPRESSUI       = "extensions.blocklist.suppressUI";
-const PREF_APP_DISTRIBUTION           = "distribution.id";
-const PREF_APP_DISTRIBUTION_VERSION   = "distribution.version";
-const PREF_EM_LOGGING_ENABLED         = "extensions.logging.enabled";
-const XMLURI_BLOCKLIST                = "http://www.mozilla.org/2006/addons-blocklist";
-const XMLURI_PARSE_ERROR              = "http://www.mozilla.org/newlayout/xml/parsererror.xml";
-const URI_BLOCKLIST_DIALOG            = "chrome://mozapps/content/extensions/blocklist.xul";
-const DEFAULT_SEVERITY                = 3;
-const DEFAULT_LEVEL                   = 2;
-const MAX_BLOCK_LEVEL                 = 3;
-const SEVERITY_OUTDATED               = 0;
-const VULNERABILITYSTATUS_NONE             = 0;
+const PREF_BLOCKLIST_SUPPRESSUI = "extensions.blocklist.suppressUI";
+const PREF_APP_DISTRIBUTION = "distribution.id";
+const PREF_APP_DISTRIBUTION_VERSION = "distribution.version";
+const PREF_EM_LOGGING_ENABLED = "extensions.logging.enabled";
+const XMLURI_BLOCKLIST = "http://www.mozilla.org/2006/addons-blocklist";
+const XMLURI_PARSE_ERROR =
+  "http://www.mozilla.org/newlayout/xml/parsererror.xml";
+const URI_BLOCKLIST_DIALOG =
+  "chrome://mozapps/content/extensions/blocklist.xul";
+const DEFAULT_SEVERITY = 3;
+const DEFAULT_LEVEL = 2;
+const MAX_BLOCK_LEVEL = 3;
+const SEVERITY_OUTDATED = 0;
+const VULNERABILITYSTATUS_NONE = 0;
 const VULNERABILITYSTATUS_UPDATE_AVAILABLE = 1;
-const VULNERABILITYSTATUS_NO_UPDATE        = 2;
+const VULNERABILITYSTATUS_NO_UPDATE = 2;
 
-const EXTENSION_BLOCK_FILTERS = ["id", "name", "creator", "homepageURL", "updateURL"];
+// Kinto blocklist constants
+const PREF_BLOCKLIST_BUCKET = "services.blocklist.bucket";
+const PREF_BLOCKLIST_GFX_COLLECTION = "services.blocklist.gfx.collection";
+const PREF_BLOCKLIST_GFX_CHECKED_SECONDS = "services.blocklist.gfx.checked";
+const PREF_BLOCKLIST_GFX_SIGNER = "services.blocklist.gfx.signer";
+const PREF_BLOCKLIST_PLUGINS_COLLECTION =
+  "services.blocklist.plugins.collection";
+const PREF_BLOCKLIST_PLUGINS_CHECKED_SECONDS =
+  "services.blocklist.plugins.checked";
+const PREF_BLOCKLIST_PLUGINS_SIGNER = "services.blocklist.plugins.signer";
+const PREF_BLOCKLIST_ADDONS_COLLECTION = "services.blocklist.addons.collection";
+const PREF_BLOCKLIST_ADDONS_CHECKED_SECONDS =
+  "services.blocklist.addons.checked";
+const PREF_BLOCKLIST_ADDONS_SIGNER = "services.blocklist.addons.signer";
+
+const Utils = {
+  /**
+   * Checks whether this entry is valid for the current OS and ABI.
+   * If the entry has an "os" property then the current OS must appear in
+   * its comma separated list for it to be valid. Similarly for the
+   * xpcomabi property.
+   *
+   * @param {Object} item
+   *        The blocklist item.
+   * @returns {bool}
+   *        Whether the entry matches the current OS.
+   */
+  matchesOSABI(item) {
+    if (item.os) {
+      let os = item.os.split(",");
+      if (!os.includes(gAppOS)) {
+        return false;
+      }
+    }
+
+    if (item.xpcomabi) {
+      let xpcomabi = item.xpcomabi.split(",");
+      if (!xpcomabi.includes(gApp.XPCOMABI)) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * Checks if a version is higher than or equal to the minVersion (if provided)
+   * and lower than or equal to the maxVersion (if provided).
+   * @param {string} version
+   *        The version to test.
+   * @param {string?} minVersion
+   *        The minimum version. If null it is assumed that version is always
+   *        larger.
+   * @param {string?} maxVersion
+   *        The maximum version. If null it is assumed that version is always
+   *        smaller.
+   * @returns {boolean}
+   *        Whether the item matches the range.
+   */
+  versionInRange(version, minVersion, maxVersion) {
+    if (minVersion && Services.vc.compare(version, minVersion) < 0) {
+      return false;
+    }
+    if (maxVersion && Services.vc.compare(version, maxVersion) > 0) {
+      return false;
+    }
+    return true;
+  },
+
+  /**
+   * Tests if this versionRange matches the item specified, and has a matching
+   * targetApplication id and version.
+   * @param {Object} versionRange
+   *        The versionRange to check against
+   * @param {string} itemVersion
+   *        The version of the actual addon/plugin to test for.
+   * @param {string} appVersion
+   *        The version of the application to test for.
+   * @param {string} toolkitVersion
+   *        The version of toolkit to check for.
+   * @returns {boolean}
+   *        True if this version range covers the item and app/toolkit version given.
+   */
+  versionsMatch(versionRange, itemVersion, appVersion, toolkitVersion) {
+    // Some platforms have no version for plugins, these don't match if there
+    // was a min/maxVersion provided
+    if (!itemVersion && (versionRange.minVersion || versionRange.maxVersion)) {
+      return false;
+    }
+
+    // Check if the item version matches
+    if (
+      !this.versionInRange(
+        itemVersion,
+        versionRange.minVersion,
+        versionRange.maxVersion
+      )
+    ) {
+      return false;
+    }
+
+    // Check if the application or toolkit version matches
+    for (let tA of versionRange.targetApplication) {
+      if (
+        tA.guid == gAppID &&
+        this.versionInRange(appVersion, tA.minVersion, tA.maxVersion)
+      ) {
+        return true;
+      }
+      if (
+        tA.guid == TOOLKIT_ID &&
+        this.versionInRange(toolkitVersion, tA.minVersion, tA.maxVersion)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  /**
+   * Given a blocklist JS object entry, ensure it has a versionRange property, where
+   * each versionRange property has valid severity and vulnerabilityStatus properties,
+   * and at least 1 valid targetApplication.
+   * If it didn't have a valid targetApplication array before and/or it was empty,
+   * fill it with an entry with null min/maxVersion properties, which will match
+   * every version.
+   *
+   * If there *are* targetApplications, if any of them don't have a guid property,
+   * assign them the current app's guid.
+   *
+   * @param {Object} entry
+   *                 blocklist entry object.
+   */
+  ensureVersionRangeIsSane(entry) {
+    if (!entry.versionRange.length) {
+      entry.versionRange.push({});
+    }
+    for (let vr of entry.versionRange) {
+      if (!vr.hasOwnProperty("severity")) {
+        vr.severity = DEFAULT_SEVERITY;
+      }
+      if (!vr.hasOwnProperty("vulnerabilityStatus")) {
+        vr.vulnerabilityStatus = VULNERABILITYSTATUS_NONE;
+      }
+
+      if (!Array.isArray(vr.targetApplication)) {
+        vr.targetApplication = [];
+      }
+      if (!vr.targetApplication.length) {
+        vr.targetApplication.push({ minVersion: null, maxVersion: null });
+      }
+      vr.targetApplication.forEach(tA => {
+        if (!tA.guid) {
+          tA.guid = gAppID;
+        }
+      });
+    }
+  },
+
+  /**
+   * Create a blocklist URL for the given blockID
+   * @param {String} id the blockID to use
+   * @returns {String} the blocklist URL.
+   */
+  _createBlocklistURL(id) {
+    let url = Services.urlFormatter.formatURLPref(PREF_BLOCKLIST_ITEM_URL);
+    return url.replace(/%blockID%/g, id);
+  },
+};
+
+/**
+ * This custom filter function is used to limit the entries returned
+ * by `RemoteSettings("...").get()` depending on the target app information
+ * defined on entries.
+ *
+ * Note that this is async because `jexlFilterFunc` is async.
+ *
+ * @param {Object} entry a Remote Settings record
+ * @param {Object} environment the JEXL environment object.
+ * @returns {Object} The entry if it matches, `null` otherwise.
+ */
+async function targetAppFilter(entry, environment) {
+  // If the entry has a JEXL filter expression, it should prevail.
+  // The legacy target app mechanism will be kept in place for old entries.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1463377
+  const { filter_expression } = entry;
+  if (filter_expression) {
+    return jexlFilterFunc(entry, environment);
+  }
+
+  // Keep entries without target information.
+  if (!("versionRange" in entry)) {
+    return entry;
+  }
+
+  const { appID, version: appVersion, toolkitVersion } = environment;
+  const { versionRange } = entry;
+
+  // Everywhere in this method, we avoid checking the minVersion, because
+  // we want to retain items whose minVersion is higher than the current
+  // app version, so that we have the items around for app updates.
+
+  // Gfx blocklist has a specific versionRange object, which is not a list.
+  if (!Array.isArray(versionRange)) {
+    const { maxVersion = "*" } = versionRange;
+    const matchesRange = Services.vc.compare(appVersion, maxVersion) <= 0;
+    return matchesRange ? entry : null;
+  }
+
+  // Iterate the targeted applications, at least one of them must match.
+  // If no target application, keep the entry.
+  if (versionRange.length == 0) {
+    return entry;
+  }
+  for (const vr of versionRange) {
+    const { targetApplication = [] } = vr;
+    if (targetApplication.length == 0) {
+      return entry;
+    }
+    for (const ta of targetApplication) {
+      const { guid } = ta;
+      if (!guid) {
+        return entry;
+      }
+      const { maxVersion = "*" } = ta;
+      if (guid == appID && Services.vc.compare(appVersion, maxVersion) <= 0) {
+        return entry;
+      }
+      if (
+        guid == "toolkit@mozilla.org" &&
+        Services.vc.compare(toolkitVersion, maxVersion) <= 0
+      ) {
+        return entry;
+      }
+    }
+  }
+  // Skip this entry.
+  return null;
+}
+
+/**
+ * The Graphics blocklist implementation. The JSON objects for graphics blocks look
+ * something like:
+ *
+ * {
+ *  "blockID": "g35",
+ *  "os": "WINNT 6.1",
+ *  "vendor": "0xabcd",
+ *  "devices": [
+ *    "0x2783",
+ *    "0x1234",
+ *  ],
+ *  "feature": " DIRECT2D ",
+ *  "featureStatus": " BLOCKED_DRIVER_VERSION ",
+ *  "driverVersion": " 8.52.322.2202 ",
+ *  "driverVersionComparator": " LESS_THAN ",
+ *  "versionRange": {"minVersion": "5.0", "maxVersion: "25.0"},
+ * }
+ *
+ * The RemoteSetttings client takes care of filtering out versions that don't apply.
+ * The code here stores entries in memory and sends them to the gfx component in
+ * serialized text form, using ',', '\t' and '\n' as separators.
+ *
+ * Note: we assign to the global to allow tests to reach the object directly.
+ */
+this.GfxBlocklistRS = {
+  _ensureInitialized() {
+    if (this._initialized || !gBlocklistEnabled) {
+      return;
+    }
+    this._initialized = true;
+    this._client = RemoteSettings(
+      Services.prefs.getCharPref(PREF_BLOCKLIST_GFX_COLLECTION),
+      {
+        bucketNamePref: PREF_BLOCKLIST_BUCKET,
+        lastCheckTimePref: PREF_BLOCKLIST_GFX_CHECKED_SECONDS,
+        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_GFX_SIGNER),
+        filterFunc: targetAppFilter,
+      }
+    );
+    this.checkForEntries = this.checkForEntries.bind(this);
+    this._client.on("sync", this.checkForEntries);
+  },
+
+  shutdown() {
+    if (this._client) {
+      this._client.off("sync", this.checkForEntries);
+    }
+  },
+
+  sync() {
+    this._ensureInitialized();
+    return this._client.sync();
+  },
+
+  async checkForEntries() {
+    this._ensureInitialized();
+    if (!gBlocklistEnabled) {
+      return []; // return value expected by tests.
+    }
+    let entries = await this._client.get();
+    // Trim helper (spaces, tabs, no-break spaces..)
+    const trim = s =>
+      (s || "").replace(/(^[\s\uFEFF\xA0]+)|([\s\uFEFF\xA0]+$)/g, "");
+
+    entries = entries.map(entry => {
+      let props = [
+        "blockID",
+        "driverVersion",
+        "driverVersionMax",
+        "driverVersionComparator",
+        "feature",
+        "featureStatus",
+        "os",
+        "vendor",
+        "devices",
+      ];
+      let rv = {};
+      for (let p of props) {
+        let val = entry[p];
+        // Ignore falsy values or empty arrays.
+        if (!val || (Array.isArray(val) && !val.length)) {
+          continue;
+        }
+        if (typeof val == "string") {
+          val = trim(val);
+        } else if (p == "devices") {
+          let invalidDevices = [];
+          let validDevices = [];
+          // We serialize the array of devices as a comma-separated string, so
+          // we need to ensure that none of the entries contain commas, also in
+          // the future.
+          val.forEach(v =>
+            v.includes(",") ? invalidDevices.push(v) : validDevices.push(v)
+          );
+          for (let dev of invalidDevices) {
+            const e = new Error(
+              `Block ${entry.blockID} contains unsupported device: ${dev}`
+            );
+            Cu.reportError(e);
+          }
+          if (!validDevices) {
+            continue;
+          }
+          val = validDevices;
+        }
+        rv[p] = val;
+      }
+      if (entry.versionRange) {
+        rv.versionRange = {
+          minVersion: trim(entry.versionRange.minVersion) || "0",
+          maxVersion: trim(entry.versionRange.maxVersion) || "*",
+        };
+      }
+      return rv;
+    });
+    if (entries.length) {
+      let sortedProps = [
+        "blockID",
+        "devices",
+        "driverVersion",
+        "driverVersionComparator",
+        "driverVersionMax",
+        "feature",
+        "featureStatus",
+        "hardware",
+        "manufacturer",
+        "model",
+        "os",
+        "osversion",
+        "product",
+        "vendor",
+        "versionRange",
+      ];
+      // Notify `GfxInfoBase`, by passing a string serialization.
+      let payload = [];
+      for (let gfxEntry of entries) {
+        let entryLines = [];
+        for (let key of sortedProps) {
+          if (gfxEntry[key]) {
+            let value = gfxEntry[key];
+            if (Array.isArray(value)) {
+              value = value.join(",");
+            } else if (value.maxVersion) {
+              // Both minVersion and maxVersion are always set on each entry.
+              value = value.minVersion + "," + value.maxVersion;
+            }
+            entryLines.push(key + ":" + value);
+          }
+        }
+        payload.push(entryLines.join("\t"));
+      }
+      Services.obs.notifyObservers(
+        null,
+        "blocklist-data-gfxItems",
+        payload.join("\n")
+      );
+    }
+    // The return value is only used by tests.
+    return entries;
+  },
+};
+
+/**
+ * The plugins blocklist implementation. The JSON objects for plugin blocks look
+ * something like:
+ *
+ *  {
+ *    "blockID":"p906",
+ *    "details": {
+ *      "bug":"https://bugzilla.mozilla.org/show_bug.cgi?id=1159917",
+ *      "who":"Which users it affects",
+ *      "why":"Why it's being blocklisted",
+ *      "name":"Java Plugin 7 update 45 to 78 (click-to-play), Windows",
+ *      "created":"2015-05-19T09:02:45Z"
+ *    },
+ *    "enabled":true,
+ *    "infoURL":"https://java.com/",
+ *    "matchName":"Java\\(TM\\) Platform SE 7 U(4[5-9]|(5|6)\\d|7[0-8])(\\s[^\\d\\._U]|$)",
+ *    "versionRange":[
+ *      {
+ *        "severity":0,
+ *        "targetApplication":[
+ *          {
+ *            "guid":"{ec8030f7-c20a-464f-9b0e-13a3a9e97384}",
+ *            "maxVersion":"57.0.*",
+ *            "minVersion":"0"
+ *          }
+ *        ],
+ *        "vulnerabilityStatus":1
+ *      }
+ *    ],
+ *    "matchFilename":"npjp2\\.dll",
+ *    "id":"f254e5bc-12c7-7954-fe6b-8f1fdab0ae88",
+ *    "last_modified":1519390914542,
+ *  }
+ *
+ * Note: we assign to the global to allow tests to reach the object directly.
+ */
+this.PluginBlocklistRS = {
+  _matchProps: {
+    matchDescription: "description",
+    matchFilename: "filename",
+    matchName: "name",
+  },
+
+  async _ensureEntries() {
+    await this.ensureInitialized();
+    if (!this._entries && gBlocklistEnabled) {
+      await this._updateEntries();
+
+      // Dispatch to mainthread because consumers may try to construct nsIPluginHost
+      // again based on this notification, while we were called from nsIPluginHost
+      // anyway, leading to re-entrancy.
+      Services.tm.dispatchToMainThread(function() {
+        Services.obs.notifyObservers(null, "plugin-blocklist-loaded");
+      });
+    }
+  },
+
+  async _updateEntries() {
+    if (!gBlocklistEnabled) {
+      this._entries = [];
+      return;
+    }
+    this._entries = await this._client.get().catch(ex => Cu.reportError(ex));
+    // Handle error silently. This can happen if our request to fetch data is aborted,
+    // e.g. by application shutdown.
+    if (!this._entries) {
+      this._entries = [];
+      return;
+    }
+    this._entries.forEach(entry => {
+      entry.matches = {};
+      for (let k of Object.keys(this._matchProps)) {
+        if (entry[k]) {
+          try {
+            entry.matches[this._matchProps[k]] = new RegExp(entry[k], "m");
+          } catch (ex) {
+            /* Ignore invalid regexes */
+          }
+        }
+      }
+      Utils.ensureVersionRangeIsSane(entry);
+    });
+  },
+
+  async _filterItem(entry) {
+    if (
+      !(await targetAppFilter(entry, { appID: gAppID, version: gApp.version }))
+    ) {
+      return null;
+    }
+    if (!Utils.matchesOSABI(entry)) {
+      return null;
+    }
+    if (!entry.matchFilename && !entry.matchName && !entry.matchDescription) {
+      Cu.reportError(
+        new Error("Nothing to filter plugin item " + entry.blockID + " on")
+      );
+      return null;
+    }
+    return entry;
+  },
+
+  sync() {
+    this.ensureInitialized();
+    return this._client.sync();
+  },
+
+  ensureInitialized() {
+    if (!gBlocklistEnabled || this._initialized) {
+      return;
+    }
+    this._initialized = true;
+    this._client = RemoteSettings(
+      Services.prefs.getCharPref(PREF_BLOCKLIST_PLUGINS_COLLECTION),
+      {
+        bucketNamePref: PREF_BLOCKLIST_BUCKET,
+        lastCheckTimePref: PREF_BLOCKLIST_PLUGINS_CHECKED_SECONDS,
+        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_PLUGINS_SIGNER),
+        filterFunc: this._filterItem,
+      }
+    );
+    this._onUpdate = this._onUpdate.bind(this);
+    this._client.on("sync", this._onUpdate);
+  },
+
+  shutdown() {
+    if (this._client) {
+      this._client.off("sync", this._onUpdate);
+    }
+  },
+
+  async _onUpdate() {
+    let oldEntries = this._entries || [];
+    this.ensureInitialized();
+    await this._updateEntries();
+    const pluginHost = Cc["@mozilla.org/plugin/host;1"].getService(
+      Ci.nsIPluginHost
+    );
+    const plugins = pluginHost.getPluginTags();
+
+    let blockedItems = [];
+
+    for (let plugin of plugins) {
+      let oldState = this._getState(plugin, oldEntries);
+      let state = this._getState(plugin, this._entries);
+      LOG(
+        "Blocklist state for " +
+          plugin.name +
+          " changed from " +
+          oldState +
+          " to " +
+          state
+      );
+      // We don't want to re-warn about items
+      if (state == oldState) {
+        continue;
+      }
+
+      if (oldState == Ci.nsIBlocklistService.STATE_BLOCKED) {
+        if (state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED) {
+          plugin.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
+        }
+      } else if (
+        !plugin.disabled &&
+        state != Ci.nsIBlocklistService.STATE_NOT_BLOCKED
+      ) {
+        if (
+          state != Ci.nsIBlocklistService.STATE_OUTDATED &&
+          state != Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE &&
+          state != Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE
+        ) {
+          blockedItems.push({
+            name: plugin.name,
+            version: plugin.version,
+            icon: "chrome://mozapps/skin/plugins/pluginGeneric.svg",
+            disable: false,
+            blocked: state == Ci.nsIBlocklistService.STATE_BLOCKED,
+            item: plugin,
+            url: await this.getURL(plugin),
+          });
+        }
+      }
+    }
+
+    if (blockedItems.length) {
+      this._showBlockedPluginsPrompt(blockedItems);
+    } else {
+      this._notifyUpdate();
+    }
+  },
+
+  _showBlockedPluginsPrompt(blockedPlugins) {
+    if ("@mozilla.org/addons/blocklist-prompt;1" in Cc) {
+      try {
+        let blockedPrompter = Cc[
+          "@mozilla.org/addons/blocklist-prompt;1"
+        ].getService().wrappedJSObject;
+        blockedPrompter.prompt(blockedPlugins);
+      } catch (e) {
+        LOG(e);
+      }
+      this._notifyUpdate();
+      return;
+    }
+
+    let args = {
+      restart: false,
+      list: blockedPlugins,
+    };
+    // This lets the dialog get the raw js object
+    args.wrappedJSObject = args;
+
+    /*
+      Some tests run without UI, so the async code listens to a message
+      that can be sent programatically
+    */
+    let applyBlocklistChanges = async () => {
+      Services.obs.removeObserver(
+        applyBlocklistChanges,
+        "addon-blocklist-closed"
+      );
+
+      for (let blockedData of blockedPlugins) {
+        if (!blockedData.disable) {
+          continue;
+        }
+
+        // This will disable all the plugins immediately.
+        if (blockedData.item instanceof Ci.nsIPluginTag) {
+          blockedData.item.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
+        }
+      }
+
+      if (!args.restart) {
+        this._notifyUpdate();
+        return;
+      }
+
+      // We need to ensure the new blocklist state is written to disk before restarting.
+      // We'll notify about the blocklist update, then wait for nsIPluginHost
+      // to finish processing it, then restart the browser.
+      let pluginUpdatesFinishedPromise = new Promise(resolve => {
+        Services.obs.addObserver(function updatesFinished() {
+          Services.obs.removeObserver(
+            updatesFinished,
+            "plugin-blocklist-updates-finished"
+          );
+          resolve();
+        }, "plugin-blocklist-updates-finished");
+      });
+      this._notifyUpdate();
+      await pluginUpdatesFinishedPromise;
+
+      // Notify all windows that an application quit has been requested.
+      var cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(
+        Ci.nsISupportsPRBool
+      );
+      Services.obs.notifyObservers(cancelQuit, "quit-application-requested");
+
+      // Something aborted the quit process.
+      if (cancelQuit.data) {
+        return;
+      }
+
+      Services.startup.quit(
+        Ci.nsIAppStartup.eRestart | Ci.nsIAppStartup.eAttemptQuit
+      );
+    };
+
+    Services.obs.addObserver(applyBlocklistChanges, "addon-blocklist-closed");
+
+    if (Services.prefs.getBoolPref(PREF_BLOCKLIST_SUPPRESSUI, false)) {
+      applyBlocklistChanges();
+      return;
+    }
+
+    function blocklistUnloadHandler(event) {
+      if (event.target.location == URI_BLOCKLIST_DIALOG) {
+        applyBlocklistChanges();
+        blocklistWindow.removeEventListener("unload", blocklistUnloadHandler);
+      }
+    }
+
+    let blocklistWindow = Services.ww.openWindow(
+      null,
+      URI_BLOCKLIST_DIALOG,
+      "",
+      "chrome,centerscreen,dialog,titlebar",
+      args
+    );
+    if (blocklistWindow) {
+      blocklistWindow.addEventListener("unload", blocklistUnloadHandler);
+    }
+  },
+
+  _notifyUpdate() {
+    Services.obs.notifyObservers(null, "plugin-blocklist-updated");
+  },
+
+  async getURL(plugin) {
+    await this._ensureEntries();
+    let r = this._getEntry(plugin, this._entries);
+    if (!r) {
+      return null;
+    }
+    let blockEntry = r.entry;
+    if (!blockEntry.blockID) {
+      return null;
+    }
+
+    return blockEntry.infoURL || Utils._createBlocklistURL(blockEntry.blockID);
+  },
+
+  async getState(plugin, appVersion, toolkitVersion) {
+    if (AppConstants.platform == "android") {
+      return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+    }
+    await this._ensureEntries();
+    return this._getState(plugin, this._entries, appVersion, toolkitVersion);
+  },
+
+  /**
+   * Private helper to get the blocklist entry for a plugin given a set of
+   * blocklist entries and versions.
+   *
+   * @param {nsIPluginTag} plugin
+   *        The nsIPluginTag to get the blocklist state for.
+   * @param {object[]} pluginEntries
+   *        The plugin blocklist entries to compare against.
+   * @param {string?} appVersion
+   *        The application version to compare to, will use the current
+   *        version if null.
+   * @param {string?} toolkitVersion
+   *        The toolkit version to compare to, will use the current version if
+   *        null.
+   * @returns {object?}
+   *        {entry: blocklistEntry, version: blocklistEntryVersion},
+   *        or null if there is no matching entry.
+   */
+  _getEntry(plugin, pluginEntries, appVersion, toolkitVersion) {
+    if (!gBlocklistEnabled) {
+      return null;
+    }
+
+    // Not all applications implement nsIXULAppInfo (e.g. xpcshell doesn't).
+    if (!appVersion && !gApp.version) {
+      return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+    }
+
+    if (!appVersion) {
+      appVersion = gApp.version;
+    }
+    if (!toolkitVersion) {
+      toolkitVersion = gApp.platformVersion;
+    }
+
+    const pluginProperties = {
+      description: plugin.description,
+      filename: plugin.filename,
+      name: plugin.name,
+      version: plugin.version,
+    };
+    if (!pluginEntries) {
+      Cu.reportError(
+        new Error("There are no plugin entries. This should never happen.")
+      );
+    }
+    for (let blockEntry of pluginEntries) {
+      var matchFailed = false;
+      for (var name in blockEntry.matches) {
+        let pluginProperty = pluginProperties[name];
+        if (
+          typeof pluginProperty != "string" ||
+          !blockEntry.matches[name].test(pluginProperty)
+        ) {
+          matchFailed = true;
+          break;
+        }
+      }
+
+      if (matchFailed) {
+        continue;
+      }
+
+      for (let versionRange of blockEntry.versionRange) {
+        if (
+          Utils.versionsMatch(
+            versionRange,
+            pluginProperties.version,
+            appVersion,
+            toolkitVersion
+          )
+        ) {
+          return { entry: blockEntry, version: versionRange };
+        }
+      }
+    }
+
+    return null;
+  },
+
+  /**
+   * Private version of getState that allows the caller to pass in
+   * the plugin blocklist entries.
+   *
+   * @param {nsIPluginTag} plugin
+   *        The nsIPluginTag to get the blocklist state for.
+   * @param {object[]} pluginEntries
+   *        The plugin blocklist entries to compare against.
+   * @param {string?} appVersion
+   *        The application version to compare to, will use the current
+   *        version if null.
+   * @param {string?} toolkitVersion
+   *        The toolkit version to compare to, will use the current version if
+   *        null.
+   * @returns {integer}
+   *        The blocklist state for the item, one of the STATE constants as
+   *        defined in nsIBlocklistService.
+   */
+  _getState(plugin, pluginEntries, appVersion, toolkitVersion) {
+    let r = this._getEntry(plugin, pluginEntries, appVersion, toolkitVersion);
+    if (!r) {
+      return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+    }
+
+    let { version: versionRange } = r;
+
+    if (versionRange.severity >= gBlocklistLevel) {
+      return Ci.nsIBlocklistService.STATE_BLOCKED;
+    }
+    if (versionRange.severity == SEVERITY_OUTDATED) {
+      let vulnerabilityStatus = versionRange.vulnerabilityStatus;
+      if (vulnerabilityStatus == VULNERABILITYSTATUS_UPDATE_AVAILABLE) {
+        return Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE;
+      }
+      if (vulnerabilityStatus == VULNERABILITYSTATUS_NO_UPDATE) {
+        return Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE;
+      }
+      return Ci.nsIBlocklistService.STATE_OUTDATED;
+    }
+    return Ci.nsIBlocklistService.STATE_SOFTBLOCKED;
+  },
+};
+
+/**
+ * The extensions blocklist implementation. The JSON objects for extension
+ * blocks look something like:
+ *
+ * {
+ *   "guid": "someguid@addons.mozilla.org",
+ *   "prefs": ["i.am.a.pref.that.needs.resetting"],
+ *   "schema": 1480349193877,
+ *   "blockID": "i12345",
+ *   "details": {
+ *     "bug": "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
+ *     "who": "All Firefox users who have this add-on installed. If you wish to continue using this add-on, you can enable it in the Add-ons Manager.",
+ *     "why": "This add-on is in violation of the <a href=\"https://developer.mozilla.org/en-US/Add-ons/Add-on_guidelines\">Add-on Guidelines</a>, using multiple add-on IDs and potentially doing other unwanted activities.",
+ *     "name": "Some pretty name",
+ *     "created": "2019-05-06T19:52:20Z"
+ *   },
+ *   "enabled": true,
+ *   "versionRange": [
+ *     {
+ *       "severity": 1,
+ *       "maxVersion": "*",
+ *       "minVersion": "0",
+ *       "targetApplication": []
+ *     }
+ *   ],
+ *   "id": "<unique guid>",
+ *   "last_modified": 1480349215672,
+ * }
+ *
+ * Note: we assign to the global to allow tests to reach the object directly.
+ */
+this.ExtensionBlocklistRS = {
+  async _ensureEntries() {
+    this.ensureInitialized();
+    if (!this._entries && gBlocklistEnabled) {
+      await this._updateEntries();
+    }
+  },
+
+  async _updateEntries() {
+    if (!gBlocklistEnabled) {
+      this._entries = [];
+      return;
+    }
+    this._entries = await this._client.get().catch(ex => Cu.reportError(ex));
+    // Handle error silently. This can happen if our request to fetch data is aborted,
+    // e.g. by application shutdown.
+    if (!this._entries) {
+      this._entries = [];
+      return;
+    }
+    this._entries.forEach(entry => {
+      function getCriteria(str) {
+        if (!str.startsWith("/")) {
+          return str;
+        }
+        let lastSlash = str.lastIndexOf("/");
+        let pattern = str.slice(1, lastSlash);
+        let flags = str.slice(lastSlash + 1);
+        return new RegExp(pattern, flags);
+      }
+      entry.matches = {};
+      if (entry.guid) {
+        entry.matches.id = getCriteria(entry.guid);
+      }
+      for (let key of EXTENSION_BLOCK_FILTERS) {
+        if (key == "id" || !entry[key]) {
+          continue;
+        }
+        entry.matches[key] = getCriteria(entry[key]);
+      }
+      Utils.ensureVersionRangeIsSane(entry);
+    });
+  },
+
+  async _filterItem(entry) {
+    if (
+      !(await targetAppFilter(entry, { appID: gAppID, version: gApp.version }))
+    ) {
+      return null;
+    }
+    if (!Utils.matchesOSABI(entry)) {
+      return null;
+    }
+    // Need something to filter on - at least a guid or name (either could be a regex):
+    if (!entry.guid && !entry.name) {
+      Cu.reportError(
+        new Error("Nothing to filter add-on item " + entry.blockID + " on")
+      );
+      return null;
+    }
+    return entry;
+  },
+
+  sync() {
+    this.ensureInitialized();
+    return this._client.sync();
+  },
+
+  ensureInitialized() {
+    if (!gBlocklistEnabled || this._initialized) {
+      return;
+    }
+    this._initialized = true;
+    this._client = RemoteSettings(
+      Services.prefs.getCharPref(PREF_BLOCKLIST_ADDONS_COLLECTION),
+      {
+        bucketNamePref: PREF_BLOCKLIST_BUCKET,
+        lastCheckTimePref: PREF_BLOCKLIST_ADDONS_CHECKED_SECONDS,
+        signerName: Services.prefs.getCharPref(PREF_BLOCKLIST_ADDONS_SIGNER),
+        filterFunc: this._filterItem,
+      }
+    );
+    this._onUpdate = this._onUpdate.bind(this);
+    this._client.on("sync", this._onUpdate);
+  },
+
+  shutdown() {
+    if (this._client) {
+      this._client.off("sync", this._onUpdate);
+    }
+  },
+
+  async _onUpdate() {
+    let oldEntries = this._entries || [];
+    await this.ensureInitialized();
+    await this._updateEntries();
+
+    const types = ["extension", "theme", "locale", "dictionary", "service"];
+    let addons = await AddonManager.getAddonsByTypes(types);
+    for (let addon of addons) {
+      let oldState = addon.blocklistState;
+      if (addon.updateBlocklistState) {
+        await addon.updateBlocklistState(false);
+      } else if (oldEntries) {
+        let oldEntry = this._getEntry(addon, oldEntries);
+        oldState = oldEntry
+          ? oldEntry.state
+          : Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+      } else {
+        oldState = Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+      }
+      let state = addon.blocklistState;
+
+      LOG(
+        "Blocklist state for " +
+          addon.id +
+          " changed from " +
+          oldState +
+          " to " +
+          state
+      );
+
+      // We don't want to re-warn about add-ons
+      if (state == oldState) {
+        continue;
+      }
+
+      // Ensure that softDisabled is false if the add-on is not soft blocked
+      if (state != Ci.nsIBlocklistService.STATE_SOFTBLOCKED) {
+        addon.softDisabled = false;
+      }
+
+      // If an add-on has dropped from hard to soft blocked just mark it as
+      // soft disabled and don't warn about it.
+      if (
+        state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED &&
+        oldState == Ci.nsIBlocklistService.STATE_BLOCKED
+      ) {
+        addon.softDisabled = true;
+      }
+
+      if (
+        state == Ci.nsIBlocklistService.STATE_BLOCKED ||
+        state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED
+      ) {
+        // Mark it as softblocked if necessary. Note that we avoid setting
+        // softDisabled at the same time as userDisabled to make it clear
+        // which was the original cause of the add-on becoming disabled in a
+        // way that the user can change.
+        if (
+          state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED &&
+          !addon.userDisabled
+        ) {
+          addon.softDisabled = true;
+        }
+        // It's a block. We must reset certain preferences.
+        let entry = this._getEntry(addon, this._entries);
+        if (entry.prefs && entry.prefs.length) {
+          for (let pref of entry.prefs) {
+            Services.prefs.clearUserPref(pref);
+          }
+        }
+      }
+    }
+
+    AddonManagerPrivate.updateAddonAppDisabledStates();
+  },
+
+  async getState(addon, appVersion, toolkitVersion) {
+    let entry = await this.getEntry(addon, appVersion, toolkitVersion);
+    return entry ? entry.state : Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+  },
+
+  async getEntry(addon, appVersion, toolkitVersion) {
+    await this._ensureEntries();
+    return this._getEntry(addon, this._entries, appVersion, toolkitVersion);
+  },
+
+  _getEntry(addon, addonEntries, appVersion, toolkitVersion) {
+    if (!gBlocklistEnabled || !addon) {
+      return null;
+    }
+
+    // Not all applications implement nsIXULAppInfo (e.g. xpcshell doesn't).
+    if (!appVersion && !gApp.version) {
+      return null;
+    }
+
+    if (!appVersion) {
+      appVersion = gApp.version;
+    }
+    if (!toolkitVersion) {
+      toolkitVersion = gApp.platformVersion;
+    }
+
+    let addonProps = {};
+    for (let key of EXTENSION_BLOCK_FILTERS) {
+      addonProps[key] = addon[key];
+    }
+    if (addonProps.creator) {
+      addonProps.creator = addonProps.creator.name;
+    }
+
+    let propMatches = ([k, v]) => {
+      return (
+        !v ||
+        addonProps[k] == v ||
+        (v instanceof RegExp && v.test(addonProps[k]))
+      );
+    };
+    for (let entry of addonEntries) {
+      // First check if it matches our properties. If not, just skip to the next item.
+      if (!Object.entries(entry.matches).every(propMatches)) {
+        continue;
+      }
+      // If those match, check the app or toolkit version works:
+      for (let versionRange of entry.versionRange) {
+        if (
+          Utils.versionsMatch(
+            versionRange,
+            addon.version,
+            appVersion,
+            toolkitVersion
+          )
+        ) {
+          return {
+            state:
+              versionRange.severity >= gBlocklistLevel
+                ? Ci.nsIBlocklistService.STATE_BLOCKED
+                : Ci.nsIBlocklistService.STATE_SOFTBLOCKED,
+            url: entry.blockID && Utils._createBlocklistURL(entry.blockID),
+            prefs: entry.prefs || [],
+          };
+        }
+      }
+    }
+    return null;
+  },
+};
+
+const EXTENSION_BLOCK_FILTERS = [
+  "id",
+  "name",
+  "creator",
+  "homepageURL",
+  "updateURL",
+];
 
 var gLoggingEnabled = null;
 var gBlocklistEnabled = true;
 var gBlocklistLevel = DEFAULT_LEVEL;
+
+class BlocklistError extends Error {}
 
 /**
  * @class nsIBlocklistPrompt
@@ -160,15 +1312,17 @@ var gBlocklistLevel = DEFAULT_LEVEL;
 // nsIXULAppInfo is created by the tests.
 XPCOMUtils.defineLazyGetter(this, "gApp", function() {
   // eslint-disable-next-line mozilla/use-services
-  let appinfo = Cc["@mozilla.org/xre/app-info;1"]
-                  .getService(Ci.nsIXULRuntime);
+  let appinfo = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime);
   try {
     appinfo.QueryInterface(Ci.nsIXULAppInfo);
   } catch (ex) {
     // Not all applications implement nsIXULAppInfo (e.g. xpcshell doesn't).
-    if (!(ex instanceof Components.Exception) ||
-        ex.result != Cr.NS_NOINTERFACE)
+    if (
+      !(ex instanceof Components.Exception) ||
+      ex.result != Cr.NS_NOINTERFACE
+    ) {
       throw ex;
+    }
   }
   return appinfo;
 });
@@ -176,9 +1330,11 @@ XPCOMUtils.defineLazyGetter(this, "gApp", function() {
 XPCOMUtils.defineLazyGetter(this, "gAppID", function() {
   return gApp.ID;
 });
-
 XPCOMUtils.defineLazyGetter(this, "gAppVersion", function() {
   return gApp.version;
+});
+XPCOMUtils.defineLazyGetter(this, "gAppOS", function() {
+  return gApp.OS;
 });
 
 XPCOMUtils.defineLazyGetter(this, "gABI", function() {
@@ -194,14 +1350,18 @@ XPCOMUtils.defineLazyGetter(this, "gABI", function() {
 XPCOMUtils.defineLazyGetter(this, "gOSVersion", function() {
   let osVersion;
   try {
-    osVersion = Services.sysinfo.getProperty("name") + " " + Services.sysinfo.getProperty("version");
+    osVersion =
+      Services.sysinfo.getProperty("name") +
+      " " +
+      Services.sysinfo.getProperty("version");
   } catch (e) {
     LOG("BlockList Global gOSVersion: OS Version unknown.");
   }
 
   if (osVersion) {
     try {
-      osVersion += " (" + Services.sysinfo.getProperty("secondaryLibrary") + ")";
+      osVersion +=
+        " (" + Services.sysinfo.getProperty("secondaryLibrary") + ")";
     } catch (e) {
       // Not all platforms have a secondary widget library, so an error is nothing to worry about.
     }
@@ -225,15 +1385,19 @@ function LOG(string) {
 // Restarts the application checking in with observers first
 function restartApp() {
   // Notify all windows that an application quit has been requested.
-  var cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].
-                   createInstance(Ci.nsISupportsPRBool);
+  var cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(
+    Ci.nsISupportsPRBool
+  );
   Services.obs.notifyObservers(cancelQuit, "quit-application-requested");
 
   // Something aborted the quit process.
-  if (cancelQuit.data)
+  if (cancelQuit.data) {
     return;
+  }
 
-  Services.startup.quit(Ci.nsIAppStartup.eRestart | Ci.nsIAppStartup.eAttemptQuit);
+  Services.startup.quit(
+    Ci.nsIAppStartup.eRestart | Ci.nsIAppStartup.eAttemptQuit
+  );
 }
 
 /**
@@ -251,35 +1415,30 @@ function matchesOSABI(blocklistElement) {
   let os = blocklistElement.getAttribute("os");
   if (os) {
     let choices = os.split(",");
-    if (choices.length > 0 && !choices.includes(gApp.OS))
+    if (choices.length > 0 && !choices.includes(gApp.OS)) {
       return false;
+    }
   }
 
   let xpcomabi = blocklistElement.getAttribute("xpcomabi");
   if (xpcomabi) {
     let choices = xpcomabi.split(",");
-    if (choices.length > 0 && !choices.includes(gApp.XPCOMABI))
+    if (choices.length > 0 && !choices.includes(gApp.XPCOMABI)) {
       return false;
+    }
   }
 
   return true;
 }
 
-/**
- * Gets the current value of the locale.  It's possible for this preference to
- * be localized, so we have to do a little extra work here.  Similar code
- * exists in nsHttpHandler.cpp when building the UA string.
- *
- * @returns {string} The current requested locale.
- */
-function getLocale() {
-  return Services.locale.requestedLocale;
-}
-
 /* Get the distribution pref values, from defaults only */
 function getDistributionPrefValue(aPrefName) {
-  return Services.prefs.getDefaultBranch(null).getCharPref(aPrefName, "default");
+  return Services.prefs
+    .getDefaultBranch(null)
+    .getCharPref(aPrefName, "default");
 }
+
+let gLoadingWasTriggered = false;
 
 /**
  * Manages the Blocklist. The Blocklist is a representation of the contents of
@@ -287,30 +1446,10 @@ function getDistributionPrefValue(aPrefName) {
  * items managed by the Extension Manager with an item's appDisabled property.
  * It also blocklists plugins with data from blocklist.xml.
  */
-var Blocklist = {
+var BlocklistXML = {
   _init() {
-    Services.obs.addObserver(this, "xpcom-shutdown");
-
-    gLoggingEnabled = Services.prefs.getBoolPref(PREF_EM_LOGGING_ENABLED, false);
-    gBlocklistEnabled = Services.prefs.getBoolPref(PREF_BLOCKLIST_ENABLED, true);
-    gBlocklistLevel = Math.min(Services.prefs.getIntPref(PREF_BLOCKLIST_LEVEL, DEFAULT_LEVEL),
-                               MAX_BLOCK_LEVEL);
-    Services.prefs.addObserver("extensions.blocklist.", this);
-    Services.prefs.addObserver(PREF_EM_LOGGING_ENABLED, this);
-
-    // Instantiate Remote Settings clients for blocklists.
-    // Their initialization right here serves two purposes:
-    // - Make sure they are instantiated (it's cheap) in order to be included in the synchronization process;
-    // - Pave the way for Bug 1257565 which will leverage remote settings instead of the XML file
-    //   to manage the blocklists state.
-    BlocklistClients.initialize();
-
-    // If the stub blocklist service deferred any queries because we
-    // weren't loaded yet, execute them now.
-    for (let entry of Services.blocklist.pluginQueries.splice(0)) {
-      entry.resolve(this.getPluginBlocklistState(entry.plugin,
-                                                 entry.appVersion,
-                                                 entry.toolkitVersion));
+    if (gLoadingWasTriggered) {
+      this.loadBlocklistAsync();
     }
   },
 
@@ -318,9 +1457,9 @@ var Blocklist = {
   STATE_SOFTBLOCKED: Ci.nsIBlocklistService.STATE_SOFTBLOCKED,
   STATE_BLOCKED: Ci.nsIBlocklistService.STATE_BLOCKED,
   STATE_OUTDATED: Ci.nsIBlocklistService.STATE_OUTDATED,
-  STATE_VULNERABLE_UPDATE_AVAILABLE: Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE,
+  STATE_VULNERABLE_UPDATE_AVAILABLE:
+    Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE,
   STATE_VULNERABLE_NO_UPDATE: Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE,
-
 
   /**
    * Extension ID -> array of Version Ranges
@@ -341,53 +1480,29 @@ var Blocklist = {
   _gfxEntries: null,
   _pluginEntries: null,
 
-  shutdown() {
-    Services.obs.removeObserver(this, "xpcom-shutdown");
-    Services.prefs.removeObserver("extensions.blocklist.", this);
-    Services.prefs.removeObserver(PREF_EM_LOGGING_ENABLED, this);
+  get profileBlocklistPath() {
+    let path = OS.Path.join(OS.Constants.Path.profileDir, FILE_BLOCKLIST);
+    Object.defineProperty(this, "profileBlocklistPath", { value: path });
+    return path;
   },
 
-  observe(aSubject, aTopic, aData) {
-    switch (aTopic) {
-    case "xpcom-shutdown":
-      this.shutdown();
-      break;
-    case "profile-after-change":
-      // We're only called here on non-Desktop-Firefox, and use this opportunity to try to
-      // load the blocklist asynchronously. On desktop Firefox, we load the list from
-      // nsBrowserGlue after sessionstore-windows-restored.
-      this.loadBlocklistAsync();
-      break;
-    case "nsPref:changed":
-      switch (aData) {
-        case PREF_EM_LOGGING_ENABLED:
-          gLoggingEnabled = Services.prefs.getBoolPref(PREF_EM_LOGGING_ENABLED, false);
-          break;
-        case PREF_BLOCKLIST_ENABLED:
-          gBlocklistEnabled = Services.prefs.getBoolPref(PREF_BLOCKLIST_ENABLED, true);
-          // This is a bit messy. Especially in tests, but in principle also by users toggling
-          // this preference repeatedly, plugin loads could race with each other if we don't
-          // enforce that they are applied sequentially.
-          // So we only update once the previous `_blocklistUpdated` call finishes running.
-          let lastUpdate = this._lastUpdate || undefined;
-          let newUpdate = this._lastUpdate = (async () => {
-            await lastUpdate;
-            this._clear();
-            await this.loadBlocklistAsync();
-            await this._blocklistUpdated(null, null);
-            if (newUpdate == this._lastUpdate) {
-              delete this._lastUpdate;
-            }
-          })().catch(Cu.reportError);
-          break;
-        case PREF_BLOCKLIST_LEVEL:
-          gBlocklistLevel = Math.min(Services.prefs.getIntPref(PREF_BLOCKLIST_LEVEL, DEFAULT_LEVEL),
-                                     MAX_BLOCK_LEVEL);
-          this._blocklistUpdated(null, null);
-          break;
+  shutdown() {},
+
+  _onBlocklistEnabledToggle() {
+    // This is a bit messy. Especially in tests, but in principle also by users toggling
+    // this preference repeatedly, plugin loads could race with each other if we don't
+    // enforce that they are applied sequentially.
+    // So we only update once the previous `_blocklistUpdated` call finishes running.
+    let lastUpdate = this._lastUpdate || undefined;
+    let newUpdate = (this._lastUpdate = (async () => {
+      await lastUpdate;
+      this._clear();
+      await this.loadBlocklistAsync();
+      await this._blocklistUpdated(null, null);
+      if (newUpdate == this._lastUpdate) {
+        delete this._lastUpdate;
       }
-      break;
-    }
+    })().catch(Cu.reportError));
   },
 
   /**
@@ -406,8 +1521,12 @@ var Blocklist = {
    */
   async getAddonBlocklistState(addon, appVersion, toolkitVersion) {
     await this.loadBlocklistAsync();
-    return this._getAddonBlocklistState(addon, this._addonEntries,
-                                        appVersion, toolkitVersion);
+    return this._getAddonBlocklistState(
+      addon,
+      this._addonEntries,
+      appVersion,
+      toolkitVersion
+    );
   },
 
   /**
@@ -430,27 +1549,36 @@ var Blocklist = {
    *          a matching blocklist entry, or null otherwise.
    */
   _getAddonBlocklistEntry(addon, addonEntries, appVersion, toolkitVersion) {
-    if (!gBlocklistEnabled)
+    if (!gBlocklistEnabled) {
       return null;
+    }
 
     // Not all applications implement nsIXULAppInfo (e.g. xpcshell doesn't).
-    if (!appVersion && !gAppVersion)
+    if (!appVersion && !gAppVersion) {
       return null;
+    }
 
-    if (!appVersion)
+    if (!appVersion) {
       appVersion = gAppVersion;
-    if (!toolkitVersion)
+    }
+    if (!toolkitVersion) {
       toolkitVersion = gApp.platformVersion;
+    }
 
     var blItem = this._findMatchingAddonEntry(addonEntries, addon);
-    if (!blItem)
+    if (!blItem) {
       return null;
+    }
 
     for (let currentblItem of blItem.versions) {
-      if (currentblItem.includesItem(addon.version, appVersion, toolkitVersion)) {
+      if (
+        currentblItem.includesItem(addon.version, appVersion, toolkitVersion)
+      ) {
         return {
-          state: (currentblItem.severity >= gBlocklistLevel ?
-                  Ci.nsIBlocklistService.STATE_BLOCKED : Ci.nsIBlocklistService.STATE_SOFTBLOCKED),
+          state:
+            currentblItem.severity >= gBlocklistLevel
+              ? Ci.nsIBlocklistService.STATE_BLOCKED
+              : Ci.nsIBlocklistService.STATE_SOFTBLOCKED,
           url: blItem.blockID && this._createBlocklistURL(blItem.blockID),
         };
       }
@@ -480,8 +1608,12 @@ var Blocklist = {
    */
   async getAddonBlocklistEntry(addon, appVersion, toolkitVersion) {
     await this.loadBlocklistAsync();
-    return this._getAddonBlocklistEntry(addon, this._addonEntries,
-                                        appVersion, toolkitVersion);
+    return this._getAddonBlocklistEntry(
+      addon,
+      this._addonEntries,
+      appVersion,
+      toolkitVersion
+    );
   },
 
   /**
@@ -503,9 +1635,15 @@ var Blocklist = {
    *        defined in nsIBlocklistService.
    */
   _getAddonBlocklistState(addon, addonEntries, appVersion, toolkitVersion) {
-    let entry = this._getAddonBlocklistEntry(addon, addonEntries, appVersion, toolkitVersion);
-    if (entry)
+    let entry = this._getAddonBlocklistEntry(
+      addon,
+      addonEntries,
+      appVersion,
+      toolkitVersion
+    );
+    if (entry) {
       return entry.state;
+    }
     return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
   },
 
@@ -523,15 +1661,17 @@ var Blocklist = {
   },
 
   _findMatchingAddonEntry(aAddonEntries, aAddon) {
-    if (!aAddon)
+    if (!aAddon) {
       return null;
+    }
     // Returns true if the params object passes the constraints set by entry.
     // (For every non-null property in entry, the same key must exist in
     // params and value must be the same)
     function checkEntry(entry, params) {
       for (let [key, value] of Object.entries(entry)) {
-        if (value === null || value === undefined)
+        if (value === null || value === undefined) {
           continue;
+        }
         if (params[key]) {
           if (value instanceof RegExp) {
             if (!value.test(params[key])) {
@@ -551,14 +1691,15 @@ var Blocklist = {
     for (let filter of EXTENSION_BLOCK_FILTERS) {
       params[filter] = aAddon[filter];
     }
-    if (params.creator)
+    if (params.creator) {
       params.creator = params.creator.name;
+    }
     for (let entry of aAddonEntries) {
       if (checkEntry(entry.attributes, params)) {
-         return entry;
-       }
-     }
-     return null;
+        return entry;
+      }
+    }
+    return null;
   },
 
   _createBlocklistURL(id) {
@@ -567,19 +1708,30 @@ var Blocklist = {
   },
 
   notify(aTimer) {
-    if (!gBlocklistEnabled)
+    if (!gBlocklistEnabled) {
       return;
+    }
 
     try {
       var dsURI = Services.prefs.getCharPref(PREF_BLOCKLIST_URL);
     } catch (e) {
-      LOG("Blocklist::notify: The " + PREF_BLOCKLIST_URL + " preference" +
-          " is missing!");
+      LOG(
+        "Blocklist::notify: The " +
+          PREF_BLOCKLIST_URL +
+          " preference" +
+          " is missing!"
+      );
       return;
     }
 
-    var pingCountVersion = Services.prefs.getIntPref(PREF_BLOCKLIST_PINGCOUNTVERSION, 0);
-    var pingCountTotal = Services.prefs.getIntPref(PREF_BLOCKLIST_PINGCOUNTTOTAL, 1);
+    var pingCountVersion = Services.prefs.getIntPref(
+      PREF_BLOCKLIST_PINGCOUNTVERSION,
+      0
+    );
+    var pingCountTotal = Services.prefs.getIntPref(
+      PREF_BLOCKLIST_PINGCOUNTTOTAL,
+      1
+    );
     var daysSinceLastPing = 0;
     if (pingCountVersion == 0) {
       daysSinceLastPing = "new";
@@ -587,7 +1739,10 @@ var Blocklist = {
       // Seconds in one day is used because nsIUpdateTimerManager stores the
       // last update time in seconds.
       let secondsInDay = 60 * 60 * 24;
-      let lastUpdateTime = Services.prefs.getIntPref(PREF_BLOCKLIST_LASTUPDATETIME, 0);
+      let lastUpdateTime = Services.prefs.getIntPref(
+        PREF_BLOCKLIST_LASTUPDATETIME,
+        0
+      );
       if (lastUpdateTime == 0) {
         daysSinceLastPing = "invalid";
       } else {
@@ -600,10 +1755,12 @@ var Blocklist = {
       }
     }
 
-    if (pingCountVersion < 1)
+    if (pingCountVersion < 1) {
       pingCountVersion = 1;
-    if (pingCountTotal < 1)
+    }
+    if (pingCountTotal < 1) {
       pingCountTotal = 1;
+    }
 
     let replacements = {
       APP_ID: gAppID,
@@ -611,11 +1768,13 @@ var Blocklist = {
       BUILD_ID: gApp.appBuildID,
       BUILD_TARGET: gApp.OS + "_" + gABI,
       OS_VERSION: gOSVersion,
-      LOCALE: getLocale(),
+      LOCALE: Services.locale.requestedLocale,
       CHANNEL: UpdateUtils.UpdateChannel,
       PLATFORM_VERSION: gApp.platformVersion,
       DISTRIBUTION: getDistributionPrefValue(PREF_APP_DISTRIBUTION),
-      DISTRIBUTION_VERSION: getDistributionPrefValue(PREF_APP_DISTRIBUTION_VERSION),
+      DISTRIBUTION_VERSION: getDistributionPrefValue(
+        PREF_APP_DISTRIBUTION_VERSION
+      ),
       PING_COUNT: pingCountVersion,
       TOTAL_PING_COUNT: pingCountTotal,
       DAYS_SINCE_LAST_PING: daysSinceLastPing,
@@ -644,7 +1803,10 @@ var Blocklist = {
         // integer preference. The -1 indicates that the counter has been reset.
         pingCountVersion = -1;
       }
-      Services.prefs.setIntPref(PREF_BLOCKLIST_PINGCOUNTVERSION, pingCountVersion);
+      Services.prefs.setIntPref(
+        PREF_BLOCKLIST_PINGCOUNTVERSION,
+        pingCountVersion
+      );
     }
 
     if (pingCountTotal != "invalid") {
@@ -661,20 +1823,28 @@ var Blocklist = {
     try {
       var uri = Services.io.newURI(dsURI);
     } catch (e) {
-      LOG("Blocklist::notify: There was an error creating the blocklist URI\r\n" +
-          "for: " + dsURI + ", error: " + e);
+      LOG(
+        "Blocklist::notify: There was an error creating the blocklist URI\r\n" +
+          "for: " +
+          dsURI +
+          ", error: " +
+          e
+      );
       return;
     }
 
     LOG("Blocklist::notify: Requesting " + uri.spec);
-    let request = new ServiceRequest({mozAnon: true});
+    let request = new ServiceRequest({ mozAnon: true });
     request.open("GET", uri.spec, true);
     request.channel.notificationCallbacks = new CertUtils.BadCertHandler();
     request.overrideMimeType("text/xml");
 
     // The server will return a `304 Not Modified` response if the blocklist was
     // not changed since last check.
-    const lastModified = Services.prefs.getCharPref(PREF_BLOCKLIST_LAST_MODIFIED, "");
+    const lastModified = Services.prefs.getCharPref(
+      PREF_BLOCKLIST_LAST_MODIFIED,
+      ""
+    );
     if (lastModified) {
       request.setRequestHeader("If-Modified-Since", lastModified);
     } else {
@@ -695,20 +1865,28 @@ var Blocklist = {
       return;
     }
 
-    let {status} = request;
+    let { status } = request;
     if (status == 304) {
       LOG("Blocklist::onXMLLoad: up to date.");
       return;
     }
 
     if (status != 200 && status != 0) {
-      LOG("Blocklist::onXMLLoad: there was an error during load, got status: " + status);
+      LOG(
+        "Blocklist::onXMLLoad: there was an error during load, got status: " +
+          status
+      );
       return;
     }
 
-    let {responseXML} = request;
-    if (!responseXML || responseXML.documentElement.namespaceURI == XMLURI_PARSE_ERROR) {
-      LOG("Blocklist::onXMLLoad: there was an error during load, we got invalid XML");
+    let { responseXML } = request;
+    if (
+      !responseXML ||
+      responseXML.documentElement.namespaceURI == XMLURI_PARSE_ERROR
+    ) {
+      LOG(
+        "Blocklist::onXMLLoad: there was an error during load, we got invalid XML"
+      );
       return;
     }
 
@@ -729,8 +1907,10 @@ var Blocklist = {
     this._blocklistUpdated(oldAddonEntries, oldPluginEntries);
 
     try {
-      let path = OS.Path.join(OS.Constants.Path.profileDir, FILE_BLOCKLIST);
-      await OS.File.writeAtomic(path, request.responseText, {tmpPath: path + ".tmp"});
+      let path = this.profileBlocklistPath;
+      await OS.File.writeAtomic(path, request.responseText, {
+        tmpPath: path + ".tmp",
+      });
     } catch (e) {
       LOG("Blocklist::onXMLLoad: " + e);
     }
@@ -750,18 +1930,23 @@ var Blocklist = {
     if (status != 0) {
       try {
         statusText = request.statusText;
-      } catch (e) {
-      }
+      } catch (e) {}
     }
-    LOG("Blocklist:onError: There was an error loading the blocklist file\r\n" +
-        statusText);
+    LOG(
+      "Blocklist:onError: There was an error loading the blocklist file\r\n" +
+        statusText
+    );
   },
 
   /**
    * Whether or not we've finished loading the blocklist.
    */
   get isLoaded() {
-    return this._addonEntries != null && this._gfxEntries != null && this._pluginEntries != null;
+    return (
+      this._addonEntries != null &&
+      this._gfxEntries != null &&
+      this._pluginEntries != null
+    );
   },
 
   /* Used for testing */
@@ -786,21 +1971,82 @@ var Blocklist = {
   },
 
   async _loadBlocklistAsyncInternal() {
+    if (this.isLoaded) {
+      return;
+    }
+
+    if (!gBlocklistEnabled) {
+      LOG("Blocklist::loadBlocklist: blocklist is disabled");
+      return;
+    }
+
+    let xmlDoc;
     try {
       // Get the path inside the try...catch because there's no profileDir in e.g. xpcshell tests.
       let profFile = FileUtils.getFile(KEY_PROFILEDIR, [FILE_BLOCKLIST]);
-      await this._loadFileInternal(profFile);
-      return;
+      xmlDoc = await this._loadFile(profFile);
     } catch (e) {
       LOG("Blocklist::loadBlocklistAsync: Failed to load XML file " + e);
     }
 
-    var appFile = FileUtils.getFile(KEY_APPDIR, [FILE_BLOCKLIST]);
-    try {
-      await this._loadFileInternal(appFile);
+    // If there's no blocklist.xml in the profile, read it from the
+    // application.  Even if blocklist.xml exists in the profile, if this
+    // is the first run of a new application version, read the application
+    // version anyway and check if it is newer.
+    if (!xmlDoc || AddonManagerPrivate.browserUpdated) {
+      var appFile = FileUtils.getFile(KEY_APPDIR, [FILE_BLOCKLIST]);
+      let appDoc;
+      try {
+        appDoc = await this._loadFile(appFile);
+      } catch (e) {
+        LOG("Blocklist::loadBlocklistAsync: Failed to load XML file " + e);
+      }
+
+      if (xmlDoc && appDoc) {
+        // If we have a new blocklist.xml in the application directory,
+        // delete the older one from the profile so we'll fall back to
+        // the app version on subsequent startups.
+        let clearProfile = false;
+        if (!xmlDoc.documentElement.hasAttribute("lastupdate")) {
+          clearProfile = true;
+        } else {
+          let profileTS = parseInt(
+            xmlDoc.documentElement.getAttribute("lastupdate"),
+            10
+          );
+          let appTS = parseInt(
+            appDoc.documentElement.getAttribute("lastupdate"),
+            10
+          );
+          if (appTS > profileTS) {
+            clearProfile = true;
+          }
+        }
+
+        if (clearProfile) {
+          await OS.File.remove(this.profileBlocklistPath);
+          xmlDoc = null;
+        }
+      }
+
+      if (!xmlDoc) {
+        // If we get here, either there was not a blocklist.xml in the
+        // profile, or it was deleted for being too old.  Fall back to
+        // the version from the application instead.
+        xmlDoc = appDoc;
+      }
+    }
+
+    if (xmlDoc) {
+      await new Promise(resolve => {
+        ChromeUtils.idleDispatch(async () => {
+          if (!this.isLoaded) {
+            await this._loadBlocklistFromXML(xmlDoc);
+          }
+          resolve();
+        });
+      });
       return;
-    } catch (e) {
-      LOG("Blocklist::loadBlocklistAsync: Failed to load XML file " + e);
     }
 
     LOG("Blocklist::loadBlocklistAsync: no XML File found");
@@ -811,48 +2057,38 @@ var Blocklist = {
     this._pluginEntries = [];
   },
 
-  async _loadFileInternal(file) {
-    if (this.isLoaded) {
-      return;
-    }
-
-    if (!gBlocklistEnabled) {
-      LOG("Blocklist::_loadFileInternal: blocklist is disabled");
-      return;
-    }
-
-    let xmlDoc = await new Promise((resolve, reject) => {
+  // Loads the given file as xml, resolving with an XMLDocument.
+  // Rejects if the file cannot be loaded or if it cannot be parsed as xml.
+  _loadFile(file) {
+    return new Promise((resolve, reject) => {
       let request = new XMLHttpRequest();
       request.open("GET", Services.io.newFileURI(file).spec, true);
       request.overrideMimeType("text/xml");
       request.addEventListener("error", reject);
       request.addEventListener("load", function() {
-        let {status} = request;
+        let { status } = request;
         if (status != 200 && status != 0) {
-          LOG("_loadFileInternal: there was an error during load, got status: " + status);
-          reject(new Error("Couldn't load blocklist file"));
+          LOG(
+            "_loadFile: there was an error during load, got status: " + status
+          );
+          reject(new BlocklistError("Couldn't load blocklist file"));
           return;
         }
         let doc = request.responseXML;
         if (doc.documentElement.namespaceURI != XMLURI_BLOCKLIST) {
-          LOG("Blocklist::_loadBlocklistFromString: aborting due to incorrect " +
-              "XML Namespace.\nExpected: " + XMLURI_BLOCKLIST + "\n" +
-              "Received: " + doc.documentElement.namespaceURI);
-          reject(new Error("Local blocklist file has the wrong namespace!"));
+          LOG(
+            "_loadFile: aborting due to incorrect XML Namespace.\n" +
+              `Expected: ${XMLURI_BLOCKLIST}\n` +
+              `Received: ${doc.documentElement.namespaceURI}`
+          );
+          reject(
+            new BlocklistError("Local blocklist file has the wrong namespace!")
+          );
           return;
         }
         resolve(doc);
       });
       request.send(null);
-    });
-
-    await new Promise(resolve => {
-      ChromeUtils.idleDispatch(async () => {
-        if (!this.isLoaded) {
-          await this._loadBlocklistFromXML(xmlDoc);
-        }
-        resolve();
-      });
     });
   },
 
@@ -864,28 +2100,42 @@ var Blocklist = {
       var children = doc.documentElement.children;
       for (let element of children) {
         switch (element.localName) {
-        case "emItems":
-          this._addonEntries = await this._processItemNodes(element.children, "emItem",
-                                                            this._handleEmItemNode);
-          break;
-        case "pluginItems":
-          this._pluginEntries = await this._processItemNodes(element.children, "pluginItem",
-                                                             this._handlePluginItemNode);
-          break;
-        case "gfxItems":
-          // Parse as simple list of objects.
-          this._gfxEntries = await this._processItemNodes(element.children, "gfxBlacklistEntry",
-                                                          this._handleGfxBlacklistNode);
-          break;
-        default:
-          LOG("Blocklist::_loadBlocklistFromXML: ignored entries " + element.localName);
+          case "emItems":
+            this._addonEntries = await this._processItemNodes(
+              element.children,
+              "emItem",
+              this._handleEmItemNode
+            );
+            break;
+          case "pluginItems":
+            this._pluginEntries = await this._processItemNodes(
+              element.children,
+              "pluginItem",
+              this._handlePluginItemNode
+            );
+            break;
+          case "gfxItems":
+            // Parse as simple list of objects.
+            this._gfxEntries = await this._processItemNodes(
+              element.children,
+              "gfxBlacklistEntry",
+              this._handleGfxBlacklistNode
+            );
+            break;
+          default:
+            LOG(
+              "Blocklist::_loadBlocklistFromXML: ignored entries " +
+                element.localName
+            );
         }
       }
       if (this._gfxEntries.length > 0) {
         this._notifyObserversBlocklistGFX();
       }
     } catch (e) {
-      LOG("Blocklist::_loadBlocklistFromXML: Error constructing blocklist " + e);
+      LOG(
+        "Blocklist::_loadBlocklistFromXML: Error constructing blocklist " + e
+      );
     }
     // Dispatch to mainthread because consumers may try to construct nsIPluginHost
     // again based on this notification, while we were called from nsIPluginHost
@@ -910,8 +2160,9 @@ var Blocklist = {
   },
 
   _handleEmItemNode(blocklistElement, result) {
-    if (!matchesOSABI(blocklistElement))
+    if (!matchesOSABI(blocklistElement)) {
       return;
+    }
 
     let blockEntry = {
       versions: [],
@@ -954,8 +2205,9 @@ var Blocklist = {
     }
     // if only the extension ID is specified block all versions of the
     // extension for the current application.
-    if (blockEntry.versions.length == 0)
+    if (blockEntry.versions.length == 0) {
       blockEntry.versions.push(new BlocklistItemData(null));
+    }
 
     blockEntry.blockID = blocklistElement.getAttribute("blockID");
 
@@ -963,8 +2215,9 @@ var Blocklist = {
   },
 
   _handlePluginItemNode(blocklistElement, result) {
-    if (!matchesOSABI(blocklistElement))
+    if (!matchesOSABI(blocklistElement)) {
       return;
+    }
 
     let children = blocklistElement.children;
     var blockEntry = {
@@ -995,11 +2248,13 @@ var Blocklist = {
       }
     }
     // Plugin entries require *something* to match to an actual plugin
-    if (!hasMatch)
+    if (!hasMatch) {
       return;
+    }
     // Add a default versionRange if there wasn't one specified
-    if (blockEntry.versions.length == 0)
+    if (blockEntry.versions.length == 0) {
       blockEntry.versions.push(new BlocklistItemData(null));
+    }
 
     blockEntry.blockID = blocklistElement.getAttribute("blockID");
 
@@ -1054,8 +2309,12 @@ var Blocklist = {
           }
         }
       } else if (matchElement.localName == "versionRange") {
-        value = {minVersion: (matchElement.getAttribute("minVersion") || "").trim() || "0",
-                 maxVersion: (matchElement.getAttribute("maxVersion") || "").trim() || "*"};
+        value = {
+          minVersion:
+            (matchElement.getAttribute("minVersion") || "").trim() || "0",
+          maxVersion:
+            (matchElement.getAttribute("maxVersion") || "").trim() || "*",
+        };
       } else {
         value = (matchElement.textContent || "").trim();
       }
@@ -1072,8 +2331,12 @@ var Blocklist = {
       return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
     }
     await this.loadBlocklistAsync();
-    return this._getPluginBlocklistState(plugin, this._pluginEntries,
-                                         appVersion, toolkitVersion);
+    return this._getPluginBlocklistState(
+      plugin,
+      this._pluginEntries,
+      appVersion,
+      toolkitVersion
+    );
   },
 
   /**
@@ -1095,17 +2358,21 @@ var Blocklist = {
    *        or null if there is no matching entry.
    */
   _getPluginBlocklistEntry(plugin, pluginEntries, appVersion, toolkitVersion) {
-    if (!gBlocklistEnabled)
+    if (!gBlocklistEnabled) {
       return null;
+    }
 
     // Not all applications implement nsIXULAppInfo (e.g. xpcshell doesn't).
-    if (!appVersion && !gAppVersion)
+    if (!appVersion && !gAppVersion) {
       return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
+    }
 
-    if (!appVersion)
+    if (!appVersion) {
       appVersion = gAppVersion;
-    if (!toolkitVersion)
+    }
+    if (!toolkitVersion) {
       toolkitVersion = gApp.platformVersion;
+    }
 
     const pluginProperties = {
       description: plugin.description,
@@ -1117,20 +2384,28 @@ var Blocklist = {
       var matchFailed = false;
       for (var name in blockEntry.matches) {
         let pluginProperty = pluginProperties[name];
-        if (typeof(pluginProperty) !== "string" ||
-            !blockEntry.matches[name].test(pluginProperty)) {
+        if (
+          typeof pluginProperty !== "string" ||
+          !blockEntry.matches[name].test(pluginProperty)
+        ) {
           matchFailed = true;
           break;
         }
       }
 
-      if (matchFailed)
+      if (matchFailed) {
         continue;
+      }
 
       for (let blockEntryVersion of blockEntry.versions) {
-        if (blockEntryVersion.includesItem(pluginProperties.version, appVersion,
-                                           toolkitVersion)) {
-          return {entry: blockEntry, version: blockEntryVersion};
+        if (
+          blockEntryVersion.includesItem(
+            pluginProperties.version,
+            appVersion,
+            toolkitVersion
+          )
+        ) {
+          return { entry: blockEntry, version: blockEntryVersion };
         }
       }
     }
@@ -1157,22 +2432,29 @@ var Blocklist = {
    *        defined in nsIBlocklistService.
    */
   _getPluginBlocklistState(plugin, pluginEntries, appVersion, toolkitVersion) {
-    let r = this._getPluginBlocklistEntry(plugin, pluginEntries,
-                                          appVersion, toolkitVersion);
+    let r = this._getPluginBlocklistEntry(
+      plugin,
+      pluginEntries,
+      appVersion,
+      toolkitVersion
+    );
     if (!r) {
       return Ci.nsIBlocklistService.STATE_NOT_BLOCKED;
     }
 
-    let {version: blockEntryVersion} = r;
+    let { version: blockEntryVersion } = r;
 
-    if (blockEntryVersion.severity >= gBlocklistLevel)
+    if (blockEntryVersion.severity >= gBlocklistLevel) {
       return Ci.nsIBlocklistService.STATE_BLOCKED;
+    }
     if (blockEntryVersion.severity == SEVERITY_OUTDATED) {
       let vulnerabilityStatus = blockEntryVersion.vulnerabilityStatus;
-      if (vulnerabilityStatus == VULNERABILITYSTATUS_UPDATE_AVAILABLE)
+      if (vulnerabilityStatus == VULNERABILITYSTATUS_UPDATE_AVAILABLE) {
         return Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE;
-      if (vulnerabilityStatus == VULNERABILITYSTATUS_NO_UPDATE)
+      }
+      if (vulnerabilityStatus == VULNERABILITYSTATUS_NO_UPDATE) {
         return Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE;
+      }
       return Ci.nsIBlocklistService.STATE_OUTDATED;
     }
     return Ci.nsIBlocklistService.STATE_SOFTBLOCKED;
@@ -1195,9 +2477,21 @@ var Blocklist = {
 
   _notifyObserversBlocklistGFX() {
     let sortedProps = [
-      "blockID", "devices", "driverVersion", "driverVersionComparator", "driverVersionMax",
-      "feature", "featureStatus", "hardware", "manufacturer", "model", "os", "osversion",
-      "product", "vendor", "versionRange",
+      "blockID",
+      "devices",
+      "driverVersion",
+      "driverVersionComparator",
+      "driverVersionMax",
+      "feature",
+      "featureStatus",
+      "hardware",
+      "manufacturer",
+      "model",
+      "os",
+      "osversion",
+      "product",
+      "vendor",
+      "versionRange",
     ];
     // Notify `GfxInfoBase`, by passing a string serialization.
     // This way we avoid spreading XML structure logics there.
@@ -1218,11 +2512,16 @@ var Blocklist = {
       }
       payload.push(entryLines.join("\t"));
     }
-    Services.obs.notifyObservers(null, "blocklist-data-gfxItems", payload.join("\n"));
+    Services.obs.notifyObservers(
+      null,
+      "blocklist-data-gfxItems",
+      payload.join("\n")
+    );
   },
 
   _notifyObserversBlocklistUpdated() {
-    Services.obs.notifyObservers(this, "blocklist-updated");
+    Services.obs.notifyObservers(this, "addon-blocklist-updated");
+    Services.obs.notifyObservers(this, "plugin-blocklist-updated");
   },
 
   async _blocklistUpdated(oldAddonEntries, oldPluginEntries) {
@@ -1230,8 +2529,9 @@ var Blocklist = {
 
     // A helper function that reverts the prefs passed to default values.
     function resetPrefs(prefs) {
-      for (let pref of prefs)
+      for (let pref of prefs) {
         Services.prefs.clearUserPref(pref);
+      }
     }
     const types = ["extension", "theme", "locale", "dictionary", "service"];
     let addons = await AddonManager.getAddonsByTypes(types);
@@ -1246,12 +2546,19 @@ var Blocklist = {
       }
       let state = addon.blocklistState;
 
-      LOG("Blocklist state for " + addon.id + " changed from " +
-          oldState + " to " + state);
+      LOG(
+        "Blocklist state for " +
+          addon.id +
+          " changed from " +
+          oldState +
+          " to " +
+          state
+      );
 
       // We don't want to re-warn about add-ons
-      if (state == oldState)
+      if (state == oldState) {
         continue;
+      }
 
       if (state === Ci.nsIBlocklistService.STATE_BLOCKED) {
         // It's a hard block. We must reset certain preferences.
@@ -1260,17 +2567,21 @@ var Blocklist = {
       }
 
       // Ensure that softDisabled is false if the add-on is not soft blocked
-      if (state != Ci.nsIBlocklistService.STATE_SOFTBLOCKED)
+      if (state != Ci.nsIBlocklistService.STATE_SOFTBLOCKED) {
         addon.softDisabled = false;
+      }
 
       // Don't warn about add-ons becoming unblocked.
-      if (state == Ci.nsIBlocklistService.STATE_NOT_BLOCKED)
+      if (state == Ci.nsIBlocklistService.STATE_NOT_BLOCKED) {
         continue;
+      }
 
       // If an add-on has dropped from hard to soft blocked just mark it as
       // soft disabled and don't warn about it.
-      if (state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED &&
-          oldState == Ci.nsIBlocklistService.STATE_BLOCKED) {
+      if (
+        state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED &&
+        oldState == Ci.nsIBlocklistService.STATE_BLOCKED
+      ) {
         addon.softDisabled = true;
         continue;
       }
@@ -1282,8 +2593,12 @@ var Blocklist = {
         // softDisabled at the same time as userDisabled to make it clear
         // which was the original cause of the add-on becoming disabled in a
         // way that the user can change.
-        if (state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED && !addon.userDisabled)
+        if (
+          state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED &&
+          !addon.userDisabled
+        ) {
           addon.softDisabled = true;
+        }
         continue;
       }
 
@@ -1301,28 +2616,41 @@ var Blocklist = {
 
     AddonManagerPrivate.updateAddonAppDisabledStates();
 
-    var phs = Cc["@mozilla.org/plugin/host;1"].
-              getService(Ci.nsIPluginHost);
+    var phs = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
     var plugins = phs.getPluginTags();
 
     for (let plugin of plugins) {
       let oldState = -1;
-      if (oldPluginEntries)
+      if (oldPluginEntries) {
         oldState = this._getPluginBlocklistState(plugin, oldPluginEntries);
+      }
       let state = this._getPluginBlocklistState(plugin, this._pluginEntries);
-      LOG("Blocklist state for " + plugin.name + " changed from " +
-          oldState + " to " + state);
+      LOG(
+        "Blocklist state for " +
+          plugin.name +
+          " changed from " +
+          oldState +
+          " to " +
+          state
+      );
       // We don't want to re-warn about items
-      if (state == oldState)
+      if (state == oldState) {
         continue;
+      }
 
       if (oldState == Ci.nsIBlocklistService.STATE_BLOCKED) {
-        if (state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED)
+        if (state == Ci.nsIBlocklistService.STATE_SOFTBLOCKED) {
           plugin.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
-      } else if (!plugin.disabled && state != Ci.nsIBlocklistService.STATE_NOT_BLOCKED) {
-        if (state != Ci.nsIBlocklistService.STATE_OUTDATED &&
-            state != Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE &&
-            state != Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE) {
+        }
+      } else if (
+        !plugin.disabled &&
+        state != Ci.nsIBlocklistService.STATE_NOT_BLOCKED
+      ) {
+        if (
+          state != Ci.nsIBlocklistService.STATE_OUTDATED &&
+          state != Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE &&
+          state != Ci.nsIBlocklistService.STATE_VULNERABLE_NO_UPDATE
+        ) {
           addonList.push({
             name: plugin.name,
             version: plugin.version,
@@ -1343,8 +2671,9 @@ var Blocklist = {
 
     if ("@mozilla.org/addons/blocklist-prompt;1" in Cc) {
       try {
-        let blockedPrompter = Cc["@mozilla.org/addons/blocklist-prompt;1"]
-                               .getService().wrappedJSObject;
+        let blockedPrompter = Cc[
+          "@mozilla.org/addons/blocklist-prompt;1"
+        ].getService().wrappedJSObject;
         blockedPrompter.prompt(addonList);
       } catch (e) {
         LOG(e);
@@ -1366,8 +2695,9 @@ var Blocklist = {
     */
     let applyBlocklistChanges = () => {
       for (let addon of addonList) {
-        if (!addon.disable)
+        if (!addon.disable) {
           continue;
+        }
 
         if (addon.item instanceof Ci.nsIPluginTag) {
           addon.item.enabledState = Ci.nsIPluginTag.STATE_DISABLED;
@@ -1380,11 +2710,15 @@ var Blocklist = {
         }
       }
 
-      if (args.restart)
+      if (args.restart) {
         restartApp();
+      }
 
       this._notifyObserversBlocklistUpdated();
-      Services.obs.removeObserver(applyBlocklistChanges, "addon-blocklist-closed");
+      Services.obs.removeObserver(
+        applyBlocklistChanges,
+        "addon-blocklist-closed"
+      );
     };
 
     Services.obs.addObserver(applyBlocklistChanges, "addon-blocklist-closed");
@@ -1401,10 +2735,16 @@ var Blocklist = {
       }
     }
 
-    let blocklistWindow = Services.ww.openWindow(null, URI_BLOCKLIST_DIALOG, "",
-                            "chrome,centerscreen,dialog,titlebar", args);
-    if (blocklistWindow)
+    let blocklistWindow = Services.ww.openWindow(
+      null,
+      URI_BLOCKLIST_DIALOG,
+      "",
+      "chrome,centerscreen,dialog,titlebar",
+      args
+    );
+    if (blocklistWindow) {
       blocklistWindow.addEventListener("unload", blocklistUnloadHandler);
+    }
   },
 };
 
@@ -1420,10 +2760,13 @@ function BlocklistItemData(versionRangeElement) {
     let versionRange = this.getBlocklistVersionRange(versionRangeElement);
     this.minVersion = versionRange.minVersion;
     this.maxVersion = versionRange.maxVersion;
-    if (versionRangeElement.hasAttribute("severity"))
+    if (versionRangeElement.hasAttribute("severity")) {
       this.severity = versionRangeElement.getAttribute("severity");
+    }
     if (versionRangeElement.hasAttribute("vulnerabilitystatus")) {
-      this.vulnerabilityStatus = versionRangeElement.getAttribute("vulnerabilitystatus");
+      this.vulnerabilityStatus = versionRangeElement.getAttribute(
+        "vulnerabilitystatus"
+      );
     }
     for (let targetAppElement of versionRangeElement.children) {
       if (targetAppElement.localName == "targetApplication") {
@@ -1439,8 +2782,9 @@ function BlocklistItemData(versionRangeElement) {
 
   // Default to all versions of the current application when no targetApplication
   // elements were found
-  if (!foundTarget)
-    this.targetApps[gAppID] = [{minVersion: null, maxVersion: null}];
+  if (!foundTarget) {
+    this.targetApps[gAppID] = [{ minVersion: null, maxVersion: null }];
+  }
 }
 
 BlocklistItemData.prototype = {
@@ -1461,16 +2805,19 @@ BlocklistItemData.prototype = {
   includesItem(version, appVersion, toolkitVersion) {
     // Some platforms have no version for plugins, these don't match if there
     // was a min/maxVersion provided
-    if (!version && (this.minVersion || this.maxVersion))
+    if (!version && (this.minVersion || this.maxVersion)) {
       return false;
+    }
 
     // Check if the item version matches
-    if (!this.matchesRange(version, this.minVersion, this.maxVersion))
+    if (!this.matchesRange(version, this.minVersion, this.maxVersion)) {
       return false;
+    }
 
     // Check if the application version matches
-    if (this.matchesTargetRange(gAppID, appVersion))
+    if (this.matchesTargetRange(gAppID, appVersion)) {
       return true;
+    }
 
     // Check if the toolkit version matches
     return this.matchesTargetRange(TOOLKIT_ID, toolkitVersion);
@@ -1491,10 +2838,12 @@ BlocklistItemData.prototype = {
    *        Whether the item matches the range.
    */
   matchesRange(version, minVersion, maxVersion) {
-    if (minVersion && Services.vc.compare(version, minVersion) < 0)
+    if (minVersion && Services.vc.compare(version, minVersion) < 0) {
       return false;
-    if (maxVersion && Services.vc.compare(version, maxVersion) > 0)
+    }
+    if (maxVersion && Services.vc.compare(version, maxVersion) > 0) {
       return false;
+    }
     return true;
   },
 
@@ -1510,12 +2859,14 @@ BlocklistItemData.prototype = {
    */
   matchesTargetRange(appID, appVersion) {
     var blTargetApp = this.targetApps[appID];
-    if (!blTargetApp)
+    if (!blTargetApp) {
       return false;
+    }
 
     for (let app of blTargetApp) {
-      if (this.matchesRange(appVersion, app.minVersion, app.maxVersion))
+      if (this.matchesRange(appVersion, app.minVersion, app.maxVersion)) {
         return true;
+      }
     }
 
     return false;
@@ -1532,7 +2883,7 @@ BlocklistItemData.prototype = {
    *          "maxVersion"  The maximum version in a version range (default = null).
    */
   getBlocklistAppVersions(targetAppElement) {
-    var appVersions = [ ];
+    var appVersions = [];
 
     if (targetAppElement) {
       for (let versionRangeElement of targetAppElement.children) {
@@ -1543,8 +2894,9 @@ BlocklistItemData.prototype = {
     }
     // return minVersion = null and maxVersion = null if no specific versionRange
     // elements were found
-    if (appVersions.length == 0)
-      appVersions.push({minVersion: null, maxVersion: null});
+    if (appVersions.length == 0) {
+      appVersions.push({ minVersion: null, maxVersion: null });
+    }
     return appVersions;
   },
 
@@ -1568,5 +2920,191 @@ BlocklistItemData.prototype = {
     return { minVersion, maxVersion };
   },
 };
+
+let BlocklistRS = {
+  _init() {},
+  shutdown() {
+    GfxBlocklistRS.shutdown();
+    PluginBlocklistRS.shutdown();
+    ExtensionBlocklistRS.shutdown();
+  },
+  isLoaded: true,
+
+  notify() {
+    // ignore. We might miss a timer notification once if the XML impl. is disabled
+    // when the timer fires and subsequently gets enabled. That seems OK.
+  },
+
+  forceUpdate() {
+    for (let blocklist of [
+      GfxBlocklistRS,
+      ExtensionBlocklistRS,
+      PluginBlocklistRS,
+    ]) {
+      blocklist.sync().catch(Cu.reportError);
+    }
+  },
+
+  loadBlocklistAsync() {
+    // Need to ensure we notify gfx of new stuff.
+    GfxBlocklistRS.checkForEntries();
+    ExtensionBlocklistRS.ensureInitialized();
+    PluginBlocklistRS.ensureInitialized();
+    // Also ensure that if we start the other service after this, we
+    // initialize it straight away.
+    gLoadingWasTriggered = true;
+  },
+
+  getPluginBlocklistState(plugin, appVersion, toolkitVersion) {
+    return PluginBlocklistRS.getState(plugin, appVersion, toolkitVersion);
+  },
+
+  getPluginBlockURL(plugin) {
+    return PluginBlocklistRS.getURL(plugin);
+  },
+
+  getAddonBlocklistState(addon, appVersion, toolkitVersion) {
+    return ExtensionBlocklistRS.getState(addon, appVersion, toolkitVersion);
+  },
+
+  getAddonBlocklistEntry(addon, appVersion, toolkitVersion) {
+    return ExtensionBlocklistRS.getEntry(addon, appVersion, toolkitVersion);
+  },
+
+  _blocklistUpdated() {
+    ExtensionBlocklistRS._onUpdate();
+    PluginBlocklistRS._onUpdate();
+  },
+};
+
+const kSharedAPIs = [
+  "notify",
+  "loadBlocklistAsync",
+  "getPluginBlockURL",
+  "getPluginBlocklistState",
+  "getAddonBlocklistState",
+  "getAddonBlocklistEntry",
+  "_blocklistUpdated",
+];
+let Blocklist = {
+  _init() {
+    Services.obs.addObserver(this, "xpcom-shutdown");
+    gLoggingEnabled = Services.prefs.getBoolPref(
+      PREF_EM_LOGGING_ENABLED,
+      false
+    );
+    gBlocklistEnabled = Services.prefs.getBoolPref(
+      PREF_BLOCKLIST_ENABLED,
+      true
+    );
+    gBlocklistLevel = Math.min(
+      Services.prefs.getIntPref(PREF_BLOCKLIST_LEVEL, DEFAULT_LEVEL),
+      MAX_BLOCK_LEVEL
+    );
+    Services.prefs.addObserver("extensions.blocklist.", this);
+    Services.prefs.addObserver(PREF_EM_LOGGING_ENABLED, this);
+
+    // Define forwarding functions:
+    for (let k of kSharedAPIs) {
+      this[k] = (...args) => this._impl[k](...args);
+    }
+
+    this.onUpdateImplementation();
+
+    // If the stub blocklist service deferred any queries because we
+    // weren't loaded yet, execute them now.
+    for (let entry of Services.blocklist.pluginQueries.splice(0)) {
+      entry.resolve(
+        this.getPluginBlocklistState(
+          entry.plugin,
+          entry.appVersion,
+          entry.toolkitVersion
+        )
+      );
+    }
+  },
+  // the `isLoaded` property needs forwarding too:
+  get isLoaded() {
+    return this._impl.isLoaded;
+  },
+
+  onUpdateImplementation(shouldCheckForUpdates = false) {
+    this._impl = this.useXML ? BlocklistXML : BlocklistRS;
+    this._impl._init();
+    if (shouldCheckForUpdates) {
+      if (this.useXML) {
+        // In theory, we should be able to use the "last update" pref to figure out
+        // when we last fetched updates and avoid fetching it if we switched
+        // this on and off within a day. However, the pref is updated by the
+        // update timer code, but the request is made in our code - and a request is
+        // not made if we're not using the XML blocklist, despite the pref being
+        // updated. In other words, the pref being updated is no guarantee that we
+        // actually updated the list that day. So just unconditionally update it:
+        this._impl.notify();
+      } else {
+        this._impl.forceUpdate();
+      }
+    }
+  },
+
+  shutdown() {
+    this._impl.shutdown();
+    Services.obs.removeObserver(this, "xpcom-shutdown");
+    Services.prefs.removeObserver("extensions.blocklist.", this);
+    Services.prefs.removeObserver(PREF_EM_LOGGING_ENABLED, this);
+  },
+
+  observe(subject, topic, prefName) {
+    switch (topic) {
+      case "xpcom-shutdown":
+        this.shutdown();
+        break;
+      case "profile-after-change":
+        // We're only called here on non-Desktop-Firefox, and use this opportunity to try to
+        // load the blocklist asynchronously. On desktop Firefox, we load the list from
+        // nsBrowserGlue after sessionstore-windows-restored.
+        this.loadBlocklistAsync();
+        break;
+      case "nsPref:changed":
+        switch (prefName) {
+          case PREF_EM_LOGGING_ENABLED:
+            gLoggingEnabled = Services.prefs.getBoolPref(
+              PREF_EM_LOGGING_ENABLED,
+              false
+            );
+            break;
+          case PREF_BLOCKLIST_ENABLED:
+            gBlocklistEnabled = Services.prefs.getBoolPref(
+              PREF_BLOCKLIST_ENABLED,
+              true
+            );
+            // Historically, this only does something if we're using the XML blocklist,
+            // so check:
+            if (this._impl == BlocklistXML) {
+              this._impl._onBlocklistEnabledToggle();
+            } else {
+              this._impl._blocklistUpdated();
+            }
+            break;
+          case PREF_BLOCKLIST_LEVEL:
+            gBlocklistLevel = Math.min(
+              Services.prefs.getIntPref(PREF_BLOCKLIST_LEVEL, DEFAULT_LEVEL),
+              MAX_BLOCK_LEVEL
+            );
+            this._blocklistUpdated(null, null);
+            break;
+        }
+        break;
+    }
+  },
+};
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  Blocklist,
+  "useXML",
+  "extensions.blocklist.useXML",
+  true,
+  () => Blocklist.onUpdateImplementation(true)
+);
 
 Blocklist._init();

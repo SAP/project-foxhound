@@ -9,7 +9,7 @@
 
 #include "Link.h"
 #include "nsDOMTokenList.h"
-#include "SVGString.h"
+#include "SVGAnimatedString.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
 
 nsresult NS_NewSVGAElement(
@@ -42,14 +42,13 @@ class SVGAElement final : public SVGAElementBase, public Link {
 
   // nsINode interface methods
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  MOZ_CAN_RUN_SCRIPT
+  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   virtual int32_t TabIndexDefault() override;
   bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) override;
@@ -67,17 +66,16 @@ class SVGAElement final : public SVGAElementBase, public Link {
   virtual bool ElementHasHref() const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedString> Href();
-  already_AddRefed<SVGAnimatedString> Target();
+  already_AddRefed<DOMSVGAnimatedString> Href();
+  already_AddRefed<DOMSVGAnimatedString> Target();
   void GetDownload(nsAString& aDownload);
   void SetDownload(const nsAString& aDownload, ErrorResult& rv);
   void GetPing(nsAString& aPing);
   void SetPing(const nsAString& aPing, mozilla::ErrorResult& rv);
   void GetRel(nsAString& aRel);
   void SetRel(const nsAString& aRel, mozilla::ErrorResult& rv);
-  void SetReferrerPolicy(const nsAString& aReferrerPolicy,
-                         mozilla::ErrorResult& rv);
-  void GetReferrerPolicy(nsAString& aReferrerPolicy);
+  void SetReferrerPolicy(const nsAString& aPolicy, mozilla::ErrorResult& rv);
+  void GetReferrerPolicy(nsAString& aPolicy);
   nsDOMTokenList* RelList();
   void GetHreflang(nsAString& aHreflang);
   void SetHreflang(const nsAString& aHreflang, mozilla::ErrorResult& rv);
@@ -92,12 +90,12 @@ class SVGAElement final : public SVGAElementBase, public Link {
   }
 
  protected:
-  virtual ~SVGAElement();
+  virtual ~SVGAElement() = default;
 
   virtual StringAttributesInfo GetStringInfo() override;
 
   enum { HREF, XLINK_HREF, TARGET };
-  SVGString mStringAttributes[3];
+  SVGAnimatedString mStringAttributes[3];
   static StringInfo sStringInfo[3];
 
   RefPtr<nsDOMTokenList> mRelList;

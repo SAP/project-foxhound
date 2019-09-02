@@ -102,15 +102,6 @@ mod checks;
 pub const SHARING_CACHE_SIZE: usize = 31;
 const SHARING_CACHE_BACKING_STORE_SIZE: usize = SHARING_CACHE_SIZE + 1;
 
-/// Controls whether the style sharing cache is used.
-#[derive(Clone, Copy, PartialEq)]
-pub enum StyleSharingBehavior {
-    /// Style sharing allowed.
-    Allow,
-    /// Style sharing disallowed.
-    Disallow,
-}
-
 /// Opaque pointer type to compare ComputedValues identities.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpaqueComputedValues(NonNull<()>);
@@ -485,8 +476,12 @@ type SharingCache<E> = SharingCacheBase<StyleSharingCandidate<E>>;
 type TypelessSharingCache = SharingCacheBase<FakeCandidate>;
 type StoredSharingCache = Arc<AtomicRefCell<TypelessSharingCache>>;
 
-thread_local!(static SHARING_CACHE_KEY: StoredSharingCache =
-              Arc::new(AtomicRefCell::new(TypelessSharingCache::default())));
+thread_local! {
+    // TODO(emilio): Looks like a few of these should just be Rc<RefCell<>> or
+    // something. No need for atomics in the thread-local code.
+    static SHARING_CACHE_KEY: StoredSharingCache =
+        Arc::new_leaked(AtomicRefCell::new(TypelessSharingCache::default()));
+}
 
 /// An LRU cache of the last few nodes seen, so that we can aggressively try to
 /// reuse their styles.
@@ -724,27 +719,6 @@ impl<E: TElement> StyleSharingCache<E> {
         // apply to them, from the respective trees.
         if target.element.containing_shadow() != candidate.element.containing_shadow() {
             trace!("Miss: Different containing shadow roots");
-            return None;
-        }
-
-        // Note that in theory we shouldn't need this XBL check. However, XBL is
-        // absolutely broken in all sorts of ways.
-        //
-        // A style change that changes which XBL binding applies to an element
-        // arrives there, with the element still having the old prototype
-        // binding attached. And thus we try to match revalidation selectors
-        // with the old XBL binding, because we can't look at the new ones of
-        // course. And that causes us to revalidate with the wrong selectors and
-        // hit assertions.
-        //
-        // Other than this, we don't need anything else like the containing XBL
-        // binding parent or what not, since two elements with different XBL
-        // bindings will necessarily end up with different style.
-        if !target
-            .element
-            .has_same_xbl_proto_binding_as(candidate.element)
-        {
-            trace!("Miss: Different proto bindings");
             return None;
         }
 

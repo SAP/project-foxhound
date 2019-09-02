@@ -7,6 +7,8 @@
 #ifndef mozilla_dom_localstorage_LSSnapshot_h
 #define mozilla_dom_localstorage_LSSnapshot_h
 
+#include "LSValue.h"
+
 namespace mozilla {
 namespace dom {
 
@@ -14,7 +16,8 @@ class LSDatabase;
 class LSNotifyInfo;
 class LSSnapshotChild;
 class LSSnapshotInitInfo;
-class LSWriteInfo;
+class LSWriteAndNotifyInfo;
+class SnapshotWriteOptimizer;
 
 class LSSnapshot final : public nsIRunnable {
  public:
@@ -77,7 +80,8 @@ class LSSnapshot final : public nsIRunnable {
   nsTHashtable<nsStringHashKey> mLoadedItems;
   nsTHashtable<nsStringHashKey> mUnknownItems;
   nsDataHashtable<nsStringHashKey, nsString> mValues;
-  nsTArray<LSWriteInfo> mWriteInfos;
+  nsAutoPtr<SnapshotWriteOptimizer> mWriteOptimizer;
+  nsAutoPtr<nsTArray<LSWriteAndNotifyInfo>> mWriteAndNotifyInfos;
 
   uint32_t mInitLength;
   uint32_t mLength;
@@ -86,6 +90,7 @@ class LSSnapshot final : public nsIRunnable {
 
   LoadState mLoadState;
 
+  bool mHasOtherProcessObservers;
   bool mExplicit;
   bool mHasPendingStableStateCallback;
   bool mHasPendingTimerCallback;
@@ -112,7 +117,8 @@ class LSSnapshot final : public nsIRunnable {
 
   bool Explicit() const { return mExplicit; }
 
-  nsresult Init(const LSSnapshotInitInfo& aInitInfo, bool aExplicit);
+  nsresult Init(const nsAString& aKey, const LSSnapshotInitInfo& aInitInfo,
+                bool aExplicit);
 
   nsresult GetLength(uint32_t* aResult);
 

@@ -6,52 +6,28 @@
 #ifndef mozilla_dom_DocumentInlines_h
 #define mozilla_dom_DocumentInlines_h
 
-#include "nsContentUtils.h"
 #include "mozilla/dom/Document.h"
+
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLBodyElement.h"
+#include "nsContentUtils.h"
+#include "nsPresContext.h"
 #include "nsStyleSheetService.h"
 
 namespace mozilla {
 namespace dom {
 
-inline HTMLBodyElement* Document::GetBodyElement() {
-  return static_cast<HTMLBodyElement*>(GetHtmlChildElement(nsGkAtoms::body));
+inline PresShell* Document::GetObservingPresShell() const {
+  return mPresShell && mPresShell->IsObservingDocument() ? mPresShell : nullptr;
 }
 
-template <typename T>
-size_t Document::FindDocStyleSheetInsertionPoint(const nsTArray<T>& aDocSheets,
-                                                 const StyleSheet& aSheet) {
-  nsStyleSheetService* sheetService = nsStyleSheetService::GetInstance();
+inline nsPresContext* Document::GetPresContext() const {
+  PresShell* presShell = GetPresShell();
+  return presShell ? presShell->GetPresContext() : nullptr;
+}
 
-  // lowest index first
-  int32_t newDocIndex = IndexOfSheet(aSheet);
-
-  size_t count = aDocSheets.Length();
-  size_t index = 0;
-  for (; index < count; index++) {
-    auto* sheet = static_cast<StyleSheet*>(aDocSheets[index]);
-    MOZ_ASSERT(sheet);
-    int32_t sheetDocIndex = IndexOfSheet(*sheet);
-    if (sheetDocIndex > newDocIndex) break;
-
-    // If the sheet is not owned by the document it can be an author
-    // sheet registered at nsStyleSheetService or an additional author
-    // sheet on the document, which means the new
-    // doc sheet should end up before it.
-    if (sheetDocIndex < 0) {
-      if (sheetService) {
-        auto& authorSheets = *sheetService->AuthorStyleSheets();
-        if (authorSheets.IndexOf(sheet) != authorSheets.NoIndex) {
-          break;
-        }
-      }
-      if (sheet == GetFirstAdditionalAuthorSheet()) {
-        break;
-      }
-    }
-  }
-
-  return size_t(index);
+inline HTMLBodyElement* Document::GetBodyElement() {
+  return static_cast<HTMLBodyElement*>(GetHtmlChildElement(nsGkAtoms::body));
 }
 
 inline void Document::SetServoRestyleRoot(nsINode* aRoot, uint32_t aDirtyBits) {

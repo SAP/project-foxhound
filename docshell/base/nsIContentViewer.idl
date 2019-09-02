@@ -15,23 +15,23 @@ webidl Node;
 #include "nsRect.h"
 
 class nsIWidget;
-class nsIPresShell;
 class nsPresContext;
 class nsView;
 class nsDOMNavigationTiming;
 namespace mozilla {
 class Encoding;
+class PresShell;
 }
 %}
 
 [ptr] native nsIWidgetPtr(nsIWidget);
 [ref] native nsIntRectRef(nsIntRect);
-[ptr] native nsIPresShellPtr(nsIPresShell);
 [ptr] native nsPresContextPtr(nsPresContext);
 [ptr] native nsViewPtr(nsView);
 [ptr] native nsDOMNavigationTimingPtr(nsDOMNavigationTiming);
 [ref] native nsIContentViewerTArray(nsTArray<nsCOMPtr<nsIContentViewer> >);
 [ptr] native Encoding(const mozilla::Encoding);
+[ptr] native PresShellPtr(mozilla::PresShell);
 
 [scriptable, builtinclass, uuid(2da17016-7851-4a45-a7a8-00b360e01595)]
 interface nsIContentViewer : nsISupports
@@ -42,7 +42,7 @@ interface nsIContentViewer : nsISupports
   attribute nsIDocShell container;
 
   [noscript,notxpcom,nostdcall] void loadStart(in Document aDoc);
-  void loadComplete(in nsresult aStatus);
+  [can_run_script] void loadComplete(in nsresult aStatus);
   [notxpcom,nostdcall] readonly attribute boolean loadCompleted;
 
   [notxpcom,nostdcall] readonly attribute boolean isStopped;
@@ -100,7 +100,7 @@ interface nsIContentViewer : nsISupports
 
   /**
    * All users of a content viewer are responsible for calling both
-   * close() and destroy(), in that order. 
+   * close() and destroy(), in that order.
    *
    * close() should be called when the load of a new page for the next
    * content viewer begins, and destroy() should be called when the next
@@ -190,7 +190,8 @@ interface nsIContentViewer : nsISupports
    * Change the layout to view the document with page layout (like print preview), but
    * dynamic and editable (like Galley layout).
    */
-  void setPageMode(in boolean aPageMode, in nsIPrintSettings aPrintSettings);
+  void setPageModeForTesting(in boolean aPageMode,
+                             in nsIPrintSettings aPrintSettings);
 
   /**
    * Get the history entry that this viewer will save itself into when
@@ -215,7 +216,7 @@ interface nsIContentViewer : nsISupports
   attribute boolean isHidden;
 
   // presShell can be null.
-  [notxpcom,nostdcall] readonly attribute nsIPresShellPtr presShell;
+  [notxpcom,nostdcall] readonly attribute PresShellPtr presShell;
   // presContext can be null.
   [notxpcom,nostdcall] readonly attribute nsPresContextPtr presContext;
   // aDocument must not be null.

@@ -95,18 +95,24 @@ unittest_suite
 This is the unit test suite being run in a unit test task.  For example,
 ``mochitest`` or ``cppunittest``.
 
-unittest_flavor
-===============
+unittest_category
+=================
 
-If a unittest suite has subdivisions, those are represented as flavors.  Not
-all suites have flavors, in which case this attribute should be set to match
-the suite.  Examples: ``mochitest-devtools-chrome-chunked`` or ``a11y``.
+This is the high-level category of test the suite corresponds to. This is
+usually the test harness used to run the suite.
 
 unittest_try_name
 =================
 
 This is the name used to refer to a unit test via try syntax.  It
-may not match either of ``unittest_suite`` or ``unittest_flavor``.
+may not match ``unittest_suite``.
+
+unittest_variant
+================
+
+The configuration variant the test suite is running with. If set, this usually
+means the tests are running with a special pref enabled. These are defined in
+``taskgraph.transforms.tests.TEST_VARIANTS``.
 
 talos_try_name
 ==============
@@ -130,18 +136,6 @@ test_chunk
 This is the chunk number of a chunked test suite (talos or unittest).  Note
 that this is a string!
 
-serviceworker_e10s
-==================
-
-For test suites which distinguish whether or not they run with the serviceworker
-e10s redesign enabled.
-
-socketprocess_e10s
-==================
-
-For test suites which distinguish whether or not they run with the socket
-process enabled.
-
 e10s
 ====
 
@@ -158,6 +152,11 @@ nightly
 
 Signals whether the task is part of a nightly graph. Useful when filtering
 out nightly tasks from full task set at target stage.
+
+shippable
+=========
+Signals whether the task is considered "shippable", that it should get signed and is ok to
+be used for nightlies or releases.
 
 all_locales
 ===========
@@ -306,3 +305,14 @@ Phabricator revision.
 retrigger
 =========
 Whether the task can be retriggered, or if it needs to be re-run.
+
+disable-push-apk
+================
+Some GeckoView-only Android tasks produce APKs that shouldn't be
+pushed to the Google Play Store.  Set this to ``true`` to disable
+pushing.
+
+disable-build-signing
+=====================
+Some GeckoView-only tasks produce APKs, but not APKs that should be
+signed.  Set this to ``true`` to disable APK signing.

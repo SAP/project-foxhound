@@ -9,25 +9,35 @@
 
 "use strict";
 
-let searchEngineDetails = [{
-  alias: "g",
-  codes: {
-    context: "",
-    keyword: "",
-    newTab: "",
-    submission: "",
+let searchEngineDetails = [
+  {
+    alias: "g",
+    codes: {
+      context: "",
+      keyword: "",
+      newTab: "",
+      submission: "",
+    },
+    name: "Google",
   },
-  name: "Google",
-}];
+];
 
 let region = Services.prefs.getCharPref("browser.search.region");
 let code = "";
 switch (region) {
   case "US":
-    code = "firefox-b-1-d";
+    if (AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")) {
+      code = "firefox-b-1-e";
+    } else {
+      code = "firefox-b-1-d";
+    }
     break;
   case "DE":
-    code = "firefox-b-d";
+    if (AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")) {
+      code = "firefox-b-e";
+    } else {
+      code = "firefox-b-d";
+    }
     break;
 }
 
@@ -49,7 +59,9 @@ function promiseContentSearchReady(browser) {
         }
       }
 
-      content.addEventListener("ContentSearchService", function listener(aEvent) {
+      content.addEventListener("ContentSearchService", function listener(
+        aEvent
+      ) {
         if (aEvent.detail.type == "State") {
           content.removeEventListener("ContentSearchService", listener);
           resolve();
@@ -94,7 +106,12 @@ async function testSearchEngine(engineDetails) {
       run() {
         // Simulate a contextmenu search
         // FIXME: This is a bit "low-level"...
-        BrowserSearch._loadSearch("foo", false, "contextmenu", Services.scriptSecurityManager.getSystemPrincipal());
+        BrowserSearch._loadSearch(
+          "foo",
+          false,
+          "contextmenu",
+          Services.scriptSecurityManager.getSystemPrincipal()
+        );
       },
     },
     {

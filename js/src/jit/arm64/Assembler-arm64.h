@@ -69,6 +69,8 @@ static constexpr Register CallTempReg5{Registers::x14};
 
 static constexpr Register PreBarrierReg{Registers::x1};
 
+static constexpr Register InterpreterPCReg{Registers::x9};
+
 static constexpr Register ReturnReg{Registers::x0};
 static constexpr Register64 ReturnReg64(ReturnReg);
 static constexpr Register JSReturnReg{Registers::x2};
@@ -224,6 +226,7 @@ class Assembler : public vixl::Assembler {
   void bind(RepatchLabel* label);
   void bind(CodeLabel* label) { label->target()->bind(currentOffset()); }
 
+  void setUnlimitedBuffer() { armbuffer_.setUnlimited(); }
   bool oom() const {
     return AssemblerShared::oom() || armbuffer_.oom() ||
            jumpRelocations_.oom() || dataRelocations_.oom();
@@ -379,6 +382,7 @@ class Assembler : public vixl::Assembler {
 
  public:
   void writeCodePointer(CodeLabel* label) {
+    armbuffer_.assertNoPoolAndNoNops();
     uintptr_t x = uintptr_t(-1);
     BufferOffset off = EmitData(&x, sizeof(uintptr_t));
     label->patchAt()->bind(off.getOffset());
@@ -522,24 +526,24 @@ inline Imm32 Imm64::secondHalf() const { return hi(); }
 
 void PatchJump(CodeLocationJump& jump_, CodeLocationLabel label);
 
-// Forbids pool generation during a specified interval. Not nestable.
-class AutoForbidPools {
-  Assembler* asm_;
-
- public:
-  AutoForbidPools(Assembler* asm_, size_t maxInst) : asm_(asm_) {
-    asm_->enterNoPool(maxInst);
-  }
-  ~AutoForbidPools() { asm_->leaveNoPool(); }
-};
-
 // Forbids nop filling for testing purposes. Not nestable.
 class AutoForbidNops {
+ protected:
   Assembler* asm_;
 
  public:
   explicit AutoForbidNops(Assembler* asm_) : asm_(asm_) { asm_->enterNoNops(); }
   ~AutoForbidNops() { asm_->leaveNoNops(); }
+};
+
+// Forbids pool generation during a specified interval. Not nestable.
+class AutoForbidPoolsAndNops : public AutoForbidNops {
+ public:
+  AutoForbidPoolsAndNops(Assembler* asm_, size_t maxInst)
+      : AutoForbidNops(asm_) {
+    asm_->enterNoPool(maxInst);
+  }
+  ~AutoForbidPoolsAndNops() { asm_->leaveNoPool(); }
 };
 
 }  // namespace jit

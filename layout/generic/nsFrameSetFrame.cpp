@@ -15,6 +15,8 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
 #include "mozilla/Likely.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
 
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValueInlines.h"
@@ -23,18 +25,19 @@
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsIContentInlines.h"
-#include "nsIPresShell.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsHTMLParts.h"
 #include "nsNameSpaceManager.h"
 #include "nsCSSAnonBoxes.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/dom/Element.h"
 #include "nsDisplayList.h"
 #include "nsNodeUtils.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/HTMLFrameSetElement.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
@@ -203,7 +206,7 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   }
 
   nsPresContext* presContext = PresContext();
-  nsIPresShell* shell = presContext->PresShell();
+  mozilla::PresShell* presShell = presContext->PresShell();
 
   nsFrameborder frameborder = GetFrameBorder();
   int32_t borderWidth = GetBorderWidth(presContext, false);
@@ -258,10 +261,11 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // create the children frames; skip content which isn't <frameset> or <frame>
   mChildCount = 0;  // number of <frame> or <frameset> children
 
-  for (nsIContent* child = mContent->GetFirstChild(); child;
-       child = child->GetNextSibling()) {
-    if (mChildCount ==
-        numCells) {  // we have more <frame> or <frameset> than cells
+  FlattenedChildIterator children(mContent);
+  for (nsIContent* child = children.GetNextChild(); child;
+       child = children.GetNextChild()) {
+    if (mChildCount == numCells) {
+      // we have more <frame> or <frameset> than cells
       // Clear the lazy bits in the remaining children.  Also clear
       // the restyle flags, like nsCSSFrameConstructor::ProcessChildren does.
       for (; child; child = child->GetNextSibling()) {
@@ -273,20 +277,19 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
     // IMPORTANT: This must match the conditions in
     // nsCSSFrameConstructor::ContentAppended/Inserted/Removed
-    if (!child->IsHTMLElement()) {
-      continue;
-    }
-
     if (!child->IsAnyOfHTMLElements(nsGkAtoms::frameset, nsGkAtoms::frame)) {
       continue;
     }
 
-    RefPtr<ComputedStyle> kidSC = shell->StyleSet()->ResolveStyleFor(
-        child->AsElement(), LazyComputeBehavior::Allow);
-
+    // FIXME(emilio): This doesn't even respect display: none, but that matches
+    // other browsers ;_;
+    //
+    // Maybe we should change that though.
+    RefPtr<ComputedStyle> kidStyle =
+        ServoStyleSet::ResolveServoStyle(*child->AsElement());
     nsIFrame* frame;
     if (child->IsHTMLElement(nsGkAtoms::frameset)) {
-      frame = NS_NewHTMLFramesetFrame(shell, kidSC);
+      frame = NS_NewHTMLFramesetFrame(presShell, kidStyle);
 
       nsHTMLFramesetFrame* childFrame = (nsHTMLFramesetFrame*)frame;
       childFrame->SetParentFrameborder(frameborder);
@@ -296,7 +299,7 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
       mChildBorderColors[mChildCount].Set(childFrame->GetBorderColor());
     } else {  // frame
-      frame = NS_NewSubDocumentFrame(shell, kidSC);
+      frame = NS_NewSubDocumentFrame(presShell, kidStyle);
 
       frame->Init(child, this, nullptr);
 
@@ -315,12 +318,12 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   for (int blankX = mChildCount; blankX < numCells; blankX++) {
     RefPtr<ComputedStyle> pseudoComputedStyle;
     pseudoComputedStyle =
-        shell->StyleSet()->ResolveNonInheritingAnonymousBoxStyle(
+        presShell->StyleSet()->ResolveNonInheritingAnonymousBoxStyle(
             PseudoStyleType::framesetBlank);
 
     // XXX the blank frame is using the content of its parent - at some point it
     // should just have null content, if we support that
-    nsHTMLFramesetBlankFrame* blankFrame = new (shell)
+    nsHTMLFramesetBlankFrame* blankFrame = new (presShell)
         nsHTMLFramesetBlankFrame(pseudoComputedStyle, PresContext());
 
     blankFrame->Init(mContent, this, nullptr);
@@ -615,7 +618,7 @@ nsresult nsHTMLFramesetFrame::HandleEvent(nsPresContext* aPresContext,
         MouseDrag(aPresContext, aEvent);
         break;
       case eMouseUp:
-        if (aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+        if (aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
           EndMouseDrag(aPresContext);
         }
         break;
@@ -643,8 +646,7 @@ void nsHTMLFramesetFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   BuildDisplayListForInline(aBuilder, aLists);
 
   if (mDragger && aBuilder->IsForEventDelivery()) {
-    aLists.Content()->AppendToTop(
-        MakeDisplayItem<nsDisplayEventReceiver>(aBuilder, this));
+    aLists.Content()->AppendNewToTop<nsDisplayEventReceiver>(aBuilder, this);
   }
 }
 
@@ -763,8 +765,8 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
-  nsIPresShell* shell = aPresContext->PresShell();
-  ServoStyleSet* styleSet = shell->StyleSet();
+  mozilla::PresShell* presShell = aPresContext->PresShell();
+  ServoStyleSet* styleSet = presShell->StyleSet();
 
   GetParent()->AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
 
@@ -873,7 +875,7 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
         pseudoComputedStyle = styleSet->ResolveNonInheritingAnonymousBoxStyle(
             PseudoStyleType::horizontalFramesetBorder);
 
-        borderFrame = new (shell) nsHTMLFramesetBorderFrame(
+        borderFrame = new (presShell) nsHTMLFramesetBorderFrame(
             pseudoComputedStyle, PresContext(), borderWidth, false, false);
         borderFrame->Init(mContent, this, nullptr);
         mChildCount++;
@@ -902,7 +904,7 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
                 styleSet->ResolveNonInheritingAnonymousBoxStyle(
                     PseudoStyleType::verticalFramesetBorder);
 
-            borderFrame = new (shell) nsHTMLFramesetBorderFrame(
+            borderFrame = new (presShell) nsHTMLFramesetBorderFrame(
                 pseudoComputedStyle, PresContext(), borderWidth, true, false);
             borderFrame->Init(mContent, this, nullptr);
             mChildCount++;
@@ -1163,7 +1165,8 @@ void nsHTMLFramesetFrame::StartMouseDrag(nsPresContext* aPresContext,
   NS_ASSERTION((nullptr != aBorder) && (index >= 0), "invalid dragger");
 #endif
 
-  nsIPresShell::SetCapturingContent(GetContent(), CAPTURE_IGNOREALLOWED);
+  PresShell::SetCapturingContent(GetContent(),
+                                 CaptureFlags::IgnoreAllowedState);
 
   mDragger = aBorder;
 
@@ -1184,7 +1187,7 @@ void nsHTMLFramesetFrame::StartMouseDrag(nsPresContext* aPresContext,
 void nsHTMLFramesetFrame::MouseDrag(nsPresContext* aPresContext,
                                     WidgetGUIEvent* aEvent) {
   // if the capture ended, reset the drag state
-  if (nsIPresShell::GetCapturingContent() != GetContent()) {
+  if (PresShell::GetCapturingContent() != GetContent()) {
     mDragger = nullptr;
     gDragInProgress = false;
     return;
@@ -1253,12 +1256,12 @@ void nsHTMLFramesetFrame::MouseDrag(nsPresContext* aPresContext,
 }
 
 void nsHTMLFramesetFrame::EndMouseDrag(nsPresContext* aPresContext) {
-  nsIPresShell::SetCapturingContent(nullptr, 0);
+  PresShell::ReleaseCapturingContent();
   mDragger = nullptr;
   gDragInProgress = false;
 }
 
-nsIFrame* NS_NewHTMLFramesetFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewHTMLFramesetFrame(PresShell* aPresShell,
                                   ComputedStyle* aStyle) {
 #ifdef DEBUG
   const nsStyleDisplay* disp = aStyle->StyleDisplay();
@@ -1325,11 +1328,11 @@ void nsHTMLFramesetBorderFrame::Reflow(nsPresContext* aPresContext,
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 }
 
-class nsDisplayFramesetBorder : public nsDisplayItem {
+class nsDisplayFramesetBorder : public nsPaintedDisplayItem {
  public:
   nsDisplayFramesetBorder(nsDisplayListBuilder* aBuilder,
                           nsHTMLFramesetBorderFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayFramesetBorder);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -1357,8 +1360,7 @@ void nsDisplayFramesetBorder::Paint(nsDisplayListBuilder* aBuilder,
 
 void nsHTMLFramesetBorderFrame::BuildDisplayList(
     nsDisplayListBuilder* aBuilder, const nsDisplayListSet& aLists) {
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplayFramesetBorder>(aBuilder, this));
+  aLists.Content()->AppendNewToTop<nsDisplayFramesetBorder>(aBuilder, this);
 }
 
 void nsHTMLFramesetBorderFrame::PaintBorder(DrawTarget* aDrawTarget,
@@ -1369,16 +1371,16 @@ void nsHTMLFramesetBorderFrame::PaintBorder(DrawTarget* aDrawTarget,
   if (widthInPixels <= 0) return;
 
   ColorPattern bgColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::eColorID_WidgetBackground, NS_RGB(200, 200, 200))));
+      LookAndFeel::ColorID::WidgetBackground, NS_RGB(200, 200, 200))));
 
   ColorPattern fgColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::eColorID_WidgetForeground, NS_RGB(0, 0, 0))));
+      LookAndFeel::ColorID::WidgetForeground, NS_RGB(0, 0, 0))));
 
   ColorPattern hltColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::eColorID_Widget3DHighlight, NS_RGB(255, 255, 255))));
+      LookAndFeel::ColorID::Widget3DHighlight, NS_RGB(255, 255, 255))));
 
   ColorPattern sdwColor(ToDeviceColor(LookAndFeel::GetColor(
-      LookAndFeel::eColorID_Widget3DShadow, NS_RGB(128, 128, 128))));
+      LookAndFeel::ColorID::Widget3DShadow, NS_RGB(128, 128, 128))));
 
   ColorPattern color(ToDeviceColor(NS_RGB(255, 255, 255)));  // default to white
   if (mVisibility) {
@@ -1452,7 +1454,7 @@ nsresult nsHTMLFramesetBorderFrame::HandleEvent(nsPresContext* aPresContext,
   }
 
   if (aEvent->mMessage == eMouseDown &&
-      aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+      aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
     nsHTMLFramesetFrame* parentFrame = do_QueryFrame(GetParent());
     if (parentFrame) {
       parentFrame->StartMouseDrag(aPresContext, this, aEvent);
@@ -1514,10 +1516,10 @@ void nsHTMLFramesetBlankFrame::Reflow(nsPresContext* aPresContext,
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 }
 
-class nsDisplayFramesetBlank : public nsDisplayItem {
+class nsDisplayFramesetBlank : public nsPaintedDisplayItem {
  public:
   nsDisplayFramesetBlank(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayFramesetBlank);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -1540,6 +1542,5 @@ void nsDisplayFramesetBlank::Paint(nsDisplayListBuilder* aBuilder,
 
 void nsHTMLFramesetBlankFrame::BuildDisplayList(
     nsDisplayListBuilder* aBuilder, const nsDisplayListSet& aLists) {
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplayFramesetBlank>(aBuilder, this));
+  aLists.Content()->AppendNewToTop<nsDisplayFramesetBlank>(aBuilder, this);
 }

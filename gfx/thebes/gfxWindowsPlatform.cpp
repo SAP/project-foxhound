@@ -74,7 +74,7 @@
 #include "d3dkmtQueryStatistics.h"
 
 #include "base/thread.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 #include "gfxConfig.h"
 #include "VsyncSource.h"
 #include "DriverCrashGuard.h"
@@ -516,10 +516,8 @@ bool gfxWindowsPlatform::HandleDeviceReset() {
 BackendPrefsData gfxWindowsPlatform::GetBackendPrefs() const {
   BackendPrefsData data;
 
-  data.mCanvasBitmask =
-      BackendTypeBit(BackendType::CAIRO) | BackendTypeBit(BackendType::SKIA);
-  data.mContentBitmask =
-      BackendTypeBit(BackendType::CAIRO) | BackendTypeBit(BackendType::SKIA);
+  data.mCanvasBitmask = BackendTypeBit(BackendType::SKIA);
+  data.mContentBitmask = BackendTypeBit(BackendType::SKIA);
   data.mCanvasDefault = BackendType::SKIA;
   data.mContentDefault = BackendType::SKIA;
 
@@ -1229,6 +1227,8 @@ void gfxWindowsPlatform::SetupClearTypeParams() {
       dwriteGeometry = defaultRenderingParams->GetPixelGeometry();
     }
 
+    Factory::SetBGRSubpixelOrder(dwriteGeometry == DWRITE_PIXEL_GEOMETRY_BGR);
+
     if (renderMode < DWRITE_RENDERING_MODE_DEFAULT ||
         renderMode > DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC) {
       renderMode = defaultRenderingParams->GetRenderingMode();
@@ -1354,7 +1354,7 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
       d3d11.Disable(FeatureStatus::Blacklisted, "Blacklisted, see bug 1351349",
                     NS_LITERAL_CSTRING("FEATURE_FAILURE_BUG_1351349"));
 #else
-      gfxPrefs::SetCompositorClearState(true);
+      Preferences::SetBool("gfx.compositor.clearstate", true);
 #endif
     }
   }
@@ -1367,7 +1367,7 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
   }
 
   // Check if the user really, really wants WARP.
-  if (gfxPrefs::LayersD3D11ForceWARP()) {
+  if (StaticPrefs::layers_d3d11_force_warp()) {
     // Force D3D11 on even if we disabled it.
     d3d11.UserForceEnable("User force-enabled WARP");
   }
@@ -1384,14 +1384,14 @@ void gfxWindowsPlatform::InitializeAdvancedLayersConfig() {
 
   FeatureState& al = gfxConfig::GetFeature(Feature::ADVANCED_LAYERS);
   al.SetDefaultFromPref(
-      gfxPrefs::GetAdvancedLayersEnabledDoNotUseDirectlyPrefName(),
+      StaticPrefs::GetPrefName_layers_mlgpu_enabled_do_not_use_directly(),
       true /* aIsEnablePref */,
-      gfxPrefs::GetAdvancedLayersEnabledDoNotUseDirectlyPrefDefault());
+      StaticPrefs::GetPrefDefault_layers_mlgpu_enabled_do_not_use_directly());
 
   // Windows 7 has an extra pref since it uses totally different buffer paths
   // that haven't been performance tested yet.
   if (al.IsEnabled() && !IsWin8OrLater()) {
-    if (gfxPrefs::AdvancedLayersEnableOnWindows7()) {
+    if (StaticPrefs::layers_mlgpu_enable_on_windows7()) {
       al.UserEnable("Enabled for Windows 7 via user-preference");
     } else {
       al.Disable(FeatureStatus::Disabled,
@@ -1543,8 +1543,9 @@ void gfxWindowsPlatform::InitializeD2DConfig() {
     return;
   }
 
-  d2d1.SetDefaultFromPref(gfxPrefs::GetDirect2DDisabledPrefName(), false,
-                          gfxPrefs::GetDirect2DDisabledPrefDefault());
+  d2d1.SetDefaultFromPref(StaticPrefs::GetPrefName_gfx_direct2d_disabled(),
+                          false,
+                          StaticPrefs::GetPrefDefault_gfx_direct2d_disabled());
 
   nsCString message;
   nsCString failureId;
@@ -1553,7 +1554,7 @@ void gfxWindowsPlatform::InitializeD2DConfig() {
     d2d1.Disable(FeatureStatus::Blacklisted, message.get(), failureId);
   }
 
-  if (!d2d1.IsEnabled() && gfxPrefs::Direct2DForceEnabled()) {
+  if (!d2d1.IsEnabled() && StaticPrefs::gfx_direct2d_force_enabled()) {
     d2d1.UserForceEnable("Force-enabled via user-preference");
   }
 }
@@ -1637,7 +1638,7 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     // Don't use the GPU process if not using D3D11, unless software
     // compositor is allowed
-    if (gfxPrefs::GPUProcessAllowSoftware()) {
+    if (StaticPrefs::layers_gpu_process_allow_software()) {
       return gpuProc.IsEnabled();
     }
     gpuProc.Disable(FeatureStatus::Unavailable,
@@ -1922,7 +1923,7 @@ class D3DVsyncSource final : public VsyncSource {
   virtual Display& GetGlobalDisplay() override { return *mPrimaryDisplay; }
 
  private:
-  virtual ~D3DVsyncSource() {}
+  virtual ~D3DVsyncSource() = default;
   RefPtr<D3DVsyncDisplay> mPrimaryDisplay;
 };  // end D3DVsyncSource
 
@@ -1944,7 +1945,7 @@ gfxWindowsPlatform::CreateHardwareVsyncSource() {
 void gfxWindowsPlatform::GetAcceleratedCompositorBackends(
     nsTArray<LayersBackend>& aBackends) {
   if (gfxConfig::IsEnabled(Feature::OPENGL_COMPOSITING) &&
-      gfxPrefs::LayersPreferOpenGL()) {
+      StaticPrefs::layers_prefer_opengl()) {
     aBackends.AppendElement(LayersBackend::LAYERS_OPENGL);
   }
 
@@ -1963,7 +1964,7 @@ void gfxWindowsPlatform::ImportGPUDeviceData(
 
   DeviceManagerDx* dm = DeviceManagerDx::Get();
   if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
-    dm->ImportDeviceInfo(aData.gpuDevice().get_D3D11DeviceStatus());
+    dm->ImportDeviceInfo(aData.gpuDevice().ref());
   } else {
     // There should be no devices, so this just takes away the device status.
     dm->ResetDevices();

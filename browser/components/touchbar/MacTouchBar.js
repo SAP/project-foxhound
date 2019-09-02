@@ -2,14 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
-  Localization: "resource://gre/modules/Localization.jsm",
 });
 
 /**
@@ -27,7 +28,9 @@ function execCommand(commandName, telemetryKey) {
   if (command) {
     command.doCommand();
   }
-  let telemetry = Services.telemetry.getHistogramById("TOUCHBAR_BUTTON_PRESSES");
+  let telemetry = Services.telemetry.getHistogramById(
+    "TOUCHBAR_BUTTON_PRESSES"
+  );
   telemetry.add(telemetryKey);
 }
 
@@ -74,7 +77,14 @@ const kBuiltInInputs = {
     title: "home",
     image: "home.pdf",
     type: "button",
-    callback: () => execCommand("Browser:Home", "Home"),
+    callback: () => {
+      let win = BrowserWindowTracker.getTopWindow();
+      win.BrowserHome();
+      let telemetry = Services.telemetry.getHistogramById(
+        "TOUCHBAR_BUTTON_PRESSES"
+      );
+      telemetry.add("Home");
+    },
   },
   Fullscreen: {
     title: "fullscreen",
@@ -95,10 +105,17 @@ const kBuiltInInputs = {
     callback: () => execCommand("cmd_newNavigatorTabNoEvent", "NewTab"),
   },
   Sidebar: {
-    title: "open-bookmarks-sidebar",
+    title: "open-sidebar",
     image: "sidebar-left.pdf",
     type: "button",
-    callback: () => execCommand("viewBookmarksSidebar", "Sidebar"),
+    callback: () => {
+      let win = BrowserWindowTracker.getTopWindow();
+      win.SidebarUI.toggle();
+      let telemetry = Services.telemetry.getHistogramById(
+        "TOUCHBAR_BUTTON_PRESSES"
+      );
+      telemetry.add("Sidebar");
+    },
   },
   AddBookmark: {
     title: "add-bookmark",
@@ -111,7 +128,7 @@ const kBuiltInInputs = {
     image: "reader-mode.pdf",
     type: "button",
     callback: () => execCommand("View:ReaderView", "ReaderView"),
-    disabled: true,  // Updated when the page is found to be Reader View-able.
+    disabled: true, // Updated when the page is found to be Reader View-able.
   },
   OpenLocation: {
     title: "open-location",
@@ -130,8 +147,13 @@ const kBuiltInInputs = {
   },
 };
 
-const kHelperObservers = new Set(["bookmark-icon-updated", "reader-mode-available",
-  "touchbar-location-change", "quit-application", "intl:app-locales-changed"]);
+const kHelperObservers = new Set([
+  "bookmark-icon-updated",
+  "reader-mode-available",
+  "touchbar-location-change",
+  "quit-application",
+  "intl:app-locales-changed",
+]);
 
 /**
  * JS-implemented TouchBarHelper class.
@@ -142,9 +164,6 @@ class TouchBarHelper {
     for (let topic of kHelperObservers) {
       Services.obs.addObserver(this, topic);
     }
-
-    XPCOMUtils.defineLazyPreferenceGetter(this, "_touchBarLayout",
-      "ui.touchbar.layout", "Back,Forward,Reload,OpenLocation,NewTab,Share");
   }
 
   destructor() {
@@ -162,11 +181,12 @@ class TouchBarHelper {
     return activeTitle;
   }
 
-  get layout() {
-    let prefArray = this.storedLayout;
-    let layoutItems = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
+  get allItems() {
+    let layoutItems = Cc["@mozilla.org/array;1"].createInstance(
+      Ci.nsIMutableArray
+    );
 
-    for (let inputName of prefArray) {
+    for (let inputName of Object.keys(kBuiltInInputs)) {
       if (typeof kBuiltInInputs[inputName].context == "function") {
         inputName = kBuiltInInputs[inputName].context();
       }
@@ -188,29 +208,13 @@ class TouchBarHelper {
     return this.window.BookmarkingUI;
   }
 
-  /**
-   * Returns a string array of the user's Touch Bar layout preference.
-   * Set by a pref ui.touchbar.layout and returned in an array.
-   */
-  get storedLayout() {
-    let prefArray = this._touchBarLayout.split(",");
-    prefArray = prefArray.map(str => str.trim());
-    // Remove duplicates.
-    prefArray = Array.from(new Set(prefArray));
-
-    // Remove unimplemented/mispelled inputs.
-    prefArray = prefArray.filter(input =>
-      Object.keys(kBuiltInInputs).includes(input));
-    this._storedLayout = prefArray;
-    return this._storedLayout;
-  }
-
   getTouchBarInput(inputName) {
     // inputName might be undefined if an input's context() returns undefined.
     if (!inputName || !kBuiltInInputs.hasOwnProperty(inputName)) {
       return null;
     }
 
+    // context() may specify that one named input "point" to another.
     if (typeof kBuiltInInputs[inputName].context == "function") {
       inputName = kBuiltInInputs[inputName].context();
     }
@@ -222,17 +226,24 @@ class TouchBarHelper {
     let inputData = kBuiltInInputs[inputName];
 
     let item = new TouchBarInput(inputData);
+    // Skip localization if there is already a cached localized title.
+    if (kBuiltInInputs[inputName].hasOwnProperty("localTitle")) {
+      return item;
+    }
 
     // Async l10n fills in the localized input labels after the initial load.
-    this._l10n.formatValue(item.key).then((result) => {
+    this._l10n.formatValue(item.key).then(result => {
       item.title = result;
       kBuiltInInputs[inputName].localTitle = result; // Cache result.
       // Checking this.window since this callback can fire after all windows are closed.
       if (this.window) {
-        let baseWindow = this.window.docShell.treeOwner.QueryInterface(Ci.nsIBaseWindow);
-        let updater = Cc["@mozilla.org/widget/touchbarupdater;1"]
-                        .getService(Ci.nsITouchBarUpdater);
-        updater.updateTouchBarInput(baseWindow, item);
+        let baseWindow = this.window.docShell.treeOwner.QueryInterface(
+          Ci.nsIBaseWindow
+        );
+        let updater = Cc["@mozilla.org/widget/touchbarupdater;1"].getService(
+          Ci.nsITouchBarUpdater
+        );
+        updater.updateTouchBarInputs(baseWindow, [item]);
       }
     });
 
@@ -243,17 +254,30 @@ class TouchBarHelper {
    * Fetches a specific Touch Bar Input by name and updates it on the Touch Bar.
    * @param {string} inputName
    *        A key to a value in the kBuiltInInputs object in this file.
+   * @param {...*} [otherInputs] (optional)
+   *        Additional keys to values in the kBuiltInInputs object in this file.
    */
-  _updateTouchBarInput(inputName) {
-    let input = this.getTouchBarInput(inputName);
-    if (!input || !this.window) {
+  _updateTouchBarInputs(...inputNames) {
+    if (!this.window) {
       return;
     }
 
-    let baseWindow = this.window.docShell.treeOwner.QueryInterface(Ci.nsIBaseWindow);
-    let updater = Cc["@mozilla.org/widget/touchbarupdater;1"]
-                    .getService(Ci.nsITouchBarUpdater);
-    updater.updateTouchBarInput(baseWindow, input);
+    let inputs = [];
+    for (let inputName of inputNames) {
+      let input = this.getTouchBarInput(inputName);
+      if (!input) {
+        continue;
+      }
+      inputs.push(input);
+    }
+
+    let baseWindow = this.window.docShell.treeOwner.QueryInterface(
+      Ci.nsIBaseWindow
+    );
+    let updater = Cc["@mozilla.org/widget/touchbarupdater;1"].getService(
+      Ci.nsITouchBarUpdater
+    );
+    updater.updateTouchBarInputs(baseWindow, inputs);
   }
 
   observe(subject, topic, data) {
@@ -263,28 +287,26 @@ class TouchBarHelper {
         // ReaderView button is disabled on every location change since
         // Reader View must determine if the new page can be Reader Viewed.
         kBuiltInInputs.ReaderView.disabled = !data.startsWith("about:reader");
-        this._updateTouchBarInput("ReaderView");
         kBuiltInInputs.Back.disabled = !this.window.gBrowser.canGoBack;
-        this._updateTouchBarInput("Back");
         kBuiltInInputs.Forward.disabled = !this.window.gBrowser.canGoForward;
-        this._updateTouchBarInput("Forward");
+        this._updateTouchBarInputs("ReaderView", "Back", "Forward");
         break;
       case "bookmark-icon-updated":
-        data == "starred" ?
-          kBuiltInInputs.AddBookmark.image = "bookmark-filled.pdf"
-          : kBuiltInInputs.AddBookmark.image = "bookmark.pdf";
-        this._updateTouchBarInput("AddBookmark");
+        data == "starred"
+          ? (kBuiltInInputs.AddBookmark.image = "bookmark-filled.pdf")
+          : (kBuiltInInputs.AddBookmark.image = "bookmark.pdf");
+        this._updateTouchBarInputs("AddBookmark");
         break;
       case "reader-mode-available":
         kBuiltInInputs.ReaderView.disabled = false;
-        this._updateTouchBarInput("ReaderView");
+        this._updateTouchBarInputs("ReaderView");
         break;
       case "intl:app-locales-changed":
         // On locale change, refresh all inputs after loading new localTitle.
-        for (let inputName of this._storedLayout) {
-          delete kBuiltInInputs[inputName].localTitle;
-          this._updateTouchBarInput(inputName);
+        for (let input in kBuiltInInputs) {
+          delete input.localTitle;
         }
+        this._updateTouchBarInputs(...kBuiltInInputs.keys());
         break;
       case "quit-application":
         this.destructor();
@@ -380,5 +402,7 @@ inputProto.classID = Components.ID("{77441d17-f29c-49d7-982f-f20a5ab5a900}");
 inputProto.contractID = "@mozilla.org/widget/touchbarinput;1";
 inputProto.QueryInterface = ChromeUtils.generateQI([Ci.nsITouchBarInput]);
 
-this.NSGetFactory =
-  XPCOMUtils.generateNSGetFactory([TouchBarHelper, TouchBarInput]);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory([
+  TouchBarHelper,
+  TouchBarInput,
+]);

@@ -6,9 +6,10 @@
 
 const {
   ADB_ADDON_STATUS_UPDATED,
+  ADB_READY_UPDATED,
   DEBUG_TARGET_COLLAPSIBILITY_UPDATED,
   HIDE_PROFILER_DIALOG,
-  NETWORK_LOCATIONS_UPDATED,
+  NETWORK_LOCATIONS_UPDATE_SUCCESS,
   SELECT_PAGE_SUCCESS,
   SHOW_PROFILER_DIALOG,
   TEMPORARY_EXTENSION_INSTALL_FAILURE,
@@ -17,20 +18,21 @@ const {
   USB_RUNTIMES_SCAN_SUCCESS,
 } = require("../constants");
 
-function UiState(locations = [], debugTargetCollapsibilities = {},
-                 networkEnabled = false, wifiEnabled = false,
-                 showSystemAddons = false) {
+function UiState(
+  locations = [],
+  debugTargetCollapsibilities = {},
+  showHiddenAddons = false
+) {
   return {
     adbAddonStatus: null,
     debugTargetCollapsibilities,
+    isAdbReady: false,
     isScanningUsb: false,
-    networkEnabled,
     networkLocations: locations,
     selectedPage: null,
     showProfilerDialog: false,
-    showSystemAddons,
+    showHiddenAddons,
     temporaryInstallError: null,
-    wifiEnabled,
   };
 }
 
@@ -41,14 +43,21 @@ function uiReducer(state = UiState(), action) {
       return Object.assign({}, state, { adbAddonStatus });
     }
 
+    case ADB_READY_UPDATED: {
+      const { isAdbReady } = action;
+      return Object.assign({}, state, { isAdbReady });
+    }
+
     case DEBUG_TARGET_COLLAPSIBILITY_UPDATED: {
       const { isCollapsed, key } = action;
-      const debugTargetCollapsibilities = new Map(state.debugTargetCollapsibilities);
+      const debugTargetCollapsibilities = new Map(
+        state.debugTargetCollapsibilities
+      );
       debugTargetCollapsibilities.set(key, isCollapsed);
       return Object.assign({}, state, { debugTargetCollapsibilities });
     }
 
-    case NETWORK_LOCATIONS_UPDATED: {
+    case NETWORK_LOCATIONS_UPDATE_SUCCESS: {
       const { locations } = action;
       return Object.assign({}, state, { networkLocations: locations });
     }

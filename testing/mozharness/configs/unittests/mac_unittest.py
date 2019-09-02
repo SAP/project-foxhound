@@ -36,6 +36,7 @@ config = {
         "cppunittest": {
             "options": [
                 "--symbols-path=%(symbols_path)s",
+                "--utility-path=tests/bin",
                 "--xre-path=%(abs_res_dir)s"
             ],
             "run_filename": "runcppunittests.py",
@@ -121,21 +122,17 @@ config = {
     },
     # local mochi suites
     "all_mochitest_suites": {
-        "plain": [],
-        "plain-gpu": ["--subsuite=gpu"],
-        "plain-clipboard": ["--subsuite=clipboard"],
-        "plain-chunked": ["--chunk-by-dir=4"],
+        "mochitest-plain": [],
+        "mochitest-plain-gpu": ["--subsuite=gpu"],
+        "mochitest-plain-chunked": ["--chunk-by-dir=4"],
         "mochitest-media": ["--subsuite=media"],
-        "chrome": ["--flavor=chrome"],
-        "chrome-gpu": ["--flavor=chrome", "--subsuite=gpu"],
-        "chrome-clipboard": ["--flavor=chrome", "--subsuite=clipboard"],
-        "chrome-chunked": ["--flavor=chrome", "--chunk-by-dir=4"],
-        "browser-chrome": ["--flavor=browser"],
-        "browser-chrome-clipboard": ["--flavor=browser", "--subsuite=clipboard"],
-        "browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
-        "browser-chrome-addons": ["--flavor=browser", "--chunk-by-runtime", "--tag=addons"],
-        "browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
-        "browser-chrome-instrumentation": ["--flavor=browser"],
+        "mochitest-chrome": ["--flavor=chrome", "--disable-e10s"],
+        "mochitest-chrome-gpu": ["--flavor=chrome", "--subsuite=gpu", "--disable-e10s"],
+        "mochitest-chrome-chunked": ["--flavor=chrome", "--chunk-by-dir=4", "--disable-e10s"],
+        "mochitest-browser-chrome": ["--flavor=browser"],
+        "mochitest-browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
+        "mochitest-browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
+        "mochitest-browser-chrome-instrumentation": ["--flavor=browser"],
         "mochitest-webgl1-core": ["--subsuite=webgl1-core"],
         "mochitest-webgl1-ext": ["--subsuite=webgl1-ext"],
         "mochitest-webgl2-core": ["--subsuite=webgl2-core"],
@@ -143,8 +140,9 @@ config = {
         "mochitest-webgl2-deqp": ["--subsuite=webgl2-deqp"],
         "mochitest-devtools-chrome": ["--flavor=browser", "--subsuite=devtools"],
         "mochitest-devtools-chrome-chunked": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime"],
-        "mochitest-devtools-webreplay": ["--flavor=browser", "--subsuite=devtools-webreplay"],
-        "a11y": ["--flavor=a11y"],
+        "mochitest-devtools-chrome-webreplay": ["--flavor=browser", "--subsuite=devtools-webreplay"],
+        "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
+        "mochitest-remote": ["--flavor=browser", "--subsuite=remote"],
     },
     # local reftest suites
     "all_reftest_suites": {
@@ -165,12 +163,6 @@ config = {
     "all_xpcshell_suites": {
         "xpcshell": {
             'options': ["--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-                        "--manifest=tests/xpcshell/tests/xpcshell.ini"],
-            'tests': []
-        },
-        "xpcshell-addons": {
-            'options': ["--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-                        "--tag=addons",
                         "--manifest=tests/xpcshell/tests/xpcshell.ini"],
             'tests': []
         },

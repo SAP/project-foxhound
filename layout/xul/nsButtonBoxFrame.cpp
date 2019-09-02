@@ -10,7 +10,6 @@
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
 #include "nsPresContext.h"
-#include "nsIPresShell.h"
 #include "nsDisplayList.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/Element.h"
@@ -19,6 +18,7 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
 
 using namespace mozilla;
@@ -49,8 +49,7 @@ nsresult nsButtonBoxFrame::nsButtonBoxListener::HandleEvent(
 //
 // Creates a new Button frame and returns it
 //
-nsIFrame* NS_NewButtonBoxFrame(nsIPresShell* aPresShell,
-                               ComputedStyle* aStyle) {
+nsIFrame* NS_NewButtonBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell)
       nsButtonBoxFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -194,15 +193,18 @@ void nsButtonBoxFrame::MouseClicked(WidgetGUIEvent* aEvent) {
 
   // Have the content handle the event, propagating it according to normal DOM
   // rules.
-  nsCOMPtr<nsIPresShell> shell = PresContext()->GetPresShell();
-  if (!shell) return;
+  RefPtr<mozilla::PresShell> presShell = PresContext()->GetPresShell();
+  if (!presShell) {
+    return;
+  }
 
   // Execute the oncommand event handler.
+  nsCOMPtr<nsIContent> content = mContent;
   WidgetInputEvent* inputEvent = aEvent->AsInputEvent();
   WidgetMouseEventBase* mouseEvent = aEvent->AsMouseEventBase();
   nsContentUtils::DispatchXULCommand(
-      mContent, aEvent->IsTrusted(), nullptr, shell, inputEvent->IsControl(),
+      content, aEvent->IsTrusted(), nullptr, presShell, inputEvent->IsControl(),
       inputEvent->IsAlt(), inputEvent->IsShift(), inputEvent->IsMeta(),
-      mouseEvent ? mouseEvent->inputSource
+      mouseEvent ? mouseEvent->mInputSource
                  : MouseEvent_Binding::MOZ_SOURCE_UNKNOWN);
 }

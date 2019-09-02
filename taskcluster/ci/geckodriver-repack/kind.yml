@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+---
 loader: taskgraph.loader.transform:loader
 
 kind-dependencies:
@@ -9,6 +9,7 @@ kind-dependencies:
     - fetch
 
 transforms:
+    - taskgraph.transforms.build_attrs:transforms
     - taskgraph.transforms.job:transforms
     - taskgraph.transforms.task:transforms
 
@@ -20,19 +21,20 @@ job-defaults:
         kind: other
         symbol: Gd(repack)
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
+    worker-type: b-linux
     worker:
         max-run-time: 1200
         docker-image: {in-tree: debian9-amd64-build}
+        chain-of-trust: true
     run:
         using: run-task
 
 jobs:
-    linux/opt:
+    linux-nightly/opt:
         treeherder:
             platform: linux32/opt
         dependencies:
-            build-linux/opt: build-linux-nightly/opt
+            build-linux/opt: build-linux-shippable/opt
         fetches:
             build-linux/opt:
                 - artifact: target.common.tests.tar.gz
@@ -47,11 +49,11 @@ jobs:
                 tar -cvzf geckodriver.tar.gz geckodriver &&
                 cp geckodriver.tar.gz /builds/worker
 
-    linux64/opt:
+    linux64-nightly/opt:
         treeherder:
             platform: linux64/opt
         dependencies:
-            build-linux64/opt: build-linux64-nightly/opt
+            build-linux64/opt: build-linux64-shippable/opt
         fetches:
             build-linux64/opt:
                 - artifact: target.common.tests.tar.gz
@@ -66,11 +68,11 @@ jobs:
                 tar -cvzf geckodriver.tar.gz geckodriver &&
                 cp geckodriver.tar.gz /builds/worker
 
-    macosx64/opt:
+    macosx64-nightly/opt:
         treeherder:
             platform: osx-cross/opt
         dependencies:
-            build-macosx64/opt: build-macosx64-nightly/opt
+            build-macosx64/opt: build-macosx64-shippable/opt
         fetches:
             build-macosx64/opt:
                 - artifact: target.common.tests.tar.gz
@@ -85,11 +87,11 @@ jobs:
                 tar -cvzf geckodriver.tar.gz geckodriver &&
                 cp geckodriver.tar.gz /builds/worker
 
-    win32/opt:
+    win32-nightly/opt:
         treeherder:
             platform: windows2012-32/opt
         dependencies:
-            build-win32/opt: build-win32-nightly/opt
+            build-win32/opt: build-win32-shippable/opt
         fetches:
             build-win32/opt:
                 - artifact: target.common.tests.tar.gz
@@ -104,11 +106,11 @@ jobs:
                 zip -r geckodriver.zip geckodriver.exe &&
                 cp geckodriver.zip /builds/worker
 
-    win64/opt:
+    win64-nightly/opt:
         treeherder:
             platform: windows2012-64/opt
         dependencies:
-            build-win64/opt: build-win64-nightly/opt
+            build-win64/opt: build-win64-shippable/opt
         fetches:
             build-win64/opt:
                 - artifact: target.common.tests.tar.gz

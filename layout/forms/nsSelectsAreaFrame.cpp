@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsSelectsAreaFrame.h"
+
+#include "mozilla/PresShell.h"
 #include "nsIContent.h"
 #include "nsListControlFrame.h"
 #include "nsDisplayList.h"
@@ -11,7 +13,7 @@
 
 using namespace mozilla;
 
-nsContainerFrame* NS_NewSelectsAreaFrame(nsIPresShell* aShell,
+nsContainerFrame* NS_NewSelectsAreaFrame(PresShell* aShell,
                                          ComputedStyle* aStyle,
                                          nsFrameState aFlags) {
   nsSelectsAreaFrame* it =
@@ -98,10 +100,10 @@ static nsListControlFrame* GetEnclosingListFrame(nsIFrame* aSelectsAreaFrame) {
   return nullptr;
 }
 
-class nsDisplayListFocus : public nsDisplayItem {
+class nsDisplayListFocus : public nsPaintedDisplayItem {
  public:
   nsDisplayListFocus(nsDisplayListBuilder* aBuilder, nsSelectsAreaFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayListFocus);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -150,8 +152,7 @@ void nsSelectsAreaFrame::BuildDisplayListInternal(
     // we can't just associate the display item with the list frame,
     // because then the list's scrollframe won't clip it (the scrollframe
     // only clips contained descendants).
-    aLists.Outlines()->AppendToTop(
-        MakeDisplayItem<nsDisplayListFocus>(aBuilder, this));
+    aLists.Outlines()->AppendNewToTop<nsDisplayListFocus>(aBuilder, this);
   }
 }
 

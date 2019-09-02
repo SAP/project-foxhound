@@ -6,7 +6,8 @@
 
 #include "ContentProcessController.h"
 
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZChild.h"
 #include "nsIContentInlines.h"
@@ -17,7 +18,7 @@ namespace mozilla {
 namespace layers {
 
 ContentProcessController::ContentProcessController(
-    const RefPtr<dom::TabChild>& aBrowser)
+    const RefPtr<dom::BrowserChild>& aBrowser)
     : mBrowser(aBrowser) {
   MOZ_ASSERT(mBrowser);
 }
@@ -67,11 +68,8 @@ void ContentProcessController::NotifyMozMouseScrollEvent(
 
 void ContentProcessController::NotifyFlushComplete() {
   if (mBrowser) {
-    nsCOMPtr<nsIPresShell> shell;
-    if (nsCOMPtr<dom::Document> doc = mBrowser->GetDocument()) {
-      shell = doc->GetShell();
-    }
-    APZCCallbackHelper::NotifyFlushComplete(shell.get());
+    RefPtr<PresShell> presShell = mBrowser->GetTopLevelPresShell();
+    APZCCallbackHelper::NotifyFlushComplete(presShell);
   }
 }
 

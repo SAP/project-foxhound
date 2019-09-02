@@ -36,18 +36,18 @@ firefox_ui_tests_config_options = [
         "action": "store_true",
         "dest": "enable_webrender",
         "default": False,
-        "help": "Tries to enable the WebRender compositor.",
+        "help": "Enable the WebRender compositor in Gecko.",
     }],
     [['--dry-run'], {
         'dest': 'dry_run',
         'default': False,
         'help': 'Only show what was going to be tested.',
     }],
-    [["--e10s"], {
+    [["--disable-e10s"], {
         'dest': 'e10s',
-        'action': 'store_true',
-        'default': False,
-        'help': 'Enable multi-process (e10s) mode when running tests.',
+        'action': 'store_false',
+        'default': True,
+        'help': 'Disable multi-process (e10s) mode when running tests.',
     }],
     [['--symbols-path=SYMBOLS_PATH'], {
         'dest': 'symbols_path',
@@ -234,10 +234,12 @@ class FirefoxUITests(TestingMixin, VCSToolsScript, CodeCoverageMixin):
             '-vv',
         ]
 
+        if self.config['enable_webrender']:
+            cmd.append('--enable-webrender')
+
         # Collect all pass-through harness options to the script
         cmd.extend(self.query_harness_args())
 
-        # Translate deprecated --e10s flag
         if not self.config.get('e10s'):
             cmd.append('--disable-e10s')
 
@@ -270,9 +272,6 @@ class FirefoxUITests(TestingMixin, VCSToolsScript, CodeCoverageMixin):
 
         if self.config['allow_software_gl_layers']:
             env['MOZ_LAYERS_ALLOW_SOFTWARE_GL'] = '1'
-        if self.config['enable_webrender']:
-            env['MOZ_WEBRENDER'] = '1'
-            env['MOZ_ACCELERATED'] = '1'
 
         return_code = self.run_command(cmd,
                                        cwd=dirs['abs_fxui_dir'],

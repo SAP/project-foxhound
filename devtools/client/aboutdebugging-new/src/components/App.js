@@ -5,19 +5,28 @@
 "use strict";
 
 const { connect } = require("devtools/client/shared/vendor/react-redux");
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
-const Route = createFactory(require("devtools/client/shared/vendor/react-router-dom").Route);
-const Switch = createFactory(require("devtools/client/shared/vendor/react-router-dom").Switch);
-const Redirect = createFactory(require("devtools/client/shared/vendor/react-router-dom").Redirect);
+const Route = createFactory(
+  require("devtools/client/shared/vendor/react-router-dom").Route
+);
+const Switch = createFactory(
+  require("devtools/client/shared/vendor/react-router-dom").Switch
+);
+const Redirect = createFactory(
+  require("devtools/client/shared/vendor/react-router-dom").Redirect
+);
 
 const Types = require("../types/index");
-const { RUNTIMES } = require("../constants");
+const { PAGE_TYPES, RUNTIMES } = require("../constants");
 
 const ConnectPage = createFactory(require("./connect/ConnectPage"));
 const RuntimePage = createFactory(require("./RuntimePage"));
@@ -33,14 +42,13 @@ class App extends PureComponent {
       dispatch: PropTypes.func.isRequired,
       // getString prop is injected by the withLocalization wrapper
       getString: PropTypes.func.isRequired,
+      isAdbReady: PropTypes.bool.isRequired,
       isScanningUsb: PropTypes.bool.isRequired,
-      networkEnabled: PropTypes.bool.isRequired,
       networkLocations: PropTypes.arrayOf(Types.location).isRequired,
       networkRuntimes: PropTypes.arrayOf(Types.runtime).isRequired,
       selectedPage: Types.page,
       selectedRuntimeId: PropTypes.string,
       usbRuntimes: PropTypes.arrayOf(Types.runtime).isRequired,
-      wifiEnabled: PropTypes.bool.isRequired,
     };
   }
 
@@ -51,34 +59,23 @@ class App extends PureComponent {
   updateTitle() {
     const { getString, selectedPage, selectedRuntimeId } = this.props;
 
-    const runtimeTitle = selectedRuntimeId ?
-                          getString(
-                            "about-debugging-page-title-with-runtime",
-                            { selectedPage, selectedRuntimeId }
-                          )
-                          : getString(
-                            "about-debugging-page-title",
-                            { selectedPage }
-                          );
+    const pageTitle =
+      selectedPage === PAGE_TYPES.RUNTIME
+        ? getString("about-debugging-page-title-runtime-page", {
+            selectedRuntimeId,
+          })
+        : getString("about-debugging-page-title-setup-page");
 
-    document.title = runtimeTitle;
+    document.title = pageTitle;
   }
 
   renderConnect() {
-    const {
-      adbAddonStatus,
-      dispatch,
-      networkEnabled,
-      networkLocations,
-      wifiEnabled,
-    } = this.props;
+    const { adbAddonStatus, dispatch, networkLocations } = this.props;
 
     return ConnectPage({
       adbAddonStatus,
       dispatch,
-      networkEnabled,
       networkLocations,
-      wifiEnabled,
     });
   }
 
@@ -87,18 +84,6 @@ class App extends PureComponent {
   // See react-router docs:
   // https://github.com/ReactTraining/react-router/blob/master/packages/react-router/docs/api/match.md
   renderRuntime({ match }) {
-    // Redirect to This Firefox in these cases:
-    // - If the runtimepage for a device is the first page shown (since we can't
-    //   keep connections open between page reloads).
-    // - If no runtimeId is given.
-    // - If runtime is not in the runtimes list or disconnected (this is handled later)
-    const isDeviceFirstPage =
-      !this.props.selectedPage &&
-      match.params.runtimeId !== RUNTIMES.THIS_FIREFOX;
-    if (!match.params.runtimeId || isDeviceFirstPage) {
-      return Redirect({ to: `/runtime/${RUNTIMES.THIS_FIREFOX}` });
-    }
-
     const isRuntimeAvailable = id => {
       const runtimes = [
         ...this.props.networkRuntimes,
@@ -130,7 +115,7 @@ class App extends PureComponent {
     return Switch(
       {},
       Route({
-        path: "/connect",
+        path: "/setup",
         render: () => this.renderConnect(),
       }),
       Route({
@@ -142,7 +127,21 @@ class App extends PureComponent {
       // in this case maybe we'd like to do something else than a redirect.
       // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1509897
       Route({
-        render: () => Redirect({ to: "/connect"}),
+        render: routeProps => {
+          const { pathname } = routeProps.location;
+          // The old about:debugging supported the following routes:
+          // about:debugging#workers, about:debugging#addons and about:debugging#tabs.
+          // Such links can still be found in external documentation pages.
+          // We redirect to This Firefox rather than the Setup Page here.
+          if (
+            pathname === "/workers" ||
+            pathname === "/addons" ||
+            pathname === "/tabs"
+          ) {
+            return Redirect({ to: `/runtime/${RUNTIMES.THIS_FIREFOX}` });
+          }
+          return Redirect({ to: "/setup" });
+        },
       })
     );
   }
@@ -151,6 +150,7 @@ class App extends PureComponent {
     const {
       adbAddonStatus,
       dispatch,
+      isAdbReady,
       isScanningUsb,
       networkRuntimes,
       selectedPage,
@@ -159,13 +159,14 @@ class App extends PureComponent {
     } = this.props;
 
     return Localized(
-      { },
+      {},
       dom.div(
         { className: "app" },
         Sidebar({
           adbAddonStatus,
           className: "app__sidebar",
           dispatch,
+          isAdbReady,
           isScanningUsb,
           networkRuntimes,
           selectedPage,
@@ -181,14 +182,13 @@ class App extends PureComponent {
 const mapStateToProps = state => {
   return {
     adbAddonStatus: state.ui.adbAddonStatus,
+    isAdbReady: state.ui.isAdbReady,
     isScanningUsb: state.ui.isScanningUsb,
-    networkEnabled: state.ui.networkEnabled,
     networkLocations: state.ui.networkLocations,
     networkRuntimes: state.runtimes.networkRuntimes,
     selectedPage: state.ui.selectedPage,
     selectedRuntimeId: state.runtimes.selectedRuntimeId,
     usbRuntimes: state.runtimes.usbRuntimes,
-    wifiEnabled: state.ui.wifiEnabled,
   };
 };
 
@@ -196,6 +196,9 @@ const mapDispatchToProps = dispatch => ({
   dispatch,
 });
 
-module.exports = FluentReact
-  .withLocalization(
-      connect(mapStateToProps, mapDispatchToProps)(App));
+module.exports = FluentReact.withLocalization(
+  connect(
+    mapStateToProps,
+    mapDispatchToProps
+  )(App)
+);

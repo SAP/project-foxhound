@@ -33,8 +33,6 @@ UNIFIED_SOURCES += [
     'nsXBLProtoImplProperty.cpp',
     'nsXBLPrototypeBinding.cpp',
     'nsXBLPrototypeHandler.cpp',
-    'nsXBLPrototypeResources.cpp',
-    'nsXBLResourceLoader.cpp',
     'nsXBLSerialize.cpp',
     'nsXBLService.cpp',
     'nsXBLWindowKeyHandler.cpp',
@@ -48,6 +46,8 @@ LOCAL_INCLUDES += [
     '/dom/xul',
     '/layout/style',
 ]
+
+include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 

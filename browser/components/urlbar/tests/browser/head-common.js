@@ -1,6 +1,8 @@
 /* eslint-env mozilla/frame-script */
 
-var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   HttpServer: "resource://testing-common/httpd.js",
@@ -13,27 +15,23 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyGetter(this, "TEST_BASE_URL", () =>
-  getRootDirectory(gTestPath).replace("chrome://mochitests/content",
-                                      "https://example.com"));
+  getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content",
+    "https://example.com"
+  )
+);
 
 SearchTestUtils.init(Assert, registerCleanupFunction);
-
-function is_element_visible(element, msg) {
-  isnot(element, null, "Element should not be null, when checking visibility");
-  ok(BrowserTestUtils.is_visible(element), msg || "Element should be visible");
-}
-
-function is_element_hidden(element, msg) {
-  isnot(element, null, "Element should not be null, when checking visibility");
-  ok(BrowserTestUtils.is_hidden(element), msg || "Element should be hidden");
-}
 
 /**
  * Initializes an HTTP Server, and runs a task with it.
  * @param {object} details {scheme, host, port}
  * @param {function} taskFn The task to run, gets the server as argument.
  */
-async function withHttpServer(details = { scheme: "http", host: "localhost", port: -1}, taskFn) {
+async function withHttpServer(
+  details = { scheme: "http", host: "localhost", port: -1 },
+  taskFn
+) {
   let server = new HttpServer();
   let url = `${details.scheme}://${details.host}:${details.port}`;
   try {
@@ -43,10 +41,12 @@ async function withHttpServer(details = { scheme: "http", host: "localhost", por
       details.port = server.identity.primaryPort;
       server.identity.setPrimary(details.scheme, details.host, details.port);
     } catch (ex) {
-      throw ("We can't launch our http server successfully. " + ex);
+      throw new Error("We can't launch our http server successfully. " + ex);
     }
-    Assert.ok(server.identity.has(details.scheme, details.host, details.port),
-              `${url} is listening.`);
+    Assert.ok(
+      server.identity.has(details.scheme, details.host, details.port),
+      `${url} is listening.`
+    );
     try {
       await taskFn(server);
     } catch (ex) {
@@ -61,23 +61,21 @@ async function withHttpServer(details = { scheme: "http", host: "localhost", por
   }
 }
 
-function promisePopupShown(popup) {
-  return BrowserTestUtils.waitForPopupEvent(popup, "shown");
-}
-
-function promisePopupHidden(popup) {
-  return BrowserTestUtils.waitForPopupEvent(popup, "hidden");
-}
-
 function promiseSearchComplete(win = window, dontAnimate = false) {
   return UrlbarTestUtils.promiseSearchComplete(win, dontAnimate);
 }
 
-function promiseAutocompleteResultPopup(inputText,
-                                        win = window,
-                                        fireInputEvent = false) {
-  return UrlbarTestUtils.promiseAutocompleteResultPopup(win, inputText,
-    waitForFocus, fireInputEvent);
+function promiseAutocompleteResultPopup(
+  value,
+  win = window,
+  fireInputEvent = false
+) {
+  return UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window: win,
+    waitForFocus,
+    value,
+    fireInputEvent,
+  });
 }
 
 async function waitForAutocompleteResultAt(index) {
@@ -86,8 +84,4 @@ async function waitForAutocompleteResultAt(index) {
 
 function promiseSuggestionsPresent(msg = "") {
   return UrlbarTestUtils.promiseSuggestionsPresent(window, msg);
-}
-
-function suggestionsPresent() {
-  return UrlbarTestUtils.suggestionsPresent(window);
 }

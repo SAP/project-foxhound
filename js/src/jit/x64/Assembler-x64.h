@@ -235,6 +235,8 @@ static constexpr Register OsrFrameReg = IntArgReg3;
 
 static constexpr Register PreBarrierReg = rdx;
 
+static constexpr Register InterpreterPCReg = r14;
+
 static constexpr uint32_t ABIStackAlignment = 16;
 static constexpr uint32_t CodeAlignment = 16;
 static constexpr uint32_t JitStackAlignment = 16;
@@ -722,6 +724,10 @@ class Assembler : public AssemblerX86Shared {
         break;
       case Operand::MEM_ADDRESS32:
         masm.addq_mr(src.address(), dest.encoding());
+        break;
+      case Operand::MEM_SCALE:
+        masm.addq_mr(src.disp(), src.base(), src.index(), src.scale(),
+                     dest.encoding());
         break;
       default:
         MOZ_CRASH("unexpected operand kind");

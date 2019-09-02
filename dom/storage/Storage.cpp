@@ -8,6 +8,7 @@
 #include "StorageNotifierService.h"
 
 #include "mozilla/dom/StorageBinding.h"
+#include "mozilla/StorageAccess.h"
 #include "nsIPrincipal.h"
 #include "nsPIDOMWindow.h"
 
@@ -16,7 +17,8 @@ namespace dom {
 
 static const char kStorageEnabled[] = "dom.storage.enabled";
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Storage, mWindow, mPrincipal)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Storage, mWindow, mPrincipal,
+                                      mStoragePrincipal)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Storage)
 NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(Storage, LastRelease())
@@ -26,26 +28,29 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Storage)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-Storage::Storage(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
-    : mWindow(aWindow), mPrincipal(aPrincipal), mIsSessionOnly(false) {
+Storage::Storage(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal,
+                 nsIPrincipal* aStoragePrincipal)
+    : mWindow(aWindow),
+      mPrincipal(aPrincipal),
+      mStoragePrincipal(aStoragePrincipal),
+      mIsSessionOnly(false) {
   MOZ_ASSERT(aPrincipal);
 
   if (nsContentUtils::IsSystemPrincipal(mPrincipal)) {
     mIsSessionOnly = false;
   } else if (mWindow) {
     uint32_t rejectedReason = 0;
-    nsContentUtils::StorageAccess access =
-        nsContentUtils::StorageAllowedForWindow(mWindow, &rejectedReason);
+    StorageAccess access = StorageAllowedForWindow(mWindow, &rejectedReason);
 
-    MOZ_ASSERT(access != nsContentUtils::StorageAccess::eDeny ||
+    MOZ_ASSERT(access != StorageAccess::eDeny ||
                rejectedReason ==
                    nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
 
-    mIsSessionOnly = access <= nsContentUtils::StorageAccess::eSessionScoped;
+    mIsSessionOnly = access <= StorageAccess::eSessionScoped;
   }
 }
 
-Storage::~Storage() {}
+Storage::~Storage() = default;
 
 /* static */
 bool Storage::StoragePrefIsEnabled() {

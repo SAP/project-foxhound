@@ -8,8 +8,7 @@
  * Utilities for testing SVG matrices
  */
 
-function createMatrix(a, b, c, d, e, f)
-{
+function createMatrix(a, b, c, d, e, f) {
   var svg = document.getElementsByTagName("svg")[0];
   var m = svg.createSVGMatrix();
   m.a = a;
@@ -22,8 +21,7 @@ function createMatrix(a, b, c, d, e, f)
 }
 
 // Lightweight dummy Matrix class for representing arrays that get passed in
-function MatrixFromArray(a)
-{
+function MatrixFromArray(a) {
   this.a = a[0];
   this.b = a[1];
   this.c = a[2];
@@ -32,45 +30,49 @@ function MatrixFromArray(a)
   this.f = a[5];
 }
 
-function cmpMatrix(a, b, msg)
-{
-  if (a.constructor === Array)
+function cmpMatrix(a, b, msg) {
+  if (a.constructor === Array) {
     a = new MatrixFromArray(a);
-  if (b.constructor === Array)
+  }
+  if (b.constructor === Array) {
     b = new MatrixFromArray(b);
+  }
 
-  ok(a.a == b.a &&
-     a.b == b.b &&
-     a.c == b.c &&
-     a.d == b.d &&
-     a.e == b.e &&
-     a.f == b.f,
-     msg + " - got " + formatMatrix(a)
-         + ", expected " + formatMatrix(b));
+  ok(
+    a.a == b.a &&
+      a.b == b.b &&
+      a.c == b.c &&
+      a.d == b.d &&
+      a.e == b.e &&
+      a.f == b.f,
+    msg + " - got " + formatMatrix(a) + ", expected " + formatMatrix(b)
+  );
 }
 
-function roughCmpMatrix(a, b, msg)
-{
-  if (a.constructor === Array)
+function roughCmpMatrix(a, b, msg) {
+  if (a.constructor === Array) {
     a = new MatrixFromArray(a);
-  if (b.constructor === Array)
+  }
+  if (b.constructor === Array) {
     b = new MatrixFromArray(b);
+  }
 
   const tolerance = 1 / 65535;
-  ok(Math.abs(b.a - a.a) < tolerance &&
-     Math.abs(b.b - a.b) < tolerance &&
-     Math.abs(b.c - a.c) < tolerance &&
-     Math.abs(b.d - a.d) < tolerance &&
-     Math.abs(b.e - a.e) < tolerance &&
-     Math.abs(b.f - a.f) < tolerance,
-     msg + " - got " + formatMatrix(a)
-         + ", expected " + formatMatrix(b));
+  ok(
+    Math.abs(b.a - a.a) < tolerance &&
+      Math.abs(b.b - a.b) < tolerance &&
+      Math.abs(b.c - a.c) < tolerance &&
+      Math.abs(b.d - a.d) < tolerance &&
+      Math.abs(b.e - a.e) < tolerance &&
+      Math.abs(b.f - a.f) < tolerance,
+    msg + " - got " + formatMatrix(a) + ", expected " + formatMatrix(b)
+  );
 }
 
-function formatMatrix(m)
-{
-  if (m.constructor != Array)
-    return "(" + [m.a, m.b, m.c, m.d, m.e, m.f].join(', ') + ")";
+function formatMatrix(m) {
+  if (m.constructor != Array) {
+    return "(" + [m.a, m.b, m.c, m.d, m.e, m.f].join(", ") + ")";
+  }
 
-  return "(" + m.join(', ') + ")";
+  return "(" + m.join(", ") + ")";
 }

@@ -6,10 +6,10 @@
 "use strict";
 
 const EventEmitter = require("devtools/shared/event-emitter");
-const {LocalizationHelper, ELLIPSIS} = require("devtools/shared/l10n");
+const { LocalizationHelper, ELLIPSIS } = require("devtools/shared/l10n");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 const JSOL = require("devtools/client/shared/vendor/jsol");
-const {KeyCodes} = require("devtools/client/shared/keycodes");
+const { KeyCodes } = require("devtools/client/shared/keycodes");
 const { getUnicodeHostname } = require("devtools/client/shared/unicode-url");
 
 // GUID to be used as a separator in compound keys. This must match the same
@@ -18,26 +18,41 @@ const { getUnicodeHostname } = require("devtools/client/shared/unicode-url");
 // devtools/server/tests/browser/head.js
 const SEPARATOR_GUID = "{9d414cc5-8319-0a04-0586-c0a6ae01670a}";
 
-loader.lazyRequireGetter(this, "TreeWidget",
-                         "devtools/client/shared/widgets/TreeWidget", true);
-loader.lazyRequireGetter(this, "TableWidget",
-                         "devtools/client/shared/widgets/TableWidget", true);
-loader.lazyImporter(this, "VariablesView",
-                    "resource://devtools/client/shared/widgets/VariablesView.jsm");
-loader.lazyRequireGetter(this, "validator",
-                         "devtools/client/shared/vendor/stringvalidator/validator");
+loader.lazyRequireGetter(
+  this,
+  "TreeWidget",
+  "devtools/client/shared/widgets/TreeWidget",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "TableWidget",
+  "devtools/client/shared/widgets/TableWidget",
+  true
+);
+loader.lazyImporter(
+  this,
+  "VariablesView",
+  "resource://devtools/client/shared/widgets/VariablesView.jsm"
+);
+loader.lazyRequireGetter(
+  this,
+  "validator",
+  "devtools/client/shared/vendor/stringvalidator/validator"
+);
 
 /**
  * Localization convenience methods.
  */
 const STORAGE_STRINGS = "devtools/client/locales/storage.properties";
-const L10N = new LocalizationHelper(STORAGE_STRINGS);
+const L10N = new LocalizationHelper(STORAGE_STRINGS, true);
 
 const GENERIC_VARIABLES_VIEW_SETTINGS = {
   lazyEmpty: true,
-   // ms
+  // ms
   lazyEmptyDelay: 10,
   searchEnabled: true,
+  contextMenuId: "variable-view-popup",
   searchPlaceholder: L10N.getStr("storage.search.placeholder"),
   preventDescriptorModifiers: true,
 };
@@ -58,6 +73,7 @@ const COOKIE_KEY_MAP = {
   isHttpOnly: "HttpOnly",
   creationTime: "CreationTime",
   lastAccessed: "LastAccessed",
+  sameSite: "SameSite",
 };
 
 const SAFE_HOSTS_PREFIXES_REGEX = /^(about:|https?:|file:|moz-extension:)/;
@@ -80,7 +96,6 @@ const ITEM_NAME_MAX_LENGTH = 32;
 class StorageUI {
   constructor(front, target, panelWin, toolbox) {
     EventEmitter.decorate(this);
-
     this._target = target;
     this._window = panelWin;
     this._panelDoc = panelWin.document;
@@ -116,8 +131,10 @@ class StorageUI {
 
     this.sidebar = this._panelDoc.getElementById("storage-sidebar");
     this.sidebar.setAttribute("width", "300");
-    this.view = new VariablesView(this.sidebar.firstChild,
-                                  GENERIC_VARIABLES_VIEW_SETTINGS);
+    this.view = new VariablesView(
+      this.sidebar.firstChild,
+      GENERIC_VARIABLES_VIEW_SETTINGS
+    );
 
     this.filterItems = this.filterItems.bind(this);
     this.onPaneToggleButtonClicked = this.onPaneToggleButtonClicked.bind(this);
@@ -132,38 +149,41 @@ class StorageUI {
       this.searchBox.focus();
     });
 
-    this.front.listStores().then(storageTypes => {
-      // When we are in the browser console we list indexedDBs internal to
-      // Firefox e.g. defined inside a .jsm. Because there is no way before this
-      // point to know whether or not we are inside the browser toolbox we have
-      // already fetched the hostnames of these databases.
-      //
-      // If we are not inside the browser toolbox we need to delete these
-      // hostnames.
-      if (!this._target.chrome && storageTypes.indexedDB) {
-        const hosts = storageTypes.indexedDB.hosts;
-        const newHosts = {};
+    this.front
+      .listStores()
+      .then(storageTypes => {
+        // When we are in the browser console we list indexedDBs internal to
+        // Firefox e.g. defined inside a .jsm. Because there is no way before this
+        // point to know whether or not we are inside the browser toolbox we have
+        // already fetched the hostnames of these databases.
+        //
+        // If we are not inside the browser toolbox we need to delete these
+        // hostnames.
+        if (!this._target.chrome && storageTypes.indexedDB) {
+          const hosts = storageTypes.indexedDB.hosts;
+          const newHosts = {};
 
-        for (const [host, dbs] of Object.entries(hosts)) {
-          if (SAFE_HOSTS_PREFIXES_REGEX.test(host)) {
-            newHosts[host] = dbs;
+          for (const [host, dbs] of Object.entries(hosts)) {
+            if (SAFE_HOSTS_PREFIXES_REGEX.test(host)) {
+              newHosts[host] = dbs;
+            }
           }
+
+          storageTypes.indexedDB.hosts = newHosts;
         }
 
-        storageTypes.indexedDB.hosts = newHosts;
-      }
+        this.populateStorageTree(storageTypes);
+      })
+      .catch(e => {
+        if (!this._toolbox || this._toolbox._destroyer) {
+          // The toolbox is in the process of being destroyed... in this case throwing here
+          // is expected and normal so let's ignore the error.
+          return;
+        }
 
-      this.populateStorageTree(storageTypes);
-    }).catch(e => {
-      if (!this._toolbox || this._toolbox._destroyer) {
-        // The toolbox is in the process of being destroyed... in this case throwing here
-        // is expected and normal so let's ignore the error.
-        return;
-      }
-
-      // The toolbox is open so the error is unexpected and real so let's log it.
-      console.error(e);
-    });
+        // The toolbox is open so the error is unexpected and real so let's log it.
+        console.error(e);
+      });
 
     this.onEdit = this.onEdit.bind(this);
     this.front.on("stores-update", this.onEdit);
@@ -181,8 +201,20 @@ class StorageUI {
     this._tablePopup = this._panelDoc.getElementById("storage-table-popup");
     this._tablePopup.addEventListener("popupshowing", this.onTablePopupShowing);
 
+    this.onVariableViewPopupShowing = this.onVariableViewPopupShowing.bind(
+      this
+    );
+    this._variableViewPopup = this._panelDoc.getElementById(
+      "variable-view-popup"
+    );
+    this._variableViewPopup.addEventListener(
+      "popupshowing",
+      this.onVariableViewPopupShowing
+    );
+
     this.onRefreshTable = this.onRefreshTable.bind(this);
     this.onAddItem = this.onAddItem.bind(this);
+    this.onCopyItem = this.onCopyItem.bind(this);
     this.onRemoveItem = this.onRemoveItem.bind(this);
     this.onRemoveAllFrom = this.onRemoveAllFrom.bind(this);
     this.onRemoveAll = this.onRemoveAll.bind(this);
@@ -190,45 +222,67 @@ class StorageUI {
     this.onRemoveTreeItem = this.onRemoveTreeItem.bind(this);
 
     this._refreshButton = this._panelDoc.getElementById("refresh-button");
-    this._refreshButton.addEventListener("command", this.onRefreshTable);
-    this._refreshButton.setAttribute("tooltiptext",
-    L10N.getFormatStr("storage.popupMenu.refreshItemLabel"));
+    this._refreshButton.addEventListener("click", this.onRefreshTable);
+    this._refreshButton.setAttribute(
+      "title",
+      L10N.getFormatStr("storage.popupMenu.refreshItemLabel")
+    );
 
     this._addButton = this._panelDoc.getElementById("add-button");
-    this._addButton.addEventListener("command", this.onAddItem);
+    this._addButton.addEventListener("click", this.onAddItem);
+
+    this._variableViewPopupCopy = this._panelDoc.getElementById(
+      "variable-view-popup-copy"
+    );
+    this._variableViewPopupCopy.addEventListener("command", this.onCopyItem);
 
     this._tablePopupAddItem = this._panelDoc.getElementById(
-      "storage-table-popup-add");
+      "storage-table-popup-add"
+    );
     this._tablePopupAddItem.addEventListener("command", this.onAddItem);
 
     this._tablePopupDelete = this._panelDoc.getElementById(
-      "storage-table-popup-delete");
+      "storage-table-popup-delete"
+    );
     this._tablePopupDelete.addEventListener("command", this.onRemoveItem);
 
     this._tablePopupDeleteAllFrom = this._panelDoc.getElementById(
-      "storage-table-popup-delete-all-from");
-    this._tablePopupDeleteAllFrom.addEventListener("command",
-      this.onRemoveAllFrom);
+      "storage-table-popup-delete-all-from"
+    );
+    this._tablePopupDeleteAllFrom.addEventListener(
+      "command",
+      this.onRemoveAllFrom
+    );
 
     this._tablePopupDeleteAll = this._panelDoc.getElementById(
-      "storage-table-popup-delete-all");
+      "storage-table-popup-delete-all"
+    );
     this._tablePopupDeleteAll.addEventListener("command", this.onRemoveAll);
 
     this._tablePopupDeleteAllSessionCookies = this._panelDoc.getElementById(
-      "storage-table-popup-delete-all-session-cookies");
-    this._tablePopupDeleteAllSessionCookies.addEventListener("command",
-      this.onRemoveAllSessionCookies);
+      "storage-table-popup-delete-all-session-cookies"
+    );
+    this._tablePopupDeleteAllSessionCookies.addEventListener(
+      "command",
+      this.onRemoveAllSessionCookies
+    );
 
     this._treePopupDeleteAll = this._panelDoc.getElementById(
-      "storage-tree-popup-delete-all");
+      "storage-tree-popup-delete-all"
+    );
     this._treePopupDeleteAll.addEventListener("command", this.onRemoveAll);
 
     this._treePopupDeleteAllSessionCookies = this._panelDoc.getElementById(
-      "storage-tree-popup-delete-all-session-cookies");
-    this._treePopupDeleteAllSessionCookies.addEventListener("command",
-      this.onRemoveAllSessionCookies);
+      "storage-tree-popup-delete-all-session-cookies"
+    );
+    this._treePopupDeleteAllSessionCookies.addEventListener(
+      "command",
+      this.onRemoveAllSessionCookies
+    );
 
-    this._treePopupDelete = this._panelDoc.getElementById("storage-tree-popup-delete");
+    this._treePopupDelete = this._panelDoc.getElementById(
+      "storage-tree-popup-delete"
+    );
     this._treePopupDelete.addEventListener("command", this.onRemoveTreeItem);
   }
 
@@ -248,24 +302,40 @@ class StorageUI {
     this.searchBox.removeEventListener("input", this.filterItems);
     this.searchBox = null;
 
-    this.sidebarToggleBtn.removeEventListener("click", this.onPaneToggleButtonClicked);
+    this.sidebarToggleBtn.removeEventListener(
+      "click",
+      this.onPaneToggleButtonClicked
+    );
     this.sidebarToggleBtn = null;
 
-    this._treePopup.removeEventListener("popupshowing", this.onTreePopupShowing);
-    this._refreshButton.removeEventListener("command", this.onRefreshTable);
-    this._addButton.removeEventListener("command", this.onAddItem);
+    this._treePopup.removeEventListener(
+      "popupshowing",
+      this.onTreePopupShowing
+    );
+    this._refreshButton.removeEventListener("click", this.onRefreshTable);
+    this._addButton.removeEventListener("click", this.onAddItem);
     this._tablePopupAddItem.removeEventListener("command", this.onAddItem);
     this._treePopupDeleteAll.removeEventListener("command", this.onRemoveAll);
-    this._treePopupDeleteAllSessionCookies.removeEventListener("command",
-      this.onRemoveAllSessionCookies);
+    this._treePopupDeleteAllSessionCookies.removeEventListener(
+      "command",
+      this.onRemoveAllSessionCookies
+    );
     this._treePopupDelete.removeEventListener("command", this.onRemoveTreeItem);
 
-    this._tablePopup.removeEventListener("popupshowing", this.onTablePopupShowing);
+    this._tablePopup.removeEventListener(
+      "popupshowing",
+      this.onTablePopupShowing
+    );
     this._tablePopupDelete.removeEventListener("command", this.onRemoveItem);
-    this._tablePopupDeleteAllFrom.removeEventListener("command", this.onRemoveAllFrom);
+    this._tablePopupDeleteAllFrom.removeEventListener(
+      "command",
+      this.onRemoveAllFrom
+    );
     this._tablePopupDeleteAll.removeEventListener("command", this.onRemoveAll);
-    this._tablePopupDeleteAllSessionCookies.removeEventListener("command",
-      this.onRemoveAllSessionCookies);
+    this._tablePopupDeleteAllSessionCookies.removeEventListener(
+      "command",
+      this.onRemoveAllSessionCookies
+    );
   }
 
   setupToolbar() {
@@ -276,7 +346,10 @@ class StorageUI {
     this.sidebarToggleBtn = this._panelDoc.querySelector(".sidebar-toggle");
     this.updateSidebarToggleButton();
 
-    this.sidebarToggleBtn.addEventListener("click", this.onPaneToggleButtonClicked);
+    this.sidebarToggleBtn.addEventListener(
+      "click",
+      this.onPaneToggleButtonClicked
+    );
   }
 
   onPaneToggleButtonClicked() {
@@ -302,7 +375,7 @@ class StorageUI {
       title = L10N.getStr("storage.collapsePane");
     }
 
-    this.sidebarToggleBtn.setAttribute("tooltiptext", title);
+    this.sidebarToggleBtn.setAttribute("title", title);
   }
 
   /**
@@ -315,7 +388,6 @@ class StorageUI {
 
   getCurrentFront() {
     const type = this.table.datatype;
-
     return this.storageTypes[type];
   }
 
@@ -465,7 +537,7 @@ class StorageUI {
     for (const type in added) {
       for (const host in added[type]) {
         const label = this.getReadableLabelFromHostname(host);
-        this.tree.add([type, {id: host, label: label, type: "url"}]);
+        this.tree.add([type, { id: host, label: label, type: "url" }]);
         for (let name of added[type][host]) {
           try {
             name = JSON.parse(name);
@@ -475,8 +547,12 @@ class StorageUI {
             this.tree.add([type, host, ...name]);
             if (!this.tree.selectedItem) {
               this.tree.selectedItem = [type, host, name[0], name[1]];
-              await this.fetchStorageObjects(type, host, [JSON.stringify(name)],
-                                              REASON.NEW_ROW);
+              await this.fetchStorageObjects(
+                type,
+                host,
+                [JSON.stringify(name)],
+                REASON.NEW_ROW
+              );
             }
           } catch (ex) {
             // Do nothing
@@ -484,8 +560,12 @@ class StorageUI {
         }
 
         if (this.tree.isSelected([type, host])) {
-          await this.fetchStorageObjects(type, host, added[type][host],
-                                          REASON.NEW_ROW);
+          await this.fetchStorageObjects(
+            type,
+            host,
+            added[type][host],
+            REASON.NEW_ROW
+          );
         }
       }
     }
@@ -555,8 +635,11 @@ class StorageUI {
     }
 
     const [type, host, db, objectStore] = selectedItem;
-    if (!changed[type] || !changed[type][host] ||
-        changed[type][host].length == 0) {
+    if (
+      !changed[type] ||
+      !changed[type][host] ||
+      changed[type][host].length == 0
+    ) {
       return;
     }
     try {
@@ -569,7 +652,12 @@ class StorageUI {
       }
       await this.fetchStorageObjects(type, host, toUpdate, REASON.UPDATE);
     } catch (ex) {
-      await this.fetchStorageObjects(type, host, changed[type][host], REASON.UPDATE);
+      await this.fetchStorageObjects(
+        type,
+        host,
+        changed[type][host],
+        REASON.UPDATE
+      );
     }
   }
 
@@ -587,27 +675,32 @@ class StorageUI {
    *        See REASON constant at top of file.
    */
   async fetchStorageObjects(type, host, names, reason) {
-    const fetchOpts = reason === REASON.NEXT_50_ITEMS ? {offset: this.itemOffset}
-                                                    : {};
+    const fetchOpts =
+      reason === REASON.NEXT_50_ITEMS ? { offset: this.itemOffset } : {};
     const storageType = this.storageTypes[type];
 
     this.sidebarToggledOpen = null;
 
-    if (reason !== REASON.NEXT_50_ITEMS &&
-        reason !== REASON.UPDATE &&
-        reason !== REASON.NEW_ROW &&
-        reason !== REASON.POPULATE) {
+    if (
+      reason !== REASON.NEXT_50_ITEMS &&
+      reason !== REASON.UPDATE &&
+      reason !== REASON.NEW_ROW &&
+      reason !== REASON.POPULATE
+    ) {
       throw new Error("Invalid reason specified");
     }
 
     try {
-      if (reason === REASON.POPULATE) {
+      if (
+        reason === REASON.POPULATE ||
+        (reason === REASON.NEW_ROW && this.table.items.size === 0)
+      ) {
         let subType = null;
         // The indexedDB type could have sub-type data to fetch.
         // If having names specified, then it means
         // we are fetching details of specific database or of object store.
         if (type === "indexedDB" && names) {
-          const [ dbName, objectStoreName ] = JSON.parse(names[0]);
+          const [dbName, objectStoreName] = JSON.parse(names[0]);
           if (dbName) {
             subType = "database";
           }
@@ -616,20 +709,35 @@ class StorageUI {
           }
         }
 
-        this.actorSupportsAddItem = await this._target.actorHasMethod(type, "addItem");
-        this.actorSupportsRemoveItem =
-          await this._target.actorHasMethod(type, "removeItem");
-        this.actorSupportsRemoveAll =
-          await this._target.actorHasMethod(type, "removeAll");
-        this.actorSupportsRemoveAllSessionCookies =
-          await this._target.actorHasMethod(type, "removeAllSessionCookies");
+        this.actorSupportsAddItem = await this._target.actorHasMethod(
+          type,
+          "addItem"
+        );
+        this.actorSupportsRemoveItem = await this._target.actorHasMethod(
+          type,
+          "removeItem"
+        );
+        this.actorSupportsRemoveAll = await this._target.actorHasMethod(
+          type,
+          "removeAll"
+        );
+        this.actorSupportsRemoveAllSessionCookies = await this._target.actorHasMethod(
+          type,
+          "removeAllSessionCookies"
+        );
 
         await this.resetColumns(type, host, subType);
       }
 
-      const {data} = await storageType.getStoreObjects(host, names, fetchOpts);
+      const { data } = await storageType.getStoreObjects(
+        host,
+        names,
+        fetchOpts
+      );
       if (data.length) {
         await this.populateTable(data, reason);
+      } else if (reason === REASON.POPULATE) {
+        await this.clearHeaders();
       }
       this.updateToolbar();
       this.emit("store-objects-updated");
@@ -651,11 +759,10 @@ class StorageUI {
 
     if (canAdd) {
       this._addButton.hidden = false;
-      this._addButton.setAttribute("tooltiptext",
-        L10N.getFormatStr("storage.popupMenu.addItemLabel"));
-    } else {
-      this._addButton.hidden = true;
-      this._addButton.removeAttribute("tooltiptext");
+      this._addButton.setAttribute(
+        "title",
+        L10N.getFormatStr("storage.popupMenu.addItemLabel")
+      );
     }
   }
 
@@ -681,14 +788,14 @@ class StorageUI {
       } catch (e) {
         console.error("Unable to localize tree label type:" + type);
       }
-      this.tree.add([{id: type, label: typeLabel, type: "store"}]);
+      this.tree.add([{ id: type, label: typeLabel, type: "store" }]);
       if (!storageTypes[type].hosts) {
         continue;
       }
       this.storageTypes[type] = storageTypes[type];
       for (const host in storageTypes[type].hosts) {
         const label = this.getReadableLabelFromHostname(host);
-        this.tree.add([type, {id: host, label: label, type: "url"}]);
+        this.tree.add([type, { id: host, label: label, type: "url" }]);
         for (const name of storageTypes[type].hosts[host]) {
           try {
             const names = JSON.parse(name);
@@ -722,10 +829,12 @@ class StorageUI {
 
     // Bail if the selectedRow is no longer selected, the item doesn't exist or the state
     // changed in another way during the above yield.
-    if (this.table.items.size === 0 ||
-        !item ||
-        !this.table.selectedRow ||
-        item.uniqueKey !== this.table.selectedRow.uniqueKey) {
+    if (
+      this.table.items.size === 0 ||
+      !item ||
+      !this.table.selectedRow ||
+      item.uniqueKey !== this.table.selectedRow.uniqueKey
+    ) {
       this.hideSidebar();
       return;
     }
@@ -741,7 +850,7 @@ class StorageUI {
     mainScope.expanded = true;
 
     if (value) {
-      const itemVar = mainScope.addItem(item.name + "", {}, {relaxed: true});
+      const itemVar = mainScope.addItem(item.name + "", {}, { relaxed: true });
 
       // The main area where the value will be displayed
       itemVar.setGrip(value);
@@ -757,7 +866,8 @@ class StorageUI {
         // which may be available.
         const rawObject = Object.create(null);
         const otherProps = itemProps.filter(
-          e => !["name", "value", "valueActor"].includes(e));
+          e => !["name", "value", "valueActor"].includes(e)
+        );
         for (const prop of otherProps) {
           const column = this.table.columns.get(prop);
           if (column && column.private) {
@@ -767,7 +877,7 @@ class StorageUI {
           const cookieProp = COOKIE_KEY_MAP[prop] || prop;
           rawObject[cookieProp] = item[prop];
         }
-        itemVar.populate(rawObject, {sorted: true});
+        itemVar.populate(rawObject, { sorted: true });
         itemVar.twisty = true;
         itemVar.expanded = true;
       }
@@ -834,8 +944,10 @@ class StorageUI {
     } catch (e) {
       // Unable to decode, nothing to do
     }
-    const value = (decodedValue && decodedValue !== originalValue)
-      ? decodedValue : originalValue;
+    const value =
+      decodedValue && decodedValue !== originalValue
+        ? decodedValue
+        : originalValue;
 
     if (!this._shouldParse(value)) {
       return;
@@ -860,13 +972,16 @@ class StorageUI {
     const jsonObject = Object.create(null);
     const view = this.view;
     jsonObject[name] = obj;
-    const valueScope = view.getScopeAtIndex(1) ||
-                      view.addScope(L10N.getStr("storage.parsedValue.label"));
+    const valueScope =
+      view.getScopeAtIndex(1) ||
+      view.addScope(L10N.getStr("storage.parsedValue.label"));
     valueScope.expanded = true;
-    const jsonVar = valueScope.addItem("", Object.create(null), {relaxed: true});
+    const jsonVar = valueScope.addItem("", Object.create(null), {
+      relaxed: true,
+    });
     jsonVar.expanded = true;
     jsonVar.twisty = true;
-    jsonVar.populate(jsonObject, {expanded: true});
+    jsonVar.populate(jsonObject, { expanded: true });
   }
 
   /**
@@ -901,8 +1016,12 @@ class StorageUI {
         const keyValue = `${word}${kv}${word}`;
         const keyValueList = `${keyValue}(${p}${keyValue})*`;
         const regex = new RegExp(`^${keyValueList}$`);
-        if (value.match && value.match(regex) && value.includes(kv) &&
-            (value.includes(p) || value.split(kv).length == 2)) {
+        if (
+          value.match &&
+          value.match(regex) &&
+          value.includes(kv) &&
+          (value.includes(p) || value.split(kv).length == 2)
+        ) {
           return makeObject(kv, p);
         }
       }
@@ -985,6 +1104,8 @@ class StorageUI {
 
     let names = null;
     if (!host) {
+      // If selected item has no host then reset table headers
+      await this.clearHeaders();
       return;
     }
     if (item.length > 2) {
@@ -992,6 +1113,13 @@ class StorageUI {
     }
     await this.fetchStorageObjects(type, host, names, REASON.POPULATE);
     this.itemOffset = 0;
+  }
+
+  /**
+   * Clear the column headers in the storage table
+   */
+  async clearHeaders() {
+    this.table.setColumns({}, null, {}, {});
   }
 
   /**
@@ -1037,8 +1165,15 @@ class StorageUI {
       columns[f.name] = f.name;
       let columnName;
       try {
+        let name = f.name;
+
         // Path key names for l10n in the case of a string change.
-        const name = f.name === "keyPath" ? "keyPath2" : f.name;
+        switch (f.name) {
+          case "creationTime":
+          case "keyPath":
+            name = `${f.name}2`;
+            break;
+        }
 
         columnName = L10N.getStr("table.headers." + type + "." + name);
       } catch (e) {
@@ -1046,7 +1181,9 @@ class StorageUI {
       }
 
       if (!columnName) {
-        console.error("Unable to localize table header type:" + type + " key:" + f.name);
+        console.error(
+          "Unable to localize table header type:" + type + " key:" + f.name
+        );
       } else {
         columns[f.name] = columnName;
       }
@@ -1113,12 +1250,26 @@ class StorageUI {
    *        The event passed by the keypress event.
    */
   handleKeypress(event) {
-    if (event.keyCode == KeyCodes.DOM_VK_ESCAPE && !this.sidebar.hidden) {
-      // Stop Propagation to prevent opening up of split console
-      this.hideSidebar();
-      this.sidebarToggledOpen = false;
-      event.stopPropagation();
-      event.preventDefault();
+    if (event.keyCode == KeyCodes.DOM_VK_ESCAPE) {
+      if (!this.sidebar.hidden) {
+        this.hideSidebar();
+        this.sidebarToggledOpen = false;
+        // Stop Propagation to prevent opening up of split console
+        event.stopPropagation();
+        event.preventDefault();
+      }
+    } else if (
+      event.keyCode == KeyCodes.DOM_VK_BACK_SPACE ||
+      event.keyCode == KeyCodes.DOM_VK_DELETE
+    ) {
+      if (
+        this.table.selectedRow &&
+        !["input", "textbox"].includes(event.target.localName)
+      ) {
+        this.onRemoveItem();
+        event.stopPropagation();
+        event.preventDefault();
+      }
     }
   }
 
@@ -1160,9 +1311,12 @@ class StorageUI {
     const type = selectedItem[0];
 
     // IndexedDB only supports removing items from object stores (level 4 of the tree)
-    if ((!this.actorSupportsAddItem && !this.actorSupportsRemoveItem &&
-          type !== "cookies") ||
-        (type === "indexedDB" && selectedItem.length !== 4)) {
+    if (
+      (!this.actorSupportsAddItem &&
+        !this.actorSupportsRemoveItem &&
+        type !== "cookies") ||
+      (type === "indexedDB" && selectedItem.length !== 4)
+    ) {
       event.preventDefault();
       return;
     }
@@ -1176,16 +1330,20 @@ class StorageUI {
       const label = addEllipsis((name + "").replace(separatorRegex, "-"));
 
       this._tablePopupDelete.hidden = false;
-      this._tablePopupDelete.setAttribute("label",
-        L10N.getFormatStr("storage.popupMenu.deleteLabel", label));
+      this._tablePopupDelete.setAttribute(
+        "label",
+        L10N.getFormatStr("storage.popupMenu.deleteLabel", label)
+      );
     } else {
       this._tablePopupDelete.hidden = true;
     }
 
     if (this.actorSupportsAddItem) {
       this._tablePopupAddItem.hidden = false;
-      this._tablePopupAddItem.setAttribute("label",
-        L10N.getFormatStr("storage.popupMenu.addItemLabel"));
+      this._tablePopupAddItem.setAttribute(
+        "label",
+        L10N.getFormatStr("storage.popupMenu.addItemLabel")
+      );
     } else {
       this._tablePopupAddItem.hidden = true;
     }
@@ -1203,8 +1361,10 @@ class StorageUI {
       const host = addEllipsis(data.host);
 
       this._tablePopupDeleteAllFrom.hidden = false;
-      this._tablePopupDeleteAllFrom.setAttribute("label",
-        L10N.getFormatStr("storage.popupMenu.deleteAllFromLabel", host));
+      this._tablePopupDeleteAllFrom.setAttribute(
+        "label",
+        L10N.getFormatStr("storage.popupMenu.deleteAllFromLabel", host)
+      );
     } else {
       this._tablePopupDeleteAllFrom.hidden = true;
     }
@@ -1252,13 +1412,15 @@ class StorageUI {
       // The delete action is displayed for:
       // - IndexedDB databases (level 3 of the tree)
       // - Cache objects (level 3 of the tree)
-      const showDelete = (type == "indexedDB" || type == "Cache") &&
-                        selectedItem.length == 3;
+      const showDelete =
+        (type == "indexedDB" || type == "Cache") && selectedItem.length == 3;
       this._treePopupDelete.hidden = !showDelete;
       if (showDelete) {
         const itemName = addEllipsis(selectedItem[selectedItem.length - 1]);
-        this._treePopupDelete.setAttribute("label",
-          L10N.getFormatStr("storage.popupMenu.deleteLabel", itemName));
+        this._treePopupDelete.setAttribute(
+          "label",
+          L10N.getFormatStr("storage.popupMenu.deleteLabel", itemName)
+        );
       }
 
       showMenu = showDeleteAll || showDelete;
@@ -1267,6 +1429,11 @@ class StorageUI {
     if (!showMenu) {
       event.preventDefault();
     }
+  }
+
+  onVariableViewPopupShowing(event) {
+    const item = this.view.getFocusedItem();
+    this._variableViewPopupCopy.setAttribute("disabled", !item);
   }
 
   /**
@@ -1295,18 +1462,30 @@ class StorageUI {
   }
 
   /**
+   * Handles copy an item from the storage
+   */
+  onCopyItem() {
+    this.view._copyItem();
+  }
+
+  /**
    * Handles removing an item from the storage
    */
   onRemoveItem() {
     const [, host, ...path] = this.tree.selectedItem;
     const front = this.getCurrentFront();
-    const rowId = this.table.contextMenuRowId;
+    const uniqueId = this.table.uniqueId;
+    const rowId =
+      this.table.contextMenuRowId || this.table.selectedRow[uniqueId];
     const data = this.table.items.get(rowId);
+
     let name = data[this.table.uniqueId];
     if (path.length > 0) {
       name = JSON.stringify([...path, name]);
     }
     front.removeItem(host, name);
+
+    return false;
   }
 
   /**
@@ -1361,29 +1540,34 @@ class StorageUI {
   removeDatabase(host, dbName) {
     const front = this.getCurrentFront();
 
-    front.removeDatabase(host, dbName).then(result => {
-      if (result.blocked) {
+    front
+      .removeDatabase(host, dbName)
+      .then(result => {
+        if (result.blocked) {
+          const notificationBox = this._toolbox.getNotificationBox();
+          notificationBox.appendNotification(
+            L10N.getFormatStr("storage.idb.deleteBlocked", dbName),
+            "storage-idb-delete-blocked",
+            null,
+            notificationBox.PRIORITY_WARNING_LOW
+          );
+        }
+      })
+      .catch(error => {
         const notificationBox = this._toolbox.getNotificationBox();
         notificationBox.appendNotification(
-          L10N.getFormatStr("storage.idb.deleteBlocked", dbName),
-          "storage-idb-delete-blocked",
+          L10N.getFormatStr("storage.idb.deleteError", dbName),
+          "storage-idb-delete-error",
           null,
-          notificationBox.PRIORITY_WARNING_LOW);
-      }
-    }).catch(error => {
-      const notificationBox = this._toolbox.getNotificationBox();
-      notificationBox.appendNotification(
-        L10N.getFormatStr("storage.idb.deleteError", dbName),
-        "storage-idb-delete-error",
-        null,
-        notificationBox.PRIORITY_CRITICAL_LOW);
-    });
+          notificationBox.PRIORITY_CRITICAL_LOW
+        );
+      });
   }
 
   removeCache(host, cacheName) {
     const front = this.getCurrentFront();
 
-    front.removeItem(host, JSON.stringify([ cacheName ]));
+    front.removeItem(host, JSON.stringify([cacheName]));
   }
 }
 
@@ -1393,8 +1577,8 @@ exports.StorageUI = StorageUI;
 
 function createGUID() {
   return "{cccccccc-cccc-4ccc-yccc-cccccccccccc}".replace(/[cy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    const v = c == "c" ? r : (r & 0x3 | 0x8);
+    const r = (Math.random() * 16) | 0;
+    const v = c == "c" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }

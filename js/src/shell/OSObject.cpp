@@ -8,6 +8,8 @@
 
 #include "shell/OSObject.h"
 
+#include "mozilla/TextUtils.h"
+
 #include <errno.h>
 #include <stdlib.h>
 #ifdef XP_WIN
@@ -77,8 +79,8 @@ static bool IsAbsolutePath(const UniqueChars& filename) {
   // The first two cases are handled by the test above so we only need a test
   // for the last one here.
 
-  if ((strlen(pathname) > 3 && isalpha(pathname[0]) && pathname[1] == ':' &&
-       pathname[2] == '\\')) {
+  if ((strlen(pathname) > 3 && mozilla::IsAsciiAlpha(pathname[0]) &&
+       pathname[1] == ':' && pathname[2] == '\\')) {
     return true;
   }
 #endif
@@ -423,7 +425,7 @@ class FileObject : public NativeObject {
       return nullptr;
     }
 
-    obj->setRCFile(file);
+    InitReservedSlot(obj, FILE_SLOT, file, MemoryUse::FileObjectFile);
     file->acquire();
     return obj;
   }
@@ -431,8 +433,8 @@ class FileObject : public NativeObject {
   static void finalize(FreeOp* fop, JSObject* obj) {
     FileObject* fileObj = &obj->as<FileObject>();
     RCFile* file = fileObj->rcFile();
+    RemoveCellMemory(obj, sizeof(*file), MemoryUse::FileObjectFile);
     if (file->release()) {
-      fileObj->setRCFile(nullptr);
       fop->delete_(file);
     }
   }
@@ -452,11 +454,6 @@ class FileObject : public NativeObject {
   RCFile* rcFile() {
     return reinterpret_cast<RCFile*>(
         js::GetReservedSlot(this, FILE_SLOT).toPrivate());
-  }
-
- private:
-  void setRCFile(RCFile* file) {
-    js::SetReservedSlot(this, FILE_SLOT, PrivateValue(file));
   }
 };
 
@@ -674,7 +671,7 @@ static bool ospath_join(JSContext* cx, unsigned argc, Value* vp) {
   // This function doesn't take into account some aspects of Windows paths,
   // e.g. the drive letter is always reset when an absolute path is appended.
 
-  StringBuffer buffer(cx);
+  JSStringBuilder buffer(cx);
 
   for (unsigned i = 0; i < args.length(); i++) {
     if (!args[i].isString()) {

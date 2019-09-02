@@ -22,8 +22,7 @@ use cssparser::{Parser, Token};
 use selectors::parser::SelectorParseErrorKind;
 use std::fmt::{self, Write};
 use style_traits::values::SequenceWriter;
-use style_traits::{CssWriter, KeywordsCollectFn, ParseError};
-use style_traits::{SpecifiedValueInfo, StyleParseErrorKind, ToCss};
+use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// A specified type for the `initial-letter` property.
@@ -71,33 +70,6 @@ impl Parse for WordSpacing {
         Spacing::parse_with(context, input, |c, i| {
             LengthPercentage::parse_quirky(c, i, AllowQuirks::Yes)
         })
-    }
-}
-
-impl Parse for LineHeight {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        if let Ok(number) = input.try(|i| NonNegativeNumber::parse(context, i)) {
-            return Ok(GenericLineHeight::Number(number));
-        }
-        if let Ok(nlp) = input.try(|i| NonNegativeLengthPercentage::parse(context, i)) {
-            return Ok(GenericLineHeight::Length(nlp));
-        }
-        let location = input.current_source_location();
-        let ident = input.expect_ident()?;
-        match ident {
-            ref ident if ident.eq_ignore_ascii_case("normal") => Ok(GenericLineHeight::Normal),
-            #[cfg(feature = "gecko")]
-            ref ident if ident.eq_ignore_ascii_case("-moz-block-height") => {
-                Ok(GenericLineHeight::MozBlockHeight)
-            },
-            ident => {
-                Err(location
-                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())))
-            },
-        }
     }
 }
 
@@ -162,14 +134,16 @@ impl ToComputedValue for LineHeight {
 }
 
 /// A generic value for the `text-overflow` property.
-#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
+/// cbindgen:derive-tagged-enum-copy-constructor=true
+#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[repr(C, u8)]
 pub enum TextOverflowSide {
     /// Clip inline content.
     Clip,
     /// Render ellipsis to represent clipped inline content.
     Ellipsis,
     /// Render a given string to represent clipped inline content.
-    String(Box<str>),
+    String(crate::OwnedStr),
 }
 
 impl Parse for TextOverflowSide {
@@ -188,15 +162,15 @@ impl Parse for TextOverflowSide {
                     ))
                 }
             },
-            Token::QuotedString(ref v) => Ok(TextOverflowSide::String(
-                v.as_ref().to_owned().into_boxed_str(),
-            )),
+            Token::QuotedString(ref v) => {
+                Ok(TextOverflowSide::String(v.as_ref().to_owned().into()))
+            },
             ref t => Err(location.new_unexpected_token_error(t.clone())),
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
+#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
 /// text-overflow. Specifies rendering when inline content overflows its line box edge.
 pub struct TextOverflow {
     /// First value. Applies to end line box edge if no second is supplied; line-left edge otherwise.
@@ -255,125 +229,298 @@ impl ToComputedValue for TextOverflow {
     }
 }
 
-macro_rules! impl_text_decoration_line {
-    {
-        $(
-            $(#[$($meta:tt)+])*
-            $ident:ident / $css:expr => $value:expr,
-        )+
-    } => {
-        bitflags! {
-            #[derive(MallocSizeOf, ToComputedValue)]
-            /// Specified keyword values for the text-decoration-line property.
-            pub struct TextDecorationLine: u8 {
-                /// No text decoration line is specified
-                const NONE = 0;
-                $(
-                    $(#[$($meta)+])*
-                    const $ident = $value;
-                )+
-                #[cfg(feature = "gecko")]
-                /// Only set by presentation attributes
-                ///
-                /// Setting this will mean that text-decorations use the color
-                /// specified by `color` in quirks mode.
-                ///
-                /// For example, this gives <a href=foo><font color="red">text</font></a>
-                /// a red text decoration
-                const COLOR_OVERRIDE = 0x10;
+bitflags! {
+    #[derive(MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+    #[value_info(other_values = "none,underline,overline,line-through,blink")]
+    #[repr(C)]
+    /// Specified keyword values for the text-decoration-line property.
+    pub struct TextDecorationLine: u8 {
+        /// No text decoration line is specified.
+        const NONE = 0;
+        /// underline
+        const UNDERLINE = 1 << 0;
+        /// overline
+        const OVERLINE = 1 << 1;
+        /// line-through
+        const LINE_THROUGH = 1 << 2;
+        /// blink
+        const BLINK = 1 << 3;
+        /// Only set by presentation attributes
+        ///
+        /// Setting this will mean that text-decorations use the color
+        /// specified by `color` in quirks mode.
+        ///
+        /// For example, this gives <a href=foo><font color="red">text</font></a>
+        /// a red text decoration
+        #[cfg(feature = "gecko")]
+        const COLOR_OVERRIDE = 0x10;
+    }
+}
+
+impl Parse for TextDecorationLine {
+    /// none | [ underline || overline || line-through || blink ]
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let mut result = TextDecorationLine::empty();
+
+        // NOTE(emilio): this loop has this weird structure because we run this
+        // code to parse the text-decoration shorthand as well, so we need to
+        // ensure we don't return an error if we don't consume the whole thing
+        // because we find an invalid identifier or other kind of token.
+        loop {
+            let flag: Result<_, ParseError<'i>> = input.try(|input| {
+                let flag = try_match_ident_ignore_ascii_case! { input,
+                    "none" if result.is_empty() => TextDecorationLine::NONE,
+                    "underline" => TextDecorationLine::UNDERLINE,
+                    "overline" => TextDecorationLine::OVERLINE,
+                    "line-through" => TextDecorationLine::LINE_THROUGH,
+                    "blink" => TextDecorationLine::BLINK,
+                };
+
+                Ok(flag)
+            });
+
+            let flag = match flag {
+                Ok(flag) => flag,
+                Err(..) => break,
+            };
+
+            if flag.is_empty() {
+                return Ok(TextDecorationLine::NONE);
             }
+
+            if result.contains(flag) {
+                return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            }
+
+            result.insert(flag)
         }
 
-        impl Parse for TextDecorationLine {
-            /// none | [ underline || overline || line-through || blink ]
-            fn parse<'i, 't>(
-                _context: &ParserContext,
-                input: &mut Parser<'i, 't>,
-            ) -> Result<TextDecorationLine, ParseError<'i>> {
-                let mut result = TextDecorationLine::NONE;
-                if input
-                    .try(|input| input.expect_ident_matching("none"))
-                    .is_ok()
-                {
-                    return Ok(result);
-                }
-
-                loop {
-                    let result = input.try(|input| {
-                        let ident = input.expect_ident().map_err(|_| ())?;
-                        match_ignore_ascii_case! { ident,
-                            $(
-                                $css => {
-                                    if result.contains(TextDecorationLine::$ident) {
-                                        Err(())
-                                    } else {
-                                        result.insert(TextDecorationLine::$ident);
-                                        Ok(())
-                                    }
-                                }
-                            )+
-                            _ => Err(()),
-                        }
-                    });
-                    if result.is_err() {
-                        break;
-                    }
-                }
-
-                if !result.is_empty() {
-                    Ok(result)
-                } else {
-                    Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
-                }
-            }
-        }
-
-        impl ToCss for TextDecorationLine {
-            fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
-            where
-                W: Write,
-            {
-                if self.is_empty() {
-                    return dest.write_str("none");
-                }
-
-                let mut writer = SequenceWriter::new(dest, " ");
-                $(
-                    if self.contains(TextDecorationLine::$ident) {
-                        writer.raw_item($css)?;
-                    }
-                )+
-                Ok(())
-            }
-        }
-
-        impl SpecifiedValueInfo for TextDecorationLine {
-            fn collect_completion_keywords(f: KeywordsCollectFn) {
-                f(&["none", $($css,)+]);
-            }
+        if !result.is_empty() {
+            Ok(result)
+        } else {
+            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
         }
     }
 }
 
-impl_text_decoration_line! {
-    /// Underline
-    UNDERLINE / "underline" => 1 << 0,
-    /// Overline
-    OVERLINE / "overline" => 1 << 1,
-    /// Line through
-    LINE_THROUGH / "line-through" => 1 << 2,
-    /// Blink
-    BLINK / "blink" => 1 << 3,
-}
+impl ToCss for TextDecorationLine {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if self.is_empty() {
+            return dest.write_str("none");
+        }
 
-#[cfg(feature = "gecko")]
-impl_bitflags_conversions!(TextDecorationLine);
+        #[cfg(feature = "gecko")]
+        {
+            if *self == TextDecorationLine::COLOR_OVERRIDE {
+                return Ok(());
+            }
+        }
+
+        let mut writer = SequenceWriter::new(dest, " ");
+        let mut any = false;
+
+        macro_rules! maybe_write {
+            ($ident:ident => $str:expr) => {
+                if self.contains(TextDecorationLine::$ident) {
+                    any = true;
+                    writer.raw_item($str)?;
+                }
+            };
+        }
+
+        maybe_write!(UNDERLINE => "underline");
+        maybe_write!(OVERLINE => "overline");
+        maybe_write!(LINE_THROUGH => "line-through");
+        maybe_write!(BLINK => "blink");
+
+        debug_assert!(any);
+
+        Ok(())
+    }
+}
 
 impl TextDecorationLine {
     #[inline]
     /// Returns the initial value of text-decoration-line
     pub fn none() -> Self {
         TextDecorationLine::NONE
+    }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+/// Specified value of the text-transform property, stored in two parts:
+/// the case-related transforms (mutually exclusive, only one may be in effect), and others (non-exclusive).
+pub struct TextTransform {
+    /// Case transform, if any.
+    pub case_: TextTransformCase,
+    /// Non-case transforms.
+    pub other_: TextTransformOther,
+}
+
+impl TextTransform {
+    #[inline]
+    /// Returns the initial value of text-transform
+    pub fn none() -> Self {
+        TextTransform {
+            case_: TextTransformCase::None,
+            other_: TextTransformOther::empty(),
+        }
+    }
+    #[inline]
+    /// Returns whether the value is 'none'
+    pub fn is_none(&self) -> bool {
+        self.case_ == TextTransformCase::None && self.other_.is_empty()
+    }
+}
+
+impl Parse for TextTransform {
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let mut result = TextTransform::none();
+
+        // Case keywords are mutually exclusive; other transforms may co-occur.
+        loop {
+            let location = input.current_source_location();
+            let ident = match input.next() {
+                Ok(&Token::Ident(ref ident)) => ident,
+                Ok(other) => return Err(location.new_unexpected_token_error(other.clone())),
+                Err(..) => break,
+            };
+
+            match_ignore_ascii_case! { ident,
+                "none" if result.is_none() => {
+                    return Ok(result);
+                },
+                "uppercase" if result.case_ == TextTransformCase::None => {
+                    result.case_ = TextTransformCase::Uppercase
+                },
+                "lowercase" if result.case_ == TextTransformCase::None => {
+                    result.case_ = TextTransformCase::Lowercase
+                },
+                "capitalize" if result.case_ == TextTransformCase::None => {
+                    result.case_ = TextTransformCase::Capitalize
+                },
+                "full-width" if !result.other_.intersects(TextTransformOther::FULL_WIDTH) => {
+                    result.other_.insert(TextTransformOther::FULL_WIDTH)
+                },
+                "full-size-kana" if !result.other_.intersects(TextTransformOther::FULL_SIZE_KANA) => {
+                    result.other_.insert(TextTransformOther::FULL_SIZE_KANA)
+                }
+                _ => return Err(location.new_custom_error(
+                    SelectorParseErrorKind::UnexpectedIdent(ident.clone())
+                )),
+            }
+        }
+
+        if result.is_none() {
+            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+        } else {
+            Ok(result)
+        }
+    }
+}
+
+impl ToCss for TextTransform {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if self.is_none() {
+            return dest.write_str("none");
+        }
+
+        if self.case_ != TextTransformCase::None {
+            self.case_.to_css(dest)?;
+            if !self.other_.is_empty() {
+                dest.write_str(" ")?;
+            }
+        }
+
+        self.other_.to_css(dest)
+    }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+/// Specified keyword values for case transforms in the text-transform property. (These are exclusive.)
+pub enum TextTransformCase {
+    /// No case transform.
+    None,
+    /// All uppercase.
+    Uppercase,
+    /// All lowercase.
+    Lowercase,
+    /// Capitalize each word.
+    Capitalize,
+}
+
+bitflags! {
+    #[derive(MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+    #[value_info(other_values = "none,full-width,full-size-kana")]
+    #[repr(C)]
+    /// Specified keyword values for non-case transforms in the text-transform property. (Non-exclusive.)
+    pub struct TextTransformOther: u8 {
+        /// full-width
+        const FULL_WIDTH = 1 << 0;
+        /// full-size-kana
+        const FULL_SIZE_KANA = 1 << 1;
+    }
+}
+
+impl ToCss for TextTransformOther {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        let mut writer = SequenceWriter::new(dest, " ");
+        let mut any = false;
+        macro_rules! maybe_write {
+            ($ident:ident => $str:expr) => {
+                if self.contains(TextTransformOther::$ident) {
+                    writer.raw_item($str)?;
+                    any = true;
+                }
+            };
+        }
+
+        maybe_write!(FULL_WIDTH => "full-width");
+        maybe_write!(FULL_SIZE_KANA => "full-size-kana");
+
+        debug_assert!(any || self.is_empty());
+
+        Ok(())
     }
 }
 
@@ -391,6 +538,8 @@ impl TextDecorationLine {
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[allow(missing_docs)]
 pub enum TextAlignKeyword {
@@ -418,8 +567,9 @@ pub enum TextAlignKeyword {
 }
 
 /// Specified value of text-align property.
-#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-#[derive(Clone, Copy, Debug, Eq, Hash, Parse, PartialEq, SpecifiedValueInfo, ToCss)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem,
+)]
 pub enum TextAlign {
     /// Keyword value of text-align property.
     Keyword(TextAlignKeyword),
@@ -496,7 +646,7 @@ impl ToComputedValue for TextAlign {
 }
 
 /// Specified value of text-emphasis-style property.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
 pub enum TextEmphasisStyle {
     /// <fill> <shape>
     Keyword(TextEmphasisKeywordValue),
@@ -507,7 +657,7 @@ pub enum TextEmphasisStyle {
 }
 
 /// Keyword value for the text-emphasis-style property
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
 pub enum TextEmphasisKeywordValue {
     /// <fill>
     Fill(TextEmphasisFillMode),
@@ -536,7 +686,7 @@ impl TextEmphasisKeywordValue {
 }
 
 /// Fill mode for the text-emphasis-style property
-#[derive(Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
 pub enum TextEmphasisFillMode {
     /// `filled`
     Filled,
@@ -545,7 +695,9 @@ pub enum TextEmphasisFillMode {
 }
 
 /// Shape keyword for the text-emphasis-style property
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss)]
+#[derive(
+    Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem,
+)]
 pub enum TextEmphasisShapeKeyword {
     /// `dot`
     Dot,
@@ -695,6 +847,8 @@ impl Parse for TextEmphasisStyle {
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 pub enum TextEmphasisHorizontalWritingModeValue {
     /// Draw marks over the text in horizontal writing mode.
@@ -715,6 +869,8 @@ pub enum TextEmphasisHorizontalWritingModeValue {
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 pub enum TextEmphasisVerticalWritingModeValue {
     /// Draws marks to the right of the text in vertical writing mode.
@@ -725,7 +881,16 @@ pub enum TextEmphasisVerticalWritingModeValue {
 
 /// Specified value of `text-emphasis-position` property.
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss,
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 pub struct TextEmphasisPosition(
     pub TextEmphasisHorizontalWritingModeValue,
@@ -826,6 +991,8 @@ impl From<TextEmphasisPosition> for u8 {
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[allow(missing_docs)]
 pub enum WordBreak {
@@ -838,6 +1005,31 @@ pub enum WordBreak {
     /// `anywhere`, and `word-break` behave like `normal`.
     #[cfg(feature = "gecko")]
     BreakWord,
+}
+
+/// Values for the `line-break` property.
+#[repr(u8)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[allow(missing_docs)]
+pub enum LineBreak {
+    Auto,
+    Loose,
+    Normal,
+    Strict,
+    Anywhere,
 }
 
 /// Values for the `overflow-wrap` property.
@@ -853,10 +1045,37 @@ pub enum WordBreak {
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[allow(missing_docs)]
 pub enum OverflowWrap {
     Normal,
     BreakWord,
     Anywhere,
+}
+
+/// Implements text-decoration-skip-ink which takes the keywords auto | none
+///
+/// https://drafts.csswg.org/css-text-decor-4/#text-decoration-skip-ink-property
+#[repr(u8)]
+#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[allow(missing_docs)]
+pub enum TextDecorationSkipInk {
+    Auto,
+    None,
 }

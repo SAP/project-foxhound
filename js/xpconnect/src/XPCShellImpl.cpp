@@ -8,14 +8,16 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/CharacterEncoding.h"
-#include "js/CompilationAndEvaluation.h"
+#include "js/CompilationAndEvaluation.h"  // JS::Evaluate
 #include "js/ContextOptions.h"
 #include "js/Printf.h"
 #include "js/PropertySpec.h"
+#include "js/SourceText.h"  // JS::SourceText
 #include "mozilla/ChaosMode.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsExceptionHandler.h"
@@ -37,7 +39,7 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsIPrincipal.h"
 #include "nsJSUtils.h"
-#include "gfxPrefs.h"
+
 #include "nsIXULRuntime.h"
 #include "GeckoProfiler.h"
 
@@ -367,7 +369,7 @@ static bool Load(JSContext* cx, unsigned argc, Value* vp) {
     options.setFileAndLine(filename.get(), 1).setIsRunOnce(true);
     JS::Rooted<JSScript*> script(cx);
     JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
-    JS::CompileUtf8File(cx, options, file, &script);
+    script = JS::CompileUtf8File(cx, options, file);
     fclose(file);
     if (!script) {
       return false;
@@ -699,8 +701,13 @@ static bool ProcessUtf8Line(AutoJSAPI& jsapi, const char* buffer,
   JS::CompileOptions options(cx);
   options.setFileAndLine("typein", startline).setIsRunOnce(true);
 
-  JS::RootedScript script(cx);
-  if (!JS::CompileUtf8(cx, options, buffer, strlen(buffer), &script)) {
+  JS::SourceText<mozilla::Utf8Unit> srcBuf;
+  if (!srcBuf.init(cx, buffer, strlen(buffer), JS::SourceOwnership::Borrowed)) {
+    return false;
+  }
+
+  JS::RootedScript script(cx, JS::CompileDontInflate(cx, options, srcBuf));
+  if (!script) {
     return false;
   }
   if (compileOnly) {
@@ -763,7 +770,8 @@ static bool ProcessFile(AutoJSAPI& jsapi, const char* filename, FILE* file,
     options.setFileAndLine(filename, 1)
         .setIsRunOnce(true)
         .setNoScriptRval(true);
-    if (!JS::CompileUtf8File(cx, options, file, &script)) {
+    script = JS::CompileUtf8File(cx, options, file);
+    if (!script) {
       return false;
     }
     return compileOnly || JS_ExecuteScript(cx, script, &unused);
@@ -983,7 +991,11 @@ static bool ProcessArgs(AutoJSAPI& jsapi, char** argv, int argc,
         JS::CompileOptions opts(cx);
         opts.setFileAndLine("-e", 1);
 
-        JS::EvaluateUtf8(cx, opts, argv[i], strlen(argv[i]), &rval);
+        JS::SourceText<mozilla::Utf8Unit> srcBuf;
+        if (srcBuf.init(cx, argv[i], strlen(argv[i]),
+                        JS::SourceOwnership::Borrowed)) {
+          JS::EvaluateDontInflate(cx, opts, srcBuf, &rval);
+        }
 
         isInteractive = false;
         break;
@@ -1315,8 +1327,6 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       return 1;
     }
 
-    // Initialize graphics prefs on the main thread, if not already done
-    gfxPrefs::GetSingleton();
     // Initialize e10s check on the main thread, if not already done
     BrowserTabsRemoteAutostart();
 #ifdef XP_WIN
@@ -1364,8 +1374,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
         return 1;
       }
 
-      if (!JS_DefineFunctions(cx, glob, glob_functions) ||
-          !JS_DefineProfilingFunctions(cx, glob)) {
+      if (!JS_DefineFunctions(cx, glob, glob_functions)) {
         return 1;
       }
 
@@ -1397,9 +1406,9 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       }
 
       JS_DropPrincipals(cx, gJSPrincipals);
-      JS_SetAllNonReservedSlotsToUndefined(cx, glob);
-      JS_SetAllNonReservedSlotsToUndefined(cx,
-                                           JS_GlobalLexicalEnvironment(glob));
+      JS_SetAllNonReservedSlotsToUndefined(glob);
+      JS::RootedObject lexicalEnv(cx, JS_GlobalLexicalEnvironment(glob));
+      JS_SetAllNonReservedSlotsToUndefined(lexicalEnv);
       JS_GC(cx);
     }
     JS_GC(cx);

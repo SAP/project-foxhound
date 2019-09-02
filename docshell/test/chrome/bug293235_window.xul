@@ -5,21 +5,16 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         width="600"
         height="600"
-        onload="setTimeout(nextTest,0);"
+        onload="setTimeout(nextTest, 0);"
         title="bug 293235 test">
 
-  <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/specialpowersAPI.js"/>
-  <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SpecialPowersObserverAPI.js"/>
-  <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/ChromePowers.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/ChromePowers.js"/>
   <script type="application/javascript" src= "chrome://mochikit/content/chrome-harness.js" />
   <script type="application/javascript" src="docshell_helpers.js" />
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js"></script>
 
   <script type="application/javascript"><![CDATA[
-    const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+    var {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
     // Define the generator-iterator for the tests.
     var tests = testIterator();

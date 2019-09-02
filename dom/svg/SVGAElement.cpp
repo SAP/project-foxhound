@@ -9,6 +9,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/SVGAElementBinding.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -53,9 +55,7 @@ NS_IMPL_RELEASE_INHERITED(SVGAElement, SVGAElementBase)
 SVGAElement::SVGAElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : SVGAElementBase(std::move(aNodeInfo)), Link(this) {}
 
-SVGAElement::~SVGAElement() {}
-
-already_AddRefed<SVGAnimatedString> SVGAElement::Href() {
+already_AddRefed<DOMSVGAnimatedString> SVGAElement::Href() {
   return mStringAttributes[HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
@@ -86,7 +86,7 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGAElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedString> SVGAElement::Target() {
+already_AddRefed<DOMSVGAnimatedString> SVGAElement::Target() {
   return mStringAttributes[TARGET].ToDOMAnimatedString(this);
 }
 
@@ -155,27 +155,25 @@ void SVGAElement::SetText(const nsAString& aText, mozilla::ErrorResult& rv) {
 //----------------------------------------------------------------------
 // nsIContent methods
 
-nsresult SVGAElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                 nsIContent* aBindingParent) {
+nsresult SVGAElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   Link::ResetLinkState(false, Link::ElementHasHref());
 
-  nsresult rv = SVGAElementBase::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = SVGAElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  Document* doc = GetComposedDoc();
-  if (doc) {
+  if (Document* doc = aContext.GetComposedDoc()) {
     doc->RegisterPendingLinkUpdate(this);
   }
 
   return NS_OK;
 }
 
-void SVGAElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void SVGAElement::UnbindFromTree(bool aNullParent) {
   // Without removing the link state we risk a dangling pointer
   // in the mStyledLinks hashtable
   Link::ResetLinkState(false, Link::ElementHasHref());
 
-  SVGAElementBase::UnbindFromTree(aDeep, aNullParent);
+  SVGAElementBase::UnbindFromTree(aNullParent);
 }
 
 already_AddRefed<nsIURI> SVGAElement::GetHrefURI() const {

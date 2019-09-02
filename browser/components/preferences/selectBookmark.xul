@@ -15,21 +15,16 @@
         data-l10n-id="select-bookmark-window"
         data-l10n-attrs="title, style"
         persist="screenX screenY width height" screenX="24" screenY="24"
-        onload="SelectBookmarkDialog.init();"
-        ondialogaccept="SelectBookmarkDialog.accept();">
+        onload="SelectBookmarkDialog.init();">
 
   <linkset>
     <html:link rel="localization" href="browser/preferences/selectBookmark.ftl"/>
   </linkset>
 
-  <script type="application/javascript"
-          src="chrome://browser/content/preferences/selectBookmark.js"/>
-  <script type="application/javascript"
-          src="chrome://global/content/globalOverlay.js"/>
-  <script type="application/javascript"
-          src="chrome://browser/content/utilityOverlay.js"/>
-  <script type="application/javascript"
-          src="chrome://browser/content/places/places-tree.js"/>
+  <script src="chrome://browser/content/preferences/selectBookmark.js"/>
+  <script src="chrome://global/content/globalOverlay.js"/>
+  <script src="chrome://browser/content/utilityOverlay.js"/>
+  <script src="chrome://browser/content/places/places-tree.js"/>
 
   <description data-l10n-id="select-bookmark-desc"/>
 

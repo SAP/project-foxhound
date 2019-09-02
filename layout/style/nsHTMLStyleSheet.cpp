@@ -14,8 +14,9 @@
 #include "nsGkAtoms.h"
 #include "nsPresContext.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
-#include "nsIPresShell.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsStyleConsts.h"
 #include "nsError.h"
 #include "mozilla/MemoryReporting.h"
@@ -32,30 +33,30 @@ using namespace mozilla::dom;
 // -----------------------------------------------------------
 
 struct MappedAttrTableEntry : public PLDHashEntryHdr {
-  nsMappedAttributes *mAttributes;
+  nsMappedAttributes* mAttributes;
 };
 
-static PLDHashNumber MappedAttrTable_HashKey(const void *key) {
-  nsMappedAttributes *attributes =
-      static_cast<nsMappedAttributes *>(const_cast<void *>(key));
+static PLDHashNumber MappedAttrTable_HashKey(const void* key) {
+  nsMappedAttributes* attributes =
+      static_cast<nsMappedAttributes*>(const_cast<void*>(key));
 
   return attributes->HashValue();
 }
 
-static void MappedAttrTable_ClearEntry(PLDHashTable *table,
-                                       PLDHashEntryHdr *hdr) {
-  MappedAttrTableEntry *entry = static_cast<MappedAttrTableEntry *>(hdr);
+static void MappedAttrTable_ClearEntry(PLDHashTable* table,
+                                       PLDHashEntryHdr* hdr) {
+  MappedAttrTableEntry* entry = static_cast<MappedAttrTableEntry*>(hdr);
 
   entry->mAttributes->DropStyleSheetReference();
   memset(entry, 0, sizeof(MappedAttrTableEntry));
 }
 
-static bool MappedAttrTable_MatchEntry(const PLDHashEntryHdr *hdr,
-                                       const void *key) {
-  nsMappedAttributes *attributes =
-      static_cast<nsMappedAttributes *>(const_cast<void *>(key));
-  const MappedAttrTableEntry *entry =
-      static_cast<const MappedAttrTableEntry *>(hdr);
+static bool MappedAttrTable_MatchEntry(const PLDHashEntryHdr* hdr,
+                                       const void* key) {
+  nsMappedAttributes* attributes =
+      static_cast<nsMappedAttributes*>(const_cast<void*>(key));
+  const MappedAttrTableEntry* entry =
+      static_cast<const MappedAttrTableEntry*>(hdr);
 
   return attributes->Equals(entry->mAttributes);
 }
@@ -68,14 +69,14 @@ static const PLDHashTableOps MappedAttrTable_Ops = {
 
 // -----------------------------------------------------------
 
-nsHTMLStyleSheet::nsHTMLStyleSheet(Document *aDocument)
+nsHTMLStyleSheet::nsHTMLStyleSheet(Document* aDocument)
     : mDocument(aDocument),
       mMappedAttrTable(&MappedAttrTable_Ops, sizeof(MappedAttrTableEntry)),
       mMappedAttrsDirty(false) {
   MOZ_ASSERT(aDocument);
 }
 
-void nsHTMLStyleSheet::SetOwningDocument(Document *aDocument) {
+void nsHTMLStyleSheet::SetOwningDocument(Document* aDocument) {
   mDocument = aDocument;  // not refcounted
 }
 
@@ -89,8 +90,8 @@ void nsHTMLStyleSheet::Reset() {
 }
 
 nsresult nsHTMLStyleSheet::ImplLinkColorSetter(
-    RefPtr<RawServoDeclarationBlock> &aDecl, nscolor aColor) {
-  if (!mDocument || !mDocument->GetShell()) {
+    RefPtr<RawServoDeclarationBlock>& aDecl, nscolor aColor) {
+  if (!mDocument || !mDocument->GetPresShell()) {
     return NS_OK;
   }
 
@@ -100,8 +101,8 @@ nsresult nsHTMLStyleSheet::ImplLinkColorSetter(
 
   // Now make sure we restyle any links that might need it.  This
   // shouldn't happen often, so just rebuilding everything is ok.
-  if (Element *root = mDocument->GetRootElement()) {
-    RestyleManager *rm = mDocument->GetPresContext()->RestyleManager();
+  if (Element* root = mDocument->GetRootElement()) {
+    RestyleManager* rm = mDocument->GetPresContext()->RestyleManager();
     rm->PostRestyleEvent(root, RestyleHint::RestyleSubtree(), nsChangeHint(0));
   }
   return NS_OK;
@@ -120,9 +121,9 @@ nsresult nsHTMLStyleSheet::SetVisitedLinkColor(nscolor aColor) {
 }
 
 already_AddRefed<nsMappedAttributes> nsHTMLStyleSheet::UniqueMappedAttributes(
-    nsMappedAttributes *aMapped) {
+    nsMappedAttributes* aMapped) {
   mMappedAttrsDirty = true;
-  auto entry = static_cast<MappedAttrTableEntry *>(
+  auto entry = static_cast<MappedAttrTableEntry*>(
       mMappedAttrTable.Add(aMapped, fallible));
   if (!entry) return nullptr;
   if (!entry->mAttributes) {
@@ -133,7 +134,7 @@ already_AddRefed<nsMappedAttributes> nsHTMLStyleSheet::UniqueMappedAttributes(
   return ret.forget();
 }
 
-void nsHTMLStyleSheet::DropMappedAttributes(nsMappedAttributes *aMapped) {
+void nsHTMLStyleSheet::DropMappedAttributes(nsMappedAttributes* aMapped) {
   NS_ENSURE_TRUE_VOID(aMapped);
 #ifdef DEBUG
   uint32_t entryCount = mMappedAttrTable.EntryCount() - 1;
@@ -146,8 +147,7 @@ void nsHTMLStyleSheet::DropMappedAttributes(nsMappedAttributes *aMapped) {
 
 void nsHTMLStyleSheet::CalculateMappedServoDeclarations() {
   for (auto iter = mMappedAttrTable.Iter(); !iter.Done(); iter.Next()) {
-    MappedAttrTableEntry *attr =
-        static_cast<MappedAttrTableEntry *>(iter.Get());
+    MappedAttrTableEntry* attr = static_cast<MappedAttrTableEntry*>(iter.Get());
     if (attr->mAttributes->GetServoStyle()) {
       // Only handle cases which haven't been filled in already
       continue;
@@ -162,7 +162,7 @@ size_t nsHTMLStyleSheet::DOMSizeOfIncludingThis(
 
   n += mMappedAttrTable.ShallowSizeOfExcludingThis(aMallocSizeOf);
   for (auto iter = mMappedAttrTable.ConstIter(); !iter.Done(); iter.Next()) {
-    auto entry = static_cast<MappedAttrTableEntry *>(iter.Get());
+    auto entry = static_cast<MappedAttrTableEntry*>(iter.Get());
     n += entry->mAttributes->SizeOfIncludingThis(aMallocSizeOf);
   }
 

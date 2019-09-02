@@ -31,8 +31,12 @@ Please note that some targeting attributes require stricter controls on the tele
 * [trailheadInterrupt](#trailheadinterrupt)
 * [trailheadTriplet](#trailheadtriplet)
 * [usesFirefoxSync](#usesfirefoxsync)
+* [isFxAEnabled](#isFxAEnabled)
 * [xpinstallEnabled](#xpinstallEnabled)
 * [hasPinnedTabs](#haspinnedtabs)
+* [hasAccessedFxAPanel](#hasaccessedfxapanel)
+* [isWhatsNewPanelEnabled](#iswhatsnewpanelenabled)
+* [earliestFirefoxVersion](#earliestfirefoxversion)
 
 ## Detailed usage
 
@@ -444,6 +448,16 @@ Does the user use Firefox sync?
 declare const usesFirefoxSync: boolean;
 ```
 
+### `isFxAEnabled`
+
+Does the user have Firefox sync enabled? The service could potentially be turned off [for enterprise builds](https://searchfox.org/mozilla-central/rev/b59a99943de4dd314bae4e44ab43ce7687ccbbec/browser/components/enterprisepolicies/Policies.jsm#327).
+
+#### Definition
+
+```ts
+declare const isFxAEnabled: boolean;
+```
+
 ### `xpinstallEnabled`
 
 Pref used by system administrators to disallow add-ons from installed altogether.
@@ -462,4 +476,34 @@ Does the user have any pinned tabs in any windows.
 
 ```ts
 declare const hasPinnedTabs: boolean;
+```
+
+### `hasAccessedFxAPanel`
+
+Boolean pref that gets set the first time the user opens the FxA toolbar panel
+
+#### Definition
+
+```ts
+declare const hasAccessedFxAPanel: boolean;
+```
+
+### `isWhatsNewPanelEnabled`
+
+Boolean pref that controls if the What's New panel feature is enabled
+
+#### Definition
+
+```ts
+declare const isWhatsNewPanelEnabled: boolean;
+```
+
+### `earliestFirefoxVersion`
+
+Integer value of the first Firefox version the profile ran on
+
+#### Definition
+
+```ts
+declare const earliestFirefoxVersion: boolean;
 ```

@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
+const {
+  FrontClassWithSpec,
+  registerFront,
+} = require("devtools/shared/protocol");
 const {
   flexboxSpec,
   flexItemSpec,
@@ -113,6 +116,13 @@ class GridFront extends FrontClassWithSpec(gridSpec) {
   }
 
   /**
+   * Get whether or not the grid is a subgrid.
+   */
+  get isSubgrid() {
+    return !!this._form.isSubgrid;
+  }
+
+  /**
    * Get the writing mode of the grid container.
    * Added in Firefox 60.
    */
@@ -125,8 +135,7 @@ class GridFront extends FrontClassWithSpec(gridSpec) {
   }
 }
 
-class LayoutFront extends FrontClassWithSpec(layoutSpec) {
-}
+class LayoutFront extends FrontClassWithSpec(layoutSpec) {}
 
 exports.FlexboxFront = FlexboxFront;
 registerFront(FlexboxFront);

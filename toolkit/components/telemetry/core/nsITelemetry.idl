@@ -43,12 +43,12 @@ interface nsITelemetry : nsISupports
 
   /**
    * Dataset types:
-   * DATASET_RELEASE_CHANNEL_OPTOUT - the basic dataset that is on-by-default on all channels
-   * DATASET_RELEASE_CHANNEL_OPTIN - the extended dataset that is opt-in on release,
+   * DATASET_ALL_CHANNELS - the basic dataset that is on-by-default on all channels
+   * DATASET_PRERELEASE_CHANNELS - the extended dataset that is opt-in on release,
    *                                 opt-out on pre-release channels.
    */
-  const unsigned long DATASET_RELEASE_CHANNEL_OPTOUT = 0;
-  const unsigned long DATASET_RELEASE_CHANNEL_OPTIN = 1;
+  const unsigned long DATASET_ALL_CHANNELS = 0;
+  const unsigned long DATASET_PRERELEASE_CHANNELS = 1;
 
 
   /**
@@ -486,7 +486,7 @@ interface nsITelemetry : nsISupports
    *
    * @param aCategory The category name.
    * @param aMethod The method name.
-   * @param aMethod The object name.
+   * @param aObject The object name.
    * @param aValue An optional string value to record.
    * @param aExtra An optional object of the form (string -> string).
    *               It should only contain registered extra keys.
@@ -516,7 +516,7 @@ interface nsITelemetry : nsISupports
    *     ...
    *   ]
    *
-   * @param aDataset DATASET_RELEASE_CHANNEL_OPTOUT or DATASET_RELEASE_CHANNEL_OPTIN.
+   * @param aDataset DATASET_ALL_CHANNELS or DATASET_PRERELEASE_CHANNELS.
    * @param [aClear=false] Whether to clear out the events after snapshotting.
    * @param aEventLimit How many events per process to limit the snapshot to contain, all if unspecified.
    *                    Even if aClear, the leftover event records are not cleared.
@@ -660,4 +660,32 @@ interface nsITelemetry : nsISupports
    */
   [implicit_jscontext]
   Promise gatherMemory();
+
+  /**
+   * Serializes the per-origin data in plain text, optionally clearing
+   * the storage. Only to be used by about:telemetry.
+   *
+   * The returned structure looks like:
+   *   { metric: {origin1: count1, origin2: count2, ...}, ...}
+   *
+   * @param aClear Whether to clear the storage. Default false.
+   * @return a snapshot of the per-origin data.
+   */
+  [implicit_jscontext]
+  jsval getOriginSnapshot([optional] in boolean aClear);
+
+  /**
+   * Encodes the per-origin information then serializes it.
+   * Returns a Promise.
+   *
+   * @param aClear Whether to clear the storage. Default false.
+   * @return Promise that resolves to the serialized encoded data.
+   */
+  [implicit_jscontext]
+  Promise getEncodedOriginSnapshot([optional] in boolean aClear);
+
+  /**
+   * Clears Firefox Origin Telemetry. Only to be used in tests.
+   */
+  void clearOrigins();
 };

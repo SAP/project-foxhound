@@ -3,33 +3,37 @@
 
 const kUrlPref = "geoSpecificDefaults.url";
 
-function run_test() {
-  do_load_manifest("data/chrome.manifest");
-
+add_task(async function setup() {
   configureToLoadJarEngines();
 
   // Geo specific defaults won't be fetched if there's no country code.
-  Services.prefs.setCharPref("browser.search.geoip.url",
-                             'data:application/json,{"country_code": "US"}');
+  Services.prefs.setCharPref(
+    "browser.search.geoip.url",
+    'data:application/json,{"country_code": "US"}'
+  );
 
   // Make 'hidden' the only visible engine.
-  let url = "data:application/json," + JSON.stringify({
-    "interval": 31536000,
-    "settings": {
-      "searchDefault": "hidden",
-      "visibleDefaultEngines": ["hidden"],
-    },
-  });
-  Services.prefs.getDefaultBranch(BROWSER_SEARCH_PREF).setCharPref(kUrlPref, url);
+  let url =
+    "data:application/json," +
+    JSON.stringify({
+      interval: 31536000,
+      settings: {
+        searchDefault: "hidden",
+        visibleDefaultEngines: ["hidden"],
+      },
+    });
+  Services.prefs
+    .getDefaultBranch(SearchUtils.BROWSER_SEARCH_PREF)
+    .setCharPref(kUrlPref, url);
 
   Assert.ok(!Services.search.isInitialized);
 
-  run_next_test();
-}
+  await AddonTestUtils.promiseStartupManager();
+});
 
 add_task(async function async_init() {
   let commitPromise = promiseAfterCache();
-  await asyncInit();
+  await Services.search.init();
 
   let engines = await Services.search.getEngines();
   Assert.equal(engines.length, 1);
@@ -54,16 +58,20 @@ add_task(async function invalid_engine() {
   // Set the visibleDefaultEngines list to something that contains a non-existent engine.
   // This should cause the search service to ignore the list altogether and fallback to
   // local defaults.
-  let url = "data:application/json," + JSON.stringify({
-    "interval": 31536000,
-    "settings": {
-      "searchDefault": "hidden",
-      "visibleDefaultEngines": ["hidden", "bogus"],
-    },
-  });
-  Services.prefs.getDefaultBranch(BROWSER_SEARCH_PREF).setCharPref(kUrlPref, url);
+  let url =
+    "data:application/json," +
+    JSON.stringify({
+      interval: 31536000,
+      settings: {
+        searchDefault: "hidden",
+        visibleDefaultEngines: ["hidden", "bogus"],
+      },
+    });
+  Services.prefs
+    .getDefaultBranch(SearchUtils.BROWSER_SEARCH_PREF)
+    .setCharPref(kUrlPref, url);
 
-  await asyncReInit();
+  await asyncReInit({ waitForRegionFetch: true });
 
   let engines = await Services.search.getEngines();
   Assert.equal(engines.length, 1);

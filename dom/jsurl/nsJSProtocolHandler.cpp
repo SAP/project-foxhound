@@ -39,18 +39,18 @@
 #include "nsThreadUtils.h"
 #include "nsIScriptChannel.h"
 #include "mozilla/dom/Document.h"
-#include "nsILoadInfo.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
+#include "nsITextToSubURI.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsSandboxFlags.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/PopupBlocker.h"
-#include "nsILoadInfo.h"
 #include "nsContentSecurityManager.h"
 
+#include "mozilla/LoadInfo.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ipc/URIUtils.h"
 
@@ -144,8 +144,8 @@ nsresult nsJSThunk::EvaluateScript(
   nsCOMPtr<nsISupports> owner;
   aChannel->GetOwner(getter_AddRefs(owner));
   nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(owner);
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   if (!principal) {
-    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
     if (loadInfo->GetForceInheritPrincipal()) {
       principal = loadInfo->FindPrincipalToInherit(aChannel);
     } else {
@@ -159,10 +159,9 @@ nsresult nsJSThunk::EvaluateScript(
   nsresult rv;
 
   // CSP check: javascript: URIs disabled unless "inline" scripts are
-  // allowed.
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = principal->GetCsp(getter_AddRefs(csp));
-  NS_ENSURE_SUCCESS(rv, rv);
+  // allowed.  Here we use the CSP of the thing that started the load,
+  // which is the CSPToInherit of the loadInfo.
+  nsCOMPtr<nsIContentSecurityPolicy> csp = loadInfo->GetCspToInherit();
   if (csp) {
     bool allowsInlineScript = true;
     rv = csp->GetAllowsInline(nsIContentPolicy::TYPE_SCRIPT,
@@ -176,26 +175,32 @@ nsresult nsJSThunk::EvaluateScript(
                               &allowsInlineScript);
 
     // return early if inline scripts are not allowed
-    if (!allowsInlineScript) {
+    if (NS_FAILED(rv) || !allowsInlineScript) {
       return NS_ERROR_DOM_RETVAL_UNDEFINED;
     }
   }
+
+  // Based on the outcome of https://github.com/whatwg/html/issues/4651 we may
+  // want to also test against the CSP of the document we'll be running against
+  // (which is targetDoc below).  If we do that, we should make sure to only do
+  // that test if targetDoc->NodePrincipal() subsumes
+  // loadInfo->TriggeringPrincipal().  If it doesn't, then someone
+  // more-privileged (our UI or an extension) started the load and the load
+  // should not be subject to the target document's CSP.
+  //
+  // The "more privileged" assumption is safe, because if the triggering
+  // principal does not subsume targetDoc->NodePrincipal() we won't run the
+  // script at all.  More precisely, we test that "principal" subsumes the
+  // target's principal, but "principal" should never be higher-privilege than
+  // the triggering principal here: it's either the triggering principal, or the
+  // principal of the document we started the load against if the triggering
+  // principal is system.
 
   // Get the global object we should be running on.
   nsIScriptGlobalObject* global = GetGlobalObject(aChannel);
   if (!global) {
     return NS_ERROR_FAILURE;
   }
-
-  // Sandboxed document check: javascript: URI's are disabled
-  // in a sandboxed document unless 'allow-scripts' was specified.
-  mozilla::dom::Document* doc = aOriginalInnerWindow->GetExtantDoc();
-  if (doc && doc->HasScriptsBlockedBySandbox()) {
-    return NS_ERROR_DOM_RETVAL_UNDEFINED;
-  }
-
-  // Push our popup control state
-  nsAutoPopupStatePusher popupStatePusher(aPopupState);
 
   // Make sure we still have the same inner window as we used to.
   nsCOMPtr<nsPIDOMWindowOuter> win = do_QueryInterface(global);
@@ -205,13 +210,18 @@ nsresult nsJSThunk::EvaluateScript(
     return NS_ERROR_UNEXPECTED;
   }
 
-  nsCOMPtr<nsIScriptGlobalObject> innerGlobal = do_QueryInterface(innerWin);
+  mozilla::dom::Document* targetDoc = innerWin->GetExtantDoc();
 
-  mozilla::DebugOnly<nsCOMPtr<nsIDOMWindow>> domWindow(
-      do_QueryInterface(global, &rv));
-  if (NS_FAILED(rv)) {
-    return NS_ERROR_FAILURE;
+  // Sandboxed document check: javascript: URI execution is disabled
+  // in a sandboxed document unless 'allow-scripts' was specified.
+  if (targetDoc && targetDoc->HasScriptsBlockedBySandbox()) {
+    return NS_ERROR_DOM_RETVAL_UNDEFINED;
   }
+
+  // Push our popup control state
+  AutoPopupStatePusher popupStatePusher(aPopupState);
+
+  nsCOMPtr<nsIScriptGlobalObject> innerGlobal = do_QueryInterface(innerWin);
 
   // So far so good: get the script context from its owner.
   nsCOMPtr<nsIScriptContext> scriptContext = global->GetContext();
@@ -781,11 +791,6 @@ nsJSChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
     bogusLoadBackground = !loadGroupIsBackground;
   }
 
-  // Classifying a javascript: URI doesn't help us, and requires
-  // NSS to boot, which we don't have in content processes.  See
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=617838.
-  aLoadFlags &= ~LOAD_CLASSIFY_URI;
-
   // Since the javascript channel is never the actual channel that
   // any data is loaded through, don't ever set the
   // LOAD_DOCUMENT_URI flag on it, since that could lead to two
@@ -1042,20 +1047,19 @@ nsresult nsJSProtocolHandler::Create(nsISupports* aOuter, REFNSIID aIID,
   return rv;
 }
 
-nsresult nsJSProtocolHandler::EnsureUTF8Spec(const nsCString& aSpec,
-                                             const char* aCharset,
-                                             nsACString& aUTF8Spec) {
+/* static */ nsresult nsJSProtocolHandler::EnsureUTF8Spec(
+    const nsCString& aSpec, const char* aCharset, nsACString& aUTF8Spec) {
   aUTF8Spec.Truncate();
 
   nsresult rv;
 
-  if (!mTextToSubURI) {
-    mTextToSubURI = do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  nsCOMPtr<nsITextToSubURI> txtToSubURI =
+      do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   nsAutoString uStr;
-  rv = mTextToSubURI->UnEscapeNonAsciiURI(nsDependentCString(aCharset), aSpec,
-                                          uStr);
+  rv = txtToSubURI->UnEscapeNonAsciiURI(nsDependentCString(aCharset), aSpec,
+                                        uStr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!IsASCII(uStr)) {
@@ -1091,9 +1095,10 @@ nsJSProtocolHandler::GetProtocolFlags(uint32_t* result) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsJSProtocolHandler::NewURI(const nsACString& aSpec, const char* aCharset,
-                            nsIURI* aBaseURI, nsIURI** result) {
+/* static */ nsresult nsJSProtocolHandler::CreateNewURI(const nsACString& aSpec,
+                                                        const char* aCharset,
+                                                        nsIURI* aBaseURI,
+                                                        nsIURI** result) {
   nsresult rv = NS_OK;
 
   // javascript: URLs (currently) have no additional structure beyond that

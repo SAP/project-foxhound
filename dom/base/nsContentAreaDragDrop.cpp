@@ -48,7 +48,7 @@
 #include "mozilla/dom/DataTransfer.h"
 #include "nsIMIMEInfo.h"
 #include "nsRange.h"
-#include "TabParent.h"
+#include "BrowserParent.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLAreaElement.h"
 #include "mozilla/dom/HTMLAnchorElement.h"
@@ -548,18 +548,9 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
 
   // In chrome shells, only allow dragging inside editable areas.
   if (isChromeShell && !editingElement) {
-    RefPtr<nsFrameLoaderOwner> flo = do_QueryObject(mTarget);
-    if (flo) {
-      RefPtr<nsFrameLoader> fl = flo->GetFrameLoader();
-      if (fl) {
-        TabParent* tp = static_cast<TabParent*>(fl->GetRemoteBrowser());
-        if (tp) {
-          // We have a TabParent, so it may have data for dnd in case the child
-          // process started a dnd session.
-          tp->AddInitialDnDDataTo(aDataTransfer, aPrincipal);
-        }
-      }
-    }
+    // This path should already be filtered out in
+    // EventStateManager::DetermineDragTargetAndDefaultData.
+    MOZ_ASSERT_UNREACHABLE("Shouldn't be generating drag data for chrome");
     return NS_OK;
   }
 

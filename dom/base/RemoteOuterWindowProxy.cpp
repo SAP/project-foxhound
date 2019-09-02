@@ -19,12 +19,7 @@ namespace dom {
  * Window objects that live in a different process.
  *
  * RemoteOuterWindowProxy holds a BrowsingContext, which is cycle collected.
- * However, RemoteOuterWindowProxy only holds BrowsingContexts that don't have a
- * reference to a docshell, so there's no need to declare the edge from
- * RemoteOuterWindowProxy to its BrowsingContext to the cycle collector.
- *
- * FIXME Verify that this is correct:
- *       https://bugzilla.mozilla.org/show_bug.cgi?id=1516350.
+ * This reference is declared to the cycle collector via NoteChildren().
  */
 
 class RemoteOuterWindowProxy
@@ -42,11 +37,12 @@ class RemoteOuterWindowProxy
       JSContext* aCx, JS::Handle<JSObject*> aProxy, JS::Handle<jsid> aId,
       JS::MutableHandle<JS::PropertyDescriptor> aDesc) const final;
   bool ownPropertyKeys(JSContext* aCx, JS::Handle<JSObject*> aProxy,
-                       JS::AutoIdVector& aProps) const final;
+                       JS::MutableHandleVector<jsid> aProps) const final;
 
   // SpiderMonkey extensions
-  bool getOwnEnumerablePropertyKeys(JSContext* cx, JS::Handle<JSObject*> proxy,
-                                    JS::AutoIdVector& props) const final;
+  bool getOwnEnumerablePropertyKeys(
+      JSContext* cx, JS::Handle<JSObject*> proxy,
+      JS::MutableHandleVector<jsid> props) const final;
 
   void NoteChildren(JSObject* aProxy,
                     nsCycleCollectionTraversalCallback& aCb) const override {
@@ -128,7 +124,7 @@ bool RemoteOuterWindowProxy::getOwnPropertyDescriptor(
 }
 
 bool AppendIndexedPropertyNames(JSContext* aCx, BrowsingContext* aContext,
-                                JS::AutoIdVector& aIndexedProps) {
+                                JS::MutableHandleVector<jsid> aIndexedProps) {
   int32_t length = aContext->GetChildren().Length();
   if (!aIndexedProps.reserve(aIndexedProps.length() + length)) {
     return false;
@@ -140,9 +136,9 @@ bool AppendIndexedPropertyNames(JSContext* aCx, BrowsingContext* aContext,
   return true;
 }
 
-bool RemoteOuterWindowProxy::ownPropertyKeys(JSContext* aCx,
-                                             JS::Handle<JSObject*> aProxy,
-                                             JS::AutoIdVector& aProps) const {
+bool RemoteOuterWindowProxy::ownPropertyKeys(
+    JSContext* aCx, JS::Handle<JSObject*> aProxy,
+    JS::MutableHandleVector<jsid> aProps) const {
   BrowsingContext* bc = GetBrowsingContext(aProxy);
 
   // https://html.spec.whatwg.org/multipage/window-object.html#windowproxy-ownpropertykeys:crossoriginownpropertykeys-(-o-)
@@ -158,7 +154,7 @@ bool RemoteOuterWindowProxy::ownPropertyKeys(JSContext* aCx,
 
 bool RemoteOuterWindowProxy::getOwnEnumerablePropertyKeys(
     JSContext* aCx, JS::Handle<JSObject*> aProxy,
-    JS::AutoIdVector& aProps) const {
+    JS::MutableHandleVector<jsid> aProps) const {
   return AppendIndexedPropertyNames(aCx, GetBrowsingContext(aProxy), aProps);
 }
 

@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use {WindowWrapper, NotifierEvent};
+use crate::{WindowWrapper, NotifierEvent};
 use image::png::PNGEncoder;
 use image::{self, ColorType, GenericImageView};
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use webrender::api::units::*;
-use wrench::{Wrench, WrenchThing};
-use yaml_frame_reader::YamlFrameReader;
+use crate::wrench::{Wrench, WrenchThing};
+use crate::yaml_frame_reader::YamlFrameReader;
 
 pub enum ReadSurface {
     Screen,
@@ -25,7 +25,7 @@ pub struct SaveSettings {
 pub fn save<P: Clone + AsRef<Path>>(
     path: P,
     orig_pixels: Vec<u8>,
-    size: FramebufferIntSize,
+    size: DeviceIntSize,
     settings: SaveSettings
 ) {
     let mut width = size.width as u32;
@@ -66,7 +66,7 @@ pub fn save<P: Clone + AsRef<Path>>(
 pub fn save_flipped<P: Clone + AsRef<Path>>(
     path: P,
     orig_pixels: Vec<u8>,
-    size: FramebufferIntSize,
+    size: DeviceIntSize,
 ) {
     save(path, orig_pixels, size, SaveSettings {
         flip_vertical: true,
@@ -80,6 +80,7 @@ pub fn png(
     window: &mut WindowWrapper,
     mut reader: YamlFrameReader,
     rx: Receiver<NotifierEvent>,
+    out_path: Option<PathBuf>,
 ) {
     reader.do_frame(wrench);
 
@@ -90,8 +91,8 @@ pub fn png(
     let (fb_size, data, settings) = match surface {
         ReadSurface::Screen => {
             let dim = window.get_inner_size();
-            let data = wrench.renderer
-                .read_pixels_rgba8(dim.into());
+            let rect = FramebufferIntSize::new(dim.width, dim.height).into();
+            let data = wrench.renderer.read_pixels_rgba8(rect);
             (dim, data, SaveSettings {
                 flip_vertical: true,
                 try_crop: true,
@@ -107,8 +108,11 @@ pub fn png(
         }
     };
 
-    let mut out_path = reader.yaml_path().clone();
-    out_path.set_extension("png");
+    let out_path = out_path.unwrap_or_else(|| {
+        let mut path = reader.yaml_path().clone();
+        path.set_extension("png");
+        path
+    });
 
     save(out_path, data, fb_size, settings);
 }

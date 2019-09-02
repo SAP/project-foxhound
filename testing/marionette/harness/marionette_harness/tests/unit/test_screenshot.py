@@ -8,9 +8,7 @@ import base64
 import hashlib
 import imghdr
 import struct
-import sys
 import tempfile
-import unittest
 import urllib
 
 from marionette_driver import By
@@ -164,8 +162,7 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
         self.marionette.close_chrome_window()
         self.marionette.switch_to_window(self.start_window)
 
-    # @skip_if_mobile("Fennec doesn't support other chrome windows")
-    @skip("Bug 1329424 - AssertionError: u'iVBORw0KGgoA... (images unexpectedly equal)")
+    @skip_if_mobile("Fennec doesn't support other chrome windows")
     def test_capture_flags(self):
         dialog = self.open_dialog()
         self.marionette.switch_to_window(dialog)
@@ -204,7 +201,6 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
         self.marionette.switch_to_window(self.start_window)
 
     @skip_if_mobile("Fennec doesn't support other chrome windows")
-    @unittest.skipIf(sys.platform.startswith("linux"), "Bug 1504201")
     def test_formats(self):
         dialog = self.open_dialog()
         self.marionette.switch_to_window(dialog)
@@ -307,7 +303,6 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
                          self.get_image_dimensions(screenshot))
         self.assertGreater(self.page_y_offset, 0)
 
-    @skip("Bug 1330560 - AssertionError: u'iVBORw0KGgoA... (images unexpectedly equal)")
     def test_capture_flags(self):
         self.marionette.navigate(input)
 

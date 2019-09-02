@@ -40,8 +40,6 @@
     <command id="cmd_toggleOfflineStatus" oncommand="BrowserOffline.toggleOfflineStatus();"/>
     <command id="cmd_quitApplication" oncommand="goQuitApplication()"/>
 
-#include ../../../toolkit/content/editMenuCommands.inc.xul
-
     <command id="View:PageSource" oncommand="BrowserViewSource(window.gBrowser.selectedBrowser);"/>
     <command id="View:PageInfo" oncommand="BrowserPageInfo();"/>
     <command id="View:FullScreen" oncommand="BrowserFullScreen();"/>
@@ -83,11 +81,10 @@
     <command id="cmd_gestureRotateLeft" oncommand="gGestureSupport.rotate(event.sourceEvent)"/>
     <command id="cmd_gestureRotateRight" oncommand="gGestureSupport.rotate(event.sourceEvent)"/>
     <command id="cmd_gestureRotateEnd" oncommand="gGestureSupport.rotateEnd()"/>
-    <command id="Browser:OpenLocation" oncommand="openLocation();"/>
+    <command id="Browser:OpenLocation" oncommand="openLocation(event);"/>
     <command id="Browser:RestoreLastSession" oncommand="SessionStore.restoreLastSession();" disabled="true"/>
     <command id="Browser:NewUserContextTab" oncommand="openNewUserContextTab(event.sourceEvent);"/>
-    <command id="Browser:OpenAboutContainers" oncommand="openPreferences('paneContainers', {origin: 'ContainersCommand'});"/>
-
+    <command id="Browser:OpenAboutContainers" oncommand="openPreferences('paneContainers');"/>
     <command id="Tools:Search" oncommand="BrowserSearch.webSearch();"/>
     <command id="Tools:Downloads" oncommand="BrowserDownloadsUI();"/>
     <command id="Tools:Addons" oncommand="BrowserOpenAddonsMgr();"/>
@@ -98,7 +95,8 @@
     <command id="History:UndoCloseWindow" oncommand="undoCloseWindow();"/>
 
 #ifdef NIGHTLY_BUILD
-    <command id="wrCaptureCmd" oncommand="gWebRender.capture();"/>
+    <command id="wrCaptureCmd" oncommand="gGfxUtils.webrenderCapture();"/>
+    <command id="windowRecordingCmd" oncommand="gGfxUtils.toggleWindowRecording();"/>
 #endif
 #ifdef XP_MACOSX
     <command id="minimizeWindow"
@@ -319,6 +317,13 @@
     key="#" modifiers="control"
 #endif
     command="wrCaptureCmd"/>
+    <key id="key_windowRecordingCmd"
+#ifdef XP_MACOSX
+    key="4" modifiers="control,shift"
+#else
+    key="$" modifiers="control"
+#endif
+    command="windowRecordingCmd"/>
 #endif
 #ifdef XP_MACOSX
     <key id="key_minimizeWindow"
@@ -332,6 +337,7 @@
     <!-- These are used to build the Application menu -->
     <key id="key_preferencesCmdMac"
          key="&preferencesCmdMac.commandkey;"
+         reserved="true"
          modifiers="accel"/>
     <key id="key_hideThisAppCmdMac"
          key="&hideThisAppCmdMac2.commandkey;"

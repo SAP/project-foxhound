@@ -10,6 +10,12 @@ with Files('*Text*'):
 with Files('*DWrite*'):
     BUG_COMPONENT = ('Core', 'Graphics: Text')
 
+XPIDL_SOURCES += [
+    'nsIFontLoadCompleteCallback.idl',
+]
+
+XPIDL_MODULE = 'gfx'
+
 EXPORTS += [
     'DrawMode.h',
     'gfx2DGlue.h',
@@ -42,7 +48,6 @@ EXPORTS += [
     'gfxPlatform.h',
     'gfxPlatformFontList.h',
     'gfxPoint.h',
-    'gfxPrefs.h',
     'gfxQuad.h',
     'gfxQuaternion.h',
     'gfxRect.h',
@@ -53,6 +58,7 @@ EXPORTS += [
     'gfxTypes.h',
     'gfxUserFontSet.h',
     'gfxUtils.h',
+    'SharedFontList.h',
     'SoftwareVsyncSource.h',
     'VsyncSource.h',
 ]
@@ -179,7 +185,6 @@ SOURCES += [
     # gfxFontUtils.cpp and gfxPlatform.cpp include mac system header conflicting with point/size
     'gfxFontUtils.cpp',
     'gfxPlatform.cpp',
-    'gfxPrefs.cpp',
     'PrintTarget.cpp',
     'PrintTargetThebes.cpp',
 ]
@@ -211,7 +216,7 @@ UNIFIED_SOURCES += [
     'gfxTextRun.cpp',
     'gfxUserFontSet.cpp',
     'gfxUtils.cpp',
-    'nsUnicodeRange.cpp',
+    'SharedFontList.cpp',
     'SoftwareVsyncSource.cpp',
     'VsyncSource.cpp',
 ]
@@ -273,6 +278,9 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android'):
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
     CXXFLAGS += CONFIG['MOZ_PANGO_CFLAGS']
+
+if CONFIG['MOZ_WAYLAND']:
+    CXXFLAGS += CONFIG['MOZ_WAYLAND_CFLAGS']
 
 LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
 

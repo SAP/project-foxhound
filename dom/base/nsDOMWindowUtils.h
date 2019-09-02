@@ -14,13 +14,13 @@
 #include "mozilla/BasicEvents.h"
 
 class nsGlobalWindowOuter;
-class nsIPresShell;
 class nsIWidget;
 class nsPresContext;
 class nsView;
 struct nsPoint;
 
 namespace mozilla {
+class PresShell;
 namespace dom {
 class Document;
 class Element;
@@ -77,11 +77,12 @@ class nsDOMWindowUtils final : public nsIDOMWindowUtils,
   nsIWidget* GetWidget(nsPoint* aOffset = nullptr);
   nsIWidget* GetWidgetForElement(mozilla::dom::Element* aElement);
 
-  nsIPresShell* GetPresShell();
+  mozilla::PresShell* GetPresShell();
   nsPresContext* GetPresContext();
   mozilla::dom::Document* GetDocument();
   mozilla::layers::LayerTransactionChild* GetLayerTransaction();
   mozilla::layers::WebRenderBridgeChild* GetWebRenderBridge();
+  mozilla::layers::CompositorBridgeChild* GetCompositorBridge();
 
   // Until callers are annotated.
   MOZ_CAN_RUN_SCRIPT
@@ -93,13 +94,13 @@ class nsDOMWindowUtils final : public nsIDOMWindowUtils,
       bool aIsWidgetEventSynthesized, int32_t aButtons);
 
   MOZ_CAN_RUN_SCRIPT
-  NS_IMETHOD SendTouchEventCommon(const nsAString& aType,
-                                  uint32_t* aIdentifiers, int32_t* aXs,
-                                  int32_t* aYs, uint32_t* aRxs, uint32_t* aRys,
-                                  float* aRotationAngles, float* aForces,
-                                  uint32_t aCount, int32_t aModifiers,
-                                  bool aIgnoreRootScrollFrame, bool aToWindow,
-                                  bool* aPreventDefault);
+  nsresult SendTouchEventCommon(
+      const nsAString& aType, const nsTArray<uint32_t>& aIdentifiers,
+      const nsTArray<int32_t>& aXs, const nsTArray<int32_t>& aYs,
+      const nsTArray<uint32_t>& aRxs, const nsTArray<uint32_t>& aRys,
+      const nsTArray<float>& aRotationAngles, const nsTArray<float>& aForces,
+      int32_t aModifiers, bool aIgnoreRootScrollFrame, bool aToWindow,
+      bool* aPreventDefault);
 };
 
 #endif

@@ -76,7 +76,7 @@ namespace console {
   const boolean IS_NATIVE_CONSOLE = true;
 
   [ChromeOnly, NewObject]
-  ConsoleInstance createInstance(optional ConsoleInstanceOptions options);
+  ConsoleInstance createInstance(optional ConsoleInstanceOptions options = {});
 };
 
 // This is used to propagate console events to the observers.
@@ -107,12 +107,14 @@ dictionary ConsoleEvent {
   any timer = null;
   any counter = null;
   DOMString prefix = "";
+  boolean chromeContext = false;
 };
 
 // Event for profile operations
 dictionary ConsoleProfileEvent {
   DOMString action = "";
   sequence<any> arguments;
+  boolean chromeContext = false;
 };
 
 // This dictionary is used to manage stack trace data.

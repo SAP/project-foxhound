@@ -6,11 +6,16 @@
 
 var EXPORTED_SYMBOLS = ["ParentProcessDomains"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 const ParentProcessDomains = {};
 
 XPCOMUtils.defineLazyModuleGetters(ParentProcessDomains, {
   Browser: "chrome://remote/content/domains/parent/Browser.jsm",
+  Input: "chrome://remote/content/domains/parent/Input.jsm",
+  Network: "chrome://remote/content/domains/parent/Network.jsm",
+  Page: "chrome://remote/content/domains/parent/Page.jsm",
   Target: "chrome://remote/content/domains/parent/Target.jsm",
 });

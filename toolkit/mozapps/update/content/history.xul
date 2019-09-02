@@ -7,7 +7,6 @@
 <!DOCTYPE dialog>
 
 <?xml-stylesheet href="chrome://global/skin/"?>
-<?xml-stylesheet href="chrome://mozapps/content/update/updates.css"?>
 <?xml-stylesheet href="chrome://mozapps/skin/update/updates.css"?>
 
 <dialog id="history" windowtype="Update:History"
@@ -24,8 +23,7 @@
     <html:link rel="localization" href="toolkit/updates/history.ftl"/>
   </linkset>
 
-  <script type="application/javascript"
-          src="chrome://mozapps/content/update/history.js"/>
+  <script src="chrome://mozapps/content/update/history.js"/>
 
   <label data-l10n-id="history-intro"></label>
   <separator class="thin"/>

@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
@@ -13,13 +16,15 @@ const Localized = createFactory(FluentReact.Localized);
 const Message = createFactory(require("./shared/Message"));
 
 const { MESSAGE_LEVEL } = require("../constants");
-const DOC_URL = "https://developer.mozilla.org/en-US/docs/Tools/about%3Adebugging#Service_workers_not_compatible";
+const DOC_URL =
+  "https://developer.mozilla.org/docs/Tools/about:debugging#Service_workers_not_compatible";
 
 class ServiceWorkersWarning extends PureComponent {
   render() {
     return Message(
       {
         level: MESSAGE_LEVEL.WARNING,
+        isCloseable: true,
       },
       Localized(
         {
@@ -31,10 +36,10 @@ class ServiceWorkersWarning extends PureComponent {
         },
         dom.p(
           {
-            className: "js-service-workers-warning",
+            className: "qa-service-workers-warning",
           },
-          "about-debugging-runtime-service-workers-not-compatible",
-        ),
+          "about-debugging-runtime-service-workers-not-compatible"
+        )
       )
     );
   }

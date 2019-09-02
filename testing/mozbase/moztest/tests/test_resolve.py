@@ -170,7 +170,6 @@ TASK_LABELS = [
     'test-linux64/opt-mochitest-browser-chrome-e10s',
     'test-linux64/opt-mochitest-browser-chrome-e10s-11',
     'test-linux64/opt-mochitest-chrome',
-    'test-linux64/opt-mochitest-clipboard',
     'test-linux64/opt-mochitest-devtools',
     'test-linux64/opt-mochitest-devtools-chrome',
     'test-linux64/opt-mochitest-gpu',
@@ -372,10 +371,10 @@ class TestTestResolver(Base):
         r = self._get_resolver()
 
         suites, tests = r.resolve_metadata(['bc'])
-        assert suites == {'mochitest-browser'}
+        assert suites == {'mochitest-browser-chrome'}
         assert tests == []
 
-        suites, tests = r.resolve_metadata(['mochitest-a11y', 'browser', 'xpcshell'])
+        suites, tests = r.resolve_metadata(['mochitest-a11y', '/browser', 'xpcshell'])
         assert suites == {'mochitest-a11y', 'xpcshell'}
         assert sorted(t['file_relpath'] for t in tests) == [
             'devtools/client/markupview/test/browser_markupview_copy_image_data.js',
@@ -387,19 +386,15 @@ class TestTestResolver(Base):
         """Test the task_regexes defined in TEST_SUITES."""
 
         test_cases = {
-            'mochitest-browser': [
+            'mochitest-browser-chrome': [
                 'test-linux64/opt-mochitest-browser-chrome',
                 'test-linux64/opt-mochitest-browser-chrome-e10s',
             ],
             'mochitest-chrome': [
                 'test-linux64/opt-mochitest-chrome',
             ],
-            'mochitest-devtools': [
+            'mochitest-devtools-chrome': [
                 'test-linux64/opt-mochitest-devtools-chrome',
-            ],
-            'mochitest-gpu': [
-                'test-linux64/opt-mochitest-gpu',
-                'test-linux64/opt-mochitest-gpu-e10s',
             ],
             'mochitest-media': [
                 'test-linux64/opt-mochitest-media-e10s-1',
@@ -410,7 +405,11 @@ class TestTestResolver(Base):
                 # this isn't a real task but the regex would match it if it were
                 'test-linux64/opt-mochitest-plain',
             ],
-            'mochitest-screenshots': [
+            'mochitest-plain-gpu': [
+                'test-linux64/opt-mochitest-gpu',
+                'test-linux64/opt-mochitest-gpu-e10s',
+            ],
+            'mochitest-browser-chrome-screenshots': [
                 'test-linux64/opt-browser-screenshots-1',
                 'test-linux64/opt-browser-screenshots-e10s-1',
             ],

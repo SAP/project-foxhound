@@ -48,12 +48,16 @@ bool nsGenConList::DestroyNodesFor(nsIFrame* aFrame) {
  * Compute the type of the pseudo and the content for the pseudo that
  * we'll use for comparison purposes.
  * @param aContent the content to use is stored here; it's the element
- * that generated the ::before or ::after content, or (if not for generated
- * content), the frame's own element
- * @return -1 for ::before, +1 for ::after, and 0 otherwise.
+ * that generated the pseudo, or (if not for generated content), the frame's
+ * own element
+ * @return -2 for ::marker, -1 for ::before, +1 for ::after, and 0 otherwise.
  */
 inline int32_t PseudoCompareType(nsIFrame* aFrame, nsIContent** aContent) {
   auto pseudo = aFrame->Style()->GetPseudoType();
+  if (pseudo == mozilla::PseudoStyleType::marker) {
+    *aContent = aFrame->GetContent()->GetParent();
+    return -2;
+  }
   if (pseudo == mozilla::PseudoStyleType::before) {
     *aContent = aFrame->GetContent()->GetParent();
     return -1;
@@ -65,6 +69,14 @@ inline int32_t PseudoCompareType(nsIFrame* aFrame, nsIContent** aContent) {
   *aContent = aFrame->GetContent();
   return 0;
 }
+
+#ifdef DEBUG
+static bool IsXBLInvolved(nsIContent* aContent1, nsIContent* aContent2) {
+  auto* ancestor = nsContentUtils::GetCommonAncestor(aContent1, aContent2);
+  return ancestor && ancestor->IsElement() &&
+         ancestor->AsElement()->GetXBLBinding();
+}
+#endif
 
 /* static */
 bool nsGenConList::NodeAfter(const nsGenConNode* aNode1,
@@ -79,25 +91,24 @@ bool nsGenConList::NodeAfter(const nsGenConNode* aNode1,
   nsIContent* content2;
   int32_t pseudoType1 = PseudoCompareType(frame1, &content1);
   int32_t pseudoType2 = PseudoCompareType(frame2, &content2);
-  if (pseudoType1 == 0 || pseudoType2 == 0) {
-    if (content1 == content2) {
-      NS_ASSERTION(pseudoType1 != pseudoType2, "identical");
+  if (content1 == content2) {
+    NS_ASSERTION(pseudoType1 != pseudoType2, "identical");
+    if (pseudoType1 == 0 || pseudoType2 == 0) {
       return pseudoType2 == 0;
     }
-    // We want to treat an element as coming before its :before (preorder
-    // traversal), so treating both as :before now works.
-    if (pseudoType1 == 0) pseudoType1 = -1;
-    if (pseudoType2 == 0) pseudoType2 = -1;
-  } else {
-    if (content1 == content2) {
-      NS_ASSERTION(pseudoType1 != pseudoType2, "identical");
-      return pseudoType1 == 1;
-    }
+    return pseudoType1 > pseudoType2;
   }
 
-  int32_t cmp = nsLayoutUtils::DoCompareTreePosition(content1, content2,
-                                                     pseudoType1, -pseudoType2);
-  MOZ_ASSERT(cmp != 0, "same content, different frames");
+  // Two pseudo-elements of different elements, we want to treat them as if
+  // they were normal elements and just use tree order.
+  content1 = frame1->GetContent();
+  content2 = frame2->GetContent();
+
+  int32_t cmp = nsLayoutUtils::CompareTreePosition(content1, content2);
+  // DoCompareTreePosition doesn't know about XBL anonymous content, and we
+  // probably shouldn't bother teaching it about it.
+  MOZ_ASSERT(cmp != 0 || IsXBLInvolved(content1, content2),
+             "same content, different frames");
   return cmp > 0;
 }
 

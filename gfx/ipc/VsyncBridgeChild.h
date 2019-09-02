@@ -27,16 +27,16 @@ class VsyncBridgeChild final : public PVsyncBridgeChild {
   void Close();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  void DeallocPVsyncBridgeChild() override;
+  void ActorDealloc() override;
   void ProcessingError(Result aCode, const char* aReason) override;
 
   void NotifyVsync(const VsyncEvent& aVsync, const layers::LayersId& aLayersId);
 
-  virtual void HandleFatalError(const char* aMsg) const override;
+  void HandleFatalError(const char* aMsg) const override;
 
  private:
   VsyncBridgeChild(RefPtr<VsyncIOThreadHolder>, const uint64_t& aProcessToken);
-  ~VsyncBridgeChild();
+  virtual ~VsyncBridgeChild();
 
   void Open(Endpoint<PVsyncBridgeChild>&& aEndpoint);
 

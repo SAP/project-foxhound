@@ -24,10 +24,18 @@
       ["browsingData"]
     ]
   },
+  "captivePortal": {
+    "url": "chrome://extensions/content/parent/ext-captivePortal.js",
+    "schema": "chrome://extensions/content/schemas/captive_portal.json",
+    "scopes": ["addon_parent"],
+    "paths": [
+      ["captivePortal"]
+    ]
+  },
   "chrome_settings_overrides": {
     "url": "chrome://browser/content/parent/ext-chrome-settings-overrides.js",
     "scopes": [],
-    "events": ["update", "uninstall"],
+    "events": ["update", "uninstall", "disable"],
     "schema": "chrome://browser/content/schemas/chrome_settings_overrides.json",
     "manifest": ["chrome_settings_overrides"]
   },
@@ -113,6 +121,14 @@
       ["menusInternal"]
     ]
   },
+  "normandyAddonStudy": {
+    "url": "chrome://browser/content/parent/ext-normandyAddonStudy.js",
+    "schema": "chrome://browser/content/schemas/normandyAddonStudy.json",
+    "scopes": ["addon_parent", "content_parent", "devtools_parent"],
+    "paths": [
+      ["normandyAddonStudy"]
+    ]
+  },
   "omnibox": {
     "url": "chrome://browser/content/parent/ext-omnibox.js",
     "schema": "chrome://browser/content/schemas/omnibox.json",
@@ -140,8 +156,8 @@
     ]
   },
   "geckoProfiler": {
-    "url": "chrome://browser/content/parent/ext-geckoProfiler.js",
-    "schema": "chrome://browser/content/schemas/geckoProfiler.json",
+    "url": "chrome://extensions/content/parent/ext-geckoProfiler.js",
+    "schema": "chrome://extensions/content/schemas/geckoProfiler.json",
     "scopes": ["addon_parent"],
     "paths": [
       ["geckoProfiler"]
@@ -167,6 +183,7 @@
     "url": "chrome://browser/content/parent/ext-sidebarAction.js",
     "schema": "chrome://browser/content/schemas/sidebar_action.json",
     "scopes": ["addon_parent"],
+    "events": ["uninstall"],
     "manifest": ["sidebar_action"],
     "paths": [
       ["sidebarAction"]
@@ -181,11 +198,27 @@
       ["tabs"]
     ]
   },
+  "topSites": {
+    "url": "chrome://browser/content/parent/ext-topSites.js",
+    "schema": "chrome://browser/content/schemas/top_sites.json",
+    "scopes": ["addon_parent"],
+    "paths": [
+      ["topSites"]
+    ]
+  },
+  "urlbar": {
+    "url": "chrome://browser/content/parent/ext-urlbar.js",
+    "schema": "chrome://browser/content/schemas/urlbar.json",
+    "scopes": ["addon_parent"],
+    "paths": [
+      ["urlbar"]
+    ]
+  },
   "urlOverrides": {
     "url": "chrome://browser/content/parent/ext-url-overrides.js",
     "schema": "chrome://browser/content/schemas/url_overrides.json",
     "scopes": ["addon_parent"],
-    "events": ["uninstall"],
+    "events": ["update", "uninstall", "disable"],
     "manifest": ["chrome_url_overrides"],
     "paths": [
       ["urlOverrides"]

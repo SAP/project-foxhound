@@ -16,11 +16,14 @@ function run_test() {
   // Conect the first client to the first debuggee.
   gClient1 = new DebuggerClient(DebuggerServer.connectPipe());
   gClient1.connect(function() {
-    attachTestThread(gClient1, "test-nesting1",
-                     function(response, targetFront, threadClient) {
-                       gThreadClient1 = threadClient;
-                       start_second_connection();
-                     });
+    attachTestThread(gClient1, "test-nesting1", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient1 = threadClient;
+      start_second_connection();
+    });
   });
   do_test_pending();
 }
@@ -28,27 +31,32 @@ function run_test() {
 function start_second_connection() {
   gClient2 = new DebuggerClient(DebuggerServer.connectPipe());
   gClient2.connect(function() {
-    attachTestThread(gClient2, "test-nesting1",
-                     function(response, targetFront, threadClient) {
-                       gThreadClient2 = threadClient;
-                       test_nesting();
-                     });
+    attachTestThread(gClient2, "test-nesting1", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient2 = threadClient;
+      test_nesting();
+    });
   });
 }
 
-function test_nesting() {
-  gThreadClient1.resume(response => {
-    Assert.equal(response.error, "wrongOrder");
-    gThreadClient2.resume(response => {
-      Assert.ok(!response.error);
-      Assert.equal(response.from, gThreadClient2.actor);
+async function test_nesting() {
+  let result;
+  try {
+    result = await gThreadClient1.resume();
+  } catch (e) {
+    Assert.ok(e.includes("wrongOrder"), "rejects with the wrong order");
+  }
+  Assert.ok(!result, "no response");
 
-      gThreadClient1.resume(response => {
-        Assert.ok(!response.error);
-        Assert.equal(response.from, gThreadClient1.actor);
+  result = await gThreadClient2.resume();
+  Assert.ok(true, "resumed as expected");
 
-        gClient1.close(() => finishClient(gClient2));
-      });
-    });
+  gThreadClient1.resume().then(response => {
+    Assert.ok(true, "resumed as expected");
+
+    gClient1.close(() => finishClient(gClient2));
   });
 }

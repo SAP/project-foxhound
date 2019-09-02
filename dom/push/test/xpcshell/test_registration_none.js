@@ -1,15 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-'use strict';
+"use strict";
 
-const {PushDB, PushService} = serviceExports;
+const { PushDB, PushService } = serviceExports;
 
-const userAgentID = 'a722e448-c481-4c48-aea0-fc411cb7c9ed';
+const userAgentID = "a722e448-c481-4c48-aea0-fc411cb7c9ed";
 
 function run_test() {
   do_get_profile();
-  setPrefs({userAgentID});
+  setPrefs({ userAgentID });
   run_next_test();
 }
 
@@ -19,13 +19,14 @@ add_task(async function test_registration_none() {
     serverURI: "wss://push.example.org/",
     makeWebSocket(uri) {
       return new MockWebSocket(uri);
-    }
+    },
   });
 
   let registration = await PushService.registration({
-    scope: 'https://example.net/1',
-    originAttributes: ChromeUtils.originAttributesToSuffix(
-      { appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inIsolatedMozBrowser: false }),
+    scope: "https://example.net/1",
+    originAttributes: ChromeUtils.originAttributesToSuffix({
+      inIsolatedMozBrowser: false,
+    }),
   });
-  ok(!registration, 'Should not open a connection without registration');
+  ok(!registration, "Should not open a connection without registration");
 });

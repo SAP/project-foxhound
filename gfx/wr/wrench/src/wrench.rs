@@ -3,15 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-use blob;
+use crate::blob;
 use crossbeam::sync::chase_lev;
 #[cfg(windows)]
 use dwrote;
 #[cfg(all(unix, not(target_os = "android")))]
 use font_loader::system_fonts;
 use winit::EventsLoopProxy;
-use json_frame_writer::JsonFrameWriter;
-use ron_frame_writer::RonFrameWriter;
+use crate::json_frame_writer::JsonFrameWriter;
+use crate::ron_frame_writer::RonFrameWriter;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -21,8 +21,8 @@ use webrender;
 use webrender::api::*;
 use webrender::api::units::*;
 use webrender::{DebugFlags, RenderResults, ShaderPrecacheFlags};
-use yaml_frame_writer::YamlFrameWriterReceiver;
-use {WindowWrapper, NotifierEvent};
+use crate::yaml_frame_writer::YamlFrameWriterReceiver;
+use crate::{WindowWrapper, NotifierEvent};
 
 // TODO(gw): This descriptor matches what we currently support for fonts
 //           but is quite a mess. We should at least document and
@@ -101,7 +101,7 @@ impl Notifier {
 }
 
 impl RenderNotifier for Notifier {
-    fn clone(&self) -> Box<RenderNotifier> {
+    fn clone(&self) -> Box<dyn RenderNotifier> {
         Box::new(Notifier(self.0.clone()))
     }
 
@@ -120,7 +120,7 @@ impl RenderNotifier for Notifier {
 pub trait WrenchThing {
     fn next_frame(&mut self);
     fn prev_frame(&mut self);
-    fn do_frame(&mut self, &mut Wrench) -> u32;
+    fn do_frame(&mut self, _: &mut Wrench) -> u32;
 }
 
 impl WrenchThing for CapturedDocument {
@@ -143,7 +143,7 @@ impl WrenchThing for CapturedDocument {
 }
 
 pub struct Wrench {
-    window_size: FramebufferIntSize,
+    window_size: DeviceIntSize,
     pub device_pixel_ratio: f32,
     page_zoom_factor: ZoomFactor,
 
@@ -171,9 +171,10 @@ impl Wrench {
         shader_override_path: Option<PathBuf>,
         dp_ratio: f32,
         save_type: Option<SaveType>,
-        size: FramebufferIntSize,
+        size: DeviceIntSize,
         do_rebuild: bool,
         no_subpixel_aa: bool,
+        no_picture_caching: bool,
         verbose: bool,
         no_scissor: bool,
         no_batch: bool,
@@ -181,21 +182,22 @@ impl Wrench {
         disable_dual_source_blending: bool,
         zoom_factor: f32,
         chase_primitive: webrender::ChasePrimitive,
-        notifier: Option<Box<RenderNotifier>>,
+        dump_shader_source: Option<String>,
+        notifier: Option<Box<dyn RenderNotifier>>,
     ) -> Self {
         println!("Shader override path: {:?}", shader_override_path);
 
         let recorder = save_type.map(|save_type| match save_type {
             SaveType::Yaml => Box::new(
                 YamlFrameWriterReceiver::new(&PathBuf::from("yaml_frames")),
-            ) as Box<webrender::ApiRecordingReceiver>,
+            ) as Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Json => Box::new(JsonFrameWriter::new(&PathBuf::from("json_frames"))) as
-                Box<webrender::ApiRecordingReceiver>,
+                Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Ron => Box::new(RonFrameWriter::new(&PathBuf::from("ron_frames"))) as
-                Box<webrender::ApiRecordingReceiver>,
+                Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Binary => Box::new(webrender::BinaryRecorder::new(
                 &PathBuf::from("wr-record.bin"),
-            )) as Box<webrender::ApiRecordingReceiver>,
+            )) as Box<dyn webrender::ApiRecordingReceiver>,
         });
 
         let mut debug_flags = DebugFlags::ECHO_DRIVER_MESSAGES;
@@ -218,11 +220,13 @@ impl Wrench {
             max_recorded_profiles: 16,
             precache_flags,
             blob_image_handler: Some(Box::new(blob::CheckerboardRenderer::new(callbacks.clone()))),
-            disable_dual_source_blending,
             chase_primitive,
-            enable_picture_caching: true,
+            enable_picture_caching: !no_picture_caching,
             testing: true,
             max_texture_size: Some(8196), // Needed for rawtest::test_resize_image.
+            allow_dual_source_blending: !disable_dual_source_blending,
+            allow_advanced_blend_equation: true,
+            dump_shader_source,
             ..Default::default()
         };
 
@@ -238,7 +242,13 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(window.clone_gl(), notifier, opts, None).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(
+            window.clone_gl(),
+            notifier,
+            opts,
+            None,
+            size,
+        ).unwrap();
         let api = sender.create_api();
         let document_id = api.add_document(size, 0);
 
@@ -256,7 +266,7 @@ impl Wrench {
             rebuild_display_lists: do_rebuild,
             verbose,
             device_pixel_ratio: dp_ratio,
-            page_zoom_factor: zoom_factor,
+            page_zoom_factor: ZoomFactor::new(0.0),
 
             root_pipeline_id: PipelineId(0, 0),
 
@@ -280,11 +290,13 @@ impl Wrench {
     }
 
     pub fn set_page_zoom(&mut self, zoom_factor: ZoomFactor) {
-        self.page_zoom_factor = zoom_factor;
-        let mut txn = Transaction::new();
-        txn.set_page_zoom(self.page_zoom_factor);
-        self.api.send_transaction(self.document_id, txn);
-        self.set_title("");
+        if self.page_zoom_factor.get() != zoom_factor.get() {
+            self.page_zoom_factor = zoom_factor;
+            let mut txn = Transaction::new();
+            txn.set_page_zoom(self.page_zoom_factor);
+            self.api.send_transaction(self.document_id, txn);
+            self.set_title("");
+        }
     }
 
     pub fn layout_simple_ascii(
@@ -511,7 +523,7 @@ impl Wrench {
         self.api.update_resources(txn.resource_updates);
     }
 
-    pub fn update(&mut self, dim: FramebufferIntSize) {
+    pub fn update(&mut self, dim: DeviceIntSize) {
         if dim != self.window_size {
             self.window_size = dim;
         }
@@ -586,6 +598,7 @@ impl Wrench {
             "T - Save CPU profile to a file",
             "C - Save a capture to captures/wrench/",
             "X - Do a hit test at the current cursor position",
+            "Y - Clear all caches",
         ];
 
         let color_and_offset = [(ColorF::BLACK, 2.0), (ColorF::WHITE, 0.0)];

@@ -39,15 +39,16 @@ class WebGL2Context : public WebGLContext {
   // Buffer objects - WebGL2ContextBuffers.cpp
 
   void CopyBufferSubData(GLenum readTarget, GLenum writeTarget,
-                         GLintptr readOffset, GLintptr writeOffset,
-                         GLsizeiptr size);
+                         WebGLintptr readOffset, WebGLintptr writeOffset,
+                         WebGLsizeiptr size);
 
  private:
   template <typename BufferT>
-  void GetBufferSubDataT(GLenum target, GLintptr offset, const BufferT& data);
+  void GetBufferSubDataT(GLenum target, WebGLintptr offset,
+                         const BufferT& data);
 
  public:
-  void GetBufferSubData(GLenum target, GLintptr srcByteOffset,
+  void GetBufferSubData(GLenum target, WebGLintptr srcByteOffset,
                         const dom::ArrayBufferView& dstData,
                         GLuint dstElemOffset, GLuint dstElemCountOverride);
 
@@ -57,8 +58,6 @@ class WebGL2Context : public WebGLContext {
   void BlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
                        GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
                        GLbitfield mask, GLenum filter);
-  void FramebufferTextureLayer(GLenum target, GLenum attachment,
-                               WebGLTexture* texture, GLint level, GLint layer);
 
   virtual JS::Value GetFramebufferAttachmentParameter(JSContext* cx,
                                                       GLenum target,
@@ -303,7 +302,7 @@ class WebGL2Context : public WebGLContext {
   void DrawArraysInstanced(GLenum mode, GLint first, GLsizei count,
                            GLsizei instanceCount);
   void DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type,
-                             GLintptr offset, GLsizei instanceCount);
+                             WebGLintptr offset, GLsizei instanceCount);
   */
 
   void DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count,
@@ -405,7 +404,7 @@ class WebGL2Context : public WebGLContext {
   /*
       void BindBufferBase(GLenum target, GLuint index, WebGLBuffer* buffer);
       void BindBufferRange(GLenum target, GLuint index, WebGLBuffer* buffer,
-                           GLintptr offset, GLsizeiptr size);
+                           WebGLintptr offset, WebGLsizeiptr size);
   */
   virtual JS::Value GetParameter(JSContext* cx, GLenum pname,
                                  ErrorResult& rv) override;

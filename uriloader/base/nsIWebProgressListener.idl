@@ -82,7 +82,7 @@ interface nsIWebProgressListener : nsISupports
    *   This flag is set in addition to STATE_IS_REQUEST.  A document request
    *   supports the nsIChannel interface and its loadFlags attribute includes
    *   the nsIChannel::LOAD_DOCUMENT_URI flag.
-   * 
+   *
    *   A document request does not complete until all requests associated with
    *   the loading of its corresponding document have completed.  This includes
    *   other document requests (e.g., corresponding to HTML <iframe> elements).
@@ -229,7 +229,7 @@ interface nsIWebProgressListener : nsISupports
     * State bits for EV == Extended Validation == High Assurance
     *
     * These flags describe the level of identity verification
-    * in a call to the onSecurityChange method. 
+    * in a call to the onSecurityChange method.
     *
     * STATE_IDENTITY_EV_TOPLEVEL
     *   The topmost document uses an EV cert.
@@ -292,11 +292,21 @@ interface nsIWebProgressListener : nsISupports
    *   Rejected because the resource is a tracker and cookie policy doesn't
    *   allow its loading.
    *
+   * STATE_COOKIES_PARTITIONED_FOREIGN
+   *   Rejected because the resource is a third-party and cookie policy forces
+   *   third-party resources to be partitioned.
+   *
    * STATE_COOKIES_BLOCKED_ALL
    *   Rejected because cookie policy blocks all cookies.
    *
    * STATE_COOKIES_BLOCKED_FOREIGN
    *   Rejected because cookie policy blocks 3rd party cookies.
+   *
+   * STATE_BLOCKED_SOCIALTRACKING_CONTENT
+   *   SocialTracking content has been blocked from loading.
+   *
+   * STATE_LOADED_SOCIALTRACKING_CONTENT
+   *   SocialTracking content has been loaded.
    */
   const unsigned long STATE_BLOCKED_TRACKING_CONTENT       = 0x00001000;
   const unsigned long STATE_LOADED_TRACKING_CONTENT        = 0x00002000;
@@ -309,7 +319,10 @@ interface nsIWebProgressListener : nsISupports
   const unsigned long STATE_COOKIES_BLOCKED_BY_PERMISSION  = 0x10000000;
   const unsigned long STATE_COOKIES_BLOCKED_TRACKER        = 0x20000000;
   const unsigned long STATE_COOKIES_BLOCKED_ALL            = 0x40000000;
+  const unsigned long STATE_COOKIES_PARTITIONED_FOREIGN    = 0x80000000;
   const unsigned long STATE_COOKIES_BLOCKED_FOREIGN        = 0x00000080;
+  const unsigned long STATE_BLOCKED_SOCIALTRACKING_CONTENT = 0x00010000;
+  const unsigned long STATE_LOADED_SOCIALTRACKING_CONTENT  = 0x00020000;
 
   /**
    * Notification indicating the state has changed for one of the requests
@@ -376,7 +389,7 @@ interface nsIWebProgressListener : nsISupports
    * Flags for onLocationChange
    *
    * LOCATION_CHANGE_SAME_DOCUMENT
-   *   This flag is on when |aWebProgress| did not load a new document. 
+   *   This flag is on when |aWebProgress| did not load a new document.
    *   For example, the location change is due to an anchor scroll or a
    *   pushState/popState/replaceState.
    *

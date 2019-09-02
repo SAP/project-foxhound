@@ -6,10 +6,12 @@
 
 #include "TimeoutExecutor.h"
 
+#include "mozilla/AbstractEventQueue.h"
 #include "mozilla/dom/TimeoutManager.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIEventTarget.h"
 #include "nsString.h"
+#include "nsThreadUtils.h"
 
 extern mozilla::LazyLogModule gTimeoutLog;
 
@@ -221,8 +223,9 @@ void TimeoutExecutor::Cancel() {
   mDeadline = TimeStamp();
 }
 
-NS_IMETHODIMP
-TimeoutExecutor::Run() {
+// MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
+// bug 1535398.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP TimeoutExecutor::Run() {
   // If the executor is canceled and then rescheduled its possible to get
   // spurious executions here.  Ignore these unless our current mode matches.
   MOZ_LOG(gTimeoutLog, LogLevel::Debug,
@@ -233,7 +236,9 @@ TimeoutExecutor::Run() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
+// MOZ_CAN_RUN_SCRIPT_BOUNDARY until nsITimerCallback::Notify is
+// MOZ_CAN_RUN_SCRIPT.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP
 TimeoutExecutor::Notify(nsITimer* aTimer) {
   // If the executor is canceled and then rescheduled its possible to get
   // spurious executions here.  Ignore these unless our current mode matches.

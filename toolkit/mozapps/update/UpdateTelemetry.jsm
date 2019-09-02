@@ -4,11 +4,23 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = [
-  "AUSTLMY",
-];
+var EXPORTED_SYMBOLS = ["AUSTLMY"];
 
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+const { BitsError, BitsUnknownError } = ChromeUtils.import(
+  "resource://gre/modules/Bits.jsm"
+);
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+
+// It is possible for the update.session telemetry to be set more than once
+// which must be prevented since they are scalars and setting them more than
+// once could lead to values set in the first ping not being present in the
+// next ping which would make the values incomprehensible in relation to the
+// other values. This isn't needed for update.startup since this will only be
+// set once during startup.
+var gUpdatePhasesSetForSession = false;
 
 var AUSTLMY = {
   // Telemetry for the application update background update check occurs when
@@ -275,11 +287,129 @@ var AUSTLMY = {
    * @param  aCode
    *         An integer value for the error code from the update.bt file.
    */
-  pingBinaryTransparencyResult: function UT_pingBinaryTransparencyResult(aSuffix, aCode) {
+  pingBinaryTransparencyResult: function UT_pingBinaryTransparencyResult(
+    aSuffix,
+    aCode
+  ) {
     try {
       let id = "update.binarytransparencyresult";
       let key = aSuffix.toLowerCase().replace("_", "-");
       Services.telemetry.keyedScalarSet(id, key, aCode);
+    } catch (e) {
+      Cu.reportError(e);
+    }
+  },
+
+  /**
+   * Records a failed BITS update download using Telemetry.
+   * In addition to the BITS Result histogram, this also sends an
+   * update.bitshresult scalar value.
+   *
+   * @param aIsComplete
+   *        If true the histogram is for a patch type complete, if false the
+   *        histogram is for a patch type partial. This will determine the
+   *        histogram id out of the following histogram ids:
+   *        UPDATE_BITS_RESULT_COMPLETE
+   *        UPDATE_BITS_RESULT_PARTIAL
+   *        This value is also used to determine the key for the keyed scalar
+   *        update.bitshresult (key is either "COMPLETE" or "PARTIAL")
+   * @param aError
+   *        The BitsError that occurred. See Bits.jsm for details on BitsError.
+   */
+  pingBitsError: function UT_pingBitsError(aIsComplete, aError) {
+    if (AppConstants.platform != "win") {
+      Cu.reportError(
+        "Warning: Attempted to submit BITS telemetry on a " +
+          "non-Windows platform"
+      );
+      return;
+    }
+    if (!(aError instanceof BitsError)) {
+      Cu.reportError("Error sending BITS Error ping: Error is not a BitsError");
+      aError = new BitsUnknownError();
+    }
+    // Coerce the error to integer
+    let type = +aError.type;
+    if (isNaN(type)) {
+      Cu.reportError(
+        "Error sending BITS Error ping: Either error is not a " +
+          "BitsError, or error type is not an integer."
+      );
+      type = Ci.nsIBits.ERROR_TYPE_UNKNOWN;
+    } else if (type == Ci.nsIBits.ERROR_TYPE_SUCCESS) {
+      Cu.reportError(
+        "Error sending BITS Error ping: The error type must not " +
+          "be the success type."
+      );
+      type = Ci.nsIBits.ERROR_TYPE_UNKNOWN;
+    }
+    this._pingBitsResult(aIsComplete, type);
+
+    if (aError.codeType == Ci.nsIBits.ERROR_CODE_TYPE_HRESULT) {
+      let scalarKey;
+      if (aIsComplete) {
+        scalarKey = this.PATCH_COMPLETE;
+      } else {
+        scalarKey = this.PATCH_PARTIAL;
+      }
+      try {
+        Services.telemetry.keyedScalarSet(
+          "update.bitshresult",
+          scalarKey,
+          aError.code
+        );
+      } catch (e) {
+        Cu.reportError(e);
+      }
+    }
+  },
+
+  /**
+   * Records a successful BITS update download using Telemetry.
+   *
+   * @param aIsComplete
+   *        If true the histogram is for a patch type complete, if false the
+   *        histogram is for a patch type partial. This will determine the
+   *        histogram id out of the following histogram ids:
+   *        UPDATE_BITS_RESULT_COMPLETE
+   *        UPDATE_BITS_RESULT_PARTIAL
+   */
+  pingBitsSuccess: function UT_pingBitsSuccess(aIsComplete) {
+    if (AppConstants.platform != "win") {
+      Cu.reportError(
+        "Warning: Attempted to submit BITS telemetry on a " +
+          "non-Windows platform"
+      );
+      return;
+    }
+    this._pingBitsResult(aIsComplete, Ci.nsIBits.ERROR_TYPE_SUCCESS);
+  },
+
+  /**
+   * This is the helper function that does all the work for pingBitsError and
+   * pingBitsSuccess. It submits a telemetry ping indicating the result of the
+   * BITS update download.
+   *
+   * @param aIsComplete
+   *        If true the histogram is for a patch type complete, if false the
+   *        histogram is for a patch type partial. This will determine the
+   *        histogram id out of the following histogram ids:
+   *        UPDATE_BITS_RESULT_COMPLETE
+   *        UPDATE_BITS_RESULT_PARTIAL
+   * @param aResultType
+   *        The result code. This will be one of the ERROR_TYPE_* values defined
+   *        in the nsIBits interface.
+   */
+  _pingBitsResult: function UT_pingBitsResult(aIsComplete, aResultType) {
+    let patchType;
+    if (aIsComplete) {
+      patchType = this.PATCH_COMPLETE;
+    } else {
+      patchType = this.PATCH_PARTIAL;
+    }
+    try {
+      let id = "UPDATE_BITS_RESULT_" + patchType;
+      Services.telemetry.getHistogramById(id).add(aResultType);
     } catch (e) {
       Cu.reportError(e);
     }
@@ -297,9 +427,12 @@ var AUSTLMY = {
    *         UPDATE_LAST_NOTIFY_INTERVAL_DAYS_NOTIFY
    */
   pingLastUpdateTime: function UT_pingLastUpdateTime(aSuffix) {
-    const PREF_APP_UPDATE_LASTUPDATETIME = "app.update.lastUpdateTime.background-update-timer";
+    const PREF_APP_UPDATE_LASTUPDATETIME =
+      "app.update.lastUpdateTime.background-update-timer";
     if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_LASTUPDATETIME)) {
-      let lastUpdateTimeSeconds = Services.prefs.getIntPref(PREF_APP_UPDATE_LASTUPDATETIME);
+      let lastUpdateTimeSeconds = Services.prefs.getIntPref(
+        PREF_APP_UPDATE_LASTUPDATETIME
+      );
       if (lastUpdateTimeSeconds) {
         let currentTimeSeconds = Math.round(Date.now() / 1000);
         if (lastUpdateTimeSeconds > currentTimeSeconds) {
@@ -311,8 +444,8 @@ var AUSTLMY = {
             Cu.reportError(e);
           }
         } else {
-          let intervalDays = (currentTimeSeconds - lastUpdateTimeSeconds) /
-                             (60 * 60 * 24);
+          let intervalDays =
+            (currentTimeSeconds - lastUpdateTimeSeconds) / (60 * 60 * 24);
           try {
             let id = "UPDATE_LAST_NOTIFY_INTERVAL_DAYS_" + aSuffix;
             // exponential type histogram
@@ -326,33 +459,124 @@ var AUSTLMY = {
   },
 
   /**
-   * Submit a telemetry ping for the last page displayed by the update wizard.
+   * Submit the update phase telemetry. These are scalars and must only be
+   * submitted once per sesssion. The update.startup is only submitted once
+   * once per session due to it only being submitted during startup and only the
+   * first call to pingUpdatePhases for update.session will be submitted.
    *
-   * @param  aPageID
-   *         The page id for the last page displayed.
+   * @param  aUpdate
+   *         The update object which contains the values to submit to telemetry.
+   * @param  aIsStartup
+   *         If true the telemetry will be set under update.startup and if false
+   *         the telemetry will be set under update.session. When false
+   *         subsequent calls will return early and not submit telemetry.
    */
-  pingWizLastPageCode: function UT_pingWizLastPageCode(aPageID) {
-    let pageMap = { invalid: 0,
-                    dummy: 1,
-                    checking: 2,
-                    pluginupdatesfound: 3,
-                    noupdatesfound: 4,
-                    manualUpdate: 5,
-                    unsupported: 6,
-                    updatesfoundbasic: 8,
-                    updatesfoundbillboard: 9,
-                    downloading: 12,
-                    errors: 13,
-                    errorextra: 14,
-                    errorpatching: 15,
-                    finished: 16,
-                    finishedBackground: 17,
-                    installed: 18 };
+  pingUpdatePhases: function UT_pingUpdatePhases(aUpdate, aIsStartup) {
+    if (!aIsStartup && !Cu.isInAutomation) {
+      if (gUpdatePhasesSetForSession) {
+        return;
+      }
+      gUpdatePhasesSetForSession = true;
+    }
+    let basePrefix = aIsStartup ? "update.startup." : "update.session.";
+    // None of the calls to getProperty should fail.
     try {
-      let id = "UPDATE_WIZ_LAST_PAGE_CODE";
-      // enumerated type histogram
-      Services.telemetry.getHistogramById(id).add(pageMap[aPageID] ||
-                                                  pageMap.invalid);
+      let update = aUpdate.QueryInterface(Ci.nsIWritablePropertyBag);
+      let scalarSet = Services.telemetry.scalarSet;
+
+      // Though it is possible that the previous app version that was updated
+      // from could change the record is for the app version that initiated the
+      // update.
+      scalarSet(basePrefix + "from_app_version", aUpdate.previousAppVersion);
+
+      // The check interval only happens once even if the partial patch fails
+      // to apply on restart and the complete patch is downloaded.
+      scalarSet(
+        basePrefix + "intervals.check",
+        update.getProperty("checkInterval")
+      );
+
+      for (let i = 0; i < aUpdate.patchCount; ++i) {
+        let patch = aUpdate
+          .getPatchAt(i)
+          .QueryInterface(Ci.nsIWritablePropertyBag);
+        let type = patch.type;
+
+        scalarSet(basePrefix + "mar_" + type + "_size_bytes", patch.size);
+
+        let prefix = basePrefix + "intervals.";
+        let internalDownloadStart = patch.getProperty("internalDownloadStart");
+        let internalDownloadFinished = patch.getProperty(
+          "internalDownloadFinished"
+        );
+        if (
+          internalDownloadStart !== null &&
+          internalDownloadFinished !== null
+        ) {
+          scalarSet(
+            prefix + "download_internal_" + type,
+            Math.max(internalDownloadFinished - internalDownloadStart, 1)
+          );
+        }
+
+        let bitsDownloadStart = patch.getProperty("bitsDownloadStart");
+        let bitsDownloadFinished = patch.getProperty("bitsDownloadFinished");
+        if (bitsDownloadStart !== null && bitsDownloadFinished !== null) {
+          scalarSet(
+            prefix + "download_bits_" + type,
+            Math.max(bitsDownloadFinished - bitsDownloadStart, 1)
+          );
+        }
+
+        let stageStart = patch.getProperty("stageStart");
+        let stageFinished = patch.getProperty("stageFinished");
+        if (stageStart !== null && stageFinished !== null) {
+          scalarSet(
+            prefix + "stage_" + type,
+            Math.max(stageFinished - stageStart, 1)
+          );
+        }
+
+        // Both the partial and the complete patch are recorded for the apply
+        // interval because it is possible for a partial patch to fail when it
+        // is applied during a restart and then to try the complete patch.
+        let applyStart = patch.getProperty("applyStart");
+        if (applyStart !== null) {
+          let applyFinished = Math.ceil(Date.now() / 1000);
+          scalarSet(
+            prefix + "apply_" + type,
+            Math.max(applyFinished - applyStart, 1)
+          );
+        }
+
+        prefix = basePrefix + "downloads.";
+        let internalBytes = patch.getProperty("internalBytes");
+        if (internalBytes !== null) {
+          scalarSet(
+            prefix + "internal_" + type + "_bytes",
+            Math.max(internalBytes, 1)
+          );
+        }
+        let internalSeconds = patch.getProperty("internalSeconds");
+        if (internalSeconds !== null) {
+          scalarSet(
+            prefix + "internal_" + type + "_seconds",
+            Math.max(internalSeconds, 1)
+          );
+        }
+
+        let bitsBytes = patch.getProperty("bitsBytes");
+        if (bitsBytes !== null) {
+          scalarSet(prefix + "bits_" + type + "_bytes", Math.max(bitsBytes, 1));
+        }
+        let bitsSeconds = patch.getProperty("bitsSeconds");
+        if (bitsSeconds !== null) {
+          scalarSet(
+            prefix + "bits_" + type + "_seconds",
+            Math.max(bitsSeconds, 1)
+          );
+        }
+      }
     } catch (e) {
       Cu.reportError(e);
     }
@@ -391,11 +615,14 @@ var AUSTLMY = {
 
     let attempted = 0;
     try {
-      let wrk = Cc["@mozilla.org/windows-registry-key;1"].
-                createInstance(Ci.nsIWindowsRegKey);
-      wrk.open(wrk.ROOT_KEY_LOCAL_MACHINE,
-               "SOFTWARE\\Mozilla\\MaintenanceService",
-               wrk.ACCESS_READ | wrk.WOW64_64);
+      let wrk = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
+        Ci.nsIWindowsRegKey
+      );
+      wrk.open(
+        wrk.ROOT_KEY_LOCAL_MACHINE,
+        "SOFTWARE\\Mozilla\\MaintenanceService",
+        wrk.ACCESS_READ | wrk.WOW64_64
+      );
       // Was the service at some point installed, but is now uninstalled?
       attempted = wrk.readIntValue("Attempted");
       wrk.close();

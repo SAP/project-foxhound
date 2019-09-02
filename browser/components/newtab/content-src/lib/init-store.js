@@ -1,12 +1,16 @@
 /* eslint-env mozilla/frame-script */
 
-import {actionCreators as ac, actionTypes as at, actionUtils as au} from "common/Actions.jsm";
-import {applyMiddleware, combineReducers, createStore} from "redux";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+  actionUtils as au,
+} from "common/Actions.jsm";
+import { applyMiddleware, combineReducers, createStore } from "redux";
 
 export const MERGE_STORE_ACTION = "NEW_TAB_INITIAL_STATE";
 export const OUTGOING_MESSAGE_NAME = "ActivityStream:ContentToMain";
 export const INCOMING_MESSAGE_NAME = "ActivityStream:MainToContent";
-export const EARLY_QUEUED_ACTIONS = [at.SAVE_SESSION_PERF_DATA, at.PAGE_PRERENDERED];
+export const EARLY_QUEUED_ACTIONS = [at.SAVE_SESSION_PERF_DATA];
 
 /**
  * A higher-order function which returns a reducer that, on MERGE_STORE action,
@@ -27,7 +31,7 @@ export const EARLY_QUEUED_ACTIONS = [at.SAVE_SESSION_PERF_DATA, at.PAGE_PRERENDE
 function mergeStateReducer(mainReducer) {
   return (prevState, action) => {
     if (action.type === MERGE_STORE_ACTION) {
-      return {...prevState, ...action.data};
+      return { ...prevState, ...action.data };
     }
 
     return mainReducer(prevState, action);
@@ -67,10 +71,14 @@ export const rehydrationMiddleware = store => next => action => {
 
   // If init happened after our request was made, we need to re-request
   if (store._didRequestInitialState && action.type === at.INIT) {
-    return next(ac.AlsoToMain({type: at.NEW_TAB_STATE_REQUEST}));
+    return next(ac.AlsoToMain({ type: at.NEW_TAB_STATE_REQUEST }));
   }
 
-  if (au.isBroadcastToContent(action) || au.isSendToOneContent(action) || au.isSendToPreloaded(action)) {
+  if (
+    au.isBroadcastToContent(action) ||
+    au.isSendToOneContent(action) ||
+    au.isSendToPreloaded(action)
+  ) {
     // Note that actions received before didRehydrate will not be dispatched
     // because this could negatively affect preloading and the the state
     // will be replaced by rehydration anyway.
@@ -114,11 +122,15 @@ export const queueEarlyMessageMiddleware = store => next => action => {
  * @param  {object} intialState (optional) The initial state of the store, if desired
  * @return {object}          A redux store
  */
-export function initStore(reducers, initialState) {
+export function initStore(reducers) {
   const store = createStore(
     mergeStateReducer(combineReducers(reducers)),
-    initialState,
-    global.RPMAddMessageListener && applyMiddleware(rehydrationMiddleware, queueEarlyMessageMiddleware, messageMiddleware)
+    global.RPMAddMessageListener &&
+      applyMiddleware(
+        rehydrationMiddleware,
+        queueEarlyMessageMiddleware,
+        messageMiddleware
+      )
   );
 
   store._didRehydrate = false;
@@ -130,7 +142,11 @@ export function initStore(reducers, initialState) {
         store.dispatch(msg.data);
       } catch (ex) {
         console.error("Content msg:", msg, "Dispatch error: ", ex); // eslint-disable-line no-console
-        dump(`Content msg: ${JSON.stringify(msg)}\nDispatch error: ${ex}\n${ex.stack}`);
+        dump(
+          `Content msg: ${JSON.stringify(msg)}\nDispatch error: ${ex}\n${
+            ex.stack
+          }`
+        );
       }
     });
   }

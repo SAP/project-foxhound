@@ -12,6 +12,7 @@
 #include "mozilla/dom/ImageDocumentBinding.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/MouseEvent.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs.h"
 #include "nsRect.h"
 #include "nsIImageLoadingContent.h"
@@ -26,7 +27,6 @@
 #include "imgILoader.h"
 #include "imgIContainer.h"
 #include "imgINotificationObserver.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
@@ -402,12 +402,12 @@ void ImageDocument::ScrollImageTo(int32_t aX, int32_t aY, bool restoreImage) {
     FlushPendingNotifications(FlushType::Layout);
   }
 
-  nsCOMPtr<nsIPresShell> shell = GetShell();
-  if (!shell) {
+  RefPtr<PresShell> presShell = GetPresShell();
+  if (!presShell) {
     return;
   }
 
-  nsIScrollableFrame* sf = shell->GetRootScrollFrameAsScrollable();
+  nsIScrollableFrame* sf = presShell->GetRootScrollFrameAsScrollable();
   if (!sf) {
     return;
   }
@@ -423,7 +423,7 @@ void ImageDocument::ScrollImageTo(int32_t aX, int32_t aY, bool restoreImage) {
       nsPoint(
           nsPresContext::CSSPixelsToAppUnits(aX / ratio) - portRect.width / 2,
           nsPresContext::CSSPixelsToAppUnits(aY / ratio) - portRect.height / 2),
-      nsIScrollableFrame::INSTANT);
+      ScrollMode::Instant);
 }
 
 void ImageDocument::RestoreImage() {
@@ -580,11 +580,10 @@ nsresult ImageDocument::OnLoadComplete(imgIRequest* aRequest,
   if (NS_FAILED(aStatus) && mStringBundle && mImageContent) {
     nsAutoCString src;
     mDocumentURI->GetSpec(src);
-    NS_ConvertUTF8toUTF16 srcString(src);
-    const char16_t* formatString[] = {srcString.get()};
+    AutoTArray<nsString, 1> formatString;
+    CopyUTF8toUTF16(src, *formatString.AppendElement());
     nsAutoString errorMsg;
-    mStringBundle->FormatStringFromName("InvalidImage", formatString, 1,
-                                        errorMsg);
+    mStringBundle->FormatStringFromName("InvalidImage", formatString, errorMsg);
 
     mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::alt, errorMsg, false);
   }
@@ -639,13 +638,11 @@ void ImageDocument::UpdateSizeFromLayout() {
   nsIntSize oldSize(mImageWidth, mImageHeight);
   IntrinsicSize newSize = contentFrame->GetIntrinsicSize();
 
-  if (newSize.width.GetUnit() == eStyleUnit_Coord) {
-    mImageWidth =
-        nsPresContext::AppUnitsToFloatCSSPixels(newSize.width.GetCoordValue());
+  if (newSize.width) {
+    mImageWidth = nsPresContext::AppUnitsToFloatCSSPixels(*newSize.width);
   }
-  if (newSize.height.GetUnit() == eStyleUnit_Coord) {
-    mImageHeight =
-        nsPresContext::AppUnitsToFloatCSSPixels(newSize.height.GetCoordValue());
+  if (newSize.height) {
+    mImageHeight = nsPresContext::AppUnitsToFloatCSSPixels(*newSize.height);
   }
 
   // Ensure that our information about overflow is up-to-date if needed.
@@ -660,7 +657,7 @@ nsresult ImageDocument::CreateSyntheticDocument() {
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Add the image element
-  Element* body = GetBodyElement();
+  RefPtr<Element> body = GetBodyElement();
   if (!body) {
     NS_WARNING("no body on image document!");
     return NS_ERROR_FAILURE;
@@ -786,11 +783,10 @@ void ImageDocument::UpdateTitleAndCharset() {
 
   nsAutoString status;
   if (mImageIsResized) {
-    nsAutoString ratioStr;
-    ratioStr.AppendInt(NSToCoordFloor(GetRatio() * 100));
+    AutoTArray<nsString, 1> formatString;
+    formatString.AppendElement()->AppendInt(NSToCoordFloor(GetRatio() * 100));
 
-    const char16_t* formatString[1] = {ratioStr.get()};
-    mStringBundle->FormatStringFromName("ScaledImage", formatString, 1, status);
+    mStringBundle->FormatStringFromName("ScaledImage", formatString, status);
   }
 
   static const char* const formatNames[4] = {
@@ -835,9 +831,9 @@ float ImageDocument::GetZoomLevel() {
 #if defined(MOZ_WIDGET_ANDROID)
 float ImageDocument::GetResolution() {
   float resolution = mOriginalResolution;
-  nsCOMPtr<nsIPresShell> shell = GetShell();
-  if (shell) {
-    resolution = shell->GetResolution();
+  RefPtr<PresShell> presShell = GetPresShell();
+  if (presShell) {
+    resolution = presShell->GetResolution();
   }
   return resolution;
 }

@@ -3,15 +3,20 @@
 
 #include <regex>
 #include "json/json.h"
+#include "json/reader.h"
 #include "mozilla/net/MozURL.h"
 #include "nsCOMPtr.h"
 #include "nsDirectoryServiceDefs.h"
+#include "nsNetUtil.h"
 #include "nsIFile.h"
+#include "nsIURI.h"
+#include "nsStreamUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
 
-TEST(TestMozURL, Getters) {
+TEST(TestMozURL, Getters)
+{
   nsAutoCString href("http://user:pass@example.com/path?query#ref");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -38,7 +43,8 @@ TEST(TestMozURL, Getters) {
   ASSERT_EQ(url, nullptr);
 }
 
-TEST(TestMozURL, MutatorChain) {
+TEST(TestMozURL, MutatorChain)
+{
   nsAutoCString href("http://user:pass@example.com/path?query#ref");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -60,7 +66,8 @@ TEST(TestMozURL, MutatorChain) {
       "https://newuser:newpass@test/new/file/path?bla#huh"));
 }
 
-TEST(TestMozURL, MutatorFinalizeTwice) {
+TEST(TestMozURL, MutatorFinalizeTwice)
+{
   nsAutoCString href("http://user:pass@example.com/path?query#ref");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -79,7 +86,8 @@ TEST(TestMozURL, MutatorFinalizeTwice) {
   ASSERT_EQ(url2, nullptr);
 }
 
-TEST(TestMozURL, MutatorErrorStatus) {
+TEST(TestMozURL, MutatorErrorStatus)
+{
   nsAutoCString href("http://user:pass@example.com/path?query#ref");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -95,7 +103,8 @@ TEST(TestMozURL, MutatorErrorStatus) {
   ASSERT_EQ(mut.GetStatus(), NS_ERROR_MALFORMED_URI);
 }
 
-TEST(TestMozURL, InitWithBase) {
+TEST(TestMozURL, InitWithBase)
+{
   nsAutoCString href("https://example.net/a/b.html");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -110,7 +119,8 @@ TEST(TestMozURL, InitWithBase) {
   ASSERT_TRUE(url2->Spec().EqualsLiteral("https://example.net/a/c.png"));
 }
 
-TEST(TestMozURL, Path) {
+TEST(TestMozURL, Path)
+{
   nsAutoCString href("about:blank");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -122,7 +132,8 @@ TEST(TestMozURL, Path) {
   ASSERT_TRUE(url->FilePath().EqualsLiteral("blank"));
 }
 
-TEST(TestMozURL, HostPort) {
+TEST(TestMozURL, HostPort)
+{
   nsAutoCString href("https://user:pass@example.net:1234/path?query#ref");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -144,7 +155,8 @@ TEST(TestMozURL, HostPort) {
   ASSERT_EQ(url->Port(), -1);
 }
 
-TEST(TestMozURL, Origin) {
+TEST(TestMozURL, Origin)
+{
   nsAutoCString href("https://user:pass@example.net:1234/path?query#ref");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -186,7 +198,8 @@ TEST(TestMozURL, Origin) {
   ASSERT_TRUE(out.EqualsLiteral("about:home"));
 }
 
-TEST(TestMozURL, BaseDomain) {
+TEST(TestMozURL, BaseDomain)
+{
   nsAutoCString href("https://user:pass@example.net:1234/path?query#ref");
   RefPtr<MozURL> url;
   ASSERT_EQ(MozURL::Init(getter_AddRefs(url), href), NS_OK);
@@ -308,7 +321,8 @@ void CheckOrigin(const nsACString& aSpec, const nsACString& aBase,
 
 }  // namespace
 
-TEST(TestMozURL, UrlTestData) {
+TEST(TestMozURL, UrlTestData)
+{
   nsCOMPtr<nsIFile> file;
   nsresult rv =
       NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR, getter_AddRefs(file));

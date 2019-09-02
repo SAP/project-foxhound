@@ -7,7 +7,6 @@
 
 #include "TouchManager.h"
 
-#include "gfxPrefs.h"
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/PresShell.h"
 #include "nsIFrame.h"
@@ -61,7 +60,7 @@ void TouchManager::EvictTouchPoint(RefPtr<Touch>& aTouch,
   if (node) {
     Document* doc = node->GetComposedDoc();
     if (doc && (!aLimitToDocument || aLimitToDocument == doc)) {
-      nsIPresShell* presShell = doc->GetShell();
+      PresShell* presShell = doc->GetPresShell();
       if (presShell) {
         nsIFrame* frame = presShell->GetRootFrame();
         if (frame) {
@@ -114,7 +113,8 @@ nsIFrame* TouchManager::SetupTarget(WidgetTouchEvent* aEvent,
   // Setting this flag will skip the scrollbars on the root frame from
   // participating in hit-testing, and we only want that to happen on
   // zoomable platforms (for now).
-  if (gfxPrefs::APZAllowZooming()) {
+  dom::Document* doc = aFrame->PresContext()->Document();
+  if (nsLayoutUtils::AllowZoomingForDocument(doc)) {
     flags |= INPUT_IGNORE_ROOT_SCROLL_FRAME;
   }
 
@@ -220,15 +220,14 @@ nsIFrame* TouchManager::SuppressInvalidPointsAndGetTargetedFrame(
 }
 
 bool TouchManager::PreHandleEvent(WidgetEvent* aEvent, nsEventStatus* aStatus,
-                                  bool& aTouchIsNew, bool& aIsHandlingUserInput,
+                                  bool& aTouchIsNew,
                                   nsCOMPtr<nsIContent>& aCurrentEventContent) {
-  if (!aEvent->IsTrusted()) {
-    return true;
-  }
+  MOZ_DIAGNOSTIC_ASSERT(aEvent->IsTrusted());
 
+  // NOTE: If you need to handle new event messages here, you need to add new
+  //       cases in PresShell::EventHandler::PrepareToDispatchEvent().
   switch (aEvent->mMessage) {
     case eTouchStart: {
-      aIsHandlingUserInput = true;
       WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent();
       // if there is only one touch in this touchstart event, assume that it is
       // the start of a new touch session and evict any old touches in the
@@ -335,9 +334,6 @@ bool TouchManager::PreHandleEvent(WidgetEvent* aEvent, nsEventStatus* aStatus,
       break;
     }
     case eTouchEnd:
-      aIsHandlingUserInput = true;
-      // Fall through to touchcancel code
-      MOZ_FALLTHROUGH;
     case eTouchCancel: {
       // Remove the changed touches
       // need to make sure we only remove touches that are ending here

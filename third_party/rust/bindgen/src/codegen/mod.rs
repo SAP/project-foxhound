@@ -37,22 +37,23 @@ use ir::template::{AsTemplateParam, TemplateInstantiation, TemplateParameters};
 use ir::ty::{Type, TypeKind};
 use ir::var::Var;
 
-use quote;
-use proc_macro2::{self, Term, Span};
+use quote::TokenStreamExt;
+use proc_macro2::{self, Ident, Span};
 
 use std;
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{HashSet, VecDeque};
-use std::collections::hash_map::{Entry, HashMap};
+use std::collections::VecDeque;
 use std::fmt::Write;
 use std::iter;
 use std::ops;
+use std::str::FromStr;
+use {HashMap, HashSet, Entry};
 
 // Name of type defined in constified enum module
 pub static CONSTIFIED_ENUM_MODULE_REPR_NAME: &'static str = "Type";
 
-fn top_level_path(ctx: &BindgenContext, item: &Item) -> Vec<quote::Tokens> {
+fn top_level_path(ctx: &BindgenContext, item: &Item) -> Vec<proc_macro2::TokenStream> {
     let mut path = vec![quote! { self }];
 
     if ctx.options().enable_cxx_namespaces {
@@ -64,7 +65,7 @@ fn top_level_path(ctx: &BindgenContext, item: &Item) -> Vec<quote::Tokens> {
     path
 }
 
-fn root_import(ctx: &BindgenContext, module: &Item) -> quote::Tokens {
+fn root_import(ctx: &BindgenContext, module: &Item) -> proc_macro2::TokenStream {
     assert!(ctx.options().enable_cxx_namespaces, "Somebody messed it up");
     assert!(module.is_module());
 
@@ -76,7 +77,7 @@ fn root_import(ctx: &BindgenContext, module: &Item) -> quote::Tokens {
 
 
     let mut tokens = quote! {};
-    tokens.append_separated(path, Term::new("::", Span::call_site()));
+    tokens.append_separated(path, quote!(::));
 
     quote! {
         #[allow(unused_imports)]
@@ -85,7 +86,7 @@ fn root_import(ctx: &BindgenContext, module: &Item) -> quote::Tokens {
 }
 
 struct CodegenResult<'a> {
-    items: Vec<quote::Tokens>,
+    items: Vec<proc_macro2::TokenStream>,
 
     /// A monotonic counter used to add stable unique id's to stuff that doesn't
     /// need to be referenced by anything.
@@ -93,9 +94,6 @@ struct CodegenResult<'a> {
 
     /// Whether a bindgen union has been generated at least once.
     saw_bindgen_union: bool,
-
-    /// Whether an union has been generated at least once.
-    saw_union: bool,
 
     /// Whether an incomplete array has been generated at least once.
     saw_incomplete_array: bool,
@@ -139,7 +137,6 @@ impl<'a> CodegenResult<'a> {
     fn new(codegen_id: &'a Cell<usize>) -> Self {
         CodegenResult {
             items: vec![],
-            saw_union: false,
             saw_bindgen_union: false,
             saw_incomplete_array: false,
             saw_objc: false,
@@ -153,12 +150,7 @@ impl<'a> CodegenResult<'a> {
         }
     }
 
-    fn saw_union(&mut self) {
-        self.saw_union = true;
-    }
-
     fn saw_bindgen_union(&mut self) {
-        self.saw_union();
         self.saw_bindgen_union = true;
     }
 
@@ -212,7 +204,7 @@ impl<'a> CodegenResult<'a> {
         self.vars_seen.insert(name.into());
     }
 
-    fn inner<F>(&mut self, cb: F) -> Vec<quote::Tokens>
+    fn inner<F>(&mut self, cb: F) -> Vec<proc_macro2::TokenStream>
     where
         F: FnOnce(&mut Self),
     {
@@ -220,18 +212,18 @@ impl<'a> CodegenResult<'a> {
 
         cb(&mut new);
 
-        self.saw_union |= new.saw_union;
         self.saw_incomplete_array |= new.saw_incomplete_array;
         self.saw_objc |= new.saw_objc;
         self.saw_block |= new.saw_block;
         self.saw_bitfield_unit |= new.saw_bitfield_unit;
+        self.saw_bindgen_union |= new.saw_bindgen_union;
 
         new.items
     }
 }
 
 impl<'a> ops::Deref for CodegenResult<'a> {
-    type Target = Vec<quote::Tokens>;
+    type Target = Vec<proc_macro2::TokenStream>;
 
     fn deref(&self) -> &Self::Target {
         &self.items
@@ -247,11 +239,11 @@ impl<'a> ops::DerefMut for CodegenResult<'a> {
 /// A trait to convert a rust type into a pointer, optionally const, to the same
 /// type.
 trait ToPtr {
-    fn to_ptr(self, is_const: bool) -> quote::Tokens;
+    fn to_ptr(self, is_const: bool) -> proc_macro2::TokenStream;
 }
 
-impl ToPtr for quote::Tokens {
-    fn to_ptr(self, is_const: bool) -> quote::Tokens {
+impl ToPtr for proc_macro2::TokenStream {
+    fn to_ptr(self, is_const: bool) -> proc_macro2::TokenStream {
         if is_const {
             quote! { *const #self }
         } else {
@@ -260,7 +252,7 @@ impl ToPtr for quote::Tokens {
     }
 }
 
-/// An extension trait for `quote::Tokens` that lets us append any implicit
+/// An extension trait for `proc_macro2::TokenStream` that lets us append any implicit
 /// template parameters that exist for some type, if necessary.
 trait AppendImplicitTemplateParams {
     fn append_implicit_template_params(
@@ -270,7 +262,7 @@ trait AppendImplicitTemplateParams {
     );
 }
 
-impl AppendImplicitTemplateParams for quote::Tokens {
+impl AppendImplicitTemplateParams for proc_macro2::TokenStream {
     fn append_implicit_template_params(
         &mut self,
         ctx: &BindgenContext,
@@ -418,7 +410,7 @@ impl CodeGenerator for Module {
                     utils::prepend_objc_header(ctx, &mut *result);
                 }
                 if result.saw_bitfield_unit {
-                    utils::prepend_bitfield_unit_type(&mut *result);
+                    utils::prepend_bitfield_unit_type(ctx, &mut *result);
                 }
             }
         };
@@ -439,10 +431,7 @@ impl CodeGenerator for Module {
             if let Some(raw_lines) = ctx.options().module_lines.get(&path) {
                 for raw_line in raw_lines {
                     found_any = true;
-                    // FIXME(emilio): The use of `Term` is an abuse, but we abuse it
-                    // in a bunch more places.
-                    let line = Term::new(raw_line, Span::call_site());
-                    result.push(quote! { #line });
+                    result.push(proc_macro2::TokenStream::from_str(raw_line).unwrap());
                 }
             }
 
@@ -569,10 +558,15 @@ impl CodeGenerator for Var {
             }
         } else {
             let mut attrs = vec![];
-            if let Some(mangled) = self.mangled_name() {
-                attrs.push(attributes::link_name(mangled));
-            } else if canonical_name != self.name() {
-                attrs.push(attributes::link_name(self.name()));
+
+            // If necessary, apply a `#[link_name]` attribute
+            let link_name = self.mangled_name().unwrap_or(self.name());
+            if !utils::names_will_be_identical_after_mangling(
+                &canonical_name,
+                link_name,
+                None,
+            ) {
+                attrs.push(attributes::link_name(link_name));
             }
 
             let maybe_mut = if self.is_const() {
@@ -581,7 +575,7 @@ impl CodeGenerator for Var {
                 quote! { mut }
             };
 
-            let mut tokens = quote!(
+            let tokens = quote!(
                 extern "C" {
                     #(#attrs)*
                     pub static #maybe_mut #canonical_ident: #ty;
@@ -621,6 +615,8 @@ impl CodeGenerator for Type {
             TypeKind::TypeParam => {
                 // These items don't need code generation, they only need to be
                 // converted to rust types in fields, arguments, and such.
+                // NOTE(emilio): If you add to this list, make sure to also add
+                // it to BindgenContext::compute_whitelisted_and_codegen_items.
                 return;
             }
             TypeKind::TemplateInstantiation(ref inst) => {
@@ -756,7 +752,7 @@ impl CodeGenerator for Type {
                         pub use
                     });
                     let path = top_level_path(ctx, item);
-                    tokens.append_separated(path, Term::new("::", Span::call_site()));
+                    tokens.append_separated(path, quote!(::));
                     tokens.append_all(quote! {
                         :: #inner_rust_type  as #rust_name ;
                     });
@@ -868,7 +864,7 @@ impl<'a> TryToRustTy for Vtable<'a> {
         &self,
         ctx: &BindgenContext,
         _: &(),
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         let name = ctx.rust_ident(self.canonical_name(ctx));
         Ok(quote! {
             #name
@@ -963,8 +959,8 @@ trait FieldCodegen<'a> {
         methods: &mut M,
         extra: Self::Extra,
     ) where
-        F: Extend<quote::Tokens>,
-        M: Extend<quote::Tokens>;
+        F: Extend<proc_macro2::TokenStream>,
+        M: Extend<proc_macro2::TokenStream>;
 }
 
 impl<'a> FieldCodegen<'a> for Field {
@@ -983,8 +979,8 @@ impl<'a> FieldCodegen<'a> for Field {
         methods: &mut M,
         _: (),
     ) where
-        F: Extend<quote::Tokens>,
-        M: Extend<quote::Tokens>,
+        F: Extend<proc_macro2::TokenStream>,
+        M: Extend<proc_macro2::TokenStream>,
     {
         match *self {
             Field::DataMember(ref data) => {
@@ -1035,8 +1031,8 @@ impl<'a> FieldCodegen<'a> for FieldData {
         methods: &mut M,
         _: (),
     ) where
-        F: Extend<quote::Tokens>,
-        M: Extend<quote::Tokens>,
+        F: Extend<proc_macro2::TokenStream>,
+        M: Extend<proc_macro2::TokenStream>,
     {
         // Bitfields are handled by `FieldCodegen` implementations for
         // `BitfieldUnit` and `Bitfield`.
@@ -1049,6 +1045,7 @@ impl<'a> FieldCodegen<'a> for FieldData {
 
         // NB: If supported, we use proper `union` types.
         let ty = if parent.is_union() && !parent.can_be_rust_union(ctx) {
+            result.saw_bindgen_union();
             if ctx.options().enable_cxx_namespaces {
                 quote! {
                     root::__BindgenUnionField<#ty>
@@ -1170,8 +1167,8 @@ impl<'a> FieldCodegen<'a> for FieldData {
 
 impl BitfieldUnit {
     /// Get the constructor name for this bitfield unit.
-    fn ctor_name(&self) -> quote::Tokens {
-        let ctor_name = Term::new(&format!("new_bitfield_{}", self.nth()), Span::call_site());
+    fn ctor_name(&self) -> proc_macro2::TokenStream {
+        let ctor_name = Ident::new(&format!("new_bitfield_{}", self.nth()), Span::call_site());
         quote! {
             #ctor_name
         }
@@ -1189,9 +1186,9 @@ impl Bitfield {
     fn extend_ctor_impl(
         &self,
         ctx: &BindgenContext,
-        param_name: quote::Tokens,
-        mut ctor_impl: quote::Tokens,
-    ) -> quote::Tokens {
+        param_name: proc_macro2::TokenStream,
+        mut ctor_impl: proc_macro2::TokenStream,
+    ) -> proc_macro2::TokenStream {
         let bitfield_ty = ctx.resolve_type(self.ty());
         let bitfield_ty_layout = bitfield_ty.layout(ctx).expect(
             "Bitfield without layout? Gah!",
@@ -1235,14 +1232,15 @@ impl<'a> FieldCodegen<'a> for BitfieldUnit {
         methods: &mut M,
         _: (),
     ) where
-        F: Extend<quote::Tokens>,
-        M: Extend<quote::Tokens>,
+        F: Extend<proc_macro2::TokenStream>,
+        M: Extend<proc_macro2::TokenStream>,
     {
         result.saw_bitfield_unit();
 
         let field_ty = {
             let ty = helpers::bitfield_unit(ctx, self.layout());
             if parent.is_union() && !parent.can_be_rust_union(ctx) {
+                result.saw_bindgen_union();
                 if ctx.options().enable_cxx_namespaces {
                     quote! {
                         root::__BindgenUnionField<#ty>
@@ -1333,7 +1331,7 @@ impl<'a> FieldCodegen<'a> for BitfieldUnit {
 fn bitfield_getter_name(
     ctx: &BindgenContext,
     bitfield: &Bitfield,
-) -> quote::Tokens {
+) -> proc_macro2::TokenStream {
     let name = bitfield.getter_name();
     let name = ctx.rust_ident_raw(name);
     quote! { #name }
@@ -1342,7 +1340,7 @@ fn bitfield_getter_name(
 fn bitfield_setter_name(
     ctx: &BindgenContext,
     bitfield: &Bitfield,
-) -> quote::Tokens {
+) -> proc_macro2::TokenStream {
     let setter = bitfield.setter_name();
     let setter = ctx.rust_ident_raw(setter);
     quote! { #setter }
@@ -1364,13 +1362,13 @@ impl<'a> FieldCodegen<'a> for Bitfield {
         methods: &mut M,
         (unit_field_name, bitfield_representable_as_int): (&'a str, &mut bool),
     ) where
-        F: Extend<quote::Tokens>,
-        M: Extend<quote::Tokens>,
+        F: Extend<proc_macro2::TokenStream>,
+        M: Extend<proc_macro2::TokenStream>,
     {
         let prefix = ctx.trait_prefix();
         let getter_name = bitfield_getter_name(ctx, self);
         let setter_name = bitfield_setter_name(ctx, self);
-        let unit_field_ident = Term::new(unit_field_name, Span::call_site());
+        let unit_field_ident = Ident::new(unit_field_name, Span::call_site());
 
         let bitfield_ty_item = ctx.resolve_item(self.ty());
         let bitfield_ty = bitfield_ty_item.expect_type();
@@ -1513,14 +1511,15 @@ impl CodeGenerator for CompInfo {
                     continue;
                 }
 
-                let inner = base.ty.to_rust_ty_or_opaque(ctx, &());
+                let inner_item = ctx.resolve_item(base.ty);
+                let mut inner = inner_item.to_rust_ty_or_opaque(ctx, &());
+                inner.append_implicit_template_params(ctx, &inner_item);
                 let field_name = ctx.rust_ident(&base.field_name);
 
-                let base_ty = ctx.resolve_type(base.ty);
-                struct_layout.saw_base(base_ty);
+                struct_layout.saw_base(inner_item.expect_type());
 
                 fields.push(quote! {
-                    pub #field_name : #inner ,
+                    pub #field_name: #inner,
                 });
             }
         }
@@ -1594,14 +1593,10 @@ impl CodeGenerator for CompInfo {
                 }
             }
         } else if is_union && !self.is_forward_declaration() {
-            result.saw_union();
-            if !self.can_be_rust_union(ctx) {
-                result.saw_bindgen_union();
-            }
-
             // TODO(emilio): It'd be nice to unify this with the struct path
             // above somehow.
             let layout = layout.expect("Unable to get layout information?");
+            struct_layout.saw_union(layout);
 
             if struct_layout.requires_explicit_align(layout) {
                 explicit_align = Some(layout.align);
@@ -1613,8 +1608,6 @@ impl CodeGenerator for CompInfo {
                     _bindgen_union_align: #ty ,
                 }
             } else {
-                struct_layout.saw_union(layout);
-
                 quote! {
                     pub bindgen_union_field: #ty ,
                 }
@@ -1625,7 +1618,7 @@ impl CodeGenerator for CompInfo {
         // is making the struct 1-byte sized.
         //
         // This is apparently not the case for C, see:
-        // https://github.com/rust-lang-nursery/rust-bindgen/issues/551
+        // https://github.com/rust-lang/rust-bindgen/issues/551
         //
         // Just get the layout, and assume C++ if not.
         //
@@ -1687,7 +1680,10 @@ impl CodeGenerator for CompInfo {
             attributes.push(attributes::doc(comment));
         }
         if packed && !is_opaque {
-            attributes.push(attributes::repr_list(&["C", "packed"]));
+            let n = layout.map_or(1, |l| l.align);
+            assert!(ctx.options().rust_features().repr_packed_n || n == 1);
+            let packed_repr = if n == 1 { "packed".to_string() } else { format!("packed({})", n) };
+            attributes.push(attributes::repr_list(&["C", &packed_repr]));
         } else {
             attributes.push(attributes::repr("C"));
         }
@@ -1757,12 +1753,14 @@ impl CodeGenerator for CompInfo {
             needs_partialeq_impl =
                 ctx.options().derive_partialeq &&
                 ctx.options().impl_partialeq &&
-                ctx.lookup_can_derive_partialeq_or_partialord(item.id()) == CanDerive::ArrayTooLarge;
+                ctx.lookup_can_derive_partialeq_or_partialord(item.id()) == CanDerive::Manually;
         }
 
         if item.can_derive_eq(ctx) {
             derives.push("Eq");
         }
+
+        derives.extend(item.annotations().derives().iter().map(String::as_str));
 
         if !derives.is_empty() {
             attributes.push(attributes::derives(&derives))
@@ -1803,7 +1801,7 @@ impl CodeGenerator for CompInfo {
         if self.found_unknown_attr() {
             warn!(
                 "Type {} has an unknown attribute that may affect layout",
-                canonical_ident.as_str()
+                canonical_ident
             );
         }
 
@@ -1817,7 +1815,7 @@ impl CodeGenerator for CompInfo {
             if ctx.options().layout_tests && !self.is_forward_declaration() {
                 if let Some(layout) = layout {
                     let fn_name =
-                        format!("bindgen_test_layout_{}", canonical_ident.as_str());
+                        format!("bindgen_test_layout_{}", canonical_ident);
                     let fn_name = ctx.rust_ident_raw(fn_name);
                     let prefix = ctx.trait_prefix();
                     let size_of_expr = quote! {
@@ -1843,7 +1841,7 @@ impl CodeGenerator for CompInfo {
                             })
                         };
 
-                    // FIXME when [issue #465](https://github.com/rust-lang-nursery/rust-bindgen/issues/465) ready
+                    // FIXME when [issue #465](https://github.com/rust-lang/rust-bindgen/issues/465) ready
                     let too_many_base_vtables = self.base_members()
                         .iter()
                         .filter(|base| base.ty.has_vtable(ctx))
@@ -1879,7 +1877,7 @@ impl CodeGenerator for CompInfo {
                                         })
                                     })
                                 })
-                                .collect::<Vec<quote::Tokens>>();
+                                .collect::<Vec<proc_macro2::TokenStream>>();
 
                             asserts
                         };
@@ -2019,7 +2017,7 @@ trait MethodCodegen {
     fn codegen_method<'a>(
         &self,
         ctx: &BindgenContext,
-        methods: &mut Vec<quote::Tokens>,
+        methods: &mut Vec<proc_macro2::TokenStream>,
         method_names: &mut HashMap<String, usize>,
         result: &mut CodegenResult<'a>,
         parent: &CompInfo,
@@ -2030,7 +2028,7 @@ impl MethodCodegen for Method {
     fn codegen_method<'a>(
         &self,
         ctx: &BindgenContext,
-        methods: &mut Vec<quote::Tokens>,
+        methods: &mut Vec<proc_macro2::TokenStream>,
         method_names: &mut HashMap<String, usize>,
         result: &mut CodegenResult<'a>,
         _parent: &CompInfo,
@@ -2154,9 +2152,13 @@ impl MethodCodegen for Method {
         let mut attrs = vec![];
         attrs.push(attributes::inline());
 
+        if signature.must_use() && ctx.options().rust_features().must_use_function {
+            attrs.push(attributes::must_use());
+        }
+
         let name = ctx.rust_ident(&name);
         methods.push(quote! {
-            #[inline]
+            #(#attrs)*
             pub unsafe fn #name ( #( #args ),* ) #ret {
                 #block
             }
@@ -2168,7 +2170,10 @@ impl MethodCodegen for Method {
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum EnumVariation {
     /// The code for this enum will use a Rust enum
-    Rust,
+    Rust {
+        /// Indicates whether the generated struct should be #[non_exhaustive]
+        non_exhaustive: bool
+    },
     /// The code for this enum will use a bitfield
     Bitfield,
     /// The code for this enum will use consts
@@ -2180,14 +2185,7 @@ pub enum EnumVariation {
 impl EnumVariation {
     fn is_rust(&self) -> bool {
         match *self {
-            EnumVariation::Rust => true,
-            _ => false
-        }
-    }
-
-    fn is_bitfield(&self) -> bool {
-        match *self {
-            EnumVariation::Bitfield {..} => true,
+            EnumVariation::Rust{ .. } => true,
             _ => false
         }
     }
@@ -2214,13 +2212,14 @@ impl std::str::FromStr for EnumVariation {
     /// Create a `EnumVariation` from a string.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "rust" => Ok(EnumVariation::Rust),
+            "rust" => Ok(EnumVariation::Rust{ non_exhaustive: false }),
+            "rust_non_exhaustive" => Ok(EnumVariation::Rust{ non_exhaustive: true }),
             "bitfield" => Ok(EnumVariation::Bitfield),
             "consts" => Ok(EnumVariation::Consts),
             "moduleconsts" => Ok(EnumVariation::ModuleConsts),
             _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidInput,
                                          concat!("Got an invalid EnumVariation. Accepted values ",
-                                                 "are 'rust', 'bitfield', 'consts', and ",
+                                                 "are 'rust', 'rust_non_exhaustive', 'bitfield', 'consts', and ",
                                                  "'moduleconsts'."))),
         }
     }
@@ -2231,24 +2230,24 @@ impl std::str::FromStr for EnumVariation {
 enum EnumBuilder<'a> {
     Rust {
         codegen_depth: usize,
-        attrs: Vec<quote::Tokens>,
-        ident: Term,
-        tokens: quote::Tokens,
+        attrs: Vec<proc_macro2::TokenStream>,
+        ident: Ident,
+        tokens: proc_macro2::TokenStream,
         emitted_any_variants: bool,
     },
     Bitfield {
         codegen_depth: usize,
         canonical_name: &'a str,
-        tokens: quote::Tokens,
+        tokens: proc_macro2::TokenStream,
     },
     Consts {
-        variants: Vec<quote::Tokens>,
+        variants: Vec<proc_macro2::TokenStream>,
         codegen_depth: usize,
     },
     ModuleConsts {
         codegen_depth: usize,
         module_name: &'a str,
-        module_items: Vec<quote::Tokens>,
+        module_items: Vec<proc_macro2::TokenStream>,
     },
 }
 
@@ -2267,12 +2266,12 @@ impl<'a> EnumBuilder<'a> {
     /// the representation, and which variation it should be generated as.
     fn new(
         name: &'a str,
-        attrs: Vec<quote::Tokens>,
-        repr: quote::Tokens,
+        attrs: Vec<proc_macro2::TokenStream>,
+        repr: proc_macro2::TokenStream,
         enum_variation: EnumVariation,
         enum_codegen_depth: usize,
     ) -> Self {
-        let ident = Term::new(name, Span::call_site());
+        let ident = Ident::new(name, Span::call_site());
 
         match enum_variation {
             EnumVariation::Bitfield => {
@@ -2286,7 +2285,7 @@ impl<'a> EnumBuilder<'a> {
                 }
             }
 
-            EnumVariation::Rust => {
+            EnumVariation::Rust { .. } => {
                 let tokens = quote!();
                 EnumBuilder::Rust {
                     codegen_depth: enum_codegen_depth + 1,
@@ -2310,7 +2309,7 @@ impl<'a> EnumBuilder<'a> {
             }
 
             EnumVariation::ModuleConsts => {
-                let ident = Term::new(CONSTIFIED_ENUM_MODULE_REPR_NAME, Span::call_site());
+                let ident = Ident::new(CONSTIFIED_ENUM_MODULE_REPR_NAME, Span::call_site());
                 let type_definition = quote! {
                     #( #attrs )*
                     pub type #ident = #repr;
@@ -2331,7 +2330,7 @@ impl<'a> EnumBuilder<'a> {
         ctx: &BindgenContext,
         variant: &EnumVariant,
         mangling_prefix: Option<&str>,
-        rust_ty: quote::Tokens,
+        rust_ty: proc_macro2::TokenStream,
         result: &mut CodegenResult<'b>,
         is_ty_named: bool,
     ) -> Self {
@@ -2433,9 +2432,9 @@ impl<'a> EnumBuilder<'a> {
     fn build<'b>(
         self,
         ctx: &BindgenContext,
-        rust_ty: quote::Tokens,
+        rust_ty: proc_macro2::TokenStream,
         result: &mut CodegenResult<'b>,
-    ) -> quote::Tokens {
+    ) -> proc_macro2::TokenStream {
         match self {
             EnumBuilder::Rust { attrs, ident, tokens, emitted_any_variants, .. } => {
                 let variants = if !emitted_any_variants {
@@ -2578,11 +2577,24 @@ impl CodeGenerator for Enum {
         let variation = self.computed_enum_variation(ctx, item);
 
         // TODO(emilio): Delegate this to the builders?
-        if variation.is_rust() {
-            attrs.push(attributes::repr(repr_name));
-        } else if variation.is_bitfield() {
-            attrs.push(attributes::repr("C"));
-        }
+        match variation {
+            EnumVariation::Rust { non_exhaustive } => {
+                attrs.push(attributes::repr(repr_name));
+                if non_exhaustive && ctx.options().rust_features().non_exhaustive {
+                    attrs.push(attributes::non_exhaustive());
+                } else if non_exhaustive && !ctx.options().rust_features().non_exhaustive {
+                    panic!("The rust target you're using doesn't seem to support non_exhaustive enums");
+                }
+            },
+            EnumVariation::Bitfield => {
+                if ctx.options().rust_features.repr_transparent {
+                    attrs.push(attributes::repr("transparent"));
+                } else {
+                    attrs.push(attributes::repr("C"));
+                }
+            },
+            _ => {},
+        };
 
         if let Some(comment) = item.comment(ctx) {
             attrs.push(attributes::doc(comment));
@@ -2606,23 +2618,23 @@ impl CodeGenerator for Enum {
             ctx: &BindgenContext,
             enum_: &Type,
             // Only to avoid recomputing every time.
-            enum_canonical_name: &Term,
+            enum_canonical_name: &Ident,
             // May be the same as "variant" if it's because the
             // enum is unnamed and we still haven't seen the
             // value.
-            variant_name: &str,
-            referenced_name: &Term,
-            enum_rust_ty: quote::Tokens,
+            variant_name: &Ident,
+            referenced_name: &Ident,
+            enum_rust_ty: proc_macro2::TokenStream,
             result: &mut CodegenResult<'a>,
         ) {
             let constant_name = if enum_.name().is_some() {
                 if ctx.options().prepend_enum_name {
-                    format!("{}_{}", enum_canonical_name.as_str(), variant_name)
+                    format!("{}_{}", enum_canonical_name, variant_name)
                 } else {
-                    variant_name.into()
+                    format!("{}", variant_name)
                 }
             } else {
-                variant_name.into()
+                format!("{}", variant_name)
             };
             let constant_name = ctx.rust_ident(constant_name);
 
@@ -2646,7 +2658,7 @@ impl CodeGenerator for Enum {
         );
 
         // A map where we keep a value -> variant relation.
-        let mut seen_values = HashMap::<_, Term>::new();
+        let mut seen_values = HashMap::<_, Ident>::default();
         let enum_rust_ty = item.to_rust_ty_or_opaque(ctx, &());
         let is_toplevel = item.is_toplevel(ctx);
 
@@ -2718,7 +2730,7 @@ impl CodeGenerator for Enum {
                                 ctx,
                                 enum_ty,
                                 &ident,
-                                &*mangled_name,
+                                &Ident::new(&*mangled_name, Span::call_site()),
                                 existing_variant_name,
                                 enum_rust_ty.clone(),
                                 result,
@@ -2759,11 +2771,11 @@ impl CodeGenerator for Enum {
                             let parent_name =
                                 parent_canonical_name.as_ref().unwrap();
 
-                            Term::new(
+                            Ident::new(
                                 &format!(
                                     "{}_{}",
                                     parent_name,
-                                    variant_name.as_str()
+                                    variant_name
                                 ),
                                 Span::call_site()
                             )
@@ -2773,7 +2785,7 @@ impl CodeGenerator for Enum {
                             ctx,
                             enum_ty,
                             &ident,
-                            mangled_name.as_str(),
+                            &mangled_name,
                             &variant_name,
                             enum_rust_ty.clone(),
                             result,
@@ -2810,7 +2822,7 @@ trait TryToOpaque {
         &self,
         ctx: &BindgenContext,
         extra: &Self::Extra,
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         self.try_get_layout(ctx, extra).map(|layout| {
             helpers::blob(ctx, layout)
         })
@@ -2837,7 +2849,7 @@ trait ToOpaque: TryToOpaque {
         &self,
         ctx: &BindgenContext,
         extra: &Self::Extra,
-    ) -> quote::Tokens {
+    ) -> proc_macro2::TokenStream {
         let layout = self.get_layout(ctx, extra);
         helpers::blob(ctx, layout)
     }
@@ -2863,7 +2875,7 @@ trait TryToRustTy {
         &self,
         ctx: &BindgenContext,
         extra: &Self::Extra,
-    ) -> error::Result<quote::Tokens>;
+    ) -> error::Result<proc_macro2::TokenStream>;
 }
 
 /// Fallible conversion to a Rust type or an opaque blob with the correct size
@@ -2878,7 +2890,7 @@ trait TryToRustTyOrOpaque: TryToRustTy + TryToOpaque {
         &self,
         ctx: &BindgenContext,
         extra: &<Self as TryToRustTyOrOpaque>::Extra,
-    ) -> error::Result<quote::Tokens>;
+    ) -> error::Result<proc_macro2::TokenStream>;
 }
 
 impl<E, T> TryToRustTyOrOpaque for T
@@ -2892,7 +2904,7 @@ where
         &self,
         ctx: &BindgenContext,
         extra: &E,
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         self.try_to_rust_ty(ctx, extra).or_else(
             |_| if let Ok(layout) =
                 self.try_get_layout(ctx, extra)
@@ -2929,7 +2941,7 @@ trait ToRustTyOrOpaque: TryToRustTy + ToOpaque {
         &self,
         ctx: &BindgenContext,
         extra: &<Self as ToRustTyOrOpaque>::Extra,
-    ) -> quote::Tokens;
+    ) -> proc_macro2::TokenStream;
 }
 
 impl<E, T> ToRustTyOrOpaque for T
@@ -2942,7 +2954,7 @@ where
         &self,
         ctx: &BindgenContext,
         extra: &E,
-    ) -> quote::Tokens {
+    ) -> proc_macro2::TokenStream {
         self.try_to_rust_ty(ctx, extra).unwrap_or_else(|_| {
             self.to_opaque(ctx, extra)
         })
@@ -2974,7 +2986,7 @@ where
         &self,
         ctx: &BindgenContext,
         _: &(),
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         ctx.resolve_item((*self).into()).try_to_rust_ty(ctx, &())
     }
 }
@@ -2998,7 +3010,7 @@ impl TryToRustTy for Item {
         &self,
         ctx: &BindgenContext,
         _: &(),
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         self.kind().expect_type().try_to_rust_ty(ctx, self)
     }
 }
@@ -3022,7 +3034,7 @@ impl TryToRustTy for Type {
         &self,
         ctx: &BindgenContext,
         item: &Item,
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         use self::helpers::ast_ty::*;
 
         match *self.kind() {
@@ -3124,7 +3136,7 @@ impl TryToRustTy for Type {
             }
             TypeKind::Enum(..) => {
                 let path = item.namespace_aware_canonical_path(ctx);
-                let path = Term::new(&path.join("::"), Span::call_site());
+                let path = proc_macro2::TokenStream::from_str(&path.join("::")).unwrap();
                 Ok(quote!(#path))
             }
             TypeKind::TemplateInstantiation(ref inst) => {
@@ -3227,7 +3239,7 @@ impl TryToRustTy for TemplateInstantiation {
         &self,
         ctx: &BindgenContext,
         item: &Item,
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         if self.is_opaque(ctx, item) {
             return Err(error::Error::InstantiationOfOpaqueType);
         }
@@ -3239,7 +3251,7 @@ impl TryToRustTy for TemplateInstantiation {
 
         let mut ty = quote! {};
         let def_path = def.namespace_aware_canonical_path(ctx);
-        ty.append_separated(def_path.into_iter().map(|p| ctx.rust_ident(p)), Term::new("::", Span::call_site()));
+        ty.append_separated(def_path.into_iter().map(|p| ctx.rust_ident(p)), quote!(::));
 
         let def_params = def.self_template_params(ctx);
         if def_params.is_empty() {
@@ -3291,7 +3303,7 @@ impl TryToRustTy for FunctionSig {
         &self,
         ctx: &BindgenContext,
         _: &(),
-    ) -> error::Result<quote::Tokens> {
+    ) -> error::Result<proc_macro2::TokenStream> {
         // TODO: we might want to consider ignoring the reference return value.
         let ret = utils::fnsig_return_ty(ctx, &self);
         let arguments = utils::fnsig_arguments(ctx, &self);
@@ -3300,7 +3312,7 @@ impl TryToRustTy for FunctionSig {
         match abi {
             Abi::ThisCall if !ctx.options().rust_features().thiscall_abi => {
                 warn!("Skipping function with thiscall ABI that isn't supported by the configured Rust target");
-                Ok(quote::Tokens::new())
+                Ok(proc_macro2::TokenStream::new())
             }
             _ => {
                 Ok(quote! {
@@ -3374,6 +3386,10 @@ impl CodeGenerator for Function {
 
         let mut attributes = vec![];
 
+        if signature.must_use() && ctx.options().rust_features().must_use_function {
+            attributes.push(attributes::must_use());
+        }
+
         if let Some(comment) = item.comment(ctx) {
             attributes.push(attributes::doc(comment));
         }
@@ -3383,14 +3399,6 @@ impl CodeGenerator for Function {
         let times_seen = result.overload_number(&canonical_name);
         if times_seen > 0 {
             write!(&mut canonical_name, "{}", times_seen).unwrap();
-        }
-
-        if let Some(mangled) = mangled_name {
-            if canonical_name != mangled {
-                attributes.push(attributes::link_name(mangled));
-            }
-        } else if name != canonical_name {
-            attributes.push(attributes::link_name(name));
         }
 
         let abi = match signature.abi() {
@@ -3413,6 +3421,15 @@ impl CodeGenerator for Function {
             abi => abi,
         };
 
+        let link_name = mangled_name.unwrap_or(name);
+        if !utils::names_will_be_identical_after_mangling(
+            &canonical_name,
+            link_name,
+            Some(abi),
+        ) {
+            attributes.push(attributes::link_name(link_name));
+        }
+
         let ident = ctx.rust_ident(canonical_name);
         let tokens = quote!( extern #abi {
             #(#attributes)*
@@ -3428,7 +3445,7 @@ fn objc_method_codegen(
     method: &ObjCMethod,
     class_name: Option<&str>,
     prefix: &str,
-) -> (quote::Tokens, quote::Tokens) {
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
     let signature = method.signature();
     let fn_args = utils::fnsig_arguments(ctx, signature);
     let fn_ret = utils::fnsig_return_ty(ctx, signature);
@@ -3542,7 +3559,7 @@ impl CodeGenerator for ObjCInterface {
     }
 }
 
-pub(crate) fn codegen(context: BindgenContext) -> (Vec<quote::Tokens>, BindgenOptions) {
+pub(crate) fn codegen(context: BindgenContext) -> (Vec<proc_macro2::TokenStream>, BindgenOptions) {
     context.gen(|context| {
         let _t = context.timer("codegen");
         let counter = Cell::new(0);
@@ -3550,11 +3567,12 @@ pub(crate) fn codegen(context: BindgenContext) -> (Vec<quote::Tokens>, BindgenOp
 
         debug!("codegen: {:?}", context.options());
 
-        let codegen_items = context.codegen_items();
         if context.options().emit_ir {
-            for &id in codegen_items {
-                let item = context.resolve_item(id);
-                println!("ir: {:?} = {:#?}", id, item);
+            let codegen_items = context.codegen_items();
+            for (id, item) in context.items() {
+                if codegen_items.contains(&id) {
+                    println!("ir: {:?} = {:#?}", id, item);
+                }
             }
         }
 
@@ -3575,15 +3593,25 @@ pub(crate) fn codegen(context: BindgenContext) -> (Vec<quote::Tokens>, BindgenOp
 mod utils {
     use super::{ToRustTyOrOpaque, error};
     use ir::context::BindgenContext;
-    use ir::function::FunctionSig;
+    use ir::function::{Abi, FunctionSig};
     use ir::item::{Item, ItemCanonicalPath};
     use ir::ty::TypeKind;
-    use quote;
-    use proc_macro2::{Term, Span};
+    use proc_macro2;
+    use std::borrow::Cow;
     use std::mem;
+    use std::str::FromStr;
 
-    pub fn prepend_bitfield_unit_type(result: &mut Vec<quote::Tokens>) {
-        let bitfield_unit_type = Term::new(include_str!("./bitfield_unit.rs"), Span::call_site());
+    pub fn prepend_bitfield_unit_type(
+        ctx: &BindgenContext,
+        result: &mut Vec<proc_macro2::TokenStream>
+    ) {
+        let bitfield_unit_src = include_str!("./bitfield_unit.rs");
+        let bitfield_unit_src = if ctx.options().rust_features().min_const_fn {
+            Cow::Borrowed(bitfield_unit_src)
+        } else {
+            Cow::Owned(bitfield_unit_src.replace("const fn ", "fn "))
+        };
+        let bitfield_unit_type = proc_macro2::TokenStream::from_str(&bitfield_unit_src).unwrap();
         let bitfield_unit_type = quote!(#bitfield_unit_type);
 
         let items = vec![bitfield_unit_type];
@@ -3593,7 +3621,7 @@ mod utils {
 
     pub fn prepend_objc_header(
         ctx: &BindgenContext,
-        result: &mut Vec<quote::Tokens>,
+        result: &mut Vec<proc_macro2::TokenStream>,
     ) {
         let use_objc = if ctx.options().objc_extern_crate {
             quote! {
@@ -3618,7 +3646,7 @@ mod utils {
 
     pub fn prepend_block_header(
         ctx: &BindgenContext,
-        result: &mut Vec<quote::Tokens>,
+        result: &mut Vec<proc_macro2::TokenStream>,
     ) {
         let use_block = if ctx.options().block_extern_crate {
             quote! {
@@ -3637,9 +3665,17 @@ mod utils {
 
     pub fn prepend_union_types(
         ctx: &BindgenContext,
-        result: &mut Vec<quote::Tokens>,
+        result: &mut Vec<proc_macro2::TokenStream>,
     ) {
         let prefix = ctx.trait_prefix();
+
+        // If the target supports `const fn`, declare eligible functions
+        // as `const fn` else just `fn`.
+        let const_fn = if ctx.options().rust_features().min_const_fn {
+            quote!{ const fn }
+        } else {
+            quote!{ fn }
+        };
 
         // TODO(emilio): The fmt::Debug impl could be way nicer with
         // std::intrinsics::type_name, but...
@@ -3651,7 +3687,7 @@ mod utils {
         let union_field_impl = quote! {
             impl<T> __BindgenUnionField<T> {
                 #[inline]
-                pub fn new() -> Self {
+                pub #const_fn new() -> Self {
                     __BindgenUnionField(::#prefix::marker::PhantomData)
                 }
 
@@ -3736,22 +3772,30 @@ mod utils {
 
     pub fn prepend_incomplete_array_types(
         ctx: &BindgenContext,
-        result: &mut Vec<quote::Tokens>,
+        result: &mut Vec<proc_macro2::TokenStream>,
     ) {
         let prefix = ctx.trait_prefix();
+
+        // If the target supports `const fn`, declare eligible functions
+        // as `const fn` else just `fn`.
+        let const_fn = if ctx.options().rust_features().min_const_fn {
+            quote!{ const fn }
+        } else {
+            quote!{ fn }
+        };
 
         let incomplete_array_decl = quote! {
             #[repr(C)]
             #[derive(Default)]
             pub struct __IncompleteArrayField<T>(
-                ::#prefix::marker::PhantomData<T>);
+                ::#prefix::marker::PhantomData<T>, [T; 0]);
         };
 
         let incomplete_array_impl = quote! {
             impl<T> __IncompleteArrayField<T> {
                 #[inline]
-                pub fn new() -> Self {
-                    __IncompleteArrayField(::#prefix::marker::PhantomData)
+                pub #const_fn new() -> Self {
+                    __IncompleteArrayField(::#prefix::marker::PhantomData, [])
                 }
 
                 #[inline]
@@ -3794,22 +3838,17 @@ mod utils {
             }
         };
 
-        let incomplete_array_copy_impl = quote! {
-            impl<T> ::#prefix::marker::Copy for __IncompleteArrayField<T> {}
-        };
-
         let items = vec![incomplete_array_decl,
                          incomplete_array_impl,
                          incomplete_array_debug_impl,
-                         incomplete_array_clone_impl,
-                         incomplete_array_copy_impl];
+                         incomplete_array_clone_impl];
 
         let old_items = mem::replace(result, items);
         result.extend(old_items.into_iter());
     }
 
     pub fn prepend_complex_type(
-        result: &mut Vec<quote::Tokens>,
+        result: &mut Vec<proc_macro2::TokenStream>,
     ) {
         let complex_type = quote! {
             #[derive(PartialEq, Copy, Clone, Hash, Debug, Default)]
@@ -3828,18 +3867,14 @@ mod utils {
     pub fn build_path(
         item: &Item,
         ctx: &BindgenContext,
-    ) -> error::Result<quote::Tokens> {
-        use proc_macro2::{Term, Span};
-
+    ) -> error::Result<proc_macro2::TokenStream> {
         let path = item.namespace_aware_canonical_path(ctx);
-        let path = Term::new(&path.join("::"), Span::call_site());
-        let tokens = quote! {#path};
-        //tokens.append_separated(path, "::");
+        let tokens = proc_macro2::TokenStream::from_str(&path.join("::")).unwrap();
 
         Ok(tokens)
     }
 
-    fn primitive_ty(ctx: &BindgenContext, name: &str) -> quote::Tokens {
+    fn primitive_ty(ctx: &BindgenContext, name: &str) -> proc_macro2::TokenStream {
         let ident = ctx.rust_ident_raw(name);
         quote! {
             #ident
@@ -3849,7 +3884,7 @@ mod utils {
     pub fn type_from_named(
         ctx: &BindgenContext,
         name: &str,
-    ) -> Option<quote::Tokens> {
+    ) -> Option<proc_macro2::TokenStream> {
         // FIXME: We could use the inner item to check this is really a
         // primitive type but, who the heck overrides these anyway?
         Some(match name {
@@ -3872,7 +3907,7 @@ mod utils {
     pub fn fnsig_return_ty(
         ctx: &BindgenContext,
         sig: &FunctionSig,
-    ) -> quote::Tokens {
+    ) -> proc_macro2::TokenStream {
         let return_item = ctx.resolve_item(sig.return_type());
         if let TypeKind::Void = *return_item.kind().expect_type().kind() {
             quote! { }
@@ -3887,7 +3922,7 @@ mod utils {
     pub fn fnsig_arguments(
         ctx: &BindgenContext,
         sig: &FunctionSig,
-    ) -> Vec<quote::Tokens> {
+    ) -> Vec<proc_macro2::TokenStream> {
         use super::ToPtr;
 
         let mut unnamed_arguments = 0;
@@ -3905,9 +3940,13 @@ mod utils {
             // [1]: http://c0x.coding-guidelines.com/6.7.5.3.html
             let arg_ty = match *arg_ty.canonical_type(ctx).kind() {
                 TypeKind::Array(t, _) => {
-                    t.to_rust_ty_or_opaque(ctx, &())
-                        .to_ptr(ctx.resolve_type(t).is_const())
-                },
+                    let stream = if ctx.options().array_pointers_in_arguments {
+                        arg_ty.to_rust_ty_or_opaque(ctx, &arg_item)
+                    } else {
+                        t.to_rust_ty_or_opaque(ctx, &())
+                    };
+                    stream.to_ptr(ctx.resolve_type(t).is_const())
+                }
                 TypeKind::Pointer(inner) => {
                     let inner = ctx.resolve_item(inner);
                     let inner_ty = inner.expect_type();
@@ -3950,7 +3989,7 @@ mod utils {
     pub fn fnsig_block(
         ctx: &BindgenContext,
         sig: &FunctionSig,
-    ) -> quote::Tokens {
+    ) -> proc_macro2::TokenStream {
         let args = sig.argument_types().iter().map(|&(_, ty)| {
             let arg_item = ctx.resolve_item(ty);
 
@@ -3965,7 +4004,82 @@ mod utils {
         };
 
         quote! {
-            *const ::block::Block<(#(#args),*), #ret_ty>
+            *const ::block::Block<(#(#args,)*), #ret_ty>
         }
+    }
+
+    // Returns true if `canonical_name` will end up as `mangled_name` at the
+    // machine code level, i.e. after LLVM has applied any target specific
+    // mangling.
+    pub fn names_will_be_identical_after_mangling(
+        canonical_name: &str,
+        mangled_name: &str,
+        call_conv: Option<Abi>,
+    ) -> bool {
+        // If the mangled name and the canonical name are the same then no
+        // mangling can have happened between the two versions.
+        if canonical_name == mangled_name {
+            return true;
+        }
+
+        // Working with &[u8] makes indexing simpler than with &str
+        let canonical_name = canonical_name.as_bytes();
+        let mangled_name = mangled_name.as_bytes();
+
+        let (mangling_prefix, expect_suffix) = match call_conv {
+            Some(Abi::C) |
+            // None is the case for global variables
+            None => {
+                (b'_', false)
+            }
+            Some(Abi::Stdcall) => (b'_', true),
+            Some(Abi::Fastcall) => (b'@', true),
+
+            // This is something we don't recognize, stay on the safe side
+            // by emitting the `#[link_name]` attribute
+            Some(_) => return false,
+        };
+
+        // Check that the mangled name is long enough to at least contain the
+        // canonical name plus the expected prefix.
+        if mangled_name.len() < canonical_name.len() + 1 {
+            return false;
+        }
+
+        // Return if the mangled name does not start with the prefix expected
+        // for the given calling convention.
+        if mangled_name[0] != mangling_prefix {
+            return false;
+        }
+
+        // Check that the mangled name contains the canonical name after the
+        // prefix
+        if &mangled_name[1..canonical_name.len() + 1] != canonical_name {
+            return false;
+        }
+
+        // If the given calling convention also prescribes a suffix, check that
+        // it exists too
+        if expect_suffix {
+            let suffix = &mangled_name[canonical_name.len() + 1..];
+
+            // The shortest suffix is "@0"
+            if suffix.len() < 2 {
+                return false;
+            }
+
+            // Check that the suffix starts with '@' and is all ASCII decimals
+            // after that.
+            if suffix[0] != b'@' || !suffix[1..].iter().all(u8::is_ascii_digit)
+            {
+                return false;
+            }
+        } else if mangled_name.len() != canonical_name.len() + 1 {
+            // If we don't expect a prefix but there is one, we need the
+            // #[link_name] attribute
+            return false;
+        }
+
+        true
     }
 }

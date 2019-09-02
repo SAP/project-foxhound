@@ -29,8 +29,8 @@ EXPORTS.mozilla = [
     'CheckedInt.h',
     'Compiler.h',
     'Compression.h',
+    'DbgMacro.h',
     'DebugOnly.h',
-    'decimal/Decimal.h',
     'DefineEnum.h',
     'DoublyLinkedList.h',
     'EndianUtils.h',
@@ -154,7 +154,7 @@ UNIFIED_SOURCES += [
     'Utf8.cpp',
 ]
 
-if CONFIG['MOZ_BUILD_APP'] != 'tools/crashreporter':
+if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter'):
     # RecordReplay.cpp uses files from js/
     UNIFIED_SOURCES += [
         'RecordReplay.cpp',
@@ -168,15 +168,10 @@ DEFINES['IMPL_MFBT'] = True
 
 SOURCES += [
     'Compression.cpp',
-    'decimal/Decimal.cpp',
     'lz4.c',
 ]
 
 DisableStlWrapping()
-
-if CONFIG['CC_TYPE'] == 'clang':
-    # Suppress warnings from third-party V8 Decimal code.
-    SOURCES['decimal/Decimal.cpp'].flags += ['-Wno-implicit-fallthrough']
 
 if CONFIG['MOZ_NEEDS_LIBATOMIC']:
     OS_LIBS += ['atomic']

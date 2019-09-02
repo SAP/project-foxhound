@@ -3,8 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsISupports.idl"
 
+interface nsIContentSecurityPolicy;
 interface nsIPrincipal;
 interface nsIURI;
+interface nsIWebProgress;
 
 webidl FrameLoader;
 
@@ -14,7 +16,7 @@ interface nsIBrowser : nsISupports
   /**
    * Gets an optional frame loader that is "related" to this browser.
    * If this exists, then we should attempt to use the same content parent as
-   * this frame loader for any new tab parents.  For example, view source
+   * this frame loader for any new remote tabs.  For example, view source
    * browsers set this to the frame loader for the original content to ensure
    * they are loaded in the same process as the content.
    */
@@ -24,30 +26,12 @@ interface nsIBrowser : nsISupports
    * Called by the child to inform the parent that links are dropped into
    * content area.
    *
-   * @param linksCount length of links
    * @param links a flat array of url, name, and type for each link
    * @param triggeringPrincipal a principal that initiated loading
    *                            of the dropped links
    */
-  void dropLinks(in unsigned long linksCount,
-                 [array, size_is(linksCount)] in wstring links,
-                 in nsIPrincipal aTriggeringPrincipal);
-
-  /**
-   * Flags for controlling the behavior of swapBrowsers
-   */
-
-  /**
-   * The default options. This is used for swapping browsers between windows
-   */
-  const unsigned long SWAP_DEFAULT = 0;
-
-  /**
-   * If this bit is set, swapping the browsers will not swap the permanentKey of
-   * the browsers. This is used when performing cross process loads by swapping
-   * browsers.
-   */
-  const unsigned long SWAP_KEEP_PERMANENT_KEY = 0x1;
+  void dropLinks(in Array<AString> links,
+                 in nsIPrincipal triggeringPrincipal);
 
   /**
    * Swapping of frameloaders are usually initiated from a frameloader owner
@@ -61,7 +45,7 @@ interface nsIBrowser : nsISupports
    * frameloader owners such as <xul:browser> can setup their properties and /
    * or listeners properly on swapping.
    */
-  void swapBrowsers(in nsIBrowser aOtherBrowser, in unsigned long aFlags);
+  void swapBrowsers(in nsIBrowser aOtherBrowser);
 
   /**
    * Close the browser (usually means to remove a tab).
@@ -76,45 +60,101 @@ interface nsIBrowser : nsISupports
   readonly attribute boolean isRemoteBrowser;
 
   /**
+   * The nsIWebProgress instance responsible for handling progress events
+   * from the content process.
+   *
+   * Will always be non-null when isRemoteBrowser is true.
+   */
+  readonly attribute nsIWebProgress remoteWebProgressManager;
+
+  /**
    * Called by the child to inform the parent that a command update has occurred
    * and the supplied set of commands are now enabled and disabled.
    *
    * @param action command updater action
-   * @param enabledLength length of enabledCommands array
    * @param enabledCommands commands to enable
-   * @param disabledLength length of disabledCommands array
    * @param disabledCommand commands to disable
    */
   void enableDisableCommandsRemoteOnly(in AString action,
-                                       in unsigned long enabledLength,
-                                       [array, size_is(enabledLength)] in string enabledCommands,
-                                       in unsigned long disabledLength,
-                                       [array, size_is(disabledLength)] in string disabledCommands);
+                                       in Array<ACString> enabledCommands,
+                                       in Array<ACString> disabledCommands);
 
   readonly attribute nsIPrincipal contentPrincipal;
+  readonly attribute nsIContentSecurityPolicy csp;
 
   /**
-   * Called by Gecko when we need to call the web progress listeners on our
-   * browser element in order to notify them about a content blocking event
-   * which happened in the content process.
-   * @param isWebProgressPassed whether we're passed a webProgress argument
-   * @param isTopLevel whether we're in the top-level document
-   * @param isLoadingDocument whether we're in the process of loading a document
-   * @param loadType the type of load in progress
-   * @param DOMWindowID the ID of the window receiving the notification
-   * @param requestURI the current URI of the request
-   * @param originalRequestURI the original URI of the request
-   * @param matchedList the matched list for the content blocking event
-   * @param eventType one of the content blocking event codes defined in
-   *                  nsIWebProgressListener.idl.
+   * Whether or not the browser is in the process of an nsIWebNavigation
+   * navigation method.
    */
-  void callWebProgressContentBlockingEventListeners(in boolean isWebProgressPassed,
-                                                    in boolean isTopLevel,
-                                                    in boolean isLoadingDocument,
-                                                    in unsigned long loadType,
-                                                    in uint64_t DOMWindowID,
-                                                    in nsIURI requestURI,
-                                                    in nsIURI originalRequestURI,
-                                                    in ACString matchedList,
-                                                    in unsigned long eventType);
+  attribute boolean isNavigating;
+
+  /**
+   * Whether or not the character encoding menu may be enabled.
+   */
+  attribute boolean mayEnableCharacterEncodingMenu;
+
+  /**
+   * Whether or not the character encoding was detected by analyzing
+   * content (as opposed to reading a protocol label).
+   */
+  attribute boolean charsetAutodetected;
+
+  /**
+   * Called by Gecko to update the browser when its state changes.
+   *
+   * @param aCharset the new character set of the document
+   * @param aDocumentURI the URI of the current document
+   * @param aContentType the content type of the document
+   */
+  void updateForStateChange(in AString aCharset,
+                            in nsIURI aDocumentURI,
+                            in AString aContentType);
+
+  /**
+   * Called by Gecko to update the nsIWebNavigation when a location change occurs.
+   *
+   * @param aCanGoBack whether or not the nsIWebNavigation can go backwards in
+   *                   history
+   * @param aCanGoForward whether or not the nsIWebNavigation can go
+   *                      forward in history
+   */
+  void updateWebNavigationForLocationChange(in boolean aCanGoBack,
+                                            in boolean aCanGoForward);
+
+  /**
+   * Called by Gecko to update the browser when a location change occurs.
+   *
+   * @param aLocation the new location
+   * @param aCharset the character set of the document
+   * @param aMayEnableCharacterEncodingMenu whether or not the content encoding
+   *                                        menu may be enabled
+   * @param aCharsetAutodetected whether or not the given character set was
+   *                             autodetected
+   * @param aDocumentURI the URI of the new document
+   * @param aTitle the title of the new doucment
+   * @param aContentPrincipal the security principal of the new document
+   * @param aContentStoragePrincipal the security principal for the new
+   *                                 document's storage
+   * @param aCSP the content security policy of the new document
+   * @param aIsSynthetic whether or not the document is synthetic
+   * @param aInnerWindowID the inner window ID of the document
+   * @param aHasRequestContextID whether or not the the request context has a
+   *                             value (true) or null should be used (false)
+   * @param aRequestContextID the request context ID
+   * @param aContentType the content type of the document
+   */
+  void updateForLocationChange(in nsIURI aLocation,
+                               in AString aCharset,
+                               in boolean aMayEnableCharacterEncodingMenu,
+                               in boolean aCharsetAutodetected,
+                               in nsIURI aDocumentURI,
+                               in AString aTitle,
+                               in nsIPrincipal aContentPrincipal,
+                               in nsIPrincipal aContentStoragePrincipal,
+                               in nsIContentSecurityPolicy aCSP,
+                               in boolean aIsSynthetic,
+                               in uint64_t aInnerWindowID,
+                               in boolean aHasRequestContextID,
+                               in uint64_t aRequestContextID,
+                               in AString aContentType);
 };

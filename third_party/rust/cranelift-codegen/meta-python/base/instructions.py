@@ -164,7 +164,7 @@ jump_table_entry = Instruction(
     Currently, the only type supported is entries which are relative to the
     base of the jump table.
     """,
-    ins=(x, addr, Size, JT), outs=entry)
+    ins=(x, addr, Size, JT), outs=entry, can_load=True)
 
 jump_table_base = Instruction(
     'jump_table_base', r"""
@@ -763,6 +763,16 @@ copy_special = Instruction(
         """,
         ins=(src, dst),
         other_side_effects=True)
+
+copy_nop = Instruction(
+        'copy_nop', r"""
+        Stack-slot-to-the-same-stack-slot copy, which is guaranteed to turn
+        into a no-op.  This instruction is for use only within Cranelift
+        itself.
+
+        This instruction copies its input, preserving the value type.
+        """,
+        ins=x, outs=a)
 
 delta = Operand('delta', Int)
 adjust_sp_down = Instruction(

@@ -48,6 +48,10 @@ class UserSpaceMetrics;
  * http://www.w3.org/TR/SVG11/filters.html#FilterEffectsRegion
  */
 class nsFilterInstance {
+  template <typename T>
+  using Span = mozilla::Span<T>;
+  using StyleFilter = mozilla::StyleFilter;
+
   typedef mozilla::gfx::IntRect IntRect;
   typedef mozilla::gfx::SourceSurface SourceSurface;
   typedef mozilla::gfx::DrawTarget DrawTarget;
@@ -71,7 +75,7 @@ class nsFilterInstance {
    * @return A FilterDescription describing the filter.
    */
   static FilterDescription GetFilterDescription(
-      nsIContent* aFilteredElement, const nsTArray<nsStyleFilter>& aFilterChain,
+      nsIContent* aFilteredElement, Span<const StyleFilter> aFilterChain,
       bool aFilterInputIsTainted, const UserSpaceMetrics& aMetrics,
       const gfxRect& aBBox,
       nsTArray<RefPtr<SourceSurface>>& aOutAdditionalImages);
@@ -146,20 +150,20 @@ class nsFilterInstance {
    * @param aPreFilterDirtyRegion [optional] The pre-filter area of
    *   the filtered element that changed, in app units. Only required if you
    *   will call ComputePostFilterDirtyRegion().
-   * @param aOverridePreFilterVisualOverflowRect [optional] Use a different
+   * @param aPreFilterVisualOverflowRectOverride [optional] Use a different
    *   visual overflow rect for the target element.
    * @param aOverrideBBox [optional] Use a different SVG bbox for the target
    *   element. Must be non-null if aTargetFrame is null.
    */
   nsFilterInstance(nsIFrame* aTargetFrame, nsIContent* aTargetContent,
                    const UserSpaceMetrics& aMetrics,
-                   const nsTArray<nsStyleFilter>& aFilterChain,
+                   Span<const StyleFilter> aFilterChain,
                    bool aFilterInputIsTainted,
                    nsSVGFilterPaintCallback* aPaintCallback,
                    const gfxMatrix& aPaintTransform,
                    const nsRegion* aPostFilterDirtyRegion = nullptr,
                    const nsRegion* aPreFilterDirtyRegion = nullptr,
-                   const nsRect* aOverridePreFilterVisualOverflowRect = nullptr,
+                   const nsRect* aPreFilterVisualOverflowRectOverride = nullptr,
                    const gfxRect* aOverrideBBox = nullptr);
 
   /**
@@ -227,7 +231,7 @@ class nsFilterInstance {
    * Creates a SourceSurface for either the FillPaint or StrokePaint graph
    * nodes
    */
-  void BuildSourcePaint(SourceInfo* aPrimitive, imgDrawingParams& aImgParams);
+  void BuildSourcePaint(SourceInfo* aSource, imgDrawingParams& aImgParams);
 
   /**
    * Creates a SourceSurface for either the FillPaint and StrokePaint graph
@@ -251,7 +255,7 @@ class nsFilterInstance {
    * mPrimitiveDescriptions and mInputImages. aFilterInputIsTainted describes
    * whether the SourceGraphic is tainted.
    */
-  nsresult BuildPrimitives(const nsTArray<nsStyleFilter>& aFilterChain,
+  nsresult BuildPrimitives(Span<const StyleFilter> aFilterChain,
                            nsIFrame* aTargetFrame, bool aFilterInputIsTainted);
 
   /**
@@ -261,8 +265,7 @@ class nsFilterInstance {
    * tainted.
    */
   nsresult BuildPrimitivesForFilter(
-      const nsStyleFilter& aFilter, nsIFrame* aTargetFrame,
-      bool aInputIsTainted,
+      const StyleFilter& aFilter, nsIFrame* aTargetFrame, bool aInputIsTainted,
       nsTArray<FilterPrimitiveDescription>& aPrimitiveDescriptions);
 
   /**

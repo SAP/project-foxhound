@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf8">
   <title>Test for the network actor (HPKP detection)</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="common.js"></script>
   <!-- Any copyright is dedicated to the Public Domain.
      - http://creativecommons.org/publicdomain/zero/1.0/ -->
@@ -54,7 +54,7 @@ function startTest() {
                        .getService(Ci.nsIIOService);
     for (let {url} of TEST_CASES) {
       let uri = gIOService.newURI(url);
-      gSSService.removeState(Ci.nsISiteSecurityService.HEADER_HPKP, uri, 0);
+      gSSService.resetState(Ci.nsISiteSecurityService.HEADER_HPKP, uri, 0);
     }
   });
 
@@ -65,7 +65,7 @@ function startTest() {
 
 function onAttach(state, response) {
   onNetworkEventUpdate = onNetworkEventUpdate.bind(null, state);
-  state.dbgClient.addListener("networkEventUpdate", onNetworkEventUpdate);
+  state.dbgClient.on("networkEventUpdate", onNetworkEventUpdate);
 
   runNextCase(state);
 }
@@ -85,7 +85,7 @@ function runNextCase(state) {
   iframe.wrappedJSObject.makeXhrCallback("GET", url);
 }
 
-function onNetworkEventUpdate(state, type, packet) {
+function onNetworkEventUpdate(state, packet) {
   function onSecurityInfo(received) {
     let data = TEST_CASES[gCurrentTestCase];
     is(received.securityInfo.hpkp, data.usesPinning,

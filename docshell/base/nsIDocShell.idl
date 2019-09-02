@@ -15,12 +15,13 @@
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
+class nsCommandManager;
 class nsPresContext;
-class nsIPresShell;
 class nsDocShellLoadState;
 namespace mozilla {
 class Encoding;
 class HTMLEditor;
+class PresShell;
 namespace dom {
 class BrowsingContext;
 class ClientSource;
@@ -33,7 +34,8 @@ class ClientSource;
  */
 
 [ptr] native nsPresContext(nsPresContext);
-[ptr] native nsIPresShell(nsIPresShell);
+[ptr] native nsCommandManager(nsCommandManager);
+[ptr] native PresShell(mozilla::PresShell);
 [ref] native MaybeURI(mozilla::Maybe<nsCOMPtr<nsIURI>>);
 [ref] native Encoding(const mozilla::Encoding*);
       native UniqueClientSource(mozilla::UniquePtr<mozilla::dom::ClientSource>);
@@ -41,6 +43,7 @@ class ClientSource;
 interface nsIURI;
 interface nsIChannel;
 interface nsIContentViewer;
+interface nsIContentSecurityPolicy;
 interface nsIDocShellLoadInfo;
 interface nsIEditor;
 interface nsIEditingSession;
@@ -58,12 +61,11 @@ interface nsIWebBrowserPrint;
 interface nsIPrivacyTransitionObserver;
 interface nsIReflowObserver;
 interface nsIScrollObserver;
-interface nsITabParent;
-interface nsITabChild;
-interface nsICommandManager;
+interface nsIRemoteTab;
+interface nsIBrowserChild;
 interface nsICommandParams;
 interface nsILoadURIDelegate;
-native TabChildRef(already_AddRefed<nsITabChild>);
+native BrowserChildRef(already_AddRefed<nsIBrowserChild>);
 native nsDocShellLoadStatePtr(nsDocShellLoadState*);
 
 webidl BrowsingContext;
@@ -74,6 +76,8 @@ webidl Document;
 [scriptable, builtinclass, uuid(049234fe-da10-478b-bc5d-bc6f9a1ba63d)]
 interface nsIDocShell : nsIDocShellTreeItem
 {
+  void setCancelContentJSEpoch(in long aEpoch);
+
   /**
    * Loads a given URI.  This will give priority to loading the requested URI
    * in the object implementing this interface.  If it can't be loaded here
@@ -148,13 +152,13 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * Presentation shell for the currently loaded document.  This may be null.
    */
-  [notxpcom,nostdcall] readonly attribute nsIPresShell presShell;
+  [notxpcom,nostdcall] readonly attribute PresShell presShell;
 
   /**
    * Presentation shell for the oldest document, if this docshell is
    * currently transitioning between documents.
    */
-  [notxpcom,nostdcall] readonly attribute nsIPresShell eldestPresShell;
+  [notxpcom,nostdcall] readonly attribute PresShell eldestPresShell;
 
   /**
    * Content Viewer that is currently loaded for this DocShell.  This may
@@ -373,8 +377,6 @@ interface nsIDocShell : nsIDocShellTreeItem
 
   attribute nsILayoutHistoryState layoutHistoryState;
 
-  readonly attribute boolean shouldSaveLayoutState;
-
   /**
    * The SecureBrowserUI object for this docshell.  This is set by XUL
    * <browser> or nsWebBrowser for their root docshell.
@@ -525,6 +527,12 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   [infallible] readonly attribute boolean hasMixedDisplayContentBlocked;
 
+   /**
+   * This attribute determines whether a document has Tracking Content
+   * that has been blocked from loading.
+   */
+  [infallible] readonly attribute boolean hasTrackingContentBlocked;
+
   /**
    * Disconnects this docshell's editor from its window, and stores the
    * editor data in the open document's session history entry.  This
@@ -543,14 +551,31 @@ interface nsIDocShell : nsIDocShellTreeItem
    * Allows nsDocumentViewer to tell the top-level same-type docshell that
    * one of the documents under it is printing.
    */
-  void setIsPrinting(in boolean aIsPrinting);
+  [noscript, notxpcom] void setIsPrinting(in boolean aIsPrinting);
 
   /**
-   * If the current content viewer isn't initialized for print preview,
-   * it is replaced with one which is and to which an about:blank document
-   * is loaded.
+   * This method should only be called on a docShell that has been specifically
+   * created to display a print preview document.  If the current document
+   * viewer isn't initialized for print preview when this method is called, it
+   * is replaced with a new viewer with an about:blank document (with the URL
+   * about:printpreview).  The viewer is then returned, ready for the print
+   * preview document to be constructed when viewer.printPreview() is called.
+   *
+   * The same viewer will be returned on subsequent calls since various bits of
+   * code assume that, once created, the viewer is never replaced.  Note,
+   * however, that the viewer's document will be replaced with a new document
+   * each time printPreview() is called on it (which is what we do to take
+   * account of print preview settings changes).  Replacing the document
+   * viewer's document breaks the normally unchanging 1:1 relationship between
+   * a document and its viewer, but that seems to be okay.
    */
-  readonly attribute nsIWebBrowserPrint printPreview;
+  nsIWebBrowserPrint initOrReusePrintPreviewViewer();
+
+  /**
+   * Propagated to the print preview document viewer.  Must only be called on
+   * a document viewer that has been initialized for print preview.
+   */
+  void exitPrintPreview();
 
   /**
    * Whether this docshell can execute scripts based on its hierarchy.
@@ -564,7 +589,7 @@ interface nsIDocShell : nsIDocShellTreeItem
    * visible, and thus is not a good candidate for certain optimizations
    * like image frame discarding. Docshells are active unless told otherwise.
    */
-  attribute boolean isActive;
+  [infallible] attribute boolean isActive;
 
   /**
    * The ID of the docshell in the session history.
@@ -586,8 +611,12 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * Create a new about:blank document and content viewer.
    * @param aPrincipal the principal to use for the new document.
+   * @param aStoragePrincipal the storage principal to use for the new document.
+   * @param aCsp the CSP to use for the new document.
    */
-  void createAboutBlankContentViewer(in nsIPrincipal aPrincipal);
+  void createAboutBlankContentViewer(in nsIPrincipal aPrincipal,
+                                     in nsIPrincipal aStoragePrincipal,
+                                     [optional] in nsIContentSecurityPolicy aCSP);
 
   /**
    * Upon getting, returns the canonical encoding label of the document
@@ -855,6 +884,11 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   [infallible] readonly attribute boolean mayEnableCharacterEncodingMenu;
 
+  /**
+   * Indicates that the character encoding was autodetected.
+   */
+  [infallible] readonly attribute boolean charsetAutodetected;
+
            attribute  nsIEditor editor;
   readonly attribute  boolean   editable;             /* this docShell is editable */
   readonly attribute  boolean   hasEditingSession;    /* this docShell has an editing session */
@@ -947,8 +981,8 @@ interface nsIDocShell : nsIDocShellTreeItem
    * should be fine, considering that these methods should only ever be
    * called from native code.
    */
-  [noscript,notxpcom,nostdcall] void setOpener(in nsITabParent aOpener);
-  [noscript,notxpcom,nostdcall] nsITabParent getOpener();
+  [noscript,notxpcom,nostdcall] void setOpener(in nsIRemoteTab aOpener);
+  [noscript,notxpcom,nostdcall] nsIRemoteTab getOpener();
 
   /**
    * Notify DocShell when the browser is about to start executing JS, and after
@@ -999,12 +1033,12 @@ interface nsIDocShell : nsIDocShellTreeItem
   readonly attribute nsIEditingSession editingSession;
 
   /**
-   * The tab child for this docshell.
+   * The browser child for this docshell.
    */
-  [binaryname(ScriptableTabChild)] readonly attribute nsITabChild tabChild;
-  [noscript,notxpcom,nostdcall] TabChildRef GetTabChild();
+  [binaryname(ScriptableBrowserChild)] readonly attribute nsIBrowserChild browserChild;
+  [noscript,notxpcom,nostdcall] BrowserChildRef GetBrowserChild();
 
-  [noscript,nostdcall,notxpcom] nsICommandManager GetCommandManager();
+  [noscript,nostdcall,notxpcom] nsCommandManager GetCommandManager();
 
   cenum TouchEventsOverride: 8 {
     /**
@@ -1082,6 +1116,12 @@ interface nsIDocShell : nsIDocShellTreeItem
   */
   [noscript] void dispatchLocationChangeEvent();
 
+
+  /**
+   * Start delayed autoplay media which are in the current document.
+   */
+  [noscript] void startDelayedAutoplayMediaComponents();
+
   /**
    * Take ownership of the ClientSource representing an initial about:blank
    * document that was never needed.  As an optimization we avoid creating
@@ -1158,4 +1198,22 @@ interface nsIDocShell : nsIDocShellTreeItem
    * sense that's relevant to document.open.
    */
   [notxpcom, nostdcall] readonly attribute boolean isAttemptingToNavigate;
+
+  /**
+   * Whether developer tools are watching activity in this docshell.
+   */
+  [infallible] attribute boolean watchedByDevtools;
+
+  /*
+   * Whether or not this docshell is executing a nsIWebNavigation navigation
+   * method.
+   *
+   * This will be true when the following methods are executing:
+   *   nsIWebNavigation.binaryLoadURI
+   *   nsIWebNavigation.goBack
+   *   nsIWebNavigation.goForward
+   *   nsIWebNavigation.gotoIndex
+   *   nsIWebNavigation.loadURI
+   */
+  [infallible] readonly attribute boolean isNavigating;
 };

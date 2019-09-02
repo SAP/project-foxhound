@@ -109,6 +109,7 @@ void ProxySelectionEvent(ProxyAccessible* aTarget, ProxyAccessible* aWidget,
                          uint32_t aType);
 
 #if defined(ANDROID)
+MOZ_CAN_RUN_SCRIPT
 void ProxyVirtualCursorChangeEvent(ProxyAccessible* aTarget,
                                    ProxyAccessible* aOldPosition,
                                    int32_t aOldStartOffset,
@@ -121,6 +122,9 @@ void ProxyVirtualCursorChangeEvent(ProxyAccessible* aTarget,
 void ProxyScrollingEvent(ProxyAccessible* aTarget, uint32_t aEventType,
                          uint32_t aScrollX, uint32_t aScrollY,
                          uint32_t aMaxScrollX, uint32_t aMaxScrollY);
+
+void ProxyAnnouncementEvent(ProxyAccessible* aTarget,
+                            const nsString& aAnnouncement, uint16_t aPriority);
 
 class BatchData;
 

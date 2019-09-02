@@ -5,7 +5,9 @@ use crate::dominator_tree::DominatorTree;
 use crate::entity::{EntityList, ListPool};
 use crate::flowgraph::{BasicBlock, ControlFlowGraph};
 use crate::fx::FxHashSet;
-use crate::ir::{DataFlowGraph, Ebb, Function, Inst, InstBuilder, Layout, Opcode, Type, Value};
+use crate::ir::{
+    DataFlowGraph, Ebb, Function, Inst, InstBuilder, InstructionData, Layout, Opcode, Type, Value,
+};
 use crate::isa::TargetIsa;
 use crate::loop_analysis::{Loop, LoopAnalysis};
 use crate::timing;
@@ -15,7 +17,7 @@ use std::vec::Vec;
 /// loop-invariant instructions out of them.
 /// Changes the CFG and domtree in-place during the operation.
 pub fn do_licm(
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
     func: &mut Function,
     cfg: &mut ControlFlowGraph,
     domtree: &mut DominatorTree,
@@ -62,7 +64,7 @@ pub fn do_licm(
 // Insert a pre-header before the header, modifying the function layout and CFG to reflect it.
 // A jump instruction to the header is placed at the end of the pre-header.
 fn create_pre_header(
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
     header: Ebb,
     func: &mut Function,
     cfg: &mut ControlFlowGraph,
@@ -145,8 +147,7 @@ fn change_branch_jump_destination(inst: Inst, new_ebb: Ebb, func: &mut Function)
 
 /// Test whether the given opcode is unsafe to even consider for LICM.
 fn trivially_unsafe_for_licm(opcode: Opcode) -> bool {
-    opcode.can_load()
-        || opcode.can_store()
+    opcode.can_store()
         || opcode.is_call()
         || opcode.is_branch()
         || opcode.is_terminator()
@@ -156,9 +157,22 @@ fn trivially_unsafe_for_licm(opcode: Opcode) -> bool {
         || opcode.writes_cpu_flags()
 }
 
+fn is_unsafe_load(inst_data: &InstructionData) -> bool {
+    match *inst_data {
+        InstructionData::Load { flags, .. } | InstructionData::LoadComplex { flags, .. } => {
+            !flags.readonly() || !flags.notrap()
+        }
+        _ => inst_data.opcode().can_load(),
+    }
+}
+
 /// Test whether the given instruction is loop-invariant.
 fn is_loop_invariant(inst: Inst, dfg: &DataFlowGraph, loop_values: &FxHashSet<Value>) -> bool {
     if trivially_unsafe_for_licm(dfg[inst].opcode()) {
+        return false;
+    }
+
+    if is_unsafe_load(&dfg[inst]) {
         return false;
     }
 

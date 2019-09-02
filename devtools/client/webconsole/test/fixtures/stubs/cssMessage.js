@@ -15,12 +15,14 @@ const stubPreparedMessages = new Map();
 const stubPackets = new Map();
 stubPreparedMessages.set(`Unknown property ‘such-unknown-property’.  Declaration dropped.`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": 15032385539,
   "allowRepeating": true,
   "source": "css",
   "timeStamp": 1479159920406,
   "type": "log",
   "helperType": null,
   "level": "warn",
+  "category": "CSS Parser",
   "messageText": "Unknown property ‘such-unknown-property’.  Declaration dropped.",
   "parameters": null,
   "repeatId": "{\"frame\":{\"source\":\"http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/test-css-message.html\",\"sourceId\":null,\"line\":3,\"column\":25},\"groupId\":null,\"indent\":0,\"level\":\"warn\",\"messageText\":\"Unknown property ‘such-unknown-property’.  Declaration dropped.\",\"parameters\":null,\"source\":\"css\",\"type\":\"log\",\"userProvidedStyles\":null,\"private\":false,\"stacktrace\":null}",
@@ -33,21 +35,25 @@ stubPreparedMessages.set(`Unknown property ‘such-unknown-property’.  Declara
   },
   "groupId": null,
   "errorMessageName": "",
+  "cssSelectors": "p",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
   "prefix": "",
-  "private": false
+  "private": false,
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`Error in parsing value for ‘padding-top’.  Declaration dropped.`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": 15032385539,
   "allowRepeating": true,
   "source": "css",
   "timeStamp": 1479159920465,
   "type": "log",
   "helperType": null,
   "level": "warn",
+  "category": "CSS Parser",
   "messageText": "Error in parsing value for ‘padding-top’.  Declaration dropped.",
   "parameters": null,
   "repeatId": "{\"frame\":{\"source\":\"http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/test-css-message.html\",\"sourceId\":null,\"line\":3,\"column\":16},\"groupId\":null,\"indent\":0,\"level\":\"warn\",\"messageText\":\"Error in parsing value for ‘padding-top’.  Declaration dropped.\",\"parameters\":null,\"source\":\"css\",\"type\":\"log\",\"userProvidedStyles\":null,\"private\":false,\"stacktrace\":null}",
@@ -60,11 +66,13 @@ stubPreparedMessages.set(`Error in parsing value for ‘padding-top’.  Declara
   },
   "groupId": null,
   "errorMessageName": "",
+  "cssSelectors": "p",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
   "prefix": "",
-  "private": false
+  "private": false,
+  "chromeContext": false
 }));
 
 stubPackets.set(`Unknown property ‘such-unknown-property’.  Declaration dropped.`, {
@@ -77,6 +85,7 @@ stubPackets.set(`Unknown property ‘such-unknown-property’.  Declaration drop
     "lineNumber": 3,
     "columnNumber": 25,
     "category": "CSS Parser",
+    "innerWindowID": 15032385539,
     "timeStamp": 1479159920406,
     "warning": true,
     "error": false,
@@ -85,7 +94,9 @@ stubPackets.set(`Unknown property ‘such-unknown-property’.  Declaration drop
     "info": false,
     "private": false,
     "stacktrace": null,
-    "notes": null
+    "notes": null,
+    "chromeContext": false,
+    "cssSelectors": "p"
   },
   "type": "pageError",
   "from": "server1.conn0.child1/consoleActor2"
@@ -101,6 +112,7 @@ stubPackets.set(`Error in parsing value for ‘padding-top’.  Declaration drop
     "lineNumber": 3,
     "columnNumber": 16,
     "category": "CSS Parser",
+    "innerWindowID": 15032385539,
     "timeStamp": 1479159920465,
     "warning": true,
     "error": false,
@@ -109,7 +121,9 @@ stubPackets.set(`Error in parsing value for ‘padding-top’.  Declaration drop
     "info": false,
     "private": false,
     "stacktrace": null,
-    "notes": null
+    "notes": null,
+    "chromeContext": false,
+    "cssSelectors": "p"
   },
   "type": "pageError",
   "from": "server1.conn0.child1/consoleActor2"

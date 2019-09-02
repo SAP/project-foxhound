@@ -16,6 +16,7 @@
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
 #include "nsIDocShell.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsIExternalProtocolHandler.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -26,7 +27,6 @@
 #include "nsPluginInstanceOwner.h"
 #include "nsJSNPRuntime.h"
 #include "nsINestedURI.h"
-#include "nsIPresShell.h"
 #include "nsScriptSecurityManager.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIStreamConverterService.h"
@@ -92,8 +92,10 @@
 #include "mozilla/dom/HTMLObjectElement.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/PresShell.h"
 #include "nsChannelClassifier.h"
 #include "nsFocusManager.h"
+#include "ReferrerInfo.h"
 
 #ifdef XP_WIN
 // Thanks so much, Microsoft! :(
@@ -562,20 +564,18 @@ already_AddRefed<nsIDocShell> nsObjectLoadingContent::SetupDocShell(
   return docShell.forget();
 }
 
-nsresult nsObjectLoadingContent::BindToTree(Document* aDocument,
-                                            nsIContent* aParent,
-                                            nsIContent* aBindingParent) {
-  nsImageLoadingContent::BindToTree(aDocument, aParent, aBindingParent);
-
-  if (aDocument) {
-    aDocument->AddPlugin(this);
+nsresult nsObjectLoadingContent::BindToTree(BindContext& aContext,
+                                            nsINode& aParent) {
+  nsImageLoadingContent::BindToTree(aContext, aParent);
+  // FIXME(emilio): Should probably use composed doc?
+  if (Document* doc = aContext.GetUncomposedDoc()) {
+    doc->AddPlugin(this);
   }
-
   return NS_OK;
 }
 
-void nsObjectLoadingContent::UnbindFromTree(bool aDeep, bool aNullParent) {
-  nsImageLoadingContent::UnbindFromTree(aDeep, aNullParent);
+void nsObjectLoadingContent::UnbindFromTree(bool aNullParent) {
+  nsImageLoadingContent::UnbindFromTree(aNullParent);
 
   nsCOMPtr<Element> thisElement =
       do_QueryInterface(static_cast<nsIObjectLoadingContent*>(this));
@@ -927,6 +927,7 @@ void nsObjectLoadingContent::NotifyOwnerDocumentActivityChanged() {
   if (mInstanceOwner || mInstantiating) {
     QueueCheckPluginStopEvent();
   }
+  nsImageLoadingContent::NotifyOwnerDocumentActivityChanged();
 }
 
 // nsIRequestObserver
@@ -1339,7 +1340,7 @@ void nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI,
   if (NS_FAILED(rv)) {
     return;
   }
-  const char16_t* params[] = {utf16OldURI.get(), utf16URI.get()};
+  AutoTArray<nsString, 2> params = {utf16OldURI, utf16URI};
   const char* msgName;
   // If there's no query to rewrite, just notify in the developer console
   // that we're changing the embed.
@@ -1350,8 +1351,8 @@ void nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI,
   }
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Plugins"),
-      thisContent->OwnerDoc(), nsContentUtils::eDOM_PROPERTIES, msgName, params,
-      ArrayLength(params));
+      thisContent->OwnerDoc(), nsContentUtils::eDOM_PROPERTIES, msgName,
+      params);
 }
 
 bool nsObjectLoadingContent::CheckLoadPolicy(int16_t* aContentPolicy) {
@@ -1628,23 +1629,16 @@ nsObjectLoadingContent::UpdateObjectParameters() {
     //
     // In order of preference:
     //
-    // 1) Perform typemustmatch check.
-    //    If check is sucessful use type without further checks.
-    //    If check is unsuccessful set stateInvalid to true
-    // 2) Use our type hint if it matches a plugin
-    // 3) If we have eAllowPluginSkipChannel, use the uri file extension if
+    // 1) Use our type hint if it matches a plugin
+    // 2) If we have eAllowPluginSkipChannel, use the uri file extension if
     //    it matches a plugin
-    // 4) If the channel returns a binary stream type:
-    //    4a) If we have a type non-null non-document type hint, use that
-    //    4b) If the uri file extension matches a plugin type, use that
-    // 5) Use the channel type
+    // 3) If the channel returns a binary stream type:
+    //    3a) If we have a type non-null non-document type hint, use that
+    //    3b) If the uri file extension matches a plugin type, use that
+    // 4) Use the channel type
 
     bool overrideChannelType = false;
-    if (thisElement->HasAttr(kNameSpaceID_None, nsGkAtoms::typemustmatch)) {
-      if (!typeAttr.LowerCaseEqualsASCII(channelType.get())) {
-        stateInvalid = true;
-      }
-    } else if (IsPluginType(typeHint)) {
+    if (IsPluginType(typeHint)) {
       LOG(("OBJLC [%p]: Using plugin type hint in favor of any channel type",
            this));
       overrideChannelType = true;
@@ -2310,14 +2304,14 @@ nsresult nsObjectLoadingContent::OpenChannel() {
 
   nsContentPolicyType contentPolicyType = GetContentPolicyType();
 
-  rv = NS_NewChannel(
-      getter_AddRefs(chan), mURI, thisContent, securityFlags, contentPolicyType,
-      nullptr,  // aPerformanceStorage
-      group,    // aLoadGroup
-      shim,     // aCallbacks
-      nsIChannel::LOAD_CALL_CONTENT_SNIFFERS | nsIChannel::LOAD_CLASSIFY_URI |
-          nsIChannel::LOAD_BYPASS_SERVICE_WORKER |
-          nsIRequest::LOAD_HTML_OBJECT_DATA);
+  rv = NS_NewChannel(getter_AddRefs(chan), mURI, thisContent, securityFlags,
+                     contentPolicyType,
+                     nullptr,  // aPerformanceStorage
+                     group,    // aLoadGroup
+                     shim,     // aCallbacks
+                     nsIChannel::LOAD_CALL_CONTENT_SNIFFERS |
+                         nsIChannel::LOAD_BYPASS_SERVICE_WORKER |
+                         nsIRequest::LOAD_HTML_OBJECT_DATA);
   NS_ENSURE_SUCCESS(rv, rv);
   if (inherit) {
     nsCOMPtr<nsILoadInfo> loadinfo = chan->LoadInfo();
@@ -2327,8 +2321,10 @@ nsresult nsObjectLoadingContent::OpenChannel() {
   // Referrer
   nsCOMPtr<nsIHttpChannel> httpChan(do_QueryInterface(chan));
   if (httpChan) {
-    rv = httpChan->SetReferrerWithPolicy(doc->GetDocumentURI(),
-                                         doc->GetReferrerPolicy());
+    nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+    referrerInfo->InitWithDocument(doc);
+
+    rv = httpChan->SetReferrerInfoWithoutClone(referrerInfo);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     // Set the initiator type
@@ -2485,9 +2481,9 @@ void nsObjectLoadingContent::NotifyStateChanged(ObjectType aOldType,
   } else if (aOldType != mType) {
     // If our state changed, then we already recreated frames
     // Otherwise, need to do that here
-    nsCOMPtr<nsIPresShell> shell = doc->GetShell();
-    if (shell) {
-      shell->PostRecreateFramesFor(thisEl);
+    RefPtr<PresShell> presShell = doc->GetPresShell();
+    if (presShell) {
+      presShell->PostRecreateFramesFor(thisEl);
     }
   }
 
@@ -3507,10 +3503,9 @@ bool nsObjectLoadingContent::MayResolve(jsid aId) {
   return true;
 }
 
-void nsObjectLoadingContent::GetOwnPropertyNames(JSContext* aCx,
-                                                 JS::AutoIdVector& /* unused */,
-                                                 bool /* unused */,
-                                                 ErrorResult& aRv) {
+void nsObjectLoadingContent::GetOwnPropertyNames(
+    JSContext* aCx, JS::MutableHandleVector<jsid> /* unused */,
+    bool /* unused */, ErrorResult& aRv) {
   // Just like DoResolve, just make sure we're instantiated.  That will do
   // the work our Enumerate hook needs to do.  This purposefully does not fire
   // for xray resolves, see bug 967694

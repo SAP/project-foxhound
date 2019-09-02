@@ -43,15 +43,6 @@ endif
 
 EXEC			= exec
 
-# ELOG prints out failed command when building silently (gmake -s). Pymake
-# prints out failed commands anyway, so ELOG just makes things worse by
-# forcing shell invocations.
-ifneq (,$(findstring -s, $(filter-out --%, $(MAKEFLAGS))))
-  ELOG := $(EXEC) sh $(MOZILLA_DIR)/build/unix/print-failed-commands.sh
-else
-  ELOG :=
-endif # -s
-
 _VPATH_SRCS = $(abspath $<)
 
 ################################################################################
@@ -121,7 +112,29 @@ endif # FORCE_SHARED_LIB
 
 ifeq ($(OS_ARCH),WINNT)
 
+#
+# This next line captures both the default (non-MOZ_COPY_PDBS)
+# case as well as the MOZ_COPY_PDBS-for-mingwclang case.
+#
+# For the default case, placing the pdb in the build
+# directory is needed.
+#
+# For the MOZ_COPY_PDBS, non-mingwclang case - we need to
+# build the pdb next to the executable (handled in the if
+# statement immediately below.)
+#
+# For the MOZ_COPY_PDBS, mingwclang case - we also need to
+# build the pdb next to the executable, but this macro doesn't
+# work for jsapi-tests which is a little special, so we specify
+# the output directory below with MOZ_PROGRAM_LDFLAGS.
+#
 LINK_PDBFILE ?= $(basename $(@F)).pdb
+
+ifdef MOZ_COPY_PDBS
+ifneq ($(CC_TYPE),clang)
+LINK_PDBFILE = $(basename $@).pdb
+endif
+endif
 
 ifndef GNU_CC
 
@@ -168,10 +181,6 @@ endif
 ifdef COMPILE_ENVIRONMENT
 ifndef TARGETS
 TARGETS			= $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(HOST_SHARED_LIBRARY)
-endif
-
-ifdef MOZ_PROFILE_GENERATE
-CPPSRCS := $(CPPSRCS) $(PGO_GEN_ONLY_CPPSRCS)
 endif
 
 COBJS = $(notdir $(CSRCS:.c=.$(OBJ_SUFFIX)))
@@ -304,24 +313,6 @@ EXTRA_DSO_LDOPTS	+= -dynamiclib -install_name $(_LOADER_PATH)/$(SHARED_LIBRARY) 
 endif
 endif
 
-ifdef SYMBOLS_FILE
-ifeq ($(OS_TARGET),WINNT)
-ifndef GNU_CC
-EXTRA_DSO_LDOPTS += -DEF:$(call normalizepath,$(SYMBOLS_FILE))
-else
-EXTRA_DSO_LDOPTS += $(call normalizepath,$(SYMBOLS_FILE))
-endif
-else
-ifdef GCC_USE_GNU_LD
-EXTRA_DSO_LDOPTS += -Wl,--version-script,$(SYMBOLS_FILE)
-else
-ifeq ($(OS_TARGET),Darwin)
-EXTRA_DSO_LDOPTS += -Wl,-exported_symbols_list,$(SYMBOLS_FILE)
-endif
-endif
-endif
-EXTRA_DEPS += $(SYMBOLS_FILE)
-endif
 #
 # GNU doesn't have path length limitation
 #
@@ -399,7 +390,7 @@ endif
 default all::
 	$(foreach tier,$(TIERS),$(call SUBMAKE,$(tier)))
 
-ifeq ($(findstring s,$(filter-out --%, $(MAKEFLAGS))),)
+ifdef BUILD_VERBOSE_LOG
 ECHO := echo
 QUIET :=
 else
@@ -438,7 +429,7 @@ endif
 
 ##############################################
 ifneq (1,$(NO_PROFILE_GUIDED_OPTIMIZE))
-ifdef MOZ_PROFILE_USE
+ifdef MOZ_1TIER_PGO
 ifeq ($(OS_ARCH)_$(GNU_CC), WINNT_)
 # When building with PGO, we have to make sure to re-link
 # in the MOZ_PROFILE_USE phase if we linked in the
@@ -710,11 +701,8 @@ $(foreach f,$(HOST_CSRCS) $(HOST_CPPSRCS) $(HOST_CMSRCS) $(HOST_CMMSRCS),$(eval 
 
 # The Rust compiler only outputs library objects, and so we need different
 # mangling to generate dependency rules for it.
-mk_libname = $(basename lib$(notdir $1)).rlib
-src_libdep = $(call mk_libname,$1): $1 $$(call mkdir_deps,$$(MDDEPDIR))
 mk_global_crate_libname = $(basename lib$(notdir $1)).$(LIB_SUFFIX)
 crate_src_libdep = $(call mk_global_crate_libname,$1): $1 $$(call mkdir_deps,$$(MDDEPDIR))
-$(foreach f,$(RSSRCS),$(eval $(call src_libdep,$(f))))
 $(foreach f,$(RS_STATICLIB_CRATE_SRC),$(eval $(call crate_src_libdep,$(f))))
 
 $(OBJS) $(HOST_OBJS) $(PROGOBJS) $(HOST_PROGOBJS): $(GLOBAL_DEPS)
@@ -722,39 +710,39 @@ $(OBJS) $(HOST_OBJS) $(PROGOBJS) $(HOST_PROGOBJS): $(GLOBAL_DEPS)
 # Rules for building native targets must come first because of the host_ prefix
 $(HOST_COBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
 
 $(HOST_CPPOBJS):
 	$(REPORT_BUILD_VERBOSE)
 	$(call BUILDSTATUS,OBJECT_FILE $@)
-	$(ELOG) $(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
 
 $(HOST_CMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(HOST_CMFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(HOST_CMFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
 
 $(HOST_CMMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(HOST_CMMFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(HOST_CMMFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
 
 $(COBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(CC) $(OUTOPTION)$@ -c $(COMPILE_CFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CC) $(OUTOPTION)$@ -c $(COMPILE_CFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
 
 # DEFINES and ACDEFINES are needed here to enable conditional compilation of Q_OBJECTs:
 # 'moc' only knows about #defines it gets on the command line (-D...), not in
 # included headers like mozilla-config.h
 $(filter moc_%.cpp,$(CPPSRCS)): moc_%.cpp: %.h
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(MOC) $(DEFINES) $(ACDEFINES) $< $(OUTOPTION)$@
+	$(MOC) $(DEFINES) $(ACDEFINES) $< $(OUTOPTION)$@
 
 $(filter moc_%.cc,$(CPPSRCS)): moc_%.cc: %.cc
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(MOC) $(DEFINES) $(ACDEFINES) $(_VPATH_SRCS:.cc=.h) $(OUTOPTION)$@
+	$(MOC) $(DEFINES) $(ACDEFINES) $(_VPATH_SRCS:.cc=.h) $(OUTOPTION)$@
 
 $(filter qrc_%.cpp,$(CPPSRCS)): qrc_%.cpp: %.qrc
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(RCC) -name $* $< $(OUTOPTION)$@
+	$(RCC) -name $* $< $(OUTOPTION)$@
 
 ifdef ASFILES
 # The AS_DASH_C_FLAG is needed cause not all assemblers (Solaris) accept
@@ -785,10 +773,18 @@ endif
 endif
 
 ifdef MOZ_COPY_PDBS
-PDB_FILES = $(addsuffix .pdb,$(basename $(DUMP_SYMS_TARGETS)))
-PDB_DEST ?= $(FINAL_TARGET)
-PDB_TARGET = syms
-INSTALL_TARGETS += PDB
+MAIN_PDB_FILES = $(addsuffix .pdb,$(basename $(DUMP_SYMS_TARGETS)))
+MAIN_PDB_DEST ?= $(FINAL_TARGET)
+MAIN_PDB_TARGET = syms
+INSTALL_TARGETS += MAIN_PDB
+
+ifdef CPP_UNIT_TESTS
+CPP_UNIT_TESTS_PDB_FILES = $(addsuffix .pdb,$(basename $(CPP_UNIT_TESTS)))
+CPP_UNIT_TESTS_PDB_DEST = $(DIST)/cppunittests
+CPP_UNIT_TESTS_PDB_TARGET = syms
+INSTALL_TARGETS += CPP_UNIT_TESTS_PDB
+endif
+
 else ifdef MOZ_CRASHREPORTER
 $(foreach file,$(DUMP_SYMS_TARGETS),$(eval $(call syms_template,$(file),$(notdir $(file))_syms.track)))
 endif
@@ -804,15 +800,15 @@ $(SOBJS):
 $(CPPOBJS):
 	$(REPORT_BUILD_VERBOSE)
 	$(call BUILDSTATUS,OBJECT_FILE $@)
-	$(ELOG) $(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
 
 $(CMMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(CCC) -o $@ -c $(COMPILE_CXXFLAGS) $(COMPILE_CMMFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CCC) -o $@ -c $(COMPILE_CXXFLAGS) $(COMPILE_CMMFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
 
 $(CMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(ELOG) $(CC) -o $@ -c $(COMPILE_CFLAGS) $(COMPILE_CMFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CC) -o $@ -c $(COMPILE_CFLAGS) $(COMPILE_CMFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
 
 $(filter %.s,$(CPPSRCS:%.cpp=%.s)): %.s: %.cpp $(call mkdir_deps,$(MDDEPDIR))
 	$(REPORT_BUILD_VERBOSE)

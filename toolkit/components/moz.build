@@ -21,7 +21,9 @@ DIRS += [
     'apppicker',
     'asyncshutdown',
     'backgroundhangmonitor',
+    'bitsdownload',
     'browser',
+    'certviewer',
     'cleardata',
     'clearsitedata',
     'cloudstorage',
@@ -47,8 +49,8 @@ DIRS += [
     'osfile',
     'parentalcontrols',
     'passwordmgr',
-    'perf',
     'perfmonitoring',
+    'pictureinpicture',
     'places',
     'processsingleton',
     'promiseworker',
@@ -60,6 +62,7 @@ DIRS += [
     'reflect',
     'reputationservice',
     'resistfingerprinting',
+    'search',
     'securityreporter',
     'sessionstore',
     'shell',
@@ -78,7 +81,7 @@ DIRS += [
     'windowcreator',
     'windowwatcher',
     'workerloader',
-    'xulstore'
+    'xulstore',
 ]
 
 if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
@@ -87,17 +90,11 @@ if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
     if CONFIG['NS_PRINTING']:
         DIRS += ['printing']
 
-    if CONFIG['NIGHTLY_BUILD']:
-        DIRS += ['pictureinpicture']
-
 if CONFIG['BUILD_CTYPES']:
     DIRS += ['ctypes']
 
 if CONFIG['MOZ_XUL']:
     DIRS += ['autocomplete', 'printingui', 'satchel']
-
-if CONFIG['MOZ_TOOLKIT_SEARCH']:
-    DIRS += ['search']
 
 DIRS += ['captivedetect']
 
@@ -120,3 +117,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
 
 if CONFIG['MOZ_BUILD_APP'] == 'browser':
     DIRS += ['normandy']
+
+# This is only packaged for browser since corrupt JAR and XPI files tend to be a desktop-OS problem.
+if CONFIG['MOZ_BUILD_APP'] == 'browser':
+    DIRS += ['corroborator']

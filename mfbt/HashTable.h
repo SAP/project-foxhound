@@ -171,7 +171,7 @@ class HashMap {
 
   explicit HashMap(AllocPolicy aAllocPolicy = AllocPolicy(),
                    uint32_t aLen = Impl::sDefaultLen)
-      : mImpl(aAllocPolicy, aLen) {}
+      : mImpl(std::move(aAllocPolicy), aLen) {}
 
   explicit HashMap(uint32_t aLen) : mImpl(AllocPolicy(), aLen) {}
 
@@ -456,7 +456,7 @@ class HashSet {
 
   explicit HashSet(AllocPolicy aAllocPolicy = AllocPolicy(),
                    uint32_t aLen = Impl::sDefaultLen)
-      : mImpl(aAllocPolicy, aLen) {}
+      : mImpl(std::move(aAllocPolicy), aLen) {}
 
   explicit HashSet(uint32_t aLen) : mImpl(AllocPolicy(), aLen) {}
 
@@ -1510,20 +1510,32 @@ class HashTable : private AllocPolicy {
   };
 
   // HashTable is movable
-  HashTable(HashTable&& aRhs) : AllocPolicy(aRhs) {
-    PodAssign(this, &aRhs);
-    aRhs.mTable = nullptr;
+  HashTable(HashTable&& aRhs) : AllocPolicy(std::move(aRhs)) {
+    moveFrom(aRhs);
   }
   void operator=(HashTable&& aRhs) {
     MOZ_ASSERT(this != &aRhs, "self-move assignment is prohibited");
     if (mTable) {
       destroyTable(*this, mTable, capacity());
     }
-    PodAssign(this, &aRhs);
-    aRhs.mTable = nullptr;
+    AllocPolicy::operator=(std::move(aRhs));
+    moveFrom(aRhs);
   }
 
  private:
+  void moveFrom(HashTable& aRhs) {
+    mGen = aRhs.mGen;
+    mHashShift = aRhs.mHashShift;
+    mTable = aRhs.mTable;
+    mEntryCount = aRhs.mEntryCount;
+    mRemovedCount = aRhs.mRemovedCount;
+#ifdef DEBUG
+    mMutationCount = aRhs.mMutationCount;
+    mEntered = aRhs.mEntered;
+#endif
+    aRhs.mTable = nullptr;
+  }
+
   // HashTable is not copyable or assignable
   HashTable(const HashTable&) = delete;
   void operator=(const HashTable&) = delete;
@@ -1610,14 +1622,14 @@ class HashTable : private AllocPolicy {
 
   enum FailureBehavior { DontReportFailure = false, ReportFailure = true };
 
+  // Fake a struct that we're going to alloc. See the comments in
+  // HashTableEntry about how the table is laid out, and why it's safe.
+  struct FakeSlot {
+    unsigned char c[sizeof(HashNumber) + sizeof(typename Entry::NonConstT)];
+  };
+
   static char* createTable(AllocPolicy& aAllocPolicy, uint32_t aCapacity,
                            FailureBehavior aReportFailure = ReportFailure) {
-    // Fake a struct that we're going to alloc. See the comments in
-    // HashTableEntry about how the table is laid out, and why it's safe.
-    struct FakeSlot {
-      unsigned char c[sizeof(HashNumber) + sizeof(typename Entry::NonConstT)];
-    };
-
     FakeSlot* fake =
         aReportFailure
             ? aAllocPolicy.template pod_malloc<FakeSlot>(aCapacity)
@@ -1639,12 +1651,18 @@ class HashTable : private AllocPolicy {
         slot.toEntry()->destroyStoredT();
       }
     });
-    aAllocPolicy.free_(aOldTable, aCapacity);
+    freeTable(aAllocPolicy, aOldTable, aCapacity);
+  }
+
+  static void freeTable(AllocPolicy& aAllocPolicy, char* aOldTable,
+                        uint32_t aCapacity) {
+    FakeSlot* fake = reinterpret_cast<FakeSlot*>(aOldTable);
+    aAllocPolicy.free_(fake, aCapacity);
   }
 
  public:
   HashTable(AllocPolicy aAllocPolicy, uint32_t aLen)
-      : AllocPolicy(aAllocPolicy),
+      : AllocPolicy(std::move(aAllocPolicy)),
         mGen(0),
         mHashShift(hashShift(aLen)),
         mTable(nullptr),
@@ -1825,7 +1843,7 @@ class HashTable : private AllocPolicy {
     });
 
     // All entries have been destroyed, no need to destroyTable.
-    this->free_(oldTable, oldCapacity);
+    freeTable(*this, oldTable, oldCapacity);
     return Rehashed;
   }
 
@@ -1965,7 +1983,7 @@ class HashTable : private AllocPolicy {
   void compact() {
     if (empty()) {
       // Free the entry storage.
-      this->free_(mTable, capacity());
+      freeTable(*this, mTable, capacity());
       mGen++;
       mHashShift = hashShift(0);  // gives minimum capacity on regrowth
       mTable = nullptr;

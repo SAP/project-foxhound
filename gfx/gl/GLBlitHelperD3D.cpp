@@ -8,20 +8,21 @@
 
 #include <d3d11.h>
 
-#include "GLContext.h"
+#include "GLContextEGL.h"
 #include "GLLibraryEGL.h"
 #include "GPUVideoImage.h"
 #include "ScopedGLHelpers.h"
 
+#include "mozilla/layers/D3D11ShareHandleImage.h"
 #include "mozilla/layers/D3D11YCbCrImage.h"
 #include "mozilla/layers/TextureD3D11.h"
 
 namespace mozilla {
 namespace gl {
 
-static EGLStreamKHR StreamFromD3DTexture(ID3D11Texture2D* const texD3D,
+static EGLStreamKHR StreamFromD3DTexture(GLLibraryEGL* const egl,
+                                         ID3D11Texture2D* const texD3D,
                                          const EGLAttrib* const postAttribs) {
-  auto* egl = gl::GLLibraryEGL::Get();
   if (!egl->IsExtensionSupported(
           GLLibraryEGL::NV_stream_consumer_gltexture_yuv) ||
       !egl->IsExtensionSupported(
@@ -84,7 +85,8 @@ class BindAnglePlanes final {
     MOZ_RELEASE_ASSERT(numPlanes >= 1 && numPlanes <= 3);
 
     const auto& gl = mParent.mGL;
-    auto* egl = gl::GLLibraryEGL::Get();
+    const auto& gle = GLContextEGL::Cast(gl);
+    const auto& egl = gle->mEgl;
     const auto& display = egl->Display();
 
     gl->fGenTextures(numPlanes, mTempTexs);
@@ -96,7 +98,7 @@ class BindAnglePlanes final {
       if (postAttribsList) {
         postAttribs = postAttribsList[i];
       }
-      mStreams[i] = StreamFromD3DTexture(texD3DList[i], postAttribs);
+      mStreams[i] = StreamFromD3DTexture(egl, texD3DList[i], postAttribs);
       mSuccess &= bool(mStreams[i]);
     }
 
@@ -120,7 +122,8 @@ class BindAnglePlanes final {
 
   ~BindAnglePlanes() {
     const auto& gl = mParent.mGL;
-    auto* egl = gl::GLLibraryEGL::Get();
+    const auto& gle = GLContextEGL::Cast(gl);
+    const auto& egl = gle->mEgl;
     const auto& display = egl->Display();
 
     if (mSuccess) {
@@ -149,7 +152,8 @@ ID3D11Device* GLBlitHelper::GetD3D11() const {
 
   if (!mGL->IsANGLE()) return nullptr;
 
-  auto* egl = gl::GLLibraryEGL::Get();
+  const auto& gle = GLContextEGL::Cast(mGL);
+  const auto& egl = gle->mEgl;
   EGLDeviceEXT deviceEGL = 0;
   MOZ_ALWAYS_TRUE(egl->fQueryDisplayAttribEXT(
       egl->Display(), LOCAL_EGL_DEVICE_EXT, (EGLAttrib*)&deviceEGL));
@@ -201,6 +205,20 @@ bool GLBlitHelper::BlitImage(layers::GPUVideoImage* const srcImage,
 
 // -------------------------------------
 
+bool GLBlitHelper::BlitImage(layers::D3D11ShareHandleImage* const srcImage,
+                             const gfx::IntSize& destSize,
+                             const OriginPos destOrigin) const {
+  const auto& data = srcImage->GetData();
+  if (!data) return false;
+
+  layers::SurfaceDescriptorD3D10 desc;
+  if (!data->SerializeSpecific(&desc)) return false;
+
+  return BlitDescriptor(desc, destSize, destOrigin);
+}
+
+// -------------------------------------
+
 bool GLBlitHelper::BlitImage(layers::D3D11YCbCrImage* const srcImage,
                              const gfx::IntSize& destSize,
                              const OriginPos destOrigin) const {
@@ -229,7 +247,7 @@ bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
 
   const auto srcOrigin = OriginPos::BottomLeft;
   const gfx::IntRect clipRect(0, 0, clipSize.width, clipSize.height);
-  const auto colorSpace = YUVColorSpace::BT601;
+  const auto colorSpace = desc.yUVColorSpace();
 
   if (format != gfx::SurfaceFormat::NV12 &&
       format != gfx::SurfaceFormat::P010 &&
@@ -286,7 +304,7 @@ bool GLBlitHelper::BlitAngleYCbCr(const WindowsHandle (&handleList)[3],
                                   const gfx::IntRect& clipRect,
                                   const gfx::IntSize& ySize,
                                   const gfx::IntSize& uvSize,
-                                  const YUVColorSpace colorSpace,
+                                  const gfx::YUVColorSpace colorSpace,
                                   const gfx::IntSize& destSize,
                                   const OriginPos destOrigin) const {
   const auto& d3d = GetD3D11();

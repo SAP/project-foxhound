@@ -40,18 +40,21 @@ const GRID_FRAGMENT_DATA = {
         names: ["col-1", "col-start-1", "sidebar-start"],
         number: 1,
         start: 0,
+        type: "explicit",
       },
       {
         breadth: 0,
         names: ["col-2", "header-start", "sidebar-end", "content-start"],
         number: 2,
         start: 100,
+        type: "explicit",
       },
       {
         breadth: 0,
         names: ["header-end", "content-end"],
         number: 3,
         start: 200,
+        type: "explicit",
       },
     ],
     tracks: [
@@ -76,18 +79,21 @@ const GRID_FRAGMENT_DATA = {
         names: ["header-start"],
         number: 1,
         start: 0,
+        type: "explicit",
       },
       {
         breadth: 0,
         names: ["header-end", "sidebar-start", "content-start"],
         number: 2,
         start: 100,
+        type: "explicit",
       },
       {
         breadth: 0,
         names: ["sidebar-end", "content-end"],
         number: 3,
         start: 200,
+        type: "explicit",
       },
     ],
     tracks: [
@@ -108,8 +114,9 @@ const GRID_FRAGMENT_DATA = {
 };
 
 add_task(async function() {
-  const { target, walker, layout } =
-    await initLayoutFrontForUrl(MAIN_DOMAIN + "grid.html");
+  const { target, walker, layout } = await initLayoutFrontForUrl(
+    MAIN_DOMAIN + "grid.html"
+  );
   const grids = await layout.getGrids(walker.rootNode);
   const grid = grids[0];
   const { gridFragments } = grid;
@@ -117,13 +124,18 @@ add_task(async function() {
   is(grids.length, 1, "One grid was returned.");
   is(gridFragments.length, 1, "One grid fragment was returned.");
   ok(Array.isArray(gridFragments), "An array of grid fragments was returned.");
-  Assert.deepEqual(gridFragments[0], GRID_FRAGMENT_DATA,
-    "Got the correct grid fragment data.");
+  Assert.deepEqual(
+    gridFragments[0],
+    GRID_FRAGMENT_DATA,
+    "Got the correct grid fragment data."
+  );
 
   info("Get the grid container node front.");
 
   try {
-    const nodeFront = await walker.getNodeFromActor(grids[0].actorID, ["containerEl"]);
+    const nodeFront = await walker.getNodeFromActor(grids[0].actorID, [
+      "containerEl",
+    ]);
     ok(nodeFront, "Got the grid container node front.");
   } catch (e) {
     ok(false, "Did not get grid container node front.");

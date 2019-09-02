@@ -3,15 +3,23 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* global DomProvider */
+
 "use strict";
 
 // React & Redux
-const { Component, createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  Component,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 
-const TreeView = createFactory(require("devtools/client/shared/components/tree/TreeView"));
+const TreeView = createFactory(
+  require("devtools/client/shared/components/tree/TreeView")
+);
 // Reps
 const { REPS, MODE } = require("devtools/client/shared/components/reps/reps");
 const { Rep } = REPS;
@@ -50,50 +58,89 @@ class DomTree extends Component {
       return true;
     }
 
-    return (object.name && object.name.indexOf(this.props.filter) > -1);
+    return object.name && object.name.indexOf(this.props.filter) > -1;
   }
 
   /**
    * Render DOM panel content
    */
   render() {
-    const {
-      dispatch,
-      grips,
-      object,
-      openLink,
-    } = this.props;
+    const { dispatch, grips, object, openLink } = this.props;
 
-    const columns = [{
-      "id": "value",
-    }];
+    const columns = [
+      {
+        id: "value",
+      },
+    ];
+
+    let onDOMNodeMouseOver;
+    let onDOMNodeMouseOut;
+    let onInspectIconClick;
+    const toolbox = DomProvider.getToolbox();
+    if (toolbox) {
+      onDOMNodeMouseOver = async (grip, options = {}) => {
+        await toolbox.initInspector();
+        if (!toolbox.highlighter) {
+          return null;
+        }
+        const nodeFront = await toolbox.walker.gripToNodeFront(grip);
+        return toolbox.highlighter.highlight(nodeFront, options);
+      };
+      onDOMNodeMouseOut = (forceHide = false) => {
+        return toolbox.highlighter
+          ? toolbox.highlighter.unhighlight(forceHide)
+          : null;
+      };
+      onInspectIconClick = async grip => {
+        await toolbox.initInspector();
+        const onSelectInspector = toolbox.selectTool(
+          "inspector",
+          "inspect_dom"
+        );
+        const onGripNodeToFront = toolbox.walker.gripToNodeFront(grip);
+        const [front, inspector] = await Promise.all([
+          onGripNodeToFront,
+          onSelectInspector,
+        ]);
+
+        const onInspectorUpdated = inspector.once("inspector-updated");
+        const onNodeFrontSet = toolbox.selection.setNodeFront(front, {
+          reason: "console",
+        });
+
+        return Promise.all([onNodeFrontSet, onInspectorUpdated]);
+      };
+    }
 
     // This is the integration point with Reps. The DomTree is using
     // Reps to render all values. The code also specifies default rep
     // used for data types that don't have its own specific template.
     const renderValue = props => {
-      return Rep(Object.assign({}, props, {
-        defaultRep: Grip,
-        cropLimit: 50,
-      }));
+      return Rep(
+        Object.assign({}, props, {
+          onDOMNodeMouseOver,
+          onDOMNodeMouseOut,
+          onInspectIconClick,
+          defaultRep: Grip,
+          cropLimit: 50,
+        })
+      );
     };
 
-    return (
-      TreeView({
-        columns,
-        decorator: new DomDecorator(),
-        mode: MODE.SHORT,
-        object,
-        onFilter: this.onFilter,
-        openLink,
-        provider: new GripProvider(grips, dispatch),
-        renderValue,
-      })
-    );
+    return TreeView({
+      columns,
+      decorator: new DomDecorator(),
+      mode: MODE.SHORT,
+      object,
+      onFilter: this.onFilter,
+      openLink,
+      provider: new GripProvider(grips, dispatch),
+      renderValue,
+    });
   }
 }
 
-const mapStateToProps = (state) => {
+const mapStateToProps = state => {
   return {
     grips: state.grips,
     filter: state.filter,

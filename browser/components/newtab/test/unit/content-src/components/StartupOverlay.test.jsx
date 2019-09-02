@@ -1,40 +1,40 @@
-import {actionCreators as ac, actionTypes as at} from "common/Actions.jsm";
-import {mountWithIntl} from "test/unit/utils";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
+import { mount } from "enzyme";
 import React from "react";
-import {_StartupOverlay as StartupOverlay} from "content-src/asrouter/templates/StartupOverlay/StartupOverlay";
+import { StartupOverlay } from "content-src/asrouter/templates/StartupOverlay/StartupOverlay";
 
 describe("<StartupOverlay>", () => {
   let wrapper;
   let dispatch;
-  let onReady;
   let onBlock;
   let sandbox;
   beforeEach(() => {
-    sandbox = sinon.sandbox.create();
+    sandbox = sinon.createSandbox();
     dispatch = sandbox.stub();
-    onReady = sandbox.stub();
     onBlock = sandbox.stub();
 
-    wrapper = mountWithIntl(<StartupOverlay onBlock={onBlock} onReady={onReady} dispatch={dispatch} />);
+    wrapper = mount(<StartupOverlay onBlock={onBlock} dispatch={dispatch} />);
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  it("should not render if state.show is false", () => {
-    wrapper.setState({overlayRemoved: true});
-    assert.isTrue(wrapper.isEmptyRender());
-  });
-
-  it("should call prop.onReady after mount + timeout", async () => {
+  it("should add show class after mount and timeout", async () => {
     const clock = sandbox.useFakeTimers();
-    wrapper = mountWithIntl(<StartupOverlay onBlock={onBlock} onReady={onReady} dispatch={dispatch} />);
-    wrapper.setState({overlayRemoved: false});
+    wrapper = mount(<StartupOverlay onBlock={onBlock} dispatch={dispatch} />);
+    assert.isFalse(
+      wrapper.find(".overlay-wrapper").hasClass("show"),
+      ".overlay-wrapper does not have .show class"
+    );
 
     clock.tick(10);
+    wrapper.update();
 
-    assert.calledOnce(onReady);
+    assert.isTrue(
+      wrapper.find(".overlay-wrapper").hasClass("show"),
+      ".overlay-wrapper has .show class"
+    );
   });
 
   it("should emit UserEvent SKIPPED_SIGNIN when you click the skip button", () => {
@@ -44,7 +44,13 @@ describe("<StartupOverlay>", () => {
 
     assert.calledOnce(dispatch);
     assert.isUserEventAction(dispatch.firstCall.args[0]);
-    assert.calledWith(dispatch, ac.UserEvent({event: at.SKIPPED_SIGNIN, value: {has_flow_params: false}}));
+    assert.calledWith(
+      dispatch,
+      ac.UserEvent({
+        event: at.SKIPPED_SIGNIN,
+        value: { has_flow_params: false },
+      })
+    );
   });
 
   it("should emit UserEvent SUBMIT_EMAIL when you submit the form", () => {
@@ -54,6 +60,12 @@ describe("<StartupOverlay>", () => {
 
     assert.calledOnce(dispatch);
     assert.isUserEventAction(dispatch.firstCall.args[0]);
-    assert.calledWith(dispatch, ac.UserEvent({event: at.SUBMIT_EMAIL, value: {has_flow_params: false}}));
+    assert.calledWith(
+      dispatch,
+      ac.UserEvent({
+        event: at.SUBMIT_EMAIL,
+        value: { has_flow_params: false },
+      })
+    );
   });
 });

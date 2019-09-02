@@ -163,10 +163,13 @@ function defineCursorUpdateMethods(cls, methods) {
   }
 }
 
-defineCursorUpdateMethods(Cursor, ["advance", "continue", "continuePrimaryKey"]);
+defineCursorUpdateMethods(Cursor, [
+  "advance",
+  "continue",
+  "continuePrimaryKey",
+]);
 
-forwardGetters(Cursor, "cursor",
-               ["direction", "key", "primaryKey"]);
+forwardGetters(Cursor, "cursor", ["direction", "key", "primaryKey"]);
 wrapMethods(Cursor, "cursor", ["delete", "update"]);
 
 class CursorWithValue extends Cursor {}
@@ -189,8 +192,13 @@ class Cursed {
   }
 }
 
-wrapMethods(Cursed, "cursed",
-            ["count", "get", "getAll", "getAllKeys", "getKey"]);
+wrapMethods(Cursed, "cursed", [
+  "count",
+  "get",
+  "getAll",
+  "getAllKeys",
+  "getKey",
+]);
 
 class Index extends Cursed {
   constructor(index, objectStore) {
@@ -201,8 +209,14 @@ class Index extends Cursed {
   }
 }
 
-forwardGetters(Index, "index",
-               ["isAutoLocale", "keyPath", "locale", "multiEntry", "name", "unique"]);
+forwardGetters(Index, "index", [
+  "isAutoLocale",
+  "keyPath",
+  "locale",
+  "multiEntry",
+  "name",
+  "unique",
+]);
 
 class ObjectStore extends Cursed {
   constructor(store) {
@@ -212,18 +226,15 @@ class ObjectStore extends Cursed {
   }
 
   createIndex(...args) {
-    return new Index(this.store.createIndex(...args),
-                     this);
+    return new Index(this.store.createIndex(...args), this);
   }
 
   index(...args) {
-    return new Index(this.store.index(...args),
-                     this);
+    return new Index(this.store.index(...args), this);
   }
 }
 
-wrapMethods(ObjectStore, "store",
-            ["add", "clear", "delete", "put"]);
+wrapMethods(ObjectStore, "store", ["add", "clear", "delete", "put"]);
 
 forwardMethods(ObjectStore, "store", ["deleteIndex"]);
 
@@ -236,6 +247,9 @@ class Transaction {
       transaction.onerror = () => {
         reject(transaction.error);
       };
+      transaction.onabort = () => {
+        reject(transaction.error);
+      };
     });
   }
 
@@ -245,7 +259,7 @@ class Transaction {
 
   /**
    * Returns a Promise which resolves when the transaction completes, or
-   * rejects when a transaction error occurs.
+   * rejects when a transaction error or abort occurs.
    *
    * @returns {Promise}
    */
@@ -254,8 +268,12 @@ class Transaction {
   }
 }
 
-forwardGetters(Transaction, "transaction",
-               ["db", "mode", "error", "objectStoreNames"]);
+forwardGetters(Transaction, "transaction", [
+  "db",
+  "mode",
+  "error",
+  "objectStoreNames",
+]);
 
 forwardMethods(Transaction, "transaction", ["abort"]);
 
@@ -398,11 +416,19 @@ for (let method of ["cmp", "deleteDatabase"]) {
   };
 }
 
-forwardMethods(IndexedDB, "db",
-               ["addEventListener", "close", "deleteObjectStore", "hasEventListener", "removeEventListener"]);
+forwardMethods(IndexedDB, "db", [
+  "addEventListener",
+  "close",
+  "deleteObjectStore",
+  "hasEventListener",
+  "removeEventListener",
+]);
 
-forwardGetters(IndexedDB, "db",
-               ["name", "objectStoreNames", "version"]);
+forwardGetters(IndexedDB, "db", ["name", "objectStoreNames", "version"]);
 
-forwardProps(IndexedDB, "db",
-             ["onabort", "onclose", "onerror", "onversionchange"]);
+forwardProps(IndexedDB, "db", [
+  "onabort",
+  "onclose",
+  "onerror",
+  "onversionchange",
+]);

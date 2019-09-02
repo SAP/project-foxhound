@@ -15,8 +15,9 @@ const WORKER_NAME = "testserviceworker";
 add_task(async function() {
   const mocks = new Mocks();
 
-  const { document, tab, window } =
-    await openAboutDebugging({ enableWorkerUpdates: true });
+  const { document, tab, window } = await openAboutDebugging({
+    enableWorkerUpdates: true,
+  });
   await selectThisFirefoxPage(document, window.AboutDebugging.store);
 
   info("Prepare Network client mock");
@@ -31,10 +32,12 @@ add_task(async function() {
   info(`Add a service worker to the network client`);
   const workers = {
     otherWorkers: [],
-    serviceWorkers: [{
-      name: WORKER_NAME,
-      workerTargetFront: { actorID: WORKER_NAME },
-    }],
+    serviceWorkers: [
+      {
+        name: WORKER_NAME,
+        workerTargetFront: { actorID: WORKER_NAME },
+      },
+    ],
     sharedWorkers: [],
   };
   networkClient.listWorkers = () => workers;
@@ -44,8 +47,14 @@ add_task(async function() {
   await waitUntil(() => findDebugTargetByText(WORKER_NAME, document));
 
   info("Go to This Firefox again");
-  const thisFirefoxSidebarItem = findSidebarItemByText("This Firefox", document);
-  const thisFirefoxLink = thisFirefoxSidebarItem.querySelector(".js-sidebar-link");
+  const thisFirefoxString = getThisFirefoxString(window);
+  const thisFirefoxSidebarItem = findSidebarItemByText(
+    thisFirefoxString,
+    document
+  );
+  const thisFirefoxLink = thisFirefoxSidebarItem.querySelector(
+    ".qa-sidebar-link"
+  );
   info("Click on the ThisFirefox item in the sidebar");
   const requestsSuccess = waitForRequestsSuccess(window.AboutDebugging.store);
   thisFirefoxLink.click();
@@ -54,12 +63,17 @@ add_task(async function() {
   await requestsSuccess;
 
   info("Check that the runtime info is rendered for This Firefox");
-  const thisFirefoxRuntimeInfo = document.querySelector(".js-runtime-name");
-  ok(thisFirefoxRuntimeInfo, "Runtime info for this-firefox runtime is displayed");
+  const thisFirefoxRuntimeInfo = document.querySelector(".qa-runtime-name");
+  ok(
+    thisFirefoxRuntimeInfo,
+    "Runtime info for this-firefox runtime is displayed"
+  );
 
   const text = thisFirefoxRuntimeInfo.textContent;
-  ok(text.includes("Firefox") && text.includes("63.0"),
-    "this-firefox runtime info shows the correct values");
+  ok(
+    text.includes("Firefox") && text.includes("63.0"),
+    "this-firefox runtime info shows the correct values"
+  );
 
   await removeTab(tab);
 });

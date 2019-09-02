@@ -28,27 +28,6 @@ namespace rx
 namespace
 {
 
-// This class needs to match OutputHLSL::decorate
-class DecorateVariable final : angle::NonCopyable
-{
-  public:
-    explicit DecorateVariable(const std::string &str) : mName(str) {}
-    const std::string &getName() const { return mName; }
-
-  private:
-    const std::string &mName;
-};
-
-std::ostream &operator<<(std::ostream &o, const DecorateVariable &dv)
-{
-    if (dv.getName().compare(0, 3, "gl_") != 0)
-    {
-        o << "_";
-    }
-    o << dv.getName();
-    return o;
-}
-
 const char *HLSLComponentTypeString(GLenum componentType)
 {
     switch (componentType)
@@ -118,13 +97,14 @@ void HLSLTypeString(std::ostringstream &ostream, GLenum type)
 
 const PixelShaderOutputVariable *FindOutputAtLocation(
     const std::vector<PixelShaderOutputVariable> &outputVariables,
-    unsigned int location)
+    unsigned int location,
+    size_t index = 0)
 {
-    for (size_t variableIndex = 0; variableIndex < outputVariables.size(); ++variableIndex)
+    for (auto &outputVar : outputVariables)
     {
-        if (outputVariables[variableIndex].outputIndex == location)
+        if (outputVar.outputLocation == location && outputVar.outputIndex == index)
         {
-            return &outputVariables[variableIndex];
+            return &outputVar;
         }
     }
 
@@ -159,9 +139,7 @@ BuiltinInfo::~BuiltinInfo() = default;
 
 // DynamicHLSL implementation
 
-DynamicHLSL::DynamicHLSL(RendererD3D *const renderer) : mRenderer(renderer)
-{
-}
+DynamicHLSL::DynamicHLSL(RendererD3D *const renderer) : mRenderer(renderer) {}
 
 std::string DynamicHLSL::generateVertexShaderForInputLayout(
     const std::string &sourceShader,
@@ -204,8 +182,8 @@ std::string DynamicHLSL::generateVertexShaderForInputLayout(
         if (!shaderAttribute.name.empty())
         {
             ASSERT(inputIndex < MAX_VERTEX_ATTRIBS);
-            VertexFormatType vertexFormatType =
-                inputIndex < inputLayout.size() ? inputLayout[inputIndex] : VERTEX_FORMAT_INVALID;
+            angle::FormatID vertexFormatID =
+                inputIndex < inputLayout.size() ? inputLayout[inputIndex] : angle::FormatID::NONE;
 
             // HLSL code for input structure
             if (IsMatrixType(shaderAttribute.type))
@@ -216,7 +194,7 @@ std::string DynamicHLSL::generateVertexShaderForInputLayout(
             }
             else
             {
-                GLenum componentType = mRenderer->getVertexComponentType(vertexFormatType);
+                GLenum componentType = mRenderer->getVertexComponentType(vertexFormatID);
 
                 if (shaderAttribute.name == "gl_InstanceID" ||
                     shaderAttribute.name == "gl_VertexID")
@@ -258,9 +236,9 @@ std::string DynamicHLSL::generateVertexShaderForInputLayout(
             // data reinterpretation (eg for pure integer->float, float->pure integer)
             // TODO: issue warning with gl debug info extension, when supported
             if (IsMatrixType(shaderAttribute.type) ||
-                (mRenderer->getVertexConversionType(vertexFormatType) & VERTEX_CONVERT_GPU) != 0)
+                (mRenderer->getVertexConversionType(vertexFormatID) & VERTEX_CONVERT_GPU) != 0)
             {
-                GenerateAttributeConversionHLSL(vertexFormatType, shaderAttribute, initStream);
+                GenerateAttributeConversionHLSL(vertexFormatID, shaderAttribute, initStream);
             }
             else
             {
@@ -311,7 +289,9 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
     {
         numOutputs = 1u;
     }
-    const PixelShaderOutputVariable defaultOutput(GL_FLOAT_VEC4, "dummy", "float4(0, 0, 0, 1)", 0);
+    const PixelShaderOutputVariable defaultOutput(GL_FLOAT_VEC4, "dummy", "float4(0, 0, 0, 1)", 0,
+                                                  0);
+    size_t outputIndex = 0;
 
     for (size_t layoutIndex = 0; layoutIndex < numOutputs; ++layoutIndex)
     {
@@ -320,15 +300,16 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
         if (binding != GL_NONE)
         {
             unsigned int location = (binding - GL_COLOR_ATTACHMENT0);
+            outputIndex =
+                layoutIndex > 0 && binding == outputLayout[layoutIndex - 1] ? outputIndex + 1 : 0;
 
             const PixelShaderOutputVariable *outputVariable =
                 outputLayout.empty() ? &defaultOutput
-                                     : FindOutputAtLocation(outputVariables, location);
+                                     : FindOutputAtLocation(outputVariables, location, outputIndex);
 
             // OpenGL ES 3.0 spec $4.2.1
             // If [...] not all user-defined output variables are written, the values of fragment
-            // colors
-            // corresponding to unwritten variables are similarly undefined.
+            // colors corresponding to unwritten variables are similarly undefined.
             if (outputVariable)
             {
                 declarationStream << "    ";
@@ -353,8 +334,9 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
                          "PS_OUTPUT generateOutput()\n"
                          "{\n"
                          "    PS_OUTPUT output;\n"
-                      << copyStream.str() << "    return output;\n"
-                                             "}\n";
+                      << copyStream.str()
+                      << "    return output;\n"
+                         "}\n";
 
     std::string pixelHLSL(sourceShader);
 
@@ -363,6 +345,25 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
     ASSERT(success);
 
     return pixelHLSL;
+}
+
+std::string DynamicHLSL::generateComputeShaderForImage2DBindSignature(
+    const d3d::Context *context,
+    ProgramD3D &programD3D,
+    const gl::ProgramState &programData,
+    std::vector<sh::Uniform> &image2DUniforms,
+    const gl::ImageUnitTextureTypeMap &image2DBindLayout) const
+{
+    std::string computeHLSL(
+        programData.getAttachedShader(ShaderType::Compute)->getTranslatedSource());
+
+    if (image2DUniforms.empty())
+    {
+        return computeHLSL;
+    }
+
+    return GenerateComputeShaderForImage2DBindSignature(context, programD3D, programData,
+                                                        image2DUniforms, image2DBindLayout);
 }
 
 void DynamicHLSL::generateVaryingLinkHLSL(const VaryingPacking &varyingPacking,
@@ -407,7 +408,7 @@ void DynamicHLSL::generateVaryingLinkHLSL(const VaryingPacking &varyingPacking,
     for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
     {
         const PackedVaryingRegister &registerInfo = registerInfos[registerIndex];
-        const auto &varying = *registerInfo.packedVarying->varying;
+        const auto &varying                       = *registerInfo.packedVarying->varying;
         ASSERT(!varying.isStruct());
 
         // TODO: Add checks to ensure D3D interpolation modifiers don't result in too many
@@ -468,10 +469,10 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Caps &caps,
     ASSERT((*shaderHLSL)[gl::ShaderType::Vertex].empty() &&
            (*shaderHLSL)[gl::ShaderType::Fragment].empty());
 
-    gl::Shader *vertexShaderGL         = programData.getAttachedShader(ShaderType::Vertex);
-    gl::Shader *fragmentShaderGL       = programData.getAttachedShader(ShaderType::Fragment);
-    const ShaderD3D *fragmentShader    = GetImplAs<ShaderD3D>(fragmentShaderGL);
-    const int shaderModel              = mRenderer->getMajorShaderModel();
+    gl::Shader *vertexShaderGL      = programData.getAttachedShader(ShaderType::Vertex);
+    gl::Shader *fragmentShaderGL    = programData.getAttachedShader(ShaderType::Fragment);
+    const ShaderD3D *fragmentShader = GetImplAs<ShaderD3D>(fragmentShaderGL);
+    const int shaderModel           = mRenderer->getMajorShaderModel();
 
     // usesViewScale() isn't supported in the D3D9 renderer
     ASSERT(shaderModel >= 4 || !programMetadata.usesViewScale());
@@ -586,8 +587,8 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Caps &caps,
     for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
     {
         const PackedVaryingRegister &registerInfo = registerInfos[registerIndex];
-        const auto &packedVarying = *registerInfo.packedVarying;
-        const auto &varying = *packedVarying.varying;
+        const auto &packedVarying                 = *registerInfo.packedVarying;
+        const auto &varying                       = *packedVarying.varying;
         ASSERT(!varying.isStruct());
 
         vertexGenerateOutput << "    output.v" << registerIndex << " = ";
@@ -782,8 +783,8 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Caps &caps,
     for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
     {
         const PackedVaryingRegister &registerInfo = registerInfos[registerIndex];
-        const auto &packedVarying = *registerInfo.packedVarying;
-        const auto &varying = *packedVarying.varying;
+        const auto &packedVarying                 = *registerInfo.packedVarying;
+        const auto &varying                       = *packedVarying.varying;
         ASSERT(!varying.isBuiltIn() && !varying.isStruct());
 
         // Don't reference VS-only transform feedback varyings in the PS. Note that we're relying on
@@ -978,8 +979,8 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Caps &caps,
     switch (primitiveType)
     {
         case gl::PrimitiveMode::Points:
-            inputPT         = "point";
-            inputSize       = 1;
+            inputPT   = "point";
+            inputSize = 1;
 
             if (pointSprites)
             {
@@ -1150,7 +1151,7 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Caps &caps,
 }
 
 // static
-void DynamicHLSL::GenerateAttributeConversionHLSL(gl::VertexFormatType vertexFormatType,
+void DynamicHLSL::GenerateAttributeConversionHLSL(angle::FormatID vertexFormatID,
                                                   const sh::ShaderVariable &shaderAttrib,
                                                   std::ostringstream &outStream)
 {
@@ -1161,9 +1162,9 @@ void DynamicHLSL::GenerateAttributeConversionHLSL(gl::VertexFormatType vertexFor
         return;
     }
 
-    GLenum shaderComponentType = VariableComponentType(shaderAttrib.type);
-    int shaderComponentCount   = VariableComponentCount(shaderAttrib.type);
-    const gl::VertexFormat &vertexFormat = gl::GetVertexFormatFromType(vertexFormatType);
+    GLenum shaderComponentType           = VariableComponentType(shaderAttrib.type);
+    int shaderComponentCount             = VariableComponentCount(shaderAttrib.type);
+    const gl::VertexFormat &vertexFormat = gl::GetVertexFormatFromID(vertexFormatID);
 
     // Perform integer to float conversion (if necessary)
     if (shaderComponentType == GL_FLOAT && vertexFormat.type != GL_FLOAT)
@@ -1179,7 +1180,7 @@ void DynamicHLSL::GenerateAttributeConversionHLSL(gl::VertexFormatType vertexFor
     outStream << "input." << DecorateVariable(shaderAttrib.name);
 }
 
-void DynamicHLSL::getPixelShaderOutputKey(const gl::ContextState &data,
+void DynamicHLSL::getPixelShaderOutputKey(const gl::State &data,
                                           const gl::ProgramState &programData,
                                           const ProgramD3DMetadata &metadata,
                                           std::vector<PixelShaderOutputVariable> *outPixelShaderKey)
@@ -1201,9 +1202,25 @@ void DynamicHLSL::getPixelShaderOutputKey(const gl::ContextState &data,
             outputKeyVariable.name = "gl_Color" + Str(renderTargetIndex);
             outputKeyVariable.source =
                 broadcast ? "gl_Color[0]" : "gl_Color[" + Str(renderTargetIndex) + "]";
-            outputKeyVariable.outputIndex = renderTargetIndex;
+            outputKeyVariable.outputLocation = renderTargetIndex;
 
             outPixelShaderKey->push_back(outputKeyVariable);
+        }
+
+        if (metadata.usesSecondaryColor())
+        {
+            for (unsigned int secondaryIndex = 0;
+                 secondaryIndex < data.getExtensions().maxDualSourceDrawBuffers; secondaryIndex++)
+            {
+                PixelShaderOutputVariable outputKeyVariable;
+                outputKeyVariable.type           = GL_FLOAT_VEC4;
+                outputKeyVariable.name           = "gl_SecondaryColor" + Str(secondaryIndex);
+                outputKeyVariable.source         = "gl_SecondaryColor[" + Str(secondaryIndex) + "]";
+                outputKeyVariable.outputLocation = secondaryIndex;
+                outputKeyVariable.outputIndex    = 1;
+
+                outPixelShaderKey->push_back(outputKeyVariable);
+            }
         }
     }
     else
@@ -1230,12 +1247,44 @@ void DynamicHLSL::getPixelShaderOutputKey(const gl::ContextState &data,
             ASSERT(outputVariable.active);
 
             PixelShaderOutputVariable outputKeyVariable;
-            outputKeyVariable.type        = outputVariable.type;
-            outputKeyVariable.name        = variableName + elementString;
+            outputKeyVariable.type = outputVariable.type;
+            outputKeyVariable.name = variableName + elementString;
             outputKeyVariable.source =
                 variableName +
                 (outputVariable.isArray() ? ArrayString(outputLocation.arrayIndex) : "");
-            outputKeyVariable.outputIndex = outputLocationIndex;
+            outputKeyVariable.outputLocation = outputLocationIndex;
+
+            outPixelShaderKey->push_back(outputKeyVariable);
+        }
+
+        // Now generate any secondary outputs...
+        for (size_t outputLocationIndex = 0u;
+             outputLocationIndex < programData.getSecondaryOutputLocations().size();
+             ++outputLocationIndex)
+        {
+            const VariableLocation &outputLocation =
+                programData.getSecondaryOutputLocations().at(outputLocationIndex);
+            if (!outputLocation.used())
+            {
+                continue;
+            }
+            const sh::ShaderVariable &outputVariable = shaderOutputVars[outputLocation.index];
+            const std::string &variableName          = "out_" + outputVariable.name;
+
+            // Fragment outputs can't be arrays of arrays. ESSL 3.10 section 4.3.6.
+            const std::string &elementString =
+                (outputVariable.isArray() ? Str(outputLocation.arrayIndex) : "");
+
+            ASSERT(outputVariable.active);
+
+            PixelShaderOutputVariable outputKeyVariable;
+            outputKeyVariable.type = outputVariable.type;
+            outputKeyVariable.name = variableName + elementString;
+            outputKeyVariable.source =
+                variableName +
+                (outputVariable.isArray() ? ArrayString(outputLocation.arrayIndex) : "");
+            outputKeyVariable.outputLocation = outputLocationIndex;
+            outputKeyVariable.outputIndex    = 1;
 
             outPixelShaderKey->push_back(outputKeyVariable);
         }
@@ -1243,9 +1292,7 @@ void DynamicHLSL::getPixelShaderOutputKey(const gl::ContextState &data,
 }
 
 // BuiltinVarying Implementation.
-BuiltinVarying::BuiltinVarying() : enabled(false), index(0), systemValue(false)
-{
-}
+BuiltinVarying::BuiltinVarying() : enabled(false), index(0), systemValue(false) {}
 
 std::string BuiltinVarying::str() const
 {

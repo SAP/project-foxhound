@@ -11,13 +11,13 @@ extern crate winit;
 #[path = "common/boilerplate.rs"]
 mod boilerplate;
 
-use boilerplate::{Example, HandyDandyRectBuilder};
+use crate::boilerplate::{Example, HandyDandyRectBuilder};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use webrender::api::{self, DisplayListBuilder, DocumentId, PipelineId, RenderApi, Transaction};
-use webrender::api::{ColorF, SpaceAndClipInfo};
+use webrender::api::{ColorF, CommonItemProperties, SpaceAndClipInfo};
 use webrender::api::units::*;
 use webrender::euclid::size2;
 
@@ -154,14 +154,14 @@ impl api::BlobImageHandler for CheckerboardRenderer {
 
     fn prepare_resources(
         &mut self,
-        _services: &api::BlobImageResources,
+        _services: &dyn api::BlobImageResources,
         _requests: &[api::BlobImageParams],
     ) {}
 
     fn delete_font(&mut self, _font: api::FontKey) {}
     fn delete_font_instance(&mut self, _instance: api::FontInstanceKey) {}
     fn clear_namespace(&mut self, _namespace: api::IdNamespace) {}
-    fn create_blob_rasterizer(&mut self) -> Box<api::AsyncBlobImageRasterizer> {
+    fn create_blob_rasterizer(&mut self) -> Box<dyn api::AsyncBlobImageRasterizer> {
         Box::new(Rasterizer {
             workers: Arc::clone(&self.workers),
             image_cmds: self.image_cmds.clone(),
@@ -200,7 +200,7 @@ impl Example for App {
         api: &RenderApi,
         builder: &mut DisplayListBuilder,
         txn: &mut Transaction,
-        _framebuffer_size: FramebufferIntSize,
+        _device_size: DeviceIntSize,
         pipeline_id: PipelineId,
         _document_id: DocumentId,
     ) {
@@ -220,17 +220,18 @@ impl Example for App {
             None,
         );
 
-        let bounds = LayoutRect::new(LayoutPoint::zero(), builder.content_size());
         let space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         builder.push_simple_stacking_context(
-            &api::LayoutPrimitiveInfo::new(bounds),
+            LayoutPoint::zero(),
             space_and_clip.spatial_id,
+            true,
         );
 
+        let bounds = (30, 30).by(500, 500);
         builder.push_image(
-            &api::LayoutPrimitiveInfo::new((30, 30).by(500, 500)),
-            &space_and_clip,
+            &CommonItemProperties::new(bounds, space_and_clip),
+            bounds,
             LayoutSize::new(500.0, 500.0),
             LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
@@ -239,9 +240,10 @@ impl Example for App {
             ColorF::WHITE,
         );
 
+        let bounds = (600, 600).by(200, 200);
         builder.push_image(
-            &api::LayoutPrimitiveInfo::new((600, 600).by(200, 200)),
-            &space_and_clip,
+            &CommonItemProperties::new(bounds, space_and_clip),
+            bounds,
             LayoutSize::new(200.0, 200.0),
             LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,

@@ -66,13 +66,13 @@ class nsQueryFrame {
   enum FrameIID {
 #define FRAME_ID(classname, ...) classname##_id,
 #define ABSTRACT_FRAME_ID(classname) classname##_id,
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 
     // This marker allows mozilla::ArenaObjectID to "extend" this enum
     // with additional sequential values for use in nsPresArena and
-    // nsIPresShell::{Allocate,Free}ByObjectId
+    // PresShell::{Allocate,Free}ByObjectId
     NON_FRAME_MARKER
   };
 
@@ -80,7 +80,7 @@ class nsQueryFrame {
   enum class ClassID : uint8_t {
 #define FRAME_ID(classname, ...) classname##_id,
 #define ABSTRACT_FRAME_ID(classname)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
   };

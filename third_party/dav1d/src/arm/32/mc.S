@@ -27,7 +27,7 @@
  */
 
 #include "src/arm/asm.S"
-#include "src/arm/32/util.S"
+#include "util.S"
 
 .macro avg dst0, dst1, t0, t1, t2, t3
         vld1.16         {\t0,\t1},   [r2, :128]!
@@ -217,8 +217,8 @@ bidir_fn mask
 
 // This has got the same signature as the put_8tap functions,
 // assumes that the caller has loaded the h argument into r5,
-// and assumes that r8 is set to (24-clz(w)).
-function put
+// and assumes that r8 is set to (clz(w)-24).
+function put_neon
         adr             r9,  L(put_tbl)
         ldr             r8,  [r9, r8, lsl #2]
         add             r9,  r9,  r8
@@ -307,9 +307,9 @@ endfunc
 
 
 // This has got the same signature as the put_8tap functions,
-// assumes that the caller has loaded the h argument into r5,
-// and assumes that r8 is set to (24-clz(w)), and r7 to w*2.
-function prep
+// assumes that the caller has loaded the h argument into r4,
+// and assumes that r8 is set to (clz(w)-24), and r7 to w*2.
+function prep_neon
         adr             r9,  L(prep_tbl)
         ldr             r8,  [r9, r8, lsl #2]
         add             r9,  r9,  r8
@@ -660,7 +660,7 @@ function \op\()_8tap_\type\()_8bpc_neon, export=1
         push            {r4-r11,lr}
         movw            r8,  \type_h
         movw            r9,  \type_v
-        b               \op\()_8tap
+        b               \op\()_8tap_neon
 endfunc
 .endm
 
@@ -680,7 +680,7 @@ make_8tap_fn \type, sharp,          SHARP,   SHARP
 make_8tap_fn \type, sharp_regular,  SHARP,   REGULAR
 make_8tap_fn \type, sharp_smooth,   SHARP,   SMOOTH
 
-function \type\()_8tap
+function \type\()_8tap_neon
         ldrd            r4,  r5,  [sp, #36]
         ldrd            r6,  r7,  [sp, #44]
         movw            r10,  #0x4081  // (1 << 14) | (1 << 7) | (1 << 0)
@@ -699,7 +699,7 @@ function \type\()_8tap
         bne             L(\type\()_8tap_h)
         tst             \my, #(0x7f << 14)
         bne             L(\type\()_8tap_v)
-        b               \type
+        b               \type\()_neon
 
 L(\type\()_8tap_h):
         cmp             \w,  #4
@@ -1112,7 +1112,7 @@ L(\type\()_8tap_v_tbl):
         vmovl_u8        q3,  d6,  q4,  d8,  q8,  d16, q9, d18
         mul_mla_8_2     q12, q13, q12, q13, q14, q15, q1,  q2,  q3,  q4,  q8,  q9
         shift_store_4   \type, \d_strd, q12, d24, d25, q13, d26, d27
-        b               48b
+        bgt             48b
 0:
         vpop            {q4}
         pop             {r4-r11,pc}
@@ -1145,7 +1145,7 @@ L(\type\()_8tap_v_tbl):
 0:
         pop             {r4-r11,pc}
 
-880:    // 8x8, 8x16, 8x32 v
+880:    // 8x6, 8x8, 8x16, 8x32 v
 1680:   // 16x8, 16x16, ...
 320:    // 32x8, 32x16, ...
 640:
@@ -1178,12 +1178,17 @@ L(\type\()_8tap_v_tbl):
         mul_mla_8_1     q3,  q4,  q3,  q4,  q8,  q9,  q10, q11, q12, q13, q14
         shift_store_8   \type, \d_strd, q3,  d6,  q4,  d8
         ble             9f
-        subs            \h,  \h,  #4
-        load_reg        \sr2, \src, \s_strd, d30, d2,  d4,  d6
-        vmovl_u8        q15, d30, q1,  d2,  q2,  d4,  q3,  d6
+        subs            \h,  \h,  #2
+        load_reg        \sr2, \src, \s_strd, d30, d2
+        vmovl_u8        q15, d30, q1,  d2
         mul_mla_8_1     q8,  q9,  q8,  q9,  q10, q11, q12, q13, q14, q15, q1
+        shift_store_8   \type, \d_strd, q8,  d16, q9,  d18
+        ble             9f
+        subs            \h,  \h,  #2
+        load_reg        \sr2, \src, \s_strd, d4,  d6
+        vmovl_u8        q2,  d4,  q3,  d6
         mul_mla_8_1     q10, q11, q10, q11, q12, q13, q14, q15, q1,  q2,  q3
-        shift_store_8   \type, \d_strd, q8,  d16, q9,  d18, q10, d20, q11, d22
+        shift_store_8   \type, \d_strd, q10, d20, q11, d22
         ble             9f
         subs            \h,  \h,  #4
         load_reg        \sr2, \src, \s_strd, d8,  d16, d18, d20
@@ -1831,7 +1836,7 @@ function \type\()_bilin_8bpc_neon, export=1
         bne             L(\type\()_bilin_h)
         cmp             \my, #0
         bne             L(\type\()_bilin_v)
-        b               \type
+        b               \type\()_neon
 
 L(\type\()_bilin_h):
         cmp             \my, #0

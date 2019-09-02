@@ -10,6 +10,7 @@ interface nsIKeyValueEnumeratorCallback;
 interface nsIKeyValuePairCallback;
 interface nsIKeyValueVariantCallback;
 interface nsIKeyValueVoidCallback;
+interface nsIKeyValuePair;
 
 /**
  * The nsIKeyValue* interfaces provide a simple, asynchronous API to a key/value
@@ -65,6 +66,32 @@ interface nsIKeyValueDatabase : nsISupports {
         in nsIVariant value);
 
     /**
+     * Write multiple key/value pairs to the database.
+     *
+     * It supports two types of write:
+     *   * Put a key/value pair into the database. It takes a nsIKeyValuePair
+     *     where its key and value follow the same types as the put() method.
+     *   * Delete a key/value pair from database. It takes a nsIkeyValuePair
+     *     where its value property must be null or undefined.
+     *
+     * This features the "all-or-nothing" semantics, i.e. if any error occurs
+     * during the call, it will rollback the previous writes and terminate the
+     * call. In addition, writeMany should be more efficient than calling "put"
+     * or "delete" for every single key/value pair since it does all the writes
+     * in a single transaction.
+     *
+     * Note:
+     *   * If there are multiple values with the same key in the specified
+     *     pairs, only the last value will be stored in the database.
+     *   * Deleting a key that is not in the database will be silently ignored.
+     *   * If the same key gets put and deleted for multiple times, the final
+     *     state of that key is subject to the ordering of the put(s) and delete(s).
+     */
+    void writeMany(
+        in nsIKeyValueVoidCallback callback,
+        in Array<nsIKeyValuePair> pairs);
+
+    /**
      * Retrieve the value of the specified key from the database.
      *
      * If the key/value pair doesn't exist in the database, and you specify
@@ -95,6 +122,11 @@ interface nsIKeyValueDatabase : nsISupports {
     void delete(
         in nsIKeyValueVoidCallback callback,
         in AUTF8String key);
+
+    /**
+     * Clear all the key/value pairs from the database.
+     */
+    void clear(in nsIKeyValueVoidCallback callback);
 
     /**
      * Enumerate key/value pairs, starting with the first key equal to

@@ -38,13 +38,13 @@
 #include "nsPIDOMWindow.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLFormElement.h"
 #include "nsIContent.h"
 #include "nsIForm.h"
 #include "nsIFormControl.h"
 
 #include "nsDeckFrame.h"
 #include "nsLayoutUtils.h"
-#include "nsIPresShell.h"
 #include "nsIStringBundle.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
@@ -74,6 +74,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
@@ -315,13 +316,19 @@ uint64_t Accessible::VisibilityState() const {
     return states::INVISIBLE;
   }
 
-  // Walk the parent frame chain to see if there's invisible parent or the frame
-  // is in background tab.
   if (!frame->StyleVisibility()->IsVisible()) return states::INVISIBLE;
+
+  // It's invisible if the presshell is hidden by a visibility:hidden element in
+  // an ancestor document.
+  if (frame->PresShell()->IsUnderHiddenEmbedderElement()) {
+    return states::INVISIBLE;
+  }
 
   // Offscreen state if the document's visibility state is not visible.
   if (Document()->IsHidden()) return states::OFFSCREEN;
 
+  // Walk the parent frame chain to see if the frame is in background tab or
+  // scrolled out.
   nsIFrame* curFrame = frame;
   do {
     nsView* view = curFrame->GetView();
@@ -366,8 +373,6 @@ uint64_t Accessible::VisibilityState() const {
 
     if (!parentFrame) {
       parentFrame = nsLayoutUtils::GetCrossDocParentFrame(curFrame);
-      if (parentFrame && !parentFrame->StyleVisibility()->IsVisible())
-        return states::INVISIBLE;
     }
 
     curFrame = parentFrame;
@@ -381,8 +386,8 @@ uint64_t Accessible::VisibilityState() const {
   if (frame->IsTextFrame() && !(frame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
       frame->GetRect().IsEmpty()) {
     nsIFrame::RenderedText text = frame->GetRenderedText(
-        0, UINT32_MAX, nsIFrame::TextOffsetType::OFFSETS_IN_CONTENT_TEXT,
-        nsIFrame::TrailingWhitespace::DONT_TRIM_TRAILING_WHITESPACE);
+        0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
+        nsIFrame::TrailingWhitespace::DontTrim);
     if (text.mString.IsEmpty()) {
       return states::INVISIBLE;
     }
@@ -533,7 +538,22 @@ Accessible* Accessible::ChildAtPoint(int32_t aX, int32_t aY,
   // This happens in mobile platforms with async pinch zooming.
   offset = offset.RemoveResolution(presContext->PresShell()->GetResolution());
 
-  nsIFrame* foundFrame = nsLayoutUtils::GetFrameForPoint(startFrame, offset);
+  // We need to translate with the offset of the edge of the visual
+  // viewport from top edge of the layout viewport.
+  offset += presContext->PresShell()->GetVisualViewportOffset() -
+            presContext->PresShell()->GetLayoutViewportOffset();
+
+  EnumSet<nsLayoutUtils::FrameForPointOption> options = {
+#ifdef MOZ_WIDGET_ANDROID
+      // This is needed in Android to ignore the clipping of the scroll frame
+      // when zoomed in. May regress something on other platforms, so
+      // keeping it Android-exclusive for now.
+      nsLayoutUtils::FrameForPointOption::IgnoreRootScrollFrame
+#endif
+  };
+
+  nsIFrame* foundFrame =
+      nsLayoutUtils::GetFrameForPoint(startFrame, offset, options);
 
   nsIContent* content = nullptr;
   if (!foundFrame || !(content = foundFrame->GetContent()))
@@ -641,11 +661,18 @@ nsRect Accessible::BoundsInAppUnits() const {
     return nsRect();
   }
 
+  PresShell* presShell = mDoc->PresContext()->PresShell();
+
+  // We need to inverse translate with the offset of the edge of the visual
+  // viewport from top edge of the layout viewport.
+  nsPoint viewportOffset = presShell->GetVisualViewportOffset() -
+                           presShell->GetLayoutViewportOffset();
+  unionRectTwips.MoveBy(-viewportOffset);
+
   // We need to take into account a non-1 resolution set on the presshell.
   // This happens in mobile platforms with async pinch zooming. Here we
   // scale the bounds before adding the screen-relative offset.
-  unionRectTwips.ScaleRoundOut(
-      mDoc->PresContext()->PresShell()->GetResolution());
+  unionRectTwips.ScaleRoundOut(presShell->GetResolution());
   // We have the union of the rectangle, now we need to put it in absolute
   // screen coords.
   nsRect orgRectPixels = boundingFrame->GetScreenRectInAppUnits();
@@ -716,8 +743,7 @@ void Accessible::TakeFocus() const {
 
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
-    AutoHandlingUserInputStatePusher inputStatePusher(true, nullptr,
-                                                      focusContent->OwnerDoc());
+    AutoHandlingUserInputStatePusher inputStatePusher(true);
     // XXXbz: Can we actually have a non-element content here?
     RefPtr<Element> element =
         focusContent->IsElement() ? focusContent->AsElement() : nullptr;
@@ -1277,6 +1303,18 @@ void Accessible::ApplyARIAState(uint64_t* aState) const {
         break;
       }
     }
+  } else {
+    // Sometimes, we use aria-activedescendant targeting something which isn't
+    // actually a descendant. This is technically a spec violation, but it's a
+    // useful hack which makes certain things much easier. For example, we use
+    // this for "fake focus" for multi select browser tabs and Quantumbar
+    // autocomplete suggestions.
+    // In these cases, the aria-activedescendant code above won't make the
+    // active item focusable. It doesn't make sense for something to have
+    // focus when it isn't focusable, so fix that here.
+    if (FocusMgr()->IsActiveItem(this)) {
+      *aState |= states::FOCUSABLE;
+    }
   }
 
   // special case: A native button element whose role got transformed by ARIA to
@@ -1693,8 +1731,7 @@ Relation Accessible::RelationByType(RelationType aType) const {
         // HTML form controls implements nsIFormControl interface.
         nsCOMPtr<nsIFormControl> control(do_QueryInterface(mContent));
         if (control) {
-          nsCOMPtr<nsIForm> form(do_QueryInterface(control->GetFormElement()));
-          if (form) {
+          if (dom::HTMLFormElement* form = control->GetFormElement()) {
             nsCOMPtr<nsIContent> formContent =
                 do_QueryInterface(form->GetDefaultSubmitElement());
             return Relation(mDoc, formContent);
@@ -1704,11 +1741,10 @@ Relation Accessible::RelationByType(RelationType aType) const {
         // In XUL, use first <button default="true" .../> in the document
         dom::Document* doc = mContent->OwnerDoc();
         nsIContent* buttonEl = nullptr;
-        if (doc->IsXULDocument()) {
-          dom::XULDocument* xulDoc = doc->AsXULDocument();
+        if (doc->AllowXULXBL()) {
           nsCOMPtr<nsIHTMLCollection> possibleDefaultButtons =
-              xulDoc->GetElementsByAttribute(NS_LITERAL_STRING("default"),
-                                             NS_LITERAL_STRING("true"));
+              doc->GetElementsByAttribute(NS_LITERAL_STRING("default"),
+                                          NS_LITERAL_STRING("true"));
           if (possibleDefaultButtons) {
             uint32_t length = possibleDefaultButtons->Length();
             // Check for button in list of default="true" elements
@@ -1800,9 +1836,12 @@ void Accessible::DoCommand(nsIContent* aContent, uint32_t aActionIndex) const {
           mContent(aContent),
           mIdx(aIdx) {}
 
-    NS_IMETHOD Run() override {
-      if (mAcc) mAcc->DispatchClickEvent(mContent, mIdx);
-
+    // XXX Cannot mark as MOZ_CAN_RUN_SCRIPT because the base class change
+    //     requires too big changes across a lot of modules.
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override {
+      if (mAcc) {
+        MOZ_KnownLive(mAcc)->DispatchClickEvent(MOZ_KnownLive(mContent), mIdx);
+      }
       return NS_OK;
     }
 
@@ -1826,12 +1865,11 @@ void Accessible::DispatchClickEvent(nsIContent* aContent,
                                     uint32_t aActionIndex) const {
   if (IsDefunct()) return;
 
-  nsCOMPtr<nsIPresShell> presShell = mDoc->PresShell();
+  RefPtr<PresShell> presShell = mDoc->PresShellPtr();
 
   // Scroll into view.
-  presShell->ScrollContentIntoView(aContent, nsIPresShell::ScrollAxis(),
-                                   nsIPresShell::ScrollAxis(),
-                                   nsIPresShell::SCROLL_OVERFLOW_HIDDEN);
+  presShell->ScrollContentIntoView(aContent, ScrollAxis(), ScrollAxis(),
+                                   ScrollFlags::ScrollOverflowHidden);
 
   AutoWeakFrame frame = aContent->GetPrimaryFrame();
   if (!frame) return;

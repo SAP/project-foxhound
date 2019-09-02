@@ -56,7 +56,17 @@ impl Parse for CursorImage {
 }
 
 /// Specified value of `-moz-force-broken-image-icon`
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
 pub struct MozForceBrokenImageIcon(pub bool);
 
 impl MozForceBrokenImageIcon {
@@ -139,6 +149,8 @@ impl Parse for ScrollbarColor {
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[repr(u8)]
 pub enum UserSelect {
@@ -166,6 +178,8 @@ pub enum UserSelect {
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[repr(u8)]
 pub enum CursorKind {
@@ -185,7 +199,9 @@ pub enum CursorKind {
     Move,
     NoDrop,
     NotAllowed,
+    #[parse(aliases = "-moz-grab")]
     Grab,
+    #[parse(aliases = "-moz-grabbing")]
     Grabbing,
     EResize,
     NResize,
@@ -202,15 +218,9 @@ pub enum CursorKind {
     ColResize,
     RowResize,
     AllScroll,
+    #[parse(aliases = "-moz-zoom-in")]
     ZoomIn,
+    #[parse(aliases = "-moz-zoom-out")]
     ZoomOut,
     Auto,
-    #[cfg(feature = "gecko")]
-    MozGrab,
-    #[cfg(feature = "gecko")]
-    MozGrabbing,
-    #[cfg(feature = "gecko")]
-    MozZoomIn,
-    #[cfg(feature = "gecko")]
-    MozZoomOut,
 }

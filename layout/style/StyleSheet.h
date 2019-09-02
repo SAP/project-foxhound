@@ -25,12 +25,13 @@
 
 class nsINode;
 class nsIPrincipal;
+struct nsLayoutStylesheetCacheShm;
+struct RawServoSharedMemoryBuilder;
 
 namespace mozilla {
 
 class ServoCSSRuleList;
 class ServoStyleSet;
-enum class OriginFlags : uint8_t;
 
 typedef MozPromise</* Dummy */ bool,
                    /* Dummy */ bool,
@@ -138,8 +139,8 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // completeness check.
   ServoCSSRuleList* GetCssRulesInternal();
 
-  // Returns the stylesheet's Servo origin as an OriginFlags value.
-  mozilla::OriginFlags GetOrigin();
+  // Returns the stylesheet's Servo origin as a StyleOrigin value.
+  mozilla::StyleOrigin GetOrigin() const;
 
   /**
    * The different changes that a stylesheet may go through.
@@ -345,6 +346,9 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
                       nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv);
   void DeleteRule(uint32_t aIndex, nsIPrincipal& aSubjectPrincipal,
                   ErrorResult& aRv);
+  int32_t AddRule(const nsAString& aSelector, const nsAString& aBlock,
+                  const dom::Optional<uint32_t>& aIndex,
+                  nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv);
 
   // WebIDL miscellaneous bits
   inline dom::ParentObject GetParentObject() const;
@@ -376,6 +380,22 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
     }
   }
 
+  // Copy the contents of this style sheet into the shared memory buffer managed
+  // by aBuilder.  Returns the pointer into the buffer that the sheet contents
+  // were stored at.  (The returned pointer is to an Arc<Locked<Rules>> value.)
+  const ServoCssRules* ToShared(RawServoSharedMemoryBuilder* aBuilder);
+
+  // Sets the contents of this style sheet to the specified aSharedRules
+  // pointer, which must be a pointer somewhere in the aSharedMemory buffer
+  // as previously returned by a ToShared() call.
+  void SetSharedContents(nsLayoutStylesheetCacheShm* aSharedMemory,
+                         const ServoCssRules* aSharedRules);
+
+  // Whether this style sheet should not allow any modifications.
+  //
+  // This is true for any User Agent sheets once they are complete.
+  bool IsReadOnly() const;
+
  private:
   dom::ShadowRoot* GetContainingShadow() const;
 
@@ -395,7 +415,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // returns false.
   bool AreRulesAvailable(nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv);
 
-  already_AddRefed<URLExtraData> CreateURLExtraData() const;
+  void SetURLExtraData();
 
  protected:
   // Internal methods which do not have security check and completeness check.
@@ -419,6 +439,9 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Called when a rule is added to the sheet from CSSOM.
   void RuleRemoved(css::Rule&);
+
+  // Called when a stylesheet is cloned.
+  void StyleSheetCloned(StyleSheet&);
 
   void ApplicableStateChanged(bool aApplicable);
 

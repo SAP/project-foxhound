@@ -8,9 +8,12 @@
 #define mozilla_dom_workers_workerprivate_h__
 
 #include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RelativeTimeline.h"
+#include "mozilla/StorageAccess.h"
+#include "nsContentUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIEventTarget.h"
 #include "nsTObserverArray.h"
@@ -41,6 +44,7 @@ class MessagePort;
 class MessagePortIdentifier;
 class PerformanceStorage;
 class RemoteWorkerChild;
+class TimeoutHandler;
 class WorkerControlRunnable;
 class WorkerCSPEventListener;
 class WorkerDebugger;
@@ -131,8 +135,6 @@ class WorkerPrivate : public RelativeTimeline {
 
   bool Cancel() { return Notify(Canceling); }
 
-  bool Kill() { return Notify(Killing); }
-
   bool Close();
 
   // The passed principal must be the Worker principal in case of a
@@ -193,6 +195,7 @@ class WorkerPrivate : public RelativeTimeline {
     return std::move(mDefaultLocale);
   }
 
+  MOZ_CAN_RUN_SCRIPT
   void DoRunLoop(JSContext* aCx);
 
   bool InterruptCallback(JSContext* aCx);
@@ -226,7 +229,7 @@ class WorkerPrivate : public RelativeTimeline {
                                       const Sequence<JSObject*>& aTransferable,
                                       ErrorResult& aRv);
 
-  void EnterDebuggerEventLoop();
+  MOZ_CAN_RUN_SCRIPT void EnterDebuggerEventLoop();
 
   void LeaveDebuggerEventLoop();
 
@@ -247,12 +250,12 @@ class WorkerPrivate : public RelativeTimeline {
   static void ReportErrorToConsole(const char* aMessage,
                                    const nsTArray<nsString>& aParams);
 
-  int32_t SetTimeout(JSContext* aCx, nsIScriptTimeoutHandler* aHandler,
-                     int32_t aTimeout, bool aIsInterval, ErrorResult& aRv);
+  int32_t SetTimeout(JSContext* aCx, TimeoutHandler* aHandler, int32_t aTimeout,
+                     bool aIsInterval, ErrorResult& aRv);
 
   void ClearTimeout(int32_t aId);
 
-  bool RunExpiredTimeouts(JSContext* aCx);
+  MOZ_CAN_RUN_SCRIPT bool RunExpiredTimeouts(JSContext* aCx);
 
   bool RescheduleTimeoutTimer(JSContext* aCx);
 
@@ -274,6 +277,8 @@ class WorkerPrivate : public RelativeTimeline {
   void UpdateGCZealInternal(JSContext* aCx, uint8_t aGCZeal,
                             uint32_t aFrequency);
 #endif
+
+  void SetLowMemoryStateInternal(JSContext* aCx, bool aState);
 
   void GarbageCollectInternal(JSContext* aCx, bool aShrinking,
                               bool aCollectChildren);
@@ -659,6 +664,11 @@ class WorkerPrivate : public RelativeTimeline {
     return mLoadInfo.mPrincipal;
   }
 
+  nsIPrincipal* GetEffectiveStoragePrincipal() const {
+    AssertIsOnMainThread();
+    return mLoadInfo.mStoragePrincipal;
+  }
+
   nsIPrincipal* GetLoadingPrincipal() const {
     AssertIsOnMainThread();
     return mLoadInfo.mLoadingPrincipal;
@@ -671,17 +681,14 @@ class WorkerPrivate : public RelativeTimeline {
     return mLoadInfo.mLoadGroup;
   }
 
-  // This method allows the principal to be retrieved off the main thread.
-  // Principals are main-thread objects so the caller must ensure that all
-  // access occurs on the main thread.
-  nsIPrincipal* GetPrincipalDontAssertMainThread() const {
-    return mLoadInfo.mPrincipal;
-  }
-
   bool UsesSystemPrincipal() const { return mLoadInfo.mPrincipalIsSystem; }
 
   const mozilla::ipc::PrincipalInfo& GetPrincipalInfo() const {
     return *mLoadInfo.mPrincipalInfo;
+  }
+
+  const mozilla::ipc::PrincipalInfo& GetEffectiveStoragePrincipalInfo() const {
+    return *mLoadInfo.mStoragePrincipalInfo;
   }
 
   already_AddRefed<nsIChannel> ForgetWorkerChannel() {
@@ -704,15 +711,23 @@ class WorkerPrivate : public RelativeTimeline {
   nsresult SetCSPFromHeaderValues(const nsACString& aCSPHeaderValue,
                                   const nsACString& aCSPReportOnlyHeaderValue);
 
-  void SetReferrerPolicyFromHeaderValue(
-      const nsACString& aReferrerPolicyHeaderValue);
+  void StoreCSPOnClient();
 
-  net::ReferrerPolicy GetReferrerPolicy() const {
-    return mLoadInfo.mReferrerPolicy;
+  const mozilla::ipc::CSPInfo& GetCSPInfo() const {
+    return *mLoadInfo.mCSPInfo;
   }
 
-  void SetReferrerPolicy(net::ReferrerPolicy aReferrerPolicy) {
-    mLoadInfo.mReferrerPolicy = aReferrerPolicy;
+  void UpdateReferrerInfoFromHeader(
+      const nsACString& aReferrerPolicyHeaderValue);
+
+  nsIReferrerInfo* GetReferrerInfo() const { return mLoadInfo.mReferrerInfo; }
+
+  uint32_t GetReferrerPolicy() const {
+    return mLoadInfo.mReferrerInfo->GetReferrerPolicy();
+  }
+
+  void SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
+    mLoadInfo.mReferrerInfo = aReferrerInfo;
   }
 
   bool IsEvalAllowed() const { return mLoadInfo.mEvalAllowed; }
@@ -733,10 +748,13 @@ class WorkerPrivate : public RelativeTimeline {
     mLoadInfo.mXHRParamsAllowed = aAllowed;
   }
 
-  bool IsStorageAllowed() const {
+  mozilla::StorageAccess StorageAccess() const {
     AssertIsOnWorkerThread();
-    return mLoadInfo.mStorageAllowed ||
-           mLoadInfo.mFirstPartyStorageAccessGranted;
+    if (mLoadInfo.mFirstPartyStorageAccessGranted) {
+      return mozilla::StorageAccess::eAllow;
+    }
+
+    return mLoadInfo.mStorageAccess;
   }
 
   nsICookieSettings* CookieSettings() const {
@@ -753,6 +771,8 @@ class WorkerPrivate : public RelativeTimeline {
   bool ServiceWorkersTestingInWindow() const {
     return mLoadInfo.mServiceWorkersTestingInWindow;
   }
+
+  bool IsWatchedByDevtools() const { return mLoadInfo.mWatchedByDevtools; }
 
   // Determine if the worker is currently loading its top level script.
   bool IsLoadingWorkerScript() const { return mLoadingWorkerScript; }
@@ -785,14 +805,18 @@ class WorkerPrivate : public RelativeTimeline {
 
   bool ProxyReleaseMainThreadObjects();
 
+  void SetLowMemoryState(bool aState);
+
   void GarbageCollect(bool aShrinking);
 
   void CycleCollect(bool aDummy);
 
-  nsresult SetPrincipalOnMainThread(nsIPrincipal* aPrincipal,
-                                    nsILoadGroup* aLoadGroup);
+  nsresult SetPrincipalsAndCSPOnMainThread(nsIPrincipal* aPrincipal,
+                                           nsIPrincipal* aStoragePrincipal,
+                                           nsILoadGroup* aLoadGroup,
+                                           nsIContentSecurityPolicy* aCsp);
 
-  nsresult SetPrincipalFromChannel(nsIChannel* aChannel);
+  nsresult SetPrincipalsAndCSPFromChannel(nsIChannel* aChannel);
 
   bool FinalChannelPrincipalIsValid(nsIChannel* aChannel);
 
@@ -844,6 +868,8 @@ class WorkerPrivate : public RelativeTimeline {
 #endif
 
   void StartCancelingTimer();
+
+  nsAString& Id();
 
  private:
   WorkerPrivate(WorkerPrivate* aParent, const nsAString& aScriptURL,
@@ -929,6 +955,13 @@ class WorkerPrivate : public RelativeTimeline {
   nsresult DispatchLockHeld(already_AddRefed<WorkerRunnable> aRunnable,
                             nsIEventTarget* aSyncLoopTarget,
                             const MutexAutoLock& aProofOfLock);
+
+  // This method dispatches a simple runnable that starts the shutdown procedure
+  // after a self.close(). This method is called after a ClearMainEventQueue()
+  // to be sure that the canceling runnable is the only one in the queue.  We
+  // need this async operation to be sure that all the current JS code is
+  // executed.
+  void DispatchCancelingRunnable();
 
   class EventTarget;
   friend class EventTarget;
@@ -1078,9 +1111,16 @@ class WorkerPrivate : public RelativeTimeline {
   };
   ThreadBound<WorkerThreadAccessible> mWorkerThreadAccessible;
 
+  uint32_t mPostSyncLoopOperations;
+
+  // List of operations to do at the end of the last sync event loop.
+  enum {
+    ePendingEventQueueClearing = 0x01,
+    eDispatchCancelingRunnable = 0x02,
+  };
+
   bool mParentWindowPaused;
 
-  bool mPendingEventQueueClearing;
   bool mCancelAllPendingRunnables;
   bool mWorkerScriptExecutedSuccessfully;
   bool mFetchHandlerWasAdded;
@@ -1110,6 +1150,8 @@ class WorkerPrivate : public RelativeTimeline {
   bool mIsInAutomation;
 
   RefPtr<mozilla::PerformanceCounter> mPerformanceCounter;
+
+  nsString mID;
 };
 
 class AutoSyncLoopHolder {

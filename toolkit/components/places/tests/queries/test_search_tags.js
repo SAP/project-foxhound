@@ -20,14 +20,22 @@ add_task(async function test_search_for_tagged_bookmarks() {
   });
 
   // tag the bookmarked URI
-  PlacesUtils.tagging.tagURI(uri(testURI), ["elephant", "walrus", "giraffe", "turkey", "hiPPo", "BABOON", "alf"]);
+  PlacesUtils.tagging.tagURI(uri(testURI), [
+    "elephant",
+    "walrus",
+    "giraffe",
+    "turkey",
+    "hiPPo",
+    "BABOON",
+    "alf",
+  ]);
 
   // search for the bookmark, using a tag
   var query = PlacesUtils.history.getNewQuery();
   query.searchTerms = "elephant";
   var options = PlacesUtils.history.getNewQueryOptions();
   options.queryType = Ci.nsINavHistoryQueryOptions.QUERY_TYPE_BOOKMARKS;
-  query.setParents([folder.guid], 1);
+  query.setParents([folder.guid]);
 
   var result = PlacesUtils.history.executeQuery(query, options);
   var rootNode = result.root;

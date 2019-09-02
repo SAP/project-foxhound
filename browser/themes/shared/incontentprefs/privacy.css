@@ -18,11 +18,6 @@
   width: 16px;
 }
 
-.content-blocking-category .checkbox-label-box {
-  -moz-context-properties: fill;
-  fill: currentColor;
-}
-
 #contentBlockingTrackingProtectionCheckbox > .checkbox-label-box {
   list-style-image: url("chrome://browser/skin/controlcenter/trackers.svg");
 }
@@ -56,7 +51,13 @@
 }
 
 .content-blocking-icon,
-.permission-icon {
+.permission-icon,
+.content-blocking-category .checkbox-label-box,
+.extra-information-label > image,
+.arrowhead,
+.content-blocking-info-image,
+.reload-tabs-button,
+.content-blocking-warning-image {
   -moz-context-properties: fill;
   fill: currentColor;
 }
@@ -81,6 +82,10 @@
   list-style-image: url(chrome://browser/skin/notification-icons/desktop-notification.svg);
 }
 
+.autoplay-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media-detailed.svg);
+}
+
 .midi-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
 }
@@ -90,7 +95,7 @@
 /* Override styling that sets descriptions as grey */
 #trackingGroup description.indent,
 #trackingGroup .indent > description {
-  color: #000;
+  color: inherit;
 }
 
 [data-subcategory="trackingprotection"] {
@@ -103,8 +108,9 @@
 
 #trackingProtectionShield {
   list-style-image: url("chrome://browser/skin/controlcenter/tracking-protection.svg");
-  -moz-context-properties: fill;
-  fill: #737373;
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.5;
   width: 64px;
   height: 64px;
   margin-inline-end: 10px;
@@ -114,7 +120,7 @@
   border-radius: 4px;
   margin: 3px 0;
   padding: 9px;
-  border: 1px solid #D7D7DB;
+  border: 1px solid var(--in-content-border-color);
   background-color: rgba(215, 215, 219, 0.2);
 }
 
@@ -131,11 +137,6 @@
   margin-inline-end: 28px;
 }
 
-#contentBlockingCategories[fallback-ui] .default-content-blocking-ui,
-#contentBlockingCategories:not([fallback-ui]) .fallback-content-blocking-ui {
-  display: none;
-}
-
 .arrowhead {
   -moz-appearance: none;
   border: none;
@@ -144,10 +145,9 @@
   min-width: 20px;
   max-height: 20px;
   max-width: 20px;
+  list-style-image: url("chrome://global/skin/icons/arrow-dropdown-12.svg");
   background-color: transparent;
-  background-image: url("chrome://global/skin/icons/arrow-dropdown-12.svg");
-  background-repeat: no-repeat;
-  background-position: center;
+  padding: 3px;
 }
 
 .arrowhead:not([disabled]):hover {
@@ -160,7 +160,7 @@
 }
 
 .arrowhead.up {
-  background-image: url("chrome://global/skin/icons/arrow-up-12.svg");
+  list-style-image: url("chrome://global/skin/icons/arrow-up-12.svg");
 }
 
 .arrowhead > .button-box {
@@ -188,8 +188,6 @@
 }
 
 .reload-tabs-button {
-  -moz-context-properties: fill;
-  fill: currentColor;
   max-height: 30px;
   min-height: 30px;
   padding: 0 20px;
@@ -240,13 +238,13 @@
   margin-top: 18px;
 }
 
-.extra-information-label:last-child {
-  margin-bottom: 18px;
-}
-
 .content-blocking-category.expanded .content-blocking-extra-information,
 .content-blocking-category.selected .content-blocking-extra-information {
   visibility: visible;
+}
+
+.content-blocking-extra-information > .indent {
+  margin-bottom: 18px;
 }
 
 .content-blocking-extra-information > .custom-option {
@@ -260,7 +258,7 @@
   margin: 10px 0;
 }
 
-.content-blocking-warning + .content-blocking-warning {
+.content-blocking-warning:not([hidden]) + .content-blocking-warning {
   margin-top: 0;
 }
 
@@ -274,10 +272,18 @@
   margin-inline-end: 5px;
 }
 
+.content-blocking-cryptominers-image {
+  list-style-image: url("chrome://browser/skin/controlcenter/cryptominers-disabled.svg");
+  margin-inline-end: 5px;
+}
+
+.content-blocking-fingerprinters-image {
+  list-style-image: url("chrome://browser/skin/controlcenter/fingerprinters-disabled.svg");
+  margin-inline-end: 5px;
+}
+
 .content-blocking-warning-image {
   list-style-image: url("chrome://global/skin/icons/warning.svg");
-  -moz-context-properties: fill;
-  fill: currentColor;
   margin-inline-end: 8px;
   margin-inline-start: 4px;
 }

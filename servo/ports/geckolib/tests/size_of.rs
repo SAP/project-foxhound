@@ -3,13 +3,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use selectors;
-use servo_arc::Arc;
 use style;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::data::{ElementData, ElementStyles};
 use style::gecko::selector_parser::{self, SelectorImpl};
 use style::properties::ComputedValues;
 use style::rule_tree::{RuleNode, StrongRuleNode};
+use style::servo_arc::Arc;
 use style::values::computed;
 use style::values::specified;
 
@@ -33,7 +33,7 @@ size_of_test!(size_of_pseudo_class, selector_parser::NonTSPseudoClass, 16);
 size_of_test!(test_size_of_rule, style::stylist::Rule, 32);
 
 // Large pages generate tens of thousands of ComputedValues.
-size_of_test!(test_size_of_cv, ComputedValues, 232);
+size_of_test!(test_size_of_cv, ComputedValues, 224);
 
 size_of_test!(test_size_of_option_arc_cv, Option<Arc<ComputedValues>>, 8);
 size_of_test!(test_size_of_option_rule_node, Option<StrongRuleNode>, 8);
@@ -52,7 +52,8 @@ size_of_test!(
     ApplicableDeclarationBlock,
     16
 );
-size_of_test!(test_size_of_rule_node, RuleNode, 72);
+
+size_of_test!(test_size_of_rule_node, RuleNode, 80);
 
 // This is huge, but we allocate it on the stack and then never move it,
 // we only pass `&mut SourcePropertyDeclaration` references around.
@@ -62,18 +63,18 @@ size_of_test!(
     608
 );
 
-size_of_test!(test_size_of_computed_image, computed::image::Image, 24);
-size_of_test!(test_size_of_specified_image, specified::image::Image, 24);
+size_of_test!(test_size_of_computed_image, computed::image::Image, 16);
+size_of_test!(test_size_of_specified_image, specified::image::Image, 16);
 
 // FIXME(bz): These can shrink if we move the None_ value inside the
 // enum instead of paying an extra word for the Either discriminant.
 size_of_test!(
     test_size_of_computed_image_layer,
     computed::image::ImageLayer,
-    24
+    16
 );
 size_of_test!(
     test_size_of_specified_image_layer,
     specified::image::ImageLayer,
-    24
+    16
 );

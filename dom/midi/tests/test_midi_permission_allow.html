@@ -1,7 +1,7 @@
 <html>
   <head>
     <title>WebMIDI Listener Test</title>
-    <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <script type="application/javascript" src="MIDITestUtils.js"></script>
   </head>
 
@@ -16,7 +16,7 @@
          await navigator.requestMIDIAccess({ "sysex": false })
          ok(true, "MIDI Access Request successful");
          SimpleTest.finish();
-       } catch {
+       } catch (ex) {
          ok(false, "MIDI Access Request Failed!");
          SimpleTest.finish();
        }

@@ -12,7 +12,6 @@
 #include "mozilla/Poison.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/SharedThreadPool.h"
-#include "mozilla/VideoDecoderManagerChild.h"
 #include "mozilla/XPCOM.h"
 #include "mozJSComponentLoader.h"
 #include "nsXULAppAPI.h"
@@ -173,27 +172,7 @@ const mozilla::Module kXPCOMModule = {
     nullptr,
     nullptr,
     nullptr,
-    Module::ALLOW_IN_GPU_VR_AND_SOCKET_PROCESS};
-
-// FIXME: Dummy modules to avoid Windows PGO bustage when we have too few
-// modules registered.
-static const mozilla::Module kDummy1 = {mozilla::Module::kVersion};
-static const mozilla::Module kDummy2 = {mozilla::Module::kVersion};
-static const mozilla::Module kDummy3 = {mozilla::Module::kVersion};
-static const mozilla::Module kDummy4 = {mozilla::Module::kVersion};
-static const mozilla::Module kDummy5 = {mozilla::Module::kVersion};
-static const mozilla::Module kDummy6 = {mozilla::Module::kVersion};
-static const mozilla::Module kDummy7 = {mozilla::Module::kVersion};
-static const mozilla::Module kDummy8 = {mozilla::Module::kVersion};
-
-NSMODULE_DEFN(Dummy1) = &kDummy1;
-NSMODULE_DEFN(Dummy2) = &kDummy2;
-NSMODULE_DEFN(Dummy3) = &kDummy3;
-NSMODULE_DEFN(Dummy4) = &kDummy4;
-NSMODULE_DEFN(Dummy5) = &kDummy5;
-NSMODULE_DEFN(Dummy6) = &kDummy6;
-NSMODULE_DEFN(Dummy7) = &kDummy7;
-NSMODULE_DEFN(Dummy8) = &kDummy8;
+    Module::ALLOW_IN_GPU_RDD_VR_AND_SOCKET_PROCESS};
 
 // gDebug will be freed during shutdown.
 static nsIDebug2* gDebug = nullptr;
@@ -269,7 +248,7 @@ static bool sInitializedJS = false;
 // Note that on OSX, aBinDirectory will point to .app/Contents/Resources/browser
 EXPORT_XPCOM_API(nsresult)
 NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
-            nsIDirectoryServiceProvider* aAppFileLocationProvider) {
+             nsIDirectoryServiceProvider* aAppFileLocationProvider) {
   static bool sInitialized = false;
   if (sInitialized) {
     return NS_ERROR_FAILURE;
@@ -644,7 +623,6 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
     // are triggered by the NS_XPCOM_SHUTDOWN_OBSERVER_ID notification.
     NS_ProcessPendingEvents(thread);
     gfxPlatform::ShutdownLayersIPC();
-    mozilla::VideoDecoderManagerChild::Shutdown();
     mozilla::RemoteDecoderManagerChild::Shutdown();
 
     mozilla::scache::StartupCache::DeleteSingleton();

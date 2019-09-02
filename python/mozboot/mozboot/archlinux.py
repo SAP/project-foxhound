@@ -11,10 +11,15 @@ import subprocess
 import glob
 
 from mozboot.base import BaseBootstrapper
-from mozboot.linux_common import NodeInstall, StyloInstall, ClangStaticAnalysisInstall
+from mozboot.linux_common import (
+    ClangStaticAnalysisInstall,
+    NodeInstall,
+    SccacheInstall,
+    StyloInstall,
+)
 
 
-class ArchlinuxBootstrapper(NodeInstall, StyloInstall,
+class ArchlinuxBootstrapper(NodeInstall, StyloInstall, SccacheInstall,
                             ClangStaticAnalysisInstall, BaseBootstrapper):
     '''Archlinux experimental bootstrapper.'''
 
@@ -32,26 +37,15 @@ class ArchlinuxBootstrapper(NodeInstall, StyloInstall,
     BROWSER_PACKAGES = [
         'alsa-lib',
         'dbus-glib',
-        'desktop-file-utils',
-        'gconf',
         'gtk2',
         'gtk3',
-        'hicolor-icon-theme',
-        'hunspell',
-        'icu',
         'libevent',
         'libvpx',
         'libxt',
         'mime-types',
-        'mozilla-common',
         'nasm',
-        'nss',
-        'sqlite',
         'startup-notification',
-        'diffutils',
         'gst-plugins-base-libs',
-        'imake',
-        'inetutils',
         'libpulse',
         'xorg-server-xvfb',
         'yasm',

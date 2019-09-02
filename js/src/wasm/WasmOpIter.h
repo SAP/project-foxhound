@@ -46,6 +46,7 @@ class StackType {
       case TypeCode::F32:
       case TypeCode::F64:
       case TypeCode::AnyRef:
+      case TypeCode::FuncRef:
       case TypeCode::Ref:
       case TypeCode::NullRef:
       case TypeCode::Limit:
@@ -64,6 +65,7 @@ class StackType {
     F64 = uint8_t(ValType::F64),
 
     AnyRef = uint8_t(ValType::AnyRef),
+    FuncRef = uint8_t(ValType::FuncRef),
     Ref = uint8_t(ValType::Ref),
     NullRef = uint8_t(ValType::NullRef),
 
@@ -83,24 +85,16 @@ class StackType {
   Code code() const { return Code(UnpackTypeCodeType(tc_)); }
 
   uint32_t refTypeIndex() const { return UnpackTypeCodeIndex(tc_); }
-
   bool isRef() const { return UnpackTypeCodeType(tc_) == TypeCode::Ref; }
 
-  bool isReference() const {
-    TypeCode tc = UnpackTypeCodeType(tc_);
-    return tc == TypeCode::Ref || tc == TypeCode::AnyRef ||
-           tc == TypeCode::NullRef;
-  }
+  bool isReference() const { return IsReferenceType(tc_); }
 
   bool operator==(const StackType& that) const { return tc_ == that.tc_; }
-
   bool operator!=(const StackType& that) const { return tc_ != that.tc_; }
-
   bool operator==(Code that) const {
     MOZ_ASSERT(that != Code::Ref);
     return code() == that;
   }
-
   bool operator!=(Code that) const { return !(*this == that); }
 };
 
@@ -168,6 +162,7 @@ enum class OpKind {
   DataOrElemDrop,
   MemFill,
   MemOrTableInit,
+  TableFill,
   TableGet,
   TableGrow,
   TableSet,
@@ -466,9 +461,11 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool readMemOrTableInit(bool isMem, uint32_t* segIndex,
                                        uint32_t* dstTableIndex, Value* dst,
                                        Value* src, Value* len);
+  MOZ_MUST_USE bool readTableFill(uint32_t* tableIndex, Value* start,
+                                  Value* val, Value* len);
   MOZ_MUST_USE bool readTableGet(uint32_t* tableIndex, Value* index);
-  MOZ_MUST_USE bool readTableGrow(uint32_t* tableIndex, Value* delta,
-                                  Value* initValue);
+  MOZ_MUST_USE bool readTableGrow(uint32_t* tableIndex, Value* initValue,
+                                  Value* delta);
   MOZ_MUST_USE bool readTableSet(uint32_t* tableIndex, Value* index,
                                  Value* value);
   MOZ_MUST_USE bool readTableSize(uint32_t* tableIndex);
@@ -762,6 +759,7 @@ inline bool OpIter<Policy>::readBlockType(ExprType* type) {
     case uint8_t(ExprType::F64):
       known = true;
       break;
+    case uint8_t(ExprType::FuncRef):
     case uint8_t(ExprType::AnyRef):
 #ifdef ENABLE_WASM_REFTYPES
       known = true;
@@ -1561,7 +1559,7 @@ inline bool OpIter<Policy>::readCallIndirect(uint32_t* funcTypeIndex,
     }
     return fail("table index out of range for call_indirect");
   }
-  if (env_.tables[*tableIndex].kind != TableKind::AnyFunction) {
+  if (env_.tables[*tableIndex].kind != TableKind::FuncRef) {
     return fail("indirect calls must go through a table of 'funcref'");
   }
 
@@ -1849,16 +1847,6 @@ inline bool OpIter<Policy>::readDataOrElemDrop(bool isData,
                                                uint32_t* segIndex) {
   MOZ_ASSERT(Classify(op_) == OpKind::DataOrElemDrop);
 
-  if (isData) {
-    if (!env_.usesMemory()) {
-      return fail("can't touch memory without memory");
-    }
-  } else {
-    if (env_.tables.length() == 0) {
-      return fail("can't elem.drop without a table");
-    }
-  }
-
   if (!readVarU32(segIndex)) {
     return false;
   }
@@ -1962,7 +1950,7 @@ inline bool OpIter<Policy>::readMemOrTableInit(bool isMem, uint32_t* segIndex,
 
     // Element segments must carry functions exclusively and funcref is not
     // yet a subtype of anyref.
-    if (env_.tables[*dstTableIndex].kind != TableKind::AnyFunction) {
+    if (env_.tables[*dstTableIndex].kind != TableKind::FuncRef) {
       return fail("only tables of 'funcref' may have element segments");
     }
     if (*segIndex >= env_.elemSegments.length()) {
@@ -1974,40 +1962,53 @@ inline bool OpIter<Policy>::readMemOrTableInit(bool isMem, uint32_t* segIndex,
 }
 
 template <typename Policy>
+inline bool OpIter<Policy>::readTableFill(uint32_t* tableIndex, Value* start,
+                                          Value* val, Value* len) {
+  MOZ_ASSERT(Classify(op_) == OpKind::TableFill);
+
+  if (!readVarU32(tableIndex)) {
+    return false;
+  }
+  if (*tableIndex >= env_.tables.length()) {
+    return fail("table index out of range for table.fill");
+  }
+
+  if (!popWithType(ValType::I32, len)) {
+    return false;
+  }
+  if (!popWithType(ToElemValType(env_.tables[*tableIndex].kind), val)) {
+    return false;
+  }
+  if (!popWithType(ValType::I32, start)) {
+    return false;
+  }
+
+  return true;
+}
+
+template <typename Policy>
 inline bool OpIter<Policy>::readTableGet(uint32_t* tableIndex, Value* index) {
   MOZ_ASSERT(Classify(op_) == OpKind::TableGet);
+
+  if (!readVarU32(tableIndex)) {
+    return false;
+  }
+  if (*tableIndex >= env_.tables.length()) {
+    return fail("table index out of range for table.get");
+  }
 
   if (!popWithType(ValType::I32, index)) {
     return false;
   }
 
-  if (!readVarU32(tableIndex)) {
-    return false;
-  }
-
-  if (*tableIndex >= env_.tables.length()) {
-    return fail("table index out of range for table.get");
-  }
-
-  if (env_.tables[*tableIndex].kind != TableKind::AnyRef) {
-    return fail("table.get only on tables of anyref");
-  }
-
-  infalliblePush(ValType::AnyRef);
+  infalliblePush(ToElemValType(env_.tables[*tableIndex].kind));
   return true;
 }
 
 template <typename Policy>
-inline bool OpIter<Policy>::readTableGrow(uint32_t* tableIndex, Value* delta,
-                                          Value* initValue) {
+inline bool OpIter<Policy>::readTableGrow(uint32_t* tableIndex,
+                                          Value* initValue, Value* delta) {
   MOZ_ASSERT(Classify(op_) == OpKind::TableGrow);
-
-  if (!popWithType(ValType::AnyRef, initValue)) {
-    return false;
-  }
-  if (!popWithType(ValType::I32, delta)) {
-    return false;
-  }
 
   if (!readVarU32(tableIndex)) {
     return false;
@@ -2015,8 +2016,12 @@ inline bool OpIter<Policy>::readTableGrow(uint32_t* tableIndex, Value* delta,
   if (*tableIndex >= env_.tables.length()) {
     return fail("table index out of range for table.grow");
   }
-  if (env_.tables[*tableIndex].kind != TableKind::AnyRef) {
-    return fail("table.grow only on tables of anyref");
+
+  if (!popWithType(ValType::I32, delta)) {
+    return false;
+  }
+  if (!popWithType(ToElemValType(env_.tables[*tableIndex].kind), initValue)) {
+    return false;
   }
 
   infalliblePush(ValType::I32);
@@ -2028,21 +2033,18 @@ inline bool OpIter<Policy>::readTableSet(uint32_t* tableIndex, Value* index,
                                          Value* value) {
   MOZ_ASSERT(Classify(op_) == OpKind::TableSet);
 
-  if (!popWithType(ValType::AnyRef, value)) {
-    return false;
-  }
-  if (!popWithType(ValType::I32, index)) {
-    return false;
-  }
-
   if (!readVarU32(tableIndex)) {
     return false;
   }
   if (*tableIndex >= env_.tables.length()) {
     return fail("table index out of range for table.set");
   }
-  if (env_.tables[*tableIndex].kind != TableKind::AnyRef) {
-    return fail("table.set only on tables of anyref");
+
+  if (!popWithType(ToElemValType(env_.tables[*tableIndex].kind), value)) {
+    return false;
+  }
+  if (!popWithType(ValType::I32, index)) {
+    return false;
   }
 
   return true;

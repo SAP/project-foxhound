@@ -2,9 +2,8 @@
 <head>
   <title>Test for Bug 620145</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="prompt_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -85,7 +84,7 @@ function dispatchMouseEvent(target, type) {
   e.initEvent(type, false, false, win, 0, 1, 1, 1, 1,
               false, false, false, false, 0, null);
   var utils = SpecialPowers.getDOMWindowUtils(win);
-  utils.dispatchDOMEventViaPresShell(target, e, true);
+  utils.dispatchDOMEventViaPresShell(target, e);
   ok(true, type + " sent to " + target.id);
 }
 

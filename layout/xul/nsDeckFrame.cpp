@@ -13,13 +13,13 @@
 
 #include "nsDeckFrame.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/PresShell.h"
 #include "nsPresContext.h"
 #include "nsIContent.h"
 #include "nsCOMPtr.h"
 #include "nsNameSpaceManager.h"
 #include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
-#include "nsIPresShell.h"
 #include "nsCSSRendering.h"
 #include "nsViewManager.h"
 #include "nsBoxLayoutState.h"
@@ -28,6 +28,8 @@
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
 #include "nsXULPopupManager.h"
+#include "nsImageBoxFrame.h"
+#include "nsImageFrame.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -35,7 +37,7 @@
 
 using namespace mozilla;
 
-nsIFrame* NS_NewDeckFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewDeckFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsDeckFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -72,13 +74,17 @@ void nsDeckFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   mIndex = GetSelectedIndex();
 }
 
+void nsDeckFrame::ShowBox(nsIFrame* aBox) { Animate(aBox, true); }
+
 void nsDeckFrame::HideBox(nsIFrame* aBox) {
-  nsIPresShell::ClearMouseCapture(aBox);
+  mozilla::PresShell::ClearMouseCapture(aBox);
+  Animate(aBox, false);
 }
 
 void nsDeckFrame::IndexChanged() {
   // did the index change?
   int32_t index = GetSelectedIndex();
+
   if (index == mIndex) return;
 
   // redraw
@@ -90,6 +96,8 @@ void nsDeckFrame::IndexChanged() {
     HideBox(currentBox);
 
   mIndex = index;
+
+  ShowBox(GetSelectedBox());
 
 #ifdef ACCESSIBILITY
   nsAccessibilityService* accService = GetAccService();
@@ -171,6 +179,34 @@ void nsDeckFrame::BuildDisplayListForChildren(nsDisplayListBuilder* aBuilder,
   BuildDisplayListForChild(aBuilder, box, set);
 }
 
+void nsDeckFrame::Animate(nsIFrame* aParentBox, bool start) {
+  if (!aParentBox) return;
+
+  nsImageBoxFrame* imgBoxFrame = do_QueryFrame(aParentBox);
+  nsImageFrame* imgFrame = do_QueryFrame(aParentBox);
+
+  if (imgBoxFrame) {
+    if (start)
+      imgBoxFrame->RestartAnimation();
+    else
+      imgBoxFrame->StopAnimation();
+  }
+
+  if (imgFrame) {
+    if (start)
+      imgFrame->RestartAnimation();
+    else
+      imgFrame->StopAnimation();
+  }
+
+  for (nsIFrame::ChildListIterator childLists(aParentBox); !childLists.IsDone();
+       childLists.Next()) {
+    for (nsIFrame* child : childLists.CurrentList()) {
+      Animate(child, start);
+    }
+  }
+}
+
 NS_IMETHODIMP
 nsDeckFrame::DoXULLayout(nsBoxLayoutState& aState) {
   // Make sure we tweak the state so it does not resize our children.
@@ -187,8 +223,11 @@ nsDeckFrame::DoXULLayout(nsBoxLayoutState& aState) {
   nscoord count = 0;
   while (box) {
     // make collapsed children not show up
-    if (count != mIndex) HideBox(box);
-
+    if (count != mIndex) {
+      HideBox(box);
+    } else {
+      ShowBox(box);
+    }
     box = GetNextXULBox(box);
     count++;
   }

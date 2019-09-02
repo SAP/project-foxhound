@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { PureComponent, createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  PureComponent,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
@@ -24,15 +27,11 @@ class SidebarFixedItem extends PureComponent {
   }
 
   render() {
-    const {
-      icon,
-      isSelected,
-      name,
-      to,
-    } = this.props;
+    const { icon, isSelected, name, to } = this.props;
 
     return SidebarItem(
       {
+        className: "sidebar-item--tall",
         isSelected,
         to,
       },
@@ -40,12 +39,10 @@ class SidebarFixedItem extends PureComponent {
         {
           className: "sidebar-fixed-item__container",
         },
-        dom.img(
-          {
-            className: "sidebar-fixed-item__icon",
-            src: icon,
-          }
-        ),
+        dom.img({
+          className: "sidebar-fixed-item__icon",
+          src: icon,
+        }),
         dom.span(
           {
             className: "ellipsis-text",

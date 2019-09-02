@@ -9,6 +9,7 @@
 #include "nsIServiceManager.h"
 #include "nsResizerFrame.h"
 #include "nsIContent.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
@@ -37,7 +38,7 @@ using namespace mozilla;
 //
 // Creates a new Resizer frame and returns it
 //
-nsIFrame* NS_NewResizerFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewResizerFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsResizerFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -63,9 +64,9 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
     case eMouseDown: {
       if (aEvent->mClass == eTouchEventClass ||
           (aEvent->mClass == eMouseEventClass &&
-           aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton)) {
+           aEvent->AsMouseEvent()->mButton == MouseButton::eLeft)) {
         nsCOMPtr<nsIBaseWindow> window;
-        nsIPresShell* presShell = aPresContext->GetPresShell();
+        mozilla::PresShell* presShell = aPresContext->GetPresShell();
         nsIContent* contentToResize =
             GetContentToResize(presShell, getter_AddRefs(window));
         if (contentToResize) {
@@ -112,7 +113,8 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
         // we're tracking
         mTrackingMouseMove = true;
 
-        nsIPresShell::SetCapturingContent(GetContent(), CAPTURE_IGNOREALLOWED);
+        PresShell::SetCapturingContent(GetContent(),
+                                       CaptureFlags::IgnoreAllowedState);
       }
     } break;
 
@@ -120,11 +122,11 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
     case eMouseUp: {
       if (aEvent->mClass == eTouchEventClass ||
           (aEvent->mClass == eMouseEventClass &&
-           aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton)) {
+           aEvent->AsMouseEvent()->mButton == MouseButton::eLeft)) {
         // we're done tracking.
         mTrackingMouseMove = false;
 
-        nsIPresShell::SetCapturingContent(nullptr, 0);
+        PresShell::ReleaseCapturingContent();
 
         doDefault = false;
       }
@@ -134,7 +136,7 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
     case eMouseMove: {
       if (mTrackingMouseMove) {
         nsCOMPtr<nsIBaseWindow> window;
-        nsIPresShell* presShell = aPresContext->GetPresShell();
+        mozilla::PresShell* presShell = aPresContext->GetPresShell();
         nsCOMPtr<nsIContent> contentToResize =
             GetContentToResize(presShell, getter_AddRefs(window));
 
@@ -290,9 +292,9 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
       break;
     }
     case eMouseDoubleClick:
-      if (aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+      if (aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
         nsCOMPtr<nsIBaseWindow> window;
-        nsIPresShell* presShell = aPresContext->GetPresShell();
+        mozilla::PresShell* presShell = aPresContext->GetPresShell();
         nsIContent* contentToResize =
             GetContentToResize(presShell, getter_AddRefs(window));
         if (contentToResize) {
@@ -319,7 +321,7 @@ nsresult nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
   return NS_OK;
 }
 
-nsIContent* nsResizerFrame::GetContentToResize(nsIPresShell* aPresShell,
+nsIContent* nsResizerFrame::GetContentToResize(mozilla::PresShell* aPresShell,
                                                nsIBaseWindow** aWindow) {
   *aWindow = nullptr;
 
@@ -526,7 +528,8 @@ nsResizerFrame::Direction nsResizerFrame::GetDirection() {
 
 void nsResizerFrame::MouseClicked(WidgetMouseEvent* aEvent) {
   // Execute the oncommand event handler.
+  nsCOMPtr<nsIContent> content = mContent;
   nsContentUtils::DispatchXULCommand(
-      mContent, false, nullptr, nullptr, aEvent->IsControl(), aEvent->IsAlt(),
-      aEvent->IsShift(), aEvent->IsMeta(), aEvent->inputSource);
+      content, false, nullptr, nullptr, aEvent->IsControl(), aEvent->IsAlt(),
+      aEvent->IsShift(), aEvent->IsMeta(), aEvent->mInputSource);
 }

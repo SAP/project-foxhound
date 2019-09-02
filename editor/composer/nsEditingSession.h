@@ -23,13 +23,13 @@
 #include "nsString.h"  // for nsCString
 
 class mozIDOMWindowProxy;
+class nsBaseCommandController;
 class nsIDOMWindow;
 class nsISupports;
 class nsITimer;
 class nsIChannel;
 class nsIControllers;
 class nsIDocShell;
-class nsIEditor;
 class nsIWebProgress;
 
 namespace mozilla {
@@ -52,10 +52,22 @@ class nsEditingSession final : public nsIEditingSession,
   // nsIEditingSession
   NS_DECL_NSIEDITINGSESSION
 
+  /**
+   * Removes all the editor's controllers/listeners etc and makes the window
+   * uneditable.
+   */
+  nsresult DetachFromWindow(nsPIDOMWindowOuter* aWindow);
+
+  /**
+   * Undos DetachFromWindow(), reattaches this editing session/editor
+   * to the window.
+   */
+  nsresult ReattachToWindow(nsPIDOMWindowOuter* aWindow);
+
  protected:
   virtual ~nsEditingSession();
 
-  typedef already_AddRefed<nsIController> (*ControllerCreatorFn)();
+  typedef already_AddRefed<nsBaseCommandController> (*ControllerCreatorFn)();
 
   nsresult SetupEditorCommandController(
       ControllerCreatorFn aControllerCreatorFn, mozIDOMWindowProxy* aWindow,
@@ -63,6 +75,17 @@ class nsEditingSession final : public nsIEditingSession,
 
   nsresult SetContextOnControllerById(nsIControllers* aControllers,
                                       nsISupports* aContext, uint32_t aID);
+
+  /**
+   *  Set the editor on the controller(s) for this window
+   */
+  nsresult SetEditorOnControllers(nsPIDOMWindowOuter& aWindow,
+                                  mozilla::HTMLEditor* aEditor);
+
+  /**
+   *  Setup editor and related support objects
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow);
 
   nsresult PrepareForEditing(nsPIDOMWindowOuter* aWindow);
 
@@ -72,6 +95,7 @@ class nsEditingSession final : public nsIEditingSession,
   // progress load stuff
   nsresult StartDocumentLoad(nsIWebProgress* aWebProgress,
                              bool isToBeMadeEditable);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult EndDocumentLoad(nsIWebProgress* aWebProgress, nsIChannel* aChannel,
                            nsresult aStatus, bool isToBeMadeEditable);
   nsresult StartPageLoad(nsIChannel* aChannel);

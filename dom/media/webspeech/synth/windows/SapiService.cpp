@@ -10,9 +10,11 @@
 #include "GeckoProfiler.h"
 #include "nsEscape.h"
 
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/nsSynthVoiceRegistry.h"
 #include "mozilla/dom/nsSpeechTask.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 
 namespace mozilla {
 namespace dom {
@@ -190,7 +192,7 @@ bool SapiService::Init() {
   MOZ_ASSERT(!mInitialized);
 
   if (Preferences::GetBool("media.webspeech.synth.test") ||
-      !Preferences::GetBool("media.webspeech.synth.enabled")) {
+      !StaticPrefs::media_webspeech_synth_enabled()) {
     // When enabled, we shouldn't add OS backend (Bug 1160844)
     return false;
   }
@@ -415,6 +417,7 @@ SapiService* SapiService::GetInstance() {
     RefPtr<SapiService> service = new SapiService();
     if (service->Init()) {
       sSingleton = service;
+      ClearOnShutdown(&sSingleton);
     }
   }
   return sSingleton;
@@ -423,13 +426,6 @@ SapiService* SapiService::GetInstance() {
 already_AddRefed<SapiService> SapiService::GetInstanceForService() {
   RefPtr<SapiService> sapiService = GetInstance();
   return sapiService.forget();
-}
-
-void SapiService::Shutdown() {
-  if (!sSingleton) {
-    return;
-  }
-  sSingleton = nullptr;
 }
 
 }  // namespace dom

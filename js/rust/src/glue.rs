@@ -30,7 +30,7 @@ pub struct ProxyTraps {
                                                    -> bool>,
     pub ownPropertyKeys: ::std::option::Option<unsafe extern "C" fn(cx: *mut JSContext,
                                                                     proxy: JS::HandleObject,
-                                                                    props: *mut JS::AutoIdVector)
+                                                                    props: JS::MutableHandleIdVector)
                                                                     -> bool>,
     pub delete_: ::std::option::Option<unsafe extern "C" fn(cx: *mut JSContext,
                                                             proxy: JS::HandleObject,
@@ -90,7 +90,7 @@ pub struct ProxyTraps {
     pub getOwnEnumerablePropertyKeys:
         ::std::option::Option<unsafe extern "C" fn(cx: *mut JSContext,
                                                    proxy: JS::HandleObject,
-                                                   props: *mut JS::AutoIdVector)
+                                                   props: JS::MutableHandleIdVector)
                                                    -> bool>,
     pub nativeCall: ::std::option::Option<unsafe extern "C" fn(cx: *mut JSContext,
                                                                test: JS::IsAcceptableThis,
@@ -257,13 +257,14 @@ extern "C" {
     pub fn IsWrapper(obj: *mut JSObject) -> bool;
     pub fn UnwrapObjectStatic(obj: *mut JSObject) -> *mut JSObject;
     pub fn UncheckedUnwrapObject(obj: *mut JSObject, stopAtOuter: u8) -> *mut JSObject;
-    pub fn CreateAutoIdVector(cx: *mut JSContext) -> *mut JS::AutoIdVector;
-    pub fn AppendToAutoIdVector(v: *mut JS::AutoIdVector, id: jsid) -> bool;
-    pub fn SliceAutoIdVector(v: *const JS::AutoIdVector, length: *mut usize) -> *const jsid;
-    pub fn DestroyAutoIdVector(v: *mut JS::AutoIdVector);
-    pub fn CreateAutoObjectVector(aCx: *mut JSContext) -> *mut JS::AutoObjectVector;
-    pub fn AppendToAutoObjectVector(v: *mut JS::AutoObjectVector, obj: *mut JSObject) -> bool;
-    pub fn DeleteAutoObjectVector(v: *mut JS::AutoObjectVector);
+    pub fn CreateRootedIdVector(cx: *mut JSContext) -> *mut JS::PersistentRootedIdVector;
+    pub fn AppendToRootedIdVector(v: *mut JS::PersistentRootedIdVector, id: jsid) -> bool;
+    pub fn SliceRootedIdVector(v: *const JS::PersistentRootedIdVector, length: *mut usize) -> *const jsid;
+    pub fn DestroyRootedIdVector(v: *mut JS::PersistentRootedIdVector);
+    pub fn GetMutableHandleIdVector(v: *mut JS::PersistentRootedIdVector)-> JS::MutableHandleIdVector;
+    pub fn CreateRootedObjectVector(aCx: *mut JSContext) -> *mut JS::PersistentRootedObjectVector;
+    pub fn AppendToRootedObjectVector(v: *mut JS::PersistentRootedObjectVector, obj: *mut JSObject) -> bool;
+    pub fn DeleteRootedObjectVector(v: *mut JS::PersistentRootedObjectVector);
     pub fn CollectServoSizes(rt: *mut JSRuntime, sizes: *mut JS::ServoSizes) -> bool;
     pub fn CallIdTracer(trc: *mut JSTracer, idp: *mut Heap<jsid>, name: *const ::libc::c_char);
     pub fn CallValueTracer(trc: *mut JSTracer,

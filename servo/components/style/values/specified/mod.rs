@@ -12,14 +12,14 @@ use super::generics::grid::{GridLine as GenericGridLine, TrackBreadth as Generic
 use super::generics::grid::{TrackList as GenericTrackList, TrackSize as GenericTrackSize};
 use super::generics::transform::IsParallelTo;
 use super::generics::{self, GreaterThanOrEqualToOne, NonNegative};
-use super::{Auto, CSSFloat, CSSInteger, Either};
+use super::{Auto, CSSFloat, CSSInteger, Either, None_};
 use crate::context::QuirksMode;
 use crate::parser::{Parse, ParserContext};
 use crate::values::serialize_atom_identifier;
 use crate::values::specified::calc::CalcNode;
-use crate::{Atom, Namespace, Prefix};
+use crate::{Atom, Namespace, Prefix, Zero};
 use cssparser::{Parser, Token};
-use num_traits::{One, Zero};
+use num_traits::One;
 use std::f32;
 use std::fmt::{self, Write};
 use std::ops::Add;
@@ -40,11 +40,11 @@ pub use self::box_::{AnimationIterationCount, AnimationName, Contain, Display};
 pub use self::box_::{Appearance, BreakBetween, BreakWithin};
 pub use self::box_::{Clear, Float, Overflow, OverflowAnchor};
 pub use self::box_::{OverflowClipBox, OverscrollBehavior, Perspective, Resize};
-pub use self::box_::{ScrollSnapAlign, ScrollSnapType};
+pub use self::box_::{ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStrictness, ScrollSnapType};
 pub use self::box_::{TouchAction, TransitionProperty, VerticalAlign, WillChange};
-pub use self::color::{Color, ColorOrAuto, ColorPropertyValue, RGBAColor};
+pub use self::color::{Color, ColorOrAuto, ColorPropertyValue};
 pub use self::column::ColumnCount;
-pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset};
+pub use self::counters::{Content, ContentItem, CounterIncrement, CounterSetOrReset};
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
 pub use self::flex::FlexBasis;
@@ -54,8 +54,6 @@ pub use self::font::{FontSize, FontSizeAdjust, FontStretch, FontSynthesis};
 pub use self::font::{FontVariantAlternates, FontWeight};
 pub use self::font::{FontVariantEastAsian, FontVariationSettings};
 pub use self::font::{MozScriptLevel, MozScriptMinSize, MozScriptSizeMultiplier, XLang, XTextZoom};
-#[cfg(feature = "gecko")]
-pub use self::gecko::ScrollSnapPoint;
 pub use self::image::{ColorStop, EndingShape as GradientEndingShape, Gradient};
 pub use self::image::{GradientItem, GradientKind, Image, ImageLayer, MozImageRect};
 pub use self::length::{AbsoluteLength, CalcLengthPercentage, CharacterWidth};
@@ -66,8 +64,9 @@ pub use self::length::{NoCalcLength, ViewportPercentageLength};
 pub use self::length::{NonNegativeLengthPercentage, NonNegativeLengthPercentageOrAuto};
 #[cfg(feature = "gecko")]
 pub use self::list::ListStyleType;
+pub use self::list::MozListReversed;
 pub use self::list::{QuotePair, Quotes};
-pub use self::motion::OffsetPath;
+pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::percentage::Percentage;
 pub use self::position::{GridAutoFlow, GridTemplateAreas, Position};
@@ -75,13 +74,14 @@ pub use self::position::{PositionComponent, ZIndex};
 pub use self::rect::NonNegativeLengthOrNumberRect;
 pub use self::resolution::Resolution;
 pub use self::svg::MozContextProperties;
-pub use self::svg::{SVGLength, SVGOpacity, SVGPaint, SVGPaintKind};
+pub use self::svg::{SVGLength, SVGOpacity, SVGPaint};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth};
 pub use self::svg_path::SVGPathData;
 pub use self::table::XSpan;
-pub use self::text::{InitialLetter, LetterSpacing, LineHeight, TextAlign};
+pub use self::text::{InitialLetter, LetterSpacing, LineBreak, LineHeight, TextAlign};
 pub use self::text::{OverflowWrap, TextEmphasisPosition, TextEmphasisStyle, WordBreak};
 pub use self::text::{TextAlignKeyword, TextDecorationLine, TextOverflow, WordSpacing};
+pub use self::text::{TextDecorationSkipInk, TextTransform};
 pub use self::time::Time;
 pub use self::transform::{Rotate, Scale, Transform};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
@@ -158,7 +158,7 @@ fn parse_number_with_clamping_mode<'i, 't>(
 /// A CSS `<number>` specified value.
 ///
 /// https://drafts.csswg.org/css-values-3/#number-value
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToShmem)]
 pub struct Number {
     /// The numeric value itself.
     value: CSSFloat,
@@ -342,10 +342,8 @@ impl Parse for GreaterThanOrEqualToOneNumber {
 /// <number> | <percentage>
 ///
 /// Accepts only non-negative numbers.
-///
-/// FIXME(emilio): Should probably use Either.
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
 pub enum NumberOrPercentage {
     Percentage(Percentage),
     Number(Number),
@@ -405,7 +403,9 @@ impl Parse for NonNegativeNumberOrPercentage {
 }
 
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, SpecifiedValueInfo, ToCss)]
+#[derive(
+    Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, SpecifiedValueInfo, ToCss, ToShmem,
+)]
 pub struct Opacity(Number);
 
 impl Parse for Opacity {
@@ -441,10 +441,22 @@ impl ToComputedValue for Opacity {
 /// A specified `<integer>`, optionally coming from a `calc()` expression.
 ///
 /// <https://drafts.csswg.org/css-values/#integers>
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, PartialOrd, ToShmem)]
 pub struct Integer {
     value: CSSInteger,
     was_calc: bool,
+}
+
+impl Zero for Integer {
+    #[inline]
+    fn zero() -> Self {
+        Self::new(0)
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.value() == 0
+    }
 }
 
 impl One for Integer {
@@ -589,6 +601,9 @@ impl Parse for PositiveInteger {
     }
 }
 
+/// A specified positive `<integer>` value or `none`.
+pub type PositiveIntegerOrNone = Either<PositiveInteger, None_>;
+
 /// The specified value of a grid `<track-breadth>`
 pub type TrackBreadth = GenericTrackBreadth<LengthPercentage>;
 
@@ -705,7 +720,17 @@ impl AllowQuirks {
 /// An attr(...) rule
 ///
 /// `[namespace? `|`]? ident`
-#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[css(function)]
 pub struct Attr {
     /// Optional namespace prefix and URL.

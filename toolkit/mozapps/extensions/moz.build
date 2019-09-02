@@ -15,7 +15,10 @@ if CONFIG['MOZ_BUILD_APP'] == 'browser':
 if CONFIG['MOZ_BUILD_APP'] == 'mobile/android':
     DEFINES['MOZ_FENNEC'] = True
 
-DIRS += ['internal']
+DIRS += [
+    'default-theme',
+    'internal',
+]
 TEST_DIRS += ['test']
 
 XPIDL_SOURCES += [
@@ -48,6 +51,7 @@ EXTRA_PP_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES += [
+    'AbuseReporter.jsm',
     'addonManager.js',
     'AddonManager.jsm',
     'amContentHandler.jsm',

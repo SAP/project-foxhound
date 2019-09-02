@@ -1,5 +1,4 @@
 
 1 Added function:
 
-  'function SECOidTag HASH_GetHashOidTagByHashType(HASH_HashType)'    {HASH_GetHashOidTagByHashType@@NSS_3.43}
-
+  'function SECStatus PK11_FindRawCertsWithSubject(PK11SlotInfo*, SECItem*, CERTCertificateList**)'    {PK11_FindRawCertsWithSubject@@NSS_3.45}

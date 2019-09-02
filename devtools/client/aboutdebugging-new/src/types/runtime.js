@@ -6,7 +6,9 @@
 
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { ClientWrapper } = require("../modules/client-wrapper");
-const { COMPATIBILITY_STATUS } = require("devtools/client/shared/remote-debugging/version-checker");
+const {
+  COMPATIBILITY_STATUS,
+} = require("devtools/client/shared/remote-debugging/version-checker");
 
 const runtimeInfo = {
   // device name which is running the runtime,
@@ -61,10 +63,6 @@ const runtimeDetails = {
   // reflect devtools.debugger.prompt-connection preference of this runtime
   connectionPromptEnabled: PropTypes.bool.isRequired,
 
-  // In case that runtime is this-firefox, reflects devtools.chrome.enabled and
-  // devtools.debugger.remote-enabled preference. Otherwise, this sould be true.
-  extensionDebugEnabled: PropTypes.bool.isRequired,
-
   // runtime information
   info: PropTypes.shape(runtimeInfo).isRequired,
 
@@ -96,7 +94,7 @@ const usbRuntimeConnectionParameter = {
 
 const runtimeExtra = {
   // parameter to connect to debugger server
-  // unavailable on unknown runtimes
+  // unavailable on unavailable/unplugged runtimes
   connectionParameters: PropTypes.oneOfType([
     PropTypes.shape(networkRuntimeConnectionParameter),
     PropTypes.shape(usbRuntimeConnectionParameter),
@@ -105,6 +103,10 @@ const runtimeExtra = {
   // device name
   // unavailable on this-firefox and network-location runtimes
   deviceName: PropTypes.string,
+
+  // version of the application coming from ADB, only available via USB. Useful for Fenix
+  // runtimes, because the version can't be retrieved from Service.appInfo.
+  adbPackageVersion: PropTypes.string,
 };
 
 const runtime = {
@@ -115,9 +117,33 @@ const runtime = {
   // unavailable on this-firefox runtime
   extra: PropTypes.shape(runtimeExtra),
 
-  // unknown runtimes are placeholders for devices where the runtime has not been started
-  // yet. For instance an ADB device connected without a compatible runtime running.
-  isUnknown: PropTypes.bool.isRequired,
+  // this flag will be true when start to connect to the runtime, will be false after
+  // connected or has failures.
+  isConnecting: PropTypes.bool.isRequired,
+
+  // this flag will be true when the connection failed.
+  isConnectionFailed: PropTypes.bool.isRequired,
+
+  // will be true if connecting to runtime is taking time, will be false after connecting
+  // or failing.
+  isConnectionNotResponding: PropTypes.bool.isRequired,
+
+  // this flag will be true when the connection was timeout.
+  isConnectionTimeout: PropTypes.bool.isRequired,
+
+  // this flag will be true when the detected runtime is Fenix (Firefox Preview).
+  // Fenix need specific logic to get their display name, version and logos.
+  // Discussion ongoing in https://github.com/mozilla-mobile/fenix/issues/2016
+  isFenix: PropTypes.bool.isRequired,
+
+  // unavailable runtimes are placeholders for devices where the runtime has not been
+  // started yet. For instance an ADB device connected without a compatible runtime
+  // running.
+  isUnavailable: PropTypes.bool.isRequired,
+
+  // unplugged runtimes are placeholders for devices that are no longer available. For
+  // instance a USB device that was unplugged from the computer.
+  isUnplugged: PropTypes.bool.isRequired,
 
   // display name of the runtime
   name: PropTypes.string.isRequired,

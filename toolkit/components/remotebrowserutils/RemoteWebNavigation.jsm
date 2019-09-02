@@ -3,21 +3,30 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-ChromeUtils.defineModuleGetter(this, "Services",
-  "resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(this, "Utils",
-  "resource://gre/modules/sessionstore/Utils.jsm");
-ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "E10SUtils",
-  "resource://gre/modules/E10SUtils.jsm");
-
-function makeURI(url) {
-  return Services.io.newURI(url);
-}
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Utils",
+  "resource://gre/modules/sessionstore/Utils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "E10SUtils",
+  "resource://gre/modules/E10SUtils.jsm"
+);
 
 function RemoteWebNavigation() {
   this.wrappedJSObject = this;
+  this._cancelContentJSEpoch = 1;
 }
 
 RemoteWebNavigation.prototype = {
@@ -55,22 +64,48 @@ RemoteWebNavigation.prototype = {
   canGoBack: false,
   canGoForward: false,
   goBack() {
-    this._sendMessage("WebNavigation:GoBack", {});
+    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
+    this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
+      Ci.nsIRemoteTab.NAVIGATE_BACK,
+      { epoch: cancelContentJSEpoch }
+    );
+    this._sendMessage("WebNavigation:GoBack", { cancelContentJSEpoch });
   },
   goForward() {
-    this._sendMessage("WebNavigation:GoForward", {});
+    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
+    this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
+      Ci.nsIRemoteTab.NAVIGATE_FORWARD,
+      { epoch: cancelContentJSEpoch }
+    );
+    this._sendMessage("WebNavigation:GoForward", { cancelContentJSEpoch });
   },
   gotoIndex(aIndex) {
-    this._sendMessage("WebNavigation:GotoIndex", {index: aIndex});
+    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
+    this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
+      Ci.nsIRemoteTab.NAVIGATE_INDEX,
+      { index: aIndex, epoch: cancelContentJSEpoch }
+    );
+    this._sendMessage("WebNavigation:GotoIndex", {
+      index: aIndex,
+      cancelContentJSEpoch,
+    });
   },
   loadURI(aURI, aLoadURIOptions) {
-    // We know the url is going to be loaded, let's start requesting network
-    // connection before the content process asks.
-    // Note that we might have already setup the speculative connection in some
-    // cases, especially when the url is from location bar or its popup menu.
-    if (aURI.startsWith("http:") || aURI.startsWith("https:")) {
-      try {
-        let uri = makeURI(aURI);
+    let uri;
+    try {
+      let fixup = Cc["@mozilla.org/docshell/urifixup;1"].getService();
+      let fixupFlags = fixup.webNavigationFlagsToFixupFlags(
+        aURI,
+        aLoadURIOptions.loadFlags
+      );
+      uri = fixup.createFixupURI(aURI, fixupFlags);
+
+      // We know the url is going to be loaded, let's start requesting network
+      // connection before the content process asks.
+      // Note that we might have already setup the speculative connection in
+      // some cases, especially when the url is from location bar or its popup
+      // menu.
+      if (uri.schemeIs("http") || uri.schemeIs("https")) {
         let principal = aLoadURIOptions.triggeringPrincipal;
         // We usually have a triggeringPrincipal assigned, but in case we
         // don't have one or if it's a SystemPrincipal, let's create it with OA
@@ -78,28 +113,50 @@ RemoteWebNavigation.prototype = {
         if (!principal || principal.isSystemPrincipal) {
           let attrs = {
             userContextId: this._browser.getAttribute("usercontextid") || 0,
-            privateBrowsingId: PrivateBrowsingUtils.isBrowserPrivate(this._browser) ? 1 : 0,
+            privateBrowsingId: PrivateBrowsingUtils.isBrowserPrivate(
+              this._browser
+            )
+              ? 1
+              : 0,
           };
-          principal = Services.scriptSecurityManager.createCodebasePrincipal(uri, attrs);
+          principal = Services.scriptSecurityManager.createCodebasePrincipal(
+            uri,
+            attrs
+          );
         }
         Services.io.speculativeConnect(uri, principal, null);
-      } catch (ex) {
-        // Can't setup speculative connection for this uri string for some
-        // reason (such as failing to parse the URI), just ignore it.
       }
+    } catch (ex) {
+      // Can't setup speculative connection for this uri string for some
+      // reason (such as failing to parse the URI), just ignore it.
     }
 
+    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
+    this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
+      Ci.nsIRemoteTab.NAVIGATE_URL,
+      { uri, epoch: cancelContentJSEpoch }
+    );
     this._sendMessage("WebNavigation:LoadURI", {
       uri: aURI,
-      flags: aLoadURIOptions.loadFlags,
-      referrerInfo: E10SUtils.serializeReferrerInfo(aLoadURIOptions.referrerInfo),
-      postData: aLoadURIOptions.postData ? Utils.serializeInputStream(aLoadURIOptions.postData) : null,
-      headers: aLoadURIOptions.headers ? Utils.serializeInputStream(aLoadURIOptions.headers) : null,
+      loadFlags: aLoadURIOptions.loadFlags,
+      referrerInfo: E10SUtils.serializeReferrerInfo(
+        aLoadURIOptions.referrerInfo
+      ),
+      postData: aLoadURIOptions.postData
+        ? Utils.serializeInputStream(aLoadURIOptions.postData)
+        : null,
+      headers: aLoadURIOptions.headers
+        ? Utils.serializeInputStream(aLoadURIOptions.headers)
+        : null,
       baseURI: aLoadURIOptions.baseURI ? aLoadURIOptions.baseURI.spec : null,
       triggeringPrincipal: E10SUtils.serializePrincipal(
-                           aLoadURIOptions.triggeringPrincipal || Services.scriptSecurityManager.createNullPrincipal({})),
-      csp: aLoadURIOptions.csp ? E10SUtils.serializeCSP(aLoadURIOptions.csp) : null,
-      requestTime: Services.telemetry.msSystemNow(),
+        aLoadURIOptions.triggeringPrincipal ||
+          Services.scriptSecurityManager.createNullPrincipal({})
+      ),
+      csp: aLoadURIOptions.csp
+        ? E10SUtils.serializeCSP(aLoadURIOptions.csp)
+        : null,
+      cancelContentJSEpoch,
     });
   },
   setOriginAttributesBeforeLoading(aOriginAttributes) {
@@ -108,10 +165,10 @@ RemoteWebNavigation.prototype = {
     });
   },
   reload(aReloadFlags) {
-    this._sendMessage("WebNavigation:Reload", {flags: aReloadFlags});
+    this._sendMessage("WebNavigation:Reload", { loadFlags: aReloadFlags });
   },
   stop(aStopFlags) {
-    this._sendMessage("WebNavigation:Stop", {flags: aStopFlags});
+    this._sendMessage("WebNavigation:Stop", { loadFlags: aStopFlags });
   },
 
   get document() {
@@ -121,7 +178,7 @@ RemoteWebNavigation.prototype = {
   _currentURI: null,
   get currentURI() {
     if (!this._currentURI) {
-      this._currentURI = makeURI("about:blank");
+      this._currentURI = Services.io.newURI("about:blank");
     }
 
     return this._currentURI;

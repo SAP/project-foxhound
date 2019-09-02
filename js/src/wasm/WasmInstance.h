@@ -21,6 +21,7 @@
 
 #include "builtin/TypedObject.h"
 #include "gc/Barrier.h"
+#include "gc/Zone.h"
 #include "vm/SharedMem.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmDebug.h"
@@ -43,7 +44,7 @@ namespace wasm {
 
 class Instance {
   JS::Realm* const realm_;
-  ReadBarrieredWasmInstanceObject object_;
+  WeakHeapPtrWasmInstanceObject object_;
   void* jsJitArgsRectifier_;
   void* jsJitExceptionHandler_;
   void* preBarrierCode_;
@@ -74,8 +75,8 @@ class Instance {
   Instance(JSContext* cx, HandleWasmInstanceObject object, SharedCode code,
            UniqueTlsData tlsData, HandleWasmMemoryObject memory,
            SharedTableVector&& tables, StructTypeDescrVector&& structTypeDescrs,
-           Handle<FunctionVector> funcImports,
-           HandleValVector globalImportValues,
+           const JSFunctionVector& funcImports,
+           const ValVector& globalImportValues,
            const WasmGlobalObjectVector& globalObjs,
            UniqueDebugState maybeDebug);
   ~Instance();
@@ -182,6 +183,7 @@ class Instance {
   static int32_t callImport_i64(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_f64(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_anyref(Instance*, int32_t, int32_t, uint64_t*);
+  static int32_t callImport_funcref(Instance*, int32_t, int32_t, uint64_t*);
   static uint32_t memoryGrow_i32(Instance* instance, uint32_t delta);
   static uint32_t memorySize_i32(Instance* instance);
   static int32_t wait_i32(Instance* instance, uint32_t byteOffset,
@@ -200,9 +202,11 @@ class Instance {
                            uint32_t srcOffset, uint32_t len,
                            uint32_t dstTableIndex, uint32_t srcTableIndex);
   static int32_t elemDrop(Instance* instance, uint32_t segIndex);
+  static int32_t tableFill(Instance* instance, uint32_t start, void* value,
+                           uint32_t len, uint32_t tableIndex);
   static void* tableGet(Instance* instance, uint32_t index,
                         uint32_t tableIndex);
-  static uint32_t tableGrow(Instance* instance, uint32_t delta, void* initValue,
+  static uint32_t tableGrow(Instance* instance, void* initValue, uint32_t delta,
                             uint32_t tableIndex);
   static int32_t tableSet(Instance* instance, uint32_t index, void* value,
                           uint32_t tableIndex);

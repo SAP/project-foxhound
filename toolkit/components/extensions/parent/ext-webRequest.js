@@ -4,14 +4,24 @@
 // by ext-utils.js).
 /* global tabTracker */
 
-ChromeUtils.defineModuleGetter(this, "WebRequest",
-                               "resource://gre/modules/WebRequest.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "WebRequest",
+  "resource://gre/modules/WebRequest.jsm"
+);
 
 // The guts of a WebRequest event handler.  Takes care of converting
 // |details| parameter when invoking listeners.
-function registerEvent(extension, eventName, fire, filter, info, tabParent = null) {
+function registerEvent(
+  extension,
+  eventName,
+  fire,
+  filter,
+  info,
+  remoteTab = null
+) {
   let listener = async data => {
-    let browserData = {tabId: -1, windowId: -1};
+    let browserData = { tabId: -1, windowId: -1 };
     if (data.browser) {
       browserData = tabTracker.getBrowserData(data.browser);
     }
@@ -24,12 +34,23 @@ function registerEvent(extension, eventName, fire, filter, info, tabParent = nul
 
     let event = data.serialize(eventName);
     event.tabId = browserData.tabId;
-
+    if (data.originAttributes) {
+      event.incognito = data.originAttributes.privateBrowsingId > 0;
+      if (extension.hasPermission("cookies")) {
+        event.cookieStoreId = getCookieStoreIdForOriginAttributes(
+          data.originAttributes
+        );
+      }
+    }
     if (data.registerTraceableChannel) {
+      // If this is a primed listener, no tabParent was passed in here,
+      // but the convert() callback later in this function will be called
+      // when the background page is started.  Force that to happen here
+      // after which we'll have a valid tabParent.
       if (fire.wakeup) {
         await fire.wakeup();
       }
-      data.registerTraceableChannel(extension.policy, tabParent);
+      data.registerTraceableChannel(extension.policy, remoteTab);
     }
 
     return fire.sync(event);
@@ -37,13 +58,17 @@ function registerEvent(extension, eventName, fire, filter, info, tabParent = nul
 
   let filter2 = {};
   if (filter.urls) {
-    let perms = new MatchPatternSet([...extension.whiteListedHosts.patterns,
-                                     ...extension.optionalOrigins.patterns]);
+    let perms = new MatchPatternSet([
+      ...extension.whiteListedHosts.patterns,
+      ...extension.optionalOrigins.patterns,
+    ]);
 
     filter2.urls = new MatchPatternSet(filter.urls);
 
     if (!perms.overlapsAll(filter2.urls)) {
-      Cu.reportError("The webRequest.addListener filter doesn't overlap with host permissions.");
+      Cu.reportError(
+        "The webRequest.addListener filter doesn't overlap with host permissions."
+      );
     }
   }
   if (filter.types) {
@@ -54,6 +79,9 @@ function registerEvent(extension, eventName, fire, filter, info, tabParent = nul
   }
   if (filter.windowId) {
     filter2.windowId = filter.windowId;
+  }
+  if (filter.incognito !== undefined) {
+    filter2.incognito = filter.incognito;
   }
 
   let blockingAllowed = extension.hasPermission("webRequestBlocking");
@@ -66,8 +94,10 @@ function registerEvent(extension, eventName, fire, filter, info, tabParent = nul
         // should be checked with the "webRequestBlockingPermissionRequired" postprocess property),
         // but it is worth to also check it here just in case a new webRequest has been added and
         // it has not yet using the expected postprocess property).
-        Cu.reportError("Using webRequest.addListener with the blocking option " +
-                       "requires the 'webRequestBlocking' permission.");
+        Cu.reportError(
+          "Using webRequest.addListener with the blocking option " +
+            "requires the 'webRequestBlocking' permission."
+        );
       } else {
         info2.push(desc);
       }
@@ -79,15 +109,15 @@ function registerEvent(extension, eventName, fire, filter, info, tabParent = nul
     extension: extension.policy,
     blockingAllowed,
   };
-  WebRequest[eventName].addListener(
-    listener, filter2, info2,
-    listenerDetails);
+  WebRequest[eventName].addListener(listener, filter2, info2, listenerDetails);
 
   return {
-    unregister: () => { WebRequest[eventName].removeListener(listener); },
+    unregister: () => {
+      WebRequest[eventName].removeListener(listener);
+    },
     convert(_fire, context) {
       fire = _fire;
-      tabParent = context.xulBrowser.frameLoader.tabParent;
+      remoteTab = context.xulBrowser.frameLoader.remoteTab;
     },
   };
 }
@@ -101,8 +131,14 @@ function makeWebRequestEvent(context, name) {
       event: name,
     },
     register: (fire, filter, info) => {
-      return registerEvent(context.extension, name, fire, filter, info,
-                           context.xulBrowser.frameLoader.tabParent).unregister;
+      return registerEvent(
+        context.extension,
+        name,
+        fire,
+        filter,
+        info,
+        context.xulBrowser.frameLoader.remoteTab
+      ).unregister;
     },
   }).api();
 }
@@ -116,7 +152,10 @@ this.webRequest = class extends ExtensionAPI {
     return {
       webRequest: {
         onBeforeRequest: makeWebRequestEvent(context, "onBeforeRequest"),
-        onBeforeSendHeaders: makeWebRequestEvent(context, "onBeforeSendHeaders"),
+        onBeforeSendHeaders: makeWebRequestEvent(
+          context,
+          "onBeforeSendHeaders"
+        ),
         onSendHeaders: makeWebRequestEvent(context, "onSendHeaders"),
         onHeadersReceived: makeWebRequestEvent(context, "onHeadersReceived"),
         onAuthRequired: makeWebRequestEvent(context, "onAuthRequired"),
@@ -128,7 +167,7 @@ this.webRequest = class extends ExtensionAPI {
           return WebRequest.getSecurityInfo({
             id: requestId,
             extension: context.extension.policy,
-            tabParent: context.xulBrowser.frameLoader.tabParent,
+            remoteTab: context.xulBrowser.frameLoader.remoteTab,
             options,
           });
         },

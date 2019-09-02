@@ -236,7 +236,7 @@ class MediaSessionConduit {
                                      uint32_t* packetsReceived,
                                      uint64_t* bytesReceived,
                                      uint32_t* cumulativeLost,
-                                     int32_t* rttMs) = 0;
+                                     Maybe<double>* aOutRttMs) = 0;
   virtual bool GetRTCPSenderReport(unsigned int* packetsSent,
                                    uint64_t* bytesSent) = 0;
 
@@ -463,6 +463,8 @@ class VideoSessionConduit : public MediaSessionConduit {
                                     double* bitrateMean, double* bitrateStdDev,
                                     uint32_t* discardedPackets,
                                     uint32_t* framesDecoded) = 0;
+
+  virtual void RecordTelemetry() const = 0;
 
  protected:
   /* RTCP feedback settings, for unit testing purposes */

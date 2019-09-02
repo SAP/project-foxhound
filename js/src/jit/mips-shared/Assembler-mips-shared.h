@@ -796,6 +796,8 @@ class AssemblerMIPSShared : public AssemblerShared {
   // As opposed to x86/x64 version, the data relocation has to be executed
   // before to recover the pointer, and not after.
   void writeDataRelocation(ImmGCPtr ptr) {
+    // Raw GC pointer relocations and Value relocations both end up in
+    // TraceOneDataRelocation.
     if (ptr.value) {
       if (gc::IsInsideNursery(ptr.value)) {
         embedsNurseryPointers_ = true;
@@ -814,6 +816,7 @@ class AssemblerMIPSShared : public AssemblerShared {
   }
 
  public:
+  void setUnlimitedBuffer() { m_buffer.setUnlimited(); }
   bool oom() const;
 
   void setPrinter(Sprinter* sp) {
@@ -1216,8 +1219,6 @@ class AssemblerMIPSShared : public AssemblerShared {
 
   static void UpdateLuiOriValue(Instruction* inst0, Instruction* inst1,
                                 uint32_t value);
-
-  bool bailed() { return m_buffer.bail(); }
 
   void verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
                                    const Disassembler::HeapAccess& heapAccess) {

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use euclid::{Angle, TypedSize2D};
-use parse_function::parse_function;
+use crate::parse_function::parse_function;
 use std::f32;
 use std::str::FromStr;
 use webrender::api::*;
@@ -75,7 +75,7 @@ fn string_to_color(color: &str) -> Option<ColorF> {
 }
 
 pub trait StringEnum: Sized {
-    fn from_str(&str) -> Option<Self>;
+    fn from_str(_: &str) -> Option<Self>;
     fn as_str(&self) -> &'static str;
 }
 
@@ -443,6 +443,9 @@ impl YamlHelper for Yaml {
             if nums.len() == 3 {
                 nums.push(1.0);
             }
+            assert!(nums[3] >= 0.0 && nums[3] <= 1.0,
+                    "alpha value should be in the 0-1 range, got {:?}",
+                    nums[3]);
             return Some(ColorF::new(
                 nums[0] / 255.0,
                 nums[1] / 255.0,
@@ -598,15 +601,23 @@ impl YamlHelper for Yaml {
                     let str = format!("---\noffset: {}\nblur-radius: {}\ncolor: {}\n", args[0], args[1], args[2]);
                     let mut yaml_doc = YamlLoader::load_from_str(&str).expect("Failed to parse drop-shadow");
                     let yaml = yaml_doc.pop().unwrap();
-                    Some(FilterOp::DropShadow(yaml["offset"].as_vector().unwrap(),
-                                              yaml["blur-radius"].as_f32().unwrap(),
-                                              yaml["color"].as_colorf().unwrap()))
+                    Some(FilterOp::DropShadow(Shadow {
+                        offset: yaml["offset"].as_vector().unwrap(),
+                        blur_radius: yaml["blur-radius"].as_f32().unwrap(),
+                        color: yaml["color"].as_colorf().unwrap()
+                    }))
                 }
                 ("color-matrix", ref args, _) if args.len() == 20 => {
                     let m: Vec<f32> = args.iter().map(|f| f.parse().unwrap()).collect();
                     let mut matrix: [f32; 20] = [0.0; 20];
                     matrix.clone_from_slice(&m);
                     Some(FilterOp::ColorMatrix(matrix))
+                }
+                ("flood", ref args, _) if args.len() == 1 => {
+                    let str = format!("---\ncolor: {}\n", args[0]);
+                    let mut yaml_doc = YamlLoader::load_from_str(&str).expect("Failed to parse flood");
+                    let yaml = yaml_doc.pop().unwrap();
+                    Some(FilterOp::Flood(yaml["color"].as_colorf().unwrap()))
                 }
                 (_, _, _) => None,
             }

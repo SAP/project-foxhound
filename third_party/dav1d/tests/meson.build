@@ -34,7 +34,10 @@ endif
 libdav1d_nasm_objs_if_needed = []
 
 if is_asm_enabled
-    checkasm_sources = files('checkasm/checkasm.c')
+    checkasm_sources = files(
+        'checkasm/checkasm.c',
+        'checkasm/msac.c',
+    )
 
     checkasm_tmpl_sources = files(
         'checkasm/cdef.c',
@@ -95,13 +98,17 @@ endif
 dav1d_fuzzer_sources =  files('libfuzzer/dav1d_fuzzer.c')
 fuzzer_ldflags = []
 
+if get_option('fuzzer_ldflags') != ''
+    fuzzer_ldflags += [get_option('fuzzer_ldflags')]
+endif
+
 if fuzzing_engine == 'none'
     dav1d_fuzzer_sources += files('libfuzzer/main.c')
 elif fuzzing_engine == 'libfuzzer'
     fuzzer_ldflags += ['-fsanitize=fuzzer']
 elif fuzzing_engine == 'oss-fuzz'
     # libFuzzingEngine needs libc++
-    fuzzer_ldflags += ['-lFuzzingEngine', '-lc++']
+    fuzzer_ldflags += ['-lc++']
 endif
 
 dav1d_fuzzer = executable('dav1d_fuzzer',

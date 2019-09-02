@@ -6,8 +6,12 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewAutoFill"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { GeckoViewUtils } = ChromeUtils.import(
+  "resource://gre/modules/GeckoViewUtils.jsm"
+);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
@@ -15,7 +19,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   LoginManagerContent: "resource://gre/modules/LoginManagerContent.jsm",
 });
 
-const {debug, warn} = GeckoViewUtils.initLogging("AutoFill"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("AutoFill"); // eslint-disable-line no-unused-vars
 
 class GeckoViewAutoFill {
   constructor(aEventDispatcher) {
@@ -41,11 +45,11 @@ class GeckoViewAutoFill {
   }
 
   _addElement(aFormLike, aFromDeferredTask) {
-    let task = this._autoFillTasks &&
-               this._autoFillTasks.get(aFormLike.rootElement);
+    let task =
+      this._autoFillTasks && this._autoFillTasks.get(aFormLike.rootElement);
     if (task && !aFromDeferredTask) {
       // We already have a pending task; cancel that and start a new one.
-      debug `Canceling previous auto-fill task`;
+      debug`Canceling previous auto-fill task`;
       task.disarm();
       task = null;
     }
@@ -53,13 +57,12 @@ class GeckoViewAutoFill {
     if (!task) {
       if (aFromDeferredTask) {
         // Canceled before we could run the task.
-        debug `Auto-fill task canceled`;
+        debug`Auto-fill task canceled`;
         return;
       }
       // Start a new task so we can coalesce adding elements in one batch.
-      debug `Deferring auto-fill task`;
-      task = new DeferredTask(
-          () => this._addElement(aFormLike, true), 100);
+      debug`Deferring auto-fill task`;
+      task = new DeferredTask(() => this._addElement(aFormLike, true), 100);
       task.arm();
       if (!this._autoFillTasks) {
         this._autoFillTasks = new WeakMap();
@@ -68,7 +71,7 @@ class GeckoViewAutoFill {
       return;
     }
 
-    debug `Adding auto-fill ${aFormLike.rootElement.tagName}`;
+    debug`Adding auto-fill ${aFormLike.rootElement.tagName}`;
 
     this._autoFillTasks.delete(aFormLike.rootElement);
 
@@ -84,23 +87,47 @@ class GeckoViewAutoFill {
       if (info) {
         return info;
       }
+      const bounds = element.getBoundingClientRect();
       info = {
         id: ++this._autoFillId,
         parent,
         root,
         tag: element.tagName,
         type: element instanceof window.HTMLInputElement ? element.type : null,
-        editable: (element instanceof window.HTMLInputElement) &&
-                  ["color", "date", "datetime-local", "email", "month",
-                   "number", "password", "range", "search", "tel", "text",
-                   "time", "url", "week"].includes(element.type),
-        disabled: element instanceof window.HTMLInputElement ? element.disabled
-                                                             : null,
-        attributes: Object.assign({}, ...Array.from(element.attributes)
+        editable:
+          element instanceof window.HTMLInputElement &&
+          [
+            "color",
+            "date",
+            "datetime-local",
+            "email",
+            "month",
+            "number",
+            "password",
+            "range",
+            "search",
+            "tel",
+            "text",
+            "time",
+            "url",
+            "week",
+          ].includes(element.type),
+        disabled:
+          element instanceof window.HTMLInputElement ? element.disabled : null,
+        attributes: Object.assign(
+          {},
+          ...Array.from(element.attributes)
             .filter(attr => attr.localName !== "value")
-            .map(attr => ({[attr.localName]: attr.value}))),
+            .map(attr => ({ [attr.localName]: attr.value }))
+        ),
         origin: element.ownerDocument.location.origin,
         autofillhint: "",
+        bounds: {
+          left: bounds.left,
+          top: bounds.top,
+          right: bounds.right,
+          bottom: bounds.bottom,
+        },
       };
 
       if (element === usernameField) {
@@ -109,53 +136,76 @@ class GeckoViewAutoFill {
 
       this._autoFillInfos.set(element, info);
       this._autoFillElements.set(info.id, Cu.getWeakReference(element));
-      sendFocusEvent |= (element === element.ownerDocument.activeElement);
+      sendFocusEvent |= element === element.ownerDocument.activeElement;
       return info;
     };
 
-    let [usernameField] =
-      LoginManagerContent.getUserNameAndPasswordFields(aFormLike.elements[0]);
+    // Get password field to get better form data via LoginManagerContent.
+    let passwordField;
+    for (const field of aFormLike.elements) {
+      if (
+        ChromeUtils.getClassName(field) === "HTMLInputElement" &&
+        field.type == "password"
+      ) {
+        passwordField = field;
+        break;
+      }
+    }
+
+    const [usernameField] = LoginManagerContent.getUserNameAndPasswordFields(
+      passwordField || aFormLike.elements[0]
+    );
 
     const rootInfo = getInfo(aFormLike.rootElement, null, undefined, null);
     rootInfo.root = rootInfo.id;
     rootInfo.children = aFormLike.elements
-        .filter(element => (!usernameField || element.type != "text" ||
-                            element == usernameField))
-        .map(element => getInfo(element, rootInfo.id, rootInfo.id, usernameField));
+      .filter(
+        element =>
+          !usernameField || element.type != "text" || element == usernameField
+      )
+      .map(element =>
+        getInfo(element, rootInfo.id, rootInfo.id, usernameField)
+      );
 
     this._eventDispatcher.dispatch("GeckoView:AddAutoFill", rootInfo, {
       onSuccess: responses => {
         // `responses` is an object with IDs as keys.
-        debug `Performing auto-fill ${Object.keys(responses)}`;
+        debug`Performing auto-fill ${Object.keys(responses)}`;
 
         const AUTOFILL_STATE = "-moz-autofill";
         const winUtils = window.windowUtils;
 
-        for (let id in responses) {
-          const entry = this._autoFillElements &&
-                        this._autoFillElements.get(+id);
+        for (const id in responses) {
+          const entry =
+            this._autoFillElements && this._autoFillElements.get(+id);
           const element = entry && entry.get();
           const value = responses[id] || "";
 
-          if (element instanceof window.HTMLInputElement &&
-              !element.disabled && element.parentElement) {
+          if (
+            element instanceof window.HTMLInputElement &&
+            !element.disabled &&
+            element.parentElement
+          ) {
             element.setUserInput(value);
             if (winUtils && element.value === value) {
               // Add highlighting for autofilled fields.
               winUtils.addManuallyManagedState(element, AUTOFILL_STATE);
 
               // Remove highlighting when the field is changed.
-              element.addEventListener("input", _ =>
+              element.addEventListener(
+                "input",
+                _ =>
                   winUtils.removeManuallyManagedState(element, AUTOFILL_STATE),
-                  { mozSystemGroup: true, once: true });
+                { mozSystemGroup: true, once: true }
+              );
             }
           } else if (element) {
-            warn `Don't know how to auto-fill ${element.tagName}`;
+            warn`Don't know how to auto-fill ${element.tagName}`;
           }
         }
       },
       onError: error => {
-        warn `Cannot perform autofill ${error}`;
+        warn`Cannot perform autofill ${error}`;
       },
     });
 
@@ -171,10 +221,10 @@ class GeckoViewAutoFill {
    * @param aTarget Focused element, or null if an element has lost focus.
    */
   onFocus(aTarget) {
-    debug `Auto-fill focus on ${aTarget && aTarget.tagName}`;
+    debug`Auto-fill focus on ${aTarget && aTarget.tagName}`;
 
-    let info = aTarget && this._autoFillInfos &&
-               this._autoFillInfos.get(aTarget);
+    const info =
+      aTarget && this._autoFillInfos && this._autoFillInfos.get(aTarget);
     if (!aTarget || info) {
       this._eventDispatcher.dispatch("GeckoView:OnAutoFillFocus", info);
     }
@@ -184,7 +234,7 @@ class GeckoViewAutoFill {
    * Clear all tracked auto-fill forms and notify Java.
    */
   clearElements() {
-    debug `Clearing auto-fill`;
+    debug`Clearing auto-fill`;
 
     this._autoFillTasks = undefined;
     this._autoFillInfos = undefined;
@@ -209,13 +259,11 @@ class GeckoViewAutoFill {
     for (let i = 0; i < inputs.length; i++) {
       if (inputs[i].form) {
         // Let _addAutoFillElement coalesce multiple calls for the same form.
-        this._addElement(
-            FormLikeFactory.createFromForm(inputs[i].form));
+        this._addElement(FormLikeFactory.createFromForm(inputs[i].form));
       } else if (!inputAdded) {
         // Treat inputs without forms as one unit, and process them only once.
         inputAdded = true;
-        this._addElement(
-            FormLikeFactory.createFromField(inputs[i]));
+        this._addElement(FormLikeFactory.createFromField(inputs[i]));
       }
     }
 

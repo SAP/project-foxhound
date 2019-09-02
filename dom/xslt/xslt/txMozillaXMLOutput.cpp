@@ -20,7 +20,6 @@
 #include "nsNameSpaceManager.h"
 #include "txStringUtils.h"
 #include "txURIUtils.h"
-#include "nsIHTMLDocument.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsIDocumentTransformer.h"
 #include "mozilla/StyleSheetInlines.h"
@@ -758,6 +757,8 @@ nsresult txMozillaXMLOutput::createResultDocument(const nsAString& aName,
   // source, so that we have the right principal.
   mDocument->SetScriptHandlingObject(sgo);
 
+  mDocument->SetStateObjectFrom(aSourceDocument);
+
   // Set the charset
   if (!mOutputFormat.mEncoding.IsEmpty()) {
     const Encoding* encoding = Encoding::ForLabel(mOutputFormat.mEncoding);
@@ -810,9 +811,8 @@ nsresult txMozillaXMLOutput::createResultDocument(const nsAString& aName,
 
   // Do this after calling OnDocumentCreated to ensure that the
   // PresShell/PresContext has been hooked up and get notified.
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(mDocument);
-  if (htmlDoc) {
-    htmlDoc->SetCompatibilityMode(eCompatibility_FullStandards);
+  if (mDocument) {
+    mDocument->SetCompatibilityMode(eCompatibility_FullStandards);
   }
 
   // Add a doc-type if requested

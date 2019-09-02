@@ -23,10 +23,11 @@ import platform
 from datetime import datetime, timedelta
 
 # load modules from parent dir
-sys.path.insert(1, os.path.dirname(sys.path[0]))
+here = os.path.abspath(os.path.dirname(__file__))
+sys.path.insert(1, os.path.dirname(here))
 
 from mozharness.base.errors import BaseErrorList
-from mozharness.base.log import INFO
+from mozharness.base.log import INFO, WARNING
 from mozharness.base.script import PreScriptAction
 from mozharness.base.vcs.vcsbase import MercurialScript
 from mozharness.mozilla.automation import TBPL_EXCEPTION, TBPL_RETRY
@@ -44,6 +45,7 @@ SUITE_CATEGORIES = ['gtest', 'cppunittest', 'jittest', 'mochitest', 'reftest', '
                     'mozmill']
 SUITE_DEFAULT_E10S = ['mochitest', 'reftest']
 SUITE_NO_E10S = ['xpcshell']
+SUITE_REPEATABLE = ['mochitest', 'reftest']
 
 
 # DesktopUnittest {{{1
@@ -114,11 +116,11 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin,
                     "in the config file. You do not need to specify "
                     "any other suites.\nBeware, this may take a while ;)"}
          ],
-        [['--e10s', ], {
-            "action": "store_true",
+        [['--disable-e10s', ], {
+            "action": "store_false",
             "dest": "e10s",
-            "default": False,
-            "help": "Run tests with multiple processes."}
+            "default": True,
+            "help": "Run tests without multiple processes (e10s)."}
          ],
         [['--headless', ], {
             "action": "store_true",
@@ -159,7 +161,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin,
             "action": "store_true",
             "dest": "enable_webrender",
             "default": False,
-            "help": "Tries to enable the WebRender compositor."}
+            "help": "Enable the WebRender compositor in Gecko."}
          ],
         [["--gpu-required"], {
             "action": "store_true",
@@ -173,6 +175,14 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin,
             "dest": "extra_prefs",
             "default": [],
             "help": "Defines an extra user preference."}
+         ],
+        [['--repeat', ], {
+            "action": "store",
+            "type": "int",
+            "dest": "repeat",
+            "default": 0,
+            "help": "Repeat the tests the given number of times. Supported "
+                    "by mochitest, reftest, crashtest, ignored otherwise."}
          ],
     ] + copy.deepcopy(testing_config_options) + \
         copy.deepcopy(code_coverage_config_options)
@@ -363,6 +373,12 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin,
     def _get_mozharness_test_paths(self, suite_category, suite):
         test_paths = json.loads(os.environ.get('MOZHARNESS_TEST_PATHS', '""'))
 
+        if '-chunked' in suite:
+            suite = suite[:suite.index('-chunked')]
+
+        if '-coverage' in suite:
+            suite = suite[:suite.index('-coverage')]
+
         if not test_paths or suite not in test_paths:
             return None
 
@@ -412,6 +428,11 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin,
                     base_cmd.append('--disable-e10s')
                 elif suite_category not in SUITE_DEFAULT_E10S and c['e10s']:
                     base_cmd.append('--e10s')
+            if c.get('repeat'):
+                if suite_category in SUITE_REPEATABLE:
+                    base_cmd.extend(["--repeat=%s" % c.get('repeat')])
+                else:
+                    self.log("--repeat not supported in {}".format(suite_category), level=WARNING)
 
             # Ignore chunking if we have user specified test paths
             if not (self.verify_enabled or self.per_test_coverage):
@@ -431,6 +452,9 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin,
 
             if c['headless']:
                 base_cmd.append('--headless')
+
+            if c['enable_webrender']:
+                base_cmd.append('--enable-webrender')
 
             if c['extra_prefs']:
                 base_cmd.extend(['--setpref={}'.format(p) for p in c['extra_prefs']])
@@ -862,9 +886,6 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin,
 
                 if self.config['allow_software_gl_layers']:
                     env['MOZ_LAYERS_ALLOW_SOFTWARE_GL'] = '1'
-                if self.config['enable_webrender']:
-                    env['MOZ_WEBRENDER'] = '1'
-                    env['MOZ_ACCELERATED'] = '1'
 
                 if self.config['single_stylo_traversal']:
                     env['STYLO_THREADS'] = '1'

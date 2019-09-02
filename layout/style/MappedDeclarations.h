@@ -96,6 +96,16 @@ class MappedDeclarations final {
     Servo_DeclarationBlock_SetIntValue(mDecl, aId, aValue);
   }
 
+  // Set "counter-reset: list-item <integer>".
+  void SetCounterResetListItem(int32_t aValue) {
+    Servo_DeclarationBlock_SetCounterResetListItem(mDecl, aValue);
+  }
+
+  // Set "counter-set: list-item <integer>".
+  void SetCounterSetListItem(int32_t aValue) {
+    Servo_DeclarationBlock_SetCounterSetListItem(mDecl, aValue);
+  }
+
   // Set a property to a pixel value
   void SetPixelValue(nsCSSPropertyID aId, float aValue) {
     Servo_DeclarationBlock_SetPixelValue(mDecl, aId, aValue);
@@ -164,7 +174,7 @@ class MappedDeclarations final {
 
   // Set font-family to a string
   void SetFontFamily(const nsString& aValue) {
-    Servo_DeclarationBlock_SetFontFamily(mDecl, aValue);
+    Servo_DeclarationBlock_SetFontFamily(mDecl, &aValue);
   }
 
   // Add a quirks-mode override to the decoration color of elements nested in

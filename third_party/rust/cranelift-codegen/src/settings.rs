@@ -346,7 +346,7 @@ pub struct FlagsOrIsa<'a> {
     pub flags: &'a Flags,
 
     /// The ISA may not be present.
-    pub isa: Option<&'a TargetIsa>,
+    pub isa: Option<&'a dyn TargetIsa>,
 }
 
 impl<'a> From<&'a Flags> for FlagsOrIsa<'a> {
@@ -355,8 +355,8 @@ impl<'a> From<&'a Flags> for FlagsOrIsa<'a> {
     }
 }
 
-impl<'a> From<&'a TargetIsa> for FlagsOrIsa<'a> {
-    fn from(isa: &'a TargetIsa) -> FlagsOrIsa {
+impl<'a> From<&'a dyn TargetIsa> for FlagsOrIsa<'a> {
+    fn from(isa: &'a dyn TargetIsa) -> FlagsOrIsa {
         FlagsOrIsa {
             flags: isa.flags(),
             isa: Some(isa),
@@ -379,6 +379,8 @@ mod tests {
             f.to_string(),
             "[shared]\n\
              opt_level = \"default\"\n\
+             baldrdash_prologue_words = 0\n\
+             probestack_size_log2 = 12\n\
              enable_verifier = true\n\
              is_pic = false\n\
              colocated_libcalls = false\n\
@@ -387,11 +389,9 @@ mod tests {
              enable_nan_canonicalization = false\n\
              enable_simd = true\n\
              enable_atomics = true\n\
-             baldrdash_prologue_words = 0\n\
              allones_funcaddrs = false\n\
              probestack_enabled = true\n\
              probestack_func_adjusts_sp = false\n\
-             probestack_size_log2 = 12\n\
              jump_tables_enabled = true\n"
         );
         assert_eq!(f.opt_level(), super::OptLevel::Default);

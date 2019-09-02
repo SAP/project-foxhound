@@ -7,7 +7,8 @@
 #include "nsString.h"
 #include "gtest/gtest.h"
 
-TEST(TextFormatter, Tests) {
+TEST(TextFormatter, Tests)
+{
   nsAutoString fmt(NS_LITERAL_STRING("%3$s %4$S %1$d %2$d %2$d %3$s"));
   char utf8[] = "Hello";
   char16_t ucs2[] = {'W',    'o',    'r',    'l',    'd',
@@ -18,7 +19,7 @@ TEST(TextFormatter, Tests) {
   nsTextFormatter::snprintf(buf, 256, fmt.get(), d, 333, utf8, ucs2);
   nsAutoString out(buf);
 
-  const char16_t *uout = out.get();
+  const char16_t* uout = out.get();
   const char16_t expected[] = {
       0x48,   0x65,   0x6C,   0x6C,   0x6F, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64,
       0x4E00, 0xAC00, 0xFF45, 0x0103, 0x20, 0x33, 0x20, 0x33, 0x33, 0x33, 0x20,
@@ -34,8 +35,7 @@ TEST(TextFormatter, Tests) {
   EXPECT_STREQ("%1m!", NS_ConvertUTF16toUTF8(out2).get());
 
   // Treat NULL the same in both %s cases.
-  nsTextFormatter::ssprintf(out2, u"%s %S", (char *)nullptr,
-                            (char16_t *)nullptr);
+  nsTextFormatter::ssprintf(out2, u"%s %S", (char*)nullptr, (char16_t*)nullptr);
   EXPECT_STREQ("(null) (null)", NS_ConvertUTF16toUTF8(out2).get());
 
   nsTextFormatter::ssprintf(out2, u"%lld", INT64_MIN);
@@ -50,7 +50,8 @@ TEST(TextFormatter, Tests) {
  * Check misordered parameters
  */
 
-TEST(TextFormatterOrdering, orders) {
+TEST(TextFormatterOrdering, orders)
+{
   nsString out;
 
   // plain list
@@ -101,7 +102,8 @@ TEST(TextFormatterOrdering, orders) {
  * Tests to validate that horrible things don't happen if the passed-in
  * variable and the formatter don't match.
  */
-TEST(TextFormatterTestMismatch, format_d) {
+TEST(TextFormatterTestMismatch, format_d)
+{
   nsString out;
   // just for completeness, this is our format, and works
   nsTextFormatter::ssprintf(out, u"%d", int(-1));
@@ -118,7 +120,8 @@ TEST(TextFormatterTestMismatch, format_d) {
 #endif
 }
 
-TEST(TextFormatterTestMismatch, format_u) {
+TEST(TextFormatterTestMismatch, format_u)
+{
   nsString out;
   nsTextFormatter::ssprintf(out, u"%u", int(-1));
   EXPECT_STREQ("4294967295", NS_ConvertUTF16toUTF8(out).get());
@@ -135,7 +138,8 @@ TEST(TextFormatterTestMismatch, format_u) {
 #endif
 }
 
-TEST(TextFormatterTestMismatch, format_x) {
+TEST(TextFormatterTestMismatch, format_x)
+{
   nsString out;
   nsTextFormatter::ssprintf(out, u"%x", int32_t(-1));
   EXPECT_STREQ("ffffffff", NS_ConvertUTF16toUTF8(out).get());
@@ -152,7 +156,8 @@ TEST(TextFormatterTestMismatch, format_x) {
 #endif
 }
 
-TEST(TextFormatterTestMismatch, format_s) {
+TEST(TextFormatterTestMismatch, format_s)
+{
   nsString out;
 #ifndef DEBUG
   nsTextFormatter::ssprintf(out, u"%s", int(-1));
@@ -171,7 +176,8 @@ TEST(TextFormatterTestMismatch, format_s) {
 #endif
 }
 
-TEST(TextFormatterTestMismatch, format_S) {
+TEST(TextFormatterTestMismatch, format_S)
+{
   nsString out;
 #ifndef DEBUG
   nsTextFormatter::ssprintf(out, u"%S", int32_t(-1));
@@ -188,7 +194,8 @@ TEST(TextFormatterTestMismatch, format_S) {
   EXPECT_STREQ("foo", NS_ConvertUTF16toUTF8(out).get());
 }
 
-TEST(TextFormatterTestMismatch, format_c) {
+TEST(TextFormatterTestMismatch, format_c)
+{
   nsString out;
   nsTextFormatter::ssprintf(out, u"%c", int32_t(-1));
   EXPECT_EQ(1u, out.Length());
@@ -214,7 +221,8 @@ TEST(TextFormatterTestMismatch, format_c) {
   EXPECT_EQ(u'c', out.CharAt(0));
 }
 
-TEST(TextFormatterTestResults, Tests) {
+TEST(TextFormatterTestResults, Tests)
+{
   char16_t buf[10];
 
   EXPECT_EQ(

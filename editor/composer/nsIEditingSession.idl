@@ -17,7 +17,6 @@ class HTMLEditor;
 %}
 
 [scriptable, builtinclass, uuid(24f963d1-e6fc-43ea-a206-99ac5fcc5265)]
-
 interface nsIEditingSession : nsISupports
 {
   /**
@@ -47,6 +46,7 @@ interface nsIEditingSession : nsISupports
    *                                    (or part of it) editable.
    *  @param aInteractive if PR_FALSE turn off scripting and plugins
    */
+  [can_run_script]
   void makeWindowEditable(in mozIDOMWindowProxy window,
                           in string aEditorType,
                           in boolean doAfterUriLoad,
@@ -68,29 +68,9 @@ interface nsIEditingSession : nsISupports
 	nsIEditor getEditorForWindow(in mozIDOMWindowProxy window);
 
   /**
-   *  Setup editor and related support objects
-   */
-  void setupEditorOnWindow(in mozIDOMWindowProxy window);
-
-  /**
    *   Destroy editor and related support objects
    */
-  void tearDownEditorOnWindow(in mozIDOMWindowProxy window);
-
-  void setEditorOnControllers(in mozIDOMWindowProxy aWindow,
-                              in nsIEditor aEditor);
-
-  /**
-   * Removes all the editor's controllers/listeners etc and makes the window
-   * uneditable.
-   */
-  void detachFromWindow(in mozIDOMWindowProxy aWindow);
-
-  /**
-   * Undos detachFromWindow(), reattaches this editing session/editor
-   * to the window.
-   */
-  void reattachToWindow(in mozIDOMWindowProxy aWindow);
+  [noscript] void tearDownEditorOnWindow(in mozIDOMWindowProxy window);
 
 %{C++
   /**

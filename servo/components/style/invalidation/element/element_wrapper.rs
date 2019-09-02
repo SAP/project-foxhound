@@ -58,6 +58,10 @@ pub trait ElementSnapshot: Sized {
     /// if `has_attrs()` returns true.
     fn has_class(&self, name: &Atom, case_sensitivity: CaseSensitivity) -> bool;
 
+    /// Whether this snapshot represents the part named `name`. Should only be
+    /// called if `has_attrs()` returns true.
+    fn is_part(&self, name: &Atom) -> bool;
+
     /// A callback that should be called for each class of the snapshot. Should
     /// only be called if `has_attrs()` returns true.
     fn each_class<F>(&self, _: F)
@@ -308,13 +312,24 @@ where
     }
 
     #[inline]
-    fn local_name(&self) -> &<Self::Impl as ::selectors::SelectorImpl>::BorrowedLocalName {
-        self.element.local_name()
+    fn has_local_name(
+        &self,
+        local_name: &<Self::Impl as ::selectors::SelectorImpl>::BorrowedLocalName,
+    ) -> bool {
+        self.element.has_local_name(local_name)
     }
 
     #[inline]
-    fn namespace(&self) -> &<Self::Impl as ::selectors::SelectorImpl>::BorrowedNamespaceUrl {
-        self.element.namespace()
+    fn has_namespace(
+        &self,
+        ns: &<Self::Impl as ::selectors::SelectorImpl>::BorrowedNamespaceUrl,
+    ) -> bool {
+        self.element.has_namespace(ns)
+    }
+
+    #[inline]
+    fn is_same_type(&self, other: &Self) -> bool {
+        self.element.is_same_type(&other.element)
     }
 
     fn attr_matches(
@@ -340,6 +355,13 @@ where
         }
     }
 
+    fn is_part(&self, name: &Atom) -> bool {
+        match self.snapshot() {
+            Some(snapshot) if snapshot.has_attrs() => snapshot.is_part(name),
+            _ => self.element.is_part(name),
+        }
+    }
+
     fn has_class(&self, name: &Atom, case_sensitivity: CaseSensitivity) -> bool {
         match self.snapshot() {
             Some(snapshot) if snapshot.has_attrs() => snapshot.has_class(name, case_sensitivity),
@@ -353,6 +375,10 @@ where
 
     fn is_root(&self) -> bool {
         self.element.is_root()
+    }
+
+    fn is_pseudo_element(&self) -> bool {
+        self.element.is_pseudo_element()
     }
 
     fn pseudo_element_originating_element(&self) -> Option<Self> {

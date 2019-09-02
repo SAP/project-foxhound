@@ -36,7 +36,6 @@
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/ObjectGroup-inl.h"
-#include "vm/UnboxedObject-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -756,8 +755,8 @@ AbortReasonOr<Ok> IonBuilder::analyzeNewLoopTypes(
 AbortReasonOr<Ok> IonBuilder::init() {
   {
     LifoAlloc::AutoFallibleScope fallibleAllocator(alloc().lifoAlloc());
-    if (!TypeScript::FreezeTypeSets(constraints(), script(), &thisTypes,
-                                    &argTypes, &typeArray)) {
+    if (!JitScript::FreezeTypeSets(constraints(), script(), &thisTypes,
+                                   &argTypes, &typeArray)) {
       return abort(AbortReason::Alloc);
     }
   }
@@ -774,7 +773,7 @@ AbortReasonOr<Ok> IonBuilder::init() {
     argTypes = nullptr;
   }
 
-  bytecodeTypeMap = script()->types()->bytecodeTypeMap();
+  bytecodeTypeMap = script()->jitScript()->bytecodeTypeMap();
 
   return Ok();
 }
@@ -1123,6 +1122,20 @@ AbortReasonOr<Ok> IonBuilder::buildInline(IonBuilder* callerBuilder,
   }
 
   return Ok();
+}
+
+void IonBuilder::runTask() {
+  // This is the entry point when ion compiles are run offthread.
+  JSRuntime* rt = script()->runtimeFromAnyThread();
+
+  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
+  TraceLoggerEvent event(TraceLogger_AnnotateScripts, script());
+  AutoTraceLog logScript(logger, event);
+  AutoTraceLog logCompile(logger, TraceLogger_IonCompilation);
+
+  jit::JitContext jctx(jit::CompileRuntime::get(rt),
+                       jit::CompileRealm::get(script()->realm()), &alloc());
+  setBackgroundCodegen(jit::CompileBackEnd(this));
 }
 
 void IonBuilder::rewriteParameter(uint32_t slotIdx, MDefinition* param) {
@@ -1968,8 +1981,11 @@ AbortReasonOr<Ok> IonBuilder::inspectOpcode(JSOp op) {
       return jsop_compare(op);
 
     case JSOP_DOUBLE:
+      pushConstant(GET_INLINE_VALUE(pc));
+      return Ok();
+
     case JSOP_BIGINT:
-      pushConstant(info().getConst(pc));
+      pushConstant(BigIntValue(info().getBigInt(pc)));
       return Ok();
 
     case JSOP_STRING:
@@ -2520,7 +2536,7 @@ AbortReasonOr<Ok> IonBuilder::inspectOpcode(JSOp op) {
     case JSOP_YIELD:
     case JSOP_FINALYIELDRVAL:
     case JSOP_RESUME:
-    case JSOP_DEBUGAFTERYIELD:
+    case JSOP_AFTERYIELD:
     case JSOP_AWAIT:
     case JSOP_TRYSKIPAWAIT:
     case JSOP_GENERATOR:
@@ -2562,7 +2578,8 @@ AbortReasonOr<Ok> IonBuilder::inspectOpcode(JSOp op) {
 }
 
 AbortReasonOr<Ok> IonBuilder::restartLoop(const CFGBlock* cfgHeader) {
-  AutoTraceLog logCompile(traceLogger(), TraceLogger_IonBuilderRestartLoop);
+  AutoTraceLog logCompile(TraceLoggerForCurrentThread(),
+                          TraceLogger_IonBuilderRestartLoop);
 
   spew("New types at loop header, restarting loop body");
 
@@ -3676,11 +3693,6 @@ AbortReasonOr<Ok> IonBuilder::arithTryBinaryStub(bool* emitted, JSOp op,
   MOZ_ASSERT(*emitted == false);
   JSOp actualOp = JSOp(*pc);
 
-  // Try to emit a binary arith stub cache.
-  if (JitOptions.disableCacheIRBinaryArith) {
-    return Ok();
-  }
-
   // The actual jsop 'jsop_pos' is not supported yet.
   // There's no IC support for JSOP_POW either.
   if (actualOp == JSOP_POS || actualOp == JSOP_POW) {
@@ -4038,8 +4050,10 @@ IonBuilder::InliningResult IonBuilder::inlineScriptedCall(CallInfo& callInfo,
 
   // Improve type information of |this| when not set.
   if (callInfo.constructing() && !callInfo.thisArg()->resultTypeSet()) {
-    StackTypeSet* types = TypeScript::ThisTypes(calleeScript);
-    if (types && !types->unknown()) {
+    AutoSweepJitScript sweep(calleeScript);
+    StackTypeSet* types =
+        calleeScript->jitScript()->thisTypes(sweep, calleeScript);
+    if (!types->unknown()) {
       TemporaryTypeSet* clonedTypes = types->clone(alloc_->lifoAlloc());
       if (!clonedTypes) {
         return abort(AbortReason::Alloc);
@@ -5301,8 +5315,7 @@ MDefinition* IonBuilder::createThisScriptedSingleton(JSFunction* target) {
   if (!templateObject) {
     return nullptr;
   }
-  if (!templateObject->is<PlainObject>() &&
-      !templateObject->is<UnboxedPlainObject>()) {
+  if (!templateObject->is<PlainObject>()) {
     return nullptr;
   }
   if (templateObject->staticPrototype() != proto) {
@@ -5319,8 +5332,15 @@ MDefinition* IonBuilder::createThisScriptedSingleton(JSFunction* target) {
     return nullptr;
   }
 
-  StackTypeSet* thisTypes = TypeScript::ThisTypes(target->nonLazyScript());
-  if (!thisTypes || !thisTypes->hasType(TypeSet::ObjectType(templateObject))) {
+  JSScript* targetScript = target->nonLazyScript();
+  JitScript* jitScript = targetScript->jitScript();
+  if (!jitScript) {
+    return nullptr;
+  }
+
+  AutoSweepJitScript sweep(targetScript);
+  StackTypeSet* thisTypes = jitScript->thisTypes(sweep, targetScript);
+  if (!thisTypes->hasType(TypeSet::ObjectType(templateObject))) {
     return nullptr;
   }
 
@@ -5353,8 +5373,7 @@ MDefinition* IonBuilder::createThisScriptedBaseline(MDefinition* callee) {
   if (!templateObject) {
     return nullptr;
   }
-  if (!templateObject->is<PlainObject>() &&
-      !templateObject->is<UnboxedPlainObject>()) {
+  if (!templateObject->is<PlainObject>()) {
     return nullptr;
   }
   if (templateObject->nonCCWRealm() != target->realm()) {
@@ -5383,8 +5402,15 @@ MDefinition* IonBuilder::createThisScriptedBaseline(MDefinition* callee) {
     return nullptr;
   }
 
-  StackTypeSet* thisTypes = TypeScript::ThisTypes(target->nonLazyScript());
-  if (!thisTypes || !thisTypes->hasType(TypeSet::ObjectType(templateObject))) {
+  JSScript* targetScript = target->nonLazyScript();
+  JitScript* jitScript = targetScript->jitScript();
+  if (!jitScript) {
+    return nullptr;
+  }
+
+  AutoSweepJitScript sweep(targetScript);
+  StackTypeSet* thisTypes = jitScript->thisTypes(sweep, targetScript);
+  if (!thisTypes->hasType(TypeSet::ObjectType(templateObject))) {
     return nullptr;
   }
 
@@ -5435,12 +5461,9 @@ MDefinition* IonBuilder::createThis(JSFunction* target, MDefinition* callee,
       return nullptr;
     }
 
-    if (target->isNativeWithJitEntry()) {
-      // Do not bother inlining constructor calls to asm.js, since it is
-      // not used much in practice.
-      MOZ_ASSERT(target->isWasmOptimized());
-      return nullptr;
-    }
+    // Only asm.js natives can be constructors and asm.js natives don't have
+    // jit entries.
+    MOZ_ASSERT(!target->isNativeWithJitEntry());
 
     MConstant* magic = MConstant::New(alloc(), MagicValue(JS_IS_CONSTRUCTING));
     current->add(magic);
@@ -6064,6 +6087,14 @@ bool IonBuilder::testNeedsArgumentCheck(JSFunction* target,
   // callee. Since typeset accumulates and can't decrease that means we don't
   // need to check the arguments anymore.
 
+  if (target->isNativeWithJitEntry()) {
+    // For natives with JitEntry we use the call-scripted path, but that
+    // requires a JitScript for the skip-arguments-check optimization so make
+    // sure we don't use that optimization. Note that these natives don't do
+    // argument type checks anyway.
+    return true;
+  }
+
   if (target->isNative()) {
     return false;
   }
@@ -6073,21 +6104,26 @@ bool IonBuilder::testNeedsArgumentCheck(JSFunction* target,
   }
 
   JSScript* targetScript = target->nonLazyScript();
+  JitScript* jitScript = targetScript->jitScript();
+  if (!jitScript) {
+    return true;
+  }
 
+  AutoSweepJitScript sweep(targetScript);
   if (!ArgumentTypesMatch(callInfo.thisArg(),
-                          TypeScript::ThisTypes(targetScript))) {
+                          jitScript->thisTypes(sweep, targetScript))) {
     return true;
   }
   uint32_t expected_args = Min<uint32_t>(callInfo.argc(), target->nargs());
   for (size_t i = 0; i < expected_args; i++) {
     if (!ArgumentTypesMatch(callInfo.getArg(i),
-                            TypeScript::ArgTypes(targetScript, i))) {
+                            jitScript->argTypes(sweep, targetScript, i))) {
       return true;
     }
   }
   for (size_t i = callInfo.argc(); i < target->nargs(); i++) {
-    if (!TypeScript::ArgTypes(targetScript, i)
-             ->mightBeMIRType(MIRType::Undefined)) {
+    StackTypeSet* types = jitScript->argTypes(sweep, targetScript, i);
+    if (!types->mightBeMIRType(MIRType::Undefined)) {
       return true;
     }
   }
@@ -6111,7 +6147,7 @@ AbortReasonOr<MCall*> IonBuilder::makeCallHelper(
 
   // Collect number of missing arguments provided that the target is
   // scripted. Native functions are passed an explicit 'argc' parameter.
-  if (target && !target->isNativeWithCppEntry()) {
+  if (target && !target->isBuiltinNative()) {
     targetArgs = Max<uint32_t>(target->nargs(), callInfo.argc());
   }
 
@@ -6144,7 +6180,7 @@ AbortReasonOr<MCall*> IonBuilder::makeCallHelper(
   // Explicitly pad any missing arguments with |undefined|.
   // This permits skipping the argumentsRectifier.
   MOZ_ASSERT_IF(target && targetArgs > callInfo.argc(),
-                !target->isNativeWithCppEntry());
+                !target->isBuiltinNative());
   for (int i = targetArgs; i > (int)callInfo.argc(); i--) {
     MConstant* undef = constant(UndefinedValue());
     if (!alloc().ensureBallast()) {
@@ -6445,46 +6481,60 @@ AbortReasonOr<Ok> IonBuilder::compareTryCharacter(bool* emitted, JSOp op,
     trackOptimizationAttempt(TrackedStrategy::Compare_Character);
   }
 
-  // Try to optimize |MConstant(string) <compare> (MFromCharCode MCharCodeAt)|
-  // as |MConstant(charcode) <compare> MCharCodeAt|.
+  // |str[i]| is compiled as |MFromCharCode(MCharCodeAt(str, i))|.
+  auto isCharAccess = [](MDefinition* ins) {
+    return ins->isFromCharCode() &&
+           ins->toFromCharCode()->input()->isCharCodeAt();
+  };
 
-  MConstant* constant;
-  MDefinition* operand;
-  if (left->isConstant()) {
-    constant = left->toConstant();
-    operand = right;
-  } else if (right->isConstant()) {
-    constant = right->toConstant();
-    operand = left;
+  if (left->isConstant() || right->isConstant()) {
+    // Try to optimize |MConstant(string) <compare> (MFromCharCode MCharCodeAt)|
+    // as |MConstant(charcode) <compare> MCharCodeAt|.
+    MConstant* constant;
+    MDefinition* operand;
+    if (left->isConstant()) {
+      constant = left->toConstant();
+      operand = right;
+    } else {
+      constant = right->toConstant();
+      operand = left;
+    }
+
+    if (constant->type() != MIRType::String ||
+        constant->toString()->length() != 1 || !isCharAccess(operand)) {
+      return Ok();
+    }
+
+    char16_t charCode = constant->toString()->asAtom().latin1OrTwoByteChar(0);
+    constant->setImplicitlyUsedUnchecked();
+
+    MConstant* charCodeConst = MConstant::New(alloc(), Int32Value(charCode));
+    current->add(charCodeConst);
+
+    MDefinition* charCodeAt = operand->toFromCharCode()->input();
+    operand->setImplicitlyUsedUnchecked();
+
+    if (left == constant) {
+      left = charCodeConst;
+      right = charCodeAt;
+    } else {
+      left = charCodeAt;
+      right = charCodeConst;
+    }
+  } else if (isCharAccess(left) && isCharAccess(right)) {
+    // Try to optimize |(MFromCharCode MCharCodeAt) <compare> (MFromCharCode
+    // MCharCodeAt)| as |MCharCodeAt <compare> MCharCodeAt|.
+
+    MDefinition* leftCharCodeAt = left->toFromCharCode()->input();
+    left->setImplicitlyUsedUnchecked();
+
+    MDefinition* rightCharCodeAt = right->toFromCharCode()->input();
+    right->setImplicitlyUsedUnchecked();
+
+    left = leftCharCodeAt;
+    right = rightCharCodeAt;
   } else {
     return Ok();
-  }
-
-  if (constant->type() != MIRType::String ||
-      constant->toString()->length() != 1) {
-    return Ok();
-  }
-
-  if (!operand->isFromCharCode() ||
-      !operand->toFromCharCode()->input()->isCharCodeAt()) {
-    return Ok();
-  }
-
-  char16_t charCode = constant->toString()->asAtom().latin1OrTwoByteChar(0);
-  constant->setImplicitlyUsedUnchecked();
-
-  MConstant* charCodeConst = MConstant::New(alloc(), Int32Value(charCode));
-  current->add(charCodeConst);
-
-  MDefinition* charCodeAt = operand->toFromCharCode()->input();
-  operand->setImplicitlyUsedUnchecked();
-
-  if (left == constant) {
-    left = charCodeConst;
-    right = charCodeAt;
-  } else {
-    left = charCodeAt;
-    right = charCodeConst;
   }
 
   MCompare* ins = MCompare::New(alloc(), left, right, op);
@@ -7150,10 +7200,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_initprop(PropertyName* name) {
         if (templateObject->as<PlainObject>().containsPure(name)) {
           useFastPath = true;
         }
-      } else {
-        MOZ_ASSERT(
-            templateObject->as<UnboxedPlainObject>().layout().lookup(name));
-        useFastPath = true;
       }
     }
   }
@@ -7626,7 +7672,7 @@ void IonBuilder::maybeMarkEmpty(MDefinition* ins) {
 
 // Return whether property lookups can be performed effectlessly on clasp.
 static bool ClassHasEffectlessLookup(const Class* clasp) {
-  return (clasp == &UnboxedPlainObject::class_) || IsTypedObjectClass(clasp) ||
+  return IsTypedObjectClass(clasp) ||
          (clasp->isNative() && !clasp->getOpsLookupProperty());
 }
 
@@ -8288,11 +8334,11 @@ AbortReasonOr<Ok> IonBuilder::jsop_getgname(PropertyName* name) {
     return Ok();
   }
   if (name == names().NaN) {
-    pushConstant(realm->runtime()->NaNValue());
+    pushConstant(JS::NaNValue());
     return Ok();
   }
   if (name == names().Infinity) {
-    pushConstant(realm->runtime()->positiveInfinityValue());
+    pushConstant(JS::InfinityValue());
     return Ok();
   }
 
@@ -8495,9 +8541,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_getelem() {
   }
 
   obj = maybeUnboxForPropertyAccess(obj);
-  if (obj->type() == MIRType::Object) {
-    obj = convertUnboxedObjects(obj);
-  }
 
   if (!forceInlineCaches()) {
     // Note: no trackOptimizationAttempt call is needed, getElemTryGetProp
@@ -8956,15 +8999,15 @@ AbortReasonOr<Ok> IonBuilder::getElemTryTypedArray(bool* emitted,
     return Ok();
   }
 
-  // Don't generate a fast path if this pc has seen negative
-  // or floating-point indexes accessed which will not appear
-  // to be extra indexed properties.
+  // Don't generate a fast path if this pc has seen floating-point
+  // indexes accessed to avoid repeated bailouts. Unlike
+  // getElemTryDense, we still generate a fast path if we have seen
+  // negative indices. We expect code to occasionally generate
+  // negative indices by accident, but not to use negative indices
+  // intentionally, because typed arrays always return undefined for
+  // negative indices. See Bug 1535031.
   if (inspector->hasSeenNonIntegerIndex(pc)) {
     trackOptimizationOutcome(TrackedOutcome::ArraySeenNonIntegerIndex);
-    return Ok();
-  }
-  if (inspector->hasSeenNegativeIndexGetElement(pc)) {
-    trackOptimizationOutcome(TrackedOutcome::ArraySeenNegativeIndex);
     return Ok();
   }
 
@@ -9579,7 +9622,7 @@ AbortReasonOr<Ok> IonBuilder::jsop_setelem() {
 
   MDefinition* value = current->pop();
   MDefinition* index = current->pop();
-  MDefinition* object = convertUnboxedObjects(current->pop());
+  MDefinition* object = current->pop();
 
   trackTypeInfo(TrackedTypeSite::Receiver, object->type(),
                 object->resultTypeSet());
@@ -9759,9 +9802,7 @@ AbortReasonOr<Ok> IonBuilder::initOrSetElemTryDense(bool* emitted,
   MOZ_ASSERT(*emitted == false);
 
   if (value->type() == MIRType::MagicHole) {
-    {
-      trackOptimizationOutcome(TrackedOutcome::InitHole);
-    }
+    trackOptimizationOutcome(TrackedOutcome::InitHole);
     return Ok();
   }
 
@@ -9838,9 +9879,7 @@ AbortReasonOr<Ok> IonBuilder::initOrSetElemTryCache(bool* emitted,
   }
 
   if (value->type() == MIRType::MagicHole) {
-    {
-      trackOptimizationOutcome(TrackedOutcome::InitHole);
-    }
+    trackOptimizationOutcome(TrackedOutcome::InitHole);
     return Ok();
   }
 
@@ -9853,7 +9892,7 @@ AbortReasonOr<Ok> IonBuilder::initOrSetElemTryCache(bool* emitted,
 
   // We can avoid worrying about holes in the IC if we know a priori we are safe
   // from them. If TI can guard that there are no indexed properties on the
-  // prototype chain, we know that we anen't missing any setters by overwriting
+  // prototype chain, we know that we aren't missing any setters by overwriting
   // the hole with another value.
   bool guardHoles;
   MOZ_TRY_VAR(guardHoles, ElementAccessHasExtraIndexedProperty(this, object));
@@ -10354,14 +10393,8 @@ uint32_t IonBuilder::getDefiniteSlot(TemporaryTypeSet* types, jsid id,
     }
 
     // Definite slots will always be fixed slots when they are in the
-    // allowable range for fixed slots, except for objects which were
-    // converted from unboxed objects and have a smaller allocation size.
+    // allowable range for fixed slots.
     size_t nfixed = NativeObject::MAX_FIXED_SLOTS;
-    if (ObjectGroup* group = key->group()->maybeOriginalUnboxedGroup()) {
-      AutoSweepObjectGroup sweepGroup(group);
-      nfixed =
-          gc::GetGCKindSlots(group->unboxedLayout(sweepGroup).getAllocKind());
-    }
 
     uint32_t propertySlot = property.maybeTypes()->definiteSlot();
     if (slot == UINT32_MAX) {
@@ -10374,66 +10407,6 @@ uint32_t IonBuilder::getDefiniteSlot(TemporaryTypeSet* types, jsid id,
   }
 
   return slot;
-}
-
-uint32_t IonBuilder::getUnboxedOffset(TemporaryTypeSet* types, jsid id,
-                                      JSValueType* punboxedType) {
-  if (!types || types->unknownObject() || !types->objectOrSentinel()) {
-    trackOptimizationOutcome(TrackedOutcome::NoTypeInfo);
-    return UINT32_MAX;
-  }
-
-  uint32_t offset = UINT32_MAX;
-
-  for (size_t i = 0; i < types->getObjectCount(); i++) {
-    TypeSet::ObjectKey* key = types->getObject(i);
-    if (!key) {
-      continue;
-    }
-
-    if (key->unknownProperties()) {
-      trackOptimizationOutcome(TrackedOutcome::UnknownProperties);
-      return UINT32_MAX;
-    }
-
-    if (key->isSingleton()) {
-      trackOptimizationOutcome(TrackedOutcome::Singleton);
-      return UINT32_MAX;
-    }
-
-    AutoSweepObjectGroup sweep(key->group());
-    UnboxedLayout* layout = key->group()->maybeUnboxedLayout(sweep);
-    if (!layout) {
-      trackOptimizationOutcome(TrackedOutcome::NotUnboxed);
-      return UINT32_MAX;
-    }
-
-    const UnboxedLayout::Property* property = layout->lookup(id);
-    if (!property) {
-      trackOptimizationOutcome(TrackedOutcome::StructNoField);
-      return UINT32_MAX;
-    }
-
-    if (layout->nativeGroup()) {
-      trackOptimizationOutcome(TrackedOutcome::UnboxedConvertedToNative);
-      return UINT32_MAX;
-    }
-
-    key->watchStateChangeForUnboxedConvertedToNative(constraints());
-
-    if (offset == UINT32_MAX) {
-      offset = property->offset;
-      *punboxedType = property->type;
-    } else if (offset != property->offset) {
-      trackOptimizationOutcome(TrackedOutcome::InconsistentFieldOffset);
-      return UINT32_MAX;
-    } else if (*punboxedType != property->type) {
-      trackOptimizationOutcome(TrackedOutcome::InconsistentFieldType);
-      return UINT32_MAX;
-    }
-  }
-
-  return offset;
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_not() {
@@ -10998,9 +10971,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_getprop(PropertyName* name) {
   }
 
   obj = maybeUnboxForPropertyAccess(obj);
-  if (obj->type() == MIRType::Object) {
-    obj = convertUnboxedObjects(obj);
-  }
 
   BarrierKind barrier = PropertyReadNeedsTypeBarrier(
       analysisContext, alloc(), constraints(), obj, name, types);
@@ -11077,13 +11047,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_getprop(PropertyName* name) {
     // Try to emit loads from definite slots.
     trackOptimizationAttempt(TrackedStrategy::GetProp_DefiniteSlot);
     MOZ_TRY(getPropTryDefiniteSlot(&emitted, obj, name, barrier, types));
-    if (emitted) {
-      return Ok();
-    }
-
-    // Try to emit loads from unboxed objects.
-    trackOptimizationAttempt(TrackedStrategy::GetProp_Unboxed);
-    MOZ_TRY(getPropTryUnboxed(&emitted, obj, name, barrier, types));
     if (emitted) {
       return Ok();
     }
@@ -11445,50 +11408,6 @@ AbortReasonOr<Ok> IonBuilder::getPropTryComplexPropOfTypedObject(
                                 fieldTypeObj);
 }
 
-MDefinition* IonBuilder::convertUnboxedObjects(MDefinition* obj) {
-  // If obj might be in any particular unboxed group which should be
-  // converted to a native representation, perform that conversion. This does
-  // not guarantee the object will not have such a group afterwards, if the
-  // object's possible groups are not precisely known.
-  TemporaryTypeSet* types = obj->resultTypeSet();
-  if (!types || types->unknownObject() || !types->objectOrSentinel()) {
-    return obj;
-  }
-
-  BaselineInspector::ObjectGroupVector list(alloc());
-  for (size_t i = 0; i < types->getObjectCount(); i++) {
-    TypeSet::ObjectKey* key = obj->resultTypeSet()->getObject(i);
-    if (!key || !key->isGroup()) {
-      continue;
-    }
-
-    AutoSweepObjectGroup sweep(key->group());
-    if (UnboxedLayout* layout = key->group()->maybeUnboxedLayout(sweep)) {
-      AutoEnterOOMUnsafeRegion oomUnsafe;
-      if (layout->nativeGroup() && !list.append(key->group())) {
-        oomUnsafe.crash("IonBuilder::convertUnboxedObjects");
-      }
-    }
-  }
-
-  return convertUnboxedObjects(obj, list);
-}
-
-MDefinition* IonBuilder::convertUnboxedObjects(
-    MDefinition* obj, const BaselineInspector::ObjectGroupVector& list) {
-  for (size_t i = 0; i < list.length(); i++) {
-    ObjectGroup* group = list[i];
-    if (TemporaryTypeSet* types = obj->resultTypeSet()) {
-      if (!types->hasType(TypeSet::ObjectType(group))) {
-        continue;
-      }
-    }
-    obj = MConvertUnboxedObjectToNative::New(alloc(), obj, group);
-    current->add(obj->toInstruction());
-  }
-  return obj;
-}
-
 AbortReasonOr<Ok> IonBuilder::getPropTryDefiniteSlot(bool* emitted,
                                                      MDefinition* obj,
                                                      PropertyName* name,
@@ -11580,113 +11499,11 @@ AbortReasonOr<Ok> IonBuilder::getPropTryModuleNamespace(
   return Ok();
 }
 
-MInstruction* IonBuilder::loadUnboxedProperty(MDefinition* obj, size_t offset,
-                                              JSValueType unboxedType,
-                                              BarrierKind barrier,
-                                              TemporaryTypeSet* types) {
-  // loadUnboxedValue is designed to load any value as if it were contained in
-  // an array. Thus a property offset is converted to an index, when the
-  // object is reinterpreted as an array of properties of the same size.
-  size_t index = offset / UnboxedTypeSize(unboxedType);
-  MInstruction* indexConstant = MConstant::New(alloc(), Int32Value(index));
-  current->add(indexConstant);
-
-  return loadUnboxedValue(obj, UnboxedPlainObject::offsetOfData(),
-                          indexConstant, unboxedType, barrier, types);
-}
-
-MInstruction* IonBuilder::loadUnboxedValue(
-    MDefinition* elements, size_t elementsOffset, MDefinition* index,
-    JSValueType unboxedType, BarrierKind barrier, TemporaryTypeSet* types) {
-  MInstruction* load;
-  switch (unboxedType) {
-    case JSVAL_TYPE_BOOLEAN:
-      load =
-          MLoadUnboxedScalar::New(alloc(), elements, index, Scalar::Uint8,
-                                  DoesNotRequireMemoryBarrier, elementsOffset);
-      load->setResultType(MIRType::Boolean);
-      break;
-
-    case JSVAL_TYPE_INT32:
-      load =
-          MLoadUnboxedScalar::New(alloc(), elements, index, Scalar::Int32,
-                                  DoesNotRequireMemoryBarrier, elementsOffset);
-      load->setResultType(MIRType::Int32);
-      break;
-
-    case JSVAL_TYPE_DOUBLE:
-      load =
-          MLoadUnboxedScalar::New(alloc(), elements, index, Scalar::Float64,
-                                  DoesNotRequireMemoryBarrier, elementsOffset,
-                                  /* canonicalizeDoubles = */ false);
-      load->setResultType(MIRType::Double);
-      break;
-
-    case JSVAL_TYPE_STRING:
-      load = MLoadUnboxedString::New(alloc(), elements, index, elementsOffset);
-      break;
-
-    case JSVAL_TYPE_OBJECT: {
-      MLoadUnboxedObjectOrNull::NullBehavior nullBehavior;
-      if (types->hasType(TypeSet::NullType())) {
-        nullBehavior = MLoadUnboxedObjectOrNull::HandleNull;
-      } else if (barrier != BarrierKind::NoBarrier) {
-        nullBehavior = MLoadUnboxedObjectOrNull::BailOnNull;
-      } else {
-        nullBehavior = MLoadUnboxedObjectOrNull::NullNotPossible;
-      }
-      load = MLoadUnboxedObjectOrNull::New(alloc(), elements, index,
-                                           nullBehavior, elementsOffset);
-      break;
-    }
-
-    default:
-      MOZ_CRASH();
-  }
-
-  current->add(load);
-  return load;
-}
-
-AbortReasonOr<Ok> IonBuilder::getPropTryUnboxed(bool* emitted, MDefinition* obj,
-                                                PropertyName* name,
-                                                BarrierKind barrier,
-                                                TemporaryTypeSet* types) {
-  MOZ_ASSERT(*emitted == false);
-
-  JSValueType unboxedType;
-  uint32_t offset =
-      getUnboxedOffset(obj->resultTypeSet(), NameToId(name), &unboxedType);
-  if (offset == UINT32_MAX) {
-    return Ok();
-  }
-
-  if (obj->type() != MIRType::Object) {
-    MGuardObject* guard = MGuardObject::New(alloc(), obj);
-    current->add(guard);
-    obj = guard;
-  }
-
-  MInstruction* load =
-      loadUnboxedProperty(obj, offset, unboxedType, barrier, types);
-  current->push(load);
-
-  MOZ_TRY(pushTypeBarrier(load, types, barrier));
-
-  trackOptimizationSuccess();
-  *emitted = true;
-  return Ok();
-}
-
 MDefinition* IonBuilder::addShapeGuardsForGetterSetter(
     MDefinition* obj, JSObject* holder, Shape* holderShape,
-    const BaselineInspector::ReceiverVector& receivers,
-    const BaselineInspector::ObjectGroupVector& convertUnboxedGroups,
-    bool isOwnProperty) {
+    const BaselineInspector::ReceiverVector& receivers, bool isOwnProperty) {
   MOZ_ASSERT(isOwnProperty == !holder);
   MOZ_ASSERT(holderShape);
-
-  obj = convertUnboxedObjects(obj, convertUnboxedGroups);
 
   if (isOwnProperty) {
     MOZ_ASSERT(receivers.empty());
@@ -11717,10 +11534,9 @@ AbortReasonOr<Ok> IonBuilder::getPropTryCommonGetter(bool* emitted,
     JSObject* foundProto = nullptr;
     bool isOwnProperty = false;
     BaselineInspector::ReceiverVector receivers(alloc());
-    BaselineInspector::ObjectGroupVector convertUnboxedGroups(alloc());
     if (inspector->commonGetPropFunction(
             pc, id, innerized, &foundProto, &lastProperty, &commonGetter,
-            &globalShape, &isOwnProperty, receivers, convertUnboxedGroups)) {
+            &globalShape, &isOwnProperty, receivers)) {
       bool canUseTIForGetter = false;
       if (!isOwnProperty) {
         // If it's not an own property, try to use TI to avoid shape guards.
@@ -11734,8 +11550,7 @@ AbortReasonOr<Ok> IonBuilder::getPropTryCommonGetter(bool* emitted,
         // If it's an own property or type information is bad, we can still
         // optimize the getter if we shape guard.
         obj = addShapeGuardsForGetterSetter(obj, foundProto, lastProperty,
-                                            receivers, convertUnboxedGroups,
-                                            isOwnProperty);
+                                            receivers, isOwnProperty);
         if (!obj) {
           return abort(AbortReason::Alloc);
         }
@@ -11895,7 +11710,7 @@ bool IonBuilder::canInlinePropertyOpShapes(
     // dictionary mode. We cannot be sure that the shape is still a
     // lastProperty, and calling Shape::search() on dictionary mode
     // shapes that aren't lastProperty is invalid.
-    if (receivers[i].shape && receivers[i].shape->inDictionary()) {
+    if (receivers[i].getShape() && receivers[i].getShape()->inDictionary()) {
       trackOptimizationOutcome(TrackedOutcome::InDictionaryMode);
       return false;
     }
@@ -11908,11 +11723,11 @@ static Shape* PropertyShapesHaveSameSlot(
     const BaselineInspector::ReceiverVector& receivers, jsid id) {
   Shape* firstShape = nullptr;
   for (size_t i = 0; i < receivers.length(); i++) {
-    if (receivers[i].group) {
+    if (receivers[i].getGroup()) {
       return nullptr;
     }
 
-    Shape* shape = receivers[i].shape->searchLinear(id);
+    Shape* shape = receivers[i].getShape()->searchLinear(id);
     MOZ_ASSERT(shape);
 
     if (i == 0) {
@@ -11934,8 +11749,7 @@ AbortReasonOr<Ok> IonBuilder::getPropTryInlineAccess(bool* emitted,
   MOZ_ASSERT(*emitted == false);
 
   BaselineInspector::ReceiverVector receivers(alloc());
-  BaselineInspector::ObjectGroupVector convertUnboxedGroups(alloc());
-  if (!inspector->maybeInfoForPropertyOp(pc, receivers, convertUnboxedGroups)) {
+  if (!inspector->maybeInfoForPropertyOp(pc, receivers)) {
     return abort(AbortReason::Alloc);
   }
 
@@ -11943,21 +11757,19 @@ AbortReasonOr<Ok> IonBuilder::getPropTryInlineAccess(bool* emitted,
     return Ok();
   }
 
-  obj = convertUnboxedObjects(obj, convertUnboxedGroups);
-
   MIRType rvalType = types->getKnownMIRType();
   if (barrier != BarrierKind::NoBarrier || IsNullOrUndefined(rvalType)) {
     rvalType = MIRType::Value;
   }
 
   if (receivers.length() == 1) {
-    if (!receivers[0].group) {
+    if (!receivers[0].getGroup()) {
       // Monomorphic load from a native object.
       spew("Inlining monomorphic native GETPROP");
 
-      obj = addShapeGuard(obj, receivers[0].shape, Bailout_ShapeGuard);
+      obj = addShapeGuard(obj, receivers[0].getShape(), Bailout_ShapeGuard);
 
-      Shape* shape = receivers[0].shape->searchLinear(NameToId(name));
+      Shape* shape = receivers[0].getShape()->searchLinear(NameToId(name));
       MOZ_ASSERT(shape);
 
       MOZ_TRY(loadSlot(obj, shape, rvalType, barrier, types));
@@ -11967,49 +11779,6 @@ AbortReasonOr<Ok> IonBuilder::getPropTryInlineAccess(bool* emitted,
       return Ok();
     }
 
-    if (receivers[0].shape) {
-      // Monomorphic load from an unboxed object expando.
-      spew("Inlining monomorphic unboxed expando GETPROP");
-
-      obj = addGroupGuard(obj, receivers[0].group, Bailout_ShapeGuard);
-      obj = addUnboxedExpandoGuard(obj, /* hasExpando = */ true,
-                                   Bailout_ShapeGuard);
-
-      MInstruction* expando = MLoadUnboxedExpando::New(alloc(), obj);
-      current->add(expando);
-
-      expando = addShapeGuard(expando, receivers[0].shape, Bailout_ShapeGuard);
-
-      Shape* shape = receivers[0].shape->searchLinear(NameToId(name));
-      MOZ_ASSERT(shape);
-
-      MOZ_TRY(loadSlot(expando, shape, rvalType, barrier, types));
-
-      trackOptimizationOutcome(TrackedOutcome::Monomorphic);
-      *emitted = true;
-      return Ok();
-    }
-
-    // Monomorphic load from an unboxed object.
-    ObjectGroup* group = receivers[0].group;
-    if (obj->resultTypeSet() &&
-        !obj->resultTypeSet()->hasType(TypeSet::ObjectType(group))) {
-      return Ok();
-    }
-
-    obj = addGroupGuard(obj, group, Bailout_ShapeGuard);
-
-    AutoSweepObjectGroup sweep(group);
-    const UnboxedLayout::Property* property =
-        group->unboxedLayout(sweep).lookup(name);
-    MInstruction* load = loadUnboxedProperty(obj, property->offset,
-                                             property->type, barrier, types);
-    current->push(load);
-
-    MOZ_TRY(pushTypeBarrier(load, types, barrier));
-
-    trackOptimizationOutcome(TrackedOutcome::Monomorphic);
-    *emitted = true;
     return Ok();
   }
 
@@ -12037,8 +11806,8 @@ AbortReasonOr<Ok> IonBuilder::getPropTryInlineAccess(bool* emitted,
 
   for (size_t i = 0; i < receivers.length(); i++) {
     Shape* propShape = nullptr;
-    if (receivers[i].shape) {
-      propShape = receivers[i].shape->searchLinear(NameToId(name));
+    if (receivers[i].getShape()) {
+      propShape = receivers[i].getShape()->searchLinear(NameToId(name));
       MOZ_ASSERT(propShape);
     }
     if (!load->addReceiver(receivers[i], propShape)) {
@@ -12064,10 +11833,8 @@ AbortReasonOr<Ok> IonBuilder::getPropTryInlineProtoAccess(
   MOZ_ASSERT(*emitted == false);
 
   BaselineInspector::ReceiverVector receivers(alloc());
-  BaselineInspector::ObjectGroupVector convertUnboxedGroups(alloc());
   JSObject* holder = nullptr;
-  if (!inspector->maybeInfoForProtoReadSlot(pc, receivers, convertUnboxedGroups,
-                                            &holder)) {
+  if (!inspector->maybeInfoForProtoReadSlot(pc, receivers, &holder)) {
     return abort(AbortReason::Alloc);
   }
 
@@ -12088,7 +11855,6 @@ AbortReasonOr<Ok> IonBuilder::getPropTryInlineProtoAccess(
   }
 
   // Guard on the receiver shapes/groups.
-  obj = convertUnboxedObjects(obj, convertUnboxedGroups);
   obj = addGuardReceiverPolymorphic(obj, receivers);
   if (!obj) {
     return abort(AbortReason::Alloc);
@@ -12301,7 +12067,7 @@ AbortReasonOr<Ok> IonBuilder::getPropTryInnerize(bool* emitted,
 
 AbortReasonOr<Ok> IonBuilder::jsop_setprop(PropertyName* name) {
   MDefinition* value = current->pop();
-  MDefinition* obj = convertUnboxedObjects(current->pop());
+  MDefinition* obj = current->pop();
 
   bool emitted = false;
   startTrackingOptimizations();
@@ -12339,15 +12105,6 @@ AbortReasonOr<Ok> IonBuilder::jsop_setprop(PropertyName* name) {
   bool barrier = PropertyWriteNeedsTypeBarrier(alloc(), constraints(), current,
                                                &obj, name, &value,
                                                /* canModify = */ true);
-
-  if (!forceInlineCaches()) {
-    // Try to emit stores to unboxed objects.
-    trackOptimizationAttempt(TrackedStrategy::SetProp_Unboxed);
-    MOZ_TRY(setPropTryUnboxed(&emitted, obj, name, value, barrier));
-    if (emitted) {
-      return Ok();
-    }
-  }
 
   if (!forceInlineCaches()) {
     // Try to emit store from definite slots.
@@ -12388,10 +12145,9 @@ AbortReasonOr<Ok> IonBuilder::setPropTryCommonSetter(bool* emitted,
     JSObject* foundProto = nullptr;
     bool isOwnProperty;
     BaselineInspector::ReceiverVector receivers(alloc());
-    BaselineInspector::ObjectGroupVector convertUnboxedGroups(alloc());
     if (inspector->commonSetPropFunction(pc, &foundProto, &lastProperty,
                                          &commonSetter, &isOwnProperty,
-                                         receivers, convertUnboxedGroups)) {
+                                         receivers)) {
       bool canUseTIForSetter = false;
       if (!isOwnProperty) {
         // If it's not an own property, try to use TI to avoid shape guards.
@@ -12405,8 +12161,7 @@ AbortReasonOr<Ok> IonBuilder::setPropTryCommonSetter(bool* emitted,
         // If it's an own property or type information is bad, we can still
         // optimize the setter if we shape guard.
         obj = addShapeGuardsForGetterSetter(obj, foundProto, lastProperty,
-                                            receivers, convertUnboxedGroups,
-                                            isOwnProperty);
+                                            receivers, isOwnProperty);
         if (!obj) {
           return abort(AbortReason::Alloc);
         }
@@ -12686,103 +12441,6 @@ AbortReasonOr<Ok> IonBuilder::setPropTryDefiniteSlot(bool* emitted,
   return Ok();
 }
 
-MInstruction* IonBuilder::storeUnboxedProperty(MDefinition* obj, size_t offset,
-                                               JSValueType unboxedType,
-                                               MDefinition* value) {
-  size_t scaledOffsetConstant = offset / UnboxedTypeSize(unboxedType);
-  MInstruction* scaledOffset =
-      MConstant::New(alloc(), Int32Value(scaledOffsetConstant));
-  current->add(scaledOffset);
-
-  return storeUnboxedValue(obj, obj, UnboxedPlainObject::offsetOfData(),
-                           scaledOffset, unboxedType, value);
-}
-
-MInstruction* IonBuilder::storeUnboxedValue(
-    MDefinition* obj, MDefinition* elements, int32_t elementsOffset,
-    MDefinition* scaledOffset, JSValueType unboxedType, MDefinition* value,
-    bool preBarrier /* = true */) {
-  MInstruction* store;
-  switch (unboxedType) {
-    case JSVAL_TYPE_BOOLEAN:
-      store = MStoreUnboxedScalar::New(
-          alloc(), elements, scaledOffset, value, Scalar::Uint8,
-          MStoreUnboxedScalar::DontTruncateInput, DoesNotRequireMemoryBarrier,
-          elementsOffset);
-      break;
-
-    case JSVAL_TYPE_INT32:
-      store = MStoreUnboxedScalar::New(
-          alloc(), elements, scaledOffset, value, Scalar::Int32,
-          MStoreUnboxedScalar::DontTruncateInput, DoesNotRequireMemoryBarrier,
-          elementsOffset);
-      break;
-
-    case JSVAL_TYPE_DOUBLE:
-      store = MStoreUnboxedScalar::New(
-          alloc(), elements, scaledOffset, value, Scalar::Float64,
-          MStoreUnboxedScalar::DontTruncateInput, DoesNotRequireMemoryBarrier,
-          elementsOffset);
-      break;
-
-    case JSVAL_TYPE_STRING:
-      store = MStoreUnboxedString::New(alloc(), elements, scaledOffset, value,
-                                       obj, elementsOffset, preBarrier);
-      break;
-
-    case JSVAL_TYPE_OBJECT:
-      MOZ_ASSERT(value->type() == MIRType::Object ||
-                 value->type() == MIRType::Null ||
-                 value->type() == MIRType::Value);
-      MOZ_ASSERT(!value->mightBeType(MIRType::Undefined),
-                 "MToObjectOrNull slow path is invalid for unboxed objects");
-      store =
-          MStoreUnboxedObjectOrNull::New(alloc(), elements, scaledOffset, value,
-                                         obj, elementsOffset, preBarrier);
-      break;
-
-    default:
-      MOZ_CRASH();
-  }
-
-  current->add(store);
-  return store;
-}
-
-AbortReasonOr<Ok> IonBuilder::setPropTryUnboxed(bool* emitted, MDefinition* obj,
-                                                PropertyName* name,
-                                                MDefinition* value,
-                                                bool barrier) {
-  MOZ_ASSERT(*emitted == false);
-
-  if (barrier) {
-    trackOptimizationOutcome(TrackedOutcome::NeedsTypeBarrier);
-    return Ok();
-  }
-
-  JSValueType unboxedType;
-  uint32_t offset =
-      getUnboxedOffset(obj->resultTypeSet(), NameToId(name), &unboxedType);
-  if (offset == UINT32_MAX) {
-    return Ok();
-  }
-
-  if (obj->type() != MIRType::Object) {
-    MGuardObject* guard = MGuardObject::New(alloc(), obj);
-    current->add(guard);
-    obj = guard;
-  }
-
-  MInstruction* store = storeUnboxedProperty(obj, offset, unboxedType, value);
-
-  current->push(value);
-
-  MOZ_TRY(resumeAfter(store));
-
-  *emitted = true;
-  return Ok();
-}
-
 AbortReasonOr<Ok> IonBuilder::setPropTryInlineAccess(
     bool* emitted, MDefinition* obj, PropertyName* name, MDefinition* value,
     bool barrier, TemporaryTypeSet* objTypes) {
@@ -12794,8 +12452,7 @@ AbortReasonOr<Ok> IonBuilder::setPropTryInlineAccess(
   }
 
   BaselineInspector::ReceiverVector receivers(alloc());
-  BaselineInspector::ObjectGroupVector convertUnboxedGroups(alloc());
-  if (!inspector->maybeInfoForPropertyOp(pc, receivers, convertUnboxedGroups)) {
+  if (!inspector->maybeInfoForPropertyOp(pc, receivers)) {
     return abort(AbortReason::Alloc);
   }
 
@@ -12803,16 +12460,14 @@ AbortReasonOr<Ok> IonBuilder::setPropTryInlineAccess(
     return Ok();
   }
 
-  obj = convertUnboxedObjects(obj, convertUnboxedGroups);
-
   if (receivers.length() == 1) {
-    if (!receivers[0].group) {
+    if (!receivers[0].getGroup()) {
       // Monomorphic store to a native object.
       spew("Inlining monomorphic native SETPROP");
 
-      obj = addShapeGuard(obj, receivers[0].shape, Bailout_ShapeGuard);
+      obj = addShapeGuard(obj, receivers[0].getShape(), Bailout_ShapeGuard);
 
-      Shape* shape = receivers[0].shape->searchLinear(NameToId(name));
+      Shape* shape = receivers[0].getShape()->searchLinear(NameToId(name));
       MOZ_ASSERT(shape);
 
       if (needsPostBarrier(value)) {
@@ -12827,63 +12482,6 @@ AbortReasonOr<Ok> IonBuilder::setPropTryInlineAccess(
       *emitted = true;
       return Ok();
     }
-
-    if (receivers[0].shape) {
-      // Monomorphic store to an unboxed object expando.
-      spew("Inlining monomorphic unboxed expando SETPROP");
-
-      obj = addGroupGuard(obj, receivers[0].group, Bailout_ShapeGuard);
-      obj = addUnboxedExpandoGuard(obj, /* hasExpando = */ true,
-                                   Bailout_ShapeGuard);
-
-      MInstruction* expando = MLoadUnboxedExpando::New(alloc(), obj);
-      current->add(expando);
-
-      expando = addShapeGuard(expando, receivers[0].shape, Bailout_ShapeGuard);
-
-      Shape* shape = receivers[0].shape->searchLinear(NameToId(name));
-      MOZ_ASSERT(shape);
-
-      if (needsPostBarrier(value)) {
-        current->add(MPostWriteBarrier::New(alloc(), obj, value));
-      }
-
-      bool needsPreBarrier =
-          objTypes->propertyNeedsBarrier(constraints(), NameToId(name));
-      MOZ_TRY(storeSlot(expando, shape, value, needsPreBarrier));
-
-      trackOptimizationOutcome(TrackedOutcome::Monomorphic);
-      *emitted = true;
-      return Ok();
-    }
-
-    // Monomorphic store to an unboxed object.
-    spew("Inlining monomorphic unboxed SETPROP");
-
-    ObjectGroup* group = receivers[0].group;
-    if (!objTypes->hasType(TypeSet::ObjectType(group))) {
-      return Ok();
-    }
-
-    obj = addGroupGuard(obj, group, Bailout_ShapeGuard);
-
-    if (needsPostBarrier(value)) {
-      current->add(MPostWriteBarrier::New(alloc(), obj, value));
-    }
-
-    AutoSweepObjectGroup sweep(group);
-    const UnboxedLayout::Property* property =
-        group->unboxedLayout(sweep).lookup(name);
-    MInstruction* store =
-        storeUnboxedProperty(obj, property->offset, property->type, value);
-
-    current->push(value);
-
-    MOZ_TRY(resumeAfter(store));
-
-    trackOptimizationOutcome(TrackedOutcome::Monomorphic);
-    *emitted = true;
-    return Ok();
   }
 
   MOZ_ASSERT(receivers.length() > 1);
@@ -12920,8 +12518,8 @@ AbortReasonOr<Ok> IonBuilder::setPropTryInlineAccess(
 
   for (size_t i = 0; i < receivers.length(); i++) {
     Shape* propShape = nullptr;
-    if (receivers[i].shape) {
-      propShape = receivers[i].shape->searchLinear(NameToId(name));
+    if (receivers[i].getShape()) {
+      propShape = receivers[i].getShape()->searchLinear(NameToId(name));
       MOZ_ASSERT(propShape);
     }
     if (!ins->addReceiver(receivers[i], propShape)) {
@@ -13450,7 +13048,7 @@ AbortReasonOr<Ok> IonBuilder::jsop_setaliasedvar(EnvironmentCoordinate ec) {
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_in() {
-  MDefinition* obj = convertUnboxedObjects(current->pop());
+  MDefinition* obj = current->pop();
   MDefinition* id = current->pop();
 
   if (!forceInlineCaches()) {
@@ -13588,13 +13186,7 @@ AbortReasonOr<Ok> IonBuilder::hasTryDefiniteSlotOrUnboxed(bool* emitted,
   uint32_t nfixed;
   uint32_t slot = getDefiniteSlot(obj->resultTypeSet(), propId, &nfixed);
   if (slot == UINT32_MAX) {
-    // Check for unboxed object properties next.
-    JSValueType unboxedType;
-    uint32_t offset =
-        getUnboxedOffset(obj->resultTypeSet(), propId, &unboxedType);
-    if (offset == UINT32_MAX) {
-      return Ok();
-    }
+    return Ok();
   }
 
   *emitted = true;
@@ -13606,7 +13198,7 @@ AbortReasonOr<Ok> IonBuilder::hasTryDefiniteSlotOrUnboxed(bool* emitted,
 }
 
 AbortReasonOr<Ok> IonBuilder::jsop_hasown() {
-  MDefinition* obj = convertUnboxedObjects(current->pop());
+  MDefinition* obj = current->pop();
   MDefinition* id = current->pop();
 
   if (!forceInlineCaches()) {
@@ -13974,38 +13566,13 @@ MInstruction* IonBuilder::addGroupGuard(MDefinition* obj, ObjectGroup* group,
   return guard;
 }
 
-MInstruction* IonBuilder::addUnboxedExpandoGuard(MDefinition* obj,
-                                                 bool hasExpando,
-                                                 BailoutKind bailoutKind) {
-  MGuardUnboxedExpando* guard =
-      MGuardUnboxedExpando::New(alloc(), obj, hasExpando, bailoutKind);
-  current->add(guard);
-
-  // If a shape guard failed in the past, don't optimize group guards.
-  if (failedShapeGuard_) {
-    guard->setNotMovable();
-  }
-
-  return guard;
-}
-
 MInstruction* IonBuilder::addGuardReceiverPolymorphic(
     MDefinition* obj, const BaselineInspector::ReceiverVector& receivers) {
   if (receivers.length() == 1) {
-    if (!receivers[0].group) {
+    if (!receivers[0].getGroup()) {
       // Monomorphic guard on a native object.
-      return addShapeGuard(obj, receivers[0].shape, Bailout_ShapeGuard);
+      return addShapeGuard(obj, receivers[0].getShape(), Bailout_ShapeGuard);
     }
-
-    if (!receivers[0].shape) {
-      // Guard on an unboxed object that does not have an expando.
-      obj = addGroupGuard(obj, receivers[0].group, Bailout_ShapeGuard);
-      return addUnboxedExpandoGuard(obj, /* hasExpando = */ false,
-                                    Bailout_ShapeGuard);
-    }
-
-    // Monomorphic receiver guards are not yet supported when the receiver
-    // is an unboxed object with an expando.
   }
 
   MGuardReceiverPolymorphic* guard =
@@ -14032,8 +13599,8 @@ MInstruction* IonBuilder::addSharedTypedArrayGuard(MDefinition* obj) {
 }
 
 TemporaryTypeSet* IonBuilder::bytecodeTypes(jsbytecode* pc) {
-  return TypeScript::BytecodeTypes(script(), pc, bytecodeTypeMap,
-                                   &typeArrayHint, typeArray);
+  return JitScript::BytecodeTypes(script(), pc, bytecodeTypeMap, &typeArrayHint,
+                                  typeArray);
 }
 
 TypedObjectPrediction IonBuilder::typedObjectPrediction(MDefinition* typedObj) {

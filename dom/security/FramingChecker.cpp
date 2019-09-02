@@ -93,12 +93,9 @@ bool FramingChecker::CheckOneFrameOptionsPolicy(nsIHttpChannel* aHttpChannel,
       break;
     }
 
-    bool system = false;
     topDoc = parentDocShellItem->GetDocument();
     if (topDoc) {
-      if (NS_SUCCEEDED(
-              ssm->IsSystemPrincipal(topDoc->NodePrincipal(), &system)) &&
-          system) {
+      if (topDoc->NodePrincipal()->IsSystemPrincipal()) {
         // Found a system-principled doc: last docshell was top.
         break;
       }
@@ -165,19 +162,12 @@ bool FramingChecker::CheckOneFrameOptionsPolicy(nsIHttpChannel* aHttpChannel,
 
 // Ignore x-frame-options if CSP with frame-ancestors exists
 static bool ShouldIgnoreFrameOptions(nsIChannel* aChannel,
-                                     nsIPrincipal* aPrincipal) {
+                                     nsIContentSecurityPolicy* aCSP) {
   NS_ENSURE_TRUE(aChannel, false);
-  NS_ENSURE_TRUE(aPrincipal, false);
-
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  aPrincipal->GetCsp(getter_AddRefs(csp));
-  if (!csp) {
-    // if there is no CSP, then there is nothing to do here
-    return false;
-  }
+  NS_ENSURE_TRUE(aCSP, false);
 
   bool enforcesFrameAncestors = false;
-  csp->GetEnforcesFrameAncestors(&enforcesFrameAncestors);
+  aCSP->GetEnforcesFrameAncestors(&enforcesFrameAncestors);
   if (!enforcesFrameAncestors) {
     // if CSP does not contain frame-ancestors, then there
     // is nothing to do here.
@@ -188,9 +178,9 @@ static bool ShouldIgnoreFrameOptions(nsIChannel* aChannel,
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   uint64_t innerWindowID = loadInfo->GetInnerWindowID();
   bool privateWindow = !!loadInfo->GetOriginAttributes().mPrivateBrowsingId;
-  const char16_t* params[] = {u"x-frame-options", u"frame-ancestors"};
+  AutoTArray<nsString, 2> params = {NS_LITERAL_STRING("x-frame-options"),
+                                    NS_LITERAL_STRING("frame-ancestors")};
   CSP_LogLocalizedStr("IgnoringSrcBecauseOfDirective", params,
-                      ArrayLength(params),
                       EmptyString(),  // no sourcefile
                       EmptyString(),  // no scriptsample
                       0,              // no linenumber
@@ -208,12 +198,12 @@ static bool ShouldIgnoreFrameOptions(nsIChannel* aChannel,
 /* static */
 bool FramingChecker::CheckFrameOptions(nsIChannel* aChannel,
                                        nsIDocShell* aDocShell,
-                                       nsIPrincipal* aPrincipal) {
+                                       nsIContentSecurityPolicy* aCsp) {
   if (!aChannel || !aDocShell) {
     return true;
   }
 
-  if (ShouldIgnoreFrameOptions(aChannel, aPrincipal)) {
+  if (ShouldIgnoreFrameOptions(aChannel, aCsp)) {
     return true;
   }
 

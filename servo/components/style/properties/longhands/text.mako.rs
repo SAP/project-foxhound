@@ -5,16 +5,7 @@
 <%namespace name="helpers" file="/helpers.mako.rs" />
 <% from data import Method %>
 
-<% data.new_style_struct(
-    "Text",
-    inherited=False,
-    gecko_name="TextReset",
-    additional_methods=[
-        Method("has_underline", "bool"),
-        Method("has_overline", "bool"),
-        Method("has_line_through", "bool"),
-    ]
-) %>
+<% data.new_style_struct("Text", inherited=False, gecko_name="TextReset") %>
 
 ${helpers.predefined_type(
     "text-overflow",
@@ -32,6 +23,7 @@ ${helpers.single_keyword(
     "normal embed isolate bidi-override isolate-override plaintext",
     animation_value_type="none",
     spec="https://drafts.csswg.org/css-writing-modes/#propdef-unicode-bidi",
+    flags="APPLIES_TO_MARKER",
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
@@ -41,7 +33,7 @@ ${helpers.predefined_type(
     "specified::TextDecorationLine::none()",
     initial_specified_value="specified::TextDecorationLine::none()",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-line",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -51,7 +43,7 @@ ${helpers.single_keyword(
     "solid double dotted dashed wavy -moz-none",
     products="gecko",
     animation_value_type="discrete",
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-style",
 )}
 
@@ -63,7 +55,7 @@ ${helpers.predefined_type(
     products="gecko",
     animation_value_type="AnimatedColor",
     ignored_when_colors_disabled=True,
-    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+    flags="APPLIES_TO_CUE APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-color",
 )}
 
@@ -77,4 +69,14 @@ ${helpers.predefined_type(
     flags="APPLIES_TO_FIRST_LETTER",
     gecko_pref="layout.css.initial-letter.enabled",
     spec="https://drafts.csswg.org/css-inline/#sizing-drop-initials",
+)}
+
+${helpers.predefined_type(
+   "text-decoration-width",
+   "LengthOrAuto",
+   "computed::LengthOrAuto::auto()",
+   products="gecko",
+   animation_value_type="ComputedValue",
+   gecko_pref="layout.css.text-decoration-width.enabled",
+   spec="https://drafts.csswg.org/css-text-decor-4/#text-decoration-width-property"
 )}

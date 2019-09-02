@@ -11,9 +11,9 @@
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {
+class PresShell;
 class ServoStyleSet;
 }  // namespace mozilla
-class nsIPresShell;
 class nsPresContext;
 class nsViewManager;
 
@@ -38,12 +38,6 @@ class nsIDocumentViewerPrint : public nsISupports {
 
   virtual void SetIsPrintPreview(bool aIsPrintPreview) = 0;
   virtual bool GetIsPrintPreview() = 0;
-
-  // The style set returned by CreateStyleSet is in the middle of an
-  // update batch so that the caller can add sheets to it if needed.
-  // Callers should call EndUpdate() on it when ready to use.
-  virtual mozilla::UniquePtr<mozilla::ServoStyleSet> CreateStyleSet(
-      mozilla::dom::Document* aDocument) = 0;
 
   /**
    * This is used by nsPagePrintTimer to make nsDocumentViewer::Destroy()
@@ -70,7 +64,7 @@ class nsIDocumentViewerPrint : public nsISupports {
    */
   virtual void SetPrintPreviewPresentation(nsViewManager* aViewManager,
                                            nsPresContext* aPresContext,
-                                           nsIPresShell* aPresShell) = 0;
+                                           mozilla::PresShell* aPresShell) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocumentViewerPrint,
@@ -82,8 +76,6 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocumentViewerPrint,
   bool GetIsPrinting() override;                                \
   void SetIsPrintPreview(bool aIsPrintPreview) override;        \
   bool GetIsPrintPreview() override;                            \
-  mozilla::UniquePtr<mozilla::ServoStyleSet> CreateStyleSet(    \
-      mozilla::dom::Document* aDocument) override;              \
   void IncrementDestroyBlockedCount() override;                 \
   void DecrementDestroyBlockedCount() override;                 \
   void OnDonePrinting() override;                               \
@@ -91,6 +83,6 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocumentViewerPrint,
   void InitializeForPrintPreview() override;                    \
   void SetPrintPreviewPresentation(nsViewManager* aViewManager, \
                                    nsPresContext* aPresContext, \
-                                   nsIPresShell* aPresShell) override;
+                                   mozilla::PresShell* aPresShell) override;
 
 #endif /* nsIDocumentViewerPrint_h___ */

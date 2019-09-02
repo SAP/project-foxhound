@@ -68,11 +68,9 @@ class MLGPUScreenshotGrabberImpl final {
   nsTArray<RefPtr<MLGTexture>> mAvailableReadbackTextures;
   Maybe<QueueItem> mCurrentFrameQueueItem;
   nsTArray<QueueItem> mQueue;
-  UniquePtr<ProfilerScreenshots> mProfilerScreenshots;
+  RefPtr<ProfilerScreenshots> mProfilerScreenshots;
   const IntSize mReadbackTextureSize;
 };
-
-MLGPUScreenshotGrabber::MLGPUScreenshotGrabber() {}
 
 MLGPUScreenshotGrabber::~MLGPUScreenshotGrabber() {}
 
@@ -299,7 +297,7 @@ void MLGPUScreenshotGrabberImpl::ReturnReadbackTexture(
 void MLGPUScreenshotGrabberImpl::ProcessQueue() {
   if (!mQueue.IsEmpty()) {
     if (!mProfilerScreenshots) {
-      mProfilerScreenshots = MakeUnique<ProfilerScreenshots>();
+      mProfilerScreenshots = new ProfilerScreenshots();
     }
     for (const auto& item : mQueue) {
       mProfilerScreenshots->SubmitScreenshot(

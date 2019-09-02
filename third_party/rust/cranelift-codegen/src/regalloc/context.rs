@@ -64,13 +64,18 @@ impl Context {
         self.coloring.clear();
     }
 
+    /// Current values liveness state.
+    pub fn liveness(&self) -> &Liveness {
+        &self.liveness
+    }
+
     /// Allocate registers in `func`.
     ///
     /// After register allocation, all values in `func` have been assigned to a register or stack
     /// location that is consistent with instruction encoding constraints.
     pub fn run(
         &mut self,
-        isa: &TargetIsa,
+        isa: &dyn TargetIsa,
         func: &mut Function,
         cfg: &ControlFlowGraph,
         domtree: &mut DominatorTree,

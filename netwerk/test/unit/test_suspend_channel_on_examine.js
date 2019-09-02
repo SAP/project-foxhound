@@ -2,16 +2,15 @@
 
 var CC = Components.Constructor;
 
-const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
-var obs = Cc["@mozilla.org/observer-service;1"]
-            .getService(Ci.nsIObserverService);
+var obs = Cc["@mozilla.org/observer-service;1"].getService(
+  Ci.nsIObserverService
+);
 
 var baseUrl;
 
-function responseHandler(metadata, response)
-{
+function responseHandler(metadata, response) {
   var text = "testing";
   response.setHeader("Content-Type", "text/plain", false);
   response.setHeader("Set-Cookie", "chewy", false);
@@ -19,20 +18,23 @@ function responseHandler(metadata, response)
 }
 
 function onExamineListener(callback) {
-  obs.addObserver({
-    observe: function(subject, topic, data) {
-      var obs = Cc["@mozilla.org/observer-service;1"].getService();
-      obs = obs.QueryInterface(Ci.nsIObserverService);
-      obs.removeObserver(this, "http-on-examine-response");
-      callback(subject.QueryInterface(Ci.nsIHttpChannel));
-    }
-  }, "http-on-examine-response");
+  obs.addObserver(
+    {
+      observe(subject, topic, data) {
+        var obs = Cc["@mozilla.org/observer-service;1"].getService();
+        obs = obs.QueryInterface(Ci.nsIObserverService);
+        obs.removeObserver(this, "http-on-examine-response");
+        callback(subject.QueryInterface(Ci.nsIHttpChannel));
+      },
+    },
+    "http-on-examine-response"
+  );
 }
 
 function startChannelRequest(baseUrl, flags, callback) {
   var chan = NetUtil.newChannel({
     uri: baseUrl,
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   chan.asyncOpen(new ChannelListener(callback, null, flags));
 }
@@ -50,7 +52,7 @@ add_test(function testAsyncCancel() {
     });
   });
   startChannelRequest(baseUrl, CL_EXPECT_FAILURE, (request, data, context) => {
-    Assert.ok(!!!data, "no response");
+    Assert.ok(!data, "no response");
 
     var cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
     Assert.equal(cm.countCookiesFromHost("localhost"), 0, "no cookies set");
@@ -68,7 +70,7 @@ function run_test() {
 
   run_next_test();
 
-  registerCleanupFunction(function(){
+  registerCleanupFunction(function() {
     httpServer.stop(() => {});
   });
 }

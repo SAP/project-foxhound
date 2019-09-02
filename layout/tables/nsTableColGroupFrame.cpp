@@ -3,16 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsTableColGroupFrame.h"
+
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/PresShell.h"
 #include "nsTableColFrame.h"
 #include "nsTableFrame.h"
-#include "mozilla/ComputedStyle.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsHTMLParts.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
 #include "nsCSSRendering.h"
-#include "nsIPresShell.h"
 
 using namespace mozilla;
 
@@ -114,6 +115,11 @@ void nsTableColGroupFrame::SetInitialChildList(ChildListID aListID,
   MOZ_ASSERT(mFrames.IsEmpty(),
              "unexpected second call to SetInitialChildList");
   MOZ_ASSERT(aListID == kPrincipalList, "unexpected child list");
+#ifdef DEBUG
+  for (nsIFrame* f : aChildList) {
+    MOZ_ASSERT(f->GetParent() == this, "Unexpected parent");
+  }
+#endif
   if (aChildList.IsEmpty()) {
     GetTableFrame()->AppendAnonymousColFrames(this, GetSpan(),
                                               eColAnonymousColGroup, false);
@@ -223,7 +229,7 @@ void nsTableColGroupFrame::InsertColsReflow(int32_t aColIndex,
                                             const nsFrameList::Slice& aCols) {
   AddColsToTable(aColIndex, true, aCols);
 
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
 }
 
@@ -247,7 +253,7 @@ void nsTableColGroupFrame::RemoveChild(nsTableColFrame& aChild,
     }
   }
 
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
 }
 
@@ -346,7 +352,12 @@ void nsTableColGroupFrame::Reflow(nsPresContext* aPresContext,
 
 void nsTableColGroupFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                             const nsDisplayListSet& aLists) {
-  nsTableFrame::DisplayGenericTablePart(aBuilder, this, aLists);
+  // Per https://drafts.csswg.org/css-tables-3/#global-style-overrides:
+  // "All css properties of table-column and table-column-group boxes are
+  // ignored, except when explicitly specified by this specification."
+  // CSS outlines and box-shadows fall into this category, so we skip them
+  // on these boxes.
+  MOZ_ASSERT_UNREACHABLE("Colgroups don't paint themselves");
 }
 
 nsTableColFrame* nsTableColGroupFrame::GetFirstColumn() {
@@ -400,7 +411,7 @@ void nsTableColGroupFrame::GetContinuousBCBorderWidth(WritingMode aWM,
 
 /* ----- global methods ----- */
 
-nsTableColGroupFrame* NS_NewTableColGroupFrame(nsIPresShell* aPresShell,
+nsTableColGroupFrame* NS_NewTableColGroupFrame(PresShell* aPresShell,
                                                ComputedStyle* aStyle) {
   return new (aPresShell)
       nsTableColGroupFrame(aStyle, aPresShell->GetPresContext());

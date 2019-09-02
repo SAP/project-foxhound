@@ -6,8 +6,8 @@ extern crate yaml_rust;
 
 use euclid::{TypedPoint2D, TypedRect, TypedSize2D, TypedTransform3D, TypedVector2D};
 use image::{save_buffer, ColorType};
-use premultiply::unpremultiply;
-use scene::{Scene, SceneProperties};
+use crate::premultiply::unpremultiply;
+use crate::scene::{Scene, SceneProperties};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,10 +16,9 @@ use super::CURRENT_FRAME_NUMBER;
 use time;
 use webrender;
 use webrender::api::*;
-use webrender::api::SpecificDisplayItem as Sdi;
 use webrender::api::channel::Payload;
 use webrender::api::units::*;
-use yaml_helper::StringEnum;
+use crate::yaml_helper::StringEnum;
 use yaml_rust::{Yaml, YamlEmitter};
 
 type Table = yaml_rust::yaml::Hash;
@@ -190,6 +189,33 @@ fn maybe_radius_yaml(radius: &BorderRadius) -> Option<Yaml> {
     }
 }
 
+fn common_node(v: &mut Table, clip_id_mapper: &mut ClipIdMapper, info: &CommonItemProperties) {
+    rect_node(v, "clip-rect", &info.clip_rect);
+    bool_node(v, "backface-visible", info.is_backface_visible);
+
+    clip_and_scroll_node(v, clip_id_mapper, info.clip_id, info.spatial_id);
+
+    if let Some(tag) = info.hit_info {
+        yaml_node(
+            v,
+            "hit-testing-tag",
+             Yaml::Array(vec![Yaml::Integer(tag.0 as i64), Yaml::Integer(tag.1 as i64)])
+        );
+    }
+}
+
+fn clip_and_scroll_node(
+    v: &mut Table,
+    clip_id_mapper: &mut ClipIdMapper,
+    clip_id: ClipId,
+    spatial_id: SpatialId
+) {
+    let clip_id = if clip_id.is_root() { None } else { Some(clip_id) };
+    yaml_node(v, "clip-and-scroll",
+        clip_id_mapper.map_clip_and_scroll_ids(clip_id, spatial_id)
+    );
+}
+
 fn write_reference_frame(
     parent: &mut Table,
     reference_frame: &ReferenceFrame,
@@ -212,13 +238,21 @@ fn write_reference_frame(
     usize_node(parent, "id", clip_id_mapper.add_spatial_id(reference_frame.id));
 }
 
+fn shadow_parameters(shadow: &Shadow) -> String {
+    format!(
+        "[{},{}],{},[{}]",
+        shadow.offset.x, shadow.offset.y,
+        shadow.blur_radius,
+        color_to_string(shadow.color)
+    )
+}
+
 fn write_stacking_context(
     parent: &mut Table,
     sc: &StackingContext,
     properties: &SceneProperties,
-    filter_iter: AuxIter<FilterOp>,
+    filter_iter: impl IntoIterator<Item = FilterOp>,
     filter_data_iter: &[TempFilterData],
-    display_list: &BuiltDisplayList,
 ) {
     enum_node(parent, "transform-style", sc.transform_style);
 
@@ -253,11 +287,11 @@ fn write_stacking_context(
             }
             FilterOp::Saturate(x) => { filters.push(Yaml::String(format!("saturate({})", x))) }
             FilterOp::Sepia(x) => { filters.push(Yaml::String(format!("sepia({})", x))) }
-            FilterOp::DropShadow(offset, blur, color) => {
-                filters.push(Yaml::String(format!("drop-shadow([{},{}],{},[{}])",
-                                                  offset.x, offset.y,
-                                                  blur,
-                                                  color_to_string(color))))
+            FilterOp::DropShadow(shadow) => {
+                filters.push(Yaml::String(format!(
+                    "drop-shadow({})",
+                    shadow_parameters(&shadow)
+                )))
             }
             FilterOp::ColorMatrix(matrix) => {
                 filters.push(Yaml::String(format!("color-matrix({:?})", matrix)))
@@ -271,6 +305,9 @@ fn write_stacking_context(
             FilterOp::ComponentTransfer => {
                 filters.push(Yaml::String("component-transfer".to_string()))
             }
+            FilterOp::Flood(color) => {
+                filters.push(Yaml::String(format!("flood({})", color_to_string(color))))
+            }
         }
     }
 
@@ -279,7 +316,7 @@ fn write_stacking_context(
     // filter datas
     let mut filter_datas = vec![];
     for filter_data in filter_data_iter {
-        let func_types = display_list.get(filter_data.func_types).map(|func_type| {
+        let func_types = filter_data.func_types.iter().map(|func_type| {
             match func_type {
                 ComponentTransferFuncType::Identity => { Yaml::String("Identity".to_string()) }
                 ComponentTransferFuncType::Table => { Yaml::String("Table".to_string()) }
@@ -288,16 +325,16 @@ fn write_stacking_context(
                 ComponentTransferFuncType::Gamma => { Yaml::String("Gamma".to_string()) }
             }
         }).collect();
-        let r_values = display_list.get(filter_data.r_values).map(|value| {
+        let r_values = filter_data.r_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
-        let g_values = display_list.get(filter_data.g_values).map(|value| {
+        let g_values = filter_data.g_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
-        let b_values = display_list.get(filter_data.b_values).map(|value| {
+        let b_values = filter_data.b_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
-        let a_values = display_list.get(filter_data.a_values).map(|value| {
+        let a_values = filter_data.a_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
 
@@ -324,7 +361,7 @@ fn native_font_handle_to_yaml(
     let path = match *path_opt {
         Some(ref path) => { path.clone() },
         None => {
-            use cgfont_to_data;
+            use crate::cgfont_to_data;
             let bytes = cgfont_to_data::font_to_data(handle.0.clone()).unwrap();
             let (path_file, path) = rsrc.next_rsrc_paths(
                 "font",
@@ -357,7 +394,6 @@ fn radial_gradient_to_yaml(
     table: &mut Table,
     gradient: &webrender::api::RadialGradient,
     stops_range: ItemRange<GradientStop>,
-    display_list: &BuiltDisplayList
 ) {
     point_node(table, "center", &gradient.center);
     size_node(table, "radius", &gradient.radius);
@@ -368,7 +404,7 @@ fn radial_gradient_to_yaml(
     assert!(first_offset <= last_offset);
 
     let mut denormalized_stops = vec![];
-    for stop in display_list.get(stops_range) {
+    for stop in stops_range {
         let denormalized_stop = (stop.offset * stops_delta) + first_offset;
         denormalized_stops.push(Yaml::Real(denormalized_stop.to_string()));
         denormalized_stops.push(Yaml::String(color_to_string(stop.color)));
@@ -441,6 +477,46 @@ impl YamlFrameWriterReceiver {
         YamlFrameWriterReceiver {
             frame_writer: YamlFrameWriter::new(path),
             scene: Scene::new(),
+        }
+    }
+
+    fn update_document(&mut self, txn: &TransactionMsg) {
+        self.frame_writer.update_resources(&txn.resource_updates);
+        for doc_msg in &txn.scene_ops {
+            match *doc_msg {
+                SceneMsg::SetDisplayList {
+                    ref epoch,
+                    ref pipeline_id,
+                    ref background,
+                    ref viewport_size,
+                    ref list_descriptor,
+                    ..
+                } => {
+                    self.frame_writer.begin_write_display_list(
+                        &mut self.scene,
+                        epoch,
+                        pipeline_id,
+                        background,
+                        viewport_size,
+                        list_descriptor,
+                    );
+                }
+                SceneMsg::SetRootPipeline(ref pipeline_id) => {
+                    self.scene.set_root_pipeline_id(pipeline_id.clone());
+                }
+                SceneMsg::RemovePipeline(ref pipeline_id) => {
+                    self.scene.remove_pipeline(pipeline_id);
+                }
+                _ => {}
+            }
+        }
+        for doc_msg in &txn.frame_ops {
+            match *doc_msg {
+                FrameMsg::UpdateDynamicProperties(ref properties) => {
+                    self.scene.properties.set_properties(properties);
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -524,7 +600,7 @@ impl YamlFrameWriter {
             let mut referenced_pipeline_ids = vec![];
             let mut traversal = dl.iter();
             while let Some(item) = traversal.next() {
-                if let &SpecificDisplayItem::Iframe(k) = item.item() {
+                if let &DisplayItem::Iframe(k) = item.item() {
                     referenced_pipeline_ids.push(k.pipeline_id);
                 }
             }
@@ -732,15 +808,14 @@ impl YamlFrameWriter {
 
     fn make_complex_clips_node(
         &mut self,
-        complex_clip_count: usize,
         complex_clips: ItemRange<ComplexClipRegion>,
-        list: &BuiltDisplayList,
     ) -> Option<Yaml> {
-        if complex_clip_count == 0 {
+        let iter = complex_clips.iter();
+        if iter.len() == 0 {
             return None;
         }
 
-        let complex_items = list.get(complex_clips)
+        let complex_items = iter
             .map(|ccx| if ccx.radii.is_zero() {
                 rect_yaml(&ccx.rect)
             } else {
@@ -785,35 +860,24 @@ impl YamlFrameWriter {
             };
 
             let mut v = new_table();
-            let info = base.get_layout_primitive_info(&LayoutVector2D::zero());
-            rect_node(&mut v, "bounds", &info.rect);
-            rect_node(&mut v, "clip-rect", &info.clip_rect);
-
-            if let Some(tag) = info.tag {
-                yaml_node(
-                    &mut v,
-                    "hit-testing-tag",
-                     Yaml::Array(vec![Yaml::Integer(tag.0 as i64), Yaml::Integer(tag.1 as i64)])
-                );
-            }
-
-            let space_and_clip = base.space_and_clip_info();
-            let clip_id = if space_and_clip.clip_id.is_root() { None } else { Some(space_and_clip.clip_id) };
-            yaml_node(&mut v, "clip-and-scroll",
-                clip_id_mapper.map_clip_and_scroll_ids(clip_id, space_and_clip.spatial_id)
-            );
-            bool_node(&mut v, "backface-visible", base.is_backface_visible());
-
             match *base.item() {
-                Sdi::Rectangle(item) => {
+                DisplayItem::Rectangle(item) => {
                     str_node(&mut v, "type", "rect");
+                    common_node(&mut v, clip_id_mapper, &item.common);
                     color_node(&mut v, "color", item.color);
                 }
-                Sdi::ClearRectangle => {
-                    str_node(&mut v, "type", "clear-rect");;
+                DisplayItem::HitTest(item) => {
+                    str_node(&mut v, "type", "hit-test");
+                    common_node(&mut v, clip_id_mapper, &item.common);
                 }
-                Sdi::Line(item) => {
+                DisplayItem::ClearRectangle(item) => {
+                    str_node(&mut v, "type", "clear-rect");
+                    common_node(&mut v, clip_id_mapper, &item.common);
+                }
+                DisplayItem::Line(item) => {
                     str_node(&mut v, "type", "line");
+                    common_node(&mut v, clip_id_mapper, &item.common);
+                    rect_node(&mut v, "bounds", &item.area);
                     if let LineStyle::Wavy = item.style {
                         f32_node(&mut v, "thickness", item.wavy_line_thickness);
                     }
@@ -821,15 +885,16 @@ impl YamlFrameWriter {
                     color_node(&mut v, "color", item.color);
                     str_node(&mut v, "style", item.style.as_str());
                 }
-                Sdi::Text(item) => {
-                    let gi = display_list.get(base.glyphs());
+                DisplayItem::Text(item) => {
                     let mut indices: Vec<u32> = vec![];
                     let mut offsets: Vec<f32> = vec![];
-                    for g in gi {
+                    for g in base.glyphs() {
                         indices.push(g.index);
                         offsets.push(g.point.x);
                         offsets.push(g.point.y);
                     }
+                    common_node(&mut v, clip_id_mapper, &item.common);
+                    rect_node(&mut v, "bounds", &item.bounds);
                     u32_vec_node(&mut v, "glyphs", &indices);
                     f32_vec_node(&mut v, "offsets", &offsets);
 
@@ -875,7 +940,9 @@ impl YamlFrameWriter {
                         }
                     }
                 }
-                Sdi::Image(item) => {
+                DisplayItem::Image(item) => {
+                    common_node(&mut v, clip_id_mapper, &item.common);
+                    rect_node(&mut v, "bounds", &item.bounds);
                     if let Some(path) = self.path_for_image(item.image_key) {
                         path_node(&mut v, "image", &path);
                     }
@@ -898,13 +965,16 @@ impl YamlFrameWriter {
                         AlphaType::Alpha => str_node(&mut v, "alpha-type", "alpha"),
                     };
                 }
-                Sdi::YuvImage(_) => {
+                DisplayItem::YuvImage(item) => {
                     str_node(&mut v, "type", "yuv-image");
+                    common_node(&mut v, clip_id_mapper, &item.common);
                     // TODO
                     println!("TODO YAML YuvImage");
                 }
-                Sdi::Border(item) => {
+                DisplayItem::Border(item) => {
                     str_node(&mut v, "type", "border");
+                    rect_node(&mut v, "bounds", &item.bounds);
+                    common_node(&mut v, clip_id_mapper, &item.common);
                     match item.details {
                         BorderDetails::Normal(ref details) => {
                             let trbl =
@@ -969,7 +1039,7 @@ impl YamlFrameWriter {
                                     point_node(&mut v, "start", &gradient.start_point);
                                     point_node(&mut v, "end", &gradient.end_point);
                                     let mut stops = vec![];
-                                    for stop in display_list.get(base.gradient_stops()) {
+                                    for stop in base.gradient_stops() {
                                         stops.push(Yaml::Real(stop.offset.to_string()));
                                         stops.push(Yaml::String(color_to_string(stop.color)));
                                     }
@@ -982,7 +1052,6 @@ impl YamlFrameWriter {
                                         &mut v,
                                         &gradient,
                                         base.gradient_stops(),
-                                        display_list
                                     );
                                 }
                             }
@@ -1018,8 +1087,9 @@ impl YamlFrameWriter {
                         }
                     }
                 }
-                Sdi::BoxShadow(item) => {
+                DisplayItem::BoxShadow(item) => {
                     str_node(&mut v, "type", "box-shadow");
+                    common_node(&mut v, clip_id_mapper, &item.common);
                     rect_node(&mut v, "box-bounds", &item.box_bounds);
                     vector_node(&mut v, "offset", &item.offset);
                     color_node(&mut v, "color", item.color);
@@ -1034,14 +1104,16 @@ impl YamlFrameWriter {
                     };
                     str_node(&mut v, "clip-mode", clip_mode);
                 }
-                Sdi::Gradient(item) => {
+                DisplayItem::Gradient(item) => {
                     str_node(&mut v, "type", "gradient");
+                    rect_node(&mut v, "bounds", &item.bounds);
+                    common_node(&mut v, clip_id_mapper, &item.common);
                     point_node(&mut v, "start", &item.gradient.start_point);
                     point_node(&mut v, "end", &item.gradient.end_point);
                     size_node(&mut v, "tile-size", &item.tile_size);
                     size_node(&mut v, "tile-spacing", &item.tile_spacing);
                     let mut stops = vec![];
-                    for stop in display_list.get(base.gradient_stops()) {
+                    for stop in base.gradient_stops() {
                         stops.push(Yaml::Real(stop.offset.to_string()));
                         stops.push(Yaml::String(color_to_string(stop.color)));
                     }
@@ -1052,39 +1124,54 @@ impl YamlFrameWriter {
                         item.gradient.extend_mode == ExtendMode::Repeat,
                     );
                 }
-                Sdi::RadialGradient(item) => {
+                DisplayItem::RadialGradient(item) => {
                     str_node(&mut v, "type", "radial-gradient");
+                    rect_node(&mut v, "bounds", &item.bounds);
+                    common_node(&mut v, clip_id_mapper, &item.common);
                     size_node(&mut v, "tile-size", &item.tile_size);
                     size_node(&mut v, "tile-spacing", &item.tile_spacing);
                     radial_gradient_to_yaml(
                         &mut v,
                         &item.gradient,
                         base.gradient_stops(),
-                        display_list
                     );
                 }
-                Sdi::Iframe(item) => {
+                DisplayItem::Iframe(item) => {
                     str_node(&mut v, "type", "iframe");
+                    rect_node(&mut v, "bounds", &item.bounds);
+                    rect_node(&mut v, "clip_rect", &item.clip_rect);
+                    clip_and_scroll_node(
+                        &mut v,
+                        clip_id_mapper,
+                        item.space_and_clip.clip_id,
+                        item.space_and_clip.spatial_id
+                    );
                     u32_vec_node(&mut v, "id", &[item.pipeline_id.0, item.pipeline_id.1]);
                     bool_node(&mut v, "ignore_missing_pipeline", item.ignore_missing_pipeline);
                 }
-                Sdi::PushStackingContext(item) => {
+                DisplayItem::PushStackingContext(item) => {
                     str_node(&mut v, "type", "stacking-context");
-                    let filters = display_list.get(base.filters());
+                    clip_and_scroll_node(
+                        &mut v,
+                        clip_id_mapper,
+                        item.stacking_context.clip_id.unwrap_or(ClipId::invalid()),
+                        item.spatial_id
+                    );
+                    point_node(&mut v, "origin", &item.origin);
+                    bool_node(&mut v, "backface-visible", item.is_backface_visible);
                     write_stacking_context(
                         &mut v,
                         &item.stacking_context,
                         &scene.properties,
-                        filters,
+                        base.filters(),
                         base.filter_datas(),
-                        display_list,
                     );
 
                     let mut sub_iter = base.sub_iter();
                     self.write_display_list(&mut v, display_list, scene, &mut sub_iter, clip_id_mapper);
                     continue_traversal = Some(sub_iter);
                 }
-                Sdi::PushReferenceFrame(item) => {
+                DisplayItem::PushReferenceFrame(item) => {
                     str_node(&mut v, "type", "reference-frame");
                     write_reference_frame(
                         &mut v,
@@ -1097,15 +1184,18 @@ impl YamlFrameWriter {
                     self.write_display_list(&mut v, display_list, scene, &mut sub_iter, clip_id_mapper);
                     continue_traversal = Some(sub_iter);
                 }
-                Sdi::Clip(item) => {
+                DisplayItem::Clip(item) => {
                     str_node(&mut v, "type", "clip");
+                    clip_and_scroll_node(
+                        &mut v,
+                        clip_id_mapper,
+                        item.parent_space_and_clip.clip_id,
+                        item.parent_space_and_clip.spatial_id);
+                    rect_node(&mut v, "clip-rect", &item.clip_rect);
                     usize_node(&mut v, "id", clip_id_mapper.add_clip_id(item.id));
 
-                    let (complex_clips, complex_clip_count) = base.complex_clip();
                     if let Some(complex) = self.make_complex_clips_node(
-                        complex_clip_count,
-                        complex_clips,
-                        display_list,
+                        base.complex_clip()
                     ) {
                         yaml_node(&mut v, "complex", complex);
                     }
@@ -1114,13 +1204,13 @@ impl YamlFrameWriter {
                         yaml_node(&mut v, "image-mask", mask_yaml);
                     }
                 }
-                Sdi::ClipChain(item) => {
+                DisplayItem::ClipChain(item) => {
                     str_node(&mut v, "type", "clip-chain");
 
                     let id = ClipId::ClipChain(item.id);
                     u32_node(&mut v, "id", clip_id_mapper.add_clip_id(id) as u32);
 
-                    let clip_ids = display_list.get(base.clip_chain_items()).map(|clip_id| {
+                    let clip_ids = base.clip_chain_items().iter().map(|clip_id| {
                         clip_id_mapper.map_clip_id(&clip_id)
                     }).collect();
                     yaml_node(&mut v, "clips", Yaml::Array(clip_ids));
@@ -1130,18 +1220,15 @@ impl YamlFrameWriter {
                         yaml_node(&mut v, "parent", clip_id_mapper.map_clip_id(&parent));
                     }
                 }
-                Sdi::ScrollFrame(item) => {
+                DisplayItem::ScrollFrame(item) => {
                     str_node(&mut v, "type", "scroll-frame");
                     usize_node(&mut v, "id", clip_id_mapper.add_spatial_id(item.scroll_frame_id));
-                    size_node(&mut v, "content-size", &base.rect().size);
-                    rect_node(&mut v, "bounds", &base.clip_rect());
+                    size_node(&mut v, "content-size", &item.content_rect.size);
+                    rect_node(&mut v, "bounds", &item.clip_rect);
                     vector_node(&mut v, "external-scroll-offset", &item.external_scroll_offset);
 
-                    let (complex_clips, complex_clip_count) = base.complex_clip();
                     if let Some(complex) = self.make_complex_clips_node(
-                        complex_clip_count,
-                        complex_clips,
-                        display_list,
+                        base.complex_clip()
                     ) {
                         yaml_node(&mut v, "complex", complex);
                     }
@@ -1150,10 +1237,10 @@ impl YamlFrameWriter {
                         yaml_node(&mut v, "image-mask", mask_yaml);
                     }
                 }
-                Sdi::StickyFrame(item) => {
+                DisplayItem::StickyFrame(item) => {
                     str_node(&mut v, "type", "sticky-frame");
                     usize_node(&mut v, "id", clip_id_mapper.add_spatial_id(item.id));
-                    rect_node(&mut v, "bounds", &base.clip_rect());
+                    rect_node(&mut v, "bounds", &item.bounds);
 
                     if let Some(margin) = item.margins.top {
                         f32_node(&mut v, "margin-top", margin);
@@ -1187,24 +1274,19 @@ impl YamlFrameWriter {
                     yaml_node(&mut v, "previously-applied-offset", Yaml::Array(applied));
                 }
 
-                Sdi::PopReferenceFrame |
-                Sdi::PopStackingContext => return,
+                DisplayItem::PopReferenceFrame |
+                DisplayItem::PopStackingContext => return,
 
-                Sdi::PopCacheMarker => return,
-                Sdi::PushCacheMarker(_) => {
-                    str_node(&mut v, "type", "cache-marker");
-                }
-
-                Sdi::SetGradientStops => panic!("dummy item yielded?"),
-                Sdi::SetFilterOps => panic!("dummy item yielded?"),
-                Sdi::SetFilterData => panic!("dummy item yielded?"),
-                Sdi::PushShadow(shadow) => {
+                DisplayItem::SetGradientStops => panic!("dummy item yielded?"),
+                DisplayItem::SetFilterOps => panic!("dummy item yielded?"),
+                DisplayItem::SetFilterData => panic!("dummy item yielded?"),
+                DisplayItem::PushShadow(item) => {
                     str_node(&mut v, "type", "shadow");
-                    vector_node(&mut v, "offset", &shadow.offset);
-                    color_node(&mut v, "color", shadow.color);
-                    f32_node(&mut v, "blur-radius", shadow.blur_radius);
+                    vector_node(&mut v, "offset", &item.shadow.offset);
+                    color_node(&mut v, "color", item.shadow.color);
+                    f32_node(&mut v, "blur-radius", item.shadow.blur_radius);
                 }
-                Sdi::PopAllShadows => {
+                DisplayItem::PopAllShadows => {
                     str_node(&mut v, "type", "pop-all-shadows");
                 }
             }
@@ -1234,43 +1316,9 @@ impl webrender::ApiRecordingReceiver for YamlFrameWriterReceiver {
             ApiMsg::UpdateResources(ref updates) => {
                 self.frame_writer.update_resources(updates);
             }
-            ApiMsg::UpdateDocument(_, ref txn) => {
-                self.frame_writer.update_resources(&txn.resource_updates);
-                for doc_msg in &txn.scene_ops {
-                    match *doc_msg {
-                        SceneMsg::SetDisplayList {
-                            ref epoch,
-                            ref pipeline_id,
-                            ref background,
-                            ref viewport_size,
-                            ref list_descriptor,
-                            ..
-                        } => {
-                            self.frame_writer.begin_write_display_list(
-                                &mut self.scene,
-                                epoch,
-                                pipeline_id,
-                                background,
-                                viewport_size,
-                                list_descriptor,
-                            );
-                        }
-                        SceneMsg::SetRootPipeline(ref pipeline_id) => {
-                            self.scene.set_root_pipeline_id(pipeline_id.clone());
-                        }
-                        SceneMsg::RemovePipeline(ref pipeline_id) => {
-                            self.scene.remove_pipeline(pipeline_id);
-                        }
-                        _ => {}
-                    }
-                }
-                for doc_msg in &txn.frame_ops {
-                    match *doc_msg {
-                        FrameMsg::UpdateDynamicProperties(ref properties) => {
-                            self.scene.properties.set_properties(properties);
-                        }
-                        _ => {}
-                    }
+            ApiMsg::UpdateDocuments(_, ref txns) => {
+                for txn in txns {
+                    self.update_document(txn);
                 }
             }
             _ => {}

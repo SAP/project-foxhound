@@ -6,22 +6,24 @@
 
 #include "nsNSSModule.h"
 
-#include "CertBlocklist.h"
+#ifndef MOZ_NEW_CERT_STORAGE
+#  include "CertBlocklist.h"
+#endif
 #include "ContentSignatureVerifier.h"
 #include "NSSErrorsService.h"
+#include "OSKeyStore.h"
+#include "OSReauthenticator.h"
 #include "PKCS11ModuleDB.h"
 #include "PSMContentListener.h"
 #include "SecretDecoderRing.h"
 #include "TransportSecurityInfo.h"
 #include "mozilla/MacroArgs.h"
 #include "mozilla/ModuleUtils.h"
-#include "mozilla/SyncRunnable.h"
 #include "nsCURILoader.h"
 #include "nsCertOverrideService.h"
 #include "nsCryptoHash.h"
 #include "nsICategoryManager.h"
 #include "nsKeyModule.h"
-#include "nsKeygenHandler.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSCertificateDB.h"
 #include "nsNSSComponent.h"
@@ -33,8 +35,6 @@
 #include "nsSecureBrowserUIImpl.h"
 #include "nsSiteSecurityService.h"
 #include "nsXULAppAPI.h"
-#include "OSKeyStore.h"
-#include "OSReauthenticator.h"
 
 #ifdef MOZ_XUL
 #  include "nsCertTree.h"
@@ -148,8 +148,10 @@ IMPL(nsRandomGenerator, nullptr, ProcessRestriction::AnyProcess)
 IMPL(TransportSecurityInfo, nullptr, ProcessRestriction::AnyProcess)
 IMPL(nsSiteSecurityService, &nsSiteSecurityService::Init,
      ProcessRestriction::AnyProcess, ThreadRestriction::MainThreadOnly)
+#ifndef MOZ_NEW_CERT_STORAGE
 IMPL(CertBlocklist, &CertBlocklist::Init, ProcessRestriction::ParentProcessOnly,
      ThreadRestriction::MainThreadOnly)
+#endif
 IMPL(OSKeyStore, nullptr, ProcessRestriction::ParentProcessOnly,
      ThreadRestriction::MainThreadOnly)
 IMPL(OSReauthenticator, nullptr, ProcessRestriction::ParentProcessOnly,

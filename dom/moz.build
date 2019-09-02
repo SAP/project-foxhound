@@ -44,6 +44,7 @@ DIRS += [
     'commandhandler',
     'credentialmanagement',
     'crypto',
+    'debugger',
     'encoding',
     'events',
     'fetch',
@@ -56,7 +57,6 @@ DIRS += [
     'grid',
     'html',
     'jsurl',
-    'asmjscache',
     'mathml',
     'media',
     'midi',
@@ -106,6 +106,7 @@ DIRS += [
     'reporting',
     'localstorage',
     'prio',
+    'l10n',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -121,3 +122,4 @@ TEST_DIRS += [
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk3', 'cocoa', 'windows'):
     TEST_DIRS += ['plugins/test']
 
+SPHINX_TREES['dom'] = 'docs'

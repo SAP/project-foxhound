@@ -12,6 +12,10 @@
 
 class nsIBaseWindow;
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
 class nsResizerFrame final : public nsTitleBarFrame {
  protected:
   typedef mozilla::LayoutDeviceIntPoint LayoutDeviceIntPoint;
@@ -25,7 +29,7 @@ class nsResizerFrame final : public nsTitleBarFrame {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsResizerFrame)
 
-  friend nsIFrame* NS_NewResizerFrame(nsIPresShell* aPresShell,
+  friend nsIFrame* NS_NewResizerFrame(mozilla::PresShell* aPresShell,
                                       ComputedStyle* aStyle);
 
   explicit nsResizerFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
@@ -34,10 +38,11 @@ class nsResizerFrame final : public nsTitleBarFrame {
                                mozilla::WidgetGUIEvent* aEvent,
                                nsEventStatus* aEventStatus) override;
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual void MouseClicked(mozilla::WidgetMouseEvent* aEvent) override;
 
  protected:
-  nsIContent* GetContentToResize(nsIPresShell* aPresShell,
+  nsIContent* GetContentToResize(mozilla::PresShell* aPresShell,
                                  nsIBaseWindow** aWindow);
 
   Direction GetDirection();

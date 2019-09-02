@@ -5,8 +5,7 @@
   <link id="link" rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -716,6 +715,7 @@
         actions: "press",
       };
       testElm("input_image", obj);
+      testElm("input_image_display", obj);
       testElm("input_submit", obj);
 
       obj = {
@@ -938,23 +938,6 @@
         ],
       };
       testElm("kbd_container", obj);
-
-      // ////////////////////////////////////////////////////////////////////////
-      // HTML:keygen
-
-      obj = {
-        role: ROLE_COMBOBOX,
-        states: STATE_COLLAPSED | STATE_HASPOPUP,
-        extraStates: EXT_STATE_EXPANDABLE,
-        actions: "open",
-        children: [
-          { COMBOBOX_LIST: [
-            { role: ROLE_COMBOBOX_OPTION }, // high grade
-            { role: ROLE_COMBOBOX_OPTION }, // medium grade
-          ] },
-        ],
-      };
-      testElm("keygen", obj);
 
       // ////////////////////////////////////////////////////////////////////////
       // HTML:label
@@ -1651,6 +1634,7 @@
   <input id="input_checkbox_true" type="checkbox" checked>
   <input id="input_file" type="file">
   <input id="input_image" type="image">
+  <input id="input_image_display" type="image" style="display: block">
   <form>
     <input id="input_image_default" type="image">
   </form>
@@ -1684,7 +1668,6 @@
 
   <p id="ins_container">normal<ins>Inserted</ins></p>
   <p id="kbd_container">normal<kbd>cmd</kbd></p>
-  <keygen id="keygen" name="RSA public key" challenge="123456789" keytype="RSA">
 
   <label id="label">label<input id="label_input"></label>
   <label id="label_for" for="label_for_input">label</label>

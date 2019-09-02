@@ -6,8 +6,7 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="Accessible XUL listbox hierarchy tests">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
 
   <script type="application/javascript"
           src="../common.js" />
@@ -25,8 +24,8 @@
     {
       this.listboxNode = getNode(aListboxID);
 
-      this.listitemNode = document.createElement("richlistitem");
-      var label = document.createElement("label");
+      this.listitemNode = document.createXULElement("richlistitem");
+      var label = document.createXULElement("label");
       label.setAttribute("value", "item1");
       this.listitemNode.appendChild(label);
 

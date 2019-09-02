@@ -17,7 +17,11 @@
 
 class nsIScrollbarMediator;
 
-nsIFrame* NS_NewScrollbarFrame(nsIPresShell* aPresShell,
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
+nsIFrame* NS_NewScrollbarFrame(mozilla::PresShell* aPresShell,
                                mozilla::ComputedStyle* aStyle);
 
 class nsScrollbarFrame final : public nsBoxFrame,
@@ -57,6 +61,7 @@ class nsScrollbarFrame final : public nsBoxFrame,
                                  nsEventStatus* aEventStatus,
                                  bool aControlHeld) override;
 
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD HandleDrag(nsPresContext* aPresContext,
                         mozilla::WidgetGUIEvent* aEvent,
                         nsEventStatus* aEventStatus) override;

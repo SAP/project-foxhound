@@ -16,16 +16,15 @@
 #include "nsQueryObject.h"
 
 #include "mozilla/dom/URL.h"
-#include "nsDOMWindowList.h"
 #include "nsIConsoleService.h"
 #include "mozilla/dom/Document.h"
 #include "nsIDOMWindow.h"
 #include "nsIObserverService.h"
-#include "nsIPresShell.h"
 #include "nsIScriptError.h"
 #include "nsIWindowMediator.h"
 #include "nsIPrefService.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Printf.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
@@ -38,9 +37,9 @@ nsChromeRegistry* nsChromeRegistry::gChromeRegistry;
 
 // DO NOT use namespace mozilla; it'll break due to a naming conflict between
 // mozilla::TextRange and a TextRange in OSX headers.
+using mozilla::PresShell;
 using mozilla::StyleSheet;
 using mozilla::dom::Document;
-using mozilla::dom::IsChromeURI;
 using mozilla::dom::Location;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -79,10 +78,10 @@ void nsChromeRegistry::LogMessageWithContext(nsIURI* aURL, uint32_t aLineNumber,
   nsCString spec;
   if (aURL) aURL->GetSpec(spec);
 
-  rv = error->Init(NS_ConvertUTF8toUTF16(formatted.get()),
-                   NS_ConvertUTF8toUTF16(spec), EmptyString(), aLineNumber, 0,
-                   flags, "chrome registration",
-                   false /* from private window */);
+  rv = error->Init(
+      NS_ConvertUTF8toUTF16(formatted.get()), NS_ConvertUTF8toUTF16(spec),
+      EmptyString(), aLineNumber, 0, flags, "chrome registration",
+      false /* from private window */, true /* from chrome context */);
 
   if (NS_FAILED(rv)) return;
 
@@ -271,147 +270,6 @@ nsChromeRegistry::ConvertChromeURL(nsIURI* aChromeURI, nsIURI** aResult) {
 }
 
 ////////////////////////////////////////////////////////////////////////
-
-// theme stuff
-
-static void FlushSkinBindingsForWindow(nsPIDOMWindowOuter* aWindow) {
-  // Get the document.
-  RefPtr<Document> document = aWindow->GetDoc();
-  if (!document) return;
-
-  // Annihilate all XBL bindings.
-  document->FlushSkinBindings();
-}
-
-// XXXbsmedberg: move this to nsIWindowMediator
-NS_IMETHODIMP nsChromeRegistry::RefreshSkins() {
-  nsCOMPtr<nsIWindowMediator> windowMediator(
-      do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
-  if (!windowMediator) return NS_OK;
-
-  nsCOMPtr<nsISimpleEnumerator> windowEnumerator;
-  windowMediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
-  bool more;
-  windowEnumerator->HasMoreElements(&more);
-  while (more) {
-    nsCOMPtr<nsISupports> protoWindow;
-    windowEnumerator->GetNext(getter_AddRefs(protoWindow));
-    if (protoWindow) {
-      nsCOMPtr<nsPIDOMWindowOuter> domWindow = do_QueryInterface(protoWindow);
-      if (domWindow) FlushSkinBindingsForWindow(domWindow);
-    }
-    windowEnumerator->HasMoreElements(&more);
-  }
-
-  FlushSkinCaches();
-
-  windowMediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
-  windowEnumerator->HasMoreElements(&more);
-  while (more) {
-    nsCOMPtr<nsISupports> protoWindow;
-    windowEnumerator->GetNext(getter_AddRefs(protoWindow));
-    if (protoWindow) {
-      nsCOMPtr<nsPIDOMWindowOuter> domWindow = do_QueryInterface(protoWindow);
-      if (domWindow) RefreshWindow(domWindow);
-    }
-    windowEnumerator->HasMoreElements(&more);
-  }
-
-  return NS_OK;
-}
-
-void nsChromeRegistry::FlushSkinCaches() {
-  nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
-  NS_ASSERTION(obsSvc, "Couldn't get observer service.");
-
-  obsSvc->NotifyObservers(static_cast<nsIChromeRegistry*>(this),
-                          NS_CHROME_FLUSH_SKINS_TOPIC, nullptr);
-}
-
-// XXXbsmedberg: move this to windowmediator
-nsresult nsChromeRegistry::RefreshWindow(nsPIDOMWindowOuter* aWindow) {
-  // Deal with our subframes first.
-  nsDOMWindowList* frames = aWindow->GetFrames();
-  uint32_t length = frames->GetLength();
-  for (uint32_t j = 0; j < length; j++) {
-    nsCOMPtr<nsPIDOMWindowOuter> piWindow = frames->IndexedGetter(j);
-    RefreshWindow(piWindow);
-  }
-
-  nsresult rv;
-  // Get the document.
-  RefPtr<Document> document = aWindow->GetDoc();
-  if (!document) return NS_OK;
-
-  // Deal with the agent sheets first.  Have to do all the style sets by hand.
-  nsCOMPtr<nsIPresShell> shell = document->GetShell();
-  if (shell) {
-    // Reload only the chrome URL agent style sheets.
-    nsTArray<RefPtr<StyleSheet>> agentSheets;
-    rv = shell->GetAgentStyleSheets(agentSheets);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsTArray<RefPtr<StyleSheet>> newAgentSheets;
-    for (StyleSheet* sheet : agentSheets) {
-      nsIURI* uri = sheet->GetSheetURI();
-
-      if (IsChromeURI(uri)) {
-        // Reload the sheet.
-        RefPtr<StyleSheet> newSheet;
-        rv = document->LoadChromeSheetSync(uri, true, &newSheet);
-        if (NS_FAILED(rv)) return rv;
-        if (newSheet) {
-          newAgentSheets.AppendElement(newSheet);
-          return NS_OK;
-        }
-      } else {  // Just use the same sheet.
-        rv = newAgentSheets.AppendElement(sheet) ? NS_OK : NS_ERROR_FAILURE;
-        if (NS_FAILED(rv)) return rv;
-      }
-    }
-
-    rv = shell->SetAgentStyleSheets(newAgentSheets);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  size_t count = document->SheetCount();
-
-  // Build an array of style sheets we need to reload.
-  nsTArray<RefPtr<StyleSheet>> oldSheets(count);
-  nsTArray<RefPtr<StyleSheet>> newSheets(count);
-
-  // Iterate over the style sheets.
-  for (size_t i = 0; i < count; i++) {
-    // Get the style sheet
-    oldSheets.AppendElement(document->SheetAt(i));
-  }
-
-  // Iterate over our old sheets and kick off a sync load of the new
-  // sheet if and only if it's a non-inline sheet with a chrome URL.
-  for (StyleSheet* sheet : oldSheets) {
-    MOZ_ASSERT(sheet,
-               "SheetAt shouldn't return nullptr for "
-               "in-range sheet indexes");
-    nsIURI* uri = sheet->GetSheetURI();
-
-    if (!sheet->IsInline() && IsChromeURI(uri)) {
-      // Reload the sheet.
-      RefPtr<StyleSheet> newSheet;
-      // XXX what about chrome sheets that have a title or are disabled?  This
-      // only works by sheer dumb luck.
-      document->LoadChromeSheetSync(uri, false, &newSheet);
-      // Even if it's null, we put in in there.
-      newSheets.AppendElement(newSheet);
-    } else {
-      // Just use the same sheet.
-      newSheets.AppendElement(sheet);
-    }
-  }
-
-  // Now notify the document that multiple sheets have been added and removed.
-  document->UpdateStyleSheets(oldSheets, newSheets);
-  return NS_OK;
-}
 
 void nsChromeRegistry::FlushAllCaches() {
   nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();

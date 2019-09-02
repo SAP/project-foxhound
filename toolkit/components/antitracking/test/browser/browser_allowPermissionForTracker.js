@@ -1,11 +1,19 @@
 // This test works by setting up an exception for the tracker domain, which
 // disables all the anti-tracking tests.
 
+/* import-globals-from antitracking_head.js */
+
 add_task(async _ => {
-  Services.perms.add(Services.io.newURI("https://tracking.example.org"),
-                     "cookie", Services.perms.ALLOW_ACTION);
-  Services.perms.add(Services.io.newURI("https://tracking.example.com"),
-                     "cookie", Services.perms.ALLOW_ACTION);
+  Services.perms.add(
+    Services.io.newURI("https://tracking.example.org"),
+    "cookie",
+    Services.perms.ALLOW_ACTION
+  );
+  Services.perms.add(
+    Services.io.newURI("https://tracking.example.com"),
+    "cookie",
+    Services.perms.ALLOW_ACTION
+  );
 
   registerCleanupFunction(_ => {
     Services.perms.removeAll();
@@ -31,6 +39,8 @@ AntiTracking._createTask({
 
 add_task(async _ => {
   await new Promise(resolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+      resolve()
+    );
   });
 });

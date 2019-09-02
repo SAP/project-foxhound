@@ -38,7 +38,6 @@ WGET="wget -nv"
 UNTAR="tar -zxf"
 DIFF="$(command -v diff) -u"
 BASEDIR="${HOME}"
-TOOLSDIR="${HOME}/tools"
 
 SCRIPTDIR="$(realpath "$(dirname "$0")")"
 HG="$(command -v hg)"
@@ -155,9 +154,9 @@ function download_shared_artifacts_from_tc {
 
   # Download everything we need to run js with xpcshell
   echo "INFO: Downloading all the necessary pieces from the taskcluster index..."
-  TASKID_URL="$index_base/task/gecko.v2.${REPODIR}.latest.${PRODUCT}.linux64-opt"
+  TASKID_URL="$index_base/task/gecko.v2.${REPODIR}.shippable.latest.${PRODUCT}.linux64-opt"
   if [ "${USE_MC}" == "true" ]; then
-    TASKID_URL="$index_base/task/gecko.v2.mozilla-central.latest.${PRODUCT}.linux64-opt"
+    TASKID_URL="$index_base/task/gecko.v2.mozilla-central.shippable.latest.${PRODUCT}.linux64-opt"
   fi
   ${WGET} -O ${TASKID_FILE} "${TASKID_URL}"
   INDEX_TASK_ID="$($JQ -r '.taskId' ${TASKID_FILE})"
@@ -382,18 +381,11 @@ function compare_remote_settings_files {
   return 1
 }
 
-function clone_build_tools {
-  rm -fr "${TOOLSDIR}"
-  CLONE_CMD="${HG} clone https://hg.mozilla.org/build/tools ${TOOLSDIR}"
-  ${CLONE_CMD}
-}
-
 # Clones an hg repo
 function clone_repo {
   cd "${BASEDIR}"
   if [ ! -d "${REPODIR}" ]; then
-    CLONE_CMD="${HG} clone ${HGREPO} ${REPODIR}"
-    ${CLONE_CMD}
+    ${HG} robustcheckout --sharebase /tmp/hg-store -b default "${HGREPO}" "${REPODIR}"
   fi
 
   ${HG} -R ${REPODIR} pull
@@ -612,9 +604,6 @@ else
     exit 2
   fi
 fi
-
-# Currently less reliable than regular 'hg'
-# clone_build_tools
 
 clone_repo
 

@@ -11,9 +11,11 @@ const {
 const {
   ADD_REQUEST,
   CLEAR_REQUESTS,
+  CLONE_REQUEST,
   CLONE_SELECTED_REQUEST,
   OPEN_NETWORK_DETAILS,
   REMOVE_SELECTED_CUSTOM_REQUEST,
+  RIGHT_CLICK_REQUEST,
   SELECT_REQUEST,
   SEND_CUSTOM_REQUEST,
   TOGGLE_RECORDING,
@@ -44,6 +46,7 @@ function Requests() {
  * This reducer is responsible for maintaining list of request
  * within the Network panel.
  */
+/* eslint-disable complexity */
 function requestsReducer(state = Requests(), action) {
   switch (action.type) {
     // Appending new request into the list/map.
@@ -89,14 +92,15 @@ function requestsReducer(state = Requests(), action) {
         ...request,
         ...processNetworkUpdates(action.data, request),
       };
-      const requestEndTime = request.startedMillis +
+      const requestEndTime =
+        request.startedMillis +
         (request.eventTimings ? request.eventTimings.totalTime : 0);
 
       return {
         ...state,
         requests: mapSet(state.requests, action.id, request),
-        lastEndedMillis: requestEndTime > lastEndedMillis ?
-          requestEndTime : lastEndedMillis,
+        lastEndedMillis:
+          requestEndTime > lastEndedMillis ? requestEndTime : lastEndedMillis,
       };
     }
 
@@ -111,42 +115,31 @@ function requestsReducer(state = Requests(), action) {
 
     // Select specific request.
     case SELECT_REQUEST: {
+      // Selected request represents the last request that was clicked
+      // before the context menu is shown
+      const clickedRequest = state.requests.get(action.id);
       return {
         ...state,
+        clickedRequest,
         selectedId: action.id,
       };
     }
 
     // Clone selected request for re-send.
+    case CLONE_REQUEST: {
+      return cloneRequest(state, action.id);
+    }
+
     case CLONE_SELECTED_REQUEST: {
-      const { requests, selectedId } = state;
+      return cloneRequest(state, state.selectedId);
+    }
 
-      if (!selectedId) {
-        return state;
-      }
-
-      const clonedRequest = requests.get(selectedId);
-      if (!clonedRequest) {
-        return state;
-      }
-
-      const newRequest = {
-        id: clonedRequest.id + "-clone",
-        cause: clonedRequest.cause,
-        method: clonedRequest.method,
-        url: clonedRequest.url,
-        urlDetails: clonedRequest.urlDetails,
-        requestHeaders: clonedRequest.requestHeaders,
-        requestPostData: clonedRequest.requestPostData,
-        requestPostDataAvailable: clonedRequest.requestPostDataAvailable,
-        isCustom: true,
-      };
-
+    case RIGHT_CLICK_REQUEST: {
+      const { requests } = state;
+      const clickedRequest = requests.get(action.id);
       return {
         ...state,
-        requests: mapSet(requests, newRequest.id, newRequest),
-        selectedId: newRequest.id,
-        preselectedId: selectedId,
+        clickedRequest,
       };
     }
 
@@ -160,7 +153,7 @@ function requestsReducer(state = Requests(), action) {
       // When a new request with a given id is added in future, select it immediately.
       // where we know in advance the ID of the request, at a time when it
       // wasn't sent yet.
-      return closeCustomRequest({...state, preselectedId: action.id});
+      return closeCustomRequest({ ...state, preselectedId: action.id });
     }
 
     // Pause/resume button clicked.
@@ -191,8 +184,41 @@ function requestsReducer(state = Requests(), action) {
       return state;
   }
 }
+/* eslint-enable complexity */
 
 // Helpers
+
+function cloneRequest(state, id) {
+  const { requests } = state;
+
+  if (!id) {
+    return state;
+  }
+
+  const clonedRequest = requests.get(id);
+  if (!clonedRequest) {
+    return state;
+  }
+
+  const newRequest = {
+    id: clonedRequest.id + "-clone",
+    method: clonedRequest.method,
+    cause: clonedRequest.cause,
+    url: clonedRequest.url,
+    urlDetails: clonedRequest.urlDetails,
+    requestHeaders: clonedRequest.requestHeaders,
+    requestPostData: clonedRequest.requestPostData,
+    requestPostDataAvailable: clonedRequest.requestPostDataAvailable,
+    isCustom: true,
+  };
+
+  return {
+    ...state,
+    requests: mapSet(requests, newRequest.id, newRequest),
+    selectedId: newRequest.id,
+    preselectedId: id,
+  };
+}
 
 /**
  * Remove the currently selected custom request.
@@ -206,17 +232,16 @@ function closeCustomRequest(state) {
 
   const removedRequest = requests.get(selectedId);
 
-  // Only custom requests can be removed
-  if (!removedRequest || !removedRequest.isCustom) {
-    return state;
-  }
-
   // If the custom request is already in the Map, select it immediately,
   // and reset `preselectedId` attribute.
   const hasPreselectedId = preselectedId && requests.has(preselectedId);
   return {
     ...state,
-    requests: mapDelete(requests, selectedId),
+    // Only custom requests can be removed
+    [removedRequest && removedRequest.isCustom && "requests"]: mapDelete(
+      requests,
+      selectedId
+    ),
     preselectedId: hasPreselectedId ? null : preselectedId,
     selectedId: hasPreselectedId ? preselectedId : null,
   };

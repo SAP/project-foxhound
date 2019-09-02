@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=574663
 -->
 <head>
   <title>Test for Bug 574663</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -63,7 +63,6 @@ function forceScrollAndWait(scrollbox, callback) {
   }
 }
 
-var kExtraEvents = 5;
 var kDelta = 3;
 
 function sendTouchpadScrollMotion(scrollbox, direction, ctrl, momentum, callback) {
@@ -91,11 +90,9 @@ function sendTouchpadScrollMotion(scrollbox, direction, ctrl, momentum, callback
   scrollbox.addEventListener("wheel", onwheel);
 
   synthesizeWheel(scrollbox, 10, 10, event, win);
-  // then 5 additional pixel scrolls
+  // then additional pixel scroll
   event.lineOrPageDeltaY = 0;
-  for (let i = 1; i <= kExtraEvents; ++i) {
-    synthesizeWheel(scrollbox, 10, 10, event, win);
-  }
+  synthesizeWheel(scrollbox, 10, 10, event, win);
 }
 
 function runTest() {
@@ -107,6 +104,7 @@ function runTest() {
     // browser to 0 using the 'blank' attribute.
     // Until the blank attribute is removed, we can't send scroll events.
     SimpleTest.waitForFocus(function() {
+      /* eslint-disable no-shadow */
       let chromeScript = SpecialPowers.loadChromeScript(_ => {
         const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
         let win = Services.wm.getMostRecentWindow("navigator:browser");
@@ -117,6 +115,7 @@ function runTest() {
           });
         });
       });
+      /* eslint-enable no-shadow */
       chromeScript.promiseOneMessage("blank-attribute-removed").then(() => {
         chromeScript.destroy();
         waitForPaint(win, winUtils, callback);
@@ -147,7 +146,7 @@ function runTest() {
           let postfix = isMomentum ? ", even after releasing the touchpad" : "";
           // Normal scroll: scroll
           is(winUtils.fullZoom, zoomFactorBefore, "Normal scrolling shouldn't change zoom" + postfix);
-          is(scrollbox.scrollTop, scrollTopBefore + kDelta * (kExtraEvents + 1),
+          is(scrollbox.scrollTop, scrollTopBefore + kDelta * 2,
              "Normal scrolling should scroll" + postfix);
         } else {
           if (!isMomentum) {
@@ -155,7 +154,7 @@ function runTest() {
             is(scrollbox.scrollTop, scrollTopBefore, "Ctrl-scrolling shouldn't scroll while the user is touching the touchpad");
           } else {
             is(winUtils.fullZoom, zoomFactorBefore, "Momentum scrolling shouldn't zoom, even when pressing Ctrl");
-            is(scrollbox.scrollTop, scrollTopBefore + kDelta * (kExtraEvents + 1),
+            is(scrollbox.scrollTop, scrollTopBefore + kDelta * 2,
                "Momentum scrolling should scroll, even when pressing Ctrl");
           }
         }

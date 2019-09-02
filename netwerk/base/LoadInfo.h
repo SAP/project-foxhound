@@ -7,11 +7,13 @@
 #ifndef mozilla_LoadInfo_h
 #define mozilla_LoadInfo_h
 
+#include "nsIContentSecurityPolicy.h"
 #include "nsIContentPolicy.h"
 #include "nsILoadInfo.h"
 #include "nsIPrincipal.h"
 #include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
 #include "nsIURI.h"
+#include "nsContentUtils.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
@@ -88,6 +90,32 @@ class LoadInfo final : public nsILoadInfo {
   void SetBrowserWouldUpgradeInsecureRequests();
   void SetIsFromProcessingFrameAttributes();
 
+  // Hands off from the cspToInherit functionality!
+  //
+  // For navigations, GetCSPToInherit returns what the spec calls the
+  // "request's client's global object's CSP list", or more precisely
+  // a snapshot of it taken when the navigation starts.  For navigations
+  // that need to inherit their CSP, this is the right CSP to use for
+  // the new document.  We need a way to transfer the CSP from the
+  // docshell (where the navigation starts) to the point where the new
+  // document is created and decides whether to inherit its CSP, and
+  // this is the mechanism we use for that.
+  //
+  // For example:
+  // A document with a CSP triggers a new top-level data: URI load.
+  // We pass the CSP of the document that triggered the load all the
+  // way to docshell. Within docshell we call SetCSPToInherit() on the
+  // loadinfo. Within Document::InitCSP() we check if the newly created
+  // document needs to inherit the CSP. If so, we call GetCSPToInherit()
+  // and set the inherited CSP as the CSP for the new document. Please
+  // note that any additonal Meta CSP in that document will be merged
+  // into that CSP. Any subresource loads within that document
+  // subesquently will receive the correct CSP by querying
+  // loadinfo->GetCSP() from that point on.
+  void SetCSPToInherit(nsIContentSecurityPolicy* aCspToInherit) {
+    mCspToInherit = aCspToInherit;
+  }
+
  private:
   // private constructor that is only allowed to be called from within
   // HttpChannelParent and FTPChannelParent declared as friends undeneath.
@@ -99,6 +127,7 @@ class LoadInfo final : public nsILoadInfo {
            nsIPrincipal* aTopLevelPrincipal,
            nsIPrincipal* aTopLevelStorageAreaPrincipal,
            nsIURI* aResultPrincipalURI, nsICookieSettings* aCookieSettings,
+           nsIContentSecurityPolicy* aCspToInherit,
            const Maybe<mozilla::dom::ClientInfo>& aClientInfo,
            const Maybe<mozilla::dom::ClientInfo>& aReservedClientInfo,
            const Maybe<mozilla::dom::ClientInfo>& aInitialClientInfo,
@@ -106,9 +135,8 @@ class LoadInfo final : public nsILoadInfo {
            nsSecurityFlags aSecurityFlags,
            nsContentPolicyType aContentPolicyType, LoadTainting aTainting,
            bool aUpgradeInsecureRequests, bool aBrowserUpgradeInsecureRequests,
-           bool aBrowserWouldUpgradeInsecureRequests, bool aVerifySignedContent,
-           bool aEnforceSRI, bool aForceAllowDataURI,
-           bool aAllowInsecureRedirectToDataURI,
+           bool aBrowserWouldUpgradeInsecureRequests, bool aForceAllowDataURI,
+           bool aAllowInsecureRedirectToDataURI, bool aBypassCORSChecks,
            bool aSkipContentPolicyCheckForWebRequest,
            bool aForceInheritPrincipalDropped, uint64_t aInnerWindowID,
            uint64_t aOuterWindowID, uint64_t aParentOuterWindowID,
@@ -125,7 +153,7 @@ class LoadInfo final : public nsILoadInfo {
            bool aIsPreflight, bool aLoadTriggeredFromExternal,
            bool aServiceWorkerTaintingSynthesized,
            bool aDocumentHasUserInteracted, bool aDocumentHasLoaded,
-           const nsAString& aCspNonce);
+           const nsAString& aCspNonce, uint32_t aRequestBlockingReason);
   LoadInfo(const LoadInfo& rhs);
 
   NS_IMETHOD GetRedirects(JSContext* aCx,
@@ -146,6 +174,16 @@ class LoadInfo final : public nsILoadInfo {
   void SetIncludeCookiesSecFlag();
   friend class mozilla::dom::XMLHttpRequestMainThread;
 
+  // nsDocShell::OpenInitializedChannel needs to update the loadInfo with
+  // the correct browsingContext.
+  friend class ::nsDocShell;
+  void UpdateBrowsingContextID(uint64_t aBrowsingContextID) {
+    mBrowsingContextID = aBrowsingContextID;
+  }
+  void UpdateFrameBrowsingContextID(uint64_t aFrameBrowsingContextID) {
+    mFrameBrowsingContextID = aFrameBrowsingContextID;
+  }
+
   // if you add a member, please also update the copy constructor and consider
   // if it should be merged from parent channel through
   // ParentLoadInfoForwarderArgs.
@@ -158,6 +196,7 @@ class LoadInfo final : public nsILoadInfo {
   nsCOMPtr<nsIURI> mResultPrincipalURI;
   nsCOMPtr<nsICSPEventListener> mCSPEventListener;
   nsCOMPtr<nsICookieSettings> mCookieSettings;
+  nsCOMPtr<nsIContentSecurityPolicy> mCspToInherit;
 
   Maybe<mozilla::dom::ClientInfo> mClientInfo;
   UniquePtr<mozilla::dom::ClientSource> mReservedClientSource;
@@ -174,10 +213,9 @@ class LoadInfo final : public nsILoadInfo {
   bool mUpgradeInsecureRequests;
   bool mBrowserUpgradeInsecureRequests;
   bool mBrowserWouldUpgradeInsecureRequests;
-  bool mVerifySignedContent;
-  bool mEnforceSRI;
   bool mForceAllowDataURI;
   bool mAllowInsecureRedirectToDataURI;
+  bool mBypassCORSChecks;
   bool mSkipContentPolicyCheckForWebRequest;
   bool mOriginalFrameSrcLoad;
   bool mForceInheritPrincipalDropped;
@@ -198,6 +236,7 @@ class LoadInfo final : public nsILoadInfo {
   nsTArray<nsCOMPtr<nsIPrincipal>> mAncestorPrincipals;
   nsTArray<uint64_t> mAncestorOuterWindowIDs;
   nsTArray<nsCString> mCorsUnsafeHeaders;
+  uint32_t mRequestBlockingReason;
   bool mForcePreflight;
   bool mIsPreflight;
   bool mLoadTriggeredFromExternal;
@@ -210,8 +249,6 @@ class LoadInfo final : public nsILoadInfo {
   // browsing context container.
   // See nsILoadInfo.isFromProcessingFrameAttributes
   bool mIsFromProcessingFrameAttributes;
-
-  nsILoadInfo::CrossOriginOpenerPolicy mOpenerPolicy;
 };
 
 }  // namespace net

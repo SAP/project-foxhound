@@ -83,6 +83,8 @@ try:
 except ImportError:
     pass
 
+import six
+
 here = os.path.abspath(os.path.dirname(__file__))
 
 NO_TESTS_FOUND = """
@@ -102,9 +104,8 @@ list of valid flavors.
 # Set the desired log modules you want a log be produced
 # by a try run for, or leave blank to disable the feature.
 # This will be passed to MOZ_LOG environment variable.
-# Try run will then put a download link for all log files
-# on tbpl.mozilla.org.
-
+# Try run will then put a download link for a zip archive
+# of all the log files on treeherder.
 MOZ_LOG = ""
 
 #####################
@@ -203,7 +204,12 @@ class MessageLogger(object):
     def parse_line(self, line):
         """Takes a given line of input (structured or not) and
         returns a list of structured messages"""
-        line = line.rstrip().decode("UTF-8", "replace")
+        if isinstance(line, six.binary_type):
+            # if line is a sequence of bytes, let's decode it
+            line = line.rstrip().decode("UTF-8", "replace")
+        else:
+            # line is in unicode - so let's use it as it is
+            line = line.rstrip()
 
         messages = []
         for fragment in line.split(MessageLogger.DELIMITER):
@@ -571,8 +577,8 @@ class WebSocketServer(object):
         cmd = [sys.executable, script]
         if self.debuggerInfo and self.debuggerInfo.interactive:
             cmd += ['--interactive']
-        cmd += ['-p', str(self.port), '-w', self._scriptdir, '-l',
-                os.path.join(self._scriptdir, "websock.log"),
+        cmd += ['-H', '127.0.0.1', '-p', str(self.port), '-w', self._scriptdir,
+                '-l', os.path.join(self._scriptdir, "websock.log"),
                 '--log-level=debug', '--allow-handlers-outside-root-dir']
         # start the process
         self._process = mozprocess.ProcessHandler(cmd, cwd=SCRIPT_DIR)
@@ -623,6 +629,9 @@ class SSLTunnel:
 
             if option in (
                     'tls1',
+                    'tls1_1',
+                    'tls1_2',
+                    'tls1_3',
                     'ssl3',
                     'rc4',
                     'failHandshake'):
@@ -630,7 +639,7 @@ class SSLTunnel:
                     "%s:%s:%s:%s\n" %
                     (option, loc.host, loc.port, self.sslPort))
 
-    def buildConfig(self, locations):
+    def buildConfig(self, locations, public=None):
         """Create the ssltunnel configuration file"""
         configFd, self.configFile = tempfile.mkstemp(
             prefix="ssltunnel", suffix=".cfg")
@@ -641,7 +650,17 @@ class SSLTunnel:
             config.write(
                 "websocketserver:%s:%s\n" %
                 (self.webServer, self.webSocketPort))
-            config.write("listen:*:%s:pgoserver\n" % self.sslPort)
+            # Use "*" to tell ssltunnel to listen on the public ip
+            # address instead of the loopback address 127.0.0.1. This
+            # may have the side-effect of causing firewall warnings on
+            # macOS and Windows. Use "127.0.0.1" to listen on the
+            # loopback address.  Remote tests using physical or
+            # emulated Android devices must use the public ip address
+            # in order for the sslproxy to work but Desktop tests
+            # which run on the same host as ssltunnel may use the
+            # loopback address.
+            listen_address = "*" if public else "127.0.0.1"
+            config.write("listen:%s:%s:pgoserver\n" % (listen_address, self.sslPort))
 
             for loc in locations:
                 if loc.scheme == "https" and "nocert" not in loc.options:
@@ -832,7 +851,6 @@ class MochitestDesktop(object):
 
     # Path to the test script on the server
     TEST_PATH = "tests"
-    NESTED_OOP_TEST_PATH = "nested_oop"
     CHROME_PATH = "redirect.html"
 
     certdbNew = False
@@ -1057,7 +1075,6 @@ class MochitestDesktop(object):
     def setTestRoot(self, options):
         if options.flavor != 'plain':
             self.testRoot = options.flavor
-
         else:
             self.testRoot = self.TEST_PATH
         self.testRootAbs = os.path.join(SCRIPT_DIR, self.testRoot)
@@ -1084,8 +1101,6 @@ class MochitestDesktop(object):
             testURL = "/".join([testHost, self.CHROME_PATH])
         elif options.flavor == 'browser':
             testURL = "about:blank"
-        if options.nested_oop:
-            testURL = "/".join([testHost, self.NESTED_OOP_TEST_PATH])
         return testURL
 
     def getTestsByScheme(self, options, testsToFilter=None, disabled=True):
@@ -1164,7 +1179,7 @@ class MochitestDesktop(object):
             self.log.error("runtests.py | Timed out while waiting for "
                            "websocket/process bridge startup.")
 
-    def startServers(self, options, debuggerInfo):
+    def startServers(self, options, debuggerInfo, public=None):
         # start servers and set ports
         # TODO: pass these values, don't set on `self`
         self.webServer = options.webServer
@@ -1189,7 +1204,7 @@ class MochitestDesktop(object):
         self.sslTunnel = SSLTunnel(
             options,
             logger=self.log)
-        self.sslTunnel.buildConfig(self.locations)
+        self.sslTunnel.buildConfig(self.locations, public=public)
         self.sslTunnel.start()
 
         # If we're lucky, the server has fully started by now, and all paths are
@@ -1690,6 +1705,12 @@ toolbar#nav-bar {
         if not options.enableCPOWWarnings:
             browserEnv["DISABLE_UNSAFE_CPOW_WARNINGS"] = "1"
 
+        if options.enable_webrender:
+            browserEnv["MOZ_WEBRENDER"] = "1"
+            browserEnv["MOZ_ACCELERATED"] = "1"
+        else:
+            browserEnv["MOZ_WEBRENDER"] = "0"
+
         return browserEnv
 
     def killNamedProc(self, pname, orphans=True):
@@ -1899,7 +1920,6 @@ toolbar#nav-bar {
         # Hardcoded prefs (TODO move these into a base profile)
         prefs = {
             "browser.tabs.remote.autostart": options.e10s,
-            "dom.ipc.tabs.nested.enabled": options.nested_oop,
             # Enable tracing output for detailed failures in case of
             # failing connection attempts, and hangs (bug 1397201)
             "marionette.log.level": "Trace",
@@ -2561,19 +2581,16 @@ toolbar#nav-bar {
         """ Prepare, configure, run tests and cleanup """
         self.extraPrefs = parse_preferences(options.extraPrefs)
 
-        # a11y and chrome tests don't run with e10s enabled in CI. Need to set
-        # this here since |mach mochitest| sets the flavor after argument parsing.
-        if options.flavor in ('a11y', 'chrome'):
-            options.e10s = False
-
         # for test manifest parsing.
         mozinfo.update({
             "e10s": options.e10s,
+            "fission": self.extraPrefs.get('fission.autostart', False),
             "headless": options.headless,
             "serviceworker_e10s": self.extraPrefs.get(
                 'dom.serviceWorkers.parent_intercept', False),
             "socketprocess_e10s": self.extraPrefs.get(
                 'network.process.enabled', False),
+            "webrender": options.enable_webrender,
         })
 
         self.setTestRoot(options)
@@ -2929,6 +2946,15 @@ toolbar#nav-bar {
             self.killAndGetStack(browser_pid, utilityPath, debuggerInfo,
                                  dump_screen=not debuggerInfo)
 
+    def archiveMozLogs(self):
+        if self.mozLogs:
+            with zipfile.ZipFile("{}/mozLogs.zip".format(os.environ["MOZ_UPLOAD_DIR"]),
+                                 "w", zipfile.ZIP_DEFLATED) as logzip:
+                for logfile in glob.glob("{}/moz*.log*".format(os.environ["MOZ_UPLOAD_DIR"])):
+                    logzip.write(logfile, os.path.basename(logfile))
+                    os.remove(logfile)
+                logzip.close()
+
     class OutputHandler(object):
 
         """line output handler for mozrunner"""
@@ -3115,13 +3141,7 @@ def run_test_harness(parser, options):
     else:
         result = runner.runTests(options)
 
-    if runner.mozLogs:
-        with zipfile.ZipFile("{}/mozLogs.zip".format(runner.browserEnv["MOZ_UPLOAD_DIR"]),
-                             "w", zipfile.ZIP_DEFLATED) as logzip:
-            for logfile in glob.glob("{}/moz*.log*".format(runner.browserEnv["MOZ_UPLOAD_DIR"])):
-                logzip.write(logfile)
-                os.remove(logfile)
-            logzip.close()
+    runner.archiveMozLogs()
     runner.message_logger.finish()
     return result
 

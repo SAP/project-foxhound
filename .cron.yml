@@ -10,6 +10,7 @@ jobs:
           type: decision-task
           treeherder-symbol: Nd
           target-tasks-method: nightly_desktop
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when:
@@ -23,6 +24,7 @@ jobs:
           type: decision-task
           treeherder-symbol: Nd-Ln
           target-tasks-method: nightly_linux
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when: []  # never (hook only)
@@ -32,6 +34,7 @@ jobs:
           type: decision-task
           treeherder-symbol: Nd-OSX
           target-tasks-method: nightly_macosx
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when: []  # never (hook only)
@@ -41,6 +44,7 @@ jobs:
           type: decision-task
           treeherder-symbol: Nd-win32
           target-tasks-method: nightly_win32
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when: []  # never (hook only)
@@ -50,6 +54,7 @@ jobs:
           type: decision-task
           treeherder-symbol: Nd-win64
           target-tasks-method: nightly_win64
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when: []  # never (hook only)
@@ -59,33 +64,48 @@ jobs:
           type: decision-task
           treeherder-symbol: Nd-win64-aarch64
           target-tasks-method: nightly_win64_aarch64
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when: []  # never (hook only)
 
-    - name: nightly-android
+    - name: ship-geckoview
       job:
           type: decision-task
-          treeherder-symbol: Na
-          target-tasks-method: nightly_fennec
+          treeherder-symbol: ship_geckoview
+          target-tasks-method: ship_geckoview
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
+          - mozilla-beta
       when:
           by-project:
-              # Match buildbot starts for now
               mozilla-central: [{hour: 10, minute: 0}]
-              # No default
+              mozilla-beta:
+                  - {weekday: 'Monday', hour: 10, minute: 0}
+                  - {weekday: 'Thursday', hour: 10, minute: 0}
 
-    - name: nightly-mochitest-valgrind
+    - name: tp6m-fennec-v64
       job:
           type: decision-task
-          treeherder-symbol: Vg
-          target-tasks-method: mochitest_valgrind
+          treeherder-symbol: f64
+          target-tasks-method: fennec_v64
+          include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when:
-          - {hour: 16, minute: 0}
-          - {hour: 4, minute: 0}
+          - {weekday: 'Saturday', hour: 5, minute: 0}
+
+    - name: android-power-tests
+      job:
+          type: decision-task
+          treeherder-symbol: apt
+          target-tasks-method: android_power
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {weekday: 'Saturday', hour: 17, minute: 0}
 
     - name: searchfox-index
       job:
@@ -154,21 +174,10 @@ jobs:
           - mozilla-beta
           - mozilla-release
           - mozilla-esr60
+          - mozilla-esr68
       when:
-          by-project:
-              # No default branch
-              mozilla-central:
-                  - {weekday: 'Monday', hour: 10, minute: 0}
-                  - {weekday: 'Thursday', hour: 10, minute: 0}
-              mozilla-beta:
-                  - {weekday: 'Monday', hour: 10, minute: 0}
-                  - {weekday: 'Thursday', hour: 10, minute: 0}
-              mozilla-release:
-                  - {weekday: 'Monday', hour: 10, minute: 0}
-                  - {weekday: 'Thursday', hour: 10, minute: 0}
-              mozilla-esr60:
-                  - {weekday: 'Monday', hour: 10, minute: 0}
-                  - {weekday: 'Thursday', hour: 10, minute: 0}
+          - {weekday: 'Monday', hour: 10, minute: 0}
+          - {weekday: 'Thursday', hour: 10, minute: 0}
 
     - name: pipfile-update
       job:

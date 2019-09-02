@@ -16,11 +16,11 @@
 #include "nsITransactionListener.h"  // for nsITransactionListener
 #include "nscore.h"                  // for NS_IMETHOD, nsresult, etc
 
+class nsCommandManager;
 class nsIDocShell;
 class nsITransaction;
 class nsITransactionManager;
 class nsPIDOMWindowOuter;
-class nsPICommandUpdater;
 
 namespace mozilla {
 
@@ -48,7 +48,7 @@ class ComposerCommandsUpdater final : public nsIDocumentStateListener,
   // nsITransactionListener
   NS_DECL_NSITRANSACTIONLISTENER
 
-  nsresult Init(nsPIDOMWindowOuter* aDOMWindow);
+  void Init(nsPIDOMWindowOuter& aDOMWindow);
 
   /**
    * OnSelectionChange() is called when selection is changed in the editor.
@@ -69,7 +69,7 @@ class ComposerCommandsUpdater final : public nsIDocumentStateListener,
   nsresult UpdateOneCommand(const char* aCommand);
   nsresult UpdateCommandGroup(const nsAString& aCommandGroup);
 
-  already_AddRefed<nsPICommandUpdater> GetCommandUpdater();
+  nsCommandManager* GetCommandManager();
 
   nsresult PrimeUpdateTimer();
   void TimerCallback();

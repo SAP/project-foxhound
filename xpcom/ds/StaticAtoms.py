@@ -28,6 +28,7 @@ STATIC_ATOMS = [
     # Generic atoms
     # --------------------------------------------------------------------------
 
+    Atom("SystemPrincipal", "[System Principal]"),
     Atom("_empty", ""),
     Atom("_0", "0"),
     Atom("_1", "1"),
@@ -41,11 +42,11 @@ STATIC_ATOMS = [
     Atom("moztype", "_moz-type"),
     Atom("mozdirty", "_moz_dirty"),
     Atom("mozdisallowselectionprint", "mozdisallowselectionprint"),
-    Atom("mozpersist", "mozpersist"),
     Atom("mozdonotsend", "moz-do-not-send"),
     Atom("mozeditorbogusnode", "_moz_editor_bogus_node"),
     Atom("mozgeneratedcontentbefore", "_moz_generated_content_before"),
     Atom("mozgeneratedcontentafter", "_moz_generated_content_after"),
+    Atom("mozgeneratedcontentmarker", "_moz_generated_content_marker"),
     Atom("mozgeneratedcontentimage", "_moz_generated_content_image"),
     Atom("mozquote", "_moz_quote"),
     Atom("mozsignature", "moz-signature"),
@@ -287,6 +288,8 @@ STATIC_ATOMS = [
     Atom("datal10nid", "data-l10n-id"),
     Atom("datal10nargs", "data-l10n-args"),
     Atom("datal10nattrs", "data-l10n-attrs"),
+    Atom("datal10nname", "data-l10n-name"),
+    Atom("datal10nsync", "data-l10n-sync"),
     Atom("dataType", "data-type"),
     Atom("dateTime", "date-time"),
     Atom("date", "date"),
@@ -515,6 +518,7 @@ STATIC_ATOMS = [
     Atom("import", "import"),
     Atom("include", "include"),
     Atom("includes", "includes"),
+    Atom("incontentshell", "incontentshell"),
     Atom("increment", "increment"),
     Atom("indent", "indent"),
     Atom("indeterminate", "indeterminate"),
@@ -631,6 +635,7 @@ STATIC_ATOMS = [
     Atom("meta", "meta"),
     Atom("referrer", "referrer"),
     Atom("referrerpolicy", "referrerpolicy"),
+    Atom("renderroot", "renderroot"),
     Atom("headerReferrerPolicy", "referrer-policy"),
     Atom("meter", "meter"),
     Atom("method", "method"),
@@ -682,7 +687,7 @@ STATIC_ATOMS = [
     Atom("never", "never"),
     Atom("_new", "new"),
     Atom("newline", "newline"),
-    Atom("nextTabParentId", "nextTabParentId"),
+    Atom("nextRemoteTabId", "nextRemoteTabId"),
     Atom("no", "no"),
     Atom("noautofocus", "noautofocus"),
     Atom("noautohide", "noautohide"),
@@ -858,6 +863,8 @@ STATIC_ATOMS = [
     Atom("onpushsubscriptionchange", "onpushsubscriptionchange"),
     Atom("onRadioStateChange", "onRadioStateChange"),
     Atom("onreadystatechange", "onreadystatechange"),
+    Atom("onrejectionhandled", "onrejectionhandled"),
+    Atom("onremove", "onremove"),
     Atom("onrequestprogress", "onrequestprogress"),
     Atom("onresourcetimingbufferfull", "onresourcetimingbufferfull"),
     Atom("onresponseprogress", "onresponseprogress"),
@@ -889,6 +896,7 @@ STATIC_ATOMS = [
     Atom("ontransitionrun", "ontransitionrun"),
     Atom("ontransitionstart", "ontransitionstart"),
     Atom("onunderflow", "onunderflow"),
+    Atom("onunhandledrejection", "onunhandledrejection"),
     Atom("onunload", "onunload"),
     Atom("onunmute", "onunmute"),
     Atom("onupdatefound", "onupdatefound"),
@@ -938,6 +946,7 @@ STATIC_ATOMS = [
     Atom("parent", "parent"),
     Atom("parentfocused", "parentfocused"),
     Atom("parsererror", "parsererror"),
+    Atom("part", "part"),
     Atom("password", "password"),
     Atom("pattern", "pattern"),
     Atom("patternSeparator", "pattern-separator"),
@@ -1210,7 +1219,6 @@ STATIC_ATOMS = [
     Atom("truespeed", "truespeed"),
     Atom("tt", "tt"),
     Atom("type", "type"),
-    Atom("typemustmatch", "typemustmatch"),
     Atom("u", "u"),
     Atom("ul", "ul"),
     Atom("unparsedEntityUri", "unparsed-entity-uri"),
@@ -1410,6 +1418,7 @@ STATIC_ATOMS = [
     Atom("limitingConeAngle", "limitingConeAngle"),
     Atom("linear", "linear"),
     Atom("linearGradient", "linearGradient"),
+    Atom("list_item", "list-item"),
     Atom("list_style_type", "list-style-type"),
     Atom("luminanceToAlpha", "luminanceToAlpha"),
     Atom("luminosity", "luminosity"),
@@ -2046,15 +2055,19 @@ STATIC_ATOMS = [
     Atom("animationsProperty", "AnimationsProperty"),        # FrameAnimations*
     Atom("animationsOfBeforeProperty", "AnimationsOfBeforeProperty"),  # FrameAnimations*
     Atom("animationsOfAfterProperty", "AnimationsOfAfterProperty"),  # FrameAnimations*
+    Atom("animationsOfMarkerProperty", "AnimationsOfMarkerProperty"),  # FrameAnimations*
     Atom("animationEffectsProperty", "AnimationEffectsProperty"),  # EffectSet*
     Atom("animationEffectsForBeforeProperty", "AnimationsEffectsForBeforeProperty"),  # EffectSet*
     Atom("animationEffectsForAfterProperty", "AnimationsEffectsForAfterProperty"),  # EffectSet*
+    Atom("animationEffectsForMarkerProperty", "AnimationsEffectsForMarkerProperty"),  # EffectSet*
     Atom("beforePseudoProperty", "beforePseudoProperty"),  # nsXMLElement*
     Atom("cssPseudoElementBeforeProperty", "CSSPseudoElementBeforeProperty"),  # CSSPseudoElement*
     Atom("cssPseudoElementAfterProperty", "CSSPseudoElementAfterProperty"),  # CSSPseudoElement*
+    Atom("cssPseudoElementMarkerProperty", "CSSPseudoElementMarkerProperty"),  # CSSPseudoElement*
     Atom("transitionsProperty", "TransitionsProperty"),        # FrameTransitions*
     Atom("transitionsOfBeforeProperty", "TransitionsOfBeforeProperty"),  # FrameTransitions*
     Atom("transitionsOfAfterProperty", "TransitionsOfAfterProperty"),  # FrameTransitions*
+    Atom("transitionsOfMarkerProperty", "TransitionsOfMarkerProperty"),  # FrameTransitions*
     Atom("genConInitializerProperty", "QuoteNodeProperty"),
     Atom("labelMouseDownPtProperty", "LabelMouseDownPtProperty"),
     Atom("lockedStyleStates", "lockedStyleStates"),
@@ -2064,6 +2077,7 @@ STATIC_ATOMS = [
     Atom("paintRequestTime", "PaintRequestTime"),
     Atom("pseudoProperty", "PseudoProperty"),  # PseudoStyleType
     Atom("manualNACProperty", "ManualNACProperty"),  # ManualNAC*
+    Atom("markerPseudoProperty", "markerPseudoProperty"),  # nsXMLElement*
 
     # Languages for lang-specific transforms
     Atom("Japanese", "ja"),
@@ -2104,6 +2118,7 @@ STATIC_ATOMS = [
     Atom("crh", "crh"),
     # Atom("el", "el"),  # "el" is present above
     Atom("ga", "ga"),
+    # Atom("lt", "lt"),  # "lt" is present above (atom name "lt_")
     Atom("nl", "nl"),
 
     # mathematical language, used for MathML
@@ -2379,6 +2394,7 @@ STATIC_ATOMS = [
     # in nsCSSPseudoElementList.h
     PseudoElementAtom("PseudoElement_after", ":after"),
     PseudoElementAtom("PseudoElement_before", ":before"),
+    PseudoElementAtom("PseudoElement_marker", ":marker"),
     PseudoElementAtom("PseudoElement_backdrop", ":backdrop"),
     PseudoElementAtom("PseudoElement_cue", ":cue"),
     PseudoElementAtom("PseudoElement_firstLetter", ":first-letter"),
@@ -2386,8 +2402,6 @@ STATIC_ATOMS = [
     PseudoElementAtom("PseudoElement_selection", ":selection"),
     PseudoElementAtom("PseudoElement_mozFocusInner", ":-moz-focus-inner"),
     PseudoElementAtom("PseudoElement_mozFocusOuter", ":-moz-focus-outer"),
-    PseudoElementAtom("PseudoElement_mozListBullet", ":-moz-list-bullet"),
-    PseudoElementAtom("PseudoElement_mozListNumber", ":-moz-list-number"),
     PseudoElementAtom("PseudoElement_mozMathAnonymous", ":-moz-math-anonymous"),
     PseudoElementAtom("PseudoElement_mozNumberWrapper", ":-moz-number-wrapper"),
     PseudoElementAtom("PseudoElement_mozNumberText", ":-moz-number-text"),

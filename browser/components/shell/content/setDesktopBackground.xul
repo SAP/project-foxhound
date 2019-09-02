@@ -26,7 +26,6 @@
 #endif
         buttonlabelaccept="&setDesktopBackground.title;"
         onload="gSetBackground.load();"
-        ondialogaccept="gSetBackground.setDesktopBackground();"
         title="&setDesktopBackground.title;"
         style="width: 30em;">
 
@@ -36,9 +35,9 @@
 
     <stringbundle id="backgroundBundle"
                   src="chrome://browser/locale/shellservice.properties"/>
-    <script type="application/javascript" src="chrome://browser/content/utilityOverlay.js"/>
-    <script type="application/javascript" src="chrome://browser/content/setDesktopBackground.js"/>
-    <script type="application/javascript" src="chrome://global/content/contentAreaUtils.js"/>
+    <script src="chrome://browser/content/utilityOverlay.js"/>
+    <script src="chrome://browser/content/setDesktopBackground.js"/>
+    <script src="chrome://global/content/contentAreaUtils.js"/>
 
 #ifndef XP_MACOSX
     <hbox align="center">
@@ -50,8 +49,9 @@
           <menuitem label="&center.label;"  value="CENTER"/>
           <menuitem label="&tile.label;"    value="TILE"/>
           <menuitem label="&stretch.label;" value="STRETCH"/>
-          <menuitem label="&fill.label;"    value="FILL" id="fillPosition"/>
-          <menuitem label="&fit.label;"     value="FIT"  id="fitPosition"/>
+          <menuitem label="&fill.label;"    value="FILL"/>
+          <menuitem label="&fit.label;"     value="FIT"/>
+          <menuitem label="&span.label;"    value="SPAN" id="spanPosition"/>
         </menupopup>
       </menulist>
       <spacer flex="1"/>
@@ -63,11 +63,14 @@
 #endif
 
     <vbox align="center">
+      <!-- default to 16:9, will be adjusted to match user's actual screen -->
       <stack>
-        <!-- if width and height are not present, they default to 300x150 and stretch the stack -->
-        <html:canvas id="screen" width="1" height="1" role="presentation"/>
-        <image id="monitor"/>
+        <html:canvas id="screen" width="202" height="114" role="presentation"/>
+        <vbox pack="center">
+          <html:p id="preview-unavailable" hidden="">&previewUnavailable;</html:p>
+        </vbox>
       </stack>
+      <image id="monitor-base"/>
     </vbox>
 
 #ifdef XP_MACOSX

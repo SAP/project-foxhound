@@ -37,7 +37,7 @@ static void IterateRealmsArenasCellsUnbarriered(
     for (ArenaIter aiter(zone, thingKind); !aiter.done(); aiter.next()) {
       Arena* arena = aiter.get();
       (*arenaCallback)(cx->runtime(), data, arena, traceKind, thingSize);
-      for (ArenaCellIterUnbarriered iter(arena); !iter.done(); iter.next()) {
+      for (ArenaCellIter iter(arena); !iter.done(); iter.next()) {
         (*cellCallback)(cx->runtime(), data, iter.getCell(), traceKind,
                         thingSize);
       }
@@ -86,11 +86,7 @@ static void TraverseInnerLazyScriptsForLazyScript(
     JSContext* cx, void* data, LazyScript* enclosingLazyScript,
     IterateLazyScriptCallback lazyScriptCallback,
     const JS::AutoRequireNoGC& nogc) {
-  GCPtrFunction* innerFunctions = enclosingLazyScript->innerFunctions();
-  for (size_t i = 0, len = enclosingLazyScript->numInnerFunctions(); i < len;
-       i++) {
-    JSFunction* fun = innerFunctions[i];
-
+  for (JSFunction* fun : enclosingLazyScript->innerFunctions()) {
     // LazyScript::CreateForXDR temporarily initializes innerFunctions with
     // its own function, but it should be overwritten with correct
     // inner functions before getting inserted into parent's innerFunctions.

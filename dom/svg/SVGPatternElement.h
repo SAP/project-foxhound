@@ -8,12 +8,12 @@
 #define mozilla_dom_SVGPatternElement_h
 
 #include "nsAutoPtr.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedLength.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
+#include "SVGAnimatedString.h"
 #include "SVGAnimatedTransformList.h"
-#include "SVGEnum.h"
-#include "nsSVGLength2.h"
-#include "SVGString.h"
-#include "SVGViewBox.h"
+#include "SVGAnimatedViewBox.h"
 #include "mozilla/dom/SVGElement.h"
 
 class nsSVGPatternFrame;
@@ -60,38 +60,39 @@ class SVGPatternElement final : public SVGPatternElementBase {
   // WebIDL
   already_AddRefed<SVGAnimatedRect> ViewBox();
   already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
-  already_AddRefed<SVGAnimatedEnumeration> PatternUnits();
-  already_AddRefed<SVGAnimatedEnumeration> PatternContentUnits();
+  already_AddRefed<DOMSVGAnimatedEnumeration> PatternUnits();
+  already_AddRefed<DOMSVGAnimatedEnumeration> PatternContentUnits();
   already_AddRefed<DOMSVGAnimatedTransformList> PatternTransform();
-  already_AddRefed<SVGAnimatedLength> X();
-  already_AddRefed<SVGAnimatedLength> Y();
-  already_AddRefed<SVGAnimatedLength> Width();
-  already_AddRefed<SVGAnimatedLength> Height();
-  already_AddRefed<SVGAnimatedString> Href();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedString> Href();
 
  protected:
   virtual LengthAttributesInfo GetLengthInfo() override;
   virtual EnumAttributesInfo GetEnumInfo() override;
-  virtual SVGViewBox* GetViewBox() override;
-  virtual SVGAnimatedPreserveAspectRatio* GetPreserveAspectRatio() override;
   virtual StringAttributesInfo GetStringInfo() override;
+  virtual SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio()
+      override;
+  virtual SVGAnimatedViewBox* GetAnimatedViewBox() override;
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  nsSVGLength2 mLengthAttributes[4];
+  SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 
   enum { PATTERNUNITS, PATTERNCONTENTUNITS };
-  SVGEnum mEnumAttributes[2];
+  SVGAnimatedEnumeration mEnumAttributes[2];
   static EnumInfo sEnumInfo[2];
 
   nsAutoPtr<mozilla::SVGAnimatedTransformList> mPatternTransform;
 
   enum { HREF, XLINK_HREF };
-  SVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 
   // SVGFitToViewbox properties
-  SVGViewBox mViewBox;
+  SVGAnimatedViewBox mViewBox;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
 };
 

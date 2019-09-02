@@ -39,7 +39,6 @@
 #include "vm/ProxyObject.h"
 #include "vm/Shape.h"
 #include "vm/TypedArrayObject.h"
-#include "vm/UnboxedObject.h"
 
 // [SMDOC] MacroAssembler multi-platform overview
 //
@@ -378,6 +377,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void Push(const ImmPtr imm) PER_SHARED_ARCH;
   void Push(const ImmGCPtr ptr) PER_SHARED_ARCH;
   void Push(FloatRegister reg) PER_SHARED_ARCH;
+  void PushBoxed(FloatRegister reg) PER_ARCH;
   void PushFlags() DEFINED_ON(x86_shared);
   void Push(jsid id, Register scratchReg);
   void Push(const Address& addr);
@@ -776,6 +776,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // Load instructions
 
   inline void load32SignExtendToPtr(const Address& src, Register dest) PER_ARCH;
+
+  inline void loadAbiReturnAddress(Register dest) PER_SHARED_ARCH;
 
  public:
   // ===============================================================
@@ -1296,9 +1298,13 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void branchLatin1String(Register string, Label* label);
   inline void branchTwoByteString(Register string, Label* label);
 
+  inline void branchTestFunctionFlags(Register fun, uint32_t flags,
+                                      Condition cond, Label* label);
+
   inline void branchIfFunctionHasNoJitEntry(Register fun, bool isConstructing,
                                             Label* label);
-  inline void branchIfInterpreted(Register fun, Label* label);
+  inline void branchIfInterpreted(Register fun, bool isConstructing,
+                                  Label* label);
 
   inline void branchFunctionKind(Condition cond, JSFunction::FunctionKind kind,
                                  Register fun, Register scratch, Label* label);
@@ -1629,6 +1635,14 @@ class MacroAssembler : public MacroAssemblerSpecific {
                           Register src, Register dest)
       DEFINED_ON(arm, arm64, mips_shared, x86_shared);
 
+  inline void cmp32Load32(Condition cond, Register lhs, const Address& rhs,
+                          const Address& src, Register dest)
+      DEFINED_ON(arm, arm64, mips_shared, x86_shared);
+
+  inline void cmp32Load32(Condition cond, Register lhs, Register rhs,
+                          const Address& src, Register dest)
+      DEFINED_ON(arm, arm64, mips_shared, x86_shared);
+
   inline void cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,
                            Register src, Register dest)
       DEFINED_ON(arm, arm64, mips_shared, x86, x64);
@@ -1687,7 +1701,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   template <class T>
   inline void storeDouble(FloatRegister src, const T& dest);
 
-  inline void boxDouble(FloatRegister src, const Address& dest);
+  template <class T>
+  inline void boxDouble(FloatRegister src, const T& dest);
+
   using MacroAssemblerSpecific::boxDouble;
 
   inline void storeUncanonicalizedFloat32(FloatRegister src,
@@ -1914,7 +1930,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // (TLS & pinned regs are non-volatile registers in the system ABI).
   CodeOffset wasmCallBuiltinInstanceMethod(const wasm::CallSiteDesc& desc,
                                            const ABIArg& instanceArg,
-                                           wasm::SymbolicAddress builtin);
+                                           wasm::SymbolicAddress builtin,
+                                           wasm::FailureMode failureMode);
 
   // As enterFakeExitFrame(), but using register conventions appropriate for
   // wasm stubs.
@@ -2558,9 +2575,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
       if (src.type() == MIRType::Float32) {
         ScratchDoubleScope fpscratch(*this);
         convertFloat32ToDouble(reg, fpscratch);
-        storeDouble(fpscratch, dest);
+        boxDouble(fpscratch, dest);
       } else {
-        storeDouble(reg, dest);
+        boxDouble(reg, dest);
       }
     } else {
       storeValue(ValueTypeFromMIRType(src.type()), src.typedReg().gpr(), dest);
@@ -2710,18 +2727,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void memoryBarrierBefore(const Synchronization& sync);
   void memoryBarrierAfter(const Synchronization& sync);
 
-  // Load a property from an UnboxedPlainObject or UnboxedArrayObject.
-  template <typename T>
-  void loadUnboxedProperty(T address, JSValueType type,
-                           TypedOrValueRegister output);
-
-  // Store a property to an UnboxedPlainObject, without triggering barriers.
-  // If failure is null, the value definitely has a type suitable for storing
-  // in the property.
-  template <typename T>
-  void storeUnboxedProperty(T address, JSValueType type,
-                            const ConstantOrRegister& value, Label* failure);
-
   void debugAssertIsObject(const ValueOperand& val);
   void debugAssertObjHasFixedSlots(Register obj, Register scratch);
 
@@ -2809,7 +2814,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
                    const NativeTemplateObject& templateObj, bool initContents);
 
  public:
-  void callMallocStub(size_t nbytes, Register result, Label* fail);
   void callFreeStub(Register slots);
   void createGCObject(Register result, Register temp,
                       const TemplateObject& templateObj,
@@ -2825,8 +2829,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
                            LiveRegisterSet liveRegs, Label* fail,
                            TypedArrayObject* templateObj,
                            TypedArrayLength lengthKind);
-
-  void initUnboxedObjectContents(Register object, const UnboxedLayout& layout);
 
   void newGCString(Register result, Register temp, Label* fail,
                    bool attemptNursery);
@@ -3178,8 +3180,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // Align the stack pointer based on the number of arguments which are pushed
   // on the stack, such that the JitFrameLayout would be correctly aligned on
   // the JitStackAlignment.
-  void alignJitStackBasedOnNArgs(Register nargs);
-  void alignJitStackBasedOnNArgs(uint32_t nargs);
+  void alignJitStackBasedOnNArgs(Register nargs, bool countIncludesThis);
+  void alignJitStackBasedOnNArgs(uint32_t argc);
 
   inline void assertStackAlignment(uint32_t alignment, int32_t offset = 0);
 
@@ -3212,8 +3214,12 @@ class MOZ_RAII StackMacroAssembler : public MacroAssembler {
 // checking StackMacroAssembler has.
 class MOZ_RAII WasmMacroAssembler : public MacroAssembler {
  public:
-  explicit WasmMacroAssembler(TempAllocator& alloc)
-      : MacroAssembler(WasmToken(), alloc) {}
+  explicit WasmMacroAssembler(TempAllocator& alloc, bool limitedSize = true)
+      : MacroAssembler(WasmToken(), alloc) {
+    if (!limitedSize) {
+      setUnlimitedBuffer();
+    }
+  }
   ~WasmMacroAssembler() { assertNoGCThings(); }
 };
 

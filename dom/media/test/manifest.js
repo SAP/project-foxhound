@@ -57,17 +57,10 @@ var gFrameCountTests = [
   { name:"av1.mp4", type:"video/mp4", totalFrameCount:24},
 ];
 
-if (SpecialPowers.Services.appinfo.name != "B2G") {
-  // We only run mochitests on b2g desktop and b2g emulator. The 3gp codecs
-  // aren't present on desktop, and the emulator codecs (which are different
-  // from the real device codecs) don't pass all of our tests, so we need
-  // to disable them.
-
-  gSmallTests = gSmallTests.concat([
-    { name:"sample.3gp", type:"video/3gpp", duration:4.933 },
-    { name:"sample.3g2", type:"video/3gpp2", duration:4.933 }
-  ]);
-}
+gSmallTests = gSmallTests.concat([
+  { name:"sample.3gp", type:"video/3gpp", duration:4.933 },
+  { name:"sample.3g2", type:"video/3gpp2", duration:4.933 }
+]);
 
 // Used by test_bug654550.html, for videoStats preference
 var gVideoTests = [
@@ -200,7 +193,7 @@ var gPlayTests = [
   // Theora only oggz-chop stream
   { name:"bug482461-theora.ogv", type:"video/ogg", duration:4.138 },
   // With first frame a "duplicate" (empty) frame.
-  { name:"bug500311.ogv", type:"video/ogg", duration:1.96 },
+  { name:"bug500311.ogv", type:"video/ogg", duration:1.96, contentDuration:1.958 },
   // Small audio file
   { name:"small-shot.ogg", type:"audio/ogg", duration:0.276 },
   // More audio in file than video.
@@ -210,7 +203,7 @@ var gPlayTests = [
   // Multiple audio streams.
   { name:"bug516323.ogv", type:"video/ogg", duration:4.208 },
   // oggz-chop with non-keyframe as first frame
-  { name:"bug556821.ogv", type:"video/ogg", duration:2.936 },
+  { name:"bug556821.ogv", type:"video/ogg", duration:2.936, contentDuration:2.903 },
 
   // Encoded with vorbis beta1, includes unusually sized codebooks
   { name:"beta-phrasebook.ogg", type:"audio/ogg", duration:4.01 },
@@ -220,21 +213,21 @@ var gPlayTests = [
   { name:"bug520500.ogg", type:"audio/ogg", duration:0.123 },
 
   // Various weirdly formed Ogg files
-  { name:"bug499519.ogv", type:"video/ogg", duration:0.24 },
+  { name:"bug499519.ogv", type:"video/ogg", duration:0.24, contentDuration:0.22 },
   { name:"bug506094.ogv", type:"video/ogg", duration:0 },
   { name:"bug498855-1.ogv", type:"video/ogg", duration:0.24 },
   { name:"bug498855-2.ogv", type:"video/ogg", duration:0.24 },
   { name:"bug498855-3.ogv", type:"video/ogg", duration:0.24 },
-  { name:"bug504644.ogv", type:"video/ogg", duration:1.6 },
-  { name:"chain.ogv", type:"video/ogg", duration:Number.NaN },
-  { name:"bug523816.ogv", type:"video/ogg", duration:0.766 },
+  { name:"bug504644.ogv", type:"video/ogg", duration:1.6, contentDuration:1.52 },
+  { name:"chain.ogv", type:"video/ogg", duration:Number.NaN, contentDuration:0.266 },
+  { name:"bug523816.ogv", type:"video/ogg", duration:0.766, contentDuration:0 },
   { name:"bug495129.ogv", type:"video/ogg", duration:2.41 },
-  { name:"bug498380.ogv", type:"video/ogg", duration:0.7663 },
+  { name:"bug498380.ogv", type:"video/ogg", duration:0.7663, contentDuration:0 },
   { name:"bug495794.ogg", type:"audio/ogg", duration:0.3 },
   { name:"bug557094.ogv", type:"video/ogg", duration:0.24 },
   { name:"multiple-bos.ogg", type:"video/ogg", duration:0.431 },
-  { name:"audio-overhang.ogg", type:"audio/ogg", duration:2.3 },
-  { name:"video-overhang.ogg", type:"audio/ogg", duration:3.966 },
+  { name:"audio-overhang.ogg", type:"video/ogg", duration:2.3 },
+  { name:"video-overhang.ogg", type:"video/ogg", duration:3.966 },
 
   // bug461281.ogg with the middle second chopped out.
   { name:"audio-gaps.ogg", type:"audio/ogg", duration:2.208 },
@@ -261,11 +254,11 @@ var gPlayTests = [
   { name:"spacestorm-1000Hz-100ms.ogg", type:"audio/ogg", duration:0.099 },
 
   // Opus data in an ogg container
-  { name:"detodos-short.opus", type:"audio/ogg; codecs=opus", duration:0.22 },
+  { name:"detodos-short.opus", type:"audio/ogg; codecs=opus", duration:0.22, contentDuration:0.2135 },
   // Opus data in a webm container
-  { name:"detodos-short.webm", type:"audio/webm; codecs=opus", duration:0.26 },
+  { name:"detodos-short.webm", type:"audio/webm; codecs=opus", duration:0.26, contentDuration:0.2535 },
   // Opus in webm channel mapping=2 sample file
-  { name:"opus-mapping2.webm", type:"audio/webm; codecs=opus", duration:10.01 },
+  { name:"opus-mapping2.webm", type:"audio/webm; codecs=opus", duration:10.01, contentDuration:9.99 },
   { name:"bug1066943.webm", type:"audio/webm; codecs=opus", duration:1.383 },
 
   // Multichannel Opus in an ogg container
@@ -278,15 +271,15 @@ var gPlayTests = [
   { name:"test-7-6.1.opus", type:"audio/ogg; codecs=opus", duration:11.690 },
   { name:"test-8-7.1.opus", type:"audio/ogg; codecs=opus", duration:13.478 },
 
-  { name:"gizmo-short.mp4", type:"video/mp4", duration:0.27 },
+  { name:"gizmo-short.mp4", type:"video/mp4", duration:0.27, contentDuration:0.267 },
   // Test playback of a MP4 file with a non-zero start time (and audio starting
   // a second later).
   { name:"bipbop-lateaudio.mp4", type:"video/mp4" },
   // Ambisonics AAC, requires AAC extradata to be set when creating decoder (see bug 1431169)
   // Also test 4.0 decoding.
   { name:"ambisonics.mp4", type:"audio/mp4", duration:16.48 },
-  // Opus in MP4 channel mapping=0 sample file
-  { name:"opus-sample.mp4", type:"audio/mp4; codecs=opus", duration:10.92 },
+  // Opus in MP4 channel mapping=0 sample file (content shorter due to preskip)
+  { name:"opus-sample.mp4", type:"audio/mp4; codecs=opus", duration:10.92, contentDuration:10.09 },
   // Opus in MP4 channel mapping=2 sample file
   { name:"opus-mapping2.mp4", type:"audio/mp4; codecs=opus", duration:10.0 },
 
@@ -308,13 +301,13 @@ var gPlayTests = [
   // The Xing header reports the length of the file to be around 10 seconds, but
   // there is really only one second worth of data. We want MP3FrameParser to
   // trust the header, so this should be reported as 10 seconds.
-  { name:"vbr-head.mp3", type:"audio/mpeg", duration:10.00 },
+  { name:"vbr-head.mp3", type:"audio/mpeg", duration:10.00, contentDuration:1.019 },
 
   // A flac file where the STREAMINFO block was removed.
   // It is necessary to parse the file to find an audio frame instead.
   { name:"flac-noheader-s16.flac", type:"audio/flac", duration:4.0 },
   { name:"flac-s24.flac", type:"audio/flac", duration:4.04 },
-  { name:"flac-sample.mp4", type:"audio/mp4; codecs=flac", duration:4.95 },
+  { name:"flac-sample.mp4", type:"audio/mp4; codecs=flac", duration:4.95, contentDuration:5.03 },
   // Ogg with theora video and flac audio.
   { name:"A4.ogv", type:"video/ogg", width:320, height:240, duration:3.13 },
 
@@ -322,8 +315,9 @@ var gPlayTests = [
   { name:"bogus.duh", type:"bogus/duh", duration:Number.NaN },
 ];
 
-if (!(manifestNavigator().userAgent.includes("Windows") &&
-      !manifestNavigator().userAgent.includes("x64"))) {
+const win32 = SpecialPowers.Services.appinfo.OS == "WINNT" &&
+              !SpecialPowers.Services.appinfo.is64Bit;
+if (!win32) {
   gPlayTests.push({ name: "av1.mp4", type:"video/mp4", duration:1.00 });
 }
 
@@ -354,7 +348,7 @@ var gSeekToNextFrameTests = [
 
   { name:"bug523816.ogv", type:"video/ogg", duration:0.766 },
 
-  { name:"bug498380.ogv", type:"video/ogg", duration:0.766 },
+  { name:"bug498380.ogv", type:"video/ogg", duration:0.2 },
   { name:"bug557094.ogv", type:"video/ogg", duration:0.24 },
   { name:"multiple-bos.ogg", type:"video/ogg", duration:0.431 },
   // Test playback/metadata work after a redirect
@@ -489,7 +483,7 @@ function makeAbsolutePathConverter() {
 
       resolve((path, mustExist) => {
 	// android mochitest doesn't support file://
-	if (manifestNavigator().appVersion.includes("Android") || SpecialPowers.Services.appinfo.name == "B2G")
+	if (manifestNavigator().appVersion.includes("Android"))
 	  return path;
 
 	const { Ci, Cc } = SpecialPowers;
@@ -635,25 +629,12 @@ var gUnseekableTests = [
   { name:"bogus.duh", type:"bogus/duh"}
 ];
 
-function isWindows32() {
-    return navigator.userAgent.includes("Windows") &&
-        !navigator.userAgent.includes("Win64");
-}
-
-function isAndroid() {
-    return navigator.userAgent.includes("Android");
-}
-
 var androidVersion = -1; // non-Android platforms
 if (manifestNavigator().userAgent.includes("Mobile") ||
     manifestNavigator().userAgent.includes("Tablet")) {
-  // See nsSystemInfo.cpp, the getProperty('version') returns different value
-  // on each platforms, so we need to distinguish the android and B2G platform.
-  var versionString = manifestNavigator().userAgent.includes("Android") ?
-                      'version' : 'sdk_version';
   androidVersion = SpecialPowers.Cc['@mozilla.org/system-info;1']
                                 .getService(SpecialPowers.Ci.nsIPropertyBag2)
-                                .getProperty(versionString);
+                                .getProperty('version');
 }
 
 function getAndroidVersion() {
@@ -1870,11 +1851,6 @@ function mediaTestCleanup(callback) {
       A[i] = null;
     }
     SpecialPowers.exactGC(callback);
-}
-
-// B2G emulator and Android 2.3 are condidered slow platforms
-function isSlowPlatform() {
-  return SpecialPowers.Services.appinfo.name == "B2G" || getAndroidVersion() == 10;
 }
 
 async function dumpDebugInfoForToken(token) {

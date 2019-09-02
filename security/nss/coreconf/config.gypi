@@ -19,6 +19,8 @@
       'conditions': [
         ['OS=="android"', {
           'target_arch%': 'arm',
+        }, 'OS=="ios"', {
+          'target_arch%': 'arm64',
         }, {
           # Default architecture we're building for is the architecture we're
           # building on.
@@ -35,7 +37,7 @@
         },{
           'use_system_sqlite%': 0,
         }],
-        ['OS=="mac" or OS=="win"', {
+        ['OS=="mac" or OS=="ios" or OS=="win"', {
           'cc_use_gnu_ld%': 0,
         }, {
           'cc_use_gnu_ld%': 1,
@@ -54,7 +56,7 @@
           'zlib_libs%': ['-lz'],
           'dll_prefix': 'lib',
           'conditions': [
-            ['OS=="mac"', {
+            ['OS=="mac" or OS=="ios"', {
               'moz_debug_flags%': '-gdwarf-2 -gfull',
               'dll_suffix': 'dylib',
             }, {
@@ -64,9 +66,14 @@
           ],
         }],
         ['"<(GENERATOR)"=="ninja"', {
-          'cc_is_clang%': '<!(<(python) <(DEPTH)/coreconf/check_cc_clang.py)',
+          'cc_is_clang%': '<!(<(python) <(DEPTH)/coreconf/check_cc.py clang)',
         }, {
           'cc_is_clang%': '0',
+        }],
+        ['"<(GENERATOR)"=="ninja"', {
+          'cc_is_gcc%': '<!(<(python) <(DEPTH)/coreconf/check_cc.py gcc)',
+        }, {
+          'cc_is_gcc%': '0',
         }],
       ],
     },
@@ -86,6 +93,7 @@
     'dll_suffix': '<(dll_suffix)',
     'freebl_name': '<(freebl_name)',
     'cc_is_clang%': '<(cc_is_clang)',
+    'cc_is_gcc%': '<(cc_is_gcc)',
     'cc_use_gnu_ld%': '<(cc_use_gnu_ld)',
     # Some defaults
     'disable_tests%': 0,
@@ -98,7 +106,7 @@
     'moz_fold_libs%': 0,
     'moz_folded_library_name%': '',
     'sanitizer_flags%': 0,
-    'test_build%': 0,
+    'static_libs%': 0,
     'no_zdefs%': 0,
     'fuzz%': 0,
     'fuzz_tls%': 0,
@@ -121,7 +129,7 @@
     # This is mostly for linking to libraries.
     'variables': {
       'mapfile%': '',
-      'test_build%': 0,
+      'static_libs%': 0,
       'debug_optimization_level%': '0',
       'release_optimization_level%': '2',
     },
@@ -142,7 +150,7 @@
           'NSS_NO_INIT_SUPPORT',
         ],
       }],
-      [ 'OS!="android" and OS!="mac" and OS!="win"', {
+      [ 'OS!="android" and OS!="mac" and OS!="ios" and OS!="win"', {
         'libraries': [
           '-lpthread',
         ],
@@ -151,6 +159,11 @@
         'libraries': [
           '-ldl',
           '-lc',
+        ],
+      }],
+      [ 'OS=="android"', {
+        'libraries': [
+          '-llog',
         ],
       }],
       [ 'fuzz==1', {
@@ -213,7 +226,7 @@
         'product_dir': '<(nss_dist_obj_dir)/lib'
       }, '_type=="executable"', {
         'product_dir': '<(nss_dist_obj_dir)/bin'
-      }, '_standalone_static_library==1', {
+      }, 'static_libs==1 or _standalone_static_library==1', {
         'product_dir': '<(nss_dist_obj_dir)/lib'
       }],
       # mapfile handling
@@ -257,7 +270,7 @@
             }],
           }]
         ],
-      }, 'test_build==1 and _type=="shared_library"', {
+      }, 'static_libs==1 and _type=="shared_library"', {
         # When linking a shared lib against a static one, XCode doesn't
         # export the latter's symbols by default. -all_load fixes that.
         'xcode_settings': {
@@ -303,6 +316,9 @@
             'SubSystem': '2',
           },
         },
+      }],
+      [ '_type=="static_library" and static_libs==1', {
+        'standalone_static_library': 1,
       }],
     ],
     'default_configuration': 'Debug',
@@ -355,7 +371,7 @@
               'OPENBSD',
             ],
           }],
-          ['OS=="mac" or OS=="dragonfly" or OS=="freebsd" or OS=="netbsd" or OS=="openbsd"', {
+          ['OS=="mac" or OS=="ios" or OS=="dragonfly" or OS=="freebsd" or OS=="netbsd" or OS=="openbsd"', {
             'defines': [
               'HAVE_BSD_FLOCK',
             ],
@@ -367,7 +383,7 @@
               '_REENTRANT',
             ],
           }],
-          [ 'OS!="mac" and OS!="win"', {
+          [ 'OS!="mac" and OS!="ios" and OS!="win"', {
             'cflags': [
               '-fPIC',
               '-pipe',
@@ -393,7 +409,7 @@
           }],
           [ 'use_pprof==1 and OS!="android" and OS!="win"', {
             'conditions': [
-              [ 'OS=="mac"', {
+              [ 'OS=="mac" or OS=="ios"', {
                 'xcode_settings': {
                   'OTHER_LDFLAGS': [ '-lprofiler' ],
                 },
@@ -453,7 +469,7 @@
               'ANDROID',
             ],
           }],
-          [ 'OS=="mac"', {
+          [ 'OS=="mac" or OS=="ios"', {
             'defines': [
               'DARWIN',
             ],
@@ -468,7 +484,17 @@
                   'ARCHS': ['x86_64'],
                 },
               }],
+              [ 'target_arch=="arm64"', {
+                'xcode_settings': {
+                  'ARCHS': ['arm64'],
+                },
+              }],
             ],
+          }],
+          [ 'OS=="ios"', {
+            'xcode_settings': {
+              'IPHONEOS_DEPLOYMENT_TARGET': '<(iphone_deployment_target)',
+            },
           }],
           [ 'OS=="win"', {
             'defines': [
@@ -537,7 +563,7 @@
       'Debug': {
         'inherit_from': ['Common'],
         'conditions': [
-          [ 'OS!="mac" and OS!="win"', {
+          [ 'OS!="mac" and OS!="ios" and OS!="win"', {
             'cflags': [
               '-g',
               '<(moz_debug_flags)',
@@ -607,7 +633,7 @@
         'process_map_file': ['/bin/sh', '-c', '/usr/bin/env grep -v ";-" >(mapfile) | sed -e "s,;+,," -e "s; DATA ;;" -e "s,;;,," -e "s,;.*,;," > >@(_outputs)'],
       },
     }],
-    [ 'OS=="mac"', {
+    [ 'OS=="mac" or OS=="ios"', {
       'variables': {
         'process_map_file': ['/bin/sh', '-c', '/usr/bin/grep -v ";+" >(mapfile) | grep -v ";-" | sed -e "s; DATA ;;" -e "s,;;,," -e "s,;.*,," -e "s,^,_," > >@(_outputs)'],
       },

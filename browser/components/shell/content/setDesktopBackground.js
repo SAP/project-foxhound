@@ -14,34 +14,56 @@ var gSetBackground = {
   _imageName: null,
 
   get _shell() {
-    return Cc["@mozilla.org/browser/shell-service;1"]
-             .getService(Ci.nsIShellService);
+    return Cc["@mozilla.org/browser/shell-service;1"].getService(
+      Ci.nsIShellService
+    );
   },
 
   load() {
     this._canvas = document.getElementById("screen");
     this._screenWidth = screen.width;
     this._screenHeight = screen.height;
+    // Cap ratio to 4 so the dialog width doesn't get ridiculous. Highest
+    // regular screens seem to be 32:9 (3.56) according to Wikipedia.
+    let screenRatio = Math.min(this._screenWidth / this._screenHeight, 4);
+    this._canvas.width = this._canvas.height * screenRatio;
+    document.getElementById("preview-unavailable").style.width =
+      this._canvas.width + "px";
+
     if (AppConstants.platform == "macosx") {
       document.documentElement.getButton("accept").hidden = true;
-    }
-    if (this._screenWidth / this._screenHeight >= 1.6)
-      document.getElementById("monitor").setAttribute("aspectratio", "16:10");
+    } else {
+      let multiMonitors = false;
+      if (AppConstants.platform == "linux") {
+        // getMonitors only ever returns the primary monitor on Linux, so just
+        // always show the option
+        multiMonitors = true;
+      } else {
+        const gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
+        const monitors = gfxInfo.getMonitors();
+        multiMonitors = monitors.length > 1;
+      }
 
-    if (AppConstants.platform == "win") {
-      // Hide fill + fit options if < Win7 since they don't work.
-      var version = Services.sysinfo.getProperty("version");
-      var isWindows7OrHigher = (parseFloat(version) >= 6.1);
-      if (!isWindows7OrHigher) {
-        document.getElementById("fillPosition").hidden = true;
-        document.getElementById("fitPosition").hidden = true;
+      if (
+        !multiMonitors ||
+        AppConstants.isPlatformAndVersionAtMost("win", 6.1)
+      ) {
+        // Hide span option if < Win8 since that's when it was introduced.
+        document.getElementById("spanPosition").hidden = true;
       }
     }
 
+    document.addEventListener("dialogaccept", function() {
+      gSetBackground.setDesktopBackground();
+    });
     // make sure that the correct dimensions will be used
-    setTimeout(function(self) {
-      self.init(window.arguments[0], window.arguments[1]);
-    }, 0, this);
+    setTimeout(
+      function(self) {
+        self.init(window.arguments[0], window.arguments[1]);
+      },
+      0,
+      this
+    );
   },
 
   init(aImage, aImageName) {
@@ -53,14 +75,19 @@ var gSetBackground = {
     this._canvas.height = this._canvas.clientHeight;
 
     var ctx = this._canvas.getContext("2d");
-    ctx.scale(this._canvas.clientWidth / this._screenWidth, this._canvas.clientHeight / this._screenHeight);
+    ctx.scale(
+      this._canvas.clientWidth / this._screenWidth,
+      this._canvas.clientHeight / this._screenHeight
+    );
 
     if (AppConstants.platform != "macosx") {
       this._initColor();
     } else {
       // Make sure to reset the button state in case the user has already
       // set an image as their desktop background.
-      var setDesktopBackground = document.getElementById("setDesktopBackground");
+      var setDesktopBackground = document.getElementById(
+        "setDesktopBackground"
+      );
       setDesktopBackground.hidden = false;
       var bundle = document.getElementById("backgroundBundle");
       setDesktopBackground.label = bundle.getString("DesktopBackgroundSet");
@@ -73,25 +100,36 @@ var gSetBackground = {
 
   setDesktopBackground() {
     if (AppConstants.platform != "macosx") {
-      Services.xulStore.persist(document.getElementById("menuPosition"), "value");
-      this._shell.desktopBackgroundColor = this._hexStringToLong(this._backgroundColor);
+      Services.xulStore.persist(
+        document.getElementById("menuPosition"),
+        "value"
+      );
+      this._shell.desktopBackgroundColor = this._hexStringToLong(
+        this._backgroundColor
+      );
     } else {
       Services.obs.addObserver(this, "shell:desktop-background-changed");
 
       var bundle = document.getElementById("backgroundBundle");
-      var setDesktopBackground = document.getElementById("setDesktopBackground");
+      var setDesktopBackground = document.getElementById(
+        "setDesktopBackground"
+      );
       setDesktopBackground.disabled = true;
-      setDesktopBackground.label = bundle.getString("DesktopBackgroundDownloading");
+      setDesktopBackground.label = bundle.getString(
+        "DesktopBackgroundDownloading"
+      );
     }
     this._shell.setDesktopBackground(
       this._image,
       Ci.nsIShellService["BACKGROUND_" + this._position],
-      this._imageName);
+      this._imageName
+    );
   },
 
   updatePosition() {
     var ctx = this._canvas.getContext("2d");
     ctx.clearRect(0, 0, this._screenWidth, this._screenHeight);
+    document.getElementById("preview-unavailable").hidden = true;
 
     if (AppConstants.platform != "macosx") {
       this._position = document.getElementById("menuPosition").value;
@@ -147,6 +185,12 @@ var gSetBackground = {
         ctx.drawImage(this._image, x, y, width, height);
         break;
       }
+      case "SPAN": {
+        document.getElementById("preview-unavailable").hidden = false;
+        ctx.fillStyle = "#222";
+        ctx.fillRect(0, 0, this._screenWidth, this._screenHeight);
+        ctx.stroke();
+      }
     }
   },
 };
@@ -160,7 +204,7 @@ if (AppConstants.platform != "macosx") {
     const bMask = 255;
     var r = (color & rMask) >> 16;
     var g = (color & gMask) >> 8;
-    var b = (color & bMask);
+    var b = color & bMask;
     this.updateColor(this._rgbToHex(r, g, b));
 
     var colorpicker = document.getElementById("desktopColor");
@@ -174,14 +218,21 @@ if (AppConstants.platform != "macosx") {
 
   // Converts a color string in the format "#RRGGBB" to an integer.
   gSetBackground._hexStringToLong = function(aString) {
-    return parseInt(aString.substring(1, 3), 16) << 16 |
-           parseInt(aString.substring(3, 5), 16) << 8 |
-           parseInt(aString.substring(5, 7), 16);
+    return (
+      (parseInt(aString.substring(1, 3), 16) << 16) |
+      (parseInt(aString.substring(3, 5), 16) << 8) |
+      parseInt(aString.substring(5, 7), 16)
+    );
   };
 
   gSetBackground._rgbToHex = function(aR, aG, aB) {
-    return "#" + [aR, aG, aB].map(aInt => aInt.toString(16).replace(/^(.)$/, "0$1"))
-                             .join("").toUpperCase();
+    return (
+      "#" +
+      [aR, aG, aB]
+        .map(aInt => aInt.toString(16).replace(/^(.)$/, "0$1"))
+        .join("")
+        .toUpperCase()
+    );
   };
 } else {
   gSetBackground.observe = function(aSubject, aTopic, aData) {

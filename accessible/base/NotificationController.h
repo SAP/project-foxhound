@@ -20,6 +20,9 @@
 #endif
 
 namespace mozilla {
+
+class PresShell;
+
 namespace a11y {
 
 class DocAccessible;
@@ -89,7 +92,7 @@ class TNotification : public Notification {
 class NotificationController final : public EventQueue,
                                      public nsARefreshObserver {
  public:
-  NotificationController(DocAccessible* aDocument, nsIPresShell* aPresShell);
+  NotificationController(DocAccessible* aDocument, PresShell* aPresShell);
 
   NS_IMETHOD_(MozExternalRefCountType) AddRef(void) override;
   NS_IMETHOD_(MozExternalRefCountType) Release(void) override;
@@ -214,22 +217,23 @@ class NotificationController final : public EventQueue,
    * @note  The caller must guarantee that the given instance still exists when
    *        the notification is processed.
    */
-  template <class Class, class Arg>
+  template <class Class, class... Args>
   inline void HandleNotification(
-      Class* aInstance, typename TNotification<Class, Arg>::Callback aMethod,
-      Arg* aArg) {
+      Class* aInstance,
+      typename TNotification<Class, Args...>::Callback aMethod,
+      Args*... aArgs) {
     if (!IsUpdatePending()) {
 #ifdef A11Y_LOG
       if (mozilla::a11y::logging::IsEnabled(
               mozilla::a11y::logging::eNotifications))
         mozilla::a11y::logging::Text("sync notification processing");
 #endif
-      (aInstance->*aMethod)(aArg);
+      (aInstance->*aMethod)(aArgs...);
       return;
     }
 
     RefPtr<Notification> notification =
-        new TNotification<Class, Arg>(aInstance, aMethod, aArg);
+        new TNotification<Class, Args...>(aInstance, aMethod, aArgs...);
     if (notification && mNotifications.AppendElement(notification))
       ScheduleProcessing();
   }
@@ -333,7 +337,7 @@ class NotificationController final : public EventQueue,
   /**
    * The presshell of the document accessible.
    */
-  nsIPresShell* mPresShell;
+  PresShell* mPresShell;
 
   /**
    * Child documents that needs to be bound to the tree.

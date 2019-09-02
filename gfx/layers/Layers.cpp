@@ -17,11 +17,11 @@
 #include "UnitTransforms.h"  // for ViewAs
 #include "gfxEnv.h"
 #include "gfxPlatform.h"  // for gfxPlatform
-#include "gfxPrefs.h"
-#include "gfxUtils.h"  // for gfxUtils, etc
+#include "gfxUtils.h"     // for gfxUtils, etc
 #include "gfx2DGlue.h"
 #include "mozilla/DebugOnly.h"  // for DebugOnly
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/Telemetry.h"  // for Accumulate
 #include "mozilla/ToString.h"
 #include "mozilla/gfx/2D.h"        // for DrawTarget
@@ -139,7 +139,7 @@ already_AddRefed<ImageContainer> LayerManager::CreateImageContainer(
 }
 
 bool LayerManager::AreComponentAlphaLayersEnabled() {
-  return gfxPrefs::ComponentAlphaEnabled();
+  return StaticPrefs::layers_componentalpha_enabled();
 }
 
 /*static*/
@@ -154,26 +154,7 @@ UniquePtr<LayerUserData> LayerManager::RemoveUserData(void* aKey) {
 }
 
 void LayerManager::PayloadPresented() {
-  if (mPayload.Length()) {
-    TimeStamp presented = TimeStamp::Now();
-    for (CompositionPayload& payload : mPayload) {
-#if MOZ_GECKO_PROFILER
-      if (profiler_is_active()) {
-        nsPrintfCString marker(
-            "Payload Presented, type: %d latency: %dms\n",
-            int32_t(payload.mType),
-            int32_t((presented - payload.mTimeStamp).ToMilliseconds()));
-        profiler_add_marker(marker.get(), JS::ProfilingCategoryPair::GRAPHICS);
-      }
-#endif
-
-      if (payload.mType == CompositionPayloadType::eKeyPress) {
-        Telemetry::AccumulateTimeDelta(
-            mozilla::Telemetry::KEYPRESS_PRESENT_LATENCY, payload.mTimeStamp,
-            presented);
-      }
-    }
-  }
+  RecordCompositionPayloadsPresented(mPayload);
 }
 
 //--------------------------------------------------
@@ -247,14 +228,14 @@ void Layer::ScrollMetadataChanged() {
   mApzcs.SetLength(GetScrollMetadataCount());
 }
 
-void Layer::ApplyPendingUpdatesToSubtree() {
+std::unordered_set<ScrollableLayerGuid::ViewID>
+Layer::ApplyPendingUpdatesToSubtree() {
   ForEachNode<ForwardIterator>(this, [](Layer* layer) {
     layer->ApplyPendingUpdatesForThisTransaction();
   });
-
   // Once we're done recursing through the whole tree, clear the pending
   // updates from the manager.
-  Manager()->ClearPendingScrollInfoUpdate();
+  return Manager()->ClearPendingScrollInfoUpdate();
 }
 
 bool Layer::IsOpaqueForVisibility() {
@@ -616,8 +597,9 @@ void Layer::ApplyPendingUpdatesForThisTransaction() {
 
   for (size_t i = 0; i < mScrollMetadata.Length(); i++) {
     FrameMetrics& fm = mScrollMetadata[i].GetMetrics();
+    ScrollableLayerGuid::ViewID scrollId = fm.GetScrollId();
     Maybe<ScrollUpdateInfo> update =
-        Manager()->GetPendingScrollInfoUpdate(fm.GetScrollId());
+        Manager()->GetPendingScrollInfoUpdate(scrollId);
     if (update) {
       fm.UpdatePendingScrollInfo(update.value());
       Mutated();
@@ -675,8 +657,6 @@ void Layer::ComputeEffectiveTransformForMaskLayers(
 /* static */
 void Layer::ComputeEffectiveTransformForMaskLayer(
     Layer* aMaskLayer, const gfx::Matrix4x4& aTransformToSurface) {
-  aMaskLayer->mEffectiveTransform = aTransformToSurface;
-
 #ifdef DEBUG
   bool maskIs2D = aMaskLayer->GetTransform().CanDraw2D();
   NS_ASSERTION(maskIs2D, "How did we end up with a 3D transform here?!");
@@ -684,8 +664,8 @@ void Layer::ComputeEffectiveTransformForMaskLayer(
   // The mask layer can have an async transform applied to it in some
   // situations, so be sure to use its GetLocalTransform() rather than
   // its GetTransform().
-  aMaskLayer->mEffectiveTransform =
-      aMaskLayer->GetLocalTransform() * aMaskLayer->mEffectiveTransform;
+  aMaskLayer->mEffectiveTransform = aMaskLayer->SnapTransformTranslation(
+      aMaskLayer->GetLocalTransform() * aTransformToSurface, nullptr);
 }
 
 RenderTargetRect Layer::TransformRectToRenderTarget(const LayerIntRect& aRect) {
@@ -761,10 +741,6 @@ bool Layer::GetVisibleRegionRelativeToRootLayer(nsIntRegion& aResult,
 
   *aLayerOffset = IntPoint(offset.x, offset.y);
   return true;
-}
-
-InfallibleTArray<AnimData>& Layer::GetAnimationData() {
-  return mAnimationInfo.GetAnimationData();
 }
 
 Maybe<ParentLayerIntRect> Layer::GetCombinedClipRect() const {
@@ -993,7 +969,8 @@ bool ContainerLayer::HasMultipleChildren() {
   for (Layer* child = GetFirstChild(); child; child = child->GetNextSibling()) {
     const Maybe<ParentLayerIntRect>& clipRect = child->GetLocalClipRect();
     if (clipRect && clipRect->IsEmpty()) continue;
-    if (child->GetLocalVisibleRegion().IsEmpty()) continue;
+    if (!child->Extend3DContext() && child->GetLocalVisibleRegion().IsEmpty())
+      continue;
     ++count;
     if (count > 1) return true;
   }
@@ -1205,7 +1182,8 @@ void ContainerLayer::DefaultComputeEffectiveTransforms(
            * above. Nor for a child with a mask layer.
            */
           if (checkClipRect && (clipRect && !clipRect->IsEmpty() &&
-                                !child->GetLocalVisibleRegion().IsEmpty())) {
+                                (child->Extend3DContext() ||
+                                 !child->GetLocalVisibleRegion().IsEmpty()))) {
             useIntermediateSurface = true;
             break;
           }
@@ -1773,6 +1751,12 @@ void Layer::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
       AppendToString(aStream, mScrollMetadata[i], "", "]");
     }
   }
+  // FIXME: On the compositor thread, we don't set mAnimationInfo::mAnimations,
+  // All animations are transformed by AnimationHelper::ExtractAnimations() into
+  // mAnimationInfo.mPropertyAnimationGroups, instead. So if we want to check
+  // if layer trees are properly synced up across processes, we should dump
+  // mAnimationInfo.mPropertyAnimationGroups for the compositor thread.
+  // (See AnimationInfo.h for more details.)
   if (!mAnimationInfo.GetAnimations().IsEmpty()) {
     aStream << nsPrintfCString(" [%d animations with id=%" PRIu64 " ]",
                                (int)mAnimationInfo.GetAnimations().Length(),
@@ -2231,29 +2215,48 @@ bool LayerManager::IsLogEnabled() {
 }
 
 bool LayerManager::SetPendingScrollUpdateForNextTransaction(
-    ScrollableLayerGuid::ViewID aScrollId,
-    const ScrollUpdateInfo& aUpdateInfo) {
+    ScrollableLayerGuid::ViewID aScrollId, const ScrollUpdateInfo& aUpdateInfo,
+    wr::RenderRoot aRenderRoot) {
   Layer* withPendingTransform = DepthFirstSearch<ForwardIterator>(
       GetRoot(), [](Layer* aLayer) { return aLayer->HasPendingTransform(); });
   if (withPendingTransform) {
     return false;
   }
 
-  mPendingScrollUpdates[aScrollId] = aUpdateInfo;
+  // If this is called on a LayerManager that's not a WebRenderLayerManager,
+  // then we don't actually need the aRenderRoot information. We force it to
+  // RenderRoot::Default so that we can make assumptions in
+  // GetPendingScrollInfoUpdate.
+  wr::RenderRoot renderRoot = (GetBackendType() == LayersBackend::LAYERS_WR)
+                                  ? aRenderRoot
+                                  : wr::RenderRoot::Default;
+  mPendingScrollUpdates[renderRoot][aScrollId] = aUpdateInfo;
   return true;
 }
 
 Maybe<ScrollUpdateInfo> LayerManager::GetPendingScrollInfoUpdate(
     ScrollableLayerGuid::ViewID aScrollId) {
-  auto it = mPendingScrollUpdates.find(aScrollId);
-  if (it != mPendingScrollUpdates.end()) {
+  // This never gets called for WebRenderLayerManager, so we assume that all
+  // pending scroll info updates are stored under the default RenderRoot.
+  MOZ_ASSERT(GetBackendType() != LayersBackend::LAYERS_WR);
+  auto it = mPendingScrollUpdates[wr::RenderRoot::Default].find(aScrollId);
+  if (it != mPendingScrollUpdates[wr::RenderRoot::Default].end()) {
     return Some(it->second);
   }
   return Nothing();
 }
 
-void LayerManager::ClearPendingScrollInfoUpdate() {
-  mPendingScrollUpdates.clear();
+std::unordered_set<ScrollableLayerGuid::ViewID>
+LayerManager::ClearPendingScrollInfoUpdate() {
+  std::unordered_set<ScrollableLayerGuid::ViewID> scrollIds;
+  for (auto renderRoot : wr::kRenderRoots) {
+    auto& updates = mPendingScrollUpdates[renderRoot];
+    for (const auto& update : updates) {
+      scrollIds.insert(update.first);
+    }
+    updates.clear();
+  }
+  return scrollIds;
 }
 
 void PrintInfo(std::stringstream& aStream, HostLayer* aLayerComposite) {
@@ -2268,7 +2271,8 @@ void PrintInfo(std::stringstream& aStream, HostLayer* aLayerComposite) {
     AppendToString(aStream, aLayerComposite->GetShadowBaseTransform(),
                    " [shadow-transform=", "]");
   }
-  if (!aLayerComposite->GetShadowVisibleRegion().IsEmpty()) {
+  if (!aLayerComposite->GetLayer()->Extend3DContext() &&
+      !aLayerComposite->GetShadowVisibleRegion().IsEmpty()) {
     AppendToString(aStream,
                    aLayerComposite->GetShadowVisibleRegion().ToUnknownRegion(),
                    " [shadow-visible=", "]");
@@ -2299,6 +2303,30 @@ void SetAntialiasingFlags(Layer* aLayer, DrawTarget* aTarget) {
 
 IntRect ToOutsideIntRect(const gfxRect& aRect) {
   return IntRect::RoundOut(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height());
+}
+
+void RecordCompositionPayloadsPresented(
+    const nsTArray<CompositionPayload>& aPayloads) {
+  if (aPayloads.Length()) {
+    TimeStamp presented = TimeStamp::Now();
+    for (const CompositionPayload& payload : aPayloads) {
+#if MOZ_GECKO_PROFILER
+      if (profiler_is_active()) {
+        nsPrintfCString marker(
+            "Payload Presented, type: %d latency: %dms\n",
+            int32_t(payload.mType),
+            int32_t((presented - payload.mTimeStamp).ToMilliseconds()));
+        profiler_add_marker(marker.get(), JS::ProfilingCategoryPair::GRAPHICS);
+      }
+#endif
+
+      if (payload.mType == CompositionPayloadType::eKeyPress) {
+        Telemetry::AccumulateTimeDelta(
+            mozilla::Telemetry::KEYPRESS_PRESENT_LATENCY, payload.mTimeStamp,
+            presented);
+      }
+    }
+  }
 }
 
 }  // namespace layers

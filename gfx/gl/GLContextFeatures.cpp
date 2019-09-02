@@ -111,11 +111,6 @@ static const FeatureInfo sFeatureInfoArr[] = {
      {GLContext::ARB_draw_instanced, GLContext::EXT_draw_instanced,
       GLContext::NV_draw_instanced, GLContext::ANGLE_instanced_arrays,
       GLContext::Extensions_End}},
-    {"draw_range_elements",
-     GLVersion::GL1_2,
-     GLESVersion::ES3,
-     GLContext::Extension_None,
-     {GLContext::EXT_draw_range_elements, GLContext::Extensions_End}},
     {"element_index_uint",
      GLVersion::GL2,
      GLESVersion::ES3,
@@ -142,7 +137,8 @@ static const FeatureInfo sFeatureInfoArr[] = {
      GLESVersion::ES3,
      GLContext::Extension_None,
      {GLContext::ARB_color_buffer_float, GLContext::EXT_color_buffer_float,
-      GLContext::EXT_color_buffer_half_float, GLContext::Extensions_End}},
+      GLContext::EXT_color_buffer_half_float,
+      GLContext::CHROMIUM_color_buffer_float_rgba, GLContext::Extensions_End}},
     {"frag_depth",
      GLVersion::GL2,
      GLESVersion::ES3,
@@ -245,6 +241,12 @@ static const FeatureInfo sFeatureInfoArr[] = {
      GLESVersion::ES3,
      GLContext::ARB_map_buffer_range,
      {GLContext::EXT_map_buffer_range, GLContext::Extensions_End}},
+    {"multiview",
+     GLVersion::NONE,
+     GLESVersion::NONE,
+     GLContext::Extension_None,
+     {GLContext::ANGLE_multiview, GLContext::OVR_multiview2,
+      GLContext::Extensions_End}},
     {
         "occlusion_query",
         GLVersion::GL2,
@@ -336,7 +338,7 @@ static const FeatureInfo sFeatureInfoArr[] = {
      GLESVersion::ES3_2,
      GLContext::Extension_None,
      {GLContext::ARB_texture_float, GLContext::EXT_color_buffer_float,
-      GLContext::Extensions_End}},
+      GLContext::CHROMIUM_color_buffer_float_rgba, GLContext::Extensions_End}},
     {"renderbuffer_color_half_float",
      GLVersion::GL3,
      GLESVersion::ES3_2,
@@ -531,8 +533,9 @@ static inline uint32_t ProfileVersionForFeature(GLFeature feature,
   return (uint32_t)featureInfo.mOpenGLVersion;
 }
 
-bool IsFeaturePartOfProfileVersion(GLFeature feature, ContextProfile profile,
-                                   unsigned int version) {
+static bool IsFeaturePartOfProfileVersion(GLFeature feature,
+                                          ContextProfile profile,
+                                          unsigned int version) {
   unsigned int profileVersion = ProfileVersionForFeature(feature, profile);
 
   /**

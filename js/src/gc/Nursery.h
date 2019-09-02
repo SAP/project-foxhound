@@ -11,6 +11,8 @@
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/TimeStamp.h"
 
+#include "gc/GCParallelTask.h"
+#include "gc/Heap.h"
 #include "js/Class.h"
 #include "js/HeapAPI.h"
 #include "js/TracingAPI.h"
@@ -70,6 +72,22 @@ class TenuredCell;
 namespace jit {
 class MacroAssembler;
 }  // namespace jit
+
+class NurseryDecommitChunksTask
+    : public GCParallelTaskHelper<NurseryDecommitChunksTask> {
+ public:
+  explicit NurseryDecommitChunksTask(JSRuntime* rt)
+      : GCParallelTaskHelper(rt) {}
+  void queueChunk(NurseryChunk* chunk, const AutoLockHelperThreadState& lock);
+  void run();
+  void decommitChunk(gc::Chunk* chunk);
+
+ private:
+  // Use the next pointers in Chunk::info to form a singly-linked list.
+  MainThreadOrGCTaskData<gc::Chunk*> queue;
+
+  gc::Chunk* popChunk();
+};
 
 class TenuringTracer : public JSTracer {
   friend class Nursery;
@@ -146,14 +164,6 @@ class Nursery {
    */
   static const size_t SubChunkStep = gc::ArenaSize;
 
-  /*
-   * 192K is conservative, not too low that root marking dominates.  The Limit
-   * should be a multiple of the Step.
-   */
-  static const size_t SubChunkLimit = 192 * 1024;
-  static_assert(SubChunkLimit % SubChunkStep == 0,
-                "The limit should be a multiple of the step");
-
   struct alignas(gc::CellAlignBytes) CellAlignedByte {
     char byte;
   };
@@ -181,7 +191,7 @@ class Nursery {
   // collection.
   unsigned maxChunkCount() const {
     MOZ_ASSERT(capacity());
-    return JS_HOWMANY(capacity(), NurseryChunkUsableSize);
+    return JS_HOWMANY(capacity(), gc::ChunkSize);
   }
 
   bool exists() const { return chunkCountLimit() != 0; }
@@ -313,7 +323,10 @@ class Nursery {
   bool registerMallocedBuffer(void* buffer);
 
   /* Mark a malloced buffer as no longer needing to be freed. */
-  void removeMallocedBuffer(void* buffer) { mallocedBuffers.remove(buffer); }
+  void removeMallocedBuffer(void* buffer) {
+    MOZ_ASSERT(mallocedBuffers.has(buffer));
+    mallocedBuffers.remove(buffer);
+  }
 
   MOZ_MUST_USE bool addedUniqueIdToCell(gc::Cell* cell) {
     MOZ_ASSERT(IsInsideNursery(cell));
@@ -339,13 +352,13 @@ class Nursery {
   size_t spaceToEnd(unsigned chunkCount) const;
 
   size_t capacity() const {
-    MOZ_ASSERT(capacity_ >= SubChunkLimit || capacity_ == 0);
-    MOZ_ASSERT(capacity_ <= chunkCountLimit() * NurseryChunkUsableSize);
+    MOZ_ASSERT(capacity_ <= chunkCountLimit() * gc::ChunkSize);
     return capacity_;
   }
   size_t committed() const { return spaceToEnd(allocatedChunkCount()); }
 
-  // Used and free space, not counting chunk trailers.
+  // Used and free space both include chunk trailers for that part of the
+  // nursery.
   //
   // usedSpace() + freeSpace() == capacity()
   //
@@ -357,7 +370,7 @@ class Nursery {
     MOZ_ASSERT(currentEnd_ - position_ <= NurseryChunkUsableSize);
     MOZ_ASSERT(currentChunk_ < maxChunkCount());
     return (currentEnd_ - position_) +
-           (maxChunkCount() - currentChunk_ - 1) * NurseryChunkUsableSize;
+           (maxChunkCount() - currentChunk_ - 1) * gc::ChunkSize;
   }
 
 #ifdef JS_GC_ZEAL
@@ -408,6 +421,8 @@ class Nursery {
   /* The amount of space in the mapped nursery available to allocations. */
   static const size_t NurseryChunkUsableSize =
       gc::ChunkSize - gc::ChunkTrailerSize;
+
+  void joinDecommitTask() { decommitChunksTask.join(); }
 
  private:
   JSRuntime* runtime_;
@@ -553,6 +568,8 @@ class Nursery {
   Vector<MapObject*, 0, SystemAllocPolicy> mapsWithNurseryMemory_;
   Vector<SetObject*, 0, SystemAllocPolicy> setsWithNurseryMemory_;
 
+  NurseryDecommitChunksTask decommitChunksTask;
+
 #ifdef JS_GC_ZEAL
   struct Canary;
   Canary* lastCanary_;
@@ -567,7 +584,8 @@ class Nursery {
    * current chunk, or the whole chunk if fullPoison is true or it is not
    * the current chunk.
    */
-  void setCurrentChunk(unsigned chunkno, bool fullPoison = false);
+  void setCurrentChunk(unsigned chunkno);
+  void poisonAndInitCurrentChunk(bool fullPoison = false);
   void setCurrentEnd();
   void setStartPosition();
 
@@ -593,6 +611,9 @@ class Nursery {
   void* allocate(size_t size);
 
   void doCollection(JS::GCReason reason, gc::TenureCountCache& tenureCounts);
+
+  float doPretenuring(JSRuntime* rt, JS::GCReason reason,
+                      gc::TenureCountCache& tenureCounts);
 
   /*
    * Move the object at |src| in the Nursery to an already-allocated cell
@@ -620,8 +641,8 @@ class Nursery {
   void sweep(JSTracer* trc);
 
   /*
-   * Frees all non-live nursery-allocated things at the end of a minor
-   * collection.
+   * Reset the current chunk and position after a minor collection. Also poison
+   * the nursery on debug & nightly builds.
    */
   void clear();
 
@@ -630,6 +651,8 @@ class Nursery {
 
   /* Change the allocable space provided by the nursery. */
   void maybeResizeNursery(JS::GCReason reason);
+  bool maybeResizeExact(JS::GCReason reason);
+  size_t roundSize(size_t size) const;
   void growAllocableSpace(size_t newCapacity);
   void shrinkAllocableSpace(size_t newCapacity);
   void minimizeAllocableSpace();

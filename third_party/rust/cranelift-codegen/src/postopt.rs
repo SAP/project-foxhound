@@ -45,7 +45,7 @@ fn optimize_cpu_flags(
     pos: &mut EncCursor,
     inst: Inst,
     last_flags_clobber: Option<Inst>,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) {
     // Look for compare and branch patterns.
     // This code could be considerably simplified with non-lexical lifetimes.
@@ -128,6 +128,7 @@ fn optimize_cpu_flags(
     // We found a compare+branch pattern. Transform it to use flags.
     let args = info.args.as_slice(&pos.func.dfg.value_lists)[1..].to_vec();
     pos.goto_inst(info.cmp_inst);
+    pos.use_srcloc(info.cmp_inst);
     match info.kind {
         CmpBrKind::Icmp { mut cond, arg } => {
             let flags = pos.ins().ifcmp(info.cmp_arg, arg);
@@ -178,7 +179,7 @@ struct MemOpInfo {
     offset: Offset32,
 }
 
-fn optimize_complex_addresses(pos: &mut EncCursor, inst: Inst, isa: &TargetIsa) {
+fn optimize_complex_addresses(pos: &mut EncCursor, inst: Inst, isa: &dyn TargetIsa) {
     // Look for simple loads and stores we can optimize.
     let info = match pos.func.dfg[inst] {
         InstructionData::Load {
@@ -356,7 +357,7 @@ fn optimize_complex_addresses(pos: &mut EncCursor, inst: Inst, isa: &TargetIsa) 
 //
 // The main post-opt pass.
 
-pub fn do_postopt(func: &mut Function, isa: &TargetIsa) {
+pub fn do_postopt(func: &mut Function, isa: &dyn TargetIsa) {
     let _tt = timing::postopt();
     let mut pos = EncCursor::new(func, isa);
     while let Some(_ebb) = pos.next_ebb() {

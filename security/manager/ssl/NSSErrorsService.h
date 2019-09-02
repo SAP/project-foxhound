@@ -8,6 +8,10 @@
 #include "nsINSSErrorsService.h"
 #include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
+#ifdef MOZ_NEW_CERT_STORAGE
+#  include "nsILineInputStream.h"
+#  include "nsISafeOutputStream.h"
+#endif
 #include "nsIStringBundle.h"
 #include "prerror.h"
 

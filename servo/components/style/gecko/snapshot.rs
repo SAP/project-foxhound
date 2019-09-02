@@ -184,12 +184,22 @@ impl ElementSnapshot for GeckoElementSnapshot {
     }
 
     #[inline]
+    fn is_part(&self, name: &Atom) -> bool {
+        let attr = match snapshot_helpers::find_attr(&*self.mAttrs, &atom!("part")) {
+            Some(attr) => attr,
+            None => return false,
+        };
+
+        snapshot_helpers::has_class_or_part(name, CaseSensitivity::CaseSensitive, attr)
+    }
+
+    #[inline]
     fn has_class(&self, name: &Atom, case_sensitivity: CaseSensitivity) -> bool {
         if !self.has_any(Flags::MaybeClass) {
             return false;
         }
 
-        snapshot_helpers::has_class(name, case_sensitivity, &self.mClass)
+        snapshot_helpers::has_class_or_part(name, case_sensitivity, &self.mClass)
     }
 
     #[inline]
@@ -201,7 +211,7 @@ impl ElementSnapshot for GeckoElementSnapshot {
             return;
         }
 
-        snapshot_helpers::each_class(&self.mClass, callback)
+        snapshot_helpers::each_class_or_part(&self.mClass, callback)
     }
 
     #[inline]

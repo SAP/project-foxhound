@@ -25,24 +25,27 @@ JSObject* nsXMLElement::WrapNode(JSContext* aCx,
   return Element_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void nsXMLElement::UnbindFromTree(bool aDeep, bool aNullParent) {
-  PseudoStyleType pseudoType = GetPseudoElementType();
-  bool isBefore = pseudoType == PseudoStyleType::before;
-  nsAtom* property = isBefore ? nsGkAtoms::beforePseudoProperty
-                              : nsGkAtoms::afterPseudoProperty;
-
-  switch (pseudoType) {
+void nsXMLElement::UnbindFromTree(bool aNullParent) {
+  nsAtom* property;
+  switch (GetPseudoElementType()) {
+    case PseudoStyleType::marker:
+      property = nsGkAtoms::markerPseudoProperty;
+      break;
     case PseudoStyleType::before:
-    case PseudoStyleType::after: {
-      MOZ_ASSERT(GetParent());
-      MOZ_ASSERT(GetParent()->IsElement());
-      GetParent()->DeleteProperty(property);
+      property = nsGkAtoms::beforePseudoProperty;
       break;
-    }
+    case PseudoStyleType::after:
+      property = nsGkAtoms::afterPseudoProperty;
+      break;
     default:
-      break;
+      property = nullptr;
   }
-  Element::UnbindFromTree(aDeep, aNullParent);
+  if (property) {
+    MOZ_ASSERT(GetParent());
+    MOZ_ASSERT(GetParent()->IsElement());
+    GetParent()->DeleteProperty(property);
+  }
+  Element::UnbindFromTree(aNullParent);
 }
 
 NS_IMPL_ELEMENT_CLONE(nsXMLElement)

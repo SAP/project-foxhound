@@ -4,18 +4,41 @@
 
 "use strict";
 
-const {Cu} = require("chrome");
+const { Cu } = require("chrome");
 
 loader.lazyRequireGetter(this, "colorUtils", "devtools/shared/css/color", true);
 loader.lazyRequireGetter(this, "AsyncUtils", "devtools/shared/async-utils");
 loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
-loader.lazyRequireGetter(this, "DevToolsUtils", "devtools/shared/DevToolsUtils");
-loader.lazyRequireGetter(this, "nodeFilterConstants", "devtools/shared/dom-node-filter-constants");
+loader.lazyRequireGetter(
+  this,
+  "DevToolsUtils",
+  "devtools/shared/DevToolsUtils"
+);
+loader.lazyRequireGetter(
+  this,
+  "nodeFilterConstants",
+  "devtools/shared/dom-node-filter-constants"
+);
 
-loader.lazyRequireGetter(this, "isNativeAnonymous", "devtools/shared/layout/utils", true);
-loader.lazyRequireGetter(this, "isXBLAnonymous", "devtools/shared/layout/utils", true);
+loader.lazyRequireGetter(
+  this,
+  "isNativeAnonymous",
+  "devtools/shared/layout/utils",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "isXBLAnonymous",
+  "devtools/shared/layout/utils",
+  true
+);
 
-loader.lazyRequireGetter(this, "CssLogic", "devtools/server/actors/inspector/css-logic", true);
+loader.lazyRequireGetter(
+  this,
+  "CssLogic",
+  "devtools/server/actors/inspector/css-logic",
+  true
+);
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
@@ -39,12 +62,43 @@ const getNodeDisplayName = function(rawNode) {
   return (rawNode.prefix ? rawNode.prefix + ":" : "") + rawNode.localName;
 };
 
+/**
+ * Returns flex and grid information about a DOM node.
+ * In particular is it a grid flex/container and/or item?
+ *
+ * @param  {DOMNode} node
+ *         The node for which then information is required
+ * @return {Object}
+ *         An object like { grid: { isContainer, isItem }, flex: { isContainer, isItem } }
+ */
+function getNodeGridFlexType(node) {
+  return {
+    grid: getNodeGridType(node),
+    flex: getNodeFlexType(node),
+  };
+}
+
+function getNodeFlexType(node) {
+  return {
+    isContainer: node.getAsFlexContainer && !!node.getAsFlexContainer(),
+    isItem: !!node.parentFlexElement,
+  };
+}
+
+function getNodeGridType(node) {
+  return {
+    isContainer: node.getGridFragments && node.getGridFragments().length,
+    isItem: !!findGridParentContainerForNode(node),
+  };
+}
+
 function nodeDocument(node) {
   if (Cu.isDeadWrapper(node)) {
     return null;
   }
-  return node.ownerDocument ||
-         (node.nodeType == Node.DOCUMENT_NODE ? node : null);
+  return (
+    node.ownerDocument || (node.nodeType == Node.DOCUMENT_NODE ? node : null)
+  );
 }
 
 function isNodeDead(node) {
@@ -53,36 +107,41 @@ function isNodeDead(node) {
 
 function isInXULDocument(el) {
   const doc = nodeDocument(el);
-  return doc &&
-         doc.documentElement &&
-         doc.documentElement.namespaceURI === XUL_NS;
+  return (
+    doc && doc.documentElement && doc.documentElement.namespaceURI === XUL_NS
+  );
 }
 
 /**
  * This DeepTreeWalker filter skips whitespace text nodes and anonymous
- * content with the exception of ::before and ::after and anonymous content
- * in XUL document (needed to show all elements in the browser toolbox).
+ * content with the exception of ::marker, ::before, and ::after, plus anonymous
+ * content in XUL document (needed to show all elements in the browser toolbox).
  */
 function standardTreeWalkerFilter(node) {
-  // ::before and ::after are native anonymous content, but we always
+  // ::marker, ::before, and ::after are native anonymous content, but we always
   // want to show them
-  if (node.nodeName === "_moz_generated_content_before" ||
-      node.nodeName === "_moz_generated_content_after") {
+  if (
+    node.nodeName === "_moz_generated_content_marker" ||
+    node.nodeName === "_moz_generated_content_before" ||
+    node.nodeName === "_moz_generated_content_after"
+  ) {
     return nodeFilterConstants.FILTER_ACCEPT;
   }
 
   // Ignore empty whitespace text nodes that do not impact the layout.
   if (isWhitespaceTextNode(node)) {
     return nodeHasSize(node)
-           ? nodeFilterConstants.FILTER_ACCEPT
-           : nodeFilterConstants.FILTER_SKIP;
+      ? nodeFilterConstants.FILTER_ACCEPT
+      : nodeFilterConstants.FILTER_SKIP;
   }
 
   // Ignore all native and XBL anonymous content inside a non-XUL document.
   // We need to do this to skip things like form controls, scrollbars,
   // video controls, etc (see bug 1187482).
-  if (!isInXULDocument(node) && (isXBLAnonymous(node) ||
-                                  isNativeAnonymous(node))) {
+  if (
+    !isInXULDocument(node) &&
+    (isXBLAnonymous(node) || isNativeAnonymous(node))
+  ) {
     return nodeFilterConstants.FILTER_SKIP;
   }
 
@@ -97,8 +156,8 @@ function allAnonymousContentTreeWalkerFilter(node) {
   // Ignore empty whitespace text nodes that do not impact the layout.
   if (isWhitespaceTextNode(node)) {
     return nodeHasSize(node)
-           ? nodeFilterConstants.FILTER_ACCEPT
-           : nodeFilterConstants.FILTER_SKIP;
+      ? nodeFilterConstants.FILTER_ACCEPT
+      : nodeFilterConstants.FILTER_SKIP;
   }
   return nodeFilterConstants.FILTER_ACCEPT;
 }
@@ -301,10 +360,12 @@ function getClosestBackgroundColor(node) {
 function getClosestBackgroundImage(node) {
   let current = node;
 
-  while (current.ownerDocument) {
+  while (current) {
     const computedStyle = CssLogic.getComputedStyle(current);
     if (computedStyle) {
-      const currentBackgroundImage = computedStyle.getPropertyValue("background-image");
+      const currentBackgroundImage = computedStyle.getPropertyValue(
+        "background-image"
+      );
       if (currentBackgroundImage !== "none") {
         return currentBackgroundImage;
       }
@@ -316,11 +377,42 @@ function getClosestBackgroundImage(node) {
   return "none";
 }
 
+/**
+ * If the provided node is a grid item, then return its parent grid.
+ *
+ * @param  {DOMNode} node
+ *         The node that is supposedly a grid item.
+ * @return {DOMNode|null}
+ *         The parent grid if found, null otherwise.
+ */
+function findGridParentContainerForNode(node) {
+  try {
+    while ((node = node.parentNode)) {
+      const display = node.ownerGlobal.getComputedStyle(node).display;
+
+      if (display.includes("grid")) {
+        return node;
+      } else if (display === "contents") {
+        // Continue walking up the tree since the parent node is a content element.
+        continue;
+      }
+
+      break;
+    }
+  } catch (e) {
+    // Getting the parentNode can fail when the supplied node is in shadow DOM.
+  }
+
+  return null;
+}
+
 module.exports = {
   allAnonymousContentTreeWalkerFilter,
+  findGridParentContainerForNode,
   getClosestBackgroundColor,
   getClosestBackgroundImage,
   getNodeDisplayName,
+  getNodeGridFlexType,
   imageToImageData,
   isNodeDead,
   nodeDocument,

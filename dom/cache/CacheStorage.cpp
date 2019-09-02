@@ -197,7 +197,8 @@ already_AddRefed<CacheStorage> CacheStorage::CreateOnWorker(
     return nullptr;
   }
 
-  const PrincipalInfo& principalInfo = aWorkerPrivate->GetPrincipalInfo();
+  const PrincipalInfo& principalInfo =
+      aWorkerPrivate->GetEffectiveStoragePrincipalInfo();
 
   if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(principalInfo))) {
     aRv.Throw(NS_ERROR_FAILURE);
@@ -567,21 +568,23 @@ OpenMode CacheStorage::GetOpenMode() const {
 bool CacheStorage::HasStorageAccess() const {
   NS_ASSERT_OWNINGTHREAD(CacheStorage);
 
+  StorageAccess access;
+
   if (NS_IsMainThread()) {
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(mGlobal);
     if (NS_WARN_IF(!window)) {
       return true;
     }
 
-    nsContentUtils::StorageAccess access =
-        nsContentUtils::StorageAllowedForWindow(window);
-    return access > nsContentUtils::StorageAccess::ePrivateBrowsing;
+    access = StorageAllowedForWindow(window);
+  } else {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+
+    access = workerPrivate->StorageAccess();
   }
 
-  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-  MOZ_ASSERT(workerPrivate);
-
-  return workerPrivate->IsStorageAllowed();
+  return access > StorageAccess::ePrivateBrowsing;
 }
 
 }  // namespace cache

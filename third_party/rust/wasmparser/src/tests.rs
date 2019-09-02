@@ -16,17 +16,21 @@
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod simple_tests {
-    use parser::{Parser, ParserInput, ParserState, WasmDecoder};
-    use primitives::{Operator, SectionCode};
+    use crate::operators_validator::OperatorValidatorConfig;
+    use crate::parser::{Parser, ParserInput, ParserState, WasmDecoder};
+    use crate::primitives::{Operator, SectionCode};
+    use crate::validator::{ValidatingParser, ValidatingParserConfig};
     use std::fs::{read_dir, File};
     use std::io::prelude::*;
     use std::path::PathBuf;
-    use validator::{OperatorValidatorConfig, ValidatingParser, ValidatingParserConfig};
 
     const VALIDATOR_CONFIG: Option<ValidatingParserConfig> = Some(ValidatingParserConfig {
         operator_config: OperatorValidatorConfig {
             enable_threads: true,
             enable_reference_types: true,
+            enable_simd: true,
+            enable_bulk_memory: true,
+            enable_multi_value: true,
         },
         mutable_global_imports: true,
     });

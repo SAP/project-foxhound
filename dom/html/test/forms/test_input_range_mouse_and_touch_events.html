@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=846380
 -->
 <head>
   <title>Test mouse and touch events for range</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -52,7 +52,7 @@ const THREE_QUARTERS_OF_RANGE = "75";
 function flush() {
   // Flush style, specifically to flush the 'direction' property so that the
   // browser uses the new value for thumb positioning.
-  var flush = document.body.clientWidth;
+  document.body.clientWidth;
 }
 
 function test(synthesizeFunc, clickOrTap, startName, moveName, endName) {
@@ -201,6 +201,24 @@ function test(synthesizeFunc, clickOrTap, startName, moveName, endName) {
   //is(elem.value, MINIMUM_OF_RANGE, "Test KEY_Home during a drag sets the value to the minimum of the range (second time)");
   synthesizeFunc(elem, maxX+100, midY, { type: endName });
   is(elem.value, MAXIMUM_OF_RANGE, "Test " + endName + " outside range after key press that occurred during a drag changes the value");
+
+  function hideElement() {
+    elem.parentNode.style.display = 'none';
+    elem.parentNode.offsetLeft;
+  }
+
+  if (clickOrTap == "click") {
+    elem.addEventListener("mousedown", hideElement);
+  } else if (clickOrTap == "tap") {
+    elem.addEventListener("touchstart", hideElement);
+  }
+  synthesizeFunc(elem, midX, midY, { type: startName });
+  synthesizeFunc(elem, midX, midY, { type: endName });
+  elem.removeEventListener("mousedown", hideElement);
+  elem.removeEventListener("touchstart", hideElement);
+  ok(true, "Hiding the element during mousedown/touchstart shouldn't crash the process.");
+  elem.parentNode.style.display = "block";
+  elem.parentNode.offsetLeft;
 }
 
 </script>

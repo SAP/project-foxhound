@@ -12,8 +12,9 @@
 const EXPECTED_REFLOWS = [
   {
     stack: [
-      "clientX@chrome://browser/content/tabbrowser.xml",
-      "onxbldragstart@chrome://browser/content/tabbrowser.xml",
+      "clientX@chrome://browser/content/tabbrowser-tabs.js",
+      "on_dragstart@chrome://browser/content/tabbrowser-tabs.js",
+      "handleEvent@chrome://browser/content/tabbrowser-tabs.js",
       "synthesizeMouseAtPoint@chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
       "synthesizeMouse@chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
       "synthesizePlainDragAndDrop@chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
@@ -23,7 +24,8 @@ const EXPECTED_REFLOWS = [
 
   {
     stack: [
-      "onxbldragstart@chrome://browser/content/tabbrowser.xml",
+      "on_dragstart@chrome://browser/content/tabbrowser-tabs.js",
+      "handleEvent@chrome://browser/content/tabbrowser-tabs.js",
       "synthesizeMouseAtPoint@chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
       "synthesizeMouse@chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
       "synthesizePlainDragAndDrop@chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
@@ -47,14 +49,17 @@ add_task(async function test_detach_not_overflowed() {
   });
 
   let win;
-  await withPerfObserver(async function() {
-    win = await detachTab(gBrowser.tabs[1]);
-  }, {
-    expectedReflows: EXPECTED_REFLOWS,
-    // we are opening a whole new window, so there's no point in tracking
-    // rects being painted
-    frames: { filter: rects => [] },
-  });
+  await withPerfObserver(
+    async function() {
+      win = await detachTab(gBrowser.tabs[1]);
+    },
+    {
+      expectedReflows: EXPECTED_REFLOWS,
+      // we are opening a whole new window, so there's no point in tracking
+      // rects being painted
+      frames: { filter: rects => [] },
+    }
+  );
 
   await BrowserTestUtils.closeWindow(win);
   win = null;
@@ -70,14 +75,19 @@ add_task(async function test_detach_overflowed() {
   });
 
   let win;
-  await withPerfObserver(async function() {
-    win = await detachTab(gBrowser.tabs[Math.floor(TAB_COUNT_FOR_OVERFLOW / 2)]);
-  }, {
-    expectedReflows: EXPECTED_REFLOWS,
-    // we are opening a whole new window, so there's no point in tracking
-    // rects being painted
-    frames: { filter: rects => [] },
-  });
+  await withPerfObserver(
+    async function() {
+      win = await detachTab(
+        gBrowser.tabs[Math.floor(TAB_COUNT_FOR_OVERFLOW / 2)]
+      );
+    },
+    {
+      expectedReflows: EXPECTED_REFLOWS,
+      // we are opening a whole new window, so there's no point in tracking
+      // rects being painted
+      frames: { filter: rects => [] },
+    }
+  );
 
   await BrowserTestUtils.closeWindow(win);
   win = null;

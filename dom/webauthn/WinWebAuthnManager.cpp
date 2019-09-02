@@ -173,6 +173,10 @@ void WinWebAuthnManager::Register(
 
   BYTE U2FUserId = 0x01;
 
+  WEBAUTHN_EXTENSION rgExtension[1] = {};
+  DWORD cExtensions = 0;
+  BOOL HmacCreateSecret = FALSE;
+
   // RP Information
   WEBAUTHN_RP_ENTITY_INFORMATION rpInfo = {
       WEBAUTHN_RP_ENTITY_INFORMATION_CURRENT_VERSION, aInfo.RpId().get(),
@@ -207,9 +211,8 @@ void WinWebAuthnManager::Register(
   // AttestationConveyance
   DWORD winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_ANY;
 
-  if (aInfo.Extra().type() ==
-      WebAuthnMaybeMakeCredentialExtraInfo::TWebAuthnMakeCredentialExtraInfo) {
-    const auto& extra = aInfo.Extra().get_WebAuthnMakeCredentialExtraInfo();
+  if (aInfo.Extra().isSome()) {
+    const auto& extra = aInfo.Extra().ref();
 
     rpInfo.pwszName = extra.Rp().Name().get();
     rpInfo.pwszIcon = extra.Rp().Icon().get();
@@ -230,8 +233,7 @@ void WinWebAuthnManager::Register(
     const auto& sel = extra.AuthenticatorSelection();
 
     UserVerificationRequirement userVerificationReq =
-        static_cast<UserVerificationRequirement>(
-            sel.userVerificationRequirement());
+        sel.userVerificationRequirement();
     switch (userVerificationReq) {
       case UserVerificationRequirement::Required:
         winUserVerificationReq =
@@ -250,11 +252,9 @@ void WinWebAuthnManager::Register(
         break;
     }
 
-    if (sel.authenticatorAttachment().type() ==
-        WebAuthnMaybeAuthenticatorAttachment::Tuint8_t) {
+    if (sel.authenticatorAttachment().isSome()) {
       const AuthenticatorAttachment authenticatorAttachment =
-          static_cast<AuthenticatorAttachment>(
-              sel.authenticatorAttachment().get_uint8_t());
+          sel.authenticatorAttachment().value();
       switch (authenticatorAttachment) {
         case AuthenticatorAttachment::Platform:
           winAttachment = WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM;
@@ -271,8 +271,7 @@ void WinWebAuthnManager::Register(
 
     // AttestationConveyance
     AttestationConveyancePreference attestation =
-        static_cast<AttestationConveyancePreference>(
-            extra.attestationConveyancePreference());
+        extra.attestationConveyancePreference();
     DWORD winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_ANY;
     switch (attestation) {
       case AttestationConveyancePreference::Direct:
@@ -287,6 +286,23 @@ void WinWebAuthnManager::Register(
       default:
         winAttestation = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_ANY;
         break;
+    }
+
+    for (const WebAuthnExtension& ext : extra.Extensions()) {
+      MOZ_ASSERT(cExtensions <
+                 (int)(sizeof(rgExtension) / sizeof(rgExtension[0])));
+
+      if (ext.type() == WebAuthnExtension::TWebAuthnExtensionHmacSecret) {
+        HmacCreateSecret =
+            ext.get_WebAuthnExtensionHmacSecret().hmacCreateSecret() == true;
+        if (HmacCreateSecret) {
+          rgExtension[cExtensions].pwszExtensionIdentifier =
+              WEBAUTHN_EXTENSIONS_IDENTIFIER_HMAC_SECRET;
+          rgExtension[cExtensions].cbExtension = sizeof(BOOL);
+          rgExtension[cExtensions].pvExtension = &HmacCreateSecret;
+          cExtensions++;
+        }
+      }
     }
   } else {
     userInfo.cbId = sizeof(BYTE);
@@ -364,6 +380,11 @@ void WinWebAuthnManager::Register(
     mCancellationIds.emplace(aTransactionId, &cancellationId);
   }
 
+  if (cExtensions != 0) {
+    WebAuthNCredentialOptions.Extensions.cExtensions = cExtensions;
+    WebAuthNCredentialOptions.Extensions.pExtensions = rgExtension;
+  }
+
   WEBAUTHN_CREDENTIAL_ATTESTATION* pWebAuthNCredentialAttestation = nullptr;
 
   // Bug 1518876: Get Window Handle from Content process for Windows WebAuthN
@@ -389,8 +410,7 @@ void WinWebAuthnManager::Register(
 
     nsTArray<uint8_t> authenticatorData;
 
-    if (aInfo.Extra().type() == WebAuthnMaybeMakeCredentialExtraInfo::
-                                    TWebAuthnMakeCredentialExtraInfo) {
+    if (aInfo.Extra().isSome()) {
       authenticatorData.AppendElements(
           pWebAuthNCredentialAttestation->pbAuthenticatorData,
           pWebAuthNCredentialAttestation->cbAuthenticatorData);
@@ -434,8 +454,35 @@ void WinWebAuthnManager::Register(
                                        attestation->cbSignature);
     }
 
+    nsTArray<WebAuthnExtensionResult> extensions;
+
+    if (pWebAuthNCredentialAttestation->dwVersion >=
+        WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_2) {
+      PCWEBAUTHN_EXTENSIONS pExtensionList =
+          &pWebAuthNCredentialAttestation->Extensions;
+      if (pExtensionList->cExtensions != 0 &&
+          pExtensionList->pExtensions != NULL) {
+        for (DWORD dwIndex = 0; dwIndex < pExtensionList->cExtensions;
+             dwIndex++) {
+          PWEBAUTHN_EXTENSION pExtension =
+              &pExtensionList->pExtensions[dwIndex];
+          if (pExtension->pwszExtensionIdentifier &&
+              (0 == _wcsicmp(pExtension->pwszExtensionIdentifier,
+                             WEBAUTHN_EXTENSIONS_IDENTIFIER_HMAC_SECRET)) &&
+              pExtension->cbExtension == sizeof(BOOL)) {
+            BOOL* pCredentialCreatedWithHmacSecret =
+                (BOOL*)pExtension->pvExtension;
+            if (*pCredentialCreatedWithHmacSecret) {
+              extensions.AppendElement(WebAuthnExtensionResultHmacSecret(true));
+            }
+          }
+        }
+      }
+    }
+
     WebAuthnMakeCredentialResult result(aInfo.ClientDataJSON(), attObject,
-                                        credentialId, authenticatorData);
+                                        credentialId, authenticatorData,
+                                        extensions);
 
     Unused << mTransactionParent->SendConfirmRegister(aTransactionId, result);
     ClearTransaction();
@@ -492,9 +539,8 @@ void WinWebAuthnManager::Sign(PWebAuthnTransactionParent* aTransactionParent,
       WEBAUTHN_CLIENT_DATA_CURRENT_VERSION, aInfo.ClientDataJSON().Length(),
       (BYTE*)(aInfo.ClientDataJSON().get()), WEBAUTHN_HASH_ALGORITHM_SHA_256};
 
-  if (aInfo.Extra().type() ==
-      WebAuthnMaybeGetAssertionExtraInfo::TWebAuthnGetAssertionExtraInfo) {
-    const auto& extra = aInfo.Extra().get_WebAuthnGetAssertionExtraInfo();
+  if (aInfo.Extra().isSome()) {
+    const auto& extra = aInfo.Extra().ref();
 
     for (const WebAuthnExtension& ext : extra.Extensions()) {
       if (ext.type() == WebAuthnExtension::TWebAuthnExtensionAppId) {
@@ -510,8 +556,7 @@ void WinWebAuthnManager::Sign(PWebAuthnTransactionParent* aTransactionParent,
 
     // User Verification Requirement
     UserVerificationRequirement userVerificationReq =
-        static_cast<UserVerificationRequirement>(
-            extra.userVerificationRequirement());
+        extra.userVerificationRequirement();
 
     switch (userVerificationReq) {
       case UserVerificationRequirement::Required:
@@ -612,8 +657,7 @@ void WinWebAuthnManager::Sign(PWebAuthnTransactionParent* aTransactionParent,
 
   if (hr == S_OK) {
     nsTArray<uint8_t> signature;
-    if (aInfo.Extra().type() ==
-        WebAuthnMaybeGetAssertionExtraInfo::TWebAuthnGetAssertionExtraInfo) {
+    if (aInfo.Extra().isSome()) {
       signature.AppendElements(pWebAuthNAssertion->pbSignature,
                                pWebAuthNAssertion->cbSignature);
     } else {

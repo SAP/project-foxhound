@@ -6,7 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["AutoCompletePopup"];
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // AutoCompleteResultView is an abstraction around a list of results
 // we got back up from browser-content.js. It implements enough of
@@ -36,8 +36,9 @@ var AutoCompleteResultView = {
   },
 
   getLabelAt(index) {
-    // Unused by richlist autocomplete - see getCommentAt.
-    return "";
+    // Backwardly-used by richlist autocomplete - see getCommentAt.
+    // The label is used for secondary information.
+    return this.results[index].comment;
   },
 
   getCommentAt(index) {
@@ -132,10 +133,13 @@ this.AutoCompletePopup = {
 
       case "popuphidden": {
         let selectedIndex = this.openedPopup.selectedIndex;
-        let selectedRowStyle = selectedIndex != -1 ?
-          AutoCompleteResultView.getStyleAt(selectedIndex) : "";
-        this.sendMessageToBrowser("FormAutoComplete:PopupClosed",
-                                  { selectedRowStyle });
+        let selectedRowStyle =
+          selectedIndex != -1
+            ? AutoCompleteResultView.getStyleAt(selectedIndex)
+            : "";
+        this.sendMessageToBrowser("FormAutoComplete:PopupClosed", {
+          selectedRowStyle,
+        });
         AutoCompleteResultView.clearResults();
         // adjustHeight clears the height from the popup so that
         // we don't have a big shrink effect if we closed with a
@@ -150,10 +154,6 @@ this.AutoCompletePopup = {
     }
   },
 
-  // Along with being called internally by the receiveMessage handler,
-  // this function is also called directly by the login manager, which
-  // uses a single message to fill in the autocomplete results. See
-  // "PasswordManager:autoCompleteLogins".
   showPopupWithResults({ browser, rect, dir, results }) {
     if (!results.length || this.openedPopup) {
       // We shouldn't ever be showing an empty popup, and if we
@@ -164,18 +164,21 @@ this.AutoCompletePopup = {
 
     let window = browser.ownerGlobal;
     // Also check window top in case this is a sidebar.
-    if (Services.focus.activeWindow !== window.top &&
-        Services.focus.focusedWindow.top !== window.top) {
+    if (
+      Services.focus.activeWindow !== window.top &&
+      Services.focus.focusedWindow.top !== window.top
+    ) {
       // We were sent a message from a window or tab that went into the
       // background, so we'll ignore it for now.
       return;
     }
 
-    let firstResultStyle = results[0].style;
+    // Non-empty result styles
+    let resultStyles = new Set(results.map(r => r.style).filter(r => !!r));
     this.weakBrowser = Cu.getWeakReference(browser);
     this.openedPopup = browser.autoCompletePopup;
     // the layout varies according to different result type
-    this.openedPopup.setAttribute("firstresultstyle", firstResultStyle);
+    this.openedPopup.setAttribute("resultstyles", [...resultStyles].join(" "));
     this.openedPopup.hidden = false;
     // don't allow the popup to become overly narrow
     this.openedPopup.setAttribute("width", Math.max(100, rect.width));
@@ -189,16 +192,26 @@ this.AutoCompletePopup = {
       // Reset fields that were set from the last time the search popup was open
       this.openedPopup.mInput = AutoCompleteResultView;
       // Temporarily increase the maxRows as we don't want to show
-      // the scrollbar in form autofill popup.
-      if (firstResultStyle == "autofill-profile") {
+      // the scrollbar in login or form autofill popups.
+      if (
+        resultStyles.size &&
+        (resultStyles.has("autofill-profile") ||
+          resultStyles.has("loginsFooter"))
+      ) {
         this.openedPopup._normalMaxRows = this.openedPopup.maxRows;
         this.openedPopup.mInput.maxRows = 100;
       }
       this.openedPopup.addEventListener("popuphidden", this);
       this.openedPopup.addEventListener("popupshowing", this);
-      this.openedPopup.openPopupAtScreenRect("after_start", rect.left, rect.top,
-                                             rect.width, rect.height, false,
-                                             false);
+      this.openedPopup.openPopupAtScreenRect(
+        "after_start",
+        rect.left,
+        rect.top,
+        rect.width,
+        rect.height,
+        false,
+        false
+      );
       this.openedPopup.invalidate();
     } else {
       this.closePopup();
@@ -326,9 +339,7 @@ this.AutoCompletePopup = {
    *        The optional data to send with the message.
    */
   sendMessageToBrowser(msgName, data) {
-    let browser = this.weakBrowser ?
-      this.weakBrowser.get() :
-      null;
+    let browser = this.weakBrowser ? this.weakBrowser.get() : null;
     if (!browser) {
       return;
     }
@@ -336,7 +347,9 @@ this.AutoCompletePopup = {
     if (browser.messageManager) {
       browser.messageManager.sendAsyncMessage(msgName, data);
     } else {
-      Cu.reportError(`AutoCompletePopup: No messageManager for message "${msgName}"`);
+      Cu.reportError(
+        `AutoCompletePopup: No messageManager for message "${msgName}"`
+      );
     }
   },
 

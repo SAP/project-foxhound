@@ -1,6 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+add_task(async function setup() {
+  await AddonTestUtils.promiseStartupManager();
+});
+
 add_task(async function test_fallbacks() {
   Assert.ok((await Services.search.getVisibleEngines()).length > 1);
   Assert.ok(Services.search.isInitialized);
@@ -10,7 +14,10 @@ add_task(async function test_fallbacks() {
   await Services.search.removeEngine(defaultEngine);
 
   // ... and verify a new current engine has been set.
-  Assert.notEqual((await Services.search.getDefault()).name, defaultEngine.name);
+  Assert.notEqual(
+    (await Services.search.getDefault()).name,
+    defaultEngine.name
+  );
   Assert.ok(defaultEngine.hidden);
 
   // Remove all the other engines.

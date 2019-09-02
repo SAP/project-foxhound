@@ -19,12 +19,12 @@
 #include "mozilla/gfx/ssse3-scaler.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/SSE.h"
+#include "mozilla/StaticPrefs.h"
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "YCbCrUtils.h"
 #include <algorithm>
 #include "ImageContainer.h"
-#include "gfxPrefs.h"
 
 namespace mozilla {
 using namespace mozilla::gfx;
@@ -34,20 +34,20 @@ namespace layers {
 class DataTextureSourceBasic : public DataTextureSource,
                                public TextureSourceBasic {
  public:
-  virtual const char* Name() const override { return "DataTextureSourceBasic"; }
+  const char* Name() const override { return "DataTextureSourceBasic"; }
 
   explicit DataTextureSourceBasic(DataSourceSurface* aSurface)
       : mSurface(aSurface), mWrappingExistingData(!!aSurface) {}
 
-  virtual DataTextureSource* AsDataTextureSource() override {
+  DataTextureSource* AsDataTextureSource() override {
     // If the texture wraps someone else's memory we'd rather not use it as
     // a DataTextureSource per say (that is call Update on it).
     return mWrappingExistingData ? nullptr : this;
   }
 
-  virtual TextureSourceBasic* AsSourceBasic() override { return this; }
+  TextureSourceBasic* AsSourceBasic() override { return this; }
 
-  virtual gfx::SourceSurface* GetSurface(DrawTarget* aTarget) override {
+  gfx::SourceSurface* GetSurface(DrawTarget* aTarget) override {
     return mSurface;
   }
 
@@ -55,13 +55,13 @@ class DataTextureSourceBasic : public DataTextureSource,
     return mSurface ? mSurface->GetFormat() : gfx::SurfaceFormat::UNKNOWN;
   }
 
-  virtual IntSize GetSize() const override {
+  IntSize GetSize() const override {
     return mSurface ? mSurface->GetSize() : gfx::IntSize(0, 0);
   }
 
-  virtual bool Update(gfx::DataSourceSurface* aSurface,
-                      nsIntRegion* aDestRegion = nullptr,
-                      gfx::IntPoint* aSrcOffset = nullptr) override {
+  bool Update(gfx::DataSourceSurface* aSurface,
+              nsIntRegion* aDestRegion = nullptr,
+              gfx::IntPoint* aSrcOffset = nullptr) override {
     MOZ_ASSERT(!mWrappingExistingData);
     if (mWrappingExistingData) {
       return false;
@@ -70,7 +70,7 @@ class DataTextureSourceBasic : public DataTextureSource,
     return true;
   }
 
-  virtual void DeallocateDeviceData() override {
+  void DeallocateDeviceData() override {
     mSurface = nullptr;
     SetUpdateSerial(0);
   }
@@ -87,7 +87,7 @@ class DataTextureSourceBasic : public DataTextureSource,
 class WrappingTextureSourceYCbCrBasic : public DataTextureSource,
                                         public TextureSourceBasic {
  public:
-  virtual const char* Name() const override {
+  const char* Name() const override {
     return "WrappingTextureSourceYCbCrBasic";
   }
 
@@ -96,16 +96,16 @@ class WrappingTextureSourceYCbCrBasic : public DataTextureSource,
     mFromYCBCR = true;
   }
 
-  virtual DataTextureSource* AsDataTextureSource() override { return this; }
+  DataTextureSource* AsDataTextureSource() override { return this; }
 
-  virtual TextureSourceBasic* AsSourceBasic() override { return this; }
+  TextureSourceBasic* AsSourceBasic() override { return this; }
 
-  virtual WrappingTextureSourceYCbCrBasic* AsWrappingTextureSourceYCbCrBasic()
+  WrappingTextureSourceYCbCrBasic* AsWrappingTextureSourceYCbCrBasic()
       override {
     return this;
   }
 
-  virtual gfx::SourceSurface* GetSurface(DrawTarget* aTarget) override {
+  gfx::SourceSurface* GetSurface(DrawTarget* aTarget) override {
     if (mSurface && !mNeedsUpdate) {
       return mSurface;
     }
@@ -136,7 +136,7 @@ class WrappingTextureSourceYCbCrBasic : public DataTextureSource,
     return gfx::SurfaceFormat::B8G8R8X8;
   }
 
-  virtual IntSize GetSize() const override { return mSize; }
+  IntSize GetSize() const override { return mSize; }
 
   virtual bool Update(gfx::DataSourceSurface* aSurface,
                       nsIntRegion* aDestRegion = nullptr,
@@ -144,13 +144,13 @@ class WrappingTextureSourceYCbCrBasic : public DataTextureSource,
     return false;
   }
 
-  virtual void DeallocateDeviceData() override {
+  void DeallocateDeviceData() override {
     mTexture = nullptr;
     mSurface = nullptr;
     SetUpdateSerial(0);
   }
 
-  virtual void Unbind() override { mNeedsUpdate = true; }
+  void Unbind() override { mNeedsUpdate = true; }
 
   void SetBufferTextureHost(BufferTextureHost* aTexture) override {
     mTexture = aTexture;
@@ -218,7 +218,13 @@ BasicCompositor::BasicCompositor(CompositorBridgeParent* aParent,
       mFullWindowRenderTarget(nullptr) {
   MOZ_COUNT_CTOR(BasicCompositor);
 
-  mMaxTextureSize = Factory::GetMaxSurfaceSize(gfxVars::ContentBackend());
+  // The widget backends may create intermediate Cairo surfaces to deal with
+  // various window buffers, regardless of actual content backend type, when
+  // using the basic compositor. Ensure that the buffers will be able to fit
+  // in or blit with a Cairo surface.
+  mMaxTextureSize =
+      std::min(Factory::GetMaxSurfaceSize(gfxVars::ContentBackend()),
+               Factory::GetMaxSurfaceSize(BackendType::CAIRO));
 }
 
 BasicCompositor::~BasicCompositor() { MOZ_COUNT_DTOR(BasicCompositor); }
@@ -361,7 +367,7 @@ bool BasicCompositor::SupportsEffect(EffectTypes aEffect) {
 }
 
 bool BasicCompositor::SupportsLayerGeometry() const {
-  return gfxPrefs::BasicLayerGeometry();
+  return StaticPrefs::layers_geometry_basic_enabled();
 }
 
 static RefPtr<gfx::Path> BuildPathFromPolygon(const RefPtr<DrawTarget>& aDT,
@@ -893,15 +899,11 @@ void BasicCompositor::BeginFrame(
   LayoutDeviceIntRect intRect(LayoutDeviceIntPoint(), mWidget->GetClientSize());
   IntRect rect = IntRect(0, 0, intRect.Width(), intRect.Height());
 
-#ifdef MOZ_GECKO_PROFILER
   const bool shouldInvalidateWindow =
-      (profiler_feature_active(ProfilerFeature::Screenshots) &&
+      (ShouldRecordFrames() &&
        (!mFullWindowRenderTarget ||
         mFullWindowRenderTarget->mDrawTarget->GetSize() !=
             rect.ToUnknownRect().Size()));
-#else
-  const bool shouldInvalidateWindow = false;
-#endif  // MOZ_GECKO_PROFILER
 
   if (shouldInvalidateWindow) {
     mInvalidRegion = intRect;
@@ -964,8 +966,7 @@ void BasicCompositor::BeginFrame(
   RefPtr<CompositingRenderTarget> target =
       CreateRenderTargetForWindow(mInvalidRect, clearRect, bufferMode);
 
-#ifdef MOZ_GECKO_PROFILER
-  if (profiler_feature_active(ProfilerFeature::Screenshots)) {
+  if (ShouldRecordFrames()) {
     IntSize windowSize = rect.ToUnknownRect().Size();
 
     // On some platforms (notably Linux with X11) we do not always have a
@@ -983,7 +984,6 @@ void BasicCompositor::BeginFrame(
           new BasicCompositingRenderTarget(drawTarget, rect);
     }
   }
-#endif  // MOZ_GECKO_PROFILER
 
   mDrawTarget->PopClip();
 
@@ -1023,7 +1023,7 @@ void BasicCompositor::EndFrame() {
   // Pop aClipRectIn/bounds rect
   mRenderTarget->mDrawTarget->PopClip();
 
-  if (gfxPrefs::WidgetUpdateFlashing()) {
+  if (StaticPrefs::nglayout_debug_widget_update_flashing()) {
     float r = float(rand()) / RAND_MAX;
     float g = float(rand()) / RAND_MAX;
     float b = float(rand()) / RAND_MAX;
@@ -1038,14 +1038,11 @@ void BasicCompositor::EndFrame() {
 
   TryToEndRemoteDrawing();
 
-#ifdef MOZ_GECKO_PROFILER
   // If we are no longer recording a profile, we can drop the render target if
   // it exists.
-  if (mFullWindowRenderTarget &&
-      !profiler_feature_active(ProfilerFeature::Screenshots)) {
+  if (mFullWindowRenderTarget && !ShouldRecordFrames()) {
     mFullWindowRenderTarget = nullptr;
   }
-#endif  // MOZ_GECKO_PROFILER
 }
 
 void BasicCompositor::TryToEndRemoteDrawing(bool aForceToEnd) {
@@ -1069,21 +1066,21 @@ void BasicCompositor::TryToEndRemoteDrawing(bool aForceToEnd) {
   if (mRenderTarget->mDrawTarget != mDrawTarget || mFullWindowRenderTarget) {
     RefPtr<SourceSurface> source;
 
+    // Note: Most platforms require us to buffer drawing to the widget
+    // surface. That's why we don't draw to mDrawTarget directly.
+    IntPoint srcOffset = mRenderTarget->GetOrigin();
+    IntPoint dstOffset = mTarget ? mTargetBounds.TopLeft() : IntPoint();
+
     if (mRenderTarget->mDrawTarget != mDrawTarget) {
       source = mWidget->EndBackBufferDrawing();
-
-      // Note: Most platforms require us to buffer drawing to the widget
-      // surface. That's why we don't draw to mDrawTarget directly.
-      nsIntPoint offset = mTarget ? mTargetBounds.TopLeft() : nsIntPoint();
 
       // The source DrawTarget is clipped to the invalidation region, so we have
       // to copy the individual rectangles in the region or else we'll draw
       // blank pixels.
       for (auto iter = mInvalidRegion.RectIter(); !iter.Done(); iter.Next()) {
         const LayoutDeviceIntRect& r = iter.Get();
-        mDrawTarget->CopySurface(source,
-                                 r.ToUnknownRect() - mRenderTarget->GetOrigin(),
-                                 r.TopLeft().ToUnknownPoint() - offset);
+        mDrawTarget->CopySurface(source, r.ToUnknownRect() - srcOffset,
+                                 r.TopLeft().ToUnknownPoint() - dstOffset);
       }
     } else {
       source = mRenderTarget->mDrawTarget->Snapshot();
@@ -1093,7 +1090,8 @@ void BasicCompositor::TryToEndRemoteDrawing(bool aForceToEnd) {
       for (auto iter = mInvalidRegion.RectIter(); !iter.Done(); iter.Next()) {
         const LayoutDeviceIntRect& r = iter.Get();
         mFullWindowRenderTarget->mDrawTarget->CopySurface(
-            source, r.ToUnknownRect(), r.TopLeft().ToUnknownPoint());
+            source, r.ToUnknownRect() - srcOffset,
+            r.TopLeft().ToUnknownPoint() - dstOffset);
       }
 
       mFullWindowRenderTarget->mDrawTarget->Flush();
@@ -1122,6 +1120,14 @@ bool BasicCompositor::NeedsToDeferEndRemoteDrawing() {
 
 void BasicCompositor::FinishPendingComposite() {
   TryToEndRemoteDrawing(/* aForceToEnd */ true);
+}
+
+bool BasicCompositor::ShouldRecordFrames() const {
+#ifdef MOZ_GECKO_PROFILER
+  return profiler_feature_active(ProfilerFeature::Screenshots) || mRecordFrames;
+#else
+  return mRecordFrames;
+#endif  // MOZ_GECKO_PROFILER
 }
 
 }  // namespace layers

@@ -121,8 +121,9 @@ class AutoFTFace {
         NS_WARNING("failed to create freetype face");
       }
     }
-    if (FT_Err_Ok != FT_Select_Charmap(mFace, FT_ENCODING_UNICODE)) {
-      NS_WARNING("failed to select Unicode charmap");
+    if (FT_Err_Ok != FT_Select_Charmap(mFace, FT_ENCODING_UNICODE) &&
+        FT_Err_Ok != FT_Select_Charmap(mFace, FT_ENCODING_MS_SYMBOL)) {
+      NS_WARNING("failed to select Unicode or symbol charmap");
     }
     mOwnsFace = true;
   }
@@ -268,7 +269,8 @@ FT2FontEntry* FT2FontEntry::CreateFontEntry(
     free((void*)aFontData);
     return nullptr;
   }
-  if (FT_Err_Ok != FT_Select_Charmap(face, FT_ENCODING_UNICODE)) {
+  if (FT_Err_Ok != FT_Select_Charmap(face, FT_ENCODING_UNICODE) &&
+      FT_Err_Ok != FT_Select_Charmap(face, FT_ENCODING_MS_SYMBOL)) {
     Factory::ReleaseFTFace(face);
     free((void*)aFontData);
     return nullptr;
@@ -381,6 +383,9 @@ FT2FontEntry* FT2FontEntry::CreateFontEntry(
     int flags = gfxPlatform::GetPlatform()->FontHintingEnabled()
                     ? FT_LOAD_DEFAULT
                     : (FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING);
+    if (aFace->face_flags & FT_FACE_FLAG_TRICKY) {
+      flags &= ~FT_LOAD_NO_AUTOHINT;
+    }
     fe->mFontFace =
         cairo_ft_font_face_create_for_ft_face(aFace, flags, nullptr, 0);
     FTUserFontData* userFontData =
@@ -422,6 +427,9 @@ cairo_font_face_t* FT2FontEntry::CairoFontFace(const gfxFontStyle* aStyle) {
     int flags = gfxPlatform::GetPlatform()->FontHintingEnabled()
                     ? FT_LOAD_DEFAULT
                     : (FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING);
+    if (FT_Face(face)->face_flags & FT_FACE_FLAG_TRICKY) {
+      flags &= ~FT_LOAD_NO_AUTOHINT;
+    }
     mFontFace = cairo_ft_font_face_create_for_ft_face(face, flags, nullptr, 0);
     auto userFontData =
         new FTUserFontData(face, face.FontData(), face.DataLength());
@@ -439,6 +447,9 @@ cairo_font_face_t* FT2FontEntry::CairoFontFace(const gfxFontStyle* aStyle) {
     int flags = gfxPlatform::GetPlatform()->FontHintingEnabled()
                     ? FT_LOAD_DEFAULT
                     : (FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING);
+    if (mFTFace->face_flags & FT_FACE_FLAG_TRICKY) {
+      flags &= ~FT_LOAD_NO_AUTOHINT;
+    }
     // Resolve variations from entry (descriptor) and style (property)
     AutoTArray<gfxFontVariation, 8> settings;
     GetVariationsForStyle(settings, aStyle ? *aStyle : gfxFontStyle());
@@ -705,11 +716,14 @@ class FontNameCache {
     mCache = mozilla::scache::StartupCache::GetSingleton();
   }
 
-  ~FontNameCache() {
+  ~FontNameCache() { WriteCache(); }
+
+  void WriteCache() {
     if (!mWriteNeeded || !mCache) {
       return;
     }
 
+    LOG(("Writing FontNameCache:"));
     nsAutoCString buf;
     for (auto iter = mMap.Iter(); !iter.Done(); iter.Next()) {
       auto entry = static_cast<FNCMapEntry*>(iter.Get());
@@ -727,8 +741,11 @@ class FontNameCache {
       buf.Append(';');
     }
 
+    LOG(("putting FontNameCache to " CACHE_KEY ", length %u",
+         buf.Length() + 1));
     mCache->PutBuffer(CACHE_KEY, UniquePtr<char[]>(ToNewCString(buf)),
                       buf.Length() + 1);
+    mWriteNeeded = false;
   }
 
   // This may be called more than once (if we re-load the font list).
@@ -740,10 +757,11 @@ class FontNameCache {
     uint32_t size;
     UniquePtr<char[]> buf;
     if (NS_FAILED(mCache->GetBuffer(CACHE_KEY, &buf, &size))) {
+      LOG(("no cache of " CACHE_KEY));
       return;
     }
 
-    LOG(("got: %s from the cache", nsDependentCString(buf.get(), size).get()));
+    LOG(("got: %u bytes from the cache " CACHE_KEY, size));
 
     mMap.Clear();
     mWriteNeeded = false;
@@ -877,7 +895,7 @@ class WillShutdownObserver : public nsIObserver {
   }
 
  protected:
-  virtual ~WillShutdownObserver() {}
+  virtual ~WillShutdownObserver() = default;
 
   gfxFT2FontList* mFontList;
 };
@@ -1115,8 +1133,9 @@ void gfxFT2FontList::FindFontsInOmnijar(FontNameCache* aCache) {
 void gfxFT2FontList::AddFaceToList(const nsCString& aEntryName, uint32_t aIndex,
                                    StandardFile aStdFile, FT_Face aFace,
                                    nsCString& aFaceList) {
-  if (FT_Err_Ok != FT_Select_Charmap(aFace, FT_ENCODING_UNICODE)) {
-    // ignore faces that don't support a Unicode charmap
+  if (FT_Err_Ok != FT_Select_Charmap(aFace, FT_ENCODING_UNICODE) &&
+      FT_Err_Ok != FT_Select_Charmap(aFace, FT_ENCODING_MS_SYMBOL)) {
+    // ignore faces that don't support a Unicode or symbol charmap
     return;
   }
 
@@ -1335,6 +1354,25 @@ void gfxFT2FontList::FindFonts() {
     RefPtr<gfxFontFamily>& family = iter.Data();
     FinalizeFamilyMemberList(key, family, /* aSortFaces */ true);
   }
+  // Write out FontCache data if needed
+  WriteCache();
+}
+
+void gfxFT2FontList::WriteCache() {
+  if (mFontNameCache) {
+    mFontNameCache->WriteCache();
+  }
+  mozilla::scache::StartupCache* cache =
+      mozilla::scache::StartupCache::GetSingleton();
+  if (cache && mJarModifiedTime > 0) {
+    const size_t bufSize = sizeof(mJarModifiedTime);
+    auto buf = MakeUnique<char[]>(bufSize);
+    memcpy(buf.get(), &mJarModifiedTime, bufSize);
+
+    LOG(("WriteCache: putting Jar, length %zu", bufSize));
+    cache->PutBuffer(JAR_LAST_MODIFED_TIME, std::move(buf), bufSize);
+  }
+  LOG(("Done with writecache"));
 }
 
 void gfxFT2FontList::FindFontsInDir(const nsCString& aDir,
@@ -1505,12 +1543,12 @@ searchDone:
   return fe;
 }
 
-gfxFontFamily* gfxFT2FontList::GetDefaultFontForPlatform(
+FontFamily gfxFT2FontList::GetDefaultFontForPlatform(
     const gfxFontStyle* aStyle) {
-  gfxFontFamily* ff = nullptr;
+  FontFamily ff;
 #if defined(MOZ_WIDGET_ANDROID)
   ff = FindFamily(NS_LITERAL_CSTRING("Roboto"));
-  if (!ff) {
+  if (ff.IsNull()) {
     ff = FindFamily(NS_LITERAL_CSTRING("Droid Sans"));
   }
 #endif
@@ -1545,14 +1583,7 @@ gfxFontFamily* gfxFT2FontList::CreateFontFamily(const nsACString& aName) const {
 }
 
 void gfxFT2FontList::WillShutdown() {
-  mozilla::scache::StartupCache* cache =
-      mozilla::scache::StartupCache::GetSingleton();
-  if (cache && mJarModifiedTime > 0) {
-    const size_t bufSize = sizeof(mJarModifiedTime);
-    auto buf = MakeUnique<char[]>(bufSize);
-    memcpy(buf.get(), &mJarModifiedTime, bufSize);
-
-    cache->PutBuffer(JAR_LAST_MODIFED_TIME, std::move(buf), bufSize);
-  }
+  LOG(("WillShutdown"));
+  WriteCache();
   mFontNameCache = nullptr;
 }

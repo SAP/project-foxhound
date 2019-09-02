@@ -6,21 +6,20 @@
 //! compiled regularly (i.e. any configuration without feature = "pathfinder")
 
 use api::{ImageDescriptor, ImageFormat, DirtyRect};
-use device::TextureFilter;
+use crate::device::TextureFilter;
 use euclid::size2;
-use gpu_types::UvRectKind;
+use crate::gpu_types::UvRectKind;
 use rayon::prelude::*;
 use std::sync::{Arc, MutexGuard};
-use platform::font::FontContext;
-use glyph_rasterizer::{FontInstance, FontContexts, GlyphKey};
-use glyph_rasterizer::{GlyphRasterizer, GlyphRasterJob, GlyphRasterJobs};
-use glyph_cache::{GlyphCache, CachedGlyphInfo, GlyphCacheEntry};
-use resource_cache::CachedImageData;
-use texture_cache::{TextureCache, TextureCacheHandle, Eviction};
-use gpu_cache::GpuCache;
-use render_task::{RenderTaskTree, RenderTaskCache};
-use profiler::TextureCacheProfileCounters;
-use std::collections::hash_map::Entry;
+use crate::platform::font::FontContext;
+use crate::glyph_rasterizer::{FontInstance, FontContexts, GlyphKey};
+use crate::glyph_rasterizer::{GlyphRasterizer, GlyphRasterJob, GlyphRasterJobs};
+use crate::glyph_cache::{GlyphCache, CachedGlyphInfo, GlyphCacheEntry};
+use crate::resource_cache::CachedImageData;
+use crate::texture_cache::{TextureCache, TextureCacheHandle, Eviction};
+use crate::gpu_cache::GpuCache;
+use crate::render_task::{RenderTaskGraph, RenderTaskCache};
+use crate::profiler::TextureCacheProfileCounters;
 
 impl FontContexts {
     /// Get access to the font context associated to the current thread.
@@ -44,7 +43,7 @@ impl GlyphRasterizer {
         texture_cache: &mut TextureCache,
         gpu_cache: &mut GpuCache,
         _: &mut RenderTaskCache,
-        _: &mut RenderTaskTree,
+        _: &mut RenderTaskGraph,
     ) {
         assert!(
             self.font_contexts
@@ -57,32 +56,23 @@ impl GlyphRasterizer {
 
         // select glyphs that have not been requested yet.
         for key in glyph_keys {
-            match glyph_key_cache.entry(key.clone()) {
-                Entry::Occupied(mut entry) => {
-                    let value = entry.into_mut();
-                    match *value {
-                        GlyphCacheEntry::Cached(ref glyph) => {
-                            // Skip the glyph if it is already has a valid texture cache handle.
-                            if !texture_cache.request(&glyph.texture_cache_handle, gpu_cache) {
-                                continue;
-                            }
+            if let Some(entry) = glyph_key_cache.try_get(key) {
+                match entry {
+                    GlyphCacheEntry::Cached(ref glyph) => {
+                        // Skip the glyph if it is already has a valid texture cache handle.
+                        if !texture_cache.request(&glyph.texture_cache_handle, gpu_cache) {
+                            continue;
                         }
-                        // Otherwise, skip the entry if it is blank or pending.
-                        GlyphCacheEntry::Blank | GlyphCacheEntry::Pending => continue,
+                        // This case gets hit when we already rasterized the glyph, but the
+                        // glyph has been evicted from the texture cache. Just force it to
+                        // pending so it gets rematerialized.
                     }
-
-                    // This case gets hit when we already rasterized the glyph, but the
-                    // glyph has been evicted from the texture cache. Just force it to
-                    // pending so it gets rematerialized.
-                    *value = GlyphCacheEntry::Pending;
-                    new_glyphs.push((*key).clone());
-                }
-                Entry::Vacant(entry) => {
-                    // This is the first time we've seen the glyph, so mark it as pending.
-                    entry.insert(GlyphCacheEntry::Pending);
-                    new_glyphs.push((*key).clone());
+                    // Otherwise, skip the entry if it is blank or pending.
+                    GlyphCacheEntry::Blank | GlyphCacheEntry::Pending => continue,
                 }
             }
+            new_glyphs.push(key.clone());
+            glyph_key_cache.add_glyph(key.clone(), GlyphCacheEntry::Pending);
         }
 
         if new_glyphs.is_empty() {
@@ -139,7 +129,7 @@ impl GlyphRasterizer {
         texture_cache: &mut TextureCache,
         gpu_cache: &mut GpuCache,
         _: &mut RenderTaskCache,
-        _: &mut RenderTaskTree,
+        _: &mut RenderTaskGraph,
         _: &mut TextureCacheProfileCounters,
     ) {
         // Pull rasterized glyphs from the queue and update the caches.
@@ -197,7 +187,7 @@ impl GlyphRasterizer {
                         })
                     }
                 };
-                glyph_key_cache.insert(key, glyph_info);
+                glyph_key_cache.add_glyph(key, glyph_info);
             }
         }
 

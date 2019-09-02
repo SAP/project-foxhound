@@ -28,30 +28,72 @@
 #ifndef DAV1D_SRC_MSAC_H
 #define DAV1D_SRC_MSAC_H
 
+#include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
 
-/* Using uint32_t should be faster on 32 bit systems, in theory, maybe */
-typedef uint64_t ec_win;
+typedef size_t ec_win;
 
 typedef struct MsacContext {
     const uint8_t *buf_pos;
     const uint8_t *buf_end;
     ec_win dif;
-    uint16_t rng;
+    unsigned rng;
     int cnt;
     int allow_update_cdf;
 } MsacContext;
 
-void dav1d_msac_init(MsacContext *c, const uint8_t *data, size_t sz,
+#if HAVE_ASM
+#if ARCH_AARCH64 || ARCH_ARM
+#include "src/arm/msac.h"
+#elif ARCH_X86
+#include "src/x86/msac.h"
+#endif
+#endif
+
+void dav1d_msac_init(MsacContext *s, const uint8_t *data, size_t sz,
                      int disable_cdf_update_flag);
-unsigned dav1d_msac_decode_symbol_adapt(MsacContext *s, uint16_t *cdf,
-                                        const unsigned n_symbols);
-unsigned dav1d_msac_decode_bool_equi(MsacContext *const s);
-unsigned dav1d_msac_decode_bool(MsacContext *s, unsigned f);
-unsigned dav1d_msac_decode_bool_adapt(MsacContext *s, uint16_t *cdf);
-unsigned dav1d_msac_decode_bools(MsacContext *c, unsigned l);
-int dav1d_msac_decode_subexp(MsacContext *c, int ref, int n, unsigned k);
-int dav1d_msac_decode_uniform(MsacContext *c, unsigned n);
+unsigned dav1d_msac_decode_symbol_adapt_c(MsacContext *s, uint16_t *cdf,
+                                          size_t n_symbols);
+unsigned dav1d_msac_decode_bool_adapt_c(MsacContext *s, uint16_t *cdf);
+unsigned dav1d_msac_decode_bool_equi_c(MsacContext *s);
+unsigned dav1d_msac_decode_bool_c(MsacContext *s, unsigned f);
+int dav1d_msac_decode_subexp(MsacContext *s, int ref, int n, unsigned k);
+
+/* Supported n_symbols ranges: adapt4: 1-5, adapt8: 1-8, adapt16: 4-16 */
+#ifndef dav1d_msac_decode_symbol_adapt4
+#define dav1d_msac_decode_symbol_adapt4  dav1d_msac_decode_symbol_adapt_c
+#endif
+#ifndef dav1d_msac_decode_symbol_adapt8
+#define dav1d_msac_decode_symbol_adapt8  dav1d_msac_decode_symbol_adapt_c
+#endif
+#ifndef dav1d_msac_decode_symbol_adapt16
+#define dav1d_msac_decode_symbol_adapt16 dav1d_msac_decode_symbol_adapt_c
+#endif
+#ifndef dav1d_msac_decode_bool_adapt
+#define dav1d_msac_decode_bool_adapt     dav1d_msac_decode_bool_adapt_c
+#endif
+#ifndef dav1d_msac_decode_bool_equi
+#define dav1d_msac_decode_bool_equi      dav1d_msac_decode_bool_equi_c
+#endif
+#ifndef dav1d_msac_decode_bool
+#define dav1d_msac_decode_bool           dav1d_msac_decode_bool_c
+#endif
+
+static inline unsigned dav1d_msac_decode_bools(MsacContext *const s, unsigned n) {
+    unsigned v = 0;
+    while (n--)
+        v = (v << 1) | dav1d_msac_decode_bool_equi(s);
+    return v;
+}
+
+static inline int dav1d_msac_decode_uniform(MsacContext *const s, const unsigned n) {
+    assert(n > 0);
+    const int l = ulog2(n) + 1;
+    assert(l > 1);
+    const unsigned m = (1 << l) - n;
+    const unsigned v = dav1d_msac_decode_bools(s, l - 1);
+    return v < m ? v : (v << 1) - m + dav1d_msac_decode_bool_equi(s);
+}
 
 #endif /* DAV1D_SRC_MSAC_H */

@@ -7,7 +7,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1328868
   <meta charset="utf-8">
   <title>Test for Bug 1328868</title>
   <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://global/skin"/>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js"></script>
@@ -124,6 +123,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1328868
     cleanupTabs();
   });
 
+  function waitForPaint(tab) {
+    return new Promise(function(resolve, reject) {
+      tab.browser.contentWindow.requestAnimationFrame(() => {
+        tab.browser.contentWindow.requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+    });
+  }
+
   add_task(async function test_fontInflationPrecedence() {
     // Check that we're starting out with the default values
     is(sharedPrefs.getBoolPref(ANDROID_PREF), false, "System font size scaling is disabled");
@@ -133,6 +142,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1328868
     is(getSystemFontScale(), 1.0, "system font scale is default");
     tab = BrowserApp.addTab(URL_desktop, { selected: true, parentId: BrowserApp.selectedTab.id });
     await promiseBrowserEvent(tab.browser, "load");
+    await waitForPaint(tab);
+
     is(tab.browser.markupDocumentViewer.effectiveTextZoom,
        1.0, "text zoom is default value");
 
@@ -143,6 +154,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1328868
 
     tab.reloadWithMode(tab.desktopMode);
     await promiseBrowserEvent(tab.browser, "load");
+    await waitForPaint(tab);
 
     let fontInflationOn = snapshotWindow(tab.browser.contentWindow);
     assertSnapshots(noZoom, fontInflationOn, false, null, "noZoom", "fontInflationOn");
@@ -151,6 +163,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1328868
     setSystemFontScale(2.0);
     tab.reloadWithMode(tab.desktopMode);
     await promiseBrowserEvent(tab.browser, "load");
+    await waitForPaint(tab);
 
     is(getSystemFontScale(), 2.0, "system font scale is enabled");
     is(tab.browser.markupDocumentViewer.effectiveTextZoom,
@@ -162,6 +175,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1328868
     Services.prefs.setIntPref(GECKO_PREF_FONT_INFLATION, 0);
     tab.reloadWithMode(tab.desktopMode);
     await promiseBrowserEvent(tab.browser, "load");
+    await waitForPaint(tab);
 
     is(tab.browser.markupDocumentViewer.effectiveTextZoom, 2.0,
        "text zoom set through system font scale zooming");

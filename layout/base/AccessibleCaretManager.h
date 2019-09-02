@@ -23,11 +23,10 @@
 class nsFrameSelection;
 class nsIContent;
 
-class nsIPresShell;
 struct nsPoint;
 
 namespace mozilla {
-
+class PresShell;
 namespace dom {
 class Element;
 class Selection;
@@ -48,7 +47,7 @@ class Selection;
 //
 class AccessibleCaretManager {
  public:
-  explicit AccessibleCaretManager(nsIPresShell* aPresShell);
+  explicit AccessibleCaretManager(PresShell* aPresShell);
   virtual ~AccessibleCaretManager();
 
   // Called by AccessibleCaretEventHub to inform us that PresShell is destroyed.
@@ -213,6 +212,7 @@ class AccessibleCaretManager {
 
   // Start the selection scroll timer if the caret is being dragged out of
   // the scroll port.
+  MOZ_CAN_RUN_SCRIPT
   void StartSelectionAutoScrollTimer(const nsPoint& aPoint) const;
   void StopSelectionAutoScrollTimer() const;
 
@@ -295,7 +295,7 @@ class AccessibleCaretManager {
   //
   // mPresShell will be set to nullptr in Terminate(). Therefore mPresShell is
   // nullptr either we are in gtest or PresShell::IsDestroying() is true.
-  nsIPresShell* MOZ_NON_OWNING_REF mPresShell = nullptr;
+  PresShell* MOZ_NON_OWNING_REF mPresShell = nullptr;
 
   // First caret is attached to nsCaret in cursor mode, and is attached to
   // selection highlight as the left caret in selection mode.

@@ -15,9 +15,10 @@
 using namespace js;
 
 template <typename CharT, class Buffer>
-static CharT* ExtractWellSized(JSContext* cx, Buffer& cb) {
+static CharT* ExtractWellSized(Buffer& cb) {
   size_t capacity = cb.capacity();
   size_t length = cb.length();
+  StringBufferAllocPolicy allocPolicy = cb.allocPolicy();
 
   CharT* buf = cb.extractOrCopyRawBuffer();
   if (!buf) {
@@ -27,9 +28,9 @@ static CharT* ExtractWellSized(JSContext* cx, Buffer& cb) {
   /* For medium/big buffers, avoid wasting more than 1/4 of the memory. */
   MOZ_ASSERT(capacity >= length);
   if (length > Buffer::sMaxInlineStorage && capacity - length > length / 4) {
-    CharT* tmp = cx->pod_realloc<CharT>(buf, capacity, length + 1);
+    CharT* tmp = allocPolicy.pod_realloc<CharT>(buf, capacity, length + 1);
     if (!tmp) {
-      js_free(buf);
+      allocPolicy.free_(buf);
       return nullptr;
     }
     buf = tmp;
@@ -43,13 +44,13 @@ char16_t* StringBuffer::stealChars() {
     return nullptr;
   }
 
-  return ExtractWellSized<char16_t>(cx, twoByteChars());
+  return ExtractWellSized<char16_t>(twoByteChars());
 }
 
 bool StringBuffer::inflateChars() {
   MOZ_ASSERT(isLatin1());
 
-  TwoByteCharBuffer twoByte(cx);
+  TwoByteCharBuffer twoByte(StringBufferAllocPolicy{cx_, arenaId_});
 
   /*
    * Note: we don't use Vector::capacity() because it always returns a
@@ -68,15 +69,22 @@ bool StringBuffer::inflateChars() {
   return true;
 }
 
-template <typename CharT, class Buffer>
-static JSFlatString* FinishStringFlat(JSContext* cx, StringBuffer& sb,
-                                      Buffer& cb) {
-  size_t len = sb.length();
-  if (!sb.append('\0')) {
+template <typename CharT>
+JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
+  size_t len = length();
+
+  if (JSInlineString::lengthFits<CharT>(len)) {
+    mozilla::Range<const CharT> range(begin<CharT>(), len);
+    return NewInlineString<CanGC>(cx, range);
+  }
+
+  if (!append('\0')) {
     return nullptr;
   }
 
-  UniquePtr<CharT[], JS::FreePolicy> buf(ExtractWellSized<CharT>(cx, cb));
+  UniquePtr<CharT[], JS::FreePolicy> buf(
+      ExtractWellSized<CharT>(chars<CharT>()));
+
   if (!buf) {
     return nullptr;
   }
@@ -93,20 +101,20 @@ static JSFlatString* FinishStringFlat(JSContext* cx, StringBuffer& sb,
   cx->updateMallocCounter(sizeof(CharT) * len);
 
   // TaintFox: Propagate taint to newly created string.
-  str->setTaint(sb.taint());
+  str->setTaint(taint());
   // Taintfox: clear the stringbuffer taint information
-  sb.clearTaint();
+  clearTaint();
 
   return str;
 }
 
-JSFlatString* StringBuffer::finishString() {
+JSFlatString* JSStringBuilder::finishString() {
   size_t len = length();
   if (len == 0) {
-    return cx->names().empty;
+    return cx_->names().empty;
   }
 
-  if (!JSString::validateLength(cx, len)) {
+  if (!JSString::validateLength(cx_, len)) {
     return nullptr;
   }
 
@@ -115,41 +123,23 @@ JSFlatString* StringBuffer::finishString() {
   JS_STATIC_ASSERT(JSFatInlineString::MAX_LENGTH_LATIN1 <
                    Latin1CharBuffer::InlineLength);
 
-  if (isLatin1()) {
-    if (JSInlineString::lengthFits<Latin1Char>(len)) {
-      mozilla::Range<const Latin1Char> range(latin1Chars().begin(), len);
-      JSFlatString* res = NewInlineString<CanGC>(cx, range);
-      // TaintFox: propagate taint.
-      res->setTaint(taint());
-      return res;
-    }
-  } else {
-    if (JSInlineString::lengthFits<char16_t>(len)) {
-      mozilla::Range<const char16_t> range(twoByteChars().begin(), len);
-      JSFlatString* res = NewInlineString<CanGC>(cx, range);
-      // TaintFox: propagate taint.
-      res->setTaint(taint());
-      return res;
-    }
-  }
-
-  return isLatin1() ? FinishStringFlat<Latin1Char>(cx, *this, latin1Chars())
-                    : FinishStringFlat<char16_t>(cx, *this, twoByteChars());
+  return isLatin1() ? finishStringInternal<Latin1Char>(cx_)
+                    : finishStringInternal<char16_t>(cx_);
 }
 
 JSAtom* StringBuffer::finishAtom() {
   size_t len = length();
   if (len == 0) {
-    return cx->names().empty;
+    return cx_->names().empty;
   }
 
   if (isLatin1()) {
-    JSAtom* atom = AtomizeChars(cx, latin1Chars().begin(), len);
+    JSAtom* atom = AtomizeChars(cx_, latin1Chars().begin(), len);
     latin1Chars().clear();
     return atom;
   }
 
-  JSAtom* atom = AtomizeChars(cx, twoByteChars().begin(), len);
+  JSAtom* atom = AtomizeChars(cx_, twoByteChars().begin(), len);
   twoByteChars().clear();
 
   // TaintFox: We loose taint here, can't taint atoms..

@@ -1,5 +1,4 @@
-const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -26,7 +25,7 @@ function handler(metadata, response) {
 
 function makeChan(url, userContextId) {
   let chan = NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
-  chan.loadInfo.originAttributes = { userContextId: userContextId };
+  chan.loadInfo.originAttributes = { userContextId };
   return chan;
 }
 
@@ -38,11 +37,15 @@ function Listener(userContextId) {
 
 let gTestsRun = 0;
 Listener.prototype = {
-  onStartRequest: function(request) {
-    request.QueryInterface(Ci.nsIHttpChannel)
-           .QueryInterface(Ci.nsIHttpChannelInternal);
+  onStartRequest(request) {
+    request
+      .QueryInterface(Ci.nsIHttpChannel)
+      .QueryInterface(Ci.nsIHttpChannelInternal);
 
-    Assert.equal(request.loadInfo.originAttributes.userContextId, this.userContextId);
+    Assert.equal(
+      request.loadInfo.originAttributes.userContextId,
+      this.userContextId
+    );
 
     let hashKey = request.connectionInfoHashKey;
     if (gSecondRoundStarted) {
@@ -60,10 +63,10 @@ Listener.prototype = {
       previousHashKeys[this.userContextId] = hashKey;
     }
   },
-  onDataAvailable: function(request, stream, off, cnt) {
+  onDataAvailable(request, stream, off, cnt) {
     read_stream(stream, cnt);
   },
-  onStopRequest: function() {
+  onStopRequest() {
     gTestsRun++;
     if (gTestsRun == 3) {
       gTestsRun = 0;
@@ -95,4 +98,3 @@ function run_test() {
 
   doTest();
 }
-

@@ -488,10 +488,9 @@ class ShapeCachePtr {
   }
 
   // Use ShapeTable implementation.
-  // This will clobber an existing IC implementation.
+  // The caller must have purged any existing IC implementation.
   void initializeTable(ShapeTable* table) {
-    MOZ_ASSERT(!isTable());
-    maybePurgeCache();
+    MOZ_ASSERT(!isTable() && !isIC());
 
     uintptr_t tableptr = uintptr_t(table);
 
@@ -516,27 +515,9 @@ class ShapeCachePtr {
     p = icptr;
   }
 
-  void destroy(FreeOp* fop) {
-    if (isTable()) {
-      fop->delete_<ShapeTable>(getTablePointer());
-    } else if (isIC()) {
-      fop->delete_<ShapeIC>(getICPointer());
-    }
-    p = 0;
-  }
+  void destroy(FreeOp* fop, BaseShape* base);
 
-  void maybePurgeCache() {
-    if (isTable()) {
-      ShapeTable* table = getTablePointer();
-      if (table->freeList() == SHAPE_INVALID_SLOT) {
-        js_delete<ShapeTable>(getTablePointer());
-        p = 0;
-      }
-    } else if (isIC()) {
-      js_delete<ShapeIC>(getICPointer());
-      p = 0;
-    }
-  }
+  void maybePurgeCache(FreeOp* fop, BaseShape* base);
 
   void trace(JSTracer* trc);
 
@@ -759,7 +740,7 @@ class BaseShape : public gc::TenuredCell {
     return (cache_.isIC()) ? cache_.getICPointer() : nullptr;
   }
 
-  void maybePurgeCache() { cache_.maybePurgeCache(); }
+  void maybePurgeCache(FreeOp* fop) { cache_.maybePurgeCache(fop, this); }
 
   uint32_t slotSpan() const {
     MOZ_ASSERT(isOwned());
@@ -829,7 +810,7 @@ UnownedBaseShape* BaseShape::baseUnowned() {
 }
 
 /* Entries for the per-zone baseShapes set of unowned base shapes. */
-struct StackBaseShape : public DefaultHasher<ReadBarriered<UnownedBaseShape*>> {
+struct StackBaseShape : public DefaultHasher<WeakHeapPtr<UnownedBaseShape*>> {
   uint32_t flags;
   const Class* clasp;
 
@@ -851,7 +832,7 @@ struct StackBaseShape : public DefaultHasher<ReadBarriered<UnownedBaseShape*>> {
       MOZ_ASSERT(!base->isOwned());
     }
 
-    explicit Lookup(const ReadBarriered<UnownedBaseShape*>& base)
+    explicit Lookup(const WeakHeapPtr<UnownedBaseShape*>& base)
         : flags(base.unbarrieredGet()->getObjectFlags()),
           clasp(base.unbarrieredGet()->clasp()) {
       MOZ_ASSERT(!base.unbarrieredGet()->isOwned());
@@ -861,7 +842,7 @@ struct StackBaseShape : public DefaultHasher<ReadBarriered<UnownedBaseShape*>> {
   static HashNumber hash(const Lookup& lookup) {
     return mozilla::HashGeneric(lookup.flags, lookup.clasp);
   }
-  static inline bool match(const ReadBarriered<UnownedBaseShape*>& key,
+  static inline bool match(const WeakHeapPtr<UnownedBaseShape*>& key,
                            const Lookup& lookup) {
     return key.unbarrieredGet()->flags == lookup.flags &&
            key.unbarrieredGet()->clasp_ == lookup.clasp;
@@ -896,8 +877,8 @@ struct DefaultHasher<jsid> {
 namespace js {
 
 using BaseShapeSet =
-    JS::WeakCache<JS::GCHashSet<ReadBarriered<UnownedBaseShape*>,
-                                StackBaseShape, SystemAllocPolicy>>;
+    JS::WeakCache<JS::GCHashSet<WeakHeapPtr<UnownedBaseShape*>, StackBaseShape,
+                                SystemAllocPolicy>>;
 
 class Shape : public gc::TenuredCell {
   friend class ::JSObject;
@@ -912,7 +893,7 @@ class Shape : public gc::TenuredCell {
 
  protected:
   GCPtrBaseShape base_;
-  PreBarrieredId propid_;
+  GCPtrId propid_;
 
   // Flags that are not modified after the Shape is created. Off-thread Ion
   // compilation can access the immutableFlags word, so we don't want any
@@ -1287,12 +1268,12 @@ class Shape : public gc::TenuredCell {
     mutableFlags = (mutableFlags & ~LINEAR_SEARCHES_MASK) | (count + 1);
   }
 
-  const PreBarrieredId& propid() const {
+  const GCPtrId& propid() const {
     MOZ_ASSERT(!isEmptyShape());
     MOZ_ASSERT(!JSID_IS_VOID(propid_));
     return propid_;
   }
-  PreBarrieredId& propidRef() {
+  GCPtrId& propidRef() {
     MOZ_ASSERT(!JSID_IS_VOID(propid_));
     return propid_;
   }
@@ -1512,13 +1493,13 @@ struct InitialShapeEntry {
    * certain classes (e.g. String, RegExp) which may add certain baked-in
    * properties.
    */
-  ReadBarriered<Shape*> shape;
+  WeakHeapPtr<Shape*> shape;
 
   /*
    * Matching prototype for the entry. The shape of an object determines its
    * prototype, but the prototype cannot be determined from the shape itself.
    */
-  ReadBarriered<TaggedProto> proto;
+  WeakHeapPtr<TaggedProto> proto;
 
   /* State used to determine a match on an initial shape. */
   struct Lookup {

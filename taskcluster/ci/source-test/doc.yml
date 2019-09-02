@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 generate:
     description: Generate the Sphinx documentation
     platform: lint/opt
@@ -6,7 +10,7 @@ generate:
         kind: test
         tier: 1
     run-on-projects: ['trunk', 'try']
-    worker-type: aws-provisioner-v1/gecko-t-linux-xlarge
+    worker-type: t-linux-xlarge
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 1800
@@ -27,9 +31,9 @@ upload:
     treeherder:
         symbol: DocUp
         kind: test
-        tier: 3
+        tier: 2
     run-on-projects: [mozilla-central]
-    worker-type: aws-provisioner-v1/gecko-t-linux-xlarge
+    worker-type: t-linux-xlarge
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 1800

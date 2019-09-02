@@ -3,6 +3,7 @@ skip-if(!retainedDisplayList) == retained-dl-frame-deleted-1.html retained-dl-st
 skip-if(!retainedDisplayList) == retained-dl-frame-created-1.html retained-dl-style-change-1-ref.html
 skip-if(!retainedDisplayList) == retained-dl-style-change-stacking-context-1.html retained-dl-style-change-stacking-context-1-ref.html
 skip-if(!retainedDisplayList) == retained-dl-style-change-stacking-context-2.html retained-dl-style-change-stacking-context-2-ref.html
+skip-if(!retainedDisplayList) == retained-dl-style-change-stacking-context-3.html retained-dl-style-change-stacking-context-3-ref.html
 skip-if(!retainedDisplayList||!asyncPan) == retained-dl-async-scrolled-1.html retained-dl-async-scrolled-1-ref.html
 skip-if(!retainedDisplayList) == retained-dl-remove-for-ancestor-change-1.html retained-dl-remove-for-ancestor-change-1-ref.html
 skip-if(!retainedDisplayList) == retained-dl-scroll-out-of-view-1.html retained-dl-scroll-out-of-view-1-ref.html
@@ -39,3 +40,6 @@ fuzzy(0-2,0-40000) skip-if(!asyncPan) == 1464288-1.html 1464288-ref.html
 == 1482403-1.html 1482403-1-ref.html
 == 1504233-1.html 1504233-1-ref.html
 == 1533317-1.html 1533317-1-ref.html
+== 1544948-1.html 1544948-1-ref.html
+== 1551053-1.html 1551053-1-ref.html
+== 1553828-1.html 1553828-1-ref.html

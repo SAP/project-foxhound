@@ -34,7 +34,6 @@
 #include "nsISupports.h"
 
 #include "nsTArray.h"
-#include "nsTWeakRef.h"
 
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
@@ -74,7 +73,6 @@
 #include "nsIException.h"
 #include "nsIFactory.h"
 #include "nsIFile.h"
-#include "nsIHashable.h"
 #include "nsIINIParser.h"
 #include "nsIInputStream.h"
 #include "nsIInterfaceRequestor.h"

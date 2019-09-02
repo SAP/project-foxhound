@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
@@ -34,12 +37,12 @@ class ProfilerDialog extends PureComponent {
 
     return dom.div(
       {
-        className: "profiler-dialog__mask js-profiler-dialog-mask",
+        className: "profiler-dialog__mask qa-profiler-dialog-mask",
         onClick: () => this.hide(),
       },
       dom.article(
         {
-          className: "profiler-dialog__inner js-profiler-dialog",
+          className: "profiler-dialog__inner qa-profiler-dialog",
           onClick: e => e.stopPropagation(),
         },
         dom.header(
@@ -48,31 +51,29 @@ class ProfilerDialog extends PureComponent {
           },
           Localized(
             {
-              id: "about-debugging-profiler-dialog-title",
+              id: "about-debugging-profiler-dialog-title2",
             },
             dom.h1(
               {
                 className: "profiler-dialog__header__title",
               },
-              "Performance Profiler",
+              "about-debugging-profiler-dialog-title2"
             )
           ),
           dom.button(
             {
-              className: "ghost-button js-profiler-dialog-close",
+              className: "ghost-button qa-profiler-dialog-close",
               onClick: () => this.hide(),
             },
-            dom.img(
-              {
-                src: "chrome://devtools/skin/images/close.svg",
-              }
-            )
+            dom.img({
+              src: "chrome://devtools/skin/images/close.svg",
+            })
           )
         ),
         dom.iframe({
           className: "profiler-dialog__frame",
           src: clientWrapper.getPerformancePanelUrl(),
-          onLoad: (e) => {
+          onLoad: e => {
             clientWrapper.loadPerformanceProfiler(e.target.contentWindow);
           },
         })

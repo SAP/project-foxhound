@@ -29,6 +29,7 @@
 #include "prio.h"
 #include <algorithm>
 
+#include "mozilla/TaskQueue.h"
 #include "mozilla/Unused.h"
 
 using namespace mozilla;
@@ -38,7 +39,7 @@ using namespace mozilla::net;
 
 class nsFileCopyEvent : public Runnable {
  public:
-  nsFileCopyEvent(nsIOutputStream *dest, nsIInputStream *source, int64_t len)
+  nsFileCopyEvent(nsIOutputStream* dest, nsIInputStream* source, int64_t len)
       : mozilla::Runnable("nsFileCopyEvent"),
         mDest(dest),
         mSource(source),
@@ -54,8 +55,8 @@ class nsFileCopyEvent : public Runnable {
 
   // Call this method to perform the file copy on a background thread.  The
   // callback is dispatched when the file copy completes.
-  nsresult Dispatch(nsIRunnable *callback, nsITransportEventSink *sink,
-                    nsIEventTarget *target);
+  nsresult Dispatch(nsIRunnable* callback, nsITransportEventSink* sink,
+                    nsIEventTarget* target);
 
   // Call this method to interrupt a file copy operation that is occuring on
   // a background thread.  The status parameter passed to this function must
@@ -131,9 +132,9 @@ void nsFileCopyEvent::DoCopy() {
   }
 }
 
-nsresult nsFileCopyEvent::Dispatch(nsIRunnable *callback,
-                                   nsITransportEventSink *sink,
-                                   nsIEventTarget *target) {
+nsresult nsFileCopyEvent::Dispatch(nsIRunnable* callback,
+                                   nsITransportEventSink* sink,
+                                   nsIEventTarget* target) {
   // Use the supplied event target for all asynchronous operations.
 
   mCallback = callback;
@@ -163,19 +164,19 @@ class nsFileUploadContentStream : public nsBaseContentStream {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(nsFileUploadContentStream,
                                        nsBaseContentStream)
 
-  nsFileUploadContentStream(bool nonBlocking, nsIOutputStream *dest,
-                            nsIInputStream *source, int64_t len,
-                            nsITransportEventSink *sink)
+  nsFileUploadContentStream(bool nonBlocking, nsIOutputStream* dest,
+                            nsIInputStream* source, int64_t len,
+                            nsITransportEventSink* sink)
       : nsBaseContentStream(nonBlocking),
         mCopyEvent(new nsFileCopyEvent(dest, source, len)),
         mSink(sink) {}
 
   bool IsInitialized() { return mCopyEvent != nullptr; }
 
-  NS_IMETHOD ReadSegments(nsWriteSegmentFun fun, void *closure, uint32_t count,
-                          uint32_t *result) override;
-  NS_IMETHOD AsyncWait(nsIInputStreamCallback *callback, uint32_t flags,
-                       uint32_t count, nsIEventTarget *target) override;
+  NS_IMETHOD ReadSegments(nsWriteSegmentFun fun, void* closure, uint32_t count,
+                          uint32_t* result) override;
+  NS_IMETHOD AsyncWait(nsIInputStreamCallback* callback, uint32_t flags,
+                       uint32_t count, nsIEventTarget* target) override;
 
  private:
   virtual ~nsFileUploadContentStream() = default;
@@ -187,8 +188,8 @@ class nsFileUploadContentStream : public nsBaseContentStream {
 };
 
 NS_IMETHODIMP
-nsFileUploadContentStream::ReadSegments(nsWriteSegmentFun fun, void *closure,
-                                        uint32_t count, uint32_t *result) {
+nsFileUploadContentStream::ReadSegments(nsWriteSegmentFun fun, void* closure,
+                                        uint32_t count, uint32_t* result) {
   *result = 0;  // nothing is ever actually read from this stream
 
   if (IsClosed()) return NS_OK;
@@ -208,9 +209,9 @@ nsFileUploadContentStream::ReadSegments(nsWriteSegmentFun fun, void *closure,
 }
 
 NS_IMETHODIMP
-nsFileUploadContentStream::AsyncWait(nsIInputStreamCallback *callback,
+nsFileUploadContentStream::AsyncWait(nsIInputStreamCallback* callback,
                                      uint32_t flags, uint32_t count,
-                                     nsIEventTarget *target) {
+                                     nsIEventTarget* target) {
   nsresult rv = nsBaseContentStream::AsyncWait(callback, flags, count, target);
   if (NS_FAILED(rv) || IsClosed()) return rv;
 
@@ -233,7 +234,7 @@ void nsFileUploadContentStream::OnCopyComplete() {
 
 //-----------------------------------------------------------------------------
 
-nsFileChannel::nsFileChannel(nsIURI *uri) : mUploadLength(0), mFileURI(uri) {}
+nsFileChannel::nsFileChannel(nsIURI* uri) : mUploadLength(0), mFileURI(uri) {}
 
 nsresult nsFileChannel::Init() {
   NS_ENSURE_STATE(mLoadInfo);
@@ -288,9 +289,9 @@ nsresult nsFileChannel::Init() {
   return NS_OK;
 }
 
-nsresult nsFileChannel::MakeFileInputStream(nsIFile *file,
-                                            nsCOMPtr<nsIInputStream> &stream,
-                                            nsCString &contentType,
+nsresult nsFileChannel::MakeFileInputStream(nsIFile* file,
+                                            nsCOMPtr<nsIInputStream>& stream,
+                                            nsCString& contentType,
                                             bool async) {
   // we accept that this might result in a disk hit to stat the file
   bool isDir;
@@ -326,8 +327,8 @@ nsresult nsFileChannel::MakeFileInputStream(nsIFile *file,
   return rv;
 }
 
-nsresult nsFileChannel::OpenContentStream(bool async, nsIInputStream **result,
-                                          nsIChannel **channel) {
+nsresult nsFileChannel::OpenContentStream(bool async, nsIInputStream** result,
+                                          nsIChannel** channel) {
   // NOTE: the resulting file is a clone, so it is safe to pass it to the
   //       file input stream which will be read on a background thread.
   nsCOMPtr<nsIFile> file;
@@ -391,24 +392,77 @@ nsresult nsFileChannel::OpenContentStream(bool async, nsIInputStream **result,
     EnableSynthesizedProgressEvents(true);
 
     // fixup content length and type
-    if (mContentLength < 0) {
-      int64_t size;
-      rv = file->GetFileSize(&size);
+
+    // when we are called from asyncOpen, the content length fixup will be
+    // performed on a background thread and block the listener invocation via
+    // ListenerBlockingPromise method
+    if (!async && mContentLength < 0) {
+      rv = FixupContentLength(false);
       if (NS_FAILED(rv)) {
-        if (async && (NS_ERROR_FILE_NOT_FOUND == rv ||
-                      NS_ERROR_FILE_TARGET_DOES_NOT_EXIST == rv)) {
-          size = 0;
-        } else {
-          return rv;
-        }
+        return rv;
       }
-      mContentLength = size;
     }
-    if (!contentType.IsEmpty()) SetContentType(contentType);
+
+    if (!contentType.IsEmpty()) {
+      SetContentType(contentType);
+    }
   }
 
   *result = nullptr;
   stream.swap(*result);
+  return NS_OK;
+}
+
+nsresult nsFileChannel::ListenerBlockingPromise(BlockingPromise** aPromise) {
+  NS_ENSURE_ARG(aPromise);
+  *aPromise = nullptr;
+
+  if (mContentLength >= 0) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIEventTarget> sts(
+      do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID));
+  if (!sts) {
+    return FixupContentLength(true);
+  }
+
+  RefPtr<TaskQueue> taskQueue = new TaskQueue(sts.forget());
+  RefPtr<nsFileChannel> self = this;
+  RefPtr<BlockingPromise> promise =
+      mozilla::InvokeAsync(taskQueue, __func__, [self{std::move(self)}]() {
+        nsresult rv = self->FixupContentLength(true);
+        if (NS_FAILED(rv)) {
+          return BlockingPromise::CreateAndReject(rv, __func__);
+        }
+        return BlockingPromise::CreateAndResolve(NS_OK, __func__);
+      });
+
+  promise.forget(aPromise);
+  return NS_OK;
+}
+
+nsresult nsFileChannel::FixupContentLength(bool async) {
+  MOZ_ASSERT(mContentLength < 0);
+
+  nsCOMPtr<nsIFile> file;
+  nsresult rv = GetFile(getter_AddRefs(file));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  int64_t size;
+  rv = file->GetFileSize(&size);
+  if (NS_FAILED(rv)) {
+    if (async && (NS_ERROR_FILE_NOT_FOUND == rv ||
+                  NS_ERROR_FILE_TARGET_DOES_NOT_EXIST == rv)) {
+      size = 0;
+    } else {
+      return rv;
+    }
+  }
+  mContentLength = size;
+
   return NS_OK;
 }
 
@@ -422,7 +476,7 @@ NS_IMPL_ISUPPORTS_INHERITED(nsFileChannel, nsBaseChannel, nsIUploadChannel,
 // nsFileChannel::nsIFileChannel
 
 NS_IMETHODIMP
-nsFileChannel::GetFile(nsIFile **file) {
+nsFileChannel::GetFile(nsIFile** file) {
   nsCOMPtr<nsIFileURL> fileURL = do_QueryInterface(URI());
   NS_ENSURE_STATE(fileURL);
 
@@ -434,8 +488,8 @@ nsFileChannel::GetFile(nsIFile **file) {
 // nsFileChannel::nsIUploadChannel
 
 NS_IMETHODIMP
-nsFileChannel::SetUploadStream(nsIInputStream *stream,
-                               const nsACString &contentType,
+nsFileChannel::SetUploadStream(nsIInputStream* stream,
+                               const nsACString& contentType,
                                int64_t contentLength) {
   NS_ENSURE_TRUE(!Pending(), NS_ERROR_IN_PROGRESS);
 
@@ -457,7 +511,7 @@ nsFileChannel::SetUploadStream(nsIInputStream *stream,
 }
 
 NS_IMETHODIMP
-nsFileChannel::GetUploadStream(nsIInputStream **result) {
+nsFileChannel::GetUploadStream(nsIInputStream** result) {
   NS_IF_ADDREF(*result = mUploadStream);
   return NS_OK;
 }

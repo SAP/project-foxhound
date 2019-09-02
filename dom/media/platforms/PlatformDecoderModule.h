@@ -48,6 +48,13 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
     Default,
     LowLatency,
     HardwareDecoderNotAllowed,
+    FullH264Parsing,
+    ErrorIfNoInitializationData,  // By default frames delivered before
+                                  // initialization data are dropped. Pass this
+                                  // option to raise an error if frames are
+                                  // delivered before initialization data.
+
+    SENTINEL  // one past the last valid value
   };
   using OptionSet = EnumSet<Option>;
 
@@ -145,8 +152,8 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
 // The 'value' have to be the biggest enum from CreateDecoderParams::Option.
 template <>
 struct MaxEnumValue<::mozilla::CreateDecoderParams::Option> {
-  static constexpr unsigned int value = static_cast<unsigned int>(
-      CreateDecoderParams::Option::HardwareDecoderNotAllowed);
+  static constexpr unsigned int value =
+      static_cast<unsigned int>(CreateDecoderParams::Option::SENTINEL);
 };
 
 // The PlatformDecoderModule interface is used by the MediaFormatReader to

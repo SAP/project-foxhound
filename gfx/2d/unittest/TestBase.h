@@ -9,8 +9,9 @@
 #include <string>
 #include <vector>
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(__clang__)
 // On MSVC otherwise our generic member pointer trick doesn't work.
+// JYA: Do we still need this?
 #  pragma pointers_to_members(full_generality, single_inheritance)
 #endif
 
@@ -30,17 +31,17 @@ class TestBase {
 
   typedef void (TestBase::*TestCall)();
 
-  int RunTests(int *aFailures);
+  int RunTests(int* aFailures);
 
  protected:
   static void LogMessage(std::string aMessage);
 
   struct Test {
-    Test(TestCall aCall, std::string aName, void *aImplPointer)
+    Test(TestCall aCall, std::string aName, void* aImplPointer)
         : funcCall(aCall), name(aName), implPointer(aImplPointer) {}
     TestCall funcCall;
     std::string name;
-    void *implPointer;
+    void* implPointer;
   };
   std::vector<Test> mTests;
 
@@ -48,5 +49,5 @@ class TestBase {
 
  private:
   // This doesn't really work with our generic member pointer trick.
-  TestBase(const TestBase &aOther);
+  TestBase(const TestBase& aOther);
 };

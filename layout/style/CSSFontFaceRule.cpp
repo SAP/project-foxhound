@@ -49,6 +49,9 @@ void CSSFontFaceRuleDecl::GetCssText(nsAString& aCssText) {
 void CSSFontFaceRuleDecl::SetCssText(const nsAString& aCssText,
                                      nsIPrincipal* aSubjectPrincipal,
                                      ErrorResult& aRv) {
+  if (ContainingRule()->IsReadOnly()) {
+    return;
+  }
   aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);  // bug 443978
 }
 
@@ -56,7 +59,10 @@ NS_IMETHODIMP
 CSSFontFaceRuleDecl::GetPropertyValue(const nsAString& aPropName,
                                       nsAString& aResult) {
   aResult.Truncate();
-  GetPropertyValue(nsCSSProps::LookupFontDesc(aPropName), aResult);
+  nsCSSFontDesc descID = nsCSSProps::LookupFontDesc(aPropName);
+  if (descID != eCSSFontDesc_UNKNOWN) {
+    GetPropertyValue(descID, aResult);
+  }
   return NS_OK;
 }
 
@@ -66,6 +72,10 @@ CSSFontFaceRuleDecl::RemoveProperty(const nsAString& aPropName,
   nsCSSFontDesc descID = nsCSSProps::LookupFontDesc(aPropName);
   NS_ASSERTION(descID >= eCSSFontDesc_UNKNOWN && descID < eCSSFontDesc_COUNT,
                "LookupFontDesc returned value out of range");
+
+  if (ContainingRule()->IsReadOnly()) {
+    return NS_OK;
+  }
 
   aResult.Truncate();
   if (descID != eCSSFontDesc_UNKNOWN) {
@@ -88,6 +98,10 @@ CSSFontFaceRuleDecl::SetProperty(const nsAString& aPropName,
                                  nsIPrincipal* aSubjectPrincipal) {
   // FIXME(heycam): If we are changing unicode-range, then a FontFace object
   // representing this rule must have its mUnicodeRange value invalidated.
+
+  if (ContainingRule()->IsReadOnly()) {
+    return NS_OK;
+  }
 
   return NS_ERROR_NOT_IMPLEMENTED;  // bug 443978
 }
@@ -115,6 +129,8 @@ nsINode* CSSFontFaceRuleDecl::GetParentObject() {
 
 JSObject* CSSFontFaceRuleDecl::WrapObject(JSContext* cx,
                                           JS::Handle<JSObject*> aGivenProto) {
+  // If this changes to use a different type, remove the 'concrete'
+  // annotation from CSSStyleDeclaration.
   return CSSStyleDeclaration_Binding::Wrap(cx, this, aGivenProto);
 }
 

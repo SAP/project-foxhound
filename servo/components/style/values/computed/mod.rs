@@ -7,10 +7,10 @@
 use self::transform::DirectionVector;
 use super::animated::ToAnimatedValue;
 use super::generics::grid::GridTemplateComponent as GenericGridTemplateComponent;
-use super::generics::grid::{GridLine as GenericGridLine, TrackBreadth as GenericTrackBreadth};
-use super::generics::grid::{TrackList as GenericTrackList, TrackSize as GenericTrackSize};
+use super::generics::grid::{GenericGridLine, GenericTrackBreadth};
+use super::generics::grid::{GenericTrackSize, TrackList as GenericTrackList};
 use super::generics::transform::IsParallelTo;
-use super::generics::{self, GreaterThanOrEqualToOne, NonNegative};
+use super::generics::{self, GreaterThanOrEqualToOne, NonNegative, ZeroToOne};
 use super::specified;
 use super::{CSSFloat, CSSInteger};
 use crate::context::QuirksMode;
@@ -42,10 +42,11 @@ pub use self::box_::{AnimationIterationCount, AnimationName, Contain};
 pub use self::box_::{Appearance, BreakBetween, BreakWithin, Clear, Float};
 pub use self::box_::{Display, Overflow, OverflowAnchor, TransitionProperty};
 pub use self::box_::{OverflowClipBox, OverscrollBehavior, Perspective, Resize};
-pub use self::box_::{ScrollSnapAlign, ScrollSnapType, TouchAction, VerticalAlign, WillChange};
-pub use self::color::{Color, ColorOrAuto, ColorPropertyValue, RGBAColor};
+pub use self::box_::{ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStrictness, ScrollSnapType};
+pub use self::box_::{TouchAction, VerticalAlign, WillChange};
+pub use self::color::{Color, ColorOrAuto, ColorPropertyValue};
 pub use self::column::ColumnCount;
-pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset};
+pub use self::counters::{Content, ContentItem, CounterIncrement, CounterSetOrReset};
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
 pub use self::flex::FlexBasis;
@@ -55,8 +56,6 @@ pub use self::font::{FontSize, FontSizeAdjust, FontStretch, FontSynthesis};
 pub use self::font::{FontVariantAlternates, FontWeight};
 pub use self::font::{FontVariantEastAsian, FontVariationSettings};
 pub use self::font::{MozScriptLevel, MozScriptMinSize, MozScriptSizeMultiplier, XLang, XTextZoom};
-#[cfg(feature = "gecko")]
-pub use self::gecko::ScrollSnapPoint;
 pub use self::image::{Gradient, GradientItem, Image, ImageLayer, LineDirection, MozImageRect};
 pub use self::length::{CSSPixelLength, ExtremumLength, NonNegativeLength};
 pub use self::length::{Length, LengthOrNumber, LengthPercentage, NonNegativeLengthOrNumber};
@@ -64,8 +63,9 @@ pub use self::length::{LengthOrAuto, LengthPercentageOrAuto, MaxSize, Size};
 pub use self::length::{NonNegativeLengthPercentage, NonNegativeLengthPercentageOrAuto};
 #[cfg(feature = "gecko")]
 pub use self::list::ListStyleType;
+pub use self::list::MozListReversed;
 pub use self::list::{QuotePair, Quotes};
-pub use self::motion::OffsetPath;
+pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::percentage::{NonNegativePercentage, Percentage};
 pub use self::position::{GridAutoFlow, GridTemplateAreas, Position, ZIndex};
@@ -75,7 +75,8 @@ pub use self::svg::MozContextProperties;
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint, SVGPaintKind};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth};
 pub use self::table::XSpan;
-pub use self::text::{InitialLetter, LetterSpacing, LineHeight};
+pub use self::text::TextDecorationSkipInk;
+pub use self::text::{InitialLetter, LetterSpacing, LineBreak, LineHeight};
 pub use self::text::{OverflowWrap, TextOverflow, WordBreak, WordSpacing};
 pub use self::text::{TextAlign, TextEmphasisPosition, TextEmphasisStyle};
 pub use self::time::Time;
@@ -84,6 +85,7 @@ pub use self::transform::{TransformOrigin, TransformStyle, Translate};
 #[cfg(feature = "gecko")]
 pub use self::ui::CursorImage;
 pub use self::ui::{Cursor, MozForceBrokenImageIcon, UserSelect};
+pub use super::specified::TextTransform;
 pub use super::specified::{BorderStyle, TextDecorationLine};
 pub use super::{Auto, Either, None_};
 pub use app_units::Au;
@@ -103,8 +105,6 @@ pub mod easing;
 pub mod effects;
 pub mod flex;
 pub mod font;
-#[cfg(feature = "gecko")]
-pub mod gecko;
 pub mod image;
 pub mod length;
 pub mod list;
@@ -148,7 +148,7 @@ pub struct Context<'a> {
 
     /// A font metrics provider, used to access font metrics to implement
     /// font-relative units.
-    pub font_metrics_provider: &'a FontMetricsProvider,
+    pub font_metrics_provider: &'a dyn FontMetricsProvider,
 
     /// Whether or not we are computing the media list in a media query
     pub in_media_query: bool,
@@ -441,6 +441,25 @@ where
     }
 }
 
+impl<T> ToComputedValue for crate::OwnedSlice<T>
+where
+    T: ToComputedValue,
+{
+    type ComputedValue = crate::OwnedSlice<<T as ToComputedValue>::ComputedValue>;
+
+    #[inline]
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        self.iter()
+            .map(|item| item.to_computed_value(context))
+            .collect()
+    }
+
+    #[inline]
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        computed.iter().map(T::from_computed_value).collect()
+    }
+}
+
 trivial_to_computed_value!(());
 trivial_to_computed_value!(bool);
 trivial_to_computed_value!(f32);
@@ -501,6 +520,30 @@ impl From<NonNegativeNumber> for CSSFloat {
     }
 }
 
+/// A wrapper of Number, but the value between 0 and 1
+pub type ZeroToOneNumber = ZeroToOne<CSSFloat>;
+
+impl ToAnimatedValue for ZeroToOneNumber {
+    type AnimatedValue = CSSFloat;
+
+    #[inline]
+    fn to_animated_value(self) -> Self::AnimatedValue {
+        self.0
+    }
+
+    #[inline]
+    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
+        Self(animated.max(0.).min(1.))
+    }
+}
+
+impl From<CSSFloat> for ZeroToOneNumber {
+    #[inline]
+    fn from(number: CSSFloat) -> Self {
+        Self(number)
+    }
+}
+
 /// A wrapper of Number, but the value >= 1.
 pub type GreaterThanOrEqualToOneNumber = GreaterThanOrEqualToOne<CSSFloat>;
 
@@ -533,7 +576,9 @@ impl From<GreaterThanOrEqualToOneNumber> for CSSFloat {
 }
 
 #[allow(missing_docs)]
-#[derive(Clone, ComputeSquaredDistance, Copy, Debug, MallocSizeOf, PartialEq, ToCss)]
+#[derive(
+    Clone, ComputeSquaredDistance, Copy, Debug, MallocSizeOf, PartialEq, ToCss, ToResolvedValue,
+)]
 #[repr(C, u8)]
 pub enum NumberOrPercentage {
     Percentage(Percentage),
@@ -634,6 +679,9 @@ impl From<CSSInteger> for PositiveInteger {
         GreaterThanOrEqualToOne::<CSSInteger>(int)
     }
 }
+
+/// A computed positive `<integer>` value or `none`.
+pub type PositiveIntegerOrNone = Either<PositiveInteger, None_>;
 
 /// rect(...)
 pub type ClipRect = generics::ClipRect<LengthOrAuto>;

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -18,7 +18,7 @@ let testCounter = 0;
 function checkFinish() {
   testCounter++;
   if (testCounter < NUMBER_OF_TESTS) {
-  	return;
+    return;
   }
   SimpleTest.finish();
 }
@@ -31,7 +31,7 @@ myFrame1.addEventListener("load", checkLoadFrame1);
 document.documentElement.appendChild(myFrame1);
 
 function checkLoadFrame1() {
-  myFrame1.removeEventListener('load', checkLoadFrame1, false);
+  myFrame1.removeEventListener("load", checkLoadFrame1);
   // window.location.href is no longer cross-origin accessible in gecko.
   is(SpecialPowers.wrap(myFrame1.contentWindow).location.href, SAME_ORIGIN_URI,
     "initial same origin dummy loaded into frame1");
@@ -44,18 +44,20 @@ function checkLoadFrame1() {
   myFrame1.src = CROSS_ORIGIN_URI;
 }
 
-function checkNavFrame1() {
-  myFrame1.removeEventListener('load', checkNavFrame1, false);
-  is(SpecialPowers.wrap(myFrame1.contentWindow).location.href, CROSS_ORIGIN_URI,
+async function checkNavFrame1() {
+  myFrame1.removeEventListener("load", checkNavFrame1);
+  is(await SpecialPowers.spawn(myFrame1, [], () => this.content.location.href),
+     CROSS_ORIGIN_URI,
     "cross origin dummy loaded into frame1");
 
   myFrame1.addEventListener("load", checkBackNavFrame1);
   myFrame1.src = SAME_ORIGIN_URI + "#bar";
 }
 
-function checkBackNavFrame1() {
-  myFrame1.removeEventListener('load', checkBackNavFrame1, false);
-  is(SpecialPowers.wrap(myFrame1.contentWindow).location.href, SAME_ORIGIN_URI + "#bar",
+async function checkBackNavFrame1() {
+  myFrame1.removeEventListener("load", checkBackNavFrame1);
+  is(await SpecialPowers.spawn(myFrame1, [], () => this.content.location.href),
+     SAME_ORIGIN_URI + "#bar",
     "navagiating back to same origin dummy for frame1");
   checkFinish();
 }
@@ -68,20 +70,20 @@ myFrame2.addEventListener("load", checkLoadFrame2);
 document.documentElement.appendChild(myFrame2);
 
 function checkLoadFrame2() {
-  myFrame2.removeEventListener('load', checkLoadFrame2, false);
+  myFrame2.removeEventListener("load", checkLoadFrame2);
   is(SpecialPowers.wrap(myFrame2.contentWindow).location.href, "about:blank",
     "initial about:blank frame loaded");
 
   myFrame2.contentWindow.location.hash = "#foo";
   is(SpecialPowers.wrap(myFrame2.contentWindow).location.href, "about:blank#foo",
       "about:blank#foo frame loaded");
-  
-  myFrame2.addEventListener('load', checkHistoryFrame2);
+
+  myFrame2.addEventListener("load", checkHistoryFrame2);
   myFrame2.src = "about:blank";
 }
 
 function checkHistoryFrame2() {
-  myFrame2.removeEventListener('load', checkHistoryFrame2, false);
+  myFrame2.removeEventListener("load", checkHistoryFrame2);
   is(SpecialPowers.wrap(myFrame2.contentWindow).location.href, "about:blank",
     "about:blank frame loaded again");
   checkFinish();

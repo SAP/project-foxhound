@@ -10,10 +10,11 @@
 // Keep others in (case-insensitive) order:
 #include "AutoReferenceChainGuard.h"
 #include "gfxUtils.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/SVGFilterElement.h"
 #include "nsGkAtoms.h"
 #include "SVGObserverUtils.h"
 #include "SVGElement.h"
-#include "mozilla/dom/SVGFilterElement.h"
 #include "nsSVGFilterInstance.h"
 #include "nsSVGIntegrationUtils.h"
 #include "nsSVGUtils.h"
@@ -22,8 +23,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsIFrame* NS_NewSVGFilterFrame(nsIPresShell* aPresShell,
-                               ComputedStyle* aStyle) {
+nsIFrame* NS_NewSVGFilterFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell)
       nsSVGFilterFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -31,7 +31,7 @@ nsIFrame* NS_NewSVGFilterFrame(nsIPresShell* aPresShell,
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGFilterFrame)
 
 uint16_t nsSVGFilterFrame::GetEnumValue(uint32_t aIndex, nsIContent* aDefault) {
-  SVGEnum& thisEnum =
+  SVGAnimatedEnumeration& thisEnum =
       static_cast<SVGFilterElement*>(GetContent())->mEnumAttributes[aIndex];
 
   if (thisEnum.IsExplicitlySet()) {
@@ -58,9 +58,9 @@ uint16_t nsSVGFilterFrame::GetEnumValue(uint32_t aIndex, nsIContent* aDefault) {
                     .GetAnimValue();
 }
 
-const nsSVGLength2* nsSVGFilterFrame::GetLengthValue(uint32_t aIndex,
-                                                     nsIContent* aDefault) {
-  const nsSVGLength2* thisLength =
+const SVGAnimatedLength* nsSVGFilterFrame::GetLengthValue(
+    uint32_t aIndex, nsIContent* aDefault) {
+  const SVGAnimatedLength* thisLength =
       &static_cast<SVGFilterElement*>(GetContent())->mLengthAttributes[aIndex];
 
   if (thisLength->IsExplicitlySet()) {

@@ -20,8 +20,14 @@ const AUTOCOMPLETE = "devtools.editor.autocomplete";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
 const VALID_KEYMAPS = new Map([
-  ["emacs", "chrome://devtools/content/shared/sourceeditor/codemirror/keymap/emacs.js"],
-  ["vim", "chrome://devtools/content/shared/sourceeditor/codemirror/keymap/vim.js"],
+  [
+    "emacs",
+    "chrome://devtools/content/shared/sourceeditor/codemirror/keymap/emacs.js",
+  ],
+  [
+    "vim",
+    "chrome://devtools/content/shared/sourceeditor/codemirror/keymap/vim.js",
+  ],
   [
     "sublime",
     "chrome://devtools/content/shared/sourceeditor/codemirror/keymap/sublime.js",
@@ -43,10 +49,16 @@ const EventEmitter = require("devtools/shared/event-emitter");
 const { PrefObserver } = require("devtools/client/shared/prefs");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 
-const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/client/locales/sourceeditor.properties");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper(
+  "devtools/client/locales/sourceeditor.properties"
+);
 
-loader.lazyRequireGetter(this, "wasm", "devtools/client/shared/sourceeditor/wasm");
+loader.lazyRequireGetter(
+  this,
+  "wasm",
+  "devtools/client/shared/sourceeditor/wasm"
+);
 
 const { OS } = Services.appinfo;
 
@@ -56,7 +68,8 @@ const { OS } = Services.appinfo;
 const CM_BUNDLE =
   "chrome://devtools/content/shared/sourceeditor/codemirror/codemirror.bundle.js";
 
-const CM_IFRAME = "chrome://devtools/content/shared/sourceeditor/codemirror/cmiframe.html";
+const CM_IFRAME =
+  "chrome://devtools/content/shared/sourceeditor/codemirror/cmiframe.html";
 
 const CM_MAPPING = [
   "clearHistory",
@@ -129,7 +142,11 @@ function Editor(config) {
     matchBrackets: true,
     extraKeys: {},
     indentWithTabs: useTabs,
-    inputStyle: "textarea",
+    inputStyle: "accessibleTextArea",
+    // This is set to the biggest value for setTimeout (See https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/setTimeout#Maximum_delay_value)
+    // This is because codeMirror queries the underlying textArea for some things that
+    // can't be retrieved with events in some browser (but we're fine in Firefox).
+    pollInterval: Math.pow(2, 31) - 1,
     styleActiveLine: true,
     autoCloseBrackets: "()[]{}''\"\"``",
     autoCloseEnabled: useAutoClose,
@@ -141,14 +158,16 @@ function Editor(config) {
     cssProperties: null,
     // Set to true to prevent the search addon to be activated.
     disableSearchAddon: false,
+    maxHighlightLength: 1000,
   };
 
   // Additional shortcuts.
   this.config.extraKeys[Editor.keyFor("jumpToLine")] = () => this.jumpToLine();
-  this.config.extraKeys[Editor.keyFor("moveLineUp", { noaccel: true })] =
-    () => this.moveLineUp();
-  this.config.extraKeys[Editor.keyFor("moveLineDown", { noaccel: true })] =
-    () => this.moveLineDown();
+  this.config.extraKeys[Editor.keyFor("moveLineUp", { noaccel: true })] = () =>
+    this.moveLineUp();
+  this.config.extraKeys[
+    Editor.keyFor("moveLineDown", { noaccel: true })
+  ] = () => this.moveLineDown();
   this.config.extraKeys[Editor.keyFor("toggleComment")] = "toggleComment";
 
   // Disable ctrl-[ and ctrl-] because toolbox uses those shortcuts.
@@ -180,8 +199,10 @@ function Editor(config) {
   if (!this.config.gutters) {
     this.config.gutters = [];
   }
-  if (this.config.lineNumbers
-      && !this.config.gutters.includes("CodeMirror-linenumbers")) {
+  if (
+    this.config.lineNumbers &&
+    !this.config.gutters.includes("CodeMirror-linenumbers")
+  ) {
     this.config.gutters.push("CodeMirror-linenumbers");
   }
 
@@ -259,6 +280,13 @@ Editor.prototype = {
   },
 
   /**
+   * Return whether there is a CodeMirror instance associated with this Editor.
+   */
+  get hasCodeMirror() {
+    return editors.has(this);
+  },
+
+  /**
    * Appends the current Editor instance to the element specified by
    * 'el'. You can also provide your own iframe to host the editor as
    * an optional second parameter. This method actually creates and
@@ -327,11 +355,9 @@ Editor.prototype = {
       // Replace the propertyKeywords, colorKeywords and valueKeywords
       // properties of the CSS MIME type with the values provided by the CSS properties
       // database.
-      const {
-        propertyKeywords,
-        colorKeywords,
-        valueKeywords,
-      } = getCSSKeywords(this.config.cssProperties);
+      const { propertyKeywords, colorKeywords, valueKeywords } = getCSSKeywords(
+        this.config.cssProperties
+      );
 
       const cssSpec = win.CodeMirror.resolveMode("text/css");
       cssSpec.propertyKeywords = propertyKeywords;
@@ -403,7 +429,7 @@ Editor.prototype = {
       "scroll",
     ];
     for (const eventName of pipedEvents) {
-      cm.on(eventName, () => this.emit(eventName));
+      cm.on(eventName, (...args) => this.emit(eventName, ...args));
     }
 
     cm.on("change", () => {
@@ -419,7 +445,7 @@ Editor.prototype = {
       this.emit("gutterClick", lineOrOffset, ev.button);
     });
 
-    win.CodeMirror.defineExtension("l10n", (name) => {
+    win.CodeMirror.defineExtension("l10n", name => {
       return L10N.getStr(name);
     });
 
@@ -528,8 +554,9 @@ Editor.prototype = {
    * Kept for backward compatibility with scratchpad and styleeditor.
    */
   insertCommandsController: function() {
-    const { insertCommandsController } =
-      require("devtools/client/shared/sourceeditor/editor-commands-controller");
+    const {
+      insertCommandsController,
+    } = require("devtools/client/shared/sourceeditor/editor-commands-controller");
     insertCommandsController(this);
   },
 
@@ -592,7 +619,8 @@ Editor.prototype = {
   setText: function(value) {
     const cm = editors.get(this);
 
-    if (typeof value !== "string" && "binary" in value) { // wasm?
+    if (typeof value !== "string" && "binary" in value) {
+      // wasm?
       // binary does not survive as Uint8Array, converting from string
       const binary = value.binary;
       const data = new Uint8Array(binary.length);
@@ -625,8 +653,10 @@ Editor.prototype = {
   reloadPreferences: function() {
     // Restore the saved autoCloseBrackets value if it is preffed on.
     const useAutoClose = Services.prefs.getBoolPref(AUTO_CLOSE);
-    this.setOption("autoCloseBrackets",
-      useAutoClose ? this.config.autoCloseBracketsSaved : false);
+    this.setOption(
+      "autoCloseBrackets",
+      useAutoClose ? this.config.autoCloseBracketsSaved : false
+    );
 
     this.updateCodeFoldingGutter();
 
@@ -666,12 +696,12 @@ Editor.prototype = {
     const cm = editors.get(this);
 
     const iterFn = function(start, end, callback) {
-      cm.eachLine(start, end, (line) => {
+      cm.eachLine(start, end, line => {
         return callback(line.text);
       });
     };
 
-    const {indentUnit, indentWithTabs} = getIndentationFromIteration(iterFn);
+    const { indentUnit, indentWithTabs } = getIndentationFromIteration(iterFn);
 
     cm.setOption("tabSize", indentUnit);
     cm.setOption("indentUnit", indentUnit);
@@ -742,7 +772,7 @@ Editor.prototype = {
    */
   setFirstVisibleLine: function(line) {
     const cm = editors.get(this);
-    const { top } = cm.charCoords({line: line, ch: 0}, "local");
+    const { top } = cm.charCoords({ line: line, ch: 0 }, "local");
     cm.scrollTo(0, top);
   },
 
@@ -751,10 +781,10 @@ Editor.prototype = {
    * option to align the line at the "top", "center" or "bottom" of the editor
    * with "top" being default value.
    */
-  setCursor: function({line, ch}, align) {
+  setCursor: function({ line, ch }, align) {
     const cm = editors.get(this);
     this.alignLine(line, align);
-    cm.setCursor({line: line, ch: ch});
+    cm.setCursor({ line: line, ch: ch });
     this.emit("cursorActivity");
   },
 
@@ -780,11 +810,12 @@ Editor.prototype = {
     // MAX_VERTICAL_OFFSET is the maximum allowed value.
     const offset = Math.min(halfVisible, MAX_VERTICAL_OFFSET);
 
-    let topLine = {
-      "center": Math.max(line - halfVisible, 0),
-      "bottom": Math.max(line - linesVisible + offset, 0),
-      "top": Math.max(line - offset, 0),
-    }[align || "top"] || offset;
+    let topLine =
+      {
+        center: Math.max(line - halfVisible, 0),
+        bottom: Math.max(line - linesVisible + offset, 0),
+        top: Math.max(line - offset, 0),
+      }[align || "top"] || offset;
 
     // Bringing down the topLine to total lines in the editor if exceeding.
     topLine = Math.min(topLine, this.lineCount());
@@ -979,7 +1010,7 @@ Editor.prototype = {
    */
   getPosition: function(...args) {
     const cm = editors.get(this);
-    const res = args.map((ind) => cm.posFromIndex(ind));
+    const res = args.map(ind => cm.posFromIndex(ind));
     return args.length === 1 ? res[0] : res;
   },
 
@@ -990,7 +1021,7 @@ Editor.prototype = {
    */
   getOffset: function(...args) {
     const cm = editors.get(this);
-    const res = args.map((pos) => cm.indexFromPos(pos));
+    const res = args.map(pos => cm.indexFromPos(pos));
     return args.length > 1 ? res : res[0];
   },
 
@@ -998,7 +1029,7 @@ Editor.prototype = {
    * Returns a {line, ch} object that corresponds to the
    * left, top coordinates.
    */
-  getPositionFromCoords: function({left, top}) {
+  getPositionFromCoords: function({ left, top }) {
     const cm = editors.get(this);
     return cm.coordsChar({ left: left, top: top });
   },
@@ -1007,7 +1038,7 @@ Editor.prototype = {
    * The reverse of getPositionFromCoords. Similarly, returns a {left, top}
    * object that corresponds to the specified line and character number.
    */
-  getCoordsFromPosition: function({line, ch}) {
+  getCoordsFromPosition: function({ line, ch }) {
     const cm = editors.get(this);
     return cm.charCoords({ line: ~~line, ch: ~~ch });
   },
@@ -1074,18 +1105,18 @@ Editor.prototype = {
       // In the string above this is line 10, column 2.
       const match = sel.match(RE_SCRATCHPAD_ERROR);
       if (match) {
-        const [, line, column ] = match;
+        const [, line, column] = match;
         inp.value = column ? line + ":" + column : line;
         inp.selectionStart = inp.selectionEnd = inp.value.length;
       }
     }
 
-    this.openDialog(div, (line) => {
+    this.openDialog(div, line => {
       // Handle LINE:COLUMN as well as LINE
       const match = line.toString().match(RE_JUMP_TO_LINE);
       if (match) {
-        const [, matchLine, column ] = match;
-        this.setCursor({line: matchLine - 1, ch: column ? column - 1 : 0 });
+        const [, matchLine, column] = match;
+        this.setCursor({ line: matchLine - 1, ch: column ? column - 1 : 0 });
       }
     });
   },
@@ -1106,8 +1137,11 @@ Editor.prototype = {
     // and append the text of the previous line.
     let value;
     if (start.line !== end.line) {
-      value = cm.getRange({ line: start.line, ch: 0 },
-        { line: end.line, ch: cm.getLine(end.line).length }) + "\n";
+      value =
+        cm.getRange(
+          { line: start.line, ch: 0 },
+          { line: end.line, ch: cm.getLine(end.line).length }
+        ) + "\n";
     } else {
       value = cm.getLine(start.line) + "\n";
     }
@@ -1115,10 +1149,15 @@ Editor.prototype = {
 
     // Replace the previous line and the currently selected lines with the new
     // value and maintain the selection of the text.
-    cm.replaceRange(value, { line: start.line - 1, ch: 0 },
-      { line: end.line, ch: cm.getLine(end.line).length });
-    cm.setSelection({ line: start.line - 1, ch: start.ch },
-      { line: end.line - 1, ch: end.ch });
+    cm.replaceRange(
+      value,
+      { line: start.line - 1, ch: 0 },
+      { line: end.line, ch: cm.getLine(end.line).length }
+    );
+    cm.setSelection(
+      { line: start.line - 1, ch: start.ch },
+      { line: end.line - 1, ch: end.ch }
+    );
   },
 
   /**
@@ -1137,18 +1176,25 @@ Editor.prototype = {
     // or the current line of the cursor.
     let value = cm.getLine(end.line + 1) + "\n";
     if (start.line !== end.line) {
-      value += cm.getRange({ line: start.line, ch: 0 },
-        { line: end.line, ch: cm.getLine(end.line).length });
+      value += cm.getRange(
+        { line: start.line, ch: 0 },
+        { line: end.line, ch: cm.getLine(end.line).length }
+      );
     } else {
       value += cm.getLine(start.line);
     }
 
     // Replace the currently selected lines and the next line with the new
     // value and maintain the selection of the text.
-    cm.replaceRange(value, { line: start.line, ch: 0 },
-      { line: end.line + 1, ch: cm.getLine(end.line + 1).length});
-    cm.setSelection({ line: start.line + 1, ch: start.ch },
-      { line: end.line + 1, ch: end.ch });
+    cm.replaceRange(
+      value,
+      { line: start.line, ch: 0 },
+      { line: end.line + 1, ch: cm.getLine(end.line + 1).length }
+    );
+    cm.setSelection(
+      { line: start.line + 1, ch: start.ch },
+      { line: end.line + 1, ch: end.ch }
+    );
   },
 
   /**
@@ -1160,9 +1206,10 @@ Editor.prototype = {
     const isSearchInput = isInput && node.type === "search";
     // replace box is a different input instance than search, and it is
     // located in a code mirror dialog
-    const isDialogInput = isInput &&
-        node.parentNode &&
-        node.parentNode.classList.contains("CodeMirror-dialog");
+    const isDialogInput =
+      isInput &&
+      node.parentNode &&
+      node.parentNode.classList.contains("CodeMirror-dialog");
     if (!(isSearchInput || isDialogInput)) {
       return;
     }
@@ -1302,7 +1349,9 @@ Editor.prototype = {
 
   getAutoCompletionText() {
     const cm = editors.get(this);
-    const mark = cm.getAllMarks().find(m => m.className === AUTOCOMPLETE_MARK_CLASSNAME);
+    const mark = cm
+      .getAllMarks()
+      .find(m => m.className === AUTOCOMPLETE_MARK_CLASSNAME);
     if (!mark) {
       return "";
     }
@@ -1323,7 +1372,10 @@ Editor.prototype = {
       });
 
       if (text) {
-        cm.markText({...cursor, ch: cursor.ch - 1}, cursor, { className, title: text });
+        cm.markText({ ...cursor, ch: cursor.ch - 1 }, cursor, {
+          className,
+          title: text,
+        });
       }
     });
   },
@@ -1348,7 +1400,7 @@ Editor.prototype = {
   extend: function(funcs) {
     Object.keys(funcs).forEach(name => {
       const cm = editors.get(this);
-      const ctx = { ed: this, cm: cm, Editor: Editor};
+      const ctx = { ed: this, cm: cm, Editor: Editor };
 
       if (name === "initialize") {
         funcs[name](ctx);
@@ -1390,7 +1442,9 @@ Editor.prototype = {
 
   updateCodeFoldingGutter: function() {
     let shouldFoldGutter = this.config.enableCodeFolding;
-    const foldGutterIndex = this.config.gutters.indexOf("CodeMirror-foldgutter");
+    const foldGutterIndex = this.config.gutters.indexOf(
+      "CodeMirror-foldgutter"
+    );
     const cm = editors.get(this);
 
     if (shouldFoldGutter === undefined) {
@@ -1431,11 +1485,7 @@ Editor.prototype = {
       window: win,
     });
     this._onSearchShortcut = this._onSearchShortcut.bind(this);
-    const keys = [
-      "find.key",
-      "findNext.key",
-      "findPrev.key",
-    ];
+    const keys = ["find.key", "findNext.key", "findPrev.key"];
 
     if (OS === "Darwin") {
       keys.push("replaceAllMac.key");
@@ -1448,7 +1498,7 @@ Editor.prototype = {
       shortcuts.on(key, event => this._onSearchShortcut(name, event));
     });
   },
-    /**
+  /**
    * Key shortcut listener.
    */
   _onSearchShortcut: function(name, event) {
@@ -1515,9 +1565,12 @@ CM_MAPPING.forEach(name => {
  * order: Shift - Ctrl/Cmd - Alt - Key
  */
 Editor.accel = function(key, modifiers = {}) {
-  return (modifiers.shift ? "Shift-" : "") +
-         (Services.appinfo.OS == "Darwin" ? "Cmd-" : "Ctrl-") +
-         (modifiers.alt ? "Alt-" : "") + key;
+  return (
+    (modifiers.shift ? "Shift-" : "") +
+    (Services.appinfo.OS == "Darwin" ? "Cmd-" : "Ctrl-") +
+    (modifiers.alt ? "Alt-" : "") +
+    key
+  );
 };
 
 /**

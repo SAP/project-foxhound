@@ -1362,8 +1362,11 @@ luC(enum usage_level ul, const char *command)
               "%-20s Create extended key usage extension. Possible keywords:\n"
               "%-20s \"serverAuth\", \"clientAuth\",\"codeSigning\",\n"
               "%-20s \"emailProtection\", \"timeStamp\",\"ocspResponder\",\n"
-              "%-20s \"stepUp\", \"msTrustListSign\", \"critical\"\n",
-        "   -6 | --extKeyUsage keyword,keyword,...", "", "", "", "");
+              "%-20s \"stepUp\", \"msTrustListSign\", \"x509Any\",\n"
+              "%-20s \"ipsecIKE\", \"ipsecIKEEnd\", \"ipsecIKEIntermediate\",\n"
+              "%-20s \"ipsecEnd\", \"ipsecTunnel\", \"ipsecUser\",\n"
+              "%-20s \"critical\"\n",
+        "   -6 | --extKeyUsage keyword,keyword,...", "", "", "", "", "", "", "");
     FPS "%-20s Create an email subject alt name extension\n",
         "   -7 emailAddrs");
     FPS "%-20s Create an dns subject alt name extension\n",
@@ -3120,7 +3123,7 @@ certutil_main(int argc, char **argv, PRBool initialize)
         PR_fprintf(PR_STDERR,
                    "%s -%c: specify a nickname (-n) or\n"
                    "   a key ID (-k).\n",
-                   commandToRun, progName);
+                   progName, commandToRun);
         return 255;
     }
 

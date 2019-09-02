@@ -443,16 +443,14 @@ void DOMMediaStream::AddTrack(MediaStreamTrack& aTrack) {
     LOG(LogLevel::Error, ("DOMMediaStream %p Own MSG %p != aTrack's MSG %p",
                           this, mPlaybackStream->Graph(), aTrack.Graph()));
 
-    nsAutoString trackId;
-    aTrack.GetId(trackId);
-    const char16_t* params[] = {trackId.get()};
+    AutoTArray<nsString, 1> params;
+    aTrack.GetId(*params.AppendElement());
     nsCOMPtr<nsPIDOMWindowInner> pWindow = GetParentObject();
     Document* document = pWindow ? pWindow->GetExtantDoc() : nullptr;
-    nsContentUtils::ReportToConsole(nsIScriptError::errorFlag,
-                                    NS_LITERAL_CSTRING("Media"), document,
-                                    nsContentUtils::eDOM_PROPERTIES,
-                                    "MediaStreamAddTrackDifferentAudioChannel",
-                                    params, ArrayLength(params));
+    nsContentUtils::ReportToConsole(
+        nsIScriptError::errorFlag, NS_LITERAL_CSTRING("Media"), document,
+        nsContentUtils::eDOM_PROPERTIES,
+        "MediaStreamAddTrackDifferentAudioChannel", params);
     return;
   }
 
@@ -1055,11 +1053,12 @@ void DOMMediaStream::BlockPlaybackTrack(TrackPort* aTrack) {
   RefPtr<DOMMediaStream> that = this;
   aTrack
       ->BlockSourceTrackId(aTrack->GetTrack()->mTrackID, BlockingMode::CREATION)
-      ->Then(GetCurrentThreadSerialEventTarget(), __func__,
-             [this, that](bool aIgnore) { NotifyPlaybackTrackBlocked(); },
-             [](const nsresult& aIgnore) {
-               NS_ERROR("Could not remove track from MSG");
-             });
+      ->Then(
+          GetCurrentThreadSerialEventTarget(), __func__,
+          [this, that](bool aIgnore) { NotifyPlaybackTrackBlocked(); },
+          [](const nsresult& aIgnore) {
+            NS_ERROR("Could not remove track from MSG");
+          });
 }
 
 void DOMMediaStream::NotifyPlaybackTrackBlocked() {

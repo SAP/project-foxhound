@@ -21,11 +21,13 @@
 #include "nsIRedirectHistoryEntry.h"
 
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/Components.h"
 #include "mozilla/Logging.h"
+#include "xpcpublic.h"
 
 NS_IMPL_ISUPPORTS(nsContentSecurityManager, nsIContentSecurityManager,
                   nsIChannelEventSink)
@@ -97,17 +99,18 @@ bool nsContentSecurityManager::AllowTopLevelNavigationToDataURI(
     dataSpec.AppendLiteral("...");
   }
   nsCOMPtr<nsISupports> context = loadInfo->ContextForTopLevelLoad();
-  nsCOMPtr<nsITabChild> tabChild = do_QueryInterface(context);
+  nsCOMPtr<nsIBrowserChild> browserChild = do_QueryInterface(context);
   nsCOMPtr<Document> doc;
-  if (tabChild) {
-    doc = static_cast<mozilla::dom::TabChild*>(tabChild.get())->GetDocument();
+  if (browserChild) {
+    doc = static_cast<mozilla::dom::BrowserChild*>(browserChild.get())
+              ->GetTopLevelDocument();
   }
-  NS_ConvertUTF8toUTF16 specUTF16(NS_UnescapeURL(dataSpec));
-  const char16_t* params[] = {specUTF16.get()};
-  nsContentUtils::ReportToConsole(
-      nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DATA_URI_BLOCKED"), doc,
-      nsContentUtils::eSECURITY_PROPERTIES, "BlockTopLevelDataURINavigation",
-      params, ArrayLength(params));
+  AutoTArray<nsString, 1> params;
+  CopyUTF8toUTF16(NS_UnescapeURL(dataSpec), *params.AppendElement());
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                  NS_LITERAL_CSTRING("DATA_URI_BLOCKED"), doc,
+                                  nsContentUtils::eSECURITY_PROPERTIES,
+                                  "BlockTopLevelDataURINavigation", params);
   return false;
 }
 
@@ -148,13 +151,58 @@ bool nsContentSecurityManager::AllowInsecureRedirectToDataURI(
   if (node) {
     doc = node->OwnerDoc();
   }
-  NS_ConvertUTF8toUTF16 specUTF16(NS_UnescapeURL(dataSpec));
-  const char16_t* params[] = {specUTF16.get()};
-  nsContentUtils::ReportToConsole(
-      nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DATA_URI_BLOCKED"), doc,
-      nsContentUtils::eSECURITY_PROPERTIES, "BlockSubresourceRedirectToData",
-      params, ArrayLength(params));
+  AutoTArray<nsString, 1> params;
+  CopyUTF8toUTF16(NS_UnescapeURL(dataSpec), *params.AppendElement());
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                  NS_LITERAL_CSTRING("DATA_URI_BLOCKED"), doc,
+                                  nsContentUtils::eSECURITY_PROPERTIES,
+                                  "BlockSubresourceRedirectToData", params);
   return false;
+}
+
+/* static */
+void nsContentSecurityManager::AssertEvalNotUsingSystemPrincipal(
+    nsIPrincipal* subjectPrincipal, JSContext* cx) {
+  if (!subjectPrincipal->IsSystemPrincipal()) {
+    return;
+  }
+
+  if (Preferences::GetBool("security.allow_eval_with_system_principal")) {
+    return;
+  }
+
+  static StaticAutoPtr<nsTArray<nsCString>> sUrisAllowEval;
+  JS::AutoFilename scriptFilename;
+  if (JS::DescribeScriptedCaller(cx, &scriptFilename)) {
+    if (!sUrisAllowEval) {
+      sUrisAllowEval = new nsTArray<nsCString>();
+      nsAutoCString urisAllowEval;
+      Preferences::GetCString("security.uris_using_eval_with_system_principal",
+                              urisAllowEval);
+      for (const nsACString& filenameString : urisAllowEval.Split(',')) {
+        sUrisAllowEval->AppendElement(filenameString);
+      }
+      ClearOnShutdown(&sUrisAllowEval);
+    }
+
+    nsAutoCString fileName;
+    fileName = nsAutoCString(scriptFilename.get());
+    // Extract file name alone if scriptFilename contains line number
+    // separated by multiple space delimiters in few cases.
+    int32_t fileNameIndex = fileName.FindChar(' ');
+    if (fileNameIndex != -1) {
+      fileName = Substring(fileName, 0, fileNameIndex);
+    }
+    ToLowerCase(fileName);
+
+    for (auto& uriEntry : *sUrisAllowEval) {
+      if (StringEndsWith(fileName, uriEntry)) {
+        return;
+      }
+    }
+  }
+
+  MOZ_ASSERT(false, "do not use eval with system privileges");
 }
 
 /* static */
@@ -210,13 +258,12 @@ nsresult nsContentSecurityManager::CheckFTPSubresourceLoad(
 
   nsAutoCString spec;
   uri->GetSpec(spec);
-  NS_ConvertUTF8toUTF16 specUTF16(NS_UnescapeURL(spec));
-  const char16_t* params[] = {specUTF16.get()};
+  AutoTArray<nsString, 1> params;
+  CopyUTF8toUTF16(NS_UnescapeURL(spec), *params.AppendElement());
 
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("FTP_URI_BLOCKED"), doc,
-      nsContentUtils::eSECURITY_PROPERTIES, "BlockSubresourceFTP", params,
-      ArrayLength(params));
+      nsContentUtils::eSECURITY_PROPERTIES, "BlockSubresourceFTP", params);
 
   return NS_ERROR_CONTENT_BLOCKED;
 }
@@ -568,6 +615,9 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
                                  nsContentUtils::GetContentPolicy());
 
   if (NS_FAILED(rv) || NS_CP_REJECTED(shouldLoad)) {
+    NS_SetRequestBlockingReasonIfNull(
+        aLoadInfo, nsILoadInfo::BLOCKING_REASON_CONTENT_POLICY_GENERAL);
+
     if ((NS_SUCCEEDED(rv) && shouldLoad == nsIContentPolicy::REJECT_TYPE) &&
         (contentPolicyType == nsIContentPolicy::TYPE_DOCUMENT ||
          contentPolicyType == nsIContentPolicy::TYPE_SUBDOCUMENT)) {
@@ -729,8 +779,7 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
              aLoadInfo->GetInitialSecurityCheckDone() ? "true" : "false"));
 
     // Log CSPrequestPrincipal
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    requestPrincipal->GetCsp(getter_AddRefs(csp));
+    nsCOMPtr<nsIContentSecurityPolicy> csp = aLoadInfo->GetCsp();
     if (csp) {
       nsAutoString parsedPolicyStr;
       uint32_t count = 0;
@@ -749,6 +798,89 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
     MOZ_LOG(sCSMLog, LogLevel::Debug, ("}\n\n"));
   }
 }
+
+#ifdef EARLY_BETA_OR_EARLIER
+// Assert that we never use the SystemPrincipal to load remote documents
+// i.e., HTTP, HTTPS, FTP URLs
+static void AssertSystemPrincipalMustNotLoadRemoteDocuments(
+    nsIChannel* aChannel) {
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+
+  // bail out, if we're not loading with a SystemPrincipal
+  if (!nsContentUtils::IsSystemPrincipal(loadInfo->LoadingPrincipal())) {
+    return;
+  }
+  nsContentPolicyType contentPolicyType =
+      loadInfo->GetExternalContentPolicyType();
+  if ((contentPolicyType != nsIContentPolicy::TYPE_DOCUMENT) &&
+      (contentPolicyType != nsIContentPolicy::TYPE_SUBDOCUMENT)) {
+    return;
+  }
+  nsCOMPtr<nsIURI> finalURI;
+  NS_GetFinalChannelURI(aChannel, getter_AddRefs(finalURI));
+  // bail out, if URL isn't pointing to remote resource
+  if (!nsContentUtils::SchemeIs(finalURI, "http") &&
+      !nsContentUtils::SchemeIs(finalURI, "https") &&
+      !nsContentUtils::SchemeIs(finalURI, "ftp")) {
+    return;
+  }
+
+  // FIXME The discovery feature in about:addons uses the SystemPrincpal.
+  // We should remove the exception for AMO with bug 1544011.
+  // We should remove the exception for Firefox Accounts with bug 1561310.
+  static nsAutoCString sDiscoveryPrePath;
+#  ifdef ANDROID
+  static nsAutoCString sFxaSPrePath;
+#  endif
+  static bool recvdPrefValues = false;
+  if (!recvdPrefValues) {
+    nsAutoCString discoveryURLString;
+    Preferences::GetCString("extensions.webservice.discoverURL",
+                            discoveryURLString);
+    // discoverURL is by default suffixed with parameters in path like
+    // /%LOCALE%/ so, we use the prePath for comparison
+    nsCOMPtr<nsIURI> discoveryURL;
+    NS_NewURI(getter_AddRefs(discoveryURL), discoveryURLString);
+    if (discoveryURL) {
+      discoveryURL->GetPrePath(sDiscoveryPrePath);
+    }
+#  ifdef ANDROID
+    nsAutoCString fxaURLString;
+    Preferences::GetCString("identity.fxaccounts.remote.webchannel.uri",
+                            fxaURLString);
+    nsCOMPtr<nsIURI> fxaURL;
+    NS_NewURI(getter_AddRefs(fxaURL), fxaURLString);
+    if (fxaURL) {
+      fxaURL->GetPrePath(sFxaSPrePath);
+    }
+#  endif
+    recvdPrefValues = true;
+  }
+  nsAutoCString requestedPrePath;
+  finalURI->GetPrePath(requestedPrePath);
+
+  if (requestedPrePath.Equals(sDiscoveryPrePath)) {
+    return;
+  }
+#  ifdef ANDROID
+  if (requestedPrePath.Equals(sFxaSPrePath)) {
+    return;
+  }
+#  endif
+  if (xpc::AreNonLocalConnectionsDisabled()) {
+    bool disallowSystemPrincipalRemoteDocuments = Preferences::GetBool(
+        "security.disallow_non_local_systemprincipal_in_tests");
+    if (disallowSystemPrincipalRemoteDocuments) {
+      // our own mochitest needs NS_ASSERTION instead of MOZ_ASSERT
+      NS_ASSERTION(false, "SystemPrincipal must not load remote documents.");
+      return;
+    }
+    // but other mochitest are exempt from this
+    return;
+  }
+  MOZ_RELEASE_ASSERT(false, "SystemPrincipal must not load remote documents.");
+}
+#endif
 
 /*
  * Based on the security flags provided in the loadInfo of the channel,
@@ -775,6 +907,10 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
   if (MOZ_UNLIKELY(MOZ_LOG_TEST(sCSMLog, LogLevel::Debug))) {
     DebugDoContentSecurityCheck(aChannel, loadInfo);
   }
+
+#ifdef EARLY_BETA_OR_EARLIER
+  AssertSystemPrincipalMustNotLoadRemoteDocuments(aChannel);
+#endif
 
   // if dealing with a redirected channel then we have already installed
   // streamlistener and redirect proxies and so we are done.
@@ -960,12 +1096,7 @@ nsContentSecurityManager::IsOriginPotentiallyTrustworthy(
     *aIsTrustWorthy = true;
     return NS_OK;
   }
-
-  // The following implements:
-  // https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy
-
   *aIsTrustWorthy = false;
-
   if (aPrincipal->GetIsNullPrincipal()) {
     return NS_OK;
   }
@@ -975,78 +1106,8 @@ nsContentSecurityManager::IsOriginPotentiallyTrustworthy(
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = aPrincipal->GetURI(getter_AddRefs(uri));
-  if (NS_FAILED(rv)) {
-    return NS_OK;
-  }
-
-  nsAutoCString scheme;
-  rv = uri->GetScheme(scheme);
-  if (NS_FAILED(rv)) {
-    return NS_OK;
-  }
-
-  // Blobs are expected to inherit their principal so we don't expect to have
-  // a codebase principal with scheme 'blob' here.  We can't assert that though
-  // since someone could mess with a non-blob URI to give it that scheme.
-  NS_WARNING_ASSERTION(!scheme.EqualsLiteral("blob"),
-                       "IsOriginPotentiallyTrustworthy ignoring blob scheme");
-
-  // According to the specification, the user agent may choose to extend the
-  // trust to other, vendor-specific URL schemes. We use this for "resource:",
-  // which is technically a substituting protocol handler that is not limited to
-  // local resource mapping, but in practice is never mapped remotely as this
-  // would violate assumptions a lot of code makes.
-  // We use nsIProtocolHandler flags to determine which protocols we consider a
-  // priori authenticated.
-  bool aPrioriAuthenticated = false;
-  if (NS_FAILED(NS_URIChainHasFlags(
-          uri, nsIProtocolHandler::URI_IS_POTENTIALLY_TRUSTWORTHY,
-          &aPrioriAuthenticated))) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  if (aPrioriAuthenticated) {
-    *aIsTrustWorthy = true;
-    return NS_OK;
-  }
-
-  nsAutoCString host;
-  rv = uri->GetHost(host);
-  if (NS_FAILED(rv)) {
-    return NS_OK;
-  }
-
-  if (host.EqualsLiteral("127.0.0.1") || host.EqualsLiteral("localhost") ||
-      host.EqualsLiteral("::1")) {
-    *aIsTrustWorthy = true;
-    return NS_OK;
-  }
-
-  // If a host is not considered secure according to the default algorithm, then
-  // check to see if it has been whitelisted by the user.  We only apply this
-  // whitelist for network resources, i.e., those with scheme "http" or "ws".
-  // The pref should contain a comma-separated list of hostnames.
-  if (scheme.EqualsLiteral("http") || scheme.EqualsLiteral("ws")) {
-    nsAutoCString whitelist;
-    nsresult rv =
-        Preferences::GetCString("dom.securecontext.whitelist", whitelist);
-    if (NS_SUCCEEDED(rv)) {
-      nsCCharSeparatedTokenizer tokenizer(whitelist, ',');
-      while (tokenizer.hasMoreTokens()) {
-        const nsACString& allowedHost = tokenizer.nextToken();
-        if (host.Equals(allowedHost)) {
-          *aIsTrustWorthy = true;
-          return NS_OK;
-        }
-      }
-    }
-    // Maybe we have a .onion URL. Treat it as whitelisted as well if
-    // `dom.securecontext.whitelist_onions` is `true`.
-    if (nsMixedContentBlocker::IsPotentiallyTrustworthyOnion(uri)) {
-      *aIsTrustWorthy = true;
-      return NS_OK;
-    }
-  }
+  NS_ENSURE_SUCCESS(rv, rv);
+  *aIsTrustWorthy = nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(uri);
 
   return NS_OK;
 }

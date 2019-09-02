@@ -17,10 +17,6 @@ add_task(function test_getInstallSourceFromHost_helpers() {
       installSourceFromHost: "disco",
     },
     {
-      host: "testpilot.firefox.com",
-      installSourceFromHost: "testpilot",
-    },
-    {
       host: "about:blank",
       installSourceFromHost: "unknown",
     },
@@ -35,9 +31,12 @@ add_task(function test_getInstallSourceFromHost_helpers() {
   ];
 
   for (let testCase of sourceHostTestCases) {
-    let {host, installSourceFromHost} = testCase;
+    let { host, installSourceFromHost } = testCase;
 
-    equal(AddonManager.getInstallSourceFromHost(host), installSourceFromHost,
-          `Got the expected result from getInstallFromHost for host ${host}`);
+    equal(
+      AddonManager.getInstallSourceFromHost(host),
+      installSourceFromHost,
+      `Got the expected result from getInstallFromHost for host ${host}`
+    );
   }
 });

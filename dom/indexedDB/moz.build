@@ -21,6 +21,8 @@ XPCSHELL_TESTS_MANIFESTS += [
     'test/unit/xpcshell-parent-process.ini'
 ]
 
+TEST_DIRS += ['test/gtest']
+
 EXPORTS.mozilla.dom += [
     'IDBCursor.h',
     'IDBDatabase.h',
@@ -34,7 +36,6 @@ EXPORTS.mozilla.dom += [
     'IDBObjectStore.h',
     'IDBRequest.h',
     'IDBTransaction.h',
-    'IDBWrapperCache.h',
     'IndexedDatabase.h',
     'IndexedDatabaseManager.h',
 ]
@@ -42,8 +43,10 @@ EXPORTS.mozilla.dom += [
 EXPORTS.mozilla.dom.indexedDB += [
     'ActorsParent.h',
     'FileSnapshot.h',
+    'IDBResult.h',
     'Key.h',
     'KeyPath.h',
+    'PermissionRequestBase.h',
     'SerializationHelpers.h',
 ]
 
@@ -63,7 +66,6 @@ UNIFIED_SOURCES += [
     'IDBObjectStore.cpp',
     'IDBRequest.cpp',
     'IDBTransaction.cpp',
-    'IDBWrapperCache.cpp',
     'IndexedDatabaseManager.cpp',
     'KeyPath.cpp',
     'PermissionRequestBase.cpp',
@@ -88,7 +90,6 @@ IPDL_SOURCES += [
     'PBackgroundIDBTransaction.ipdl',
     'PBackgroundIDBVersionChangeTransaction.ipdl',
     'PBackgroundIndexedDBUtils.ipdl',
-    'PIndexedDBPermissionRequest.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -102,10 +103,10 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 LOCAL_INCLUDES += [
-    '/db/sqlite3/src',
     '/dom/base',
     '/dom/storage',
     '/ipc/glue',
+    '/third_party/sqlite3/src',
     '/xpcom/build',
 ]
 

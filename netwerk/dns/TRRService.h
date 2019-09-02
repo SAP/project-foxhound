@@ -35,32 +35,35 @@ class TRRService : public nsIObserver,
   bool AllowRFC1918() { return mRfc1918; }
   bool UseGET() { return mUseGET; }
   bool EarlyAAAA() { return mEarlyAAAA; }
+  bool CheckIPv6Connectivity() { return mCheckIPv6Connectivity; }
+  bool WaitForAllResponses() { return mWaitForAllResponses; }
   bool DisableIPv6() { return mDisableIPv6; }
   bool DisableECS() { return mDisableECS; }
-  nsresult GetURI(nsCString &result);
-  nsresult GetCredentials(nsCString &result);
+  nsresult GetURI(nsCString& result);
+  nsresult GetCredentials(nsCString& result);
   uint32_t GetRequestTimeout() { return mTRRTimeout; }
 
-  LookupStatus CompleteLookup(nsHostRecord *, nsresult,
-                              mozilla::net::AddrInfo *, bool pb,
-                              const nsACString &aOriginSuffix) override;
-  LookupStatus CompleteLookupByType(nsHostRecord *, nsresult,
-                                    const nsTArray<nsCString> *, uint32_t,
+  LookupStatus CompleteLookup(nsHostRecord*, nsresult, mozilla::net::AddrInfo*,
+                              bool pb,
+                              const nsACString& aOriginSuffix) override;
+  LookupStatus CompleteLookupByType(nsHostRecord*, nsresult,
+                                    const nsTArray<nsCString>*, uint32_t,
                                     bool pb) override;
-  void TRRBlacklist(const nsACString &host, const nsACString &originSuffix,
+  void TRRBlacklist(const nsACString& host, const nsACString& originSuffix,
                     bool privateBrowsing, bool aParentsToo);
-  bool IsTRRBlacklisted(const nsACString &aHost,
-                        const nsACString &aOriginSuffix, bool aPrivateBrowsing,
+  bool IsTRRBlacklisted(const nsACString& aHost,
+                        const nsACString& aOriginSuffix, bool aPrivateBrowsing,
                         bool aParentsToo);
+  bool IsExcludedFromTRR(const nsACString& aHost);
 
-  bool MaybeBootstrap(const nsACString &possible, nsACString &result);
+  bool MaybeBootstrap(const nsACString& possible, nsACString& result);
   enum TrrOkay { OKAY_NORMAL = 0, OKAY_TIMEOUT = 1, OKAY_BAD = 2 };
   void TRRIsOkay(enum TrrOkay aReason);
 
  private:
   virtual ~TRRService();
-  nsresult ReadPrefs(const char *name);
-  void GetPrefBranch(nsIPrefBranch **result);
+  nsresult ReadPrefs(const char* name);
+  void GetPrefBranch(nsIPrefBranch** result);
   void MaybeConfirm();
   void MaybeConfirm_locked();
 
@@ -84,8 +87,10 @@ class TRRService : public nsIObserver,
       mCaptiveIsPassed;           // set when captive portal check is passed
   Atomic<bool, Relaxed> mUseGET;  // do DOH using GET requests (instead of POST)
   Atomic<bool, Relaxed> mEarlyAAAA;  // allow use of AAAA results before A is in
-  Atomic<bool, Relaxed> mDisableIPv6;  // don't even try
-  Atomic<bool, Relaxed> mDisableECS;   // disable EDNS Client Subnet in requests
+  Atomic<bool, Relaxed> mCheckIPv6Connectivity;  // check IPv6 connectivity
+  Atomic<bool, Relaxed> mWaitForAllResponses;  // Don't notify until all are in
+  Atomic<bool, Relaxed> mDisableIPv6;          // don't even try
+  Atomic<bool, Relaxed> mDisableECS;  // disable EDNS Client Subnet in requests
   Atomic<uint32_t, Relaxed>
       mDisableAfterFails;  // this many fails in a row means failed TRR service
 
@@ -95,6 +100,9 @@ class TRRService : public nsIObserver,
   // lock while creating it and while accessing it off the main thread.
   RefPtr<DataStorage> mTRRBLStorage;
   Atomic<bool, Relaxed> mClearTRRBLStorage;
+
+  // A set of domains that we should not use TRR for.
+  nsTHashtable<nsCStringHashKey> mExcludedDomains;
 
   enum ConfirmationState {
     CONFIRM_INIT = 0,
@@ -109,7 +117,7 @@ class TRRService : public nsIObserver,
   Atomic<uint32_t, Relaxed> mTRRFailures;
 };
 
-extern TRRService *gTRRService;
+extern TRRService* gTRRService;
 
 }  // namespace net
 }  // namespace mozilla

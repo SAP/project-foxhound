@@ -47,6 +47,7 @@
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/Opcodes.h"
+#include "vm/PIC.h"
 #include "vm/Scope.h"
 #include "vm/Shape.h"
 #include "vm/StringType.h"
@@ -69,6 +70,8 @@ using namespace js;
 
 using mozilla::DebugOnly;
 using mozilla::NumberEqualsInt32;
+
+using js::jit::JitScript;
 
 template <bool Eq>
 static MOZ_ALWAYS_INLINE bool LooseEqualityOp(JSContext* cx,
@@ -428,6 +431,9 @@ bool js::RunScript(JSContext* cx, RunState& state) {
 STATIC_PRECONDITION_ASSUME(ubound(args.argv_) >= argc)
 MOZ_ALWAYS_INLINE bool CallJSNative(JSContext* cx, Native native,
                                     const CallArgs& args) {
+  TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
+  AutoTraceLog traceLog(logger, TraceLogger_Call);
+
   if (!CheckRecursionLimit(cx)) {
     return false;
   }
@@ -1311,6 +1317,7 @@ again:
 #define PUSH_DOUBLE(d) REGS.sp++->setDouble(d)
 #define PUSH_INT32(i) REGS.sp++->setInt32(i)
 #define PUSH_SYMBOL(s) REGS.sp++->setSymbol(s)
+#define PUSH_BIGINT(b) REGS.sp++->setBigInt(b)
 #define PUSH_STRING(s)               \
   do {                               \
     REGS.sp++->setString(s);         \
@@ -1546,15 +1553,15 @@ static MOZ_ALWAYS_INLINE bool SetObjectElementOperation(
   // receiver != obj happens only at super[expr], where we expect to find the
   // property. People probably aren't building hashtables with |super|
   // anyway.
-  TypeScript::MonitorAssign(cx, obj, id);
+  JitScript::MonitorAssign(cx, obj, id);
 
   if (obj->isNative() && JSID_IS_INT(id)) {
     uint32_t length = obj->as<NativeObject>().getDenseInitializedLength();
     int32_t i = JSID_TO_INT(id);
     if ((uint32_t)i >= length) {
       // Annotate script if provided with information (e.g. baseline)
-      if (script && script->hasICScript() && IsSetElemPC(pc)) {
-        script->icScript()->noteHasDenseAdd(script->pcToOffset(pc));
+      if (script && script->hasJitScript() && IsSetElemPC(pc)) {
+        script->jitScript()->noteHasDenseAdd(script->pcToOffset(pc));
       }
     }
   }
@@ -1621,7 +1628,7 @@ void js::ReportInNotObjectError(JSContext* cx, HandleValue lref, int lindex,
     static const size_t MaxStringLength = 16;
     RootedString str(cx, ref.toString());
     if (str->length() > MaxStringLength) {
-      StringBuffer buf(cx);
+      JSStringBuilder buf(cx);
       if (!buf.appendSubstring(str, 0, MaxStringLength)) {
         return nullptr;
       }
@@ -1790,9 +1797,6 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
     COUNT_COVERAGE_PC(REGS.pc);                       \
   JS_END_MACRO
 
-#define LOAD_DOUBLE(PCOFF, dbl) \
-  ((dbl) = script->getConst(GET_UINT32_INDEX(REGS.pc + (PCOFF))).toDouble())
-
 #define SET_SCRIPT(s)                                                       \
   JS_BEGIN_MACRO                                                            \
     script = (s);                                                           \
@@ -1903,7 +1907,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
               }
               goto successful_return_continuation;
             case ResumeMode::Throw:
-              cx->setPendingException(rval);
+              cx->setPendingExceptionAndCaptureStack(rval);
               goto error;
             default:;
           }
@@ -1927,7 +1931,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
               }
               goto successful_return_continuation;
             case ResumeMode::Throw:
-              cx->setPendingException(rval);
+              cx->setPendingExceptionAndCaptureStack(rval);
               goto error;
             default:
               break;
@@ -1973,7 +1977,16 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       COUNT_COVERAGE();
       // Attempt on-stack replacement with Baseline code.
       if (jit::IsBaselineEnabled(cx)) {
-        jit::MethodStatus status = jit::CanEnterBaselineAtBranch(cx, REGS.fp());
+        script->incWarmUpCounter();
+
+        using Tier = jit::BaselineTier;
+        bool tryBaselineInterpreter = (jit::JitOptions.baselineInterpreter &&
+                                       !script->hasBaselineScript());
+        jit::MethodStatus status =
+            tryBaselineInterpreter
+                ? jit::CanEnterBaselineAtBranch<Tier::Interpreter>(cx,
+                                                                   REGS.fp())
+                : jit::CanEnterBaselineAtBranch<Tier::Compiler>(cx, REGS.fp());
         if (status == jit::Method_Error) {
           goto error;
         }
@@ -1997,7 +2010,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
           // version of the function popped a copy of the frame pushed by the
           // OSR trampoline.)
           if (wasProfiler) {
-            cx->geckoProfiler().exit(script, script->functionNonDelazifying());
+            cx->geckoProfiler().exit(cx, script);
           }
 
           if (activation.entryFrame() != REGS.fp()) {
@@ -2113,11 +2126,11 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
 
         /* Resume execution in the calling frame. */
         if (MOZ_LIKELY(interpReturnOK)) {
-          TypeScript::Monitor(cx, script, REGS.pc, REGS.sp[-1]);
-
           if (JSOp(*REGS.pc) == JSOP_RESUME) {
             ADVANCE_AND_DISPATCH(JSOP_RESUME_LENGTH);
           }
+
+          JitScript::MonitorBytecodeType(cx, script, REGS.pc, REGS.sp[-1]);
           MOZ_ASSERT(CodeSpec[*REGS.pc].length == JSOP_CALL_LENGTH);
           ADVANCE_AND_DISPATCH(JSOP_CALL_LENGTH);
         }
@@ -2767,7 +2780,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         goto error;
       }
 
-      TypeScript::Monitor(cx, script, REGS.pc, lval);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, lval);
       cx->debugOnlyCheck(lval);
     }
     END_CASE(JSOP_GETPROP)
@@ -2781,7 +2794,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         goto error;
       }
 
-      TypeScript::Monitor(cx, script, REGS.pc, rref);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, rref);
       cx->debugOnlyCheck(rref);
 
       REGS.sp--;
@@ -2796,7 +2809,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         goto error;
       }
 
-      TypeScript::Monitor(cx, script, REGS.pc, rval);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, rval);
       cx->debugOnlyCheck(rval);
     }
     END_CASE(JSOP_GETBOUNDNAME)
@@ -2889,7 +2902,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         }
       }
 
-      TypeScript::Monitor(cx, script, REGS.pc, res);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, res);
       REGS.sp--;
     }
     END_CASE(JSOP_GETELEM)
@@ -2909,7 +2922,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         goto error;
       }
 
-      TypeScript::Monitor(cx, script, REGS.pc, res);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, res);
       REGS.sp -= 2;
     }
     END_CASE(JSOP_GETELEM_SUPER)
@@ -2974,7 +2987,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       }
 
       REGS.sp = args.spAfterCall();
-      TypeScript::Monitor(cx, script, REGS.pc, REGS.sp[-1]);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, REGS.sp[-1]);
     }
     END_CASE(JSOP_EVAL)
 
@@ -3081,7 +3094,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
           }
         }
         Value* newsp = args.spAfterCall();
-        TypeScript::Monitor(cx, script, REGS.pc, newsp[-1]);
+        JitScript::MonitorBytecodeType(cx, script, REGS.pc, newsp[-1]);
         REGS.sp = newsp;
         ADVANCE_AND_DISPATCH(JSOP_CALL_LENGTH);
       }
@@ -3235,7 +3248,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       }
 
       PUSH_COPY(rval);
-      TypeScript::Monitor(cx, script, REGS.pc, rval);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, rval);
       static_assert(JSOP_GETNAME_LENGTH == JSOP_GETGNAME_LENGTH,
                     "We're sharing the END_CASE so the lengths better match");
     }
@@ -3249,7 +3262,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         goto error;
       }
 
-      TypeScript::Monitor(cx, script, REGS.pc, rval);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, rval);
     }
     END_CASE(JSOP_GETIMPORT)
 
@@ -3260,7 +3273,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       }
 
       PUSH_COPY(rval);
-      TypeScript::Monitor(cx, script, REGS.pc, rval);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, rval);
     }
     END_CASE(JSOP_GETINTRINSIC)
 
@@ -3277,11 +3290,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
     CASE(JSOP_INT32) { PUSH_INT32(GET_INT32(REGS.pc)); }
     END_CASE(JSOP_INT32)
 
-    CASE(JSOP_DOUBLE) {
-      double dbl;
-      LOAD_DOUBLE(0, dbl);
-      PUSH_DOUBLE(dbl);
-    }
+    CASE(JSOP_DOUBLE) { PUSH_COPY(GET_INLINE_VALUE(REGS.pc)); }
     END_CASE(JSOP_DOUBLE)
 
     CASE(JSOP_STRING) { PUSH_STRING(script->getAtom(REGS.pc)); }
@@ -3426,7 +3435,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       }
 #endif
       PUSH_COPY(val);
-      TypeScript::Monitor(cx, script, REGS.pc, REGS.sp[-1]);
+      JitScript::MonitorBytecodeType(cx, script, REGS.pc, REGS.sp[-1]);
     }
     END_CASE(JSOP_GETALIASEDVAR)
 
@@ -3882,7 +3891,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
          * 350509, due to Igor Bukanov.
          */
         ReservedRooted<Value> v(&rootValue0, rval);
-        cx->setPendingException(v);
+        cx->setPendingExceptionAndCaptureStack(v);
         goto error;
       }
 
@@ -4123,10 +4132,10 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         }
 
         switch (resumeKind) {
-          case AbstractGeneratorObject::NEXT:
+          case GeneratorResumeKind::Next:
             break;
-          case AbstractGeneratorObject::THROW:
-          case AbstractGeneratorObject::RETURN:
+          case GeneratorResumeKind::Throw:
+          case GeneratorResumeKind::Return:
             MOZ_ALWAYS_FALSE(GeneratorThrowOrReturn(cx, activation.regs().fp(),
                                                     gen, val, resumeKind));
             goto error;
@@ -4137,12 +4146,13 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       ADVANCE_AND_DISPATCH(0);
     }
 
-    CASE(JSOP_DEBUGAFTERYIELD) {
-      // No-op in the interpreter, as AbstractGeneratorObject::resume takes care
-      // of fixing up InterpreterFrames.
+    CASE(JSOP_AFTERYIELD) {
+      // AbstractGeneratorObject::resume takes care of setting the frame's
+      // debuggee flag.
       MOZ_ASSERT_IF(REGS.fp()->script()->isDebuggee(), REGS.fp()->isDebuggee());
+      COUNT_COVERAGE();
     }
-    END_CASE(JSOP_DEBUGAFTERYIELD)
+    END_CASE(JSOP_AFTERYIELD)
 
     CASE(JSOP_FINALYIELDRVAL) {
       ReservedRooted<JSObject*> gen(&rootObject0, &REGS.sp[-1].toObject());
@@ -4206,8 +4216,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
 
       /* Load the home object */
       ReservedRooted<JSObject*> obj(&rootObject0, &REGS.sp[-1].toObject());
-      MOZ_ASSERT(obj->is<PlainObject>() || obj->is<UnboxedPlainObject>() ||
-                 obj->is<JSFunction>());
+      MOZ_ASSERT(obj->is<PlainObject>() || obj->is<JSFunction>());
 
       func->setExtendedSlot(FunctionExtended::METHOD_HOMEOBJECT_SLOT,
                             ObjectValue(*obj));
@@ -4351,10 +4360,7 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
     }
     END_CASE(JSOP_TONUMERIC)
 
-    CASE(JSOP_BIGINT) {
-      PUSH_COPY(script->getConst(GET_UINT32_INDEX(REGS.pc)));
-      MOZ_ASSERT(REGS.sp[-1].isBigInt());
-    }
+    CASE(JSOP_BIGINT) { PUSH_BIGINT(script->getBigInt(REGS.pc)); }
     END_CASE(JSOP_BIGINT)
 
     DEFAULT() {
@@ -4433,7 +4439,7 @@ prologue_error:
 
 bool js::ThrowOperation(JSContext* cx, HandleValue v) {
   MOZ_ASSERT(!cx->isExceptionPending());
-  cx->setPendingException(v);
+  cx->setPendingExceptionAndCaptureStack(v);
   return false;
 }
 
@@ -4741,14 +4747,21 @@ bool js::ThrowMsgOperation(JSContext* cx, const unsigned errorNum) {
   return false;
 }
 
-bool js::GetAndClearException(JSContext* cx, MutableHandleValue res) {
+bool js::GetAndClearExceptionAndStack(JSContext* cx, MutableHandleValue res,
+                                      MutableHandleSavedFrame stack) {
   if (!cx->getPendingException(res)) {
     return false;
   }
+  stack.set(cx->getPendingExceptionStack());
   cx->clearPendingException();
 
   // Allow interrupting deeply nested exception handling.
   return CheckForInterrupt(cx);
+}
+
+bool js::GetAndClearException(JSContext* cx, MutableHandleValue res) {
+  RootedSavedFrame stack(cx);
+  return GetAndClearExceptionAndStack(cx, res, &stack);
 }
 
 template <bool strict>
@@ -5100,7 +5113,7 @@ bool js::SpreadCallOperation(JSContext* cx, HandleScript script, jsbytecode* pc,
     }
   }
 
-  TypeScript::Monitor(cx, script, pc, res);
+  JitScript::MonitorBytecodeType(cx, script, pc, res);
   return true;
 }
 
@@ -5146,28 +5159,16 @@ JSObject* js::NewObjectOperation(JSContext* cx, HandleScript script,
       return nullptr;
     }
 
-    bool isUnboxed;
     {
       AutoSweepObjectGroup sweep(group);
       if (group->maybePreliminaryObjects(sweep)) {
         group->maybePreliminaryObjects(sweep)->maybeAnalyze(cx, group);
-        if (group->maybeUnboxedLayout(sweep)) {
-          // This sets the allocation site so that the template object
-          // can be read back but if op is NEWINIT, then the template
-          // is null.
-          MOZ_ASSERT(JSOp(*pc) != JSOP_NEWINIT);
-          group->maybeUnboxedLayout(sweep)->setAllocationSite(script, pc);
-        }
       }
 
       if (group->shouldPreTenure(sweep) ||
           group->maybePreliminaryObjects(sweep)) {
         newKind = TenuredObject;
       }
-      isUnboxed = group->maybeUnboxedLayout(sweep);
-    }
-    if (isUnboxed) {
-      return UnboxedPlainObject::create(cx, group, newKind);
     }
   }
 
@@ -5209,16 +5210,10 @@ JSObject* js::NewObjectOperationWithTemplate(JSContext* cx,
   MOZ_ASSERT(cx->realm() == templateObject->nonCCWRealm());
 
   NewObjectKind newKind;
-  bool isUnboxed;
   {
     ObjectGroup* group = templateObject->group();
     AutoSweepObjectGroup sweep(group);
     newKind = group->shouldPreTenure(sweep) ? TenuredObject : GenericObject;
-    isUnboxed = group->maybeUnboxedLayout(sweep);
-  }
-  if (isUnboxed) {
-    RootedObjectGroup group(cx, templateObject->group());
-    return UnboxedPlainObject::create(cx, group, newKind);
   }
 
   JSObject* obj =
@@ -5311,7 +5306,7 @@ ArrayObject* js::NewArrayCopyOnWriteOperation(JSContext* cx,
     return nullptr;
   }
 
-  return NewDenseCopyOnWriteArray(cx, baseobj, gc::DefaultHeap);
+  return NewDenseCopyOnWriteArray(cx, baseobj);
 }
 
 void js::ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
@@ -5404,53 +5399,8 @@ bool js::ThrowCheckIsCallable(JSContext* cx, CheckIsCallableKind kind) {
 }
 
 bool js::ThrowUninitializedThis(JSContext* cx, AbstractFramePtr frame) {
-  RootedFunction fun(cx);
-  if (frame.isFunctionFrame()) {
-    fun = frame.callee();
-  } else {
-    Scope* startingScope;
-    if (frame.isDebuggerEvalFrame()) {
-      AbstractFramePtr evalInFramePrev =
-          frame.asInterpreterFrame()->evalInFramePrev();
-      while (evalInFramePrev.isDebuggerEvalFrame()) {
-        evalInFramePrev =
-            evalInFramePrev.asInterpreterFrame()->evalInFramePrev();
-      }
-      startingScope = evalInFramePrev.script()->bodyScope();
-    } else {
-      MOZ_ASSERT(frame.isEvalFrame());
-      MOZ_ASSERT(frame.script()->isDirectEvalInFunction());
-      startingScope = frame.script()->enclosingScope();
-    }
-
-    for (ScopeIter si(startingScope); si; si++) {
-      if (si.scope()->is<FunctionScope>()) {
-        fun = si.scope()->as<FunctionScope>().canonicalFunction();
-        break;
-      }
-    }
-    MOZ_ASSERT(fun);
-  }
-
-  if (fun->isDerivedClassConstructor()) {
-    const char* name = "anonymous";
-    UniqueChars str;
-    if (fun->explicitName()) {
-      str = AtomToPrintableString(cx, fun->explicitName());
-      if (!str) {
-        return false;
-      }
-      name = str.get();
-    }
-
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_UNINITIALIZED_THIS, name);
-    return false;
-  }
-
-  MOZ_ASSERT(fun->isArrow());
   JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                            JSMSG_UNINITIALIZED_THIS_ARROW);
+                            JSMSG_UNINITIALIZED_THIS);
   return false;
 }
 

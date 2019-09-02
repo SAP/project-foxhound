@@ -401,11 +401,13 @@ void PluginModuleContentParent::Initialize(
 
   moduleMapping->SetChannelOpened();
 
-  // Request Windows message deferral behavior on our channel. This
-  // applies to the top level and all sub plugin protocols since they
-  // all share the same channel.
-  parent->GetIPCChannel()->SetChannelFlags(
-      MessageChannel::REQUIRE_DEFERRED_MESSAGE_PROTECTION);
+  if (XRE_UseNativeEventProcessing()) {
+    // If we're processing native events in our message pump, request Windows
+    // message deferral behavior on our channel. This applies to the top level
+    // and all sub plugin protocols since they all share the same channel.
+    parent->GetIPCChannel()->SetChannelFlags(
+        MessageChannel::REQUIRE_DEFERRED_MESSAGE_PROTECTION);
+  }
 
   TimeoutChanged(kContentTimeoutPref, parent);
 
@@ -661,7 +663,7 @@ PluginModuleChromeParent::~PluginModuleChromeParent() {
   mozilla::BackgroundHangMonitor::UnregisterAnnotator(*this);
 }
 
-void PluginModuleChromeParent::WriteExtraDataForMinidump() {
+void PluginModuleChromeParent::AddCrashAnnotations() {
   // mCrashReporterMutex is already held by the caller
   mCrashReporterMutex.AssertCurrentThreadOwns();
 
@@ -883,7 +885,7 @@ PluginInstanceParent* PluginModuleChromeParent::GetManagingInstance(
     mozilla::ipc::IProtocol* aProtocol) {
   MOZ_ASSERT(aProtocol);
   mozilla::ipc::IProtocol* listener = aProtocol;
-  switch (listener->GetProtocolTypeId()) {
+  switch (listener->GetProtocolId()) {
     case PPluginInstanceMsgStart:
       // In this case, aProtocol is the instance itself. Just cast it.
       return static_cast<PluginInstanceParent*>(aProtocol);
@@ -1277,9 +1279,13 @@ static void RemoveMinidump(nsIFile* minidump) {
 void PluginModuleChromeParent::ProcessFirstMinidump() {
   mozilla::MutexAutoLock lock(mCrashReporterMutex);
 
-  if (!mCrashReporter) return;
+  if (!mCrashReporter) {
+    CrashReporter::FinalizeOrphanedMinidump(OtherPid(),
+                                            GeckoProcessType_Plugin);
+    return;
+  }
 
-  WriteExtraDataForMinidump();
+  AddCrashAnnotations();
 
   if (mCrashReporter->HasMinidump()) {
     // A minidump may be set in TerminateChildProcess, which means the
@@ -1291,6 +1297,7 @@ void PluginModuleChromeParent::ProcessFirstMinidump() {
     return;
   }
 
+  AnnotationTable annotations;
   uint32_t sequence = UINT32_MAX;
   nsAutoCString flashProcessType;
   RefPtr<nsIFile> dumpFile =
@@ -1302,9 +1309,9 @@ void PluginModuleChromeParent::ProcessFirstMinidump() {
 
   if (mFlashProcess1 &&
       TakeMinidumpForChild(mFlashProcess1, getter_AddRefs(childDumpFile),
-                           &childSequence)) {
+                           annotations, &childSequence)) {
     if (childSequence < sequence &&
-        mCrashReporter->AdoptMinidump(childDumpFile)) {
+        mCrashReporter->AdoptMinidump(childDumpFile, annotations)) {
       RemoveMinidump(dumpFile);
       dumpFile = childDumpFile;
       sequence = childSequence;
@@ -1315,9 +1322,9 @@ void PluginModuleChromeParent::ProcessFirstMinidump() {
   }
   if (mFlashProcess2 &&
       TakeMinidumpForChild(mFlashProcess2, getter_AddRefs(childDumpFile),
-                           &childSequence)) {
+                           annotations, &childSequence)) {
     if (childSequence < sequence &&
-        mCrashReporter->AdoptMinidump(childDumpFile)) {
+        mCrashReporter->AdoptMinidump(childDumpFile, annotations)) {
       RemoveMinidump(dumpFile);
       dumpFile = childDumpFile;
       sequence = childSequence;
@@ -1489,7 +1496,7 @@ NPError PluginModuleParent::NPP_Destroy(NPP instance, NPSavedData** saved) {
   NPError retval = pip->Destroy();
   instance->pdata = nullptr;
 
-  Unused << PluginInstanceParent::Call__delete__(pip);
+  Unused << PluginInstanceParent::Send__delete__(pip);
   return retval;
 }
 
@@ -2044,7 +2051,8 @@ static void ForceDirect(InfallibleTArray<nsCString>& names,
   NS_NAMED_LITERAL_CSTRING(directAttributeValue, "direct");
   auto wmodeAttributeIndex = names.IndexOf(wmodeAttributeName, 0, comparator);
   if (wmodeAttributeIndex != names.NoIndex) {
-    if (values[wmodeAttributeIndex].EqualsLiteral("window")) {
+    if (values[wmodeAttributeIndex].EqualsLiteral("window") ||
+        values[wmodeAttributeIndex].EqualsLiteral("gpu")) {
       values[wmodeAttributeIndex].Assign(directAttributeValue);
     }
   } else {

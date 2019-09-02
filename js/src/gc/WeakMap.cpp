@@ -64,7 +64,7 @@ bool WeakMapBase::checkMarkingForZone(JS::Zone* zone) {
 bool WeakMapBase::markZoneIteratively(JS::Zone* zone, GCMarker* marker) {
   bool markedAny = false;
   for (WeakMapBase* m : zone->gcWeakMapList()) {
-    if (m->marked && m->markIteratively(marker)) {
+    if (m->marked && m->markEntries(marker)) {
       markedAny = true;
     }
   }
@@ -129,6 +129,10 @@ void WeakMapBase::restoreMarkedWeakMaps(WeakMapSet& markedWeakMaps) {
   }
 }
 
+size_t ObjectValueMap::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
+  return mallocSizeOf(this) + shallowSizeOfExcludingThis(mallocSizeOf);
+}
+
 bool ObjectValueMap::findZoneEdges() {
   /*
    * For unmarked weakmap keys with delegates in a different zone, add a zone
@@ -168,8 +172,8 @@ JSObject* ObjectWeakMap::lookup(const JSObject* obj) {
 bool ObjectWeakMap::add(JSContext* cx, JSObject* obj, JSObject* target) {
   MOZ_ASSERT(obj && target);
 
-  MOZ_ASSERT(!map.has(obj));
-  if (!map.put(obj, ObjectValue(*target))) {
+  Value targetVal(ObjectValue(*target));
+  if (!map.putNew(obj, targetVal)) {
     ReportOutOfMemory(cx);
     return false;
   }

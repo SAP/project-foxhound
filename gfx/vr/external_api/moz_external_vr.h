@@ -12,18 +12,24 @@
    (uint64_t)(c4) << 32 | (uint64_t)(c5) << 24 | (uint64_t)(c6) << 16 | \
    (uint64_t)(c7) << 8 | (uint64_t)(c8))
 
-#include <stddef.h>
-#include <stdint.h>
-#include <type_traits>
-
 #ifdef MOZILLA_INTERNAL_API
+#  define __STDC_WANT_LIB_EXT1__ 1
+// __STDC_WANT_LIB_EXT1__ required for memcpy_s
+#  include <stdlib.h>
+#  include <string.h>
 #  include "mozilla/TypedEnumBits.h"
 #  include "mozilla/gfx/2D.h"
+#  include <stddef.h>
+#  include <stdint.h>
+#  include <type_traits>
 #endif  // MOZILLA_INTERNAL_API
 
 #if defined(__ANDROID__)
 #  include <pthread.h>
 #endif  // defined(__ANDROID__)
+
+#include <cstdint>
+#include <type_traits>
 
 namespace mozilla {
 #ifdef MOZILLA_INTERNAL_API
@@ -34,7 +40,7 @@ enum class GamepadCapabilityFlags : uint16_t;
 #endif  //  MOZILLA_INTERNAL_API
 namespace gfx {
 
-static const int32_t kVRExternalVersion = 6;
+static const int32_t kVRExternalVersion = 8;
 
 // We assign VR presentations to groups with a bitmask.
 // Currently, we will only display either content or chrome.
@@ -160,9 +166,15 @@ enum class VRDisplayCapabilityFlags : uint16_t {
    */
   Cap_MountDetection = 1 << 8,
   /**
+   * Cap_PositionEmulated is set if the VRDisplay is capable of setting a
+   * emulated position (e.g. neck model) even if still doesn't support 6DOF
+   * tracking.
+   */
+  Cap_PositionEmulated = 1 << 9,
+  /**
    * Cap_All used for validity checking during IPC serialization
    */
-  Cap_All = (1 << 9) - 1
+  Cap_All = (1 << 10) - 1
 };
 
 #ifdef MOZILLA_INTERNAL_API
@@ -278,6 +290,10 @@ struct VRDisplayState {
   // Telemetry
   bool reportsDroppedFrames;
   uint64_t droppedFrameCount;
+
+#ifdef MOZILLA_INTERNAL_API
+  void Clear() { memset(this, 0, sizeof(VRDisplayState)); }
+#endif
 };
 
 struct VRControllerState {
@@ -305,6 +321,9 @@ struct VRControllerState {
   VRPose pose;
   bool isPositionValid;
   bool isOrientationValid;
+#ifdef MOZILLA_INTERNAL_API
+  void Clear() { memset(this, 0, sizeof(VRControllerState)); }
+#endif
 };
 
 struct VRLayerEyeRect {
@@ -340,6 +359,7 @@ struct VRLayer_Stereo_Immersive {
   uint64_t inputFrameId;
   VRLayerEyeRect leftEyeRect;
   VRLayerEyeRect rightEyeRect;
+  IntSize_POD textureSize;
 };
 
 struct VRLayerState {
@@ -376,6 +396,10 @@ struct VRBrowserState {
   bool navigationTransitionActive;
   VRLayerState layerState[kVRLayerMaxCount];
   VRHapticState hapticState[kVRHapticsMaxCount];
+
+#ifdef MOZILLA_INTERNAL_API
+  void Clear() { memset(this, 0, sizeof(VRBrowserState)); }
+#endif
 };
 
 struct VRSystemState {
@@ -410,6 +434,28 @@ struct VRExternalShmem {
   int64_t geckoGenerationB;
   int64_t servoGenerationB;
 #endif  // !defined(__ANDROID__)
+#ifdef MOZILLA_INTERNAL_API
+  void Clear() volatile {
+/**
+ * When possible we do a memset_s, which is explicitly safe for
+ * the volatile, POD struct.  A memset may be optimized out by
+ * the compiler and will fail to compile due to volatile keyword
+ * propagation.
+ *
+ * A loop-based fallback is provided in case the toolchain does
+ * not include STDC_LIB_EXT1 for memset_s.
+ */
+#  ifdef __STDC_LIB_EXT1__
+    memset_s((void*)this, sizeof(VRExternalShmem), 0, sizeof(VRExternalShmem));
+#  else
+    size_t remaining = sizeof(VRExternalShmem);
+    volatile unsigned char* d = (volatile unsigned char*)this;
+    while (remaining--) {
+      *d++ = 0;
+    }
+#  endif
+  }
+#endif
 };
 
 // As we are memcpy'ing VRExternalShmem and its members around, it must be a POD

@@ -16,48 +16,48 @@ registerCleanupFunction(() => {
  * (bug 785689).
  */
 
-add_task(threadClientTest(async ({ threadClient, debuggee, client }) => {
-  dumpn("Evaluating test code and waiting for first debugger statement");
-  await executeOnNextTickAndWaitForPause(() => evaluateTestCode(debuggee), client);
+add_task(
+  threadClientTest(async ({ threadClient, debuggee }) => {
+    dumpn("Evaluating test code and waiting for first debugger statement");
+    await executeOnNextTickAndWaitForPause(
+      () => evaluateTestCode(debuggee),
+      threadClient
+    );
 
-  const step1 = await stepIn(client, threadClient);
-  equal(step1.type, "paused");
-  equal(step1.frame.where.line, 3);
-  equal(step1.why.type, "resumeLimit");
-  equal(debuggee.a, undefined);
-  equal(debuggee.b, undefined);
+    const step1 = await stepIn(threadClient);
+    equal(step1.frame.where.line, 3);
+    equal(step1.why.type, "resumeLimit");
+    equal(debuggee.a, undefined);
+    equal(debuggee.b, undefined);
 
-  const step2 = await stepIn(client, threadClient);
-  equal(step2.type, "paused");
-  equal(step2.frame.where.line, 4);
-  equal(step2.why.type, "resumeLimit");
-  equal(debuggee.a, 1);
-  equal(debuggee.b, undefined);
+    const step2 = await stepIn(threadClient);
+    equal(step2.frame.where.line, 4);
+    equal(step2.why.type, "resumeLimit");
+    equal(debuggee.a, 1);
+    equal(debuggee.b, undefined);
 
-  const step3 = await stepIn(client, threadClient);
-  equal(step3.type, "paused");
-  equal(step3.frame.where.line, 4);
-  equal(step3.why.type, "resumeLimit");
-  equal(debuggee.a, 1);
-  equal(debuggee.b, 2);
+    const step3 = await stepIn(threadClient);
+    equal(step3.frame.where.line, 4);
+    equal(step3.why.type, "resumeLimit");
+    equal(debuggee.a, 1);
+    equal(debuggee.b, 2);
 
-  await new Promise(resolve => {
-    threadClient.stepIn(() => {
-      threadClient.addOneTimeListener("paused", (event, packet) => {
-        equal(packet.type, "paused");
+    await new Promise(async resolve => {
+      await threadClient.stepIn();
+      threadClient.once("paused", packet => {
         // Before fixing bug 785689, the type was resumeLimit.
         equal(packet.why.type, "debuggerStatement");
         resolve();
       });
       debuggee.eval("debugger;");
     });
-  });
-}));
+  })
+);
 
 function evaluateTestCode(debuggee) {
   /* eslint-disable */
   Cu.evalInSandbox(
-    `                                   // 1                       
+    `                                   // 1
     debugger;                           // 2
     var a = 1;                          // 3
     var b = 2;`,                        // 4

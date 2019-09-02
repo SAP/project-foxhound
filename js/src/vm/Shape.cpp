@@ -172,8 +172,26 @@ bool Shape::hashify(JSContext* cx, Shape* shape) {
     return false;
   }
 
-  shape->base()->setTable(table.release());
+  BaseShape* base = shape->base();
+  base->maybePurgeCache(cx->defaultFreeOp());
+  base->setTable(table.release());
+  // TODO: The contents of ShapeTable is not currently tracked, only the object
+  // itself.
+  AddCellMemory(base, sizeof(ShapeTable), MemoryUse::ShapeCache);
   return true;
+}
+
+void ShapeCachePtr::maybePurgeCache(FreeOp* fop, BaseShape* base) {
+  if (isTable()) {
+    ShapeTable* table = getTablePointer();
+    if (table->freeList() == SHAPE_INVALID_SLOT) {
+      fop->delete_(base, getTablePointer(), MemoryUse::ShapeCache);
+      p = 0;
+    }
+  } else if (isIC()) {
+    fop->delete_<ShapeIC>(base, getICPointer(), MemoryUse::ShapeCache);
+    p = 0;
+  }
 }
 
 /* static */
@@ -194,6 +212,7 @@ bool Shape::cachify(JSContext* cx, Shape* shape) {
   }
 
   shape->base()->setIC(ic.release());
+  AddCellMemory(shape->base(), sizeof(ShapeIC), MemoryUse::ShapeCache);
   return true;
 }
 
@@ -284,6 +303,15 @@ void ShapeTable::trace(JSTracer* trc) {
       }
     }
   }
+}
+
+inline void ShapeCachePtr::destroy(FreeOp* fop, BaseShape* base) {
+  if (isTable()) {
+    fop->delete_(base, getTablePointer(), MemoryUse::ShapeCache);
+  } else if (isIC()) {
+    fop->delete_(base, getICPointer(), MemoryUse::ShapeCache);
+  }
+  p = 0;
 }
 
 #ifdef JSGC_HASH_TABLE_CHECKS
@@ -865,7 +893,7 @@ Shape* js::ReshapeForAllocKind(JSContext* cx, Shape* shape, TaggedProto proto,
   size_t nfixed = gc::GetGCKindSlots(allocKind, shape->getObjectClass());
 
   // Get all the ids in the shape, in order.
-  js::AutoIdVector ids(cx);
+  js::RootedIdVector ids(cx);
   {
     for (unsigned i = 0; i < shape->slotSpan(); i++) {
       if (!ids.append(JSID_VOID)) {
@@ -1471,7 +1499,7 @@ bool JSObject::setFlags(JSContext* cx, HandleObject obj, BaseShape::Flag flags,
     return true;
   }
 
-  Shape* existingShape = obj->ensureShape(cx);
+  Shape* existingShape = obj->shape();
   if (!existingShape) {
     return false;
   }
@@ -1499,10 +1527,7 @@ bool JSObject::setFlags(JSContext* cx, HandleObject obj, BaseShape::Flag flags,
     return false;
   }
 
-  // The success of the |JSObject::ensureShape| call above means that |obj|
-  // can be assumed to have a shape.
-  obj->as<ShapedObject>().setShape(newShape);
-
+  obj->as<JSObject>().setShape(newShape);
   return true;
 }
 
@@ -1659,7 +1684,7 @@ void Zone::checkBaseShapeTableAfterMovingGC() {
 
 void BaseShape::finalize(FreeOp* fop) {
   if (cache_.isInitialized()) {
-    cache_.destroy(fop);
+    cache_.destroy(fop, this);
   }
 }
 
@@ -1754,6 +1779,7 @@ bool PropertyTree::insertChild(JSContext* cx, Shape* parent, Shape* child) {
       return false;
     }
     kidp->setHash(hash);
+    AddCellMemory(parent, sizeof(KidsHash), MemoryUse::ShapeKids);
     child->setParent(parent);
     return true;
   }
@@ -1799,6 +1825,7 @@ void Shape::removeChild(Shape* child) {
     MOZ_ASSERT((r.popFront(), r.empty())); /* No more elements! */
     kidp->setShape(otherChild);
     js_delete(hash);
+    RemoveCellMemory(this, sizeof(KidsHash), MemoryUse::ShapeKids);
   }
 }
 
@@ -1878,7 +1905,7 @@ void Shape::sweep() {
 
 void Shape::finalize(FreeOp* fop) {
   if (!inDictionary() && kids.isHash()) {
-    fop->delete_(kids.toHash());
+    fop->delete_(this, kids.toHash(), MemoryUse::ShapeKids);
   }
 }
 
@@ -1913,7 +1940,7 @@ void Shape::fixupDictionaryShapeAfterMovingGC() {
     }
   } else {
     // listp points to the shape_ field of an object.
-    JSObject* last = ShapedObject::fromShapeFieldPointer(uintptr_t(listp));
+    JSObject* last = JSObject::fromShapeFieldPointer(uintptr_t(listp));
     if (gc::IsForwarded(last)) {
       listp = gc::Forwarded(last)->as<NativeObject>().shapePtr();
     }
@@ -2230,7 +2257,7 @@ void EmptyShape::insertInitialShape(JSContext* cx, HandleShape shape,
   MOZ_ASSERT(nshape == entry.shape);
 #endif
 
-  entry.shape = ReadBarrieredShape(shape);
+  entry.shape = WeakHeapPtrShape(shape);
 
   /*
    * This affects the shape that will be produced by the various NewObject
@@ -2242,7 +2269,7 @@ void EmptyShape::insertInitialShape(JSContext* cx, HandleShape shape,
    * Clearing is not necessary when this context is running off
    * thread, as it will not use the new object cache for allocations.
    */
-  if (!cx->helperThread()) {
+  if (!cx->isHelperThreadContext()) {
     cx->caches().newObjectCache.invalidateEntriesForShape(cx, shape, proto);
   }
 }

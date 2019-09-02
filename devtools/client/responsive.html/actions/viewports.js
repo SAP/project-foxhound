@@ -12,6 +12,7 @@ const {
   ADD_VIEWPORT,
   CHANGE_DEVICE,
   CHANGE_PIXEL_RATIO,
+  CHANGE_VIEWPORT_ANGLE,
   REMOVE_DEVICE_ASSOCIATION,
   RESIZE_VIEWPORT,
   ROTATE_VIEWPORT,
@@ -60,6 +61,14 @@ module.exports = {
       type: CHANGE_PIXEL_RATIO,
       id,
       pixelRatio,
+    };
+  },
+
+  changeViewportAngle(id, angle) {
+    return {
+      type: CHANGE_VIEWPORT_ANGLE,
+      id,
+      angle,
     };
   },
 

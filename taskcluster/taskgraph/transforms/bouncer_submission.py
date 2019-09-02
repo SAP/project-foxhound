@@ -131,7 +131,8 @@ def make_task_worker(config, jobs):
             **{'release-level': config.params.release_level()}
         )
         resolve_keyed_by(
-            job, 'bouncer-products', item_name=job['name'], project=config.params['project']
+            job, 'bouncer-products', item_name=job['name'],
+            **{'release-type': config.params['release_type']}
         )
 
         # No need to filter out ja-JP-mac, we need to upload both; but we do
@@ -187,7 +188,6 @@ partial-related entry for "{}"'.format(job['name']))
         ): {
             'options': {
                 'add_locales': craft_add_locales(product),
-                'check_uptake': craft_check_uptake(bouncer_product),
                 'ssl_only': craft_ssl_only(bouncer_product, project),
             },
             'paths_per_bouncer_platform': craft_paths_per_bouncer_platform(
@@ -268,10 +268,6 @@ def craft_bouncer_product_name(product, bouncer_product, current_version,
     return '{product}-{version}{postfix}'.format(
         product=product.capitalize(), version=current_version, postfix=postfix
     )
-
-
-def craft_check_uptake(bouncer_product):
-    return bouncer_product != 'complete-mar-candidates'
 
 
 def craft_ssl_only(bouncer_product, project):

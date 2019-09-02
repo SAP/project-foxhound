@@ -14,6 +14,7 @@
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGContextPaint.h"
 #include "nsDisplayList.h"
@@ -37,8 +38,7 @@ using namespace mozilla::image;
 //----------------------------------------------------------------------
 // Implementation
 
-nsIFrame* NS_NewSVGGeometryFrame(nsIPresShell* aPresShell,
-                                 ComputedStyle* aStyle) {
+nsIFrame* NS_NewSVGGeometryFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell)
       SVGGeometryFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -56,12 +56,12 @@ NS_QUERYFRAME_TAIL_INHERITING(nsFrame)
 //----------------------------------------------------------------------
 // Display list item:
 
-class nsDisplaySVGGeometry final : public nsDisplayItem {
+class nsDisplaySVGGeometry final : public nsPaintedDisplayItem {
   typedef mozilla::image::imgDrawingParams imgDrawingParams;
 
  public:
   nsDisplaySVGGeometry(nsDisplayListBuilder* aBuilder, SVGGeometryFrame* aFrame)
-      : nsDisplayItem(aBuilder, aFrame) {
+      : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplaySVGGeometry);
     MOZ_ASSERT(aFrame, "Must have a frame!");
   }
@@ -134,7 +134,8 @@ void nsDisplaySVGGeometry::ComputeInvalidationRegion(
     aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
   }
 
-  nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
+  nsPaintedDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
+                                                  aInvalidRegion);
 }
 
 namespace mozilla {
@@ -196,6 +197,10 @@ void SVGGeometryFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
         }
       }
     }
+
+    if (element->IsGeometryChangedViaCSS(*Style(), *aOldComputedStyle)) {
+      element->ClearAnyCachedPath();
+    }
   }
 }
 
@@ -233,8 +238,7 @@ void SVGGeometryFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     return;
   }
   DisplayOutline(aBuilder, aLists);
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplaySVGGeometry>(aBuilder, this));
+  aLists.Content()->AppendNewToTop<nsDisplaySVGGeometry>(aBuilder, this);
 }
 
 //----------------------------------------------------------------------
@@ -451,7 +455,7 @@ SVGBBox SVGGeometryFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
 
   bool getFill = (aFlags & nsSVGUtils::eBBoxIncludeFillGeometry) ||
                  ((aFlags & nsSVGUtils::eBBoxIncludeFill) &&
-                  StyleSVG()->mFill.Type() != eStyleSVGPaintType_None);
+                  !StyleSVG()->mFill.kind.IsNone());
 
   bool getStroke = (aFlags & nsSVGUtils::eBBoxIncludeStrokeGeometry) ||
                    ((aFlags & nsSVGUtils::eBBoxIncludeStroke) &&
@@ -496,8 +500,7 @@ SVGBBox SVGGeometryFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
     // wrap the cached cairo_surface_t from ScreenReferenceSurface():
     RefPtr<gfxASurface> refSurf =
         gfxPlatform::GetPlatform()->ScreenReferenceSurface();
-    tmpDT = gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(
-        refSurf, IntSize(1, 1));
+    tmpDT = gfxPlatform::CreateDrawTargetForSurface(refSurf, IntSize(1, 1));
 #else
     tmpDT = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
 #endif
@@ -634,9 +637,9 @@ gfxMatrix SVGGeometryFrame::GetCanvasTM() {
 }
 
 void SVGGeometryFrame::Render(gfxContext* aContext, uint32_t aRenderComponents,
-                              const gfxMatrix& aNewTransform,
+                              const gfxMatrix& aTransform,
                               imgDrawingParams& aImgParams) {
-  MOZ_ASSERT(!aNewTransform.IsSingular());
+  MOZ_ASSERT(!aTransform.IsSingular());
 
   DrawTarget* drawTarget = aContext->GetDrawTarget();
 
@@ -656,7 +659,7 @@ void SVGGeometryFrame::Render(gfxContext* aContext, uint32_t aRenderComponents,
   // set it unnecessarily if we return early (it's an expensive operation for
   // some backends).
   gfxContextMatrixAutoSaveRestore autoRestoreTransform(aContext);
-  aContext->SetMatrixDouble(aNewTransform);
+  aContext->SetMatrixDouble(aTransform);
 
   if (GetStateBits() & NS_STATE_SVG_CLIPPATH_CHILD) {
     // We don't complicate this code with GetAsSimplePath since the cost of

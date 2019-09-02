@@ -235,11 +235,10 @@ void MediaSourceDecoder::SetMediaSourceDuration(double aDuration) {
   }
 }
 
-void MediaSourceDecoder::GetMozDebugReaderData(nsACString& aString) {
-  aString += NS_LITERAL_CSTRING("Container Type: MediaSource\n");
+void MediaSourceDecoder::GetDebugInfo(dom::MediaSourceDecoderDebugInfo& aInfo) {
   if (mReader && mDemuxer) {
-    mReader->GetMozDebugReaderData(aString);
-    mDemuxer->GetMozDebugReaderData(aString);
+    mReader->GetDebugInfo(aInfo.mReader);
+    mDemuxer->GetDebugInfo(aInfo.mDemuxer);
   }
 }
 
@@ -334,6 +333,11 @@ void MediaSourceDecoder::NotifyDataArrived() {
 already_AddRefed<nsIPrincipal> MediaSourceDecoder::GetCurrentPrincipal() {
   MOZ_ASSERT(NS_IsMainThread());
   return do_AddRef(mPrincipal);
+}
+
+bool MediaSourceDecoder::HadCrossOriginRedirects() {
+  MOZ_ASSERT(NS_IsMainThread());
+  return false;
 }
 
 #undef MSE_DEBUG

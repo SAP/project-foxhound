@@ -49,7 +49,7 @@
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsStubDocumentObserver.h"
-#include "nsIHTMLDocument.h"
+#include "nsHTMLDocument.h"
 #include "nsICookieService.h"
 #include "nsTArray.h"
 #include "nsIScriptSecurityManager.h"
@@ -137,7 +137,7 @@ class HTMLContentSink : public nsContentSink, public nsIHTMLContentSink {
  protected:
   virtual ~HTMLContentSink();
 
-  nsCOMPtr<nsIHTMLDocument> mHTMLDocument;
+  RefPtr<nsHTMLDocument> mHTMLDocument;
 
   // The maximum length of a text run
   int32_t mMaxTextRun;
@@ -457,7 +457,6 @@ nsresult SinkContext::GrowStack() {
  */
 nsresult SinkContext::FlushTags() {
   mSink->mDeferredFlushTags = false;
-  bool oldBeganUpdate = mSink->mBeganUpdate;
   uint32_t oldUpdates = mSink->mUpdatesInNotification;
 
   ++(mSink->mInNotification);
@@ -465,7 +464,6 @@ nsresult SinkContext::FlushTags() {
   {
     // Scope so we call EndUpdate before we decrease mInNotification
     mozAutoDocUpdate updateBatch(mSink->mDocument, true);
-    mSink->mBeganUpdate = true;
 
     // Start from the base of the stack (growing downward) and do
     // a notification from the node that is closest to the root of
@@ -515,7 +513,6 @@ nsresult SinkContext::FlushTags() {
   }
 
   mSink->mUpdatesInNotification = oldUpdates;
-  mSink->mBeganUpdate = oldBeganUpdate;
 
   return NS_OK;
 }
@@ -615,7 +612,7 @@ nsresult HTMLContentSink::Init(Document* aDoc, nsIURI* aURI,
 
   aDoc->AddObserver(this);
   mIsDocumentObserver = true;
-  mHTMLDocument = do_QueryInterface(aDoc);
+  mHTMLDocument = aDoc->AsHTMLDocument();
 
   NS_ASSERTION(mDocShell, "oops no docshell!");
 
@@ -663,20 +660,18 @@ NS_IMETHODIMP
 HTMLContentSink::WillBuildModel(nsDTDMode aDTDMode) {
   WillBuildModelImpl();
 
-  if (mHTMLDocument) {
-    nsCompatibility mode = eCompatibility_NavQuirks;
-    switch (aDTDMode) {
-      case eDTDMode_full_standards:
-        mode = eCompatibility_FullStandards;
-        break;
-      case eDTDMode_almost_standards:
-        mode = eCompatibility_AlmostStandards;
-        break;
-      default:
-        break;
-    }
-    mHTMLDocument->SetCompatibilityMode(mode);
+  nsCompatibility mode = eCompatibility_NavQuirks;
+  switch (aDTDMode) {
+    case eDTDMode_full_standards:
+      mode = eCompatibility_FullStandards;
+      break;
+    case eDTDMode_almost_standards:
+      mode = eCompatibility_AlmostStandards;
+      break;
+    default:
+      break;
   }
+  mDocument->SetCompatibilityMode(mode);
 
   // Notify document that the load is beginning
   mDocument->BeginLoad();
@@ -870,17 +865,13 @@ void HTMLContentSink::CloseHeadContext() {
 
 void HTMLContentSink::NotifyInsert(nsIContent* aContent,
                                    nsIContent* aChildContent) {
-  if (aContent && aContent->GetUncomposedDoc() != mDocument) {
-    // aContent is not actually in our document anymore.... Just bail out of
-    // here; notifying on our document for this insert would be wrong.
-    return;
-  }
-
   mInNotification++;
 
   {
     // Scope so we call EndUpdate before we decrease mInNotification
-    MOZ_AUTO_DOC_UPDATE(mDocument, !mBeganUpdate);
+    // Note that aContent->OwnerDoc() may be different to mDocument already.
+    MOZ_AUTO_DOC_UPDATE(aContent ? aContent->OwnerDoc() : mDocument.get(),
+                        true);
     nsNodeUtils::ContentInserted(NODE_FROM(aContent, mDocument), aChildContent);
     mLastNotificationTime = PR_Now();
   }
@@ -969,6 +960,6 @@ void HTMLContentSink::ContinueInterruptedParsingAsync() {
       "HTMLContentSink::ContinueInterruptedParsingIfEnabled", this,
       &HTMLContentSink::ContinueInterruptedParsingIfEnabled);
 
-  nsCOMPtr<Document> doc = do_QueryInterface(mHTMLDocument);
+  RefPtr<Document> doc = mHTMLDocument;
   doc->Dispatch(mozilla::TaskCategory::Other, ev.forget());
 }

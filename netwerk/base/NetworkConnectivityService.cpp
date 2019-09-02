@@ -45,28 +45,28 @@ nsresult NetworkConnectivityService::Init() {
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::GetDNSv4(ConnectivityState *aState) {
+NetworkConnectivityService::GetDNSv4(ConnectivityState* aState) {
   NS_ENSURE_ARG(aState);
   *aState = mDNSv4;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::GetDNSv6(ConnectivityState *aState) {
+NetworkConnectivityService::GetDNSv6(ConnectivityState* aState) {
   NS_ENSURE_ARG(aState);
   *aState = mDNSv6;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::GetIPv4(ConnectivityState *aState) {
+NetworkConnectivityService::GetIPv4(ConnectivityState* aState) {
   NS_ENSURE_ARG(aState);
   *aState = mIPv4;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::GetIPv6(ConnectivityState *aState) {
+NetworkConnectivityService::GetIPv6(ConnectivityState* aState) {
   NS_ENSURE_ARG(aState);
   *aState = mIPv6;
   return NS_OK;
@@ -83,14 +83,14 @@ void NetworkConnectivityService::PerformChecks() {
   RecheckIPConnectivity();
 }
 
-static inline void NotifyObservers(const char *aTopic) {
+static inline void NotifyObservers(const char* aTopic) {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   obs->NotifyObservers(nullptr, aTopic, nullptr);
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::OnLookupComplete(nsICancelable *aRequest,
-                                             nsIDNSRecord *aRecord,
+NetworkConnectivityService::OnLookupComplete(nsICancelable* aRequest,
+                                             nsIDNSRecord* aRecord,
                                              nsresult aStatus) {
   ConnectivityState state = aRecord ? OK : NOT_AVAILABLE;
 
@@ -109,8 +109,8 @@ NetworkConnectivityService::OnLookupComplete(nsICancelable *aRequest,
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::OnLookupByTypeComplete(nsICancelable *aRequest,
-                                                   nsIDNSByTypeRecord *aRes,
+NetworkConnectivityService::OnLookupByTypeComplete(nsICancelable* aRequest,
+                                                   nsIDNSByTypeRecord* aRes,
                                                    nsresult aStatus) {
   return NS_OK;
 }
@@ -129,21 +129,23 @@ NetworkConnectivityService::RecheckDNS() {
   nsAutoCString host;
   Preferences::GetCString("network.connectivity-service.DNSv4.domain", host);
 
-  rv = dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_DISABLE_IPV6, this,
-                               NS_GetCurrentThread(), attrs,
-                               getter_AddRefs(mDNSv4Request));
+  rv = dns->AsyncResolveNative(
+      host,
+      nsIDNSService::RESOLVE_DISABLE_IPV6 | nsIDNSService::RESOLVE_DISABLE_TRR,
+      this, NS_GetCurrentThread(), attrs, getter_AddRefs(mDNSv4Request));
   NS_ENSURE_SUCCESS(rv, rv);
 
   Preferences::GetCString("network.connectivity-service.DNSv6.domain", host);
-  rv = dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_DISABLE_IPV4, this,
-                               NS_GetCurrentThread(), attrs,
-                               getter_AddRefs(mDNSv6Request));
+  rv = dns->AsyncResolveNative(
+      host,
+      nsIDNSService::RESOLVE_DISABLE_IPV4 | nsIDNSService::RESOLVE_DISABLE_TRR,
+      this, NS_GetCurrentThread(), attrs, getter_AddRefs(mDNSv6Request));
   return rv;
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::Observe(nsISupports *aSubject, const char *aTopic,
-                                    const char16_t *aData) {
+NetworkConnectivityService::Observe(nsISupports* aSubject, const char* aTopic,
+                                    const char16_t* aData) {
   if (!strcmp(aTopic, "network:captive-portal-connectivity")) {
     // Captive portal is cleared, so we redo the checks.
     PerformChecks();
@@ -195,9 +197,10 @@ static inline already_AddRefed<nsIChannel> SetupIPCheckChannel(bool ipv4) {
       nullptr,  // aPerformanceStorage
       nullptr,  // aLoadGroup
       nullptr,
-      nsIRequest::LOAD_BYPASS_CACHE |    // don't read from the cache
-          nsIRequest::INHIBIT_CACHING |  // don't write the response to cache
-          nsIRequest::LOAD_ANONYMOUS);   // prevent privacy leaks
+      nsIRequest::LOAD_BYPASS_CACHE |     // don't read from the cache
+          nsIRequest::INHIBIT_CACHING |   // don't write the response to cache
+          nsIRequest::LOAD_DISABLE_TRR |  // check network capabilities not TRR
+          nsIRequest::LOAD_ANONYMOUS);    // prevent privacy leaks
 
   NS_ENSURE_SUCCESS(rv, nullptr);
 
@@ -252,12 +255,12 @@ NetworkConnectivityService::RecheckIPConnectivity() {
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::OnStartRequest(nsIRequest *aRequest) {
+NetworkConnectivityService::OnStartRequest(nsIRequest* aRequest) {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::OnStopRequest(nsIRequest *aRequest,
+NetworkConnectivityService::OnStopRequest(nsIRequest* aRequest,
                                           nsresult aStatusCode) {
   if (aStatusCode == NS_ERROR_ABORT) {
     return NS_OK;
@@ -292,8 +295,8 @@ NetworkConnectivityService::OnStopRequest(nsIRequest *aRequest,
 }
 
 NS_IMETHODIMP
-NetworkConnectivityService::OnDataAvailable(nsIRequest *aRequest,
-                                            nsIInputStream *aInputStream,
+NetworkConnectivityService::OnDataAvailable(nsIRequest* aRequest,
+                                            nsIInputStream* aInputStream,
                                             uint64_t aOffset, uint32_t aCount) {
   nsAutoCString data;
   Unused << NS_ReadInputStreamToString(aInputStream, data, aCount);

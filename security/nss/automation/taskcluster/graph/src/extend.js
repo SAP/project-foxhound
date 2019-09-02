@@ -103,15 +103,6 @@ queue.filter(task => {
     return false;
   }
 
-  if (task.group == "Test") {
-    // Don't run test builds on old make platforms, and not for fips gyp.
-    // Disable on aarch64, see bug 1488331.
-    if (task.collection == "make" || task.collection == "fips"
-        || task.platform == "aarch64") {
-      return false;
-    }
-  }
-
   // Don't run all additional hardware tests on ARM.
   if (task.group == "Cipher" && task.platform == "aarch64" && task.env &&
       (task.env.NSS_DISABLE_PCLMUL == "1" || task.env.NSS_DISABLE_HW_AES == "1"
@@ -139,7 +130,8 @@ queue.map(task => {
   }
 
   // Windows is slow.
-  if (task.platform == "windows2012-64" && task.tests == "chains") {
+  if ((task.platform == "windows2012-32" || task.platform == "windows2012-64") &&
+      task.tests == "chains") {
     task.maxRunTime = 7200;
   }
 
@@ -304,6 +296,10 @@ export default async function main() {
 
   await scheduleMac("Mac (opt)", {collection: "opt"}, "--opt");
   await scheduleMac("Mac (debug)", {collection: "debug"});
+
+  // Must be executed after all other tasks are scheduled
+  queue.clearFilters();
+  await scheduleCodeReview();
 }
 
 
@@ -325,7 +321,7 @@ async function scheduleMac(name, base, args = "") {
     command: [
       MAC_CHECKOUT_CMD,
       ["bash", "-c",
-       "nss/automation/taskcluster/scripts/build_gyp.sh", args]
+       "nss/automation/taskcluster/scripts/build_gyp.sh " + args]
     ],
     provisioner: "localprovisioner",
     workerType: "nss-macos-10-12",
@@ -468,7 +464,6 @@ async function scheduleLinux(name, overrides, args = "") {
     },
     symbol: "clang-4"
   }));
-
   queue.scheduleTask(merge(extra_base, {
     name: `${name} w/ gcc-4.4`,
     image: LINUX_GCC44_IMAGE,
@@ -527,8 +522,6 @@ async function scheduleLinux(name, overrides, args = "") {
     ],
     symbol: "modular"
   }));
-
-  await scheduleTestBuilds(name + " Test", merge(base, {group: "Test"}), args);
 
   return queue.submit();
 }
@@ -763,71 +756,6 @@ async function scheduleFuzzing32() {
 
 /*****************************************************************************/
 
-async function scheduleTestBuilds(name, base, args = "") {
-  // Build base definition.
-  let build = merge(base, {
-    command: [
-      "/bin/bash",
-      "-c",
-      "bin/checkout.sh && " +
-      "nss/automation/taskcluster/scripts/build_gyp.sh -g -v --test --ct-verif " + args
-    ],
-    artifacts: {
-      public: {
-        expires: 24 * 7,
-        type: "directory",
-        path: "/home/worker/artifacts"
-      }
-    },
-    kind: "build",
-    symbol: "B",
-    name: `${name} build`,
-  });
-
-  // On linux we have a specialized build image for building.
-  if (build.platform === "linux32" || build.platform === "linux64") {
-    build = merge(build, {
-      image: LINUX_BUILDS_IMAGE,
-    });
-  }
-
-  // The task that builds NSPR+NSS.
-  let task_build = queue.scheduleTask(build);
-
-  // Schedule tests.
-  queue.scheduleTask(merge(base, {
-    parent: task_build,
-    name: `${name} mpi tests`,
-    command: [
-      "/bin/bash",
-      "-c",
-      "bin/checkout.sh && nss/automation/taskcluster/scripts/run_tests.sh"
-    ],
-    tests: "mpi",
-    cycle: "standard",
-    symbol: "mpi",
-    kind: "test"
-  }));
-  queue.scheduleTask(merge(base, {
-    parent: task_build,
-    command: [
-      "/bin/bash",
-      "-c",
-      "bin/checkout.sh && nss/automation/taskcluster/scripts/run_tests.sh"
-    ],
-    name: `${name} gtests`,
-    symbol: "Gtest",
-    tests: "gtests",
-    cycle: "standard",
-    kind: "test"
-  }));
-
-  return queue.submit();
-}
-
-
-/*****************************************************************************/
-
 async function scheduleWindows(name, base, build_script) {
   base = merge(base, {
     workerType: "nss-win2012r2",
@@ -924,9 +852,13 @@ async function scheduleWindows(name, base, build_script) {
 
 function scheduleTests(task_build, task_cert, test_base) {
   test_base = merge(test_base, {kind: "test"});
-
-  // Schedule tests that do NOT need certificates.
   let no_cert_base = merge(test_base, {parent: task_build});
+  let cert_base = merge(test_base, {parent: task_cert});
+  let cert_base_long = merge(cert_base, {maxRunTime: 7200});
+
+  // Schedule tests that do NOT need certificates. This is defined as
+  // the test itself not needing certs AND not running under the upgradedb
+  // cycle (which itself needs certs). If cycle is not defined, default is all.
   queue.scheduleTask(merge(no_cert_base, {
     name: "Gtests", symbol: "Gtest", tests: "ssl_gtests gtests", cycle: "standard"
   }));
@@ -948,45 +880,47 @@ function scheduleTests(task_build, task_cert, test_base) {
     name: "tlsfuzzer tests", symbol: "tlsfuzzer", tests: "tlsfuzzer", cycle: "standard"
   }));
   queue.scheduleTask(merge(no_cert_base, {
+    name: "MPI tests", symbol: "MPI", tests: "mpi", cycle: "standard"
+  }));
+  queue.scheduleTask(merge(cert_base, {
     name: "Chains tests", symbol: "Chains", tests: "chains"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base_long, {
     name: "Cipher tests", symbol: "Default", tests: "cipher", group: "Cipher"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base_long, {
     name: "Cipher tests", symbol: "NoAESNI", tests: "cipher",
     env: {NSS_DISABLE_HW_AES: "1"}, group: "Cipher"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base_long, {
     name: "Cipher tests", symbol: "NoPCLMUL", tests: "cipher",
     env: {NSS_DISABLE_PCLMUL: "1"}, group: "Cipher"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base_long, {
     name: "Cipher tests", symbol: "NoAVX", tests: "cipher",
     env: {NSS_DISABLE_AVX: "1"}, group: "Cipher"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base_long, {
     name: "Cipher tests", symbol: "NoSSSE3|NEON", tests: "cipher",
     env: {
       NSS_DISABLE_ARM_NEON: "1",
       NSS_DISABLE_SSSE3: "1"
     }, group: "Cipher"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base, {
     name: "EC tests", symbol: "EC", tests: "ec"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base, {
     name: "Lowhash tests", symbol: "Lowhash", tests: "lowhash"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base, {
     name: "SDR tests", symbol: "SDR", tests: "sdr"
   }));
-  queue.scheduleTask(merge(no_cert_base, {
+  queue.scheduleTask(merge(cert_base, {
     name: "Policy tests", symbol: "Policy", tests: "policy"
   }));
 
   // Schedule tests that need certificates.
-  let cert_base = merge(test_base, {parent: task_cert});
   queue.scheduleTask(merge(cert_base, {
     name: "CRMF tests", symbol: "CRMF", tests: "crmf"
   }));
@@ -1070,6 +1004,33 @@ async function scheduleTools() {
       "/bin/bash",
       "-c",
       "bin/checkout.sh && nss/automation/taskcluster/scripts/run_scan_build.sh"
+    ]
+  }));
+
+  queue.scheduleTask(merge(base, {
+    symbol: "coverity",
+    name: "coverity",
+    image: FUZZ_IMAGE,
+    tags: ['code-review'],
+    env: {
+      USE_64: "1",
+      CC: "clang",
+      CCC: "clang++",
+      NSS_AUTOMATION: "1"
+    },
+    features: ["taskclusterProxy"],
+    scopes: ["secrets:get:project/relman/coverity-nss"],
+    artifacts: {
+      "public/code-review/coverity.json": {
+        expires: 24 * 7,
+        type: "file",
+        path: "/home/worker/nss/coverity/coverity.json"
+      }
+    },
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && nss/automation/taskcluster/scripts/run_coverity.sh"
     ]
   }));
 
@@ -1162,3 +1123,38 @@ async function scheduleTools() {
 
   return queue.submit();
 }
+
+async function scheduleCodeReview() {
+  let tasks = queue.taggedTasks("code-review");
+  if(! tasks) {
+    console.debug("No code review tasks, skipping ending task");
+    return
+  }
+
+  // From https://hg.mozilla.org/mozilla-central/file/tip/taskcluster/ci/code-review/kind.yml
+  queue.scheduleTask({
+    platform: "nss-tools",
+    name: "code-review-issues",
+    description: "List all issues found in static analysis and linting tasks",
+
+    // No logic on that task
+    image: LINUX_IMAGE,
+    command: ["/bin/true"],
+
+    // This task must run after all analyzer tasks are completed
+    parents: tasks,
+
+    // This option permits to run the task
+    // regardless of the analyzers tasks exit status
+    // as we are interested in the task failures
+    requires: "all-resolved",
+
+    // Publish code review trigger on pulse
+    routes: ["project.relman.codereview.v1.try_ending"],
+
+    kind: "code-review",
+    symbol: "E"
+  });
+
+  return queue.submit();
+};

@@ -359,8 +359,10 @@ nsresult TextEditor::OnDrop(DragEvent* aDropEvent) {
 }
 
 nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
-                                   bool aDispatchPasteEvent) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste);
+                                   bool aDispatchPasteEvent,
+                                   nsIPrincipal* aPrincipal) {
+  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -378,7 +380,7 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
   }
 
   if (aDispatchPasteEvent && !FireClipboardEvent(ePaste, aClipboardType)) {
-    return NS_OK;
+    return EditorBase::ToGenericNSResult(NS_ERROR_EDITOR_ACTION_CANCELED);
   }
 
   // Get Clipboard Service
@@ -414,9 +416,10 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-TextEditor::PasteTransferable(nsITransferable* aTransferable) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste);
+nsresult TextEditor::PasteTransferableAsAction(nsITransferable* aTransferable,
+                                               nsIPrincipal* aPrincipal) {
+  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -425,7 +428,7 @@ TextEditor::PasteTransferable(nsITransferable* aTransferable) {
   // aTransferable and we don't currently implement a way to put that in the
   // data transfer yet.
   if (!FireClipboardEvent(ePaste, -1)) {
-    return NS_OK;
+    return EditorBase::ToGenericNSResult(NS_ERROR_EDITOR_ACTION_CANCELED);
   }
 
   if (!IsModifiable()) {
@@ -439,39 +442,37 @@ TextEditor::PasteTransferable(nsITransferable* aTransferable) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-TextEditor::CanPaste(int32_t aSelectionType, bool* aCanPaste) {
-  NS_ENSURE_ARG_POINTER(aCanPaste);
-  *aCanPaste = false;
-
-  // Always enable the paste command when inside of a HTML or XHTML document.
+bool TextEditor::CanPaste(int32_t aClipboardType) const {
+  // Always enable the paste command when inside of a HTML or XHTML document,
+  // but if the document is chrome, let it control it.
   RefPtr<Document> doc = GetDocument();
-  if (doc && doc->IsHTMLOrXHTML()) {
-    *aCanPaste = true;
-    return NS_OK;
+  if (doc && doc->IsHTMLOrXHTML() && !nsContentUtils::IsChromeDoc(doc)) {
+    return true;
   }
 
   // can't paste if readonly
   if (!IsModifiable()) {
-    return NS_OK;
+    return false;
   }
 
   nsresult rv;
   nsCOMPtr<nsIClipboard> clipboard(
       do_GetService("@mozilla.org/widget/clipboard;1", &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
 
   // the flavors that we can deal with
-  const char* textEditorFlavors[] = {kUnicodeMime};
+  AutoTArray<nsCString, 1> textEditorFlavors = {
+      nsDependentCString(kUnicodeMime)};
 
   bool haveFlavors;
-  rv = clipboard->HasDataMatchingFlavors(textEditorFlavors,
-                                         ArrayLength(textEditorFlavors),
-                                         aSelectionType, &haveFlavors);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  *aCanPaste = haveFlavors;
-  return NS_OK;
+  rv = clipboard->HasDataMatchingFlavors(textEditorFlavors, aClipboardType,
+                                         &haveFlavors);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
+  return haveFlavors;
 }
 
 bool TextEditor::CanPasteTransferable(nsITransferable* aTransferable) {

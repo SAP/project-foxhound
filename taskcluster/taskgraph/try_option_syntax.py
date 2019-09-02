@@ -9,6 +9,7 @@ import copy
 import logging
 import re
 import shlex
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +87,6 @@ UNITTEST_ALIASES = {
     'mochitest-gl-e10s': alias_prefix('mochitest-webgl-e10s'),
     'mochitest-gpu': alias_prefix('mochitest-gpu'),
     'mochitest-gpu-e10s': alias_prefix('mochitest-gpu-e10s'),
-    'mochitest-clipboard': alias_prefix('mochitest-clipboard'),
-    'mochitest-clipboard-e10s': alias_prefix('mochitest-clipboard-e10s'),
     'mochitest-media': alias_prefix('mochitest-media'),
     'mochitest-media-e10s': alias_prefix('mochitest-media-e10s'),
     'mochitest-vg': alias_prefix('mochitest-valgrind'),
@@ -130,10 +129,12 @@ UNITTEST_PLATFORM_PRETTY_NAMES = {
         'linux64-stylo-sequential'
     ],
     'Android 4.3 Emulator': ['android-em-4.3-arm7-api-16'],
+    'Android 4.3 Emulator PGO': ['android-em-4-3-armv7-api16-pgo'],
     'Android 7.0 Moto G5 32bit': ['android-hw-g5-7.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 32bit': ['android-hw-p2-8.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 64bit': ['android-hw-p2-8.0-android-aarch64'],
-    '10.10': ['macosx64'],
+    '10.10': ['macosx1010-64'],
+    '10.14': ['macosx1014-64'],
     # other commonly-used substrings for platforms not yet supported with
     # in-tree taskgraphs:
     # '10.10.5': [..TODO..],
@@ -301,6 +302,21 @@ class TryOptionSyntax(object):
         self.artifact = options['artifact']
         self.include_nightly = options['include_nightly']
 
+        self.test_tiers = self.generate_test_tiers(full_task_graph)
+
+    def generate_test_tiers(self, full_task_graph):
+        retval = defaultdict(set)
+        for t in full_task_graph.tasks.itervalues():
+            if t.attributes.get('kind') == 'test':
+                try:
+                    tier = t.task['extra']['treeherder']['tier']
+                    name = t.attributes.get('unittest_try_name')
+                    retval[name].add(tier)
+                except KeyError:
+                    pass
+
+        return retval
+
     def parse_jobs(self, jobs_arg):
         if not jobs_arg or jobs_arg == ['none']:
             return []  # default is `-j none`
@@ -335,6 +351,9 @@ class TryOptionSyntax(object):
         results = []
         for build in platform_arg.split(','):
             results.append(build)
+            if build in ('macosx64',):
+                results.append('macosx64-shippable')
+                logger.info("adding macosx64-shippable for try syntax using macosx64.")
             if build in RIDEALONG_BUILDS:
                 results.extend(RIDEALONG_BUILDS[build])
                 logger.info("platform %s triggers ridealong builds %s" %
@@ -554,34 +573,64 @@ class TryOptionSyntax(object):
         if 'ccov' in attr('build_platform', []):
             return False
 
+        # Don't schedule tasks for windows10-aarch64 unless try fuzzy is used
+        if 'windows10-aarch64' in attr("test_platform", ""):
+            return False
+
         # Don't schedule android-hw tests when try option syntax is used
         if 'android-hw' in task.label:
+            return False
+
+        # Don't schedule fission tests when try option syntax is used
+        if attr('unittest_variant') == 'fission':
             return False
 
         def match_test(try_spec, attr_name):
             run_by_default = True
             if attr('build_type') not in self.build_types:
                 return False
-            if self.platforms is not None:
-                if attr('build_platform') not in self.platforms:
-                    return False
-            else:
-                if not check_run_on_projects():
-                    run_by_default = False
+
+            if self.platforms is not None and attr('build_platform') not in self.platforms:
+                return False
+            elif not check_run_on_projects():
+                run_by_default = False
+
             if try_spec is None:
                 return run_by_default
+
             # TODO: optimize this search a bit
             for test in try_spec:
                 if attr(attr_name) == test['test']:
                     break
             else:
                 return False
+
             if 'only_chunks' in test and attr('test_chunk') not in test['only_chunks']:
                 return False
+
+            tier = task.task['extra']['treeherder']['tier']
             if 'platforms' in test:
+                if 'all' in test['platforms']:
+                    return True
                 platform = attr('test_platform', '').split('/')[0]
                 # Platforms can be forced by syntax like "-u xpcshell[Windows 8]"
                 return platform in test['platforms']
+            elif tier != 1:
+                # Require tier 2/3 tests to be specifically enabled if there
+                # are other platforms that run this test suite as tier 1
+                name = attr('unittest_try_name')
+                test_tiers = self.test_tiers.get(name)
+                if 1 not in test_tiers:
+                    logger.debug("not skipping tier {} test without explicit inclusion: {}; "
+                                 "it is configured to run on tiers {}"
+                                 .format(tier, task.label, test_tiers))
+                    return True
+                else:
+                    logger.debug(
+                        "skipping mixed tier {} (of {}) test without explicit inclusion: {}"
+                        .format(tier, test_tiers, task.label))
+                    return False
+
             elif run_by_default:
                 return check_run_on_projects()
             else:

@@ -70,18 +70,12 @@ class nsWindowRoot final : public nsPIWindowRoot {
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsWindowRoot)
 
-  virtual void AddBrowser(mozilla::dom::TabParent* aBrowser) override;
-  virtual void RemoveBrowser(mozilla::dom::TabParent* aBrowser) override;
+  virtual void AddBrowser(nsIRemoteTab* aBrowser) override;
+  virtual void RemoveBrowser(nsIRemoteTab* aBrowser) override;
   virtual void EnumerateBrowsers(BrowserEnumerator aEnumFunc,
                                  void* aArg) override;
 
-  virtual bool ShowAccelerators() override { return mShowAccelerators; }
-
   virtual bool ShowFocusRings() override { return mShowFocusRings; }
-
-  virtual void SetShowAccelerators(bool aEnable) override {
-    mShowAccelerators = aEnable;
-  }
 
   virtual void SetShowFocusRings(bool aEnable) override {
     mShowFocusRings = aEnable;
@@ -92,7 +86,7 @@ class nsWindowRoot final : public nsPIWindowRoot {
 
   void GetEnabledDisabledCommandsForControllers(
       nsIControllers* aControllers,
-      nsTHashtable<nsCharPtrHashKey>& aCommandsHandled,
+      nsTHashtable<nsCStringHashKey>& aCommandsHandled,
       nsTArray<nsCString>& aEnabledCommands,
       nsTArray<nsCString>& aDisabledCommands);
 
@@ -102,14 +96,13 @@ class nsWindowRoot final : public nsPIWindowRoot {
   RefPtr<mozilla::EventListenerManager> mListenerManager;  // [Strong]
   nsWeakPtr mPopupNode;
 
-  // True if focus rings and accelerators are enabled for this
-  // window hierarchy.
-  bool mShowAccelerators;
+  // True if focus rings are enabled for this window hierarchy.
   bool mShowFocusRings;
 
   nsCOMPtr<mozilla::dom::EventTarget> mParent;
 
-  // The TabParents that are currently registered with this top-level window.
+  // The BrowserParents that are currently registered with this top-level
+  // window.
   typedef nsTHashtable<nsRefPtrHashKey<nsIWeakReference>> WeakBrowserTable;
   WeakBrowserTable mWeakBrowsers;
 };

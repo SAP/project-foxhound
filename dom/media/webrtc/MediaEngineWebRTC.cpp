@@ -6,12 +6,12 @@
 
 #include "MediaEngineWebRTC.h"
 
-#include "AllocationHandle.h"
 #include "CamerasChild.h"
 #include "CSFLog.h"
 #include "MediaEngineTabVideoSource.h"
 #include "MediaEngineRemoteVideoSource.h"
 #include "MediaEngineWebRTCAudio.h"
+#include "MediaManager.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/dom/MediaDeviceInfo.h"
 #include "mozilla/Logging.h"
@@ -58,8 +58,7 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
    * the last call. TODO: Verify that WebRTC actually does deal with hotplugging
    * new devices (with or without new engine creation) and accordingly adjust.
    * Enumeration is not neccessary if GIPS reports the same set of devices
-   * for a given instance of the engine. Likewise, if a device was plugged out,
-   * mVideoSources must be updated.
+   * for a given instance of the engine.
    */
   int num;
 #if defined(_ARM64_) && defined(XP_WIN)
@@ -130,18 +129,8 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
     NS_ConvertUTF8toUTF16 uuid(uniqueId);
     RefPtr<MediaEngineSource> vSource;
 
-    nsRefPtrHashtable<nsStringHashKey, MediaEngineSource>*
-        devicesForThisWindow = mVideoSources.LookupOrAdd(aWindowId);
-
-    if (devicesForThisWindow->Get(uuid, getter_AddRefs(vSource)) &&
-        vSource->RequiresSharing()) {
-      // We've already seen this shared device, just refresh and append.
-      static_cast<MediaEngineRemoteVideoSource*>(vSource.get())->Refresh(i);
-    } else {
-      vSource = new MediaEngineRemoteVideoSource(i, aCapEngine,
-                                                 scaryKind || scarySource);
-      devicesForThisWindow->Put(uuid, vSource);
-    }
+    vSource = new MediaEngineRemoteVideoSource(i, aCapEngine,
+                                               scaryKind || scarySource);
     aDevices->AppendElement(MakeRefPtr<MediaDevice>(
         vSource, vSource->GetName(), NS_ConvertUTF8toUTF16(vSource->GetUUID()),
         vSource->GetGroupId(), NS_LITERAL_STRING("")));
@@ -191,9 +180,14 @@ void MediaEngineWebRTC::EnumerateMicrophoneDevices(
         if (!foundPreferredDevice) {
           foundPreferredDevice = true;
         } else {
+          // This is possible on windows, there is a default communication
+          // device, and a default device:
+          // See https://bugzilla.mozilla.org/show_bug.cgi?id=1542739
+#  ifndef XP_WIN
           MOZ_ASSERT(!foundPreferredDevice,
                      "Found more than one preferred audio input device"
                      "while enumerating");
+#  endif
         }
 #endif
         aDevices->InsertElementAt(0, device);
@@ -212,6 +206,7 @@ void MediaEngineWebRTC::EnumerateSpeakerDevices(
   nsTArray<RefPtr<AudioDeviceInfo>> devices;
   mEnumerator->EnumerateAudioOutputDevices(devices);
 
+  DebugOnly<bool> preferredDeviceFound = false;
   for (auto& device : devices) {
     if (device->State() == CUBEB_DEVICE_STATE_ENABLED) {
       MOZ_ASSERT(device->Type() == CUBEB_DEVICE_TYPE_OUTPUT);
@@ -221,7 +216,16 @@ void MediaEngineWebRTC::EnumerateSpeakerDevices(
       // deviceIDs (in JS).
       uuid.Append(NS_LITERAL_STRING("_Speaker"));
       nsString groupId(device->GroupID());
-      aDevices->AppendElement(MakeRefPtr<MediaDevice>(device, uuid, groupId));
+      if (device->Preferred()) {
+#ifdef DEBUG
+        MOZ_ASSERT(!preferredDeviceFound);
+        preferredDeviceFound = true;
+#endif
+        aDevices->InsertElementAt(
+            0, MakeRefPtr<MediaDevice>(device, uuid, groupId));
+      } else {
+        aDevices->AppendElement(MakeRefPtr<MediaDevice>(device, uuid, groupId));
+      }
     }
   }
 }
@@ -241,9 +245,6 @@ void MediaEngineWebRTC::EnumerateDevices(
         // are still useful for testing.
         EnumerateVideoDevices(aWindowId, camera::WinEngine, aDevices);
         EnumerateVideoDevices(aWindowId, camera::ScreenEngine, aDevices);
-        break;
-      case dom::MediaSourceEnum::Application:
-        EnumerateVideoDevices(aWindowId, camera::AppEngine, aDevices);
         break;
       case dom::MediaSourceEnum::Screen:
         EnumerateVideoDevices(aWindowId, camera::ScreenEngine, aDevices);
@@ -275,50 +276,6 @@ void MediaEngineWebRTC::EnumerateDevices(
   }
 }
 
-void MediaEngineWebRTC::ReleaseResourcesForWindow(uint64_t aWindowId) {
-  {
-    nsRefPtrHashtable<nsStringHashKey, MediaEngineSource>*
-        audioDevicesForThisWindow = mAudioSources.Get(aWindowId);
-
-    if (audioDevicesForThisWindow) {
-      for (auto iter = audioDevicesForThisWindow->Iter(); !iter.Done();
-           iter.Next()) {
-        iter.UserData()->Shutdown();
-      }
-
-      // This makes audioDevicesForThisWindow invalid.
-      mAudioSources.Remove(aWindowId);
-    }
-  }
-
-  {
-    nsRefPtrHashtable<nsStringHashKey, MediaEngineSource>*
-        videoDevicesForThisWindow = mVideoSources.Get(aWindowId);
-    if (videoDevicesForThisWindow) {
-      for (auto iter = videoDevicesForThisWindow->Iter(); !iter.Done();
-           iter.Next()) {
-        iter.UserData()->Shutdown();
-      }
-
-      // This makes videoDevicesForThisWindow invalid.
-      mVideoSources.Remove(aWindowId);
-    }
-  }
-}
-
-namespace {
-template <typename T>
-void ShutdownSources(T& aHashTable) {
-  for (auto iter = aHashTable.Iter(); !iter.Done(); iter.Next()) {
-    for (auto iterInner = iter.UserData()->Iter(); !iterInner.Done();
-         iterInner.Next()) {
-      MediaEngineSource* source = iterInner.UserData();
-      source->Shutdown();
-    }
-  }
-}
-}  // namespace
-
 void MediaEngineWebRTC::Shutdown() {
   // This is likely paranoia
   MutexAutoLock lock(mMutex);
@@ -329,13 +286,7 @@ void MediaEngineWebRTC::Shutdown() {
   }
 
   LOG(("%s", __FUNCTION__));
-  // Shutdown all the sources, since we may have dangling references to the
-  // sources in nsDOMUserMediaStreams waiting for GC/CC
-  ShutdownSources(mVideoSources);
-  ShutdownSources(mAudioSources);
-
   mEnumerator = nullptr;
-
   mozilla::camera::Shutdown();
 }
 

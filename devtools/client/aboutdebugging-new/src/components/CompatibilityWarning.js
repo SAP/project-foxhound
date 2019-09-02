@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
@@ -13,9 +16,12 @@ const Localized = createFactory(FluentReact.Localized);
 const Message = createFactory(require("./shared/Message"));
 
 const { MESSAGE_LEVEL } = require("../constants");
-const { COMPATIBILITY_STATUS } = require("devtools/client/shared/remote-debugging/version-checker");
+const {
+  COMPATIBILITY_STATUS,
+} = require("devtools/client/shared/remote-debugging/version-checker");
 
-const TROUBLESHOOTING_URL = "https://developer.mozilla.org/docs/Tools/WebIDE/Troubleshooting";
+const TROUBLESHOOTING_URL =
+  "https://developer.mozilla.org/docs/Tools/about:debugging#Troubleshooting";
 
 const Types = require("../types/index");
 
@@ -27,8 +33,14 @@ class CompatibilityWarning extends PureComponent {
   }
 
   render() {
-    const { localID, localVersion, minVersion, runtimeID, runtimeVersion, status } =
-      this.props.compatibilityReport;
+    const {
+      localID,
+      localVersion,
+      minVersion,
+      runtimeID,
+      runtimeVersion,
+      status,
+    } = this.props.compatibilityReport;
 
     if (status === COMPATIBILITY_STATUS.COMPATIBLE) {
       return null;
@@ -37,22 +49,23 @@ class CompatibilityWarning extends PureComponent {
     let localizationId, statusClassName;
     switch (status) {
       case COMPATIBILITY_STATUS.TOO_OLD:
-        statusClassName = "js-compatibility-warning-too-old";
-        localizationId = "about-debugging-runtime-version-too-old";
+        statusClassName = "qa-compatibility-warning-too-old";
+        localizationId = "about-debugging-browser-version-too-old";
         break;
       case COMPATIBILITY_STATUS.TOO_RECENT:
-        statusClassName = "js-compatibility-warning-too-recent";
-        localizationId = "about-debugging-runtime-version-too-recent";
+        statusClassName = "qa-compatibility-warning-too-recent";
+        localizationId = "about-debugging-browser-version-too-recent";
         break;
       case COMPATIBILITY_STATUS.TOO_OLD_67_DEBUGGER:
-        statusClassName = "js-compatibility-warning-too-old-67-debugger";
-        localizationId = "about-debugging-runtime-version-too-old-67-debugger";
+        statusClassName = "qa-compatibility-warning-too-old-67-debugger";
+        localizationId = "about-debugging-browser-version-too-old-67-debugger";
         break;
     }
 
     return Message(
       {
         level: MESSAGE_LEVEL.WARNING,
+        isCloseable: true,
       },
       Localized(
         {
@@ -69,10 +82,10 @@ class CompatibilityWarning extends PureComponent {
         },
         dom.p(
           {
-            className: `js-compatibility-warning ${statusClassName}`,
+            className: `qa-compatibility-warning ${statusClassName}`,
           },
-          localizationId,
-        ),
+          localizationId
+        )
       )
     );
   }

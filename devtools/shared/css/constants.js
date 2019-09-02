@@ -8,20 +8,25 @@
  * All CSS <angle> types that properties can support.
  */
 exports.CSS_ANGLEUNIT = {
-  "deg": "deg",
-  "rad": "rad",
-  "grad": "grad",
-  "turn": "turn",
+  deg: "deg",
+  rad: "rad",
+  grad: "grad",
+  turn: "turn",
 };
 
 /**
- * All CSS types that properties can support. This list can be manually edited.
- *
- * The existing numbers are for backward compatibility so that newer versions
- * are still able to debug an old version correctly.
+ * Mapping of InspectorPropertyType to old type ID.
+ * Kept for backwards compatibility. Remove after Firefox 70.
  */
 exports.CSS_TYPES = {
-  "COLOR": 2,
-  "GRADIENT": 4,
-  "TIMING_FUNCTION": 10,
+  color: 2,
+  gradient: 4,
+  "timing-function": 10,
 };
+
+/**
+ * Supported pseudo-class locks in the order in which they appear in the pseudo-class
+ * panel in the Rules sidebar panel of the Inspector.
+ * FIXME: add ":visited" and ":link" after bug 713106 is fixed
+ */
+exports.PSEUDO_CLASSES = [":hover", ":active", ":focus", ":focus-within"];

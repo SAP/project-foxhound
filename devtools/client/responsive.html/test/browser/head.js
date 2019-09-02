@@ -150,33 +150,33 @@ function waitForViewportResizeTo(ui, width, height) {
       return;
     }
 
-    // Otherwise, we'll listen to the content's resize event, the viewport's resize event,
-    // and the browser's load end; since a racing condition can happen, where the
-    // content's listener is added after the resize, because the content's document was
-    // reloaded; therefore the test would hang forever. See bug 1302879.
+    // Otherwise, we'll listen to the viewport's resize event, and the
+    // browser's load end; since a racing condition can happen, where the
+    // viewport's listener is added after the resize, because the viewport's
+    // document was reloaded; therefore the test would hang forever.
+    // See bug 1302879.
     const browser = ui.getViewportBrowser();
 
-    const onResize = data => {
+    const onResizeViewport = data => {
       if (!isSizeMatching(data)) {
         return;
       }
-      ui.off("viewport-resize", onResize);
-      ui.off("content-resize", onResize);
+      ui.off("viewport-resize", onResizeViewport);
       browser.removeEventListener("mozbrowserloadend", onBrowserLoadEnd);
-      info(`Got content-resize or viewport-resize to ${width} x ${height}`);
+      info(`Got viewport-resize to ${width} x ${height}`);
       resolve();
     };
 
     const onBrowserLoadEnd = async function() {
       const data = ui.getViewportSize(ui);
-      onResize(data);
+      onResizeViewport(data);
     };
 
-    info(`Waiting for content-resize or viewport-resize to ${width} x ${height}`);
-    // Depending on whether or not the viewport is overridden, we'll either get a
-    // viewport-resize event or a content-resize event.
-    ui.on("viewport-resize", onResize);
-    ui.on("content-resize", onResize);
+    info(`Waiting for viewport-resize to ${width} x ${height}`);
+    // We're changing the viewport size, which may also change the content
+    // size. We wait on the viewport resize event, and check for the
+    // desired size.
+    ui.on("viewport-resize", onResizeViewport);
     browser.addEventListener("mozbrowserloadend",
       onBrowserLoadEnd, { once: true });
   });
@@ -191,6 +191,18 @@ var setViewportSize = async function(ui, manager, width, height) {
     ui.setViewportSize({ width, height });
     await resized;
   }
+};
+
+// This performs the same function as setViewportSize, but additionally
+// ensures that reflow of the viewport has completed.
+var setViewportSizeAndAwaitReflow = async function(ui, manager, width, height) {
+  await setViewportSize(ui, manager, width, height);
+  const reflowed = ContentTask.spawn(ui.getViewportBrowser(), {}, async function() {
+    return new Promise(resolve => {
+      content.requestAnimationFrame(resolve);
+    });
+  });
+  await reflowed;
 };
 
 function getViewportDevicePixelRatio(ui) {
@@ -390,7 +402,7 @@ function addDeviceForTest(device) {
 
 async function waitForClientClose(ui) {
   info("Waiting for RDM debugger client to close");
-  await ui.client.addOneTimeListener("closed");
+  await ui.client.once("closed");
   info("RDM's debugger client is now closed");
 }
 
@@ -480,12 +492,12 @@ function addDeviceInModal(ui, device) {
     ui.toolWindow.require("devtools/client/shared/vendor/react-dom-test-utils");
   const { document, store } = ui.toolWindow;
 
-  const nameInput = document.querySelector("#device-adder-name input");
+  const nameInput = document.querySelector("#device-form-name input");
   const [ widthInput, heightInput ] =
-    document.querySelectorAll("#device-adder-size input");
-  const pixelRatioInput = document.querySelector("#device-adder-pixel-ratio input");
-  const userAgentInput = document.querySelector("#device-adder-user-agent input");
-  const touchInput = document.querySelector("#device-adder-touch input");
+    document.querySelectorAll("#device-form-size input");
+  const pixelRatioInput = document.querySelector("#device-form-pixel-ratio input");
+  const userAgentInput = document.querySelector("#device-form-user-agent input");
+  const touchInput = document.querySelector("#device-form-touch input");
 
   nameInput.value = device.name;
   Simulate.change(nameInput);
@@ -503,11 +515,50 @@ function addDeviceInModal(ui, device) {
   Simulate.change(touchInput);
 
   const existingCustomDevices = store.getState().devices.custom.length;
-  const adderSave = document.querySelector("#device-adder-save");
+  const adderSave = document.querySelector("#device-form-save");
   const saved = waitUntilState(store, state =>
     state.devices.custom.length == existingCustomDevices + 1
   );
   Simulate.click(adderSave);
+  return saved;
+}
+
+function editDeviceInModal(ui, device, newDevice) {
+  const { Simulate } =
+    ui.toolWindow.require("devtools/client/shared/vendor/react-dom-test-utils");
+  const { document, store } = ui.toolWindow;
+
+  const nameInput = document.querySelector("#device-form-name input");
+  const [ widthInput, heightInput ] =
+    document.querySelectorAll("#device-form-size input");
+  const pixelRatioInput = document.querySelector("#device-form-pixel-ratio input");
+  const userAgentInput = document.querySelector("#device-form-user-agent input");
+  const touchInput = document.querySelector("#device-form-touch input");
+
+  nameInput.value = newDevice.name;
+  Simulate.change(nameInput);
+  widthInput.value = newDevice.width;
+  Simulate.change(widthInput);
+  Simulate.blur(widthInput);
+  heightInput.value = newDevice.height;
+  Simulate.change(heightInput);
+  Simulate.blur(heightInput);
+  pixelRatioInput.value = newDevice.pixelRatio;
+  Simulate.change(pixelRatioInput);
+  userAgentInput.value = newDevice.userAgent;
+  Simulate.change(userAgentInput);
+  touchInput.checked = newDevice.touch;
+  Simulate.change(touchInput);
+
+  const existingCustomDevices = store.getState().devices.custom.length;
+  const formSave = document.querySelector("#device-form-save");
+
+  const saved = waitUntilState(store, state =>
+    state.devices.custom.length == existingCustomDevices &&
+    state.devices.custom.find(({ name }) => name == newDevice.name) &&
+    !state.devices.custom.find(({ name }) => name == device.name)
+  );
+  Simulate.click(formSave);
   return saved;
 }
 
@@ -525,4 +576,43 @@ function rotateViewport(ui) {
   const { document } = ui.toolWindow;
   const rotateButton = document.getElementById("rotate-button");
   rotateButton.click();
+}
+
+// Call this to switch between on/off support for meta viewports.
+async function setTouchAndMetaViewportSupport(ui, value) {
+  const reloadNeeded = await ui.updateTouchSimulation(value);
+  if (reloadNeeded) {
+    info("Reload is needed -- waiting for it.");
+    const reload = waitForViewportLoad(ui);
+    const browser = ui.getViewportBrowser();
+    browser.reload();
+    await reload;
+  }
+  return reloadNeeded;
+}
+
+// This function checks that zoom, layout viewport width and height
+// are all as expected.
+async function testViewportZoomWidthAndHeight(message, ui, zoom, width, height) {
+  if (typeof zoom !== "undefined") {
+    const resolution = await spawnViewportTask(ui, {}, function() {
+      return content.windowUtils.getResolution();
+    });
+    is(resolution, zoom, message + " should have expected zoom.");
+  }
+
+  if (typeof width !== "undefined" || typeof height !== "undefined") {
+    const layoutSize = await spawnViewportTask(ui, {}, function() {
+      return {
+        width: content.screen.width,
+        height: content.screen.height,
+      };
+    });
+    if (typeof width !== "undefined") {
+      is(layoutSize.width, width, message + " should have expected layout width.");
+    }
+    if (typeof height !== "undefined") {
+      is(layoutSize.height, height, message + " should have expected layout height.");
+    }
+  }
 }

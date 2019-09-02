@@ -5,8 +5,11 @@
 
 var EXPORTED_SYMBOLS = ["PeerConnectionIdp"];
 
-ChromeUtils.defineModuleGetter(this, "IdpSandbox",
-  "resource://gre/modules/media/IdpSandbox.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "IdpSandbox",
+  "resource://gre/modules/media/IdpSandbox.jsm"
+);
 
 /**
  * Creates an IdP helper.
@@ -58,10 +61,9 @@ PeerConnectionIdp.prototype = {
 
   // start the IdP and do some error fixup
   start() {
-    return this._idp.start()
-      .catch(e => {
-        throw new this._win.DOMException(e.message, "IdpError");
-      });
+    return this._idp.start().catch(e => {
+      throw new this._win.DOMException(e.message, "IdpError");
+    });
   },
 
   close() {
@@ -89,21 +91,29 @@ PeerConnectionIdp.prototype = {
   },
 
   _isValidAssertion(assertion) {
-    return assertion && assertion.idp &&
+    return (
+      assertion &&
+      assertion.idp &&
       typeof assertion.idp.domain === "string" &&
-      (!assertion.idp.protocol ||
-       typeof assertion.idp.protocol === "string") &&
-      typeof assertion.assertion === "string";
+      (!assertion.idp.protocol || typeof assertion.idp.protocol === "string") &&
+      typeof assertion.assertion === "string"
+    );
+  },
+
+  _getSessionLevelEnd(sdp) {
+    const match = sdp.match(PeerConnectionIdp._mLinePattern);
+    if (!match) {
+      return sdp.length;
+    }
+    return match.index;
   },
 
   _getIdentityFromSdp(sdp) {
     // a=identity is session level
     let idMatch;
-    let mLineMatch = sdp.match(PeerConnectionIdp._mLinePattern);
-    if (mLineMatch) {
-      let sessionLevel = sdp.substring(0, mLineMatch.index);
-      idMatch = sessionLevel.match(PeerConnectionIdp._identityPattern);
-    }
+    const index = this._getSessionLevelEnd(sdp);
+    const sessionLevel = sdp.substring(0, index);
+    idMatch = sessionLevel.match(PeerConnectionIdp._identityPattern);
     if (!idMatch) {
       return undefined; // undefined === no identity
     }
@@ -112,12 +122,16 @@ PeerConnectionIdp.prototype = {
     try {
       assertion = JSON.parse(atob(idMatch[1]));
     } catch (e) {
-      throw new this._win.DOMException("invalid identity assertion: " + e,
-                                       "InvalidSessionDescriptionError");
+      throw new this._win.DOMException(
+        "invalid identity assertion: " + e,
+        "InvalidSessionDescriptionError"
+      );
     }
     if (!this._isValidAssertion(assertion)) {
-      throw new this._win.DOMException("assertion missing idp/idp.domain/assertion",
-                                       "InvalidSessionDescriptionError");
+      throw new this._win.DOMException(
+        "assertion missing idp/idp.domain/assertion",
+        "InvalidSessionDescriptionError"
+      );
     }
     return assertion;
   },
@@ -151,8 +165,10 @@ PeerConnectionIdp.prototype = {
    */
   _validateName(name) {
     let error = msg => {
-        throw new this._win.DOMException("assertion name error: " + msg,
-                                         "IdpError");
+      throw new this._win.DOMException(
+        "assertion name error: " + msg,
+        "IdpError"
+      );
     };
 
     if (typeof name !== "string") {
@@ -172,12 +188,14 @@ PeerConnectionIdp.prototype = {
     if (providerPortIdx > 0) {
       provider = provider.substring(0, providerPortIdx);
     }
-    let idnService = Cc["@mozilla.org/network/idn-service;1"]
-        .getService(Ci.nsIIDNService);
-    if (idnService.convertUTF8toACE(tail) !==
-        idnService.convertUTF8toACE(provider)) {
-      error('name "' + name +
-            '" doesn\'t match IdP: "' + this.provider + '"');
+    let idnService = Cc["@mozilla.org/network/idn-service;1"].getService(
+      Ci.nsIIDNService
+    );
+    if (
+      idnService.convertUTF8toACE(tail) !==
+      idnService.convertUTF8toACE(provider)
+    ) {
+      error('name "' + name + '" doesn\'t match IdP: "' + this.provider + '"');
     }
   },
 
@@ -188,17 +206,21 @@ PeerConnectionIdp.prototype = {
    */
   _checkValidation(validation, sdpFingerprints) {
     let error = msg => {
-      throw new this._win.DOMException("IdP validation error: " + msg,
-                                       "IdpError");
+      throw new this._win.DOMException(
+        "IdP validation error: " + msg,
+        "IdpError"
+      );
     };
 
     if (!this.provider) {
       error("IdP closed");
     }
 
-    if (typeof validation !== "object" ||
-        typeof validation.contents !== "string" ||
-        typeof validation.identity !== "string") {
+    if (
+      typeof validation !== "object" ||
+      typeof validation.contents !== "string" ||
+      typeof validation.identity !== "string"
+    ) {
       error("no payload in validation response");
     }
 
@@ -210,11 +232,12 @@ PeerConnectionIdp.prototype = {
     }
 
     let isFingerprint = f =>
-        (typeof f.digest === "string") &&
-        (typeof f.algorithm === "string");
+      typeof f.digest === "string" && typeof f.algorithm === "string";
     if (!Array.isArray(fingerprints) || !fingerprints.every(isFingerprint)) {
-      error("fingerprints must be an array of objects" +
-            " with digest and algorithm attributes");
+      error(
+        "fingerprints must be an array of objects" +
+          " with digest and algorithm attributes"
+      );
     }
 
     // everything in `innerSet` is found in `outerSet`
@@ -224,7 +247,7 @@ PeerConnectionIdp.prototype = {
       });
     };
     let compareFingerprints = (a, b) => {
-      return (a.digest === b.digest) && (a.algorithm === b.algorithm);
+      return a.digest === b.digest && a.algorithm === b.algorithm;
     };
     if (!isSubsetOf(fingerprints, sdpFingerprints, compareFingerprints)) {
       error("the fingerprints must be covered by the assertion");
@@ -238,9 +261,12 @@ PeerConnectionIdp.prototype = {
    */
   _verifyIdentity(assertion, fingerprints, origin) {
     let p = this.start()
-        .then(idp => this._wrapCrossCompartmentPromise(
-          idp.validateAssertion(assertion, origin)))
-        .then(validation => this._checkValidation(validation, fingerprints));
+      .then(idp =>
+        this._wrapCrossCompartmentPromise(
+          idp.validateAssertion(assertion, origin)
+        )
+      )
+      .then(validation => this._checkValidation(validation, fingerprints));
 
     return this._applyTimeout(p);
   },
@@ -254,11 +280,14 @@ PeerConnectionIdp.prototype = {
       return sdp;
     }
 
-    // yes, we assume that this matches; if it doesn't something is *wrong*
-    let match = sdp.match(PeerConnectionIdp._mLinePattern);
-    return sdp.substring(0, match.index) +
-      "a=identity:" + this.assertion + "\r\n" +
-      sdp.substring(match.index);
+    const index = this._getSessionLevelEnd(sdp);
+    return (
+      sdp.substring(0, index) +
+      "a=identity:" +
+      this.assertion +
+      "\r\n" +
+      sdp.substring(index)
+    );
   },
 
   /**
@@ -270,37 +299,44 @@ PeerConnectionIdp.prototype = {
   getIdentityAssertion(fingerprint, origin) {
     if (!this.enabled) {
       throw new this._win.DOMException(
-        "no IdP set, call setIdentityProvider() to set one", "InvalidStateError");
+        "no IdP set, call setIdentityProvider() to set one",
+        "InvalidStateError"
+      );
     }
 
     let [algorithm, digest] = fingerprint.split(" ", 2);
     let content = {
-      fingerprint: [{
-        algorithm,
-        digest,
-      }],
+      fingerprint: [
+        {
+          algorithm,
+          digest,
+        },
+      ],
     };
 
     this._resetAssertion();
     let p = this.start()
-        .then(idp => {
-          let options = { protocol: this.protocol,
-                          usernameHint: this.username,
-                          peerIdentity: this.peeridentity };
-          return this._wrapCrossCompartmentPromise(
-            idp.generateAssertion(JSON.stringify(content),
-                                  origin,
-                                  options));
-        })
-        .then(assertion => {
-          if (!this._isValidAssertion(assertion)) {
-            throw new this._win.DOMException("IdP generated invalid assertion",
-                                             "IdpError");
-          }
-          // save the base64+JSON assertion, since that is all that is used
-          this.assertion = btoa(JSON.stringify(assertion));
-          return this.assertion;
-        });
+      .then(idp => {
+        let options = {
+          protocol: this.protocol,
+          usernameHint: this.username,
+          peerIdentity: this.peeridentity,
+        };
+        return this._wrapCrossCompartmentPromise(
+          idp.generateAssertion(JSON.stringify(content), origin, options)
+        );
+      })
+      .then(assertion => {
+        if (!this._isValidAssertion(assertion)) {
+          throw new this._win.DOMException(
+            "IdP generated invalid assertion",
+            "IdpError"
+          );
+        }
+        // save the base64+JSON assertion, since that is all that is used
+        this.assertion = btoa(JSON.stringify(assertion));
+        return this.assertion;
+      });
 
     return this._applyTimeout(p);
   },
@@ -324,7 +360,8 @@ PeerConnectionIdp.prototype = {
           } else {
             reject(new this._win.DOMException(message, "IdpError"));
           }
-        });
+        }
+      );
     });
   },
 
@@ -334,11 +371,11 @@ PeerConnectionIdp.prototype = {
    * elapses before `p` resolves.
    */
   _applyTimeout(p) {
-    let timeout = new this._win.Promise(
-      r => this._win.setTimeout(r, this._timeout))
-        .then(() => {
-          throw new this._win.DOMException("IdP timed out", "IdpError");
-        });
-    return this._win.Promise.race([ timeout, p ]);
+    let timeout = new this._win.Promise(r =>
+      this._win.setTimeout(r, this._timeout)
+    ).then(() => {
+      throw new this._win.DOMException("IdP timed out", "IdpError");
+    });
+    return this._win.Promise.race([timeout, p]);
   },
 };

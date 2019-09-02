@@ -154,10 +154,6 @@ nsresult nsObserverService::Create(nsISupports* aOuter, const nsIID& aIID,
 
   RefPtr<nsObserverService> os = new nsObserverService();
 
-  if (!os) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
   // The memory reporter can not be immediately registered here because
   // the nsMemoryReporterManager may attempt to get the nsObserverService
   // during initialization, causing a recursive GetService.
@@ -186,6 +182,7 @@ nsresult nsObserverService::FilterHttpOnTopics(const char* aTopic) {
   // Specifically allow http-on-opening-request and http-on-stop-request in the
   // child process; see bug 1269765.
   if (mozilla::net::IsNeckoChild() && !strncmp(aTopic, "http-on-", 8) &&
+      strcmp(aTopic, "http-on-failed-opening-request") &&
       strcmp(aTopic, "http-on-opening-request") &&
       strcmp(aTopic, "http-on-stop-request")) {
     nsCOMPtr<nsIConsoleService> console(
@@ -195,7 +192,8 @@ nsresult nsObserverService::FilterHttpOnTopics(const char* aTopic) {
     error->Init(NS_LITERAL_STRING(
                     "http-on-* observers only work in the parent process"),
                 EmptyString(), EmptyString(), 0, 0, nsIScriptError::warningFlag,
-                "chrome javascript", false /* from private window */);
+                "chrome javascript", false /* from private window */,
+                true /* from chrome context */);
     console->LogMessage(error);
 
     return NS_ERROR_NOT_IMPLEMENTED;

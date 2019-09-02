@@ -9,12 +9,11 @@
 <dialog id="removemp"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
-        style="width: 35em;" 
-        ondialogaccept="gRemovePasswordDialog.removePassword();" 
+        style="width: 35em;"
         onload="gRemovePasswordDialog.init()"
         data-l10n-id="remove-password">
 
-  <script type="application/javascript" src="chrome://mozapps/content/preferences/removemp.js"/>
+  <script src="chrome://mozapps/content/preferences/removemp.js"/>
 
   <linkset>
     <html:link rel="localization" href="toolkit/preferences/preferences.ftl"/>
@@ -32,9 +31,9 @@
 
     <hbox align="center">
       <label control="password" data-l10n-id="remove-password-old-password"/> 
-      <textbox id="password" type="password"
-               oninput="gRemovePasswordDialog.validateInput();"
-               aria-describedby="warnings"/>
+      <html:input id="password" type="password"
+                  oninput="gRemovePasswordDialog.validateInput();"
+                  aria-describedby="warnings"/>
     </hbox>
   </groupbox>
   

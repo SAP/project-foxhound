@@ -7,13 +7,13 @@
 #include "mozilla/BasePrincipal.h"
 
 #include "nsDocShell.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIStandardURL.h"
 
 #include "ExpandedPrincipal.h"
 #include "nsNetUtil.h"
+#include "nsContentUtils.h"
 #include "nsIURIWithSpecialOrigin.h"
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
@@ -22,9 +22,10 @@
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ChromeUtils.h"
-#include "mozilla/dom/CSPDictionariesBinding.h"
-#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/ToJSValue.h"
+
+#include "json/json.h"
+#include "nsSerializationHelper.h"
 
 namespace mozilla {
 
@@ -58,6 +59,218 @@ NS_IMETHODIMP
 BasePrincipal::GetSiteOrigin(nsACString& aSiteOrigin) {
   MOZ_ASSERT(mInitialized);
   return GetOrigin(aSiteOrigin);
+}
+
+// Returns the inner Json::value of the serialized principal
+// Example input and return values:
+// Null principal:
+// {"0":{"0":"moz-nullprincipal:{56cac540-864d-47e7-8e25-1614eab5155e}"}} ->
+// {"0":"moz-nullprincipal:{56cac540-864d-47e7-8e25-1614eab5155e}"}
+//
+// Codebase principal:
+// {"1":{"0":"https://mozilla.com"}} -> {"0":"https://mozilla.com"}
+//
+// Expanded principal:
+// {"2":{"0":"<base64principal1>,<base64principal2>"}} ->
+// {"0":"<base64principal1>,<base64principal2>"}
+//
+// System principal:
+// {"3":{}} -> {}
+// The aKey passed in also returns the corresponding PrincipalKind enum
+//
+// Warning: The Json::Value* pointer is into the aRoot object
+static const Json::Value* GetPrincipalObject(const Json::Value& aRoot,
+                                             int& aOutPrincipalKind) {
+  const Json::Value::Members members = aRoot.getMemberNames();
+  // We only support one top level key in the object
+  if (members.size() != 1) {
+    return nullptr;
+  }
+  // members[0] here is the "0", "1", "2", "3" principalKind
+  // that is the top level of the serialized JSON principal
+  const std::string stringPrincipalKind = members[0];
+
+  // Next we take the string value from the JSON
+  // and convert it into the int for the BasePrincipal::PrincipalKind enum
+
+  // Verify that the key is within the valid range
+  int principalKind = std::stoi(stringPrincipalKind);
+  MOZ_ASSERT(BasePrincipal::eNullPrincipal == 0,
+             "We need to rely on 0 being a bounds check for the first "
+             "principal kind.");
+  if (principalKind < 0 || principalKind > BasePrincipal::eKindMax) {
+    return nullptr;
+  }
+  MOZ_ASSERT(principalKind == BasePrincipal::eNullPrincipal ||
+             principalKind == BasePrincipal::eCodebasePrincipal ||
+             principalKind == BasePrincipal::eExpandedPrincipal ||
+             principalKind == BasePrincipal::eSystemPrincipal);
+  aOutPrincipalKind = principalKind;
+
+  if (!aRoot[stringPrincipalKind].isObject()) {
+    return nullptr;
+  }
+
+  // Return the inner value of the principal object
+  return &aRoot[stringPrincipalKind];
+}
+
+// Accepts the JSON inner object without the wrapping principalKind
+// (See GetPrincipalObject for the inner object response examples)
+// Creates an array of KeyVal objects that are all defined on the principal
+// Each principal type (null, content, expanded) has a KeyVal that stores the
+// fields of the JSON
+//
+// This simplifies deserializing elsewhere as we do the checking for presence
+// and string values here for the complete set of serializable keys that the
+// corresponding principal supports.
+//
+// The KeyVal object has the following fields:
+// - valueWasSerialized: is true if the deserialized JSON contained a string
+// value
+// - value: The string that was serialized for this key
+// - key: an SerializableKeys enum value specific to the principal.
+//        For example content principal is an enum of: eCodebase, eDomain,
+//        eSuffix, eCSP
+//
+//
+//  Given an inner content principal:
+//  {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}
+//    |                |          |         |
+//    -----------------------------         |
+//         |           |                    |
+//        Key          ----------------------
+//                                |
+//                              Value
+//
+// They Key "0" corresponds to ContentPrincipal::eCodebase
+// They Key "1" corresponds to ContentPrincipal::eSuffix
+template <typename T>
+static nsTArray<typename T::KeyVal> GetJSONKeys(const Json::Value* aInput) {
+  int size = T::eMax + 1;
+  nsTArray<typename T::KeyVal> fields;
+  for (int i = 0; i != size; i++) {
+    typename T::KeyVal field;
+    // field.valueWasSerialized returns if the field was found in the
+    // deserialized code. This simplifies the consumers from having to check
+    // length.
+    field.valueWasSerialized = false;
+    field.key = static_cast<typename T::SerializableKeys>(i);
+    const std::string key = std::to_string(field.key);
+    if (aInput->isMember(key) && (*aInput)[key].isString()) {
+      field.value.Append(nsDependentCString((*aInput)[key].asCString()));
+      field.valueWasSerialized = true;
+    }
+    fields.AppendElement(field);
+  }
+  return fields;
+}
+
+// Takes a JSON string and parses it turning it into a principal of the
+// corresponding type
+//
+// Given a content principal:
+//
+//                               inner JSON object
+//                                      |
+//       ---------------------------------------------------------
+//       |                                                       |
+// {"1": {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}}
+//   |     |             |             |            |
+//   |     -----------------------------            |
+//   |              |    |                          |
+// PrincipalKind    |    |                          |
+//                  |    ----------------------------
+//           SerializableKeys           |
+//                                    Value
+//
+// The string is first deserialized with jsoncpp to get the Json::Value of the
+// object. The inner JSON object is parsed with GetPrincipalObject which returns
+// a KeyVal array of the inner object's fields. PrincipalKind is returned by
+// GetPrincipalObject which is then used to decide which principal
+// implementation of FromProperties to call. The corresponding FromProperties
+// call takes the KeyVal fields and turns it into a principal.
+already_AddRefed<BasePrincipal> BasePrincipal::FromJSON(
+    const nsACString& aJSON) {
+  Json::Value root;
+  Json::Reader reader;
+  char* jsonString = ToNewCString(aJSON);
+  bool parseSuccess = reader.parse(jsonString, root);
+  free(jsonString);
+  if (!parseSuccess) {
+    MOZ_ASSERT(false,
+               "Unable to parse string as JSON to deserialize as a principal");
+    return nullptr;
+  }
+
+  int principalKind = -1;
+  const Json::Value* value = GetPrincipalObject(root, principalKind);
+  if (!value) {
+#ifdef DEBUG
+    fprintf(stderr, "Unexpected JSON principal %s\n",
+            root.toStyledString().c_str());
+#endif
+    MOZ_ASSERT(false, "Unexpected JSON to deserialize as a principal");
+
+    return nullptr;
+  }
+  MOZ_ASSERT(principalKind != -1,
+             "PrincipalKind should always be >=0 by this point");
+
+  if (principalKind == eSystemPrincipal) {
+    RefPtr<BasePrincipal> principal =
+        BasePrincipal::Cast(nsContentUtils::GetSystemPrincipal());
+    return principal.forget();
+  }
+
+  if (principalKind == eNullPrincipal) {
+    nsTArray<NullPrincipal::KeyVal> res = GetJSONKeys<NullPrincipal>(value);
+    return NullPrincipal::FromProperties(res);
+  }
+
+  if (principalKind == eCodebasePrincipal) {
+    nsTArray<ContentPrincipal::KeyVal> res =
+        GetJSONKeys<ContentPrincipal>(value);
+    return ContentPrincipal::FromProperties(res);
+  }
+
+  if (principalKind == eExpandedPrincipal) {
+    nsTArray<ExpandedPrincipal::KeyVal> res =
+        GetJSONKeys<ExpandedPrincipal>(value);
+    return ExpandedPrincipal::FromProperties(res);
+  }
+
+  MOZ_RELEASE_ASSERT(false, "Unexpected enum to deserialize as a principal");
+}
+
+nsresult BasePrincipal::PopulateJSONObject(Json::Value& aObject) {
+  return NS_OK;
+}
+
+// Returns a JSON representation of the principal.
+// Calling BasePrincipal::FromJSON will deserialize the JSON into
+// the corresponding principal type.
+nsresult BasePrincipal::ToJSON(nsACString& aResult) {
+  MOZ_ASSERT(aResult.IsEmpty(), "ToJSON only supports an empty result input");
+  aResult.Truncate();
+
+  Json::FastWriter writer;
+  writer.omitEndingLineFeed();
+  Json::Value innerJSONObject = Json::objectValue;
+
+  nsresult rv = PopulateJSONObject(innerJSONObject);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  Json::Value root = Json::objectValue;
+  std::string key = std::to_string(Kind());
+  root[key] = innerJSONObject;
+  std::string result = writer.write(root);
+  aResult.Append(result);
+  if (aResult.Length() == 0) {
+    MOZ_ASSERT(false, "JSON writer failed to output a principal serialization");
+    return NS_ERROR_UNEXPECTED;
+  }
+  return NS_OK;
 }
 
 bool BasePrincipal::Subsumes(nsIPrincipal* aOther,
@@ -166,88 +379,6 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetCsp(nsIContentSecurityPolicy** aCsp) {
-  NS_IF_ADDREF(*aCsp = mCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  // Never destroy an existing CSP on the principal.
-  // This method should only be called in rare cases.
-
-  MOZ_ASSERT(!mCSP, "do not destroy an existing CSP");
-  if (mCSP) {
-    return NS_ERROR_ALREADY_INITIALIZED;
-  }
-
-  mCSP = aCsp;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::EnsureCSP(dom::Document* aDocument,
-                         nsIContentSecurityPolicy** aCSP) {
-  if (mCSP) {
-    // if there is a CSP already associated with this principal
-    // then just return that - do not overwrite it!!!
-    NS_IF_ADDREF(*aCSP = mCSP);
-    return NS_OK;
-  }
-
-  nsresult rv = NS_OK;
-  mCSP = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Store the request context for violation reports
-  rv = aDocument ? mCSP->SetRequestContext(aDocument, nullptr)
-                 : mCSP->SetRequestContext(nullptr, this);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_IF_ADDREF(*aCSP = mCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetPreloadCsp(nsIContentSecurityPolicy** aPreloadCSP) {
-  NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::EnsurePreloadCSP(dom::Document* aDocument,
-                                nsIContentSecurityPolicy** aPreloadCSP) {
-  if (mPreloadCSP) {
-    // if there is a speculative CSP already associated with this principal
-    // then just return that - do not overwrite it!!!
-    NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
-    return NS_OK;
-  }
-
-  nsresult rv = NS_OK;
-  mPreloadCSP = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Store the request context for violation reports
-  rv = aDocument ? mPreloadCSP->SetRequestContext(aDocument, nullptr)
-                 : mPreloadCSP->SetRequestContext(nullptr, this);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetCspJSON(nsAString& outCSPinJSON) {
-  outCSPinJSON.Truncate();
-  dom::CSPPolicies jsonPolicies;
-
-  if (!mCSP) {
-    jsonPolicies.ToJSON(outCSPinJSON);
-    return NS_OK;
-  }
-  return mCSP->ToJSON(outCSPinJSON);
-}
-
-NS_IMETHODIMP
 BasePrincipal::GetIsNullPrincipal(bool* aResult) {
   *aResult = Kind() == eNullPrincipal;
   return NS_OK;
@@ -290,18 +421,6 @@ NS_IMETHODIMP
 BasePrincipal::GetOriginSuffix(nsACString& aOriginAttributes) {
   MOZ_ASSERT(mOriginSuffix);
   mOriginSuffix->ToUTF8String(aOriginAttributes);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetAppId(uint32_t* aAppId) {
-  if (AppId() == nsIScriptSecurityManager::UNKNOWN_APP_ID) {
-    MOZ_ASSERT(false);
-    *aAppId = nsIScriptSecurityManager::NO_APP_ID;
-    return NS_OK;
-  }
-
-  *aAppId = AppId();
   return NS_OK;
 }
 
@@ -438,21 +557,22 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
   return BasePrincipal::CreateCodebasePrincipal(uri, attrs);
 }
 
-already_AddRefed<BasePrincipal>
-BasePrincipal::CloneStrippingUserContextIdAndFirstPartyDomain() {
-  OriginAttributes attrs = OriginAttributesRef();
-  attrs.StripAttributes(OriginAttributes::STRIP_USER_CONTEXT_ID |
-                        OriginAttributes::STRIP_FIRST_PARTY_DOMAIN);
+already_AddRefed<BasePrincipal> BasePrincipal::CloneForcingOriginAttributes(
+    const OriginAttributes& aOriginAttributes) {
+  if (NS_WARN_IF(!IsCodebasePrincipal())) {
+    return nullptr;
+  }
 
   nsAutoCString originNoSuffix;
   nsresult rv = GetOriginNoSuffix(originNoSuffix);
   NS_ENSURE_SUCCESS(rv, nullptr);
 
-  nsCOMPtr<nsIURI> uri;
-  rv = NS_NewURI(getter_AddRefs(uri), originNoSuffix);
+  nsIURI* uri = static_cast<ContentPrincipal*>(this)->mCodebase;
+  RefPtr<ContentPrincipal> copy = new ContentPrincipal();
+  rv = copy->Init(uri, aOriginAttributes, originNoSuffix);
   NS_ENSURE_SUCCESS(rv, nullptr);
 
-  return BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+  return copy.forget();
 }
 
 extensions::WebExtensionPolicy* BasePrincipal::ContentScriptAddonPolicy() {
@@ -507,20 +627,6 @@ void BasePrincipal::FinishInit(BasePrincipal* aOther,
 
   mOriginNoSuffix = aOther->mOriginNoSuffix;
   mHasExplicitDomain = aOther->mHasExplicitDomain;
-
-  if (aOther->mPreloadCSP) {
-    mPreloadCSP = do_CreateInstance("@mozilla.org/cspcontext;1");
-    nsCSPContext* preloadCSP = static_cast<nsCSPContext*>(mPreloadCSP.get());
-    preloadCSP->InitFromOther(
-        static_cast<nsCSPContext*>(aOther->mPreloadCSP.get()), nullptr, this);
-  }
-
-  if (aOther->mCSP) {
-    mCSP = do_CreateInstance("@mozilla.org/cspcontext;1");
-    nsCSPContext* csp = static_cast<nsCSPContext*>(mCSP.get());
-    csp->InitFromOther(static_cast<nsCSPContext*>(aOther->mCSP.get()), nullptr,
-                       this);
-  }
 }
 
 bool SiteIdentifier::Equals(const SiteIdentifier& aOther) const {

@@ -18,10 +18,12 @@ class nsIFile;
 class nsIRunnable;
 
 #define IDB_DIRECTORY_NAME "idb"
-#define ASMJSCACHE_DIRECTORY_NAME "asmjs"
 #define DOMCACHE_DIRECTORY_NAME "cache"
 #define SDB_DIRECTORY_NAME "sdb"
 #define LS_DIRECTORY_NAME "ls"
+
+// Deprecated
+#define ASMJSCACHE_DIRECTORY_NAME "asmjs"
 
 BEGIN_QUOTA_NAMESPACE
 
@@ -41,7 +43,6 @@ class Client {
   enum Type {
     IDB = 0,
     // APPCACHE,
-    ASMJS,
     DOMCACHE,
     SDB,
     LS,
@@ -61,10 +62,6 @@ class Client {
     switch (aType) {
       case IDB:
         aText.AssignLiteral(IDB_DIRECTORY_NAME);
-        break;
-
-      case ASMJS:
-        aText.AssignLiteral(ASMJSCACHE_DIRECTORY_NAME);
         break;
 
       case DOMCACHE:
@@ -94,8 +91,6 @@ class Client {
   static nsresult TypeFromText(const nsAString& aText, Type& aType) {
     if (aText.EqualsLiteral(IDB_DIRECTORY_NAME)) {
       aType = IDB;
-    } else if (aText.EqualsLiteral(ASMJSCACHE_DIRECTORY_NAME)) {
-      aType = ASMJS;
     } else if (aText.EqualsLiteral(DOMCACHE_DIRECTORY_NAME)) {
       aType = DOMCACHE;
     } else if (aText.EqualsLiteral(SDB_DIRECTORY_NAME)) {
@@ -127,6 +122,10 @@ class Client {
     return NS_OK;
   }
 
+  static bool IsDeprecatedClient(const nsAString& aText) {
+    return aText.EqualsLiteral(ASMJSCACHE_DIRECTORY_NAME);
+  }
+
   // Methods which are called on the IO thread.
   virtual nsresult UpgradeStorageFrom1_0To2_0(nsIFile* aDirectory) {
     return NS_OK;
@@ -136,11 +135,15 @@ class Client {
     return NS_OK;
   }
 
+  virtual nsresult UpgradeStorageFrom2_1To2_2(nsIFile* aDirectory) {
+    return NS_OK;
+  }
+
   virtual nsresult InitOrigin(PersistenceType aPersistenceType,
                               const nsACString& aGroup,
                               const nsACString& aOrigin,
                               const AtomicBool& aCanceled,
-                              UsageInfo* aUsageInfo) = 0;
+                              UsageInfo* aUsageInfo, bool aForGetUsage) = 0;
 
   virtual nsresult GetUsageForOrigin(PersistenceType aPersistenceType,
                                      const nsACString& aGroup,
@@ -160,6 +163,8 @@ class Client {
                                       const nsACString& aOrigin) = 0;
 
   virtual void ReleaseIOThreadObjects() = 0;
+
+  virtual void OnStorageInitFailed(){};
 
   // Methods which are called on the background thread.
   virtual void AbortOperations(const nsACString& aOrigin) = 0;

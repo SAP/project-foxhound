@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
@@ -30,7 +33,7 @@ class RefreshDevicesButton extends PureComponent {
       { id: "about-debugging-refresh-usb-devices-button" },
       dom.button(
         {
-          className: "default-button js-refresh-devices-button",
+          className: "default-button qa-refresh-devices-button",
           disabled: this.props.isScanning,
           onClick: () => this.refreshDevices(),
         },

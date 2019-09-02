@@ -9,6 +9,7 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 
+#include "gc/GCEnum.h"                // js::MemoryUse
 #include "jit/ExecutableAllocator.h"  // jit::JitPoisonRangeVector
 #include "js/AllocPolicy.h"           // SystemAllocPolicy
 #include "js/MemoryFunctions.h"       // JSFreeOp
@@ -29,11 +30,12 @@ namespace js {
 class FreeOp : public JSFreeOp {
   Vector<void*, 0, SystemAllocPolicy> freeLaterList;
   jit::JitPoisonRangeVector jitPoisonRanges;
+  const bool isDefault;
 
  public:
   static FreeOp* get(JSFreeOp* fop) { return static_cast<FreeOp*>(fop); }
 
-  explicit FreeOp(JSRuntime* maybeRuntime);
+  explicit FreeOp(JSRuntime* maybeRuntime, bool isDefault = false);
   ~FreeOp();
 
   bool onMainThread() const { return runtime_ != nullptr; }
@@ -44,20 +46,29 @@ class FreeOp : public JSFreeOp {
     return !runtime_;
   }
 
-  bool isDefaultFreeOp() const;
+  bool isDefaultFreeOp() const { return isDefault; }
 
   void free_(void* p) { js_free(p); }
 
-  void freeLater(void* p) {
-    // FreeOps other than the defaultFreeOp() are constructed on the stack,
-    // and won't hold onto the pointers to free indefinitely.
-    MOZ_ASSERT(!isDefaultFreeOp());
+  // Free memory associated with a GC thing and update the memory accounting.
+  //
+  // The memory should have been associated with the GC thing using
+  // js::InitReservedSlot or js::InitObjectPrivate, or possibly
+  // js::AddCellMemory.
+  void free_(gc::Cell* cell, void* p, size_t nbytes, MemoryUse use);
 
-    AutoEnterOOMUnsafeRegion oomUnsafe;
-    if (!freeLaterList.append(p)) {
-      oomUnsafe.crash("FreeOp::freeLater");
-    }
-  }
+  // Queue an allocation to be freed when the FreeOp is destroyed.
+  //
+  // This should not be called on the default FreeOps returned by
+  // JSRuntime/JSContext::defaultFreeOp() since these are not destroyed until
+  // the runtime itself is destroyed.
+  //
+  // This is used to ensure that copy-on-write object elements are not freed
+  // until all objects that refer to them have been finalized.
+  void freeLater(void* p);
+
+  // Free memory that was associated with a GC thing using js::AddCellMemory.
+  void freeLater(gc::Cell* cell, void* p, size_t nbytes, MemoryUse use);
 
   bool appendJitPoisonRange(const jit::JitPoisonRange& range) {
     // FreeOps other than the defaultFreeOp() are constructed on the stack,
@@ -74,6 +85,56 @@ class FreeOp : public JSFreeOp {
       free_(p);
     }
   }
+
+  // Delete a C++ object that was associated with a GC thing and update the
+  // memory accounting. The size is determined by the type T.
+  //
+  // The memory should have been associated with the GC thing using
+  // js::InitReservedSlot or js::InitObjectPrivate, or possibly
+  // js::AddCellMemory.
+  template <class T>
+  void delete_(gc::Cell* cell, T* p, MemoryUse use) {
+    delete_(cell, p, sizeof(T), use);
+  }
+
+  // Delete a C++ object that was associated with a GC thing and update the
+  // memory accounting.
+  //
+  // The memory should have been associated with the GC thing using
+  // js::InitReservedSlot or js::InitObjectPrivate, or possibly
+  // js::AddCellMemory.
+  template <class T>
+  void delete_(gc::Cell* cell, T* p, size_t nbytes, MemoryUse use) {
+    if (p) {
+      p->~T();
+      free_(cell, p, nbytes, use);
+    }
+  }
+
+  // Release a RefCounted object that was associated with a GC thing and update
+  // the memory accounting.
+  //
+  // The memory should have been associated with the GC thing using
+  // js::InitReservedSlot or js::InitObjectPrivate, or possibly
+  // js::AddCellMemory.
+  //
+  // This counts the memory once per association with a GC thing. It's not
+  // expected that the same object is associated with more than one GC thing in
+  // each zone. If this is the case then some other form of accounting would be
+  // more appropriate.
+  template <class T>
+  void release(gc::Cell* cell, T* p, MemoryUse use) {
+    release(cell, p, sizeof(T), use);
+  }
+
+  // Release a RefCounted object and that was associated with a GC thing and
+  // update the memory accounting.
+  //
+  // The memory should have been associated with the GC thing using
+  // js::InitReservedSlot or js::InitObjectPrivate, or possibly
+  // js::AddCellMemory.
+  template <class T>
+  void release(gc::Cell* cell, T* p, size_t nbytes, MemoryUse use);
 };
 
 }  // namespace js

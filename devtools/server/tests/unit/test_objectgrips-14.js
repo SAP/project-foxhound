@@ -16,11 +16,14 @@ function run_test() {
   gDebuggee = addTestGlobal("test-object-grip");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-object-grip",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             testObjectGroup();
-                           });
+    attachTestTabAndResume(gClient, "test-object-grip", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      testObjectGroup();
+    });
   });
   do_test_pending();
 }
@@ -42,13 +45,13 @@ function evalCode() {
 }
 
 const testObjectGroup = async function() {
-  let packet = await executeOnNextTickAndWaitForPause(evalCode, gClient);
+  let packet = await executeOnNextTickAndWaitForPause(evalCode, gThreadClient);
 
   const ugh = packet.frame.environment.parent.parent.bindings.variables.ugh;
   const ughClient = await gThreadClient.pauseGrip(ugh.value);
 
   packet = await getPrototypeAndProperties(ughClient);
-  packet = await resumeAndWaitForPause(gClient, gThreadClient);
+  packet = await resumeAndWaitForPause(gThreadClient);
 
   const ugh2 = packet.frame.environment.bindings.variables.ugh;
   const ugh2Client = gThreadClient.pauseGrip(ugh2.value);

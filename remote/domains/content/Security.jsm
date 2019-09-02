@@ -6,7 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["Security"];
 
-const {ContentProcessDomain} = ChromeUtils.import("chrome://remote/content/domains/ContentProcessDomain.jsm");
+const { ContentProcessDomain } = ChromeUtils.import(
+  "chrome://remote/content/domains/ContentProcessDomain.jsm"
+);
 
 class Security extends ContentProcessDomain {
   constructor(session) {
@@ -16,6 +18,8 @@ class Security extends ContentProcessDomain {
 
   destructor() {
     this.disable();
+
+    super.destructor();
   }
 
   // commands

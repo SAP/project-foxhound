@@ -28,8 +28,9 @@ class FormatUsageAuthority;
 }  // namespace webgl
 
 class WebGLContext;
-class WebGLShader;
 class WebGLQuery;
+class WebGLShader;
+class WebGLTexture;
 class WebGLVertexArray;
 
 class WebGLExtensionBase : public nsWrapperCache,
@@ -171,6 +172,17 @@ class WebGLExtensionElementIndexUint : public WebGLExtensionBase {
  public:
   explicit WebGLExtensionElementIndexUint(WebGLContext*);
   virtual ~WebGLExtensionElementIndexUint();
+
+  DECL_WEBGL_EXTENSION_GOOP
+};
+
+class WebGLExtensionExplicitPresent : public WebGLExtensionBase {
+ public:
+  explicit WebGLExtensionExplicitPresent(WebGLContext*);
+
+  static bool IsSupported(const WebGLContext*);
+
+  void Present() const;
 
   DECL_WEBGL_EXTENSION_GOOP
 };
@@ -401,6 +413,20 @@ class WebGLExtensionMOZDebug final : public WebGLExtensionBase {
 
   void GetParameter(JSContext* cx, GLenum pname,
                     JS::MutableHandle<JS::Value> retval, ErrorResult& er) const;
+
+  DECL_WEBGL_EXTENSION_GOOP
+};
+
+class WebGLExtensionMultiview : public WebGLExtensionBase {
+ public:
+  explicit WebGLExtensionMultiview(WebGLContext*);
+  virtual ~WebGLExtensionMultiview();
+  static bool IsSupported(const WebGLContext*);
+
+  void FramebufferTextureMultiviewOVR(GLenum target, GLenum attachment,
+                                      WebGLTexture* texture, GLint level,
+                                      GLint baseViewIndex,
+                                      GLsizei numViews) const;
 
   DECL_WEBGL_EXTENSION_GOOP
 };

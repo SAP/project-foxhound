@@ -72,6 +72,7 @@ class ShadowRoot final : public DocumentFragment,
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
   void RuleChanged(StyleSheet&, css::Rule*);
+  void StyleSheetCloned(StyleSheet&);
   void StyleSheetApplicableStateChanged(StyleSheet&, bool aApplicable);
 
   StyleSheetList* StyleSheets() {
@@ -152,6 +153,15 @@ class ShadowRoot final : public DocumentFragment,
   void AddSlot(HTMLSlotElement* aSlot);
   void RemoveSlot(HTMLSlotElement* aSlot);
   bool HasSlots() const { return !mSlotMap.IsEmpty(); };
+  HTMLSlotElement* GetDefaultSlot() const {
+    SlotArray* list = mSlotMap.Get(NS_LITERAL_STRING(""));
+    return list ? (*list)->ElementAt(0) : nullptr;
+  }
+
+  void PartAdded(const Element&);
+  void PartRemoved(const Element&);
+
+  const nsTArray<const Element*>& Parts() const { return mParts; }
 
   const RawServoAuthorStyles* GetServoStyles() const {
     return mServoStyles.get();
@@ -252,11 +262,15 @@ class ShadowRoot final : public DocumentFragment,
   UniquePtr<RawServoAuthorStyles> mServoStyles;
   UniquePtr<mozilla::ServoStyleRuleMap> mStyleRuleMap;
 
-  using SlotArray = AutoTArray<HTMLSlotElement*, 1>;
+  using SlotArray = TreeOrderedArray<HTMLSlotElement>;
   // Map from name of slot to an array of all slots in the shadow DOM with with
   // the given name. The slots are stored as a weak pointer because the elements
   // are in the shadow tree and should be kept alive by its parent.
   nsClassHashtable<nsStringHashKey, SlotArray> mSlotMap;
+
+  // Unordered array of all elements that have a part attribute in this shadow
+  // tree.
+  nsTArray<const Element*> mParts;
 
   bool mIsUAWidget;
 

@@ -115,10 +115,11 @@ class EditorDOMPointBase final {
         mChild(aPointedNode),
         mOffset(mozilla::Some(aOffset)),
         mIsChildInitialized(true) {
-    MOZ_RELEASE_ASSERT(
+    MOZ_DIAGNOSTIC_ASSERT(
         aContainer, "This constructor shouldn't be used when pointing nowhere");
     MOZ_ASSERT(mOffset.value() <= mParent->Length());
-    MOZ_ASSERT(mChild || mParent->Length() == mOffset.value());
+    MOZ_ASSERT(mChild || mParent->Length() == mOffset.value() ||
+               !mParent->IsContainerNode());
     MOZ_ASSERT(!mChild || mParent == mChild->GetParentNode());
     MOZ_ASSERT(mParent->GetChildAt_Deprecated(mOffset.value()) == mChild);
   }
@@ -500,6 +501,10 @@ class EditorDOMPointBase final {
     return true;
   }
 
+  bool HasChildMovedFromContainer() const {
+    return mChild && mChild->GetParentNode() != mParent;
+  }
+
   bool IsStartOfContainer() const {
     // If we're referring the first point in the container:
     //   If mParent is not a container like a text node, mOffset is 0.
@@ -655,7 +660,8 @@ class EditorDOMPointBase final {
    * This operator should be used if API of other modules take RawRangeBoundary,
    * e.g., methods of Selection and nsRange.
    */
-  operator const RawRangeBoundary() const {
+  operator const RawRangeBoundary() const { return ToRawRangeBoundary(); }
+  const RawRangeBoundary ToRawRangeBoundary() const {
     if (!IsSet() || NS_WARN_IF(!mIsChildInitialized && !mOffset.isSome())) {
       return RawRangeBoundary();
     }

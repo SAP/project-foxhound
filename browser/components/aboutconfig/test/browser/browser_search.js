@@ -1,6 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/**
+ * This is a temporary workaround to
+ * be resolved in bug 1539000.
+ */
+ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", this);
+PromiseTestUtils.whitelistRejectionsGlobally(
+  /Too many characters in placeable/
+);
+
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -27,8 +36,9 @@ add_task(async function test_search() {
     // modified by other code during the execution of this test.
     this.search("Wser.down   ");
 
-    let filteredPrefArray =
-        prefArray.filter(pref => pref.includes("wser.down"));
+    let filteredPrefArray = prefArray.filter(pref =>
+      pref.includes("wser.down")
+    );
     // Adding +1 to the list since button does not match an exact
     // preference name then a row is added for the user to add a
     // new button preference if desired
@@ -71,6 +81,30 @@ add_task(async function test_search() {
     // Entering an empty string returns to the initial page.
     this.search("");
     Assert.equal(this.rows.length, 0);
+  });
+});
+
+add_task(async function test_search_wildcard() {
+  await AboutConfigTest.withNewTab(async function() {
+    const extra = 1; // "Add" row
+
+    // A trailing wildcard
+    this.search("test.about*");
+    Assert.equal(this.rows.length, 3 + extra);
+
+    // A wildcard in middle
+    this.search("test.about*a");
+    Assert.equal(this.rows.length, 2 + extra);
+    this.search("test.about*ab");
+    Assert.equal(this.rows.length, 1 + extra);
+    this.search("test.aboutcon*fig");
+    Assert.equal(this.rows.length, 3 + extra);
+
+    // Multiple wildcards in middle
+    this.search("test.about*fig*ab");
+    Assert.equal(this.rows.length, 1 + extra);
+    this.search("test.about*config*ab");
+    Assert.equal(this.rows.length, 1 + extra);
   });
 });
 

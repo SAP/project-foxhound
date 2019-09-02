@@ -19,6 +19,7 @@
 
 namespace mozilla {
 namespace dom {
+class BrowserParent;
 template <typename>
 struct Nullable;
 class WindowProxyHolder;
@@ -62,10 +63,8 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
   // nsIContent
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                int32_t* aTabIndex) override;
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual void DestroyContent() override;
 
   nsresult CopyInnerTo(mozilla::dom::Element* aDest);
@@ -90,8 +89,30 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
                               mozilla::dom::WindowProxyHolder>& aOpenerWindow,
                           mozilla::ErrorResult& aRv);
 
-  static void InitStatics();
-  static bool BrowserFramesEnabled();
+  /**
+   * Normally, a frame tries to create its frame loader when its src is
+   * modified, or its contentWindow is accessed.
+   *
+   * disallowCreateFrameLoader prevents the frame element from creating its
+   * frame loader (in the same way that not being inside a document prevents the
+   * creation of a frame loader).  allowCreateFrameLoader lifts this
+   * restriction.
+   *
+   * These methods are not re-entrant -- it is an error to call
+   * disallowCreateFrameLoader twice without first calling allowFrameLoader.
+   *
+   * It's also an error to call either method if we already have a frame loader.
+   */
+  void DisallowCreateFrameLoader();
+  void AllowCreateFrameLoader();
+
+  /**
+   * Create a remote (i.e., out-of-process) frame loader attached to the given
+   * remote tab.
+   *
+   * It is an error to call this method if we already have a frame loader.
+   */
+  void CreateRemoteFrameLoader(mozilla::dom::BrowserParent* aBrowserParent);
 
   /**
    * Helper method to map a HTML 'scrolling' attribute value to a nsIScrollable

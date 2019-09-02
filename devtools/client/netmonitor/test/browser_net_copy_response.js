@@ -18,14 +18,17 @@ add_task(async function() {
   // Execute requests.
   await performRequests(monitor, tab, CONTENT_TYPE_WITHOUT_CACHE_REQUESTS);
 
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.querySelectorAll(".request-list-item")[3]);
-  EventUtils.sendMouseEvent({ type: "contextmenu" },
-    document.querySelectorAll(".request-list-item")[3]);
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[3]
+  );
+  EventUtils.sendMouseEvent(
+    { type: "contextmenu" },
+    document.querySelectorAll(".request-list-item")[3]
+  );
 
   await waitForClipboardPromise(function setup() {
-    monitor.panelWin.parent.document
-      .querySelector("#request-list-context-copy-response").click();
+    getContextMenuItem(monitor, "request-list-context-copy-response").click();
   }, EXPECTED_RESULT);
 
   await teardown(monitor);

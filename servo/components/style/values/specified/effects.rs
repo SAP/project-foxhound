@@ -8,6 +8,7 @@ use crate::parser::{Parse, ParserContext};
 use crate::values::computed::effects::BoxShadow as ComputedBoxShadow;
 use crate::values::computed::effects::SimpleShadow as ComputedSimpleShadow;
 use crate::values::computed::NonNegativeNumber as ComputedNonNegativeNumber;
+use crate::values::computed::ZeroToOneNumber as ComputedZeroToOneNumber;
 use crate::values::computed::{Context, ToComputedValue};
 use crate::values::generics::effects::BoxShadow as GenericBoxShadow;
 use crate::values::generics::effects::Filter as GenericFilter;
@@ -17,8 +18,8 @@ use crate::values::specified::color::Color;
 use crate::values::specified::length::{Length, NonNegativeLength};
 #[cfg(feature = "gecko")]
 use crate::values::specified::url::SpecifiedUrl;
-use crate::values::specified::{Angle, NumberOrPercentage};
-#[cfg(not(feature = "gecko"))]
+use crate::values::specified::{Angle, Number, NumberOrPercentage};
+#[cfg(feature = "servo")]
 use crate::values::Impossible;
 use crate::Zero;
 use cssparser::{self, BasicParseErrorKind, Parser, Token};
@@ -30,67 +31,98 @@ pub type BoxShadow =
 
 /// A specified value for a single `filter`.
 #[cfg(feature = "gecko")]
-pub type Filter = GenericFilter<Angle, Factor, NonNegativeLength, SimpleShadow, SpecifiedUrl>;
+pub type SpecifiedFilter = GenericFilter<
+    Angle,
+    NonNegativeFactor,
+    ZeroToOneFactor,
+    NonNegativeLength,
+    SimpleShadow,
+    SpecifiedUrl,
+>;
 
 /// A specified value for a single `filter`.
-#[cfg(not(feature = "gecko"))]
-pub type Filter = GenericFilter<Angle, Factor, NonNegativeLength, Impossible, Impossible>;
+#[cfg(feature = "servo")]
+pub type SpecifiedFilter = GenericFilter<
+    Angle,
+    NonNegativeFactor,
+    ZeroToOneFactor,
+    NonNegativeLength,
+    Impossible,
+    Impossible,
+>;
+
+pub use self::SpecifiedFilter as Filter;
 
 /// A value for the `<factor>` parts in `Filter`.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
-pub struct Factor(NumberOrPercentage);
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+pub struct NonNegativeFactor(NumberOrPercentage);
 
-impl Factor {
-    /// Parse this factor but clamp to one if the value is over 100%.
-    #[inline]
-    pub fn parse_with_clamping_to_one<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        Factor::parse(context, input).map(|v| v.clamp_to_one())
-    }
+/// A value for the `<factor>` parts in `Filter` which clamps to one.
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+pub struct ZeroToOneFactor(NumberOrPercentage);
 
-    /// Clamp the value to 1 if the value is over 100%.
-    #[inline]
-    fn clamp_to_one(self) -> Self {
-        match self.0 {
-            NumberOrPercentage::Percentage(percent) => {
-                Factor(NumberOrPercentage::Percentage(percent.clamp_to_hundred()))
-            },
-            NumberOrPercentage::Number(number) => {
-                Factor(NumberOrPercentage::Number(number.clamp_to_one()))
-            },
-        }
+/// Clamp the value to 1 if the value is over 100%.
+#[inline]
+fn clamp_to_one(number: NumberOrPercentage) -> NumberOrPercentage {
+    match number {
+        NumberOrPercentage::Percentage(percent) => {
+            NumberOrPercentage::Percentage(percent.clamp_to_hundred())
+        },
+        NumberOrPercentage::Number(number) => NumberOrPercentage::Number(number.clamp_to_one()),
     }
 }
 
-impl Parse for Factor {
+macro_rules! factor_impl_common {
+    ($ty:ty, $computed_ty:ty) => {
+        impl $ty {
+            fn one() -> Self {
+                Self(NumberOrPercentage::Number(Number::new(1.)))
+            }
+        }
+
+        impl ToComputedValue for $ty {
+            type ComputedValue = $computed_ty;
+
+            #[inline]
+            fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+                use crate::values::computed::NumberOrPercentage;
+                match self.0.to_computed_value(context) {
+                    NumberOrPercentage::Number(n) => n.into(),
+                    NumberOrPercentage::Percentage(p) => p.0.into(),
+                }
+            }
+
+            #[inline]
+            fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+                Self(NumberOrPercentage::Number(
+                    ToComputedValue::from_computed_value(&computed.0),
+                ))
+            }
+        }
+    };
+}
+factor_impl_common!(NonNegativeFactor, ComputedNonNegativeNumber);
+factor_impl_common!(ZeroToOneFactor, ComputedZeroToOneNumber);
+
+impl Parse for NonNegativeFactor {
     #[inline]
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        NumberOrPercentage::parse_non_negative(context, input).map(Factor)
+        NumberOrPercentage::parse_non_negative(context, input).map(Self)
     }
 }
 
-impl ToComputedValue for Factor {
-    type ComputedValue = ComputedNonNegativeNumber;
-
+impl Parse for ZeroToOneFactor {
     #[inline]
-    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
-        use crate::values::computed::NumberOrPercentage;
-        match self.0.to_computed_value(context) {
-            NumberOrPercentage::Number(n) => n.into(),
-            NumberOrPercentage::Percentage(p) => p.0.into(),
-        }
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
-        Factor(NumberOrPercentage::Number(
-            ToComputedValue::from_computed_value(&computed.0),
-        ))
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        NumberOrPercentage::parse_non_negative(context, input)
+            .map(clamp_to_one)
+            .map(Self)
     }
 }
 
@@ -209,34 +241,61 @@ impl Parse for Filter {
         };
         input.parse_nested_block(|i| {
             match_ignore_ascii_case! { &*function,
-                "blur" => Ok(GenericFilter::Blur((Length::parse_non_negative(context, i)?).into())),
-                "brightness" => Ok(GenericFilter::Brightness(Factor::parse(context, i)?)),
-                "contrast" => Ok(GenericFilter::Contrast(Factor::parse(context, i)?)),
+                "blur" => Ok(GenericFilter::Blur(
+                    i.try(|i| NonNegativeLength::parse(context, i))
+                     .unwrap_or(Zero::zero()),
+                )),
+                "brightness" => Ok(GenericFilter::Brightness(
+                    i.try(|i| NonNegativeFactor::parse(context, i))
+                     .unwrap_or(NonNegativeFactor::one()),
+                )),
+                "contrast" => Ok(GenericFilter::Contrast(
+                    i.try(|i| NonNegativeFactor::parse(context, i))
+                     .unwrap_or(NonNegativeFactor::one()),
+                )),
                 "grayscale" => {
                     // Values of amount over 100% are allowed but UAs must clamp the values to 1.
                     // https://drafts.fxtf.org/filter-effects/#funcdef-filter-grayscale
-                    Ok(GenericFilter::Grayscale(Factor::parse_with_clamping_to_one(context, i)?))
+                    Ok(GenericFilter::Grayscale(
+                        i.try(|i| ZeroToOneFactor::parse(context, i))
+                         .unwrap_or(ZeroToOneFactor::one()),
+                    ))
                 },
                 "hue-rotate" => {
                     // We allow unitless zero here, see:
                     // https://github.com/w3c/fxtf-drafts/issues/228
-                    Ok(GenericFilter::HueRotate(Angle::parse_with_unitless(context, i)?))
+                    Ok(GenericFilter::HueRotate(
+                        i.try(|i| Angle::parse_with_unitless(context, i))
+                         .unwrap_or(Zero::zero()),
+                    ))
                 },
                 "invert" => {
                     // Values of amount over 100% are allowed but UAs must clamp the values to 1.
                     // https://drafts.fxtf.org/filter-effects/#funcdef-filter-invert
-                    Ok(GenericFilter::Invert(Factor::parse_with_clamping_to_one(context, i)?))
+                    Ok(GenericFilter::Invert(
+                        i.try(|i| ZeroToOneFactor::parse(context, i))
+                         .unwrap_or(ZeroToOneFactor::one()),
+                    ))
                 },
                 "opacity" => {
                     // Values of amount over 100% are allowed but UAs must clamp the values to 1.
                     // https://drafts.fxtf.org/filter-effects/#funcdef-filter-opacity
-                    Ok(GenericFilter::Opacity(Factor::parse_with_clamping_to_one(context, i)?))
+                    Ok(GenericFilter::Opacity(
+                        i.try(|i| ZeroToOneFactor::parse(context, i))
+                         .unwrap_or(ZeroToOneFactor::one()),
+                    ))
                 },
-                "saturate" => Ok(GenericFilter::Saturate(Factor::parse(context, i)?)),
+                "saturate" => Ok(GenericFilter::Saturate(
+                    i.try(|i| NonNegativeFactor::parse(context, i))
+                     .unwrap_or(NonNegativeFactor::one()),
+                )),
                 "sepia" => {
                     // Values of amount over 100% are allowed but UAs must clamp the values to 1.
                     // https://drafts.fxtf.org/filter-effects/#funcdef-filter-sepia
-                    Ok(GenericFilter::Sepia(Factor::parse_with_clamping_to_one(context, i)?))
+                    Ok(GenericFilter::Sepia(
+                        i.try(|i| ZeroToOneFactor::parse(context, i))
+                         .unwrap_or(ZeroToOneFactor::one()),
+                    ))
                 },
                 "drop-shadow" => Ok(GenericFilter::DropShadow(Parse::parse(context, i)?)),
                 _ => Err(location.new_custom_error(

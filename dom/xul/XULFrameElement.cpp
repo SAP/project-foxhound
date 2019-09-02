@@ -92,8 +92,7 @@ void XULFrameElement::LoadSrc() {
     // session history handling works like dynamic html:iframes.
     // Usually xul elements are used in chrome, which doesn't have
     // session history at all.
-    mFrameLoader = nsFrameLoader::Create(
-        this, opener ? opener->GetDOMWindow() : nullptr, false);
+    mFrameLoader = nsFrameLoader::Create(this, opener, false);
     if (NS_WARN_IF(!mFrameLoader)) {
       return;
     }
@@ -123,6 +122,11 @@ void XULFrameElement::SwapFrameLoaders(XULFrameElement& aOtherLoaderOwner,
 
 void XULFrameElement::SwapFrameLoaders(nsFrameLoaderOwner* aOtherLoaderOwner,
                                        mozilla::ErrorResult& rv) {
+  if (RefPtr<Document> doc = GetComposedDoc()) {
+    // SwapWithOtherLoader relies on frames being up-to-date.
+    doc->FlushPendingNotifications(FlushType::Frames);
+  }
+
   RefPtr<nsFrameLoader> loader = GetFrameLoader();
   RefPtr<nsFrameLoader> otherLoader = aOtherLoaderOwner->GetFrameLoader();
   if (!loader || !otherLoader) {
@@ -133,12 +137,11 @@ void XULFrameElement::SwapFrameLoaders(nsFrameLoaderOwner* aOtherLoaderOwner,
   rv = loader->SwapWithOtherLoader(otherLoader, this, aOtherLoaderOwner);
 }
 
-nsresult XULFrameElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                     nsIContent* aBindingParent) {
-  nsresult rv = nsXULElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult XULFrameElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = nsXULElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aDocument) {
+  if (IsInUncomposedDoc()) {
     NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                  "Missing a script blocker!");
     // We're in a document now.  Kick off the frame load.
@@ -148,14 +151,14 @@ nsresult XULFrameElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return NS_OK;
 }
 
-void XULFrameElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void XULFrameElement::UnbindFromTree(bool aNullParent) {
   RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (frameLoader) {
     frameLoader->Destroy();
   }
   mFrameLoader = nullptr;
 
-  nsXULElement::UnbindFromTree(aDeep, aNullParent);
+  nsXULElement::UnbindFromTree(aNullParent);
 }
 
 void XULFrameElement::DestroyContent() {

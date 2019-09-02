@@ -7,14 +7,15 @@
 #ifndef mozilla_dom_SVGFEConvolveMatrixElement_h
 #define mozilla_dom_SVGFEConvolveMatrixElement_h
 
+#include "DOMSVGAnimatedNumberList.h"
+#include "SVGAnimatedBoolean.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedInteger.h"
+#include "SVGAnimatedIntegerPair.h"
+#include "SVGAnimatedNumber.h"
 #include "SVGAnimatedNumberList.h"
-#include "SVGBoolean.h"
-#include "SVGEnum.h"
+#include "SVGAnimatedString.h"
 #include "SVGFilters.h"
-#include "SVGInteger.h"
-#include "SVGIntegerPair.h"
-#include "nsSVGNumber2.h"
-#include "SVGString.h"
 
 nsresult NS_NewSVGFEConvolveMatrixElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -23,7 +24,7 @@ namespace mozilla {
 
 namespace dom {
 class DOMSVGAnimatedNumberList;
-class SVGAnimatedBoolean;
+class DOMSVGAnimatedBoolean;
 
 typedef SVGFE SVGFEConvolveMatrixElementBase;
 
@@ -46,7 +47,7 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
   virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
                                          nsAtom* aAttribute) const override;
-  virtual SVGString& GetResultImageName() override {
+  virtual SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
   virtual void GetSourceImageNames(nsTArray<SVGStringInfo>& aSources) override;
@@ -54,18 +55,18 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedString> In1();
-  already_AddRefed<SVGAnimatedInteger> OrderX();
-  already_AddRefed<SVGAnimatedInteger> OrderY();
+  already_AddRefed<DOMSVGAnimatedString> In1();
+  already_AddRefed<DOMSVGAnimatedInteger> OrderX();
+  already_AddRefed<DOMSVGAnimatedInteger> OrderY();
   already_AddRefed<DOMSVGAnimatedNumberList> KernelMatrix();
-  already_AddRefed<SVGAnimatedInteger> TargetX();
-  already_AddRefed<SVGAnimatedInteger> TargetY();
-  already_AddRefed<SVGAnimatedEnumeration> EdgeMode();
-  already_AddRefed<SVGAnimatedBoolean> PreserveAlpha();
-  already_AddRefed<SVGAnimatedNumber> Divisor();
-  already_AddRefed<SVGAnimatedNumber> Bias();
-  already_AddRefed<SVGAnimatedNumber> KernelUnitLengthX();
-  already_AddRefed<SVGAnimatedNumber> KernelUnitLengthY();
+  already_AddRefed<DOMSVGAnimatedInteger> TargetX();
+  already_AddRefed<DOMSVGAnimatedInteger> TargetY();
+  already_AddRefed<DOMSVGAnimatedEnumeration> EdgeMode();
+  already_AddRefed<DOMSVGAnimatedBoolean> PreserveAlpha();
+  already_AddRefed<DOMSVGAnimatedNumber> Divisor();
+  already_AddRefed<DOMSVGAnimatedNumber> Bias();
+  already_AddRefed<DOMSVGAnimatedNumber> KernelUnitLengthX();
+  already_AddRefed<DOMSVGAnimatedNumber> KernelUnitLengthY();
 
  protected:
   virtual NumberAttributesInfo GetNumberInfo() override;
@@ -78,32 +79,32 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
   virtual NumberListAttributesInfo GetNumberListInfo() override;
 
   enum { DIVISOR, BIAS };
-  nsSVGNumber2 mNumberAttributes[2];
+  SVGAnimatedNumber mNumberAttributes[2];
   static NumberInfo sNumberInfo[2];
 
   enum { KERNEL_UNIT_LENGTH };
-  SVGNumberPair mNumberPairAttributes[1];
+  SVGAnimatedNumberPair mNumberPairAttributes[1];
   static NumberPairInfo sNumberPairInfo[1];
 
   enum { TARGET_X, TARGET_Y };
-  SVGInteger mIntegerAttributes[2];
+  SVGAnimatedInteger mIntegerAttributes[2];
   static IntegerInfo sIntegerInfo[2];
 
   enum { ORDER };
-  SVGIntegerPair mIntegerPairAttributes[1];
+  SVGAnimatedIntegerPair mIntegerPairAttributes[1];
   static IntegerPairInfo sIntegerPairInfo[1];
 
   enum { PRESERVEALPHA };
-  SVGBoolean mBooleanAttributes[1];
+  SVGAnimatedBoolean mBooleanAttributes[1];
   static BooleanInfo sBooleanInfo[1];
 
   enum { EDGEMODE };
-  SVGEnum mEnumAttributes[1];
+  SVGAnimatedEnumeration mEnumAttributes[1];
   static SVGEnumMapping sEdgeModeMap[];
   static EnumInfo sEnumInfo[1];
 
   enum { RESULT, IN1 };
-  SVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 
   enum { KERNELMATRIX };

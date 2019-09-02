@@ -7,7 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=
   <meta charset="utf-8">
   <title>Test for Bug </title>
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
   <script type="application/javascript" src="inspector-helpers.js"></script>
   <script type="application/javascript">
@@ -82,7 +82,7 @@ addTest(function inheritedSystemStyles() {
     ok(!applied[1].rule.parentStyleSheet.system, "Entry 1 should be a system style");
     is(applied[1].rule.type, 1, "Entry 1 should be a rule style");
 
-    is(applied.length, 13, "Should have 13 rules.");
+    is(applied.length, 12, "Should have 12 rules.");
   }).then(runNextTest));
 });
 

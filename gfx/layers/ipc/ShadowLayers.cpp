@@ -14,7 +14,7 @@
 #include "RenderTrace.h"        // for RenderTraceScope
 #include "gfx2DGlue.h"          // for Moz2D transition helpers
 #include "gfxPlatform.h"        // for gfxImageFormat, gfxPlatform
-#include "gfxPrefs.h"
+
 //#include "gfxSharedImageSurface.h"      // for gfxSharedImageSurface
 #include "ipc/IPCMessageUtils.h"  // for gfxContentType, null_t
 #include "IPDLActor.h"
@@ -136,7 +136,7 @@ class Transaction {
   Transaction(const Transaction&);
   Transaction& operator=(const Transaction&);
 };
-struct AutoTxnEnd {
+struct AutoTxnEnd final {
   explicit AutoTxnEnd(Transaction* aTxn) : mTxn(aTxn) {}
   ~AutoTxnEnd() { mTxn->End(); }
   Transaction* mTxn;
@@ -404,7 +404,8 @@ void ShadowLayerForwarder::UpdateTextureRegion(
 
 void ShadowLayerForwarder::UseTextures(
     CompositableClient* aCompositable,
-    const nsTArray<TimedTextureClient>& aTextures) {
+    const nsTArray<TimedTextureClient>& aTextures,
+    const Maybe<wr::RenderRoot>& aRenderRoot) {
   MOZ_ASSERT(aCompositable);
 
   if (!aCompositable->IsConnected()) {
@@ -483,7 +484,8 @@ bool ShadowLayerForwarder::DestroyInTransaction(
 }
 
 void ShadowLayerForwarder::RemoveTextureFromCompositable(
-    CompositableClient* aCompositable, TextureClient* aTexture) {
+    CompositableClient* aCompositable, TextureClient* aTexture,
+    const Maybe<wr::RenderRoot>& aRenderRoot) {
   MOZ_ASSERT(aCompositable);
   MOZ_ASSERT(aTexture);
   MOZ_ASSERT(aTexture->GetIPDLActor());
@@ -544,7 +546,7 @@ bool ShadowLayerForwarder::EndTransaction(
   }
 
   Maybe<TimeStamp> startTime;
-  if (gfxPrefs::LayersDrawFPS()) {
+  if (StaticPrefs::layers_acceleration_draw_fps()) {
     startTime = Some(TimeStamp::Now());
   }
 

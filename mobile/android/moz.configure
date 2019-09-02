@@ -108,6 +108,20 @@ option(env='MOZ_ANDROID_MOZILLA_ONLINE',
 set_config('MOZ_ANDROID_MOZILLA_ONLINE',
            depends_if('MOZ_ANDROID_MOZILLA_ONLINE')(lambda _: True))
 
+option(env='FENNEC_NIGHTLY',
+       help='Enable experimental code for Fennec Nightly users. NOTE: This is *not* equivalent '
+            'to the NIGHTLY_BUILD flag set during configure.',
+       default=False)
+
+set_config('FENNEC_NIGHTLY', depends_if('FENNEC_NIGHTLY')(lambda _: True))
+set_define('FENNEC_NIGHTLY', depends_if('FENNEC_NIGHTLY')(lambda _: True))
+
+
+@depends('FENNEC_NIGHTLY')
+def fennec_nightly(nightly):
+    return bool(nightly)
+
+
 imply_option('MOZ_SERVICES_HEALTHREPORT', True)
 imply_option('MOZ_ANDROID_HISTORY', True)
 imply_option('--enable-small-chunk-size', True)
@@ -174,3 +188,10 @@ def check_android_gcm(android_gcm,
         if not google_play_services:
             die('You must specify --with-google-play-services when'
                 ' building with MOZ_ANDROID_GCM=1')
+
+# Automation will set this via the TC environment.
+option(env='MOZ_ANDROID_FAT_AAR_ARCHITECTURES',
+       nargs='*', choices=('armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'),
+       help='Comma-separated list of Android CPU architectures like "armeabi-v7a,arm64-v8a,x86,x86_64"')
+
+set_config('MOZ_ANDROID_FAT_AAR_ARCHITECTURES', depends('MOZ_ANDROID_FAT_AAR_ARCHITECTURES')(lambda x: x))

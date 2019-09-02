@@ -16,7 +16,6 @@
 #include "nsRect.h"
 #include "nsSize.h"
 #include "nsStyleConsts.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
@@ -854,23 +853,22 @@ static void RenderWithCoreUI(CGRect aRect, CGContextRef cgContext, NSDictionary*
 static float VerticalAlignFactor(nsIFrame* aFrame) {
   if (!aFrame) return 0.5f;  // default: center
 
-  const nsStyleCoord& va = aFrame->StyleDisplay()->mVerticalAlign;
-  uint8_t intval =
-      (va.GetUnit() == eStyleUnit_Enumerated) ? va.GetIntValue() : NS_STYLE_VERTICAL_ALIGN_MIDDLE;
-  switch (intval) {
-    case NS_STYLE_VERTICAL_ALIGN_TOP:
-    case NS_STYLE_VERTICAL_ALIGN_TEXT_TOP:
+  const auto& va = aFrame->StyleDisplay()->mVerticalAlign;
+  auto kw = va.IsKeyword() ? va.AsKeyword() : StyleVerticalAlignKeyword::Middle;
+  switch (kw) {
+    case StyleVerticalAlignKeyword::Top:
+    case StyleVerticalAlignKeyword::TextTop:
       return 0.0f;
 
-    case NS_STYLE_VERTICAL_ALIGN_SUB:
-    case NS_STYLE_VERTICAL_ALIGN_SUPER:
-    case NS_STYLE_VERTICAL_ALIGN_MIDDLE:
-    case NS_STYLE_VERTICAL_ALIGN_MIDDLE_WITH_BASELINE:
+    case StyleVerticalAlignKeyword::Sub:
+    case StyleVerticalAlignKeyword::Super:
+    case StyleVerticalAlignKeyword::Middle:
+    case StyleVerticalAlignKeyword::MozMiddleWithBaseline:
       return 0.5f;
 
-    case NS_STYLE_VERTICAL_ALIGN_BASELINE:
-    case NS_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM:
-    case NS_STYLE_VERTICAL_ALIGN_BOTTOM:
+    case StyleVerticalAlignKeyword::Baseline:
+    case StyleVerticalAlignKeyword::Bottom:
+    case StyleVerticalAlignKeyword::TextBottom:
       return 1.0f;
 
     default:
@@ -2454,9 +2452,10 @@ nsNativeThemeCocoa::ScrollbarParams nsNativeThemeCocoa::ComputeScrollbarParams(n
     ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
     const nsStyleUI* ui = style->StyleUI();
     if (ui->HasCustomScrollbars()) {
+      const auto& colors = ui->mScrollbarColor.AsColors();
       params.custom = true;
-      params.trackColor = ui->mScrollbarTrackColor.CalcColor(style);
-      params.faceColor = ui->mScrollbarFaceColor.CalcColor(style);
+      params.trackColor = colors.track.CalcColor(*style);
+      params.faceColor = colors.thumb.CalcColor(*style);
     }
   }
   return params;
@@ -4469,8 +4468,8 @@ nsITheme::Transparency nsNativeThemeCocoa::GetWidgetTransparency(nsIFrame* aFram
         return eTransparent;
       }
       const nsStyleUI* ui = nsLayoutUtils::StyleForScrollbar(aFrame)->StyleUI();
-      StyleComplexColor trackColor = ui->mScrollbarTrackColor;
-      if (!trackColor.IsAuto() && trackColor.MaybeTransparent()) {
+      if (!ui->mScrollbarColor.IsAuto() &&
+          ui->mScrollbarColor.AsColors().track.MaybeTransparent()) {
         return eTransparent;
       }
       return eOpaque;

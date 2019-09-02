@@ -23,6 +23,7 @@
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/Keyframe.h"
 #include "mozilla/KeyframeEffectParams.h"
+#include "mozilla/PostRestyleMode.h"
 // RawServoDeclarationBlock and associated RefPtrTraits
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/StyleAnimationValue.h"
@@ -34,7 +35,6 @@ struct JSContext;
 class JSObject;
 class nsIContent;
 class nsIFrame;
-class nsIPresShell;
 
 namespace mozilla {
 
@@ -45,6 +45,7 @@ struct AnimationRule;
 struct TimingParams;
 class EffectSet;
 class ComputedStyle;
+class PresShell;
 
 namespace dom {
 class ElementOrCSSPseudoElement;
@@ -98,6 +99,9 @@ struct AnimationProperty {
   bool operator!=(const AnimationProperty& aOther) const {
     return !(*this == aOther);
   }
+
+  void SetPerformanceWarning(const AnimationPerformanceWarning& aWarning,
+                             const Element* aElement);
 };
 
 struct ElementPropertyTransition;
@@ -171,7 +175,7 @@ class KeyframeEffect : public AnimationEffect {
   void SetComposite(const CompositeOperation& aComposite);
 
   void NotifySpecifiedTimingUpdated();
-  void NotifyAnimationTimingUpdated();
+  void NotifyAnimationTimingUpdated(PostRestyleMode aPostRestyle);
   void RequestRestyle(EffectCompositor::RestyleType aRestyleType);
   void SetAnimation(Animation* aAnimation) override;
   void SetKeyframes(JSContext* aContext, JS::Handle<JSObject*> aKeyframes,
@@ -179,9 +183,15 @@ class KeyframeEffect : public AnimationEffect {
   void SetKeyframes(nsTArray<Keyframe>&& aKeyframes,
                     const ComputedStyle* aStyle);
 
+  // Returns the set of properties affected by this effect regardless of
+  // whether any of these properties is overridden by an !important rule.
+  nsCSSPropertyIDSet GetPropertySet() const;
+
   // Returns true if the effect includes a property in |aPropertySet| regardless
-  // of whether any property in the set is overridden by !important rule.
-  bool HasAnimationOfPropertySet(const nsCSSPropertyIDSet& aPropertySet) const;
+  // of whether any property in the set is overridden by an !important rule.
+  bool HasAnimationOfPropertySet(const nsCSSPropertyIDSet& aPropertySet) const {
+    return GetPropertySet().Intersects(aPropertySet);
+  }
 
   // GetEffectiveAnimationOfProperty returns AnimationProperty corresponding
   // to a given CSS property if the effect includes the property and the
@@ -192,8 +202,10 @@ class KeyframeEffect : public AnimationEffect {
   // this function is typically called for all KeyframeEffects on an element
   // so that we can avoid multiple calls of EffectSet::GetEffect().
   //
-  // NOTE: We don't currently check for !important rules for properties that
-  // can't run on the compositor.
+  // Note that does not consider the interaction between related transform
+  // properties where an !important rule on another transform property may
+  // cause all transform properties to be run on the main thread. That check is
+  // performed by GetPropertiesForCompositor.
   bool HasEffectiveAnimationOfProperty(nsCSSPropertyID aProperty,
                                        const EffectSet& aEffect) const {
     return GetEffectiveAnimationOfProperty(aProperty, aEffect) != nullptr;
@@ -201,12 +213,18 @@ class KeyframeEffect : public AnimationEffect {
   const AnimationProperty* GetEffectiveAnimationOfProperty(
       nsCSSPropertyID aProperty, const EffectSet& aEffect) const;
 
-  // This is a similar version as the above function, but for a
-  // nsCSSPropertyIDSet, and this returns true if this keyframe effect has
-  // properties in |aPropertySet| and if the properties are not overridden by
-  // !important rule or transition level.
+  // Similar to HasEffectiveAnimationOfProperty, above, but for
+  // an nsCSSPropertyIDSet. Returns true if this keyframe effect has at least
+  // one property in |aPropertySet| that is not overridden by an !important
+  // rule.
+  //
+  // Note that does not consider the interaction between related transform
+  // properties where an !important rule on another transform property may
+  // cause all transform properties to be run on the main thread. That check is
+  // performed by GetPropertiesForCompositor.
   bool HasEffectiveAnimationOfPropertySet(
-      const nsCSSPropertyIDSet& aPropertySet, const EffectSet& aEffect) const;
+      const nsCSSPropertyIDSet& aPropertySet,
+      const EffectSet& aEffectSet) const;
 
   // Returns all the effective animated CSS properties that can be animated on
   // the compositor and are not overridden by a higher cascade level.
@@ -259,7 +277,7 @@ class KeyframeEffect : public AnimationEffect {
   // When returning true, |aPerformanceWarning| stores the reason why
   // we shouldn't run the transform animations.
   bool ShouldBlockAsyncTransformAnimations(
-      const nsIFrame* aFrame,
+      const nsIFrame* aFrame, const nsCSSPropertyIDSet& aPropertySet,
       AnimationPerformanceWarning::Type& aPerformanceWarning /* out */) const;
   bool HasGeometricProperties() const;
   bool AffectsGeometry() const override {
@@ -267,13 +285,13 @@ class KeyframeEffect : public AnimationEffect {
   }
 
   Document* GetRenderedDocument() const;
-  nsIPresShell* GetPresShell() const;
+  PresShell* GetPresShell() const;
 
-  // Associates a warning with the animated property on the specified frame
+  // Associates a warning with the animated property set on the specified frame
   // indicating why, for example, the property could not be animated on the
   // compositor. |aParams| and |aParamsLength| are optional parameters which
   // will be used to generate a localized message for devtools.
-  void SetPerformanceWarning(nsCSSPropertyID aProperty,
+  void SetPerformanceWarning(const nsCSSPropertyIDSet& aPropertySet,
                              const AnimationPerformanceWarning& aWarning);
 
   // Cumulative change hint on each segment for each property.

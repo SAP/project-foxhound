@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_SVGLineElement_h
 #define mozilla_dom_SVGLineElement_h
 
+#include "SVGAnimatedLength.h"
 #include "SVGGeometryElement.h"
-#include "nsSVGLength2.h"
 
 nsresult NS_NewSVGLineElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -48,16 +48,16 @@ class SVGLineElement final : public SVGLineElementBase {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedLength> X1();
-  already_AddRefed<SVGAnimatedLength> Y1();
-  already_AddRefed<SVGAnimatedLength> X2();
-  already_AddRefed<SVGAnimatedLength> Y2();
+  already_AddRefed<DOMSVGAnimatedLength> X1();
+  already_AddRefed<DOMSVGAnimatedLength> Y1();
+  already_AddRefed<DOMSVGAnimatedLength> X2();
+  already_AddRefed<DOMSVGAnimatedLength> Y2();
 
  protected:
   virtual LengthAttributesInfo GetLengthInfo() override;
 
   enum { ATTR_X1, ATTR_Y1, ATTR_X2, ATTR_Y2 };
-  nsSVGLength2 mLengthAttributes[4];
+  SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 };
 

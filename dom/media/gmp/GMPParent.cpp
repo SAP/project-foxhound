@@ -21,7 +21,7 @@
 #include "nsIObserverService.h"
 #include "GMPTimerParent.h"
 #include "runnable_utils.h"
-#if defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxInfo.h"
 #endif
 #include "CDMStorageIdProvider.h"
@@ -149,6 +149,9 @@ nsresult GMPParent::LoadProcess() {
 
   if (!mProcess) {
     mProcess = new GMPProcessParent(NS_ConvertUTF16toUTF8(path).get());
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+    mProcess->SetRequiresWindowServer(mAdapter.EqualsLiteral("chromium"));
+#endif
     if (!mProcess->Launch(30 * 1000)) {
       LOGD("%s: Failed to launch new child process", __FUNCTION__);
       mProcess->Delete();
@@ -392,7 +395,7 @@ bool GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
         // file, but uses Windows Media Foundation to decode. That's not present
         // on Windows XP, and on some Vista, Windows N, and KN variants without
         // certain services packs.
-        if (tag.Equals(kEMEKeySystemClearkey)) {
+        if (tag.EqualsLiteral(EME_KEY_SYSTEM_CLEARKEY)) {
           if (capabilities.mAPIName.EqualsLiteral(GMP_API_VIDEO_DECODER)) {
             if (!WMFDecoderModule::HasH264()) {
               continue;
@@ -420,7 +423,7 @@ bool GMPParent::EnsureProcessLoaded() {
   return NS_SUCCEEDED(rv);
 }
 
-void GMPParent::WriteExtraDataForMinidump() {
+void GMPParent::AddCrashAnnotations() {
   mCrashReporter->AddAnnotation(CrashReporter::Annotation::GMPPlugin, true);
   mCrashReporter->AddAnnotation(CrashReporter::Annotation::PluginFilename,
                                 NS_ConvertUTF16toUTF8(mName));
@@ -432,10 +435,12 @@ void GMPParent::WriteExtraDataForMinidump() {
 
 bool GMPParent::GetCrashID(nsString& aResult) {
   if (!mCrashReporter) {
+    CrashReporter::FinalizeOrphanedMinidump(OtherPid(),
+                                            GeckoProcessType_GMPlugin);
     return false;
   }
 
-  WriteExtraDataForMinidump();
+  AddCrashAnnotations();
   if (!mCrashReporter->GenerateCrashReport(OtherPid())) {
     return false;
   }
@@ -691,7 +696,7 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
   mDescription = NS_ConvertUTF16toUTF8(m.mDescription);
   mVersion = NS_ConvertUTF16toUTF8(m.mVersion);
 
-#if defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   if (!mozilla::SandboxInfo::Get().CanSandboxMedia()) {
     nsPrintfCString msg(
         "GMPParent::ParseChromiumManifest: Plugin \"%s\" is an EME CDM"
@@ -708,20 +713,20 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
   // We hard code a few of the settings because they can't be stored in the
   // widevine manifest without making our API different to widevine's.
   if (mDisplayName.EqualsASCII("clearkey")) {
-    kEMEKeySystem = kEMEKeySystemClearkey;
+    kEMEKeySystem.AssignLiteral(EME_KEY_SYSTEM_CLEARKEY);
 #if XP_WIN
     mLibs = NS_LITERAL_CSTRING(
         "dxva2.dll, msmpeg2vdec.dll, evr.dll, mfh264dec.dll, mfplat.dll");
 #endif
   } else if (mDisplayName.EqualsASCII("WidevineCdm")) {
-    kEMEKeySystem = kEMEKeySystemWidevine;
+    kEMEKeySystem.AssignLiteral(EME_KEY_SYSTEM_WIDEVINE);
 #if XP_WIN
     // psapi.dll added for GetMappedFileNameW, which could possibly be avoided
     // in future versions, see bug 1383611 for details.
     mLibs = NS_LITERAL_CSTRING("dxva2.dll, psapi.dll");
 #endif
   } else if (mDisplayName.EqualsASCII("fake")) {
-    kEMEKeySystem = NS_LITERAL_CSTRING("fake");
+    kEMEKeySystem.AssignLiteral("fake");
 #if XP_WIN
     mLibs = NS_LITERAL_CSTRING("dxva2.dll");
 #endif

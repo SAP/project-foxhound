@@ -4,9 +4,16 @@
 
 "use strict";
 
-const { Component, createFactory } = require("devtools/client/shared/vendor/react");
+const {
+  Component,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { div, span, h3 } = require("devtools/client/shared/vendor/react-dom-factories");
+const {
+  div,
+  span,
+  h3,
+} = require("devtools/client/shared/vendor/react-dom-factories");
 const LearnMoreLink = createFactory(require("./LearnMoreLink"));
 
 const { A11Y_CONTRAST_LEARN_MORE_LINK } = require("../constants");
@@ -21,33 +28,26 @@ class ContrastValueClass extends Component {
     return {
       backgroundColor: PropTypes.array.isRequired,
       color: PropTypes.array.isRequired,
-      isLargeText: PropTypes.bool.isRequired,
       value: PropTypes.number.isRequired,
+      score: PropTypes.string,
     };
   }
 
   render() {
-    const {
-      backgroundColor,
-      color,
-      isLargeText,
-      value,
-    } = this.props;
+    const { backgroundColor, color, value, score } = this.props;
 
-    const className = [
-      "accessibility-contrast-value",
-      getContrastRatioScore(value, isLargeText),
-    ].join(" ");
+    const className = ["accessibility-contrast-value", score].join(" ");
 
-    return (
-      span({
+    return span(
+      {
         className,
         role: "presentation",
         style: {
           "--accessibility-contrast-color": `rgba(${color})`,
           "--accessibility-contrast-bg": `rgba(${backgroundColor})`,
         },
-      }, value.toFixed(2))
+      },
+      value.toFixed(2)
     );
   }
 }
@@ -70,6 +70,9 @@ class ColorContrastAccessibilityClass extends Component {
       backgroundColor: PropTypes.array,
       backgroundColorMin: PropTypes.array,
       backgroundColorMax: PropTypes.array,
+      score: PropTypes.string,
+      scoreMin: PropTypes.string,
+      scoreMax: PropTypes.string,
     };
   }
 
@@ -78,88 +81,106 @@ class ColorContrastAccessibilityClass extends Component {
       error,
       isLargeText,
       color,
-      value, backgroundColor,
-      min, backgroundColorMin,
-      max, backgroundColorMax,
+      value,
+      backgroundColor,
+      score,
+      min,
+      backgroundColorMin,
+      scoreMin,
+      max,
+      backgroundColorMax,
+      scoreMax,
     } = this.props;
 
     const children = [];
 
     if (error) {
-      children.push(span({
-        className: "accessibility-color-contrast-error",
-        role: "presentation",
-      }, L10N.getStr("accessibility.contrast.error")));
-
-      return (div({
-        role: "presentation",
-        className: "accessibility-color-contrast",
-      }, ...children));
-    }
-
-    if (value) {
-      children.push(ContrastValue({ isLargeText, color, backgroundColor, value }));
-    } else {
       children.push(
-        ContrastValue(
-          { isLargeText, color, backgroundColor: backgroundColorMin, value: min }),
-        div({
-          role: "presentation",
-          className: "accessibility-color-contrast-separator",
-        }),
-        ContrastValue(
-          { isLargeText, color, backgroundColor: backgroundColorMax, value: max }),
+        span(
+          {
+            className: "accessibility-color-contrast-error",
+            role: "presentation",
+          },
+          L10N.getStr("accessibility.contrast.error")
+        )
       );
-    }
 
-    if (isLargeText) {
-      children.push(
-        span({
-          className: "accessibility-color-contrast-large-text",
-          role: "presentation",
-          title: L10N.getStr("accessibility.contrast.large.title"),
-        }, L10N.getStr("accessibility.contrast.large.text"))
-      );
-    }
-
-    return (
-      div(
+      return div(
         {
           role: "presentation",
           className: "accessibility-color-contrast",
         },
         ...children
-      )
+      );
+    }
+
+    if (value) {
+      children.push(ContrastValue({ score, color, backgroundColor, value }));
+    } else {
+      children.push(
+        ContrastValue({
+          score: scoreMin,
+          color,
+          backgroundColor: backgroundColorMin,
+          value: min,
+        }),
+        div({
+          role: "presentation",
+          className: "accessibility-color-contrast-separator",
+        }),
+        ContrastValue({
+          score: scoreMax,
+          color,
+          backgroundColor: backgroundColorMax,
+          value: max,
+        })
+      );
+    }
+
+    if (isLargeText) {
+      children.push(
+        span(
+          {
+            className: "accessibility-color-contrast-large-text",
+            role: "presentation",
+            title: L10N.getStr("accessibility.contrast.large.title"),
+          },
+          L10N.getStr("accessibility.contrast.large.text")
+        )
+      );
+    }
+
+    return div(
+      {
+        role: "presentation",
+        className: "accessibility-color-contrast",
+      },
+      ...children
     );
   }
 }
 
-const ColorContrastAccessibility = createFactory(ColorContrastAccessibilityClass);
+const ColorContrastAccessibility = createFactory(
+  ColorContrastAccessibilityClass
+);
 
 class ContrastAnnotationClass extends Component {
   static get propTypes() {
     return {
-      isLargeText: PropTypes.bool.isRequired,
-      value: PropTypes.number,
-      min: PropTypes.number,
+      score: PropTypes.string,
     };
   }
 
   render() {
-    const { isLargeText, min, value } = this.props;
-    const score = getContrastRatioScore(value || min, isLargeText);
+    const { score } = this.props;
 
-    return (
-      LearnMoreLink(
-        {
-          className: "accessibility-color-contrast-annotation",
-          href: A11Y_CONTRAST_LEARN_MORE_LINK,
-          learnMoreStringKey: "accessibility.learnMore",
-          l10n: L10N,
-          messageStringKey: `accessibility.contrast.annotation.${score}`,
-        }
-      )
-    );
+    return LearnMoreLink({
+      className: "accessibility-check-annotation",
+      href: A11Y_CONTRAST_LEARN_MORE_LINK,
+      learnMoreStringKey: "accessibility.learnMore",
+      l10n: L10N,
+      messageStringKey: `accessibility.contrast.annotation.${score}`,
+    });
   }
 }
 
@@ -175,42 +196,21 @@ class ColorContrastCheck extends Component {
   render() {
     const { error } = this.props;
 
-    return (
-      div({
+    return div(
+      {
         role: "presentation",
-        className: "accessibility-color-contrast-check",
+        className: "accessibility-check",
       },
-        h3({
-          className: "accessibility-color-contrast-header",
-        }, L10N.getStr("accessibility.contrast.header")),
-        ColorContrastAccessibility(this.props),
-        !error && ContrastAnnotation(this.props)
-      )
+      h3(
+        {
+          className: "accessibility-check-header",
+        },
+        L10N.getStr("accessibility.contrast.header")
+      ),
+      ColorContrastAccessibility(this.props),
+      !error && ContrastAnnotation(this.props)
     );
   }
-}
-
-/**
- * Get contrast ratio score.
- * ratio.
- * @param  {Number} value
- *         Value of the contrast ratio for a given accessible object.
- * @param  {Boolean} isLargeText
- *         True if the accessible object contains large text.
- * @return {String}
- *         Represents the appropriate contrast ratio score.
- */
-function getContrastRatioScore(value, isLargeText) {
-  const levels = isLargeText ? { AA: 3, AAA: 4.5 } : { AA: 4.5, AAA: 7 };
-
-  let score = "fail";
-  if (value >= levels.AAA) {
-    score = "AAA";
-  } else if (value >= levels.AA) {
-    score = "AA";
-  }
-
-  return score;
 }
 
 module.exports = {

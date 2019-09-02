@@ -6,18 +6,28 @@
 
 "use strict";
 
-const { createFactory, createRef, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  createRef,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
 loader.lazyGetter(this, "AutocompletePopup", function() {
-  return createFactory(require("devtools/client/shared/components/AutoCompletePopup"));
+  return createFactory(
+    require("devtools/client/shared/components/AutoCompletePopup")
+  );
 });
 loader.lazyGetter(this, "MDNLink", function() {
   return createFactory(require("./MdnLink"));
 });
 
-loader.lazyRequireGetter(this, "KeyShortcuts", "devtools/client/shared/key-shortcuts");
+loader.lazyRequireGetter(
+  this,
+  "KeyShortcuts",
+  "devtools/client/shared/key-shortcuts"
+);
 
 class SearchBox extends PureComponent {
   static get propTypes() {
@@ -32,8 +42,9 @@ class SearchBox extends PureComponent {
       onFocus: PropTypes.func,
       onKeyDown: PropTypes.func,
       placeholder: PropTypes.string.isRequired,
-      plainStyle: PropTypes.bool,
-      type: PropTypes.string.isRequired,
+      summary: PropTypes.string,
+      summaryTooltip: PropTypes.string,
+      type: PropTypes.string,
     };
   }
 
@@ -80,16 +91,16 @@ class SearchBox extends PureComponent {
     }
   }
 
-  onChange() {
-    if (this.state.value !== this.inputRef.current.value) {
+  onChange(inputValue = "") {
+    if (this.state.value !== inputValue) {
       this.setState({
         focused: true,
-        value: this.inputRef.current.value,
+        value: inputValue,
       });
     }
 
     if (!this.props.delay) {
-      this.props.onChange(this.state.value);
+      this.props.onChange(inputValue);
       return;
     }
 
@@ -107,8 +118,7 @@ class SearchBox extends PureComponent {
   }
 
   onClearButtonClick() {
-    this.setState({ value: "" });
-    this.onChange();
+    this.onChange("");
   }
 
   onFocus() {
@@ -169,56 +179,61 @@ class SearchBox extends PureComponent {
   }
 
   render() {
-    let {
+    const {
       autocompleteProvider,
+      summary,
+      summaryTooltip,
       learnMoreTitle,
       learnMoreUrl,
       placeholder,
-      plainStyle,
       type = "search",
     } = this.props;
     const { value } = this.state;
-    const showAutocomplete = autocompleteProvider && this.state.focused && value !== "";
+    const showAutocomplete =
+      autocompleteProvider && this.state.focused && value !== "";
+    const showLearnMoreLink = learnMoreUrl && value === "";
 
     const inputClassList = [`devtools-${type}input`];
-    if (plainStyle) {
-      inputClassList.push("devtools-plaininput");
-    }
-    if (value !== "") {
-      inputClassList.push("filled");
-      learnMoreUrl = false;
-    }
 
     return dom.div(
-      { className: "devtools-searchbox has-clear-btn" },
+      { className: "devtools-searchbox" },
       dom.input({
         className: inputClassList.join(" "),
         onBlur: this.onBlur,
-        onChange: this.onChange,
+        onChange: e => this.onChange(e.target.value),
         onFocus: this.onFocus,
         onKeyDown: this.onKeyDown,
         placeholder,
         ref: this.inputRef,
         value,
+        type: "search",
       }),
+      showLearnMoreLink &&
+        MDNLink({
+          title: learnMoreTitle,
+          url: learnMoreUrl,
+        }),
+      summary
+        ? dom.span(
+            {
+              className: "devtools-searchinput-summary",
+              title: summaryTooltip || "",
+            },
+            summary
+          )
+        : null,
       dom.button({
         className: "devtools-searchinput-clear",
         hidden: value === "",
         onClick: this.onClearButtonClick,
       }),
-      learnMoreUrl && MDNLink({
-        title: learnMoreTitle,
-        url: learnMoreUrl,
-      }),
-      showAutocomplete && AutocompletePopup({
-        autocompleteProvider,
-        filter: value,
-        onItemSelected: (itemValue) => {
-          this.setState({ value: itemValue });
-          this.onChange();
-        },
-        ref: this.autocompleteRef,
-      })
+      showAutocomplete &&
+        AutocompletePopup({
+          autocompleteProvider,
+          filter: value,
+          onItemSelected: itemValue => this.onChange(itemValue),
+          ref: this.autocompleteRef,
+        })
     );
   }
 }

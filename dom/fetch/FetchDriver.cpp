@@ -525,8 +525,7 @@ nsresult FetchDriver::HttpFetch(
   MOZ_ASSERT(mLoadGroup);
   nsCOMPtr<nsIChannel> chan;
 
-  nsLoadFlags loadFlags =
-      nsIRequest::LOAD_BACKGROUND | bypassFlag | nsIChannel::LOAD_CLASSIFY_URI;
+  nsLoadFlags loadFlags = nsIRequest::LOAD_BACKGROUND | bypassFlag;
   if (mDocument) {
     MOZ_ASSERT(mDocument->NodePrincipal() == mPrincipal);
     MOZ_ASSERT(mDocument->CookieSettings() == mCookieSettings);
@@ -607,7 +606,7 @@ nsresult FetchDriver::HttpFetch(
       nsCOMPtr<nsILoadInfo> loadInfo = httpChan->LoadInfo();
       bool isPrivate = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
       net::ReferrerPolicy referrerPolicy = static_cast<net::ReferrerPolicy>(
-          NS_GetDefaultReferrerPolicy(httpChan, uri, isPrivate));
+          ReferrerInfo::GetDefaultReferrerPolicy(httpChan, uri, isPrivate));
       mRequest->SetReferrerPolicy(referrerPolicy);
     }
 
@@ -693,7 +692,7 @@ nsresult FetchDriver::HttpFetch(
     loadInfo->SetCorsPreflightInfo(unsafeHeaders, false);
   }
 
-  if (mIsTrackingFetch && nsContentUtils::IsTailingEnabled() && cos) {
+  if (mIsTrackingFetch && StaticPrefs::network_http_tailing_enabled() && cos) {
     cos->AddClassFlags(nsIClassOfService::Throttleable |
                        nsIClassOfService::Tail);
   }
@@ -705,6 +704,8 @@ nsresult FetchDriver::HttpFetch(
       p->SetPriority(nsISupportsPriority::PRIORITY_LOWEST);
     }
   }
+
+  NotifyNetworkMonitorAlternateStack(chan, std::move(mOriginStack));
 
   // if the preferred alternative data type in InternalRequest is not empty, set
   // the data type on the created channel and also create a
@@ -824,7 +825,12 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
 
   // We should only get to the following code once.
   MOZ_ASSERT(!mPipeOutputStream);
-  MOZ_ASSERT(mObserver);
+
+  if (!mObserver) {
+    MOZ_ASSERT(false, "We should have mObserver here.");
+    FailWithNetworkError(NS_ERROR_UNEXPECTED);
+    return NS_ERROR_UNEXPECTED;
+  }
 
   mNeedToObserveOnDataAvailable = mObserver->NeedOnDataAvailable();
 
@@ -864,7 +870,8 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     rv = httpChannel->GetResponseStatusText(statusText);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
-    response = new InternalResponse(responseStatus, statusText);
+    response = new InternalResponse(responseStatus, statusText,
+                                    mRequest->GetCredentialsMode());
 
     UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo(
         new mozilla::ipc::PrincipalInfo());
@@ -892,7 +899,8 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     }
     MOZ_ASSERT(!result.Failed());
   } else {
-    response = new InternalResponse(200, NS_LITERAL_CSTRING("OK"));
+    response = new InternalResponse(200, NS_LITERAL_CSTRING("OK"),
+                                    mRequest->GetCredentialsMode());
 
     if (!contentType.IsEmpty()) {
       nsAutoCString contentCharset;
@@ -1469,6 +1477,8 @@ void FetchDriver::SetRequestHeaders(nsIHttpChannel* aChannel) const {
 }
 
 void FetchDriver::Abort() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+
   if (mObserver) {
 #ifdef DEBUG
     mResponseAvailableCalled = true;

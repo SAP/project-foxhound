@@ -5,14 +5,32 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const PrefState = (overrides) => Object.freeze(Object.assign({
-  logLimit: 1000,
-  sidebarToggle: false,
-  jstermCodeMirror: false,
-  historyCount: 50,
-}, overrides));
+const {
+  WARNING_GROUPS_TOGGLE,
+} = require("devtools/client/webconsole/constants");
+
+const PrefState = overrides =>
+  Object.freeze(
+    Object.assign(
+      {
+        logLimit: 1000,
+        sidebarToggle: false,
+        jstermCodeMirror: false,
+        groupWarnings: false,
+        historyCount: 50,
+        editor: false,
+      },
+      overrides
+    )
+  );
 
 function prefs(state = PrefState(), action) {
+  if (action.type === WARNING_GROUPS_TOGGLE) {
+    return {
+      ...state,
+      groupWarnings: action.value,
+    };
+  }
   return state;
 }
 

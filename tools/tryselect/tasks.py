@@ -4,7 +4,6 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import glob
 import hashlib
 import json
 import os
@@ -54,20 +53,21 @@ def invalidate(cache, root):
         os.remove(cache)
 
 
-def generate_tasks(params, full, root):
-    # Try to delete the old taskgraph cache directory.
-    old_cache_dir = os.path.join(get_state_dir(), 'cache', 'taskgraph')
-    if os.path.isdir(old_cache_dir):
-        shutil.rmtree(old_cache_dir)
-
+def generate_tasks(params=None, full=False):
+    # TODO: Remove after January 1st, 2020.
+    # Try to delete the old taskgraph cache directories.
+    root = build.topsrcdir
     root_hash = hashlib.sha256(os.path.abspath(root)).hexdigest()
-    cache_dir = os.path.join(get_state_dir(), 'cache', root_hash, 'taskgraph')
+    old_cache_dirs = [
+        os.path.join(get_state_dir(), 'cache', 'taskgraph'),
+        os.path.join(get_state_dir(), 'cache', root_hash, 'taskgraph'),
+    ]
+    for cache_dir in old_cache_dirs:
+        if os.path.isdir(cache_dir):
+            shutil.rmtree(cache_dir)
 
-    # Cleanup old cache files
-    for path in glob.glob(os.path.join(cache_dir, '*_set')):
-        os.remove(path)
-
-    attr = 'full_task_graph' if full else 'target_task_graph'
+    cache_dir = os.path.join(get_state_dir(srcdir=True), 'cache', 'taskgraph')
+    attr = 'full_task_set' if full else 'target_task_set'
     cache = os.path.join(cache_dir, attr)
 
     invalidate(cache, root)
@@ -82,21 +82,35 @@ def generate_tasks(params, full, root):
 
     taskgraph.fast = True
     cwd = os.getcwd()
-    os.chdir(build.topsrcdir)
+    os.chdir(root)
 
     root = os.path.join(root, 'taskcluster', 'ci')
     params = parameters_loader(params, strict=False, overrides={'try_mode': 'try_select'})
-    try:
-        tg = getattr(TaskGraphGenerator(root_dir=root, parameters=params), attr)
-    except ParameterMismatch as e:
-        print(PARAMETER_MISMATCH.format(e.args[0]))
-        sys.exit(1)
+
+    # Cache both full_task_set and target_task_set regardless of whether or not
+    # --full was requested. Caching is cheap and can potentially save a lot of
+    # time.
+    generator = TaskGraphGenerator(root_dir=root, parameters=params)
+
+    def generate(attr):
+        try:
+            tg = getattr(generator, attr)
+        except ParameterMismatch as e:
+            print(PARAMETER_MISMATCH.format(e.args[0]))
+            sys.exit(1)
+
+        # write cache
+        with open(os.path.join(cache_dir, attr), 'w') as fh:
+            json.dump(tg.to_json(), fh)
+        return tg
+
+    tg_full = generate('full_task_set')
+    tg_target = generate('target_task_set')
 
     os.chdir(cwd)
-
-    with open(cache, 'w') as fh:
-        json.dump(tg.to_json(), fh)
-    return tg
+    if full:
+        return tg_full
+    return tg_target
 
 
 def filter_tasks_by_paths(tasks, paths):
@@ -106,7 +120,7 @@ def filter_tasks_by_paths(tasks, paths):
 
     task_regexes = set()
     for flavor, subsuite in flavors:
-        suite = get_suite_definition(flavor, subsuite, strict=True)
+        _, suite = get_suite_definition(flavor, subsuite, strict=True)
         if 'task_regex' not in suite:
             print("warning: no tasks could be resolved from flavor '{}'{}".format(
                     flavor, " and subsuite '{}'".format(subsuite) if subsuite else ""))
@@ -126,10 +140,7 @@ def resolve_tests_by_suite(paths):
 
     suite_to_tests = defaultdict(list)
     for test in run_tests:
-        key = test['flavor']
-        subsuite = test.get('subsuite')
-        if subsuite:
-            key += '-' + subsuite
+        key, _ = get_suite_definition(test['flavor'], test.get('subsuite'), strict=True)
         suite_to_tests[key].append(test['srcdir_relpath'])
 
     return suite_to_tests

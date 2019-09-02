@@ -19,6 +19,7 @@ include "mozilla/net/NeckoMessageUtils.h";
 using class nsHttpHeaderArray from "nsHttpHeaderArray.h";
 using mozilla::net::NetAddr from "mozilla/net/DNS.h";
 using struct mozilla::net::ResourceTimingStruct from "mozilla/net/TimingStruct.h";
+using refcounted class nsIReferrerInfo from "mozilla/dom/ReferrerInfoUtils.h";
 
 namespace mozilla {
 namespace net {
@@ -44,14 +45,16 @@ parent:
   // Reports approval/veto of redirect by child process redirect observers
   async Redirect2Verify(nsresult result, RequestHeaderTuples changedHeaders,
                         ChildLoadInfoForwarderArgs loadInfoForwarder,
-                        uint32_t loadFlags, uint32_t referrerPolicy,
-                        URIParams? referrerUri, URIParams? apiRedirectTo,
+                        uint32_t loadFlags, nsIReferrerInfo referrerInfo,
+                        URIParams? apiRedirectTo,
                         CorsPreflightArgs? corsPreflightArgs,
                         bool chooseAppcache);
 
   // Sent to the parent in order signal that the child side listeners have been
   // set up and the parent side of the channel can be opened.
-  async CrossProcessRedirectDone(nsresult result);
+  // The passed loadInfo needs to be set on the channel - since the channel
+  // moved to a new process it now has different properties.
+  async CrossProcessRedirectDone(nsresult result, LoadInfoArgs? loadInfo);
 
   // For document loads we keep this protocol open after child's
   // OnStopRequest, and send this msg (instead of __delete__) to allow
@@ -112,6 +115,7 @@ child:
                        nsHttpHeaderArray   requestHeaders,
                        ParentLoadInfoForwarderArgs loadInfoForwarder,
                        bool                isFromCache,
+                       bool                isRacing,
                        bool                cacheEntryAvailable,
                        uint64_t            cacheEntryId,
                        int32_t             cacheFetchCount,
@@ -124,8 +128,11 @@ child:
                        uint32_t            cacheKey,
                        nsCString           altDataType,
                        int64_t             altDataLength,
+                       bool                deliveringAltData,
                        bool                applyConversion,
-                       ResourceTimingStruct timing);
+                       bool                isResolvedByTRR,
+                       ResourceTimingStruct timing,
+                       bool                allRedirectsSameOrigin);
 
   // Used to cancel child channel if we hit errors during creating and
   // AsyncOpen of nsHttpChannel on the parent.
@@ -141,7 +148,8 @@ child:
                        nsHttpResponseHead responseHead,
                        nsCString          securityInfoSerialization,
                        uint64_t           channelId,
-                       NetAddr            oldPeerAddr);
+                       NetAddr            oldPeerAddr,
+                       ResourceTimingStruct timing);
 
   // Called if redirect successful so that child can complete setup.
   async Redirect3Complete();

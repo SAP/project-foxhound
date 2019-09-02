@@ -203,6 +203,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   static bool IsHeadless();
 
+  static bool UseWebRender();
+
   /**
    * Create an offscreen surface of the given dimensions
    * and image format.
@@ -279,6 +281,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   void GetApzSupportInfo(mozilla::widget::InfoObject& aObj);
   void GetTilesSupportInfo(mozilla::widget::InfoObject& aObj);
   void GetFrameStats(mozilla::widget::InfoObject& aObj);
+  void GetCMSSupportInfo(mozilla::widget::InfoObject& aObj);
 
   // Get the default content backend that will be used with the default
   // compositor. If the compositor is known when calling this function,
@@ -303,12 +306,10 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   mozilla::gfx::BackendType GetFallbackCanvasBackend() {
     return mFallbackCanvasBackend;
   }
+
   /*
    * Font bits
    */
-
-  virtual void SetupClusterBoundaries(gfxTextRun* aTextRun,
-                                      const char16_t* aString);
 
   /**
    * Fill aListOfFonts with the results of querying the list of font names
@@ -543,6 +544,11 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   static qcms_transform* GetCMSRGBATransform();
 
+  /**
+   * Return sRGBA -> output device transform.
+   */
+  static qcms_transform* GetCMSBGRATransform();
+
   virtual void FontsPrefsChanged(const char* aPref);
 
   int32_t GetBidiNumeralOption();
@@ -608,15 +614,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool UsesOffMainThreadCompositing();
 
   /**
-   * Whether we want to adjust gfx parameters (currently just
-   * the framerate and whether we use software vs. hardware vsync)
-   * down because we've determined we're on a low-end machine.
-   * This will return false if the user has turned on fingerprinting
-   * resistance (to ensure consistent behavior across devices).
-   */
-  static bool ShouldAdjustForLowEndMachine();
-
-  /**
    * Get the hardware vsync source for each platform.
    * Should only exist and be valid on the parent process
    */
@@ -678,8 +675,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
       mozilla::gfx::SurfaceFormat aFormat);
 
   /**
-   * Wrapper around gfxPrefs::PerfWarnings().
-   * Extracted into a function to avoid including gfxPrefs.h from this file.
+   * Wrapper around StaticPrefs::gfx_perf_warnings_enabled().
+   * Extracted into a function to avoid including StaticPrefs.h from this file.
    */
   static bool PerfWarnings();
 
@@ -747,7 +744,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   gfxPlatform();
   virtual ~gfxPlatform();
 
-  virtual bool HasBattery() { return true; }
+  virtual bool HasBattery() { return false; }
 
   virtual void InitAcceleration();
   virtual void InitWebRenderConfig();
@@ -887,6 +884,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   void InitCompositorAccelerationPrefs();
   void InitGPUProcessPrefs();
+  virtual void InitPlatformGPUProcessPrefs() {}
   void InitOMTPConfig();
 
   static bool IsDXInterop2Blocked();
@@ -914,6 +912,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   mozilla::widget::GfxInfoCollector<gfxPlatform> mApzSupportCollector;
   mozilla::widget::GfxInfoCollector<gfxPlatform> mTilesInfoCollector;
   mozilla::widget::GfxInfoCollector<gfxPlatform> mFrameStatsCollector;
+  mozilla::widget::GfxInfoCollector<gfxPlatform> mCMSInfoCollector;
 
   nsTArray<mozilla::layers::FrameStats> mFrameStats;
 

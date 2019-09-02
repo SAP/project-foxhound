@@ -147,7 +147,8 @@ UrlClassifierFeatureFlash::GetIfNameMatches(const nsACString& aName) {
 
 NS_IMETHODIMP
 UrlClassifierFeatureFlash::ProcessChannel(nsIChannel* aChannel,
-                                          const nsACString& aList,
+                                          const nsTArray<nsCString>& aList,
+                                          const nsTArray<nsCString>& aHashes,
                                           bool* aShouldContinue) {
   NS_ENSURE_ARG_POINTER(aChannel);
   NS_ENSURE_ARG_POINTER(aShouldContinue);

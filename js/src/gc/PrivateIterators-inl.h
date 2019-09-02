@@ -18,26 +18,18 @@
 namespace js {
 namespace gc {
 
-class ArenaCellIterUnderGC : public ArenaCellIterImpl {
+class ArenaCellIterUnderGC : public ArenaCellIter {
  public:
-  explicit ArenaCellIterUnderGC(Arena* arena)
-      : ArenaCellIterImpl(arena, CellIterDoesntNeedBarrier) {
+  explicit ArenaCellIterUnderGC(Arena* arena) : ArenaCellIter(arena) {
     MOZ_ASSERT(CurrentThreadIsPerformingGC());
   }
 };
 
-class ArenaCellIterUnderFinalize : public ArenaCellIterImpl {
+class ArenaCellIterUnderFinalize : public ArenaCellIter {
  public:
-  explicit ArenaCellIterUnderFinalize(Arena* arena)
-      : ArenaCellIterImpl(arena, CellIterDoesntNeedBarrier) {
+  explicit ArenaCellIterUnderFinalize(Arena* arena) : ArenaCellIter(arena) {
     MOZ_ASSERT(CurrentThreadIsGCSweeping());
   }
-};
-
-class ArenaCellIterUnbarriered : public ArenaCellIterImpl {
- public:
-  explicit ArenaCellIterUnbarriered(Arena* arena)
-      : ArenaCellIterImpl(arena, CellIterDoesntNeedBarrier) {}
 };
 
 class GrayObjectIter : public ZoneAllCellIter<js::gc::TenuredCell> {
@@ -133,7 +125,7 @@ using SweepGroupCompartmentsIter =
 using SweepGroupRealmsIter =
     CompartmentsOrRealmsIterT<SweepGroupZonesIter, RealmsInZoneIter>;
 
-// Iterate the free cells in an arena. See also ArenaCellIterImpl which iterates
+// Iterate the free cells in an arena. See also ArenaCellIter which iterates
 // the allocated cells.
 class ArenaFreeCellIter {
   Arena* arena;

@@ -1,6 +1,13 @@
 // Forward iframe loaded event.
-addEventListener("frames-loaded",
-  e => sendAsyncMessage("test:frames-loaded"), true, true);
+
+/* eslint-env mozilla/frame-script */
+
+addEventListener(
+  "frames-loaded",
+  e => sendAsyncMessage("test:frames-loaded"),
+  true,
+  true
+);
 
 let requestObserver = {
   observe(subject, topic, data) {
@@ -8,16 +15,14 @@ let requestObserver = {
       // Get DOMWindow on all child docshells to force about:blank
       // content viewers being created.
       getChildDocShells().map(ds => {
-        let window = ds.QueryInterface(Ci.nsIInterfaceRequestor)
-                      .getInterface(Ci.nsILoadContext)
-                      .associatedWindow;
+        ds
+          .QueryInterface(Ci.nsIInterfaceRequestor)
+          .getInterface(Ci.nsILoadContext).associatedWindow;
       });
     }
   },
-  QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIObserver
-  ])
-}
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
+};
 Services.obs.addObserver(requestObserver, "http-on-opening-request");
 addEventListener("unload", e => {
   if (e.target == this) {

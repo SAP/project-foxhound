@@ -55,9 +55,37 @@ MediaDevices::~MediaDevices() {
   }
 }
 
+static bool IsSameOriginWithAllParentDocs(nsINode* aDoc) {
+  MOZ_ASSERT(aDoc);
+  nsINode* node = aDoc;
+  while ((node = nsContentUtils::GetCrossDocParentNode(node))) {
+    if (NS_FAILED(nsContentUtils::CheckSameOrigin(aDoc, node))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 already_AddRefed<Promise> MediaDevices::GetUserMedia(
     const MediaStreamConstraints& aConstraints, CallerType aCallerType,
     ErrorResult& aRv) {
+  if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
+    if (Document* doc = owner->GetExtantDoc()) {
+      if (!owner->IsSecureContext()) {
+        doc->SetDocumentAndPageUseCounter(eUseCounter_custom_GetUserMediaInsec);
+      }
+      if (!IsSameOriginWithAllParentDocs(doc)) {
+        doc->SetDocumentAndPageUseCounter(
+            eUseCounter_custom_GetUserMediaXOrigin);
+      }
+      Document* topDoc = doc->GetTopLevelContentDocument();
+      IgnoredErrorResult ignored;
+      if (topDoc && !topDoc->HasFocus(ignored)) {
+        doc->SetDocumentAndPageUseCounter(
+            eUseCounter_custom_GetUserMediaUnfocused);
+      }
+    }
+  }
   RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -65,26 +93,42 @@ already_AddRefed<Promise> MediaDevices::GetUserMedia(
   RefPtr<MediaDevices> self(this);
   MediaManager::Get()
       ->GetUserMedia(GetOwner(), aConstraints, aCallerType)
-      ->Then(GetCurrentThreadSerialEventTarget(), __func__,
-             [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
-               if (!GetWindowIfCurrent()) {
-                 return;  // Leave Promise pending after navigation by design.
-               }
-               p->MaybeResolve(std::move(aStream));
-             },
-             [this, self, p](const RefPtr<MediaMgrError>& error) {
-               nsPIDOMWindowInner* window = GetWindowIfCurrent();
-               if (!window) {
-                 return;  // Leave Promise pending after navigation by design.
-               }
-               p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
-             });
+      ->Then(
+          GetCurrentThreadSerialEventTarget(), __func__,
+          [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
+            if (!GetWindowIfCurrent()) {
+              return;  // Leave Promise pending after navigation by design.
+            }
+            p->MaybeResolve(std::move(aStream));
+          },
+          [this, self, p](const RefPtr<MediaMgrError>& error) {
+            nsPIDOMWindowInner* window = GetWindowIfCurrent();
+            if (!window) {
+              return;  // Leave Promise pending after navigation by design.
+            }
+            p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
+          });
   return p.forget();
 }
 
 already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
                                                          ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
+
+  if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
+    if (Document* doc = owner->GetExtantDoc()) {
+      if (!owner->IsSecureContext()) {
+        doc->SetDocumentAndPageUseCounter(
+            eUseCounter_custom_EnumerateDevicesInsec);
+      }
+      Document* topDoc = doc->GetTopLevelContentDocument();
+      IgnoredErrorResult ignored;
+      if (topDoc && !topDoc->HasFocus(ignored)) {
+        doc->SetDocumentAndPageUseCounter(
+            eUseCounter_custom_EnumerateDevicesUnfocused);
+      }
+    }
+  }
   RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -92,46 +136,55 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
   RefPtr<MediaDevices> self(this);
   MediaManager::Get()
       ->EnumerateDevices(GetOwner(), aCallerType)
-      ->Then(GetCurrentThreadSerialEventTarget(), __func__,
-             [this, self,
-              p](RefPtr<MediaManager::MediaDeviceSetRefCnt>&& aDevices) {
-               nsPIDOMWindowInner* window = GetWindowIfCurrent();
-               if (!window) {
-                 return;  // Leave Promise pending after navigation by design.
-               }
-               auto windowId = window->WindowID();
-               nsTArray<RefPtr<MediaDeviceInfo>> infos;
-               for (auto& device : *aDevices) {
-                 MOZ_ASSERT(device->mKind == dom::MediaDeviceKind::Audioinput ||
-                            device->mKind == dom::MediaDeviceKind::Videoinput ||
-                            device->mKind == dom::MediaDeviceKind::Audiooutput);
-                 // Include name only if page currently has a gUM stream active
-                 // or persistent permissions (audio or video) have been granted
-                 nsString label;
-                 if (MediaManager::Get()->IsActivelyCapturingOrHasAPermission(
-                         windowId) ||
-                     Preferences::GetBool("media.navigator.permission.disabled",
-                                          false)) {
-                   label = device->mName;
-                 }
-                 infos.AppendElement(MakeRefPtr<MediaDeviceInfo>(
-                     device->mID, device->mKind, label, device->mGroupID));
-               }
-               p->MaybeResolve(std::move(infos));
-             },
-             [this, self, p](const RefPtr<MediaMgrError>& error) {
-               nsPIDOMWindowInner* window = GetWindowIfCurrent();
-               if (!window) {
-                 return;  // Leave Promise pending after navigation by design.
-               }
-               p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
-             });
+      ->Then(
+          GetCurrentThreadSerialEventTarget(), __func__,
+          [this, self,
+           p](RefPtr<MediaManager::MediaDeviceSetRefCnt>&& aDevices) {
+            nsPIDOMWindowInner* window = GetWindowIfCurrent();
+            if (!window) {
+              return;  // Leave Promise pending after navigation by design.
+            }
+            auto windowId = window->WindowID();
+            nsTArray<RefPtr<MediaDeviceInfo>> infos;
+            for (auto& device : *aDevices) {
+              MOZ_ASSERT(device->mKind == dom::MediaDeviceKind::Audioinput ||
+                         device->mKind == dom::MediaDeviceKind::Videoinput ||
+                         device->mKind == dom::MediaDeviceKind::Audiooutput);
+              // Include name only if page currently has a gUM stream active
+              // or persistent permissions (audio or video) have been granted
+              nsString label;
+              if (MediaManager::Get()->IsActivelyCapturingOrHasAPermission(
+                      windowId) ||
+                  Preferences::GetBool("media.navigator.permission.disabled",
+                                       false)) {
+                label = device->mName;
+              }
+              infos.AppendElement(MakeRefPtr<MediaDeviceInfo>(
+                  device->mID, device->mKind, label, device->mGroupID));
+            }
+            p->MaybeResolve(std::move(infos));
+          },
+          [this, self, p](const RefPtr<MediaMgrError>& error) {
+            nsPIDOMWindowInner* window = GetWindowIfCurrent();
+            if (!window) {
+              return;  // Leave Promise pending after navigation by design.
+            }
+            p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
+          });
   return p.forget();
 }
 
 already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
     const DisplayMediaStreamConstraints& aConstraints, CallerType aCallerType,
     ErrorResult& aRv) {
+  if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
+    if (Document* doc = owner->GetExtantDoc()) {
+      if (!IsSameOriginWithAllParentDocs(doc)) {
+        doc->SetDocumentAndPageUseCounter(
+            eUseCounter_custom_GetDisplayMediaXOrigin);
+      }
+    }
+  }
   RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -139,20 +192,21 @@ already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
   RefPtr<MediaDevices> self(this);
   MediaManager::Get()
       ->GetDisplayMedia(GetOwner(), aConstraints, aCallerType)
-      ->Then(GetCurrentThreadSerialEventTarget(), __func__,
-             [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
-               if (!GetWindowIfCurrent()) {
-                 return;  // leave promise pending after navigation.
-               }
-               p->MaybeResolve(std::move(aStream));
-             },
-             [this, self, p](RefPtr<MediaMgrError>&& error) {
-               nsPIDOMWindowInner* window = GetWindowIfCurrent();
-               if (!window) {
-                 return;  // leave promise pending after navigation.
-               }
-               p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
-             });
+      ->Then(
+          GetCurrentThreadSerialEventTarget(), __func__,
+          [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
+            if (!GetWindowIfCurrent()) {
+              return;  // leave promise pending after navigation.
+            }
+            p->MaybeResolve(std::move(aStream));
+          },
+          [this, self, p](RefPtr<MediaMgrError>&& error) {
+            nsPIDOMWindowInner* window = GetWindowIfCurrent();
+            if (!window) {
+              return;  // leave promise pending after navigation.
+            }
+            p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
+          });
   return p.forget();
 }
 
@@ -164,7 +218,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 void MediaDevices::OnDeviceChange() {
   MOZ_ASSERT(NS_IsMainThread());
-  nsresult rv = CheckInnerWindowCorrectness();
+  nsresult rv = CheckCurrentGlobalCorrectness();
   if (NS_FAILED(rv)) {
     MOZ_ASSERT(false);
     return;

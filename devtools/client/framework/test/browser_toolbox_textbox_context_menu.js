@@ -33,7 +33,7 @@ add_task(async function checkMenuEntryStates() {
   synthesizeContextMenuEvent(inspector.searchBox);
   await onContextMenuPopup;
 
-  const textboxContextMenu = toolbox.doc.getElementById("toolbox-menu");
+  const textboxContextMenu = toolbox.getTextBoxContextMenu();
   ok(textboxContextMenu, "The textbox context menu is loaded in the toolbox");
 
   const cmdUndo = textboxContextMenu.querySelector("#editmenu-undo");
@@ -46,12 +46,13 @@ add_task(async function checkMenuEntryStates() {
   is(cmdUndo.getAttribute("disabled"), "true", "cmdUndo is disabled");
   is(cmdDelete.getAttribute("disabled"), "true", "cmdDelete is disabled");
   is(cmdSelectAll.getAttribute("disabled"), "true", "cmdSelectAll is disabled");
+  is(cmdCut.getAttribute("disabled"), "true", "cmdCut is disabled");
+  is(cmdCopy.getAttribute("disabled"), "true", "cmdCopy is disabled");
 
-  // Cut/Copy/Paste items are enabled in context menu even if there
-  // is no selection. See also Bug 1303033, and 1317322
-  is(cmdCut.getAttribute("disabled"), "", "cmdCut is enabled");
-  is(cmdCopy.getAttribute("disabled"), "", "cmdCopy is enabled");
-  is(cmdPaste.getAttribute("disabled"), "", "cmdPaste is enabled");
+  if (isWindows()) {
+    // emptyClipboard only works on Windows (666254), assert paste only for this OS.
+    is(cmdPaste.getAttribute("disabled"), "true", "cmdPaste is disabled");
+  }
 
   const onContextMenuHidden = toolbox.once("menu-close");
   EventUtils.sendKey("ESCAPE", toolbox.win);
@@ -59,7 +60,9 @@ add_task(async function checkMenuEntryStates() {
 });
 
 add_task(async function automaticallyBindTexbox() {
-  info("Registering a tool with an input field and making sure the context menu works");
+  info(
+    "Registering a tool with an input field and making sure the context menu works"
+  );
   gDevTools.registerTool({
     id: textboxToolId,
     isTargetSupported: () => true,
@@ -84,31 +87,37 @@ add_task(async function automaticallyBindTexbox() {
 });
 
 async function checkNonTextInput(input, toolbox) {
-  let textboxContextMenu = toolbox.doc.getElementById("toolbox-menu");
+  let textboxContextMenu = toolbox.getTextBoxContextMenu();
   ok(!textboxContextMenu, "The menu is closed");
 
-  info("Simulating context click on the non text input and expecting no menu to open");
+  info(
+    "Simulating context click on the non text input and expecting no menu to open"
+  );
   const eventBubbledUp = new Promise(resolve => {
-    input.ownerDocument.addEventListener("contextmenu", resolve, { once: true });
+    input.ownerDocument.addEventListener("contextmenu", resolve, {
+      once: true,
+    });
   });
   synthesizeContextMenuEvent(input);
   info("Waiting for event");
   await eventBubbledUp;
 
-  textboxContextMenu = toolbox.doc.getElementById("toolbox-menu");
+  textboxContextMenu = toolbox.getTextBoxContextMenu();
   ok(!textboxContextMenu, "The menu is still closed");
 }
 
 async function checkTextBox(textBox, toolbox) {
-  let textboxContextMenu = toolbox.doc.getElementById("toolbox-menu");
+  let textboxContextMenu = toolbox.getTextBoxContextMenu();
   ok(!textboxContextMenu, "The menu is closed");
 
-  info("Simulating context click on the textbox and expecting the menu to open");
+  info(
+    "Simulating context click on the textbox and expecting the menu to open"
+  );
   const onContextMenu = toolbox.once("menu-open");
   synthesizeContextMenuEvent(textBox);
   await onContextMenu;
 
-  textboxContextMenu = toolbox.doc.getElementById("toolbox-menu");
+  textboxContextMenu = toolbox.getTextBoxContextMenu();
   ok(textboxContextMenu, "The menu is now visible");
 
   info("Closing the menu");
@@ -116,6 +125,6 @@ async function checkTextBox(textBox, toolbox) {
   EventUtils.sendKey("ESCAPE", toolbox.win);
   await onContextMenuHidden;
 
-  textboxContextMenu = toolbox.doc.getElementById("toolbox-menu");
+  textboxContextMenu = toolbox.getTextBoxContextMenu();
   ok(!textboxContextMenu, "The menu is closed again");
 }

@@ -6,10 +6,13 @@
 #ifndef nsHttpHandler_h__
 #define nsHttpHandler_h__
 
+#include <functional>
+
 #include "nsHttp.h"
 #include "nsHttpAuthCache.h"
 #include "nsHttpConnectionMgr.h"
 #include "ASpdySession.h"
+#include "HttpTrafficAnalyzer.h"
 
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
@@ -44,7 +47,40 @@ class nsHttpConnectionInfo;
 class nsHttpTransaction;
 class AltSvcMapping;
 
-enum FrameCheckLevel { FRAMECHECK_LAX, FRAMECHECK_BARELY, FRAMECHECK_STRICT };
+/*
+ * FRAMECHECK_LAX - no check
+ * FRAMECHECK_BARELY - allows:
+ *                     1) that chunk-encoding does not have the last 0-size
+ *                     chunk. So, if a chunked-encoded transfer ends on exactly
+ *                     a chunk boundary we consider that fine. This will allows
+ *                     us to accept buggy servers that do not send the last
+ *                     chunk. It will make us not detect a certain amount of
+ *                     cut-offs.
+ *                     2) When receiving a gzipped response, we consider a
+ *                     gzip stream that doesn't end fine according to the gzip
+ *                     decompressing state machine to be a partial transfer.
+ *                     If a gzipped transfer ends fine according to the
+ *                     decompressor, we do not check for size unalignments.
+ *                     This allows to allow HTTP gzipped responses where the
+ *                     Content-Length is not the same as the actual contents.
+ *                     3) When receiving HTTP that isn't
+ *                     content-encoded/compressed (like in case 2) and not
+ *                     chunked (like in case 1), perform the size comparison
+ *                     between Content-Length: and the actual size received
+ *                     and consider a mismatch to mean a
+ *                     NS_ERROR_NET_PARTIAL_TRANSFER error.
+ * FRAMECHECK_STRICT_CHUNKED - This is the same as FRAMECHECK_BARELY only we
+ *                             enforce that the last 0-size chunk is received
+ *                             in case 1).
+ * FRAMECHECK_STRICT - we also do not allow case 2) and 3) from
+ *                     FRAMECHECK_BARELY.
+ */
+enum FrameCheckLevel {
+  FRAMECHECK_LAX,
+  FRAMECHECK_BARELY,
+  FRAMECHECK_STRICT_CHUNKED,
+  FRAMECHECK_STRICT
+};
 
 //-----------------------------------------------------------------------------
 // nsHttpHandler - protocol handler for HTTP and HTTPS
@@ -65,24 +101,16 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   static already_AddRefed<nsHttpHandler> GetInstance();
 
   MOZ_MUST_USE nsresult
-  AddStandardRequestHeaders(nsHttpRequestHead *, bool isSecure,
+  AddStandardRequestHeaders(nsHttpRequestHead*, bool isSecure,
                             nsContentPolicyType aContentPolicyType);
-  MOZ_MUST_USE nsresult AddConnectionHeader(nsHttpRequestHead *,
+  MOZ_MUST_USE nsresult AddConnectionHeader(nsHttpRequestHead*,
                                             uint32_t capabilities);
-  bool IsAcceptableEncoding(const char *encoding, bool isSecure);
+  bool IsAcceptableEncoding(const char* encoding, bool isSecure);
 
-  const nsCString &UserAgent();
+  const nsCString& UserAgent();
 
   enum HttpVersion HttpVersion() { return mHttpVersion; }
   enum HttpVersion ProxyHttpVersion() { return mProxyHttpVersion; }
-  uint8_t ReferrerLevel() { return mReferrerLevel; }
-  bool SpoofReferrerSource() { return mSpoofReferrerSource; }
-  bool HideOnionReferrerSource() { return mHideOnionReferrerSource; }
-  uint8_t ReferrerTrimmingPolicy() { return mReferrerTrimmingPolicy; }
-  uint8_t ReferrerXOriginTrimmingPolicy() {
-    return mReferrerXOriginTrimmingPolicy;
-  }
-  uint8_t ReferrerXOriginPolicy() { return mReferrerXOriginPolicy; }
   uint8_t RedirectionLimit() { return mRedirectionLimit; }
   PRIntervalTime IdleTimeout() { return mIdleTimeout; }
   PRIntervalTime SpdyTimeout() { return mSpdyTimeout; }
@@ -92,9 +120,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   PRIntervalTime ResponseTimeoutEnabled() { return mResponseTimeoutEnabled; }
   uint32_t NetworkChangedTimeout() { return mNetworkChangedTimeout; }
   uint16_t MaxRequestAttempts() { return mMaxRequestAttempts; }
-  const char *DefaultSocketType() {
-    return mDefaultSocketType.IsVoid() ? nullptr : mDefaultSocketType.get();
-  }
+  const nsCString& DefaultSocketType() { return mDefaultSocketType; }
   uint32_t PhishyUserPassLength() { return mPhishyUserPassLength; }
   uint8_t GetQoSBits() { return mQoSBits; }
   uint16_t GetIdleSynTimeout() { return mIdleSynTimeout; }
@@ -213,10 +239,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // network.http.enforce-framing.http1 and network.http.enforce-framing.soft
   FrameCheckLevel GetEnforceH1Framing() { return mEnforceH1Framing; }
 
-  nsHttpAuthCache *AuthCache(bool aPrivate) {
+  nsHttpAuthCache* AuthCache(bool aPrivate) {
     return aPrivate ? &mPrivateAuthCache : &mAuthCache;
   }
-  nsHttpConnectionMgr *ConnMgr() { return mConnMgr; }
+  nsHttpConnectionMgr* ConnMgr() { return mConnMgr; }
 
   // cache support
   uint32_t GenerateUniqueID() { return ++mLastUniqueID; }
@@ -235,7 +261,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // Called to kick-off a new transaction, by default the transaction
   // will be put on the pending transaction queue if it cannot be
   // initiated at this time.  Callable from any thread.
-  MOZ_MUST_USE nsresult InitiateTransaction(nsHttpTransaction *trans,
+  MOZ_MUST_USE nsresult InitiateTransaction(nsHttpTransaction* trans,
                                             int32_t priority) {
     return mConnMgr->AddTransaction(trans, priority);
   }
@@ -244,38 +270,38 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // transaction will take a sticky connection from |transWithStickyConn|
   // and reuse it.
   MOZ_MUST_USE nsresult
-  InitiateTransactionWithStickyConn(nsHttpTransaction *trans, int32_t priority,
-                                    nsHttpTransaction *transWithStickyConn) {
+  InitiateTransactionWithStickyConn(nsHttpTransaction* trans, int32_t priority,
+                                    nsHttpTransaction* transWithStickyConn) {
     return mConnMgr->AddTransactionWithStickyConn(trans, priority,
                                                   transWithStickyConn);
   }
 
   // Called to change the priority of an existing transaction that has
   // already been initiated.
-  MOZ_MUST_USE nsresult RescheduleTransaction(nsHttpTransaction *trans,
+  MOZ_MUST_USE nsresult RescheduleTransaction(nsHttpTransaction* trans,
                                               int32_t priority) {
     return mConnMgr->RescheduleTransaction(trans, priority);
   }
 
-  void UpdateClassOfServiceOnTransaction(nsHttpTransaction *trans,
+  void UpdateClassOfServiceOnTransaction(nsHttpTransaction* trans,
                                          uint32_t classOfService) {
     mConnMgr->UpdateClassOfServiceOnTransaction(trans, classOfService);
   }
 
   // Called to cancel a transaction, which may or may not be assigned to
   // a connection.  Callable from any thread.
-  MOZ_MUST_USE nsresult CancelTransaction(nsHttpTransaction *trans,
+  MOZ_MUST_USE nsresult CancelTransaction(nsHttpTransaction* trans,
                                           nsresult reason) {
     return mConnMgr->CancelTransaction(trans, reason);
   }
 
   // Called when a connection is done processing a transaction.  Callable
   // from any thread.
-  MOZ_MUST_USE nsresult ReclaimConnection(nsHttpConnection *conn) {
+  MOZ_MUST_USE nsresult ReclaimConnection(nsHttpConnection* conn) {
     return mConnMgr->ReclaimConnection(conn);
   }
 
-  MOZ_MUST_USE nsresult ProcessPendingQ(nsHttpConnectionInfo *cinfo) {
+  MOZ_MUST_USE nsresult ProcessPendingQ(nsHttpConnectionInfo* cinfo) {
     return mConnMgr->ProcessPendingQ(cinfo);
   }
 
@@ -283,28 +309,29 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     return mConnMgr->ProcessPendingQ();
   }
 
-  MOZ_MUST_USE nsresult GetSocketThreadTarget(nsIEventTarget **target) {
+  MOZ_MUST_USE nsresult GetSocketThreadTarget(nsIEventTarget** target) {
     return mConnMgr->GetSocketThreadTarget(target);
   }
 
-  MOZ_MUST_USE nsresult SpeculativeConnect(nsHttpConnectionInfo *ci,
-                                           nsIInterfaceRequestor *callbacks,
+  MOZ_MUST_USE nsresult SpeculativeConnect(nsHttpConnectionInfo* ci,
+                                           nsIInterfaceRequestor* callbacks,
                                            uint32_t caps = 0) {
     TickleWifi(callbacks);
-    return mConnMgr->SpeculativeConnect(ci, callbacks, caps);
+    RefPtr<nsHttpConnectionInfo> clone = ci->Clone();
+    return mConnMgr->SpeculativeConnect(clone, callbacks, caps);
   }
 
   // Alternate Services Maps are main thread only
-  void UpdateAltServiceMapping(AltSvcMapping *map, nsProxyInfo *proxyInfo,
-                               nsIInterfaceRequestor *callbacks, uint32_t caps,
-                               const OriginAttributes &originAttributes) {
+  void UpdateAltServiceMapping(AltSvcMapping* map, nsProxyInfo* proxyInfo,
+                               nsIInterfaceRequestor* callbacks, uint32_t caps,
+                               const OriginAttributes& originAttributes) {
     mConnMgr->UpdateAltServiceMapping(map, proxyInfo, callbacks, caps,
                                       originAttributes);
   }
 
   already_AddRefed<AltSvcMapping> GetAltServiceMapping(
-      const nsACString &scheme, const nsACString &host, int32_t port, bool pb,
-      const OriginAttributes &originAttributes) {
+      const nsACString& scheme, const nsACString& host, int32_t port, bool pb,
+      const OriginAttributes& originAttributes) {
     return mConnMgr->GetAltServiceMapping(scheme, host, port, pb,
                                           originAttributes);
   }
@@ -313,84 +340,96 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // The HTTP handler caches pointers to specific XPCOM services, and
   // provides the following helper routines for accessing those services:
   //
-  MOZ_MUST_USE nsresult GetStreamConverterService(nsIStreamConverterService **);
-  MOZ_MUST_USE nsresult GetIOService(nsIIOService **service);
-  nsICookieService *GetCookieService();  // not addrefed
-  nsISiteSecurityService *GetSSService();
+  MOZ_MUST_USE nsresult GetStreamConverterService(nsIStreamConverterService**);
+  MOZ_MUST_USE nsresult GetIOService(nsIIOService** service);
+  nsICookieService* GetCookieService();  // not addrefed
+  nsISiteSecurityService* GetSSService();
 
   // callable from socket thread only
   uint32_t Get32BitsOfPseudoRandom();
 
   // Called by the channel synchronously during asyncOpen
-  void OnOpeningRequest(nsIHttpChannel *chan) {
+  void OnFailedOpeningRequest(nsIHttpChannel* chan) {
+    NotifyObservers(chan, NS_HTTP_ON_FAILED_OPENING_REQUEST_TOPIC);
+  }
+
+  // Called by the channel synchronously during asyncOpen
+  void OnOpeningRequest(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_OPENING_REQUEST_TOPIC);
   }
 
   // Called by the channel before writing a request
-  void OnModifyRequest(nsIHttpChannel *chan) {
+  void OnModifyRequest(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_MODIFY_REQUEST_TOPIC);
   }
 
   // Called by the channel before writing a request
-  void OnStopRequest(nsIHttpChannel *chan) {
+  void OnStopRequest(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_STOP_REQUEST_TOPIC);
   }
 
   // Called by the channel and cached in the loadGroup
-  void OnUserAgentRequest(nsIHttpChannel *chan) {
+  void OnUserAgentRequest(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_USERAGENT_REQUEST_TOPIC);
   }
 
   // Called by the channel before setting up the transaction
-  void OnBeforeConnect(nsIHttpChannel *chan) {
+  void OnBeforeConnect(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_BEFORE_CONNECT_TOPIC);
   }
 
   // Called by the channel once headers are available
-  void OnExamineResponse(nsIHttpChannel *chan) {
+  void OnExamineResponse(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_RESPONSE_TOPIC);
   }
 
   // Called by the channel once headers have been merged with cached headers
-  void OnExamineMergedResponse(nsIHttpChannel *chan) {
+  void OnExamineMergedResponse(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_MERGED_RESPONSE_TOPIC);
+  }
+
+  // Called by the channel once it made background cache revalidation
+  void OnBackgroundRevalidation(nsIHttpChannel* chan) {
+    NotifyObservers(chan, NS_HTTP_ON_BACKGROUND_REVALIDATION);
   }
 
   // Called by channels before a redirect happens. This notifies both the
   // channel's and the global redirect observers.
   MOZ_MUST_USE nsresult AsyncOnChannelRedirect(
-      nsIChannel *oldChan, nsIChannel *newChan, uint32_t flags,
-      nsIEventTarget *mainThreadEventTarget = nullptr);
+      nsIChannel* oldChan, nsIChannel* newChan, uint32_t flags,
+      nsIEventTarget* mainThreadEventTarget = nullptr);
 
   // Called by the channel when the response is read from the cache without
   // communicating with the server.
-  void OnExamineCachedResponse(nsIHttpChannel *chan) {
+  void OnExamineCachedResponse(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_CACHED_RESPONSE_TOPIC);
   }
 
-  void OnMayChangeProcess(nsIHttpChannel *chan) {
+  void OnMayChangeProcess(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_MAY_CHANGE_PROCESS_TOPIC);
   }
 
   // Generates the host:port string for use in the Host: header as well as the
   // CONNECT line for proxies. This handles IPv6 literals correctly.
-  static MOZ_MUST_USE nsresult GenerateHostPort(const nsCString &host,
+  static MOZ_MUST_USE nsresult GenerateHostPort(const nsCString& host,
                                                 int32_t port,
-                                                nsACString &hostLine);
+                                                nsACString& hostLine);
 
-  SpdyInformation *SpdyInfo() { return &mSpdyInfo; }
+  SpdyInformation* SpdyInfo() { return &mSpdyInfo; }
   bool IsH2MandatorySuiteEnabled() { return mH2MandatorySuiteEnabled; }
 
   // returns true in between Init and Shutdown states
   bool Active() { return mHandlerActive; }
 
-  nsIRequestContextService *GetRequestContextService() {
+  nsIRequestContextService* GetRequestContextService() {
     return mRequestContextService.get();
   }
 
   void ShutdownConnectionManager();
 
   uint32_t DefaultHpackBuffer() const { return mDefaultHpackBuffer; }
+
+  bool Bug1563538() const { return mBug1563538; }
 
   uint32_t MaxHttpResponseHeaderSize() const {
     return mMaxHttpResponseHeaderSize;
@@ -407,10 +446,14 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // mLastActiveTabLoadOptimizationHit timestamp to now.
   void NotifyActiveTabLoadOptimization();
   TimeStamp const GetLastActiveTabLoadOptimizationHit();
-  void SetLastActiveTabLoadOptimizationHit(TimeStamp const &when);
-  bool IsBeforeLastActiveTabLoadOptimization(TimeStamp const &when);
+  void SetLastActiveTabLoadOptimizationHit(TimeStamp const& when);
+  bool IsBeforeLastActiveTabLoadOptimization(TimeStamp const& when);
 
   bool DumpHpackTables() { return mDumpHpackTables; }
+
+  HttpTrafficAnalyzer* GetHttpTrafficAnalyzer();
+
+  bool GetThroughCaptivePortal() { return mThroughCaptivePortal; }
 
  private:
   nsHttpHandler();
@@ -424,14 +467,14 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   //
   void BuildUserAgent();
   void InitUserAgentComponents();
-  void PrefsChanged(const char *pref);
+  void PrefsChanged(const char* pref);
 
   MOZ_MUST_USE nsresult SetAcceptLanguages();
-  MOZ_MUST_USE nsresult SetAcceptEncodings(const char *, bool mIsSecure);
+  MOZ_MUST_USE nsresult SetAcceptEncodings(const char*, bool mIsSecure);
 
   MOZ_MUST_USE nsresult InitConnectionMgr();
 
-  void NotifyObservers(nsIHttpChannel *chan, const char *event);
+  void NotifyObservers(nsIHttpChannel* chan, const char* event);
 
   void SetFastOpenOSSupport();
 
@@ -466,12 +509,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   enum HttpVersion mHttpVersion;
   enum HttpVersion mProxyHttpVersion;
   uint32_t mCapabilities;
-  uint8_t mReferrerLevel;
-  uint8_t mSpoofReferrerSource;
-  uint8_t mHideOnionReferrerSource;
-  uint8_t mReferrerTrimmingPolicy;
-  uint8_t mReferrerXOriginTrimmingPolicy;
-  uint8_t mReferrerXOriginPolicy;
 
   bool mFastFallbackToIPv4;
   PRIntervalTime mIdleTimeout;
@@ -556,9 +593,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // Persistent HTTPS caching flag
   bool mEnablePersistentHttpsCaching;
 
-  // For broadcasting tracking preference
-  bool mDoNotTrackEnabled;
-
   // for broadcasting safe hint;
   bool mSafeHintEnabled;
   bool mParentalControlEnabled;
@@ -639,6 +673,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // The default size (in bytes) of the HPACK decompressor table.
   uint32_t mDefaultHpackBuffer;
 
+  // Pref for the whole fix that bug provides
+  Atomic<bool, Relaxed> mBug1563538;
+
   // The max size (in bytes) for received Http response header.
   uint32_t mMaxHttpResponseHeaderSize;
 
@@ -661,6 +698,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // If true, the transactions from active tab will be dispatched first.
   bool mActiveTabPriority;
 
+  HttpTrafficAnalyzer mHttpTrafficAnalyzer;
+
  private:
   // For Rate Pacing Certain Network Events. Only assign this pointer on
   // socket thread.
@@ -669,8 +708,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
  public:
   // Socket thread only
-  MOZ_MUST_USE nsresult SubmitPacedRequest(ATokenBucketEvent *event,
-                                           nsICancelable **cancel) {
+  MOZ_MUST_USE nsresult SubmitPacedRequest(ATokenBucketEvent* event,
+                                           nsICancelable** cancel) {
     MOZ_ASSERT(OnSocketThread(), "not on socket thread");
     if (!mRequestTokenBucket) {
       return NS_ERROR_NOT_AVAILABLE;
@@ -679,7 +718,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   }
 
   // Socket thread only
-  void SetRequestTokenBucket(EventTokenBucket *aTokenBucket) {
+  void SetRequestTokenBucket(EventTokenBucket* aTokenBucket) {
     MOZ_ASSERT(OnSocketThread(), "not on socket thread");
     mRequestTokenBucket = aTokenBucket;
   }
@@ -694,12 +733,12 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
  private:
   RefPtr<Tickler> mWifiTickler;
-  void TickleWifi(nsIInterfaceRequestor *cb);
+  void TickleWifi(nsIInterfaceRequestor* cb);
 
  private:
   MOZ_MUST_USE nsresult
-  SpeculativeConnectInternal(nsIURI *aURI, nsIPrincipal *aPrincipal,
-                             nsIInterfaceRequestor *aCallbacks, bool anonymous);
+  SpeculativeConnectInternal(nsIURI* aURI, nsIPrincipal* aPrincipal,
+                             nsIInterfaceRequestor* aCallbacks, bool anonymous);
 
   // State for generating channelIds
   uint32_t mProcessId;
@@ -718,13 +757,19 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   TimeStamp mLastActiveTabLoadOptimizationHit;
 
  public:
-  MOZ_MUST_USE nsresult NewChannelId(uint64_t &channelId);
+  MOZ_MUST_USE nsresult NewChannelId(uint64_t& channelId);
 
-  void BlacklistSpdy(const nsHttpConnectionInfo *ci);
-  MOZ_MUST_USE bool IsSpdyBlacklisted(const nsHttpConnectionInfo *ci);
+  void BlacklistSpdy(const nsHttpConnectionInfo* ci);
+  MOZ_MUST_USE bool IsSpdyBlacklisted(const nsHttpConnectionInfo* ci);
+
+  virtual nsresult EnsureHSTSDataReadyNative(
+      already_AddRefed<mozilla::net::HSTSDataCallbackWrapper> aCallback)
+      override;
 
  private:
   nsTHashtable<nsCStringHashKey> mBlacklistedSpdyOrigins;
+
+  bool mThroughCaptivePortal;
 };
 
 extern StaticRefPtr<nsHttpHandler> gHttpHandler;
@@ -752,6 +797,37 @@ class nsHttpsHandler : public nsIHttpProtocolHandler,
   nsHttpsHandler() = default;
 
   MOZ_MUST_USE nsresult Init();
+  virtual nsresult EnsureHSTSDataReadyNative(
+      already_AddRefed<mozilla::net::HSTSDataCallbackWrapper> aCallback)
+      override {
+    return gHttpHandler->EnsureHSTSDataReadyNative(std::move(aCallback));
+  }
+};
+
+//-----------------------------------------------------------------------------
+// HSTSDataCallbackWrapper - A threadsafe helper class to wrap the callback.
+//
+// We need this because dom::promise and EnsureHSTSDataResolver are not
+// threadsafe.
+//-----------------------------------------------------------------------------
+class HSTSDataCallbackWrapper final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(HSTSDataCallbackWrapper)
+
+  explicit HSTSDataCallbackWrapper(std::function<void(bool)>&& aCallback)
+      : mCallback(std::move(aCallback)) {
+    MOZ_ASSERT(NS_IsMainThread());
+  }
+
+  void DoCallback(bool aResult) {
+    MOZ_ASSERT(NS_IsMainThread());
+    mCallback(aResult);
+  }
+
+ private:
+  ~HSTSDataCallbackWrapper() = default;
+
+  std::function<void(bool)> mCallback;
 };
 
 }  // namespace net

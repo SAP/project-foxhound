@@ -150,7 +150,7 @@ class IonIC;
 struct IonScript {
  private:
   // Code pointer containing the actual method.
-  PreBarrieredJitCode method_;
+  HeapPtrJitCode method_;
 
   // Entrypoint for OSR, or nullptr.
   jsbytecode* osrPc_;
@@ -230,6 +230,9 @@ struct IonScript {
   uint32_t constantTable_;
   uint32_t constantEntries_;
 
+  // The size of this allocation.
+  uint32_t allocBytes_ = 0;
+
   // Number of references from invalidation records.
   uint32_t invalidationCount_;
 
@@ -257,6 +260,8 @@ struct IonScript {
     return (SnapshotOffset*)&bottomBuffer()[bailoutTable_];
   }
   PreBarrieredValue* constants() {
+    // Nursery constants are manually barriered in CodeGenerator::link() so a
+    // post barrier is not required..
     return (PreBarrieredValue*)&bottomBuffer()[constantTable_];
   }
   const SafepointIndex* safepointIndices() const {
@@ -449,6 +454,8 @@ struct IonScript {
   bool isRecompiling() const { return recompiling_; }
 
   void clearRecompiling() { recompiling_ = false; }
+
+  size_t allocBytes() const { return allocBytes_; }
 
   enum ShouldIncreaseAge { IncreaseAge = true, KeepAge = false };
 

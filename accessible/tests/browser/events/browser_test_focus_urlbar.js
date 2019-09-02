@@ -5,12 +5,20 @@
 
 /* import-globals-from ../../mochitest/states.js */
 /* import-globals-from ../../mochitest/role.js */
-loadScripts({ name: "states.js", dir: MOCHITESTS_DIR },
-            { name: "role.js", dir: MOCHITESTS_DIR });
-ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm");
+loadScripts(
+  { name: "states.js", dir: MOCHITESTS_DIR },
+  { name: "role.js", dir: MOCHITESTS_DIR }
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesTestUtils",
+  "resource://testing-common/PlacesTestUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm"
+);
 
 function isEventForAutocompleteItem(event) {
   return event.accessible.role == ROLE_COMBOBOX_OPTION;
@@ -23,10 +31,19 @@ function isEventForAutocompleteItem(event) {
  * search isn't finished yet.
  */
 function waitForSearchFinish() {
-  return BrowserTestUtils.waitForCondition(() =>
-    (gURLBar.popupOpen && gURLBar.controller.searchStatus >=
-      Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH),
-    "Waiting for search to complete");
+  if (UrlbarPrefs.get("quantumbar")) {
+    return Promise.all([
+      gURLBar.lastQueryContextPromise,
+      BrowserTestUtils.waitForCondition(() => gURLBar.view.isOpen),
+    ]);
+  }
+  return BrowserTestUtils.waitForCondition(
+    () =>
+      gURLBar.popupOpen &&
+      gURLBar.controller.searchStatus >=
+        Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH,
+    "Waiting for search to complete"
+  );
 }
 
 // Check that the URL bar manages accessibility focus appropriately.
@@ -36,14 +53,16 @@ async function runTests() {
   });
 
   await PlacesTestUtils.addVisits([
-    {uri: makeURI("http://example1.com/blah")},
-    {uri: makeURI("http://example2.com/blah")},
-    {uri: makeURI("http://example1.com/")},
-    {uri: makeURI("http://example2.com/")}
+    { uri: makeURI("http://example1.com/blah") },
+    { uri: makeURI("http://example2.com/blah") },
+    { uri: makeURI("http://example1.com/") },
+    { uri: makeURI("http://example2.com/") },
   ]);
 
-  let focused = waitForEvent(EVENT_FOCUS,
-                             event => event.accessible.role == ROLE_ENTRY);
+  let focused = waitForEvent(
+    EVENT_FOCUS,
+    event => event.accessible.role == ROLE_ENTRY
+  );
   gURLBar.focus();
   let event = await focused;
   let textBox = event.accessible;
@@ -69,14 +88,14 @@ async function runTests() {
   testStates(textBox, STATE_FOCUSED);
 
   info("Ensuring no focus change on text selection and delete");
-  EventUtils.synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
+  EventUtils.synthesizeKey("KEY_ArrowLeft", { shiftKey: true });
   EventUtils.synthesizeKey("KEY_Delete");
   await waitForSearchFinish();
   // Wait a tick for a11y events to fire.
   await TestUtils.waitForTick();
   testStates(textBox, STATE_FOCUSED);
 
-  info("Ensuring autocomplete focus on down arrow");
+  info("Ensuring autocomplete focus on down arrow (1)");
   focused = waitForEvent(EVENT_FOCUS, isEventForAutocompleteItem);
   EventUtils.synthesizeKey("KEY_ArrowDown");
   event = await focused;
@@ -91,13 +110,13 @@ async function runTests() {
   if (AppConstants.platform == "macosx") {
     info("Ensuring focus of another autocomplete item on ctrl-n");
     focused = waitForEvent(EVENT_FOCUS, isEventForAutocompleteItem);
-    EventUtils.synthesizeKey("n", {ctrlKey: true});
+    EventUtils.synthesizeKey("n", { ctrlKey: true });
     event = await focused;
     testStates(event.accessible, STATE_FOCUSED);
 
     info("Ensuring focus of another autocomplete item on ctrl-p");
     focused = waitForEvent(EVENT_FOCUS, isEventForAutocompleteItem);
-    EventUtils.synthesizeKey("p", {ctrlKey: true});
+    EventUtils.synthesizeKey("p", { ctrlKey: true });
     event = await focused;
     testStates(event.accessible, STATE_FOCUSED);
   }
@@ -113,11 +132,14 @@ async function runTests() {
   EventUtils.synthesizeKey("KEY_ArrowLeft");
   await focused;
   testStates(textBox, STATE_FOCUSED);
+  if (UrlbarPrefs.get("quantumbar")) {
+    gURLBar.view.close();
+  }
   // On Mac, down arrow when not at the end of the field moves to the end.
   // Move back to the end so the next press of down arrow opens the popup.
   EventUtils.synthesizeKey("KEY_ArrowRight");
 
-  info("Ensuring autocomplete focus on down arrow");
+  info("Ensuring autocomplete focus on down arrow (2)");
   focused = waitForEvent(EVENT_FOCUS, isEventForAutocompleteItem);
   EventUtils.synthesizeKey("KEY_ArrowDown");
   event = await focused;
@@ -131,7 +153,7 @@ async function runTests() {
   EventUtils.synthesizeKey("KEY_Backspace");
   await waitForSearchFinish();
 
-  info("Ensuring autocomplete focus on down arrow");
+  info("Ensuring autocomplete focus on down arrow (3)");
   focused = waitForEvent(EVENT_FOCUS, isEventForAutocompleteItem);
   EventUtils.synthesizeKey("KEY_ArrowDown");
   event = await focused;
@@ -143,15 +165,19 @@ async function runTests() {
   await focused;
   testStates(textBox, STATE_FOCUSED);
 
-  info("Ensuring autocomplete focus on down arrow");
+  info("Ensuring autocomplete focus on arrow down & up");
   focused = waitForEvent(EVENT_FOCUS, isEventForAutocompleteItem);
   EventUtils.synthesizeKey("KEY_ArrowDown");
+  // With the quantumbar enabled, we only get one result here, and arrow down
+  // selects a one-off search button. We arrow back up to re-select the
+  // autocomplete result.
+  EventUtils.synthesizeKey("KEY_ArrowUp");
   event = await focused;
   testStates(event.accessible, STATE_FOCUSED);
 
   info("Ensuring text box focus on text selection");
   focused = waitForEvent(EVENT_FOCUS, textBox);
-  EventUtils.synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
+  EventUtils.synthesizeKey("KEY_ArrowLeft", { shiftKey: true });
   await focused;
   testStates(textBox, STATE_FOCUSED);
 
@@ -162,7 +188,7 @@ async function runTests() {
 
     info("Ensuring autocomplete focus on ctrl-n");
     focused = waitForEvent(EVENT_FOCUS, isEventForAutocompleteItem);
-    EventUtils.synthesizeKey("n", {ctrlKey: true});
+    EventUtils.synthesizeKey("n", { ctrlKey: true });
     event = await focused;
     testStates(event.accessible, STATE_FOCUSED);
   }

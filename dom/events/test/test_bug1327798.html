@@ -2,8 +2,8 @@
 <html>
 <head>
 <title>Test for bug 1327798</title>
-<script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-<script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
 <link rel="stylesheet" href="/tests/SimpleTest/test.css">
 </head>
 <body>
@@ -27,10 +27,10 @@ SimpleTest.waitForFocus(() => {
   var clipboard = SpecialPowers.Cc["@mozilla.org/widget/clipboard;1"]
                                .getService(SpecialPowers.Ci.nsIClipboard);
   // does the clipboard contain text/unicode data ?
-  ok(clipboard.hasDataMatchingFlavors(["text/unicode"], 1, clipboard.kGlobalClipboard),
+  ok(clipboard.hasDataMatchingFlavors(["text/unicode"], clipboard.kGlobalClipboard),
      "clipboard contains unicode text");
   // does the clipboard contain text/html data ?
-  ok(clipboard.hasDataMatchingFlavors(["text/html"], 1, clipboard.kGlobalClipboard),
+  ok(clipboard.hasDataMatchingFlavors(["text/html"], clipboard.kGlobalClipboard),
      "clipboard contains html text");
 
   window.addEventListener("paste", (e) => {

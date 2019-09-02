@@ -12,10 +12,10 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/Range.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/Unused.h"
 
-#include <ctype.h>
 #include <limits>
 #include <string.h>
 
@@ -66,7 +66,9 @@ using namespace js;
 using JS::Symbol;
 using JS::SymbolCode;
 
+using mozilla::AsciiAlphanumericToNumber;
 using mozilla::CheckedInt;
+using mozilla::IsAsciiHexDigit;
 using mozilla::IsNaN;
 using mozilla::IsSame;
 using mozilla::PodCopy;
@@ -161,7 +163,7 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
     // Wrap all taint ranges of the string.
-    AutoValueVector ranges(cx);
+    RootedValueVector ranges(cx);
     for (const TaintRange& taint_range : str->taint()) {
         RootedObject range(cx, JS_NewObject(cx, nullptr));
         if(!range)
@@ -172,7 +174,7 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
             return false;
 
         // Wrap the taint flow for the current range.
-        AutoValueVector taint_flow(cx);
+        RootedValueVector taint_flow(cx);
         for (TaintNode& taint_node : taint_range.flow()) {
             RootedObject node(cx, JS_NewObject(cx, nullptr));
             if (!node)
@@ -186,7 +188,7 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
                 return false;
 
             // Wrap the arguments.
-            AutoValueVector taint_arguments(cx);
+            RootedValueVector taint_arguments(cx);
             for (auto& taint_argument : taint_node.operation().arguments()) {
                 RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
                 if (!argument)
@@ -482,28 +484,31 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
 template <typename CharT>
 static inline bool Unhex4(const RangedPtr<const CharT> chars,
                           char16_t* result) {
-  char16_t a = chars[0], b = chars[1], c = chars[2], d = chars[3];
+  CharT a = chars[0], b = chars[1], c = chars[2], d = chars[3];
 
-  if (!(JS7_ISHEX(a) && JS7_ISHEX(b) && JS7_ISHEX(c) && JS7_ISHEX(d))) {
+  if (!(IsAsciiHexDigit(a) && IsAsciiHexDigit(b) && IsAsciiHexDigit(c) &&
+        IsAsciiHexDigit(d))) {
     return false;
   }
 
-  *result =
-      (((((JS7_UNHEX(a) << 4) + JS7_UNHEX(b)) << 4) + JS7_UNHEX(c)) << 4) +
-      JS7_UNHEX(d);
+  char16_t unhex = AsciiAlphanumericToNumber(a);
+  unhex = (unhex << 4) + AsciiAlphanumericToNumber(b);
+  unhex = (unhex << 4) + AsciiAlphanumericToNumber(c);
+  unhex = (unhex << 4) + AsciiAlphanumericToNumber(d);
+  *result = unhex;
   return true;
 }
 
 template <typename CharT>
 static inline bool Unhex2(const RangedPtr<const CharT> chars,
                           char16_t* result) {
-  char16_t a = chars[0], b = chars[1];
+  CharT a = chars[0], b = chars[1];
 
-  if (!(JS7_ISHEX(a) && JS7_ISHEX(b))) {
+  if (!(IsAsciiHexDigit(a) && IsAsciiHexDigit(b))) {
     return false;
   }
 
-  *result = (JS7_UNHEX(a) << 4) + JS7_UNHEX(b);
+  *result = (AsciiAlphanumericToNumber(a) << 4) + AsciiAlphanumericToNumber(b);
   return true;
 }
 
@@ -602,7 +607,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 3.
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (str->hasTwoByteChars() && !sb.ensureTwoByteChars()) {
     return false;
   }
@@ -783,7 +788,7 @@ MOZ_ALWAYS_INLINE bool str_toSource_impl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (!sb.append("(new String(") ||
       !sb.append(quoted.get(), strlen(quoted.get())) || !sb.append("))")) {
     return false;
@@ -1894,19 +1899,19 @@ bool js::str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     PodCopy(chars.begin(), srcChars.begin().get(), spanLength);
   }
 
-  int32_t size =
-      intl::CallICU(cx,
-                    [normalizer, &srcChars, spanLength](
-                        UChar* chars, uint32_t size, UErrorCode* status) {
-                      mozilla::RangedPtr<const char16_t> remainingStart =
-                          srcChars.begin() + spanLength;
-                      size_t remainingLength = srcChars.length() - spanLength;
+  int32_t size = intl::CallICU(
+      cx,
+      [normalizer, &srcChars, spanLength](UChar* chars, uint32_t size,
+                                          UErrorCode* status) {
+        mozilla::RangedPtr<const char16_t> remainingStart =
+            srcChars.begin() + spanLength;
+        size_t remainingLength = srcChars.length() - spanLength;
 
-                      return unorm2_normalizeSecondAndAppend(
-                          normalizer, chars, spanLength, size,
-                          remainingStart.get(), remainingLength, status);
-                    },
-                    chars);
+        return unorm2_normalizeSecondAndAppend(normalizer, chars, spanLength,
+                                               size, remainingStart.get(),
+                                               remainingLength, status);
+      },
+      chars);
   if (size < 0) {
     return false;
   }
@@ -3156,7 +3161,7 @@ static JSLinearString* InterpretDollarReplacement(
    *
    * Note that dollar vars _could_ make the resulting text smaller than this.
    */
-  StringBuffer newReplaceChars(cx);
+  JSStringBuilder newReplaceChars(cx);
   if (repstr->hasTwoByteChars() && !newReplaceChars.ensureTwoByteChars()) {
     return nullptr;
   }
@@ -3276,7 +3281,7 @@ JSString* js::StringFlatReplaceString(JSContext* cx, HandleString string,
     return nullptr;
   }
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (linearStr->hasTwoByteChars()) {
     if (!sb.ensureTwoByteChars()) {
       return nullptr;
@@ -3421,7 +3426,7 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
   }
 
   // Step 3 (reordered).
-  AutoValueVector splits(cx);
+  RootedValueVector splits(cx);
 
   // Step 8 (reordered).
   size_t lastEndIndex = 0;
@@ -3516,6 +3521,7 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
     return NewFullyAllocatedArrayTryUseGroup(cx, group, 0);
   }
 
+  js::StaticStrings& staticStrings = cx->staticStrings();
   uint32_t resultlen = (limit < strLength ? limit : strLength);
   size_t count = 0;
       
@@ -3694,7 +3700,6 @@ bool js::str_concat(JSContext* cx, unsigned argc, Value* vp) {
         return false;
       }
     }
-
   }
 
   // TaintFox: add concat operation to taint flow.
@@ -3999,7 +4004,8 @@ bool js::str_fromCodePoint(JSContext* cx, unsigned argc, Value* vp) {
   static_assert(
       ARGS_LENGTH_MAX < std::numeric_limits<decltype(args.length())>::max() / 2,
       "|args.length() * 2 + 1| does not overflow");
-  auto elements = cx->make_pod_array<char16_t>(args.length() * 2 + 1);
+  auto elements = cx->make_pod_array<char16_t>(args.length() * 2 + 1,
+                                               js::StringBufferArena);
   if (!elements) {
     return false;
   }
@@ -4035,40 +4041,10 @@ static const JSFunctionSpec string_static_methods[] = {
                     StringFromCodePoint),
 
     JS_SELF_HOSTED_FN("raw", "String_static_raw", 1, 0),
-    JS_SELF_HOSTED_FN("substring", "String_static_substring", 3, 0),
-    JS_SELF_HOSTED_FN("substr", "String_static_substr", 3, 0),
-    JS_SELF_HOSTED_FN("slice", "String_static_slice", 3, 0),
-
-    JS_SELF_HOSTED_FN("match", "String_generic_match", 2, 0),
-    JS_SELF_HOSTED_FN("replace", "String_generic_replace", 3, 0),
-    JS_SELF_HOSTED_FN("search", "String_generic_search", 2, 0),
-    JS_SELF_HOSTED_FN("split", "String_generic_split", 3, 0),
-
-    JS_SELF_HOSTED_FN("toLowerCase", "String_static_toLowerCase", 1, 0),
-    JS_SELF_HOSTED_FN("toUpperCase", "String_static_toUpperCase", 1, 0),
-    JS_SELF_HOSTED_FN("charAt", "String_static_charAt", 2, 0),
-    JS_SELF_HOSTED_FN("charCodeAt", "String_static_charCodeAt", 2, 0),
-    JS_SELF_HOSTED_FN("includes", "String_static_includes", 2, 0),
-    JS_SELF_HOSTED_FN("indexOf", "String_static_indexOf", 2, 0),
-    JS_SELF_HOSTED_FN("lastIndexOf", "String_static_lastIndexOf", 2, 0),
-    JS_SELF_HOSTED_FN("startsWith", "String_static_startsWith", 2, 0),
-    JS_SELF_HOSTED_FN("endsWith", "String_static_endsWith", 2, 0),
-    JS_SELF_HOSTED_FN("trim", "String_static_trim", 1, 0),
-    JS_SELF_HOSTED_FN("trimLeft", "String_static_trimLeft", 1, 0),
-    JS_SELF_HOSTED_FN("trimRight", "String_static_trimRight", 1, 0),
-    JS_SELF_HOSTED_FN("toLocaleLowerCase", "String_static_toLocaleLowerCase", 1,
-                      0),
-    JS_SELF_HOSTED_FN("toLocaleUpperCase", "String_static_toLocaleUpperCase", 1,
-                      0),
-#if EXPOSE_INTL_API
-    JS_SELF_HOSTED_FN("normalize", "String_static_normalize", 1, 0),
-#endif
-    JS_SELF_HOSTED_FN("concat", "String_static_concat", 2, 0),
-
-    JS_SELF_HOSTED_FN("localeCompare", "String_static_localeCompare", 2, 0),
 
     // TaintFox: Helper function for manual taint sources.
     JS_FN("tainted",              str_tainted,          1,0),
+
     JS_FS_END};
 
 /* static */
@@ -4217,7 +4193,7 @@ static const bool js_isUriUnescaped[] = {
 
 #undef ____
 
-static inline bool TransferBufferToString(StringBuffer& sb, JSString* str,
+static inline bool TransferBufferToString(JSStringBuilder& sb, JSString* str,
                                           MutableHandleValue rval) {
   if (!sb.empty()) {
     str = sb.finishString();
@@ -4332,7 +4308,6 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
 
       startAppend = k + 1;
     }
-
   }
 
   if (startAppend > 0) {
@@ -4353,7 +4328,7 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
     return true;
   }
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
 
   EncodeResult res;
   if (str->hasLatin1Chars()) {
@@ -4409,11 +4384,12 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
         return Decode_BadUri;
       }
 
-      if (!JS7_ISHEX(chars[k + 1]) || !JS7_ISHEX(chars[k + 2])) {
+      if (!IsAsciiHexDigit(chars[k + 1]) || !IsAsciiHexDigit(chars[k + 2])) {
         return Decode_BadUri;
       }
 
-      uint32_t B = JS7_UNHEX(chars[k + 1]) * 16 + JS7_UNHEX(chars[k + 2]);
+      uint32_t B = AsciiAlphanumericToNumber(chars[k + 1]) * 16 +
+                   AsciiAlphanumericToNumber(chars[k + 2]);
       k += 2;
       if (B < 128) {
         Latin1Char ch = Latin1Char(B);
@@ -4453,11 +4429,13 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
             return Decode_BadUri;
           }
 
-          if (!JS7_ISHEX(chars[k + 1]) || !JS7_ISHEX(chars[k + 2])) {
+          if (!IsAsciiHexDigit(chars[k + 1]) ||
+              !IsAsciiHexDigit(chars[k + 2])) {
             return Decode_BadUri;
           }
 
-          B = JS7_UNHEX(chars[k + 1]) * 16 + JS7_UNHEX(chars[k + 2]);
+          B = AsciiAlphanumericToNumber(chars[k + 1]) * 16 +
+              AsciiAlphanumericToNumber(chars[k + 2]);
           if ((B & 0xC0) != 0x80) {
             return Decode_BadUri;
           }
@@ -4479,6 +4457,7 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
           if (v > unicode::NonBMPMax) {
             return Decode_BadUri;
           }
+
           if (!sb.append(unicode::LeadSurrogate(v))) {
             return Decode_Failure;
           }
@@ -4494,7 +4473,6 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
 
       startAppend = k + 1;
     }
-
   }
 
   if (startAppend > 0) {
@@ -4514,7 +4492,7 @@ static bool Decode(JSContext* cx, HandleLinearString str,
     return true;
   }
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
 
   DecodeResult res;
   if (str->hasLatin1Chars()) {
@@ -4586,7 +4564,7 @@ static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp) {
 
 // TODO: TaintFox chars - need to propagate taint here
 JSString* js::EncodeURI(JSContext* cx, const char* chars, size_t length) {
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   EncodeResult result = Encode(sb, reinterpret_cast<const Latin1Char*>(chars),
                                length, js_isUriReservedPlusPound, EmptyTaint);
   if (result == EncodeResult::Encode_Failure) {

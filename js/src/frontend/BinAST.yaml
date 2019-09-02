@@ -39,15 +39,19 @@ cpp:
     #include "mozilla/Vector.h"
 
     #include "frontend/BinAST-macros.h"
+    #include "frontend/BinASTTokenReaderContext.h"
     #include "frontend/BinASTTokenReaderMultipart.h"
     #include "frontend/FullParseHandler.h"
     #include "frontend/ParseNode.h"
     #include "frontend/Parser.h"
     #include "frontend/SharedContext.h"
-
+    #include "js/RegExpFlags.h"  //  JS::RegExpFlag, JS::RegExpFlags
     #include "vm/RegExpObject.h"
 
     #include "frontend/ParseContext-inl.h"
+
+    using JS::RegExpFlag;
+    using JS::RegExpFlags;
 
     namespace js {
     namespace frontend {
@@ -64,6 +68,7 @@ cpp:
     // Force class instantiation.
     // This ensures that the symbols are built, without having to export all our
     // code (and its baggage of #include and macros) in the header.
+    template class BinASTParser<BinASTTokenReaderContext>;
     template class BinASTParser<BinASTTokenReaderMultipart>;
 
     } // namespace frontend
@@ -86,10 +91,12 @@ hpp:
       #define frontend_BinASTParser_h
 
       #include "mozilla/Maybe.h"
+      #include "mozilla/Variant.h"
 
       #include "frontend/BCEParserHandle.h"
       #include "frontend/BinASTParserPerTokenizer.h"
       #include "frontend/BinASTToken.h"
+      #include "frontend/BinASTTokenReaderContext.h"
       #include "frontend/BinASTTokenReaderMultipart.h"
       #include "frontend/FullParseHandler.h"
       #include "frontend/ParseContext.h"
@@ -115,6 +122,10 @@ hpp:
         using AutoList = typename Tokenizer::AutoList;
         using AutoTaggedTuple = typename Tokenizer::AutoTaggedTuple;
         using Chars = typename Tokenizer::Chars;
+        using Context = typename BinASTTokenReaderBase::Context;
+        using ListContext = typename BinASTTokenReaderBase::ListContext;
+        using FieldContext = typename BinASTTokenReaderBase::FieldContext;
+        using RootContext = typename BinASTTokenReaderBase::RootContext;
 
        public:
         // Auto-generated types.
@@ -193,6 +204,7 @@ hpp:
     footer: |
       };
 
+      extern template class BinASTParser<BinASTTokenReaderContext>;
       extern template class BinASTParser<BinASTTokenReaderMultipart>;
 
       } // namespace frontend
@@ -294,6 +306,8 @@ hpp:
 
       #include <stddef.h>
 
+      #include "jstypes.h"
+
       /**
        * Definition of Binary AST tokens.
        *
@@ -333,6 +347,11 @@ hpp:
        * Return a string describing a `BinASTField`.
        */
       const char* describeBinASTField(const BinASTField& field);
+
+      /**
+       * Return a string describing a `BinASTInterfaceAndField`.
+       */
+      const char* describeBinASTInterfaceAndField(const BinASTInterfaceAndField& field);
 
       /**
        * Return a string describing a `BinASTVariant`.
@@ -622,7 +641,7 @@ BreakStatement:
       block:
         replace: |
           RootedAtom label(cx_);
-          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom());
+          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom(Context(FieldContext(BinASTInterfaceAndField::BreakStatement__Label))));
 
   build: |
     if (label) {
@@ -678,8 +697,7 @@ CallExpression:
       }
     }
 
-    BINJS_TRY_DECL(result, handler_.newCall(callee, arguments));
-    result->setOp(op);
+    BINJS_TRY_DECL(result, handler_.newCall(callee, arguments, op));
 
 CatchClause:
   type-ok:
@@ -767,7 +785,7 @@ ContinueStatement:
       block:
         replace: |
           RootedAtom label(cx_);
-          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom());
+          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom(Context(FieldContext(BinASTInterfaceAndField::ContinueStatement__Label))));
 
   build: |
     if (label) {
@@ -855,7 +873,7 @@ FunctionExpressionContents:
         // Per spec, isFunctionNameCaptured can be true for anonymous
         // function.  Check isFunctionNameCaptured only for named
         // function.
-        if (pc_->functionBox()->function()->isNamedLambda() &&
+        if (pc_->functionBox()->isNamedLambda() &&
           isFunctionNameCaptured) {
           captureFunctionName();
         }
@@ -1192,7 +1210,7 @@ ListOfObjectProperty:
       result->setHasNonConstInitializer();
     result->appendWithoutOrderAssumption(item);
 
-ListOfOptionalSpreadElementOrExpression:
+ListOfOptionalExpressionOrSpreadElement:
   type-ok:
     ListNode*
   init:
@@ -1280,20 +1298,20 @@ LiteralRegExpExpression:
       block:
         replace: |
           Chars flags(cx_);
-          MOZ_TRY(tokenizer_->readChars(flags));
+          MOZ_TRY(tokenizer_->readChars(flags, Context(FieldContext(BinASTInterfaceAndField::BreakStatement__Label))));
   build: |
-    RegExpFlag reflags = NoFlags;
+    RegExpFlags reflags = RegExpFlag::NoFlags;
     for (auto c : flags) {
-      if (c == 'g' && !(reflags & GlobalFlag)) {
-        reflags = RegExpFlag(reflags | GlobalFlag);
-      } else if (c == 'i' && !(reflags & IgnoreCaseFlag)) {
-        reflags = RegExpFlag(reflags | IgnoreCaseFlag);
-      } else if (c == 'm' && !(reflags & MultilineFlag)) {
-        reflags = RegExpFlag(reflags | MultilineFlag);
-      } else if (c == 'y' && !(reflags & StickyFlag)) {
-        reflags = RegExpFlag(reflags | StickyFlag);
-      } else if (c == 'u' && !(reflags & UnicodeFlag)) {
-        reflags = RegExpFlag(reflags | UnicodeFlag);
+      if (c == 'g' && !reflags.global()) {
+        reflags |= RegExpFlag::Global;
+      } else if (c == 'i' && !reflags.ignoreCase()) {
+        reflags |= RegExpFlag::IgnoreCase;
+      } else if (c == 'm' && !reflags.multiline()) {
+        reflags |= RegExpFlag::Multiline;
+      } else if (c == 'u' && !reflags.unicode()) {
+        reflags |= RegExpFlag::Unicode;
+      } else if (c == 'y' && !reflags.sticky()) {
+        reflags |= RegExpFlag::Sticky;
       } else {
         return raiseError("Invalid regexp flags");
       }
@@ -1316,7 +1334,7 @@ NewExpression:
   build: |
     BINJS_TRY_DECL(result,
                    handler_.newNewExpression(tokenizer_->pos(start).begin,
-                                             callee, arguments));
+                                             callee, arguments, /* isSpread = */ false));
 
 ObjectExpression:
   build:
@@ -1533,7 +1551,6 @@ UnaryExpression:
       case UnaryOperator::Delete: {
         switch (operand->getKind()) {
           case ParseNodeKind::Name:
-            operand->setOp(JSOP_DELNAME);
             pnk = ParseNodeKind::DeleteNameExpr;
             BINJS_TRY(this->strictModeError(JSMSG_DEPRECATED_DELETE_OPERAND));
             pc_->sc()->setBindingsAccessedDynamically();

@@ -81,11 +81,11 @@ class JsepSessionImpl : public JsepSession {
     return mSupportedCodecs;
   }
 
-  virtual nsresult CreateOffer(const JsepOfferOptions& options,
-                               std::string* offer) override;
+  virtual Result CreateOffer(const JsepOfferOptions& options,
+                             std::string* offer) override;
 
-  virtual nsresult CreateAnswer(const JsepAnswerOptions& options,
-                                std::string* answer) override;
+  virtual Result CreateAnswer(const JsepAnswerOptions& options,
+                              std::string* answer) override;
 
   virtual std::string GetLocalDescription(
       JsepDescriptionPendingOrCurrent type) const override;
@@ -93,19 +93,21 @@ class JsepSessionImpl : public JsepSession {
   virtual std::string GetRemoteDescription(
       JsepDescriptionPendingOrCurrent type) const override;
 
-  virtual nsresult SetLocalDescription(JsepSdpType type,
-                                       const std::string& sdp) override;
+  virtual Result SetLocalDescription(JsepSdpType type,
+                                     const std::string& sdp) override;
 
-  virtual nsresult SetRemoteDescription(JsepSdpType type,
-                                        const std::string& sdp) override;
+  virtual Result SetRemoteDescription(JsepSdpType type,
+                                      const std::string& sdp) override;
 
-  virtual nsresult AddRemoteIceCandidate(const std::string& candidate,
-                                         const std::string& mid,
-                                         const Maybe<uint16_t>& level,
-                                         std::string* transportId) override;
+  virtual Result AddRemoteIceCandidate(const std::string& candidate,
+                                       const std::string& mid,
+                                       const Maybe<uint16_t>& level,
+                                       const std::string& ufrag,
+                                       std::string* transportId) override;
 
   virtual nsresult AddLocalIceCandidate(const std::string& candidate,
                                         const std::string& transportId,
+                                        const std::string& ufrag,
                                         uint16_t* level, std::string* mid,
                                         bool* skipped) override;
 
@@ -113,9 +115,6 @@ class JsepSessionImpl : public JsepSession {
       const std::string& defaultCandidateAddr, uint16_t defaultCandidatePort,
       const std::string& defaultRtcpCandidateAddr,
       uint16_t defaultRtcpCandidatePort,
-      const std::string& transportId) override;
-
-  virtual nsresult EndOfLocalCandidates(
       const std::string& transportId) override;
 
   virtual nsresult Close() override;
@@ -168,12 +167,11 @@ class JsepSessionImpl : public JsepSession {
   nsresult SetLocalDescriptionAnswer(JsepSdpType type, UniquePtr<Sdp> answer);
   nsresult SetRemoteDescriptionOffer(UniquePtr<Sdp> offer);
   nsresult SetRemoteDescriptionAnswer(JsepSdpType type, UniquePtr<Sdp> answer);
-  nsresult ValidateLocalDescription(const Sdp& description);
+  nsresult ValidateLocalDescription(const Sdp& description, JsepSdpType type);
   nsresult ValidateRemoteDescription(const Sdp& description);
   nsresult ValidateOffer(const Sdp& offer);
   nsresult ValidateAnswer(const Sdp& offer, const Sdp& answer);
   nsresult UpdateTransceiversFromRemoteDescription(const Sdp& remote);
-  bool WasMsectionDisabledLastNegotiation(size_t level) const;
   JsepTransceiver* GetTransceiverForLevel(size_t level);
   JsepTransceiver* GetTransceiverForMid(const std::string& mid);
   JsepTransceiver* GetTransceiverForLocal(size_t level);
@@ -194,13 +192,8 @@ class JsepSessionImpl : public JsepSession {
   nsresult CopyPreviousTransportParams(const Sdp& oldAnswer,
                                        const Sdp& offerersPreviousSdp,
                                        const Sdp& newOffer, Sdp* newLocal);
-  void CopyPreviousMsid(const Sdp& oldLocal, Sdp* newLocal);
   void EnsureMsid(Sdp* remote);
   void SetupBundle(Sdp* sdp) const;
-  nsresult GetRemoteIds(const Sdp& sdp, const SdpMediaSection& msection,
-                        std::vector<std::string>* streamIds,
-                        std::string* trackId);
-  nsresult RemoveDuplicateTrackIds(Sdp* sdp);
   nsresult CreateOfferMsection(const JsepOfferOptions& options,
                                JsepTransceiver& transceiver, Sdp* local);
   nsresult CreateAnswerMsection(const JsepAnswerOptions& options,
@@ -259,7 +252,8 @@ class JsepSessionImpl : public JsepSession {
   // Used to prevent duplicate local SSRCs. Not used to prevent local/remote or
   // remote-only duplication, which will be important for EKT but not now.
   std::set<uint32_t> mSsrcs;
-  UniquePtr<Sdp> mGeneratedLocalDescription;  // Created but not set.
+  UniquePtr<Sdp> mGeneratedOffer;   // Created but not set.
+  UniquePtr<Sdp> mGeneratedAnswer;  // Created but not set.
   UniquePtr<Sdp> mCurrentLocalDescription;
   UniquePtr<Sdp> mCurrentRemoteDescription;
   UniquePtr<Sdp> mPendingLocalDescription;

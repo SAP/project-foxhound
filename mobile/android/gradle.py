@@ -5,7 +5,9 @@
 from __future__ import print_function
 
 import buildconfig
+import os
 import subprocess
+import sys
 
 from mozbuild.util import (
     ensureParentDir,
@@ -23,12 +25,17 @@ def android(verb, *args):
     lock_instance = lock_file(lock_path)
     try:
         cmd = [
+            sys.executable,
             mozpath.join(buildconfig.topsrcdir, 'mach'),
             'android',
             verb,
         ]
         cmd.extend(args)
-        subprocess.check_call(cmd)
+        env = dict(os.environ)
+        # Confusingly, `MACH` is set only within `mach build`.
+        if env.get('MACH'):
+            env['GRADLE_INVOKED_WITHIN_MACH_BUILD'] = '1'
+        subprocess.check_call(cmd, env=env)
 
         return 0
     finally:

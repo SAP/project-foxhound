@@ -42,7 +42,6 @@ class gfxVarReceiver;
   _(UseWebRenderANGLE, bool, false)                                \
   _(UseWebRenderDCompWin, bool, false)                             \
   _(UseWebRenderDCompWinTripleBuffering, bool, false)              \
-  _(UseWebRenderProgramBinary, bool, false)                        \
   _(UseWebRenderProgramBinaryDisk, bool, false)                    \
   _(WebRenderDebugFlags, int32_t, 0)                               \
   _(ScreenDepth, int32_t, 0)                                       \
@@ -50,13 +49,16 @@ class gfxVarReceiver;
   _(ProfDirectory, nsString, nsString())                           \
   _(UseOMTP, bool, false)                                          \
   _(AllowD3D11KeyedMutex, bool, false)                             \
-  _(SystemTextQuality, int32_t, 5 /* CLEARTYPE_QUALITY */)
+  _(SystemTextQuality, int32_t, 5 /* CLEARTYPE_QUALITY */)         \
+  _(LayersWindowRecordingPath, nsCString, nsCString())             \
+  _(RemoteCanvasEnabled, bool, false)                              \
+  _(UseDoubleBufferingWithCompositor, bool, false)
 
 /* Add new entries above this line. */
 
 // Some graphics settings are computed on the UI process and must be
 // communicated to content and GPU processes. gfxVars helps facilitate
-// this. Its function is similar to gfxPrefs, except rather than hold
+// this. Its function is similar to StaticPrefs, except rather than hold
 // user preferences, it holds dynamically computed values.
 //
 // Each variable in GFX_VARS_LIST exposes the following static methods:

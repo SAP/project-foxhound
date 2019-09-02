@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
@@ -12,6 +15,7 @@ const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
 const ExtensionDetail = createFactory(require("./ExtensionDetail"));
+const FieldPair = createFactory(require("./FieldPair"));
 
 const Types = require("../../types/index");
 
@@ -35,23 +39,23 @@ class TemporaryExtensionDetail extends PureComponent {
       {
         id: "about-debugging-tmp-extension-temporary-id",
         a: dom.a({
-          className: "js-temporary-id-link",
+          className: "qa-temporary-id-link",
           href: TEMP_ID_DOC_URL,
           target: "_blank",
         }),
       },
       dom.div({
-        className: "temporary-extension-detail__temporary-id-message " +
-          "js-temporary-id-message",
-      }),
+        className: "qa-temporary-id-message",
+      })
     );
   }
 
   render() {
-    return dom.div(
-      {},
-      this.renderTemporaryIdMessage(),
-      ExtensionDetail({ target: this.props.target }),
+    return ExtensionDetail(
+      {
+        target: this.props.target,
+      },
+      FieldPair({ label: this.renderTemporaryIdMessage() })
     );
   }
 }

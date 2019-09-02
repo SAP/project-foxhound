@@ -15,6 +15,7 @@
 #include "nsCSSPseudoElements.h"
 #include "nsMathMLElement.h"
 #include "gfxMathTable.h"
+#include "nsPresContextInlines.h"
 
 // used to map attributes into CSS rules
 #include "mozilla/ServoStyleSet.h"
@@ -97,7 +98,7 @@ void nsMathMLFrame::ResolveMathMLCharStyle(nsPresContext* aPresContext,
   PseudoStyleType pseudoType = PseudoStyleType::mozMathAnonymous;  // savings
   RefPtr<ComputedStyle> newComputedStyle;
   newComputedStyle = aPresContext->StyleSet()->ResolvePseudoElementStyle(
-      aContent->AsElement(), pseudoType, aParentComputedStyle, nullptr);
+      *aContent->AsElement(), pseudoType, aParentComputedStyle);
 
   aMathMLChar->SetComputedStyle(newComputedStyle);
 }
@@ -294,31 +295,29 @@ void nsMathMLFrame::DisplayBoundingMetrics(nsDisplayListBuilder* aBuilder,
   nscoord w = aMetrics.rightBearing - aMetrics.leftBearing;
   nscoord h = aMetrics.ascent + aMetrics.descent;
 
-  aLists.Content()->AppendToTop(MakeDisplayItem<nsDisplayMathMLBoundingMetrics>(
-      aBuilder, aFrame, nsRect(x, y, w, h)));
+  aLists.Content()->AppendNewToTop<nsDisplayMathMLBoundingMetrics>(
+      aBuilder, aFrame, nsRect(x, y, w, h));
 }
 #endif
 
-class nsDisplayMathMLBar final : public nsDisplayItem {
+class nsDisplayMathMLBar final : public nsPaintedDisplayItem {
  public:
   nsDisplayMathMLBar(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
-                     const nsRect& aRect, uint32_t aIndex)
-      : nsDisplayItem(aBuilder, aFrame), mRect(aRect), mIndex(aIndex) {
+                     const nsRect& aRect, uint16_t aIndex)
+      : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect), mIndex(aIndex) {
     MOZ_COUNT_CTOR(nsDisplayMathMLBar);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplayMathMLBar() { MOZ_COUNT_DTOR(nsDisplayMathMLBar); }
 #endif
 
-  virtual uint32_t GetPerFrameKey() const override {
-    return (mIndex << TYPE_BITS) | nsDisplayItem::GetPerFrameKey();
-  }
+  virtual uint16_t CalculatePerFrameKey() const override { return mIndex; }
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLBar", TYPE_MATHML_BAR)
  private:
   nsRect mRect;
-  uint32_t mIndex;
+  uint16_t mIndex;
 };
 
 void nsDisplayMathMLBar::Paint(nsDisplayListBuilder* aBuilder,
@@ -339,8 +338,8 @@ void nsMathMLFrame::DisplayBar(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                                uint32_t aIndex) {
   if (!aFrame->StyleVisibility()->IsVisible() || aRect.IsEmpty()) return;
 
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplayMathMLBar>(aBuilder, aFrame, aRect, aIndex));
+  aLists.Content()->AppendNewToTop<nsDisplayMathMLBar>(aBuilder, aFrame, aRect,
+                                                       aIndex);
 }
 
 void nsMathMLFrame::GetRadicalParameters(nsFontMetrics* aFontMetrics,

@@ -16,12 +16,12 @@ interface MediaDevices : EventTarget {
   attribute EventHandler ondevicechange;
   MediaTrackSupportedConstraints getSupportedConstraints();
 
-  [Throws, NeedsCallerType]
+  [Throws, NeedsCallerType, UseCounter]
   Promise<sequence<MediaDeviceInfo>> enumerateDevices();
 
-  [Throws, NeedsCallerType]
-  Promise<MediaStream> getUserMedia(optional MediaStreamConstraints constraints);
+  [Throws, NeedsCallerType, UseCounter]
+  Promise<MediaStream> getUserMedia(optional MediaStreamConstraints constraints = {});
 
-  [SecureContext, Throws, NeedsCallerType]
-  Promise<MediaStream> getDisplayMedia(optional DisplayMediaStreamConstraints constraints);
+  [SecureContext, Throws, NeedsCallerType, UseCounter]
+  Promise<MediaStream> getDisplayMedia(optional DisplayMediaStreamConstraints constraints = {});
 };

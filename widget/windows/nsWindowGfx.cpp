@@ -318,10 +318,9 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
 
         RECT paintRect;
         ::GetClientRect(mWnd, &paintRect);
-        RefPtr<DrawTarget> dt =
-            gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(
-                targetSurface, IntSize(paintRect.right - paintRect.left,
-                                       paintRect.bottom - paintRect.top));
+        RefPtr<DrawTarget> dt = gfxPlatform::CreateDrawTargetForSurface(
+            targetSurface, IntSize(paintRect.right - paintRect.left,
+                                   paintRect.bottom - paintRect.top));
         if (!dt || !dt->IsValid()) {
           gfxWarning()
               << "nsWindow::OnPaint failed in CreateDrawTargetForSurface";
@@ -419,7 +418,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
   return result;
 }
 
-IntSize nsWindowGfx::GetIconMetrics(IconSizeType aSizeType) {
+LayoutDeviceIntSize nsWindowGfx::GetIconMetrics(IconSizeType aSizeType) {
   int32_t width = ::GetSystemMetrics(sIconMetrics[aSizeType].xMetric);
   int32_t height = ::GetSystemMetrics(sIconMetrics[aSizeType].yMetric);
 
@@ -427,12 +426,14 @@ IntSize nsWindowGfx::GetIconMetrics(IconSizeType aSizeType) {
     width = height = sIconMetrics[aSizeType].defaultSize;
   }
 
-  return IntSize(width, height);
+  return LayoutDeviceIntSize(width, height);
 }
 
 nsresult nsWindowGfx::CreateIcon(imgIContainer* aContainer, bool aIsCursor,
-                                 uint32_t aHotspotX, uint32_t aHotspotY,
-                                 IntSize aScaledSize, HICON* aIcon) {
+                                 LayoutDeviceIntPoint aHotspot,
+                                 LayoutDeviceIntSize aScaledSize,
+                                 HICON* aIcon) {
+  MOZ_ASSERT(aHotspot.x >= 0 && aHotspot.y >= 0);
   MOZ_ASSERT((aScaledSize.width > 0 && aScaledSize.height > 0) ||
              (aScaledSize.width == 0 && aScaledSize.height == 0));
 
@@ -522,8 +523,8 @@ nsresult nsWindowGfx::CreateIcon(imgIContainer* aContainer, bool aIsCursor,
 
   ICONINFO info = {0};
   info.fIcon = !aIsCursor;
-  info.xHotspot = aHotspotX;
-  info.yHotspot = aHotspotY;
+  info.xHotspot = aHotspot.x;
+  info.yHotspot = aHotspot.y;
   info.hbmMask = mbmp;
   info.hbmColor = bmp;
 

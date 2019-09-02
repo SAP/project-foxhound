@@ -680,7 +680,7 @@ static MOZ_MUST_USE bool SavedFrame_checkThis(JSContext* cx, CallArgs& args,
 
   if (!thisValue.isObject()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_NOT_NONNULL_OBJECT,
+                              JSMSG_OBJECT_REQUIRED,
                               InformalValueTypeName(thisValue));
     return false;
   }
@@ -1014,7 +1014,7 @@ JS_PUBLIC_API bool BuildStackString(JSContext* cx, JSPrincipals* principals,
   CHECK_THREAD(cx);
   MOZ_RELEASE_ASSERT(cx->realm());
 
-  js::StringBuffer sb(cx);
+  js::JSStringBuilder sb(cx);
 
   if (format == js::StackFormat::Default) {
     format = cx->runtime()->stackFormat();
@@ -1086,6 +1086,62 @@ JS_PUBLIC_API bool IsMaybeWrappedSavedFrame(JSObject* obj) {
 JS_PUBLIC_API bool IsUnwrappedSavedFrame(JSObject* obj) {
   MOZ_ASSERT(obj);
   return obj->is<js::SavedFrame>();
+}
+
+static bool AssignProperty(JSContext* cx, HandleObject dst, HandleObject src,
+                           const char* property) {
+  RootedValue v(cx);
+  return JS_GetProperty(cx, src, property, &v) &&
+         JS_DefineProperty(cx, dst, property, v, JSPROP_ENUMERATE);
+}
+
+JS_PUBLIC_API JSObject* ConvertSavedFrameToPlainObject(
+    JSContext* cx, HandleObject savedFrameArg,
+    SavedFrameSelfHosted selfHosted) {
+  MOZ_ASSERT(savedFrameArg);
+
+  RootedObject savedFrame(cx, savedFrameArg);
+  RootedObject baseConverted(cx), lastConverted(cx);
+  RootedValue v(cx);
+
+  baseConverted = lastConverted = JS_NewObject(cx, nullptr);
+  if (!baseConverted) {
+    return nullptr;
+  }
+
+  bool foundParent;
+  do {
+    if (!AssignProperty(cx, lastConverted, savedFrame, "source") ||
+        !AssignProperty(cx, lastConverted, savedFrame, "sourceId") ||
+        !AssignProperty(cx, lastConverted, savedFrame, "line") ||
+        !AssignProperty(cx, lastConverted, savedFrame, "column") ||
+        !AssignProperty(cx, lastConverted, savedFrame, "functionDisplayName") ||
+        !AssignProperty(cx, lastConverted, savedFrame, "asyncCause")) {
+      return nullptr;
+    }
+
+    const char* parentProperties[] = {"parent", "asyncParent"};
+    foundParent = false;
+    for (const char* prop : parentProperties) {
+      if (!JS_GetProperty(cx, savedFrame, prop, &v)) {
+        return nullptr;
+      }
+      if (v.isObject()) {
+        RootedObject nextConverted(cx, JS_NewObject(cx, nullptr));
+        if (!nextConverted ||
+            !JS_DefineProperty(cx, lastConverted, prop, nextConverted,
+                               JSPROP_ENUMERATE)) {
+          return nullptr;
+        }
+        lastConverted = nextConverted;
+        savedFrame = &v.toObject();
+        foundParent = true;
+        break;
+      }
+    }
+  } while (foundParent);
+
+  return baseConverted;
 }
 
 } /* namespace JS */
@@ -1298,16 +1354,16 @@ static inline bool captureIsSatisfied(JSContext* cx, JSPrincipals* principals,
     Matcher(JSContext* cx, JSPrincipals* principals, const JSAtom* source)
         : cx_(cx), framePrincipals_(principals), frameSource_(source) {}
 
-    bool match(JS::FirstSubsumedFrame& target) {
+    bool operator()(JS::FirstSubsumedFrame& target) {
       auto subsumes = cx_->runtime()->securityCallbacks->subsumes;
       return (!subsumes || subsumes(target.principals, framePrincipals_)) &&
              (!target.ignoreSelfHosted ||
               frameSource_ != cx_->names().selfHosted);
     }
 
-    bool match(JS::MaxFrames& target) { return target.maxFrames == 1; }
+    bool operator()(JS::MaxFrames& target) { return target.maxFrames == 1; }
 
-    bool match(JS::AllFrames&) { return false; }
+    bool operator()(JS::AllFrames&) { return false; }
   };
 
   Matcher m(cx, principals, source);
@@ -1367,7 +1423,10 @@ bool SavedStacks::insertFrames(JSContext* cx, MutableHandleSavedFrame frame,
         LiveSavedFrameCache::FramePtr::create(iter);
 
     if (framePtr) {
-      MOZ_ASSERT_IF(seenCached, framePtr->hasCachedSavedFrame());
+      // See the comment in Stack.h for why RematerializedFrames
+      // are a special case here.
+      MOZ_ASSERT_IF(seenCached, framePtr->hasCachedSavedFrame() ||
+                                    framePtr->isRematerializedFrame());
       seenCached |= framePtr->hasCachedSavedFrame();
     }
 
@@ -1739,6 +1798,16 @@ bool SavedStacks::getLocation(JSContext* cx, const FrameIter& iter,
 }
 
 void SavedStacks::chooseSamplingProbability(Realm* realm) {
+  {
+    JSRuntime* runtime = realm->runtimeFromMainThread();
+    if (runtime->recordAllocationCallback) {
+      // The runtime is tracking allocations across all realms, in this case
+      // ignore all of the debugger values, and use the runtime's probability.
+      this->setSamplingProbability(runtime->allocationSamplingProbability);
+      return;
+    }
+  }
+
   // Use unbarriered version to prevent triggering read barrier while
   // collecting, this is safe as long as global does not escape.
   GlobalObject* global = realm->unsafeUnbarrieredMaybeGlobal();
@@ -1751,7 +1820,7 @@ void SavedStacks::chooseSamplingProbability(Realm* realm) {
     return;
   }
 
-  mozilla::DebugOnly<ReadBarriered<Debugger*>*> begin = dbgs->begin();
+  mozilla::DebugOnly<WeakHeapPtr<Debugger*>*> begin = dbgs->begin();
   mozilla::DebugOnly<bool> foundAnyDebuggers = false;
 
   double probability = 0;
@@ -1770,6 +1839,10 @@ void SavedStacks::chooseSamplingProbability(Realm* realm) {
   }
   MOZ_ASSERT(foundAnyDebuggers);
 
+  this->setSamplingProbability(probability);
+}
+
+void SavedStacks::setSamplingProbability(double probability) {
   if (!bernoulliSeeded) {
     mozilla::Array<uint64_t, 2> seed;
     GenerateXorShift128PlusSeed(seed);
@@ -1798,6 +1871,23 @@ JSObject* SavedStacks::MetadataBuilder::build(
   if (!Debugger::onLogAllocationSite(cx, obj, frame,
                                      mozilla::TimeStamp::Now())) {
     oomUnsafe.crash("SavedStacksMetadataBuilder");
+  }
+
+  auto recordAllocationCallback =
+      cx->realm()->runtimeFromMainThread()->recordAllocationCallback;
+  if (recordAllocationCallback) {
+    // The following code translates the JS-specific information, into an
+    // RecordAllocationInfo object that can be consumed outside of SpiderMonkey.
+
+    auto node = JS::ubi::Node(obj.get());
+
+    // Pass the non-SpiderMonkey specific information back to the
+    // callback to get it out of the JS engine.
+    recordAllocationCallback(JS::RecordAllocationInfo{
+        node.typeName(), node.jsObjectClassName(), node.descriptiveTypeName(),
+        node.scriptFilename(), JS::ubi::CoarseTypeToString(node.coarseType()),
+        node.size(cx->runtime()->debuggerMallocSizeOf),
+        gc::IsInsideNursery(obj)});
   }
 
   MOZ_ASSERT_IF(frame, !frame->is<WrapperObject>());
@@ -1869,12 +1959,12 @@ struct MOZ_STACK_CLASS AtomizingMatcher {
   explicit AtomizingMatcher(JSContext* cx, size_t length)
       : cx(cx), length(length) {}
 
-  JSAtom* match(JSAtom* atom) {
+  JSAtom* operator()(JSAtom* atom) {
     MOZ_ASSERT(atom);
     return atom;
   }
 
-  JSAtom* match(const char16_t* chars) {
+  JSAtom* operator()(const char16_t* chars) {
     MOZ_ASSERT(chars);
     return AtomizeChars(cx, chars, length);
   }

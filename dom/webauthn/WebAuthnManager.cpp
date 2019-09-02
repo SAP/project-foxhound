@@ -38,8 +38,18 @@ static mozilla::LazyLogModule gWebAuthnManagerLog("webauthnmanager");
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(WebAuthnManager,
                                                WebAuthnManagerBase)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(WebAuthnManager, WebAuthnManagerBase,
-                                   mFollowingSignal, mTransaction)
+NS_IMPL_CYCLE_COLLECTION_CLASS(WebAuthnManager)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WebAuthnManager,
+                                                WebAuthnManagerBase)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFollowingSignal)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTransaction)
+  tmp->mTransaction.reset();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(WebAuthnManager,
+                                                  WebAuthnManagerBase)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFollowingSignal)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTransaction)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 /***********************************************************************
  * Utility Functions
@@ -156,7 +166,7 @@ nsresult RelaxSameOrigin(nsPIDOMWindowInner* aParent,
  **********************************************************************/
 
 void WebAuthnManager::ClearTransaction() {
-  if (!NS_WARN_IF(mTransaction.isNothing())) {
+  if (!mTransaction.isNothing()) {
     StopListeningForVisibilityEvents();
   }
 
@@ -180,6 +190,12 @@ void WebAuthnManager::CancelTransaction(const nsresult& aError) {
   RejectTransaction(aError);
 }
 
+void WebAuthnManager::HandleVisibilityChange() {
+  if (mTransaction.isSome()) {
+    mTransaction.ref().mVisibilityChanged = true;
+  }
+}
+
 WebAuthnManager::~WebAuthnManager() {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -199,16 +215,26 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
     const Optional<OwningNonNull<AbortSignal>>& aSignal) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (mTransaction.isSome()) {
-    CancelTransaction(NS_ERROR_ABORT);
-  }
-
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mParent);
 
   ErrorResult rv;
   RefPtr<Promise> promise = Promise::Create(global, rv);
   if (rv.Failed()) {
     return nullptr;
+  }
+
+  if (mTransaction.isSome()) {
+    // If there hasn't been a visibility change during the current
+    // transaction, then let's let that one complete rather than
+    // cancelling it on a subsequent call.
+    if (!mTransaction.ref().mVisibilityChanged) {
+      promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+      return promise.forget();
+    }
+
+    // Otherwise, the user may well have clicked away, so let's
+    // abort the old transaction and take over control from here.
+    CancelTransaction(NS_ERROR_ABORT);
   }
 
   // Abort the request if aborted flag is already set.
@@ -337,29 +363,28 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
   // TODO: Add extension list building
   nsTArray<WebAuthnExtension> extensions;
 
+  // <https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#sctn-hmac-secret-extension>
+  if (aOptions.mExtensions.mHmacCreateSecret.WasPassed()) {
+    bool hmacCreateSecret = aOptions.mExtensions.mHmacCreateSecret.Value();
+    if (hmacCreateSecret) {
+      extensions.AppendElement(WebAuthnExtensionHmacSecret(hmacCreateSecret));
+    }
+  }
+
   const auto& selection = aOptions.mAuthenticatorSelection;
   const auto& attachment = selection.mAuthenticatorAttachment;
   const AttestationConveyancePreference& attestation = aOptions.mAttestation;
 
   // Attachment
-  WebAuthnMaybeAuthenticatorAttachment authenticatorAttachment(
-      WebAuthnMaybeAuthenticatorAttachment::Tnull_t);
+  Maybe<AuthenticatorAttachment> authenticatorAttachment;
   if (attachment.WasPassed()) {
-    authenticatorAttachment = WebAuthnMaybeAuthenticatorAttachment(
-        static_cast<uint8_t>(attachment.Value()));
+    authenticatorAttachment.emplace(attachment.Value());
   }
-
-  // User Verification
-  uint8_t userVerificationRequirement =
-      static_cast<uint8_t>(selection.mUserVerification);
 
   // Create and forward authenticator selection criteria.
   WebAuthnAuthenticatorSelection authSelection(selection.mRequireResidentKey,
-                                               userVerificationRequirement,
+                                               selection.mUserVerification,
                                                authenticatorAttachment);
-
-  // aOptions.mAttestation
-  uint8_t attestationConveyancePreference = static_cast<uint8_t>(attestation);
 
   nsString rpIcon;
   if (aOptions.mRp.mIcon.WasPassed()) {
@@ -377,12 +402,11 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
       userId, aOptions.mUser.mName, userIcon, aOptions.mUser.mDisplayName);
 
   WebAuthnMakeCredentialExtraInfo extra(rpInfo, userInfo, coseAlgos, extensions,
-                                        authSelection,
-                                        attestationConveyancePreference);
+                                        authSelection, attestation);
 
   WebAuthnMakeCredentialInfo info(origin, NS_ConvertUTF8toUTF16(rpId),
                                   challenge, clientDataJSON, adjustedTimeout,
-                                  excludeList, extra);
+                                  excludeList, Some(extra));
 
 #ifdef OS_WIN
   if (!WinWebAuthnManager::AreWebAuthNApisAvailable()) {
@@ -410,16 +434,26 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
     const Optional<OwningNonNull<AbortSignal>>& aSignal) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (mTransaction.isSome()) {
-    CancelTransaction(NS_ERROR_ABORT);
-  }
-
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mParent);
 
   ErrorResult rv;
   RefPtr<Promise> promise = Promise::Create(global, rv);
   if (rv.Failed()) {
     return nullptr;
+  }
+
+  if (mTransaction.isSome()) {
+    // If there hasn't been a visibility change during the current
+    // transaction, then let's let that one complete rather than
+    // cancelling it on a subsequent call.
+    if (!mTransaction.ref().mVisibilityChanged) {
+      promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+      return promise.forget();
+    }
+
+    // Otherwise, the user may well have clicked away, so let's
+    // abort the old transaction and take over control from here.
+    CancelTransaction(NS_ERROR_ABORT);
   }
 
   // Abort the request if aborted flag is already set.
@@ -524,10 +558,6 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
     return promise.forget();
   }
 
-  // User Verification
-  uint8_t userVerificationRequirement =
-      static_cast<uint8_t>(aOptions.mUserVerification);
-
   // If extensions were specified, process any extensions supported by this
   // client platform, to produce the extension data that needs to be sent to the
   // authenticator. If an error is encountered while processing an extension,
@@ -562,11 +592,11 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
     extensions.AppendElement(WebAuthnExtensionAppId(appIdHash, appId));
   }
 
-  WebAuthnGetAssertionExtraInfo extra(extensions, userVerificationRequirement);
+  WebAuthnGetAssertionExtraInfo extra(extensions, aOptions.mUserVerification);
 
   WebAuthnGetAssertionInfo info(origin, NS_ConvertUTF8toUTF16(rpId), challenge,
                                 clientDataJSON, adjustedTimeout, allowList,
-                                extra);
+                                Some(extra));
 
 #ifdef OS_WIN
   if (!WinWebAuthnManager::AreWebAuthNApisAvailable()) {
@@ -593,16 +623,26 @@ already_AddRefed<Promise> WebAuthnManager::Store(
     const Credential& aCredential) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (mTransaction.isSome()) {
-    CancelTransaction(NS_ERROR_ABORT);
-  }
-
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mParent);
 
   ErrorResult rv;
   RefPtr<Promise> promise = Promise::Create(global, rv);
   if (rv.Failed()) {
     return nullptr;
+  }
+
+  if (mTransaction.isSome()) {
+    // If there hasn't been a visibility change during the current
+    // transaction, then let's let that one complete rather than
+    // cancelling it on a subsequent call.
+    if (!mTransaction.ref().mVisibilityChanged) {
+      promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+      return promise.forget();
+    }
+
+    // Otherwise, the user may well have clicked away, so let's
+    // abort the old transaction and take over control from here.
+    CancelTransaction(NS_ERROR_ABORT);
   }
 
   promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
@@ -657,6 +697,16 @@ void WebAuthnManager::FinishMakeCredential(
   credential->SetType(NS_LITERAL_STRING("public-key"));
   credential->SetRawId(keyHandleBuf);
   credential->SetResponse(attestation);
+
+  // Forward client extension results.
+  for (auto& ext : aResult.Extensions()) {
+    if (ext.type() ==
+        WebAuthnExtensionResult::TWebAuthnExtensionResultHmacSecret) {
+      bool hmacCreateSecret =
+          ext.get_WebAuthnExtensionResultHmacSecret().hmacCreateSecret();
+      credential->SetClientExtensionResultHmacSecret(hmacCreateSecret);
+    }
+  }
 
   mTransaction.ref().mPromise->MaybeResolve(credential);
   ClearTransaction();

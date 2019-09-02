@@ -47,7 +47,7 @@ class LayerTransactionParent final : public PLayerTransactionParent,
                          TimeDuration aVsyncRate);
 
  protected:
-  ~LayerTransactionParent();
+  virtual ~LayerTransactionParent();
 
  public:
   void Destroy();
@@ -120,7 +120,7 @@ class LayerTransactionParent final : public PLayerTransactionParent,
   mozilla::ipc::IPCResult RecvGetAnimationValue(
       const uint64_t& aCompositorAnimationsId, OMTAValue* aValue);
   mozilla::ipc::IPCResult RecvGetTransform(const LayerHandle& aHandle,
-                                           MaybeTransform* aTransform);
+                                           Maybe<Matrix4x4>* aTransform);
   mozilla::ipc::IPCResult RecvSetAsyncScrollOffset(
       const ScrollableLayerGuid::ViewID& aId, const float& aX, const float& aY);
   mozilla::ipc::IPCResult RecvSetAsyncZoom(
@@ -130,7 +130,7 @@ class LayerTransactionParent final : public PLayerTransactionParent,
   mozilla::ipc::IPCResult RecvRequestProperty(const nsString& aProperty,
                                               float* aValue);
   mozilla::ipc::IPCResult RecvSetConfirmedTargetAPZC(
-      const uint64_t& aBlockId, nsTArray<ScrollableLayerGuid>&& aTargets);
+      const uint64_t& aBlockId, nsTArray<SLGuidAndRenderRoot>&& aTargets);
   mozilla::ipc::IPCResult RecvRecordPaintTimes(const PaintTiming& aTiming);
   mozilla::ipc::IPCResult RecvGetTextureFactoryIdentifier(
       TextureFactoryIdentifier* aIdentifier);
@@ -187,8 +187,8 @@ class LayerTransactionParent final : public PLayerTransactionParent,
 
   // These fields keep track of the latest epoch values in the child and the
   // parent. mChildEpoch is the latest epoch value received from the child.
-  // mParentEpoch is the latest epoch value that we have told TabParent about
-  // (via ObserveLayerUpdate).
+  // mParentEpoch is the latest epoch value that we have told BrowserParent
+  // about (via ObserveLayerUpdate).
   LayersObserverEpoch mChildEpoch;
   LayersObserverEpoch mParentEpoch;
 

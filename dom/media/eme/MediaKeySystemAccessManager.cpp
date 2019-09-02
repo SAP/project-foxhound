@@ -101,7 +101,7 @@ void MediaKeySystemAccessManager::Request(
     return;
   }
 
-  if (!StaticPrefs::MediaEmeEnabled() && !IsClearkeyKeySystem(aKeySystem)) {
+  if (!StaticPrefs::media_eme_enabled() && !IsClearkeyKeySystem(aKeySystem)) {
     // EME disabled by user, send notification to chrome so UI can inform user.
     // Clearkey is allowed even when EME is disabled because we want the pref
     // "media.eme.enabled" only taking effect on proprietary DRMs.
@@ -168,15 +168,14 @@ void MediaKeySystemAccessManager::Request(
       [&](const char* aMsgName) {
         EME_LOG("Logging deprecation warning '%s' to WebConsole.", aMsgName);
         warnings.Put(aMsgName, true);
-        nsString uri;
+        AutoTArray<nsString, 1> params;
+        nsString& uri = *params.AppendElement();
         if (doc) {
           Unused << doc->GetDocumentURI(uri);
         }
-        const char16_t* params[] = {uri.get()};
-        nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                        NS_LITERAL_CSTRING("Media"), doc,
-                                        nsContentUtils::eDOM_PROPERTIES,
-                                        aMsgName, params, ArrayLength(params));
+        nsContentUtils::ReportToConsole(
+            nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Media"), doc,
+            nsContentUtils::eDOM_PROPERTIES, aMsgName, params);
       };
 
   bool isPrivateBrowsing =

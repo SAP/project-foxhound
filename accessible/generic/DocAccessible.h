@@ -27,6 +27,7 @@ const uint32_t kDefaultCacheLength = 128;
 
 namespace mozilla {
 
+class PresShell;
 class TextEditor;
 
 namespace dom {
@@ -58,7 +59,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
   typedef mozilla::dom::Document Document;
 
  public:
-  DocAccessible(Document* aDocument, nsIPresShell* aPresShell);
+  DocAccessible(Document* aDocument, PresShell* aPresShell);
 
   // nsIScrollPositionListener
   virtual void ScrollPositionWillChange(nscoord aX, nscoord aY) override {}
@@ -125,9 +126,17 @@ class DocAccessible : public HyperTextAccessibleWrap,
   nsIAccessiblePivot* VirtualCursor();
 
   /**
+   * Returns true if the instance has shutdown.
+   */
+  bool HasShutdown() const { return !mPresShell; }
+
+  /**
    * Return presentation shell for this document accessible.
    */
-  nsIPresShell* PresShell() const { return mPresShell; }
+  PresShell* PresShellPtr() const {
+    MOZ_DIAGNOSTIC_ASSERT(!HasShutdown());
+    return mPresShell;
+  }
 
   /**
    * Return the presentation shell's context.
@@ -226,10 +235,10 @@ class DocAccessible : public HyperTextAccessibleWrap,
    *          notification is processed.
    * @see   NotificationController::HandleNotification
    */
-  template <class Class, class Arg>
-  void HandleNotification(Class* aInstance,
-                          typename TNotification<Class, Arg>::Callback aMethod,
-                          Arg* aArg);
+  template <class Class, class... Args>
+  void HandleNotification(
+      Class* aInstance,
+      typename TNotification<Class, Args...>::Callback aMethod, Args*... aArgs);
 
   /**
    * Return the cached accessible by the given DOM node if it's in subtree of
@@ -275,11 +284,12 @@ class DocAccessible : public HyperTextAccessibleWrap,
 
   /**
    * Return an accessible for the given DOM node or container accessible if
-   * the node is not accessible.
+   * the node is not accessible. If aNoContainerIfPruned is true it will return
+   * null if the node is in a pruned subtree (eg. aria-hidden or unselected deck
+   * panel)
    */
-  enum { eIgnoreARIAHidden = 0, eNoContainerIfARIAHidden = 1 };
-  Accessible* GetAccessibleOrContainer(
-      nsINode* aNode, int aARIAHiddenFlag = eIgnoreARIAHidden) const;
+  Accessible* GetAccessibleOrContainer(nsINode* aNode,
+                                       bool aNoContainerIfPruned = false) const;
 
   /**
    * Return a container accessible for the given DOM node.
@@ -293,7 +303,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
    * container for it.
    */
   Accessible* AccessibleOrTrueContainer(
-      nsINode* aNode, int aARIAHiddenFlag = eIgnoreARIAHidden) const;
+      nsINode* aNode, bool aNoContainerIfPruned = false) const;
 
   /**
    * Return an accessible for the given node or its first accessible descendant.
@@ -710,7 +720,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
   friend class NotificationController;
 
  private:
-  nsIPresShell* mPresShell;
+  PresShell* mPresShell;
 
   // Exclusively owned by IPDL so don't manually delete it!
   DocAccessibleChild* mIPCDoc;

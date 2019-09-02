@@ -55,16 +55,20 @@ int32_t WebrtcMediaDataDecoder::InitDecode(
 
   mDecoder = mFactory->CreateDecoder(
       {mInfo, mTaskQueue,
-       CreateDecoderParams::OptionSet(CreateDecoderParams::Option::LowLatency),
+       CreateDecoderParams::OptionSet(
+           CreateDecoderParams::Option::LowLatency,
+           CreateDecoderParams::Option::FullH264Parsing,
+           CreateDecoderParams::Option::ErrorIfNoInitializationData),
        mTrackType, mImageContainer, knowsCompositor});
 
   if (!mDecoder) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
-  media::Await(do_AddRef(mThreadPool), mDecoder->Init(),
-               [&](TrackInfo::TrackType) { mError = NS_OK; },
-               [&](const MediaResult& aError) { mError = aError; });
+  media::Await(
+      do_AddRef(mThreadPool), mDecoder->Init(),
+      [&](TrackInfo::TrackType) { mError = NS_OK; },
+      [&](const MediaResult& aError) { mError = aError; });
 
   return NS_SUCCEEDED(mError) ? WEBRTC_VIDEO_CODEC_OK
                               : WEBRTC_VIDEO_CODEC_ERROR;
@@ -108,12 +112,13 @@ int32_t WebrtcMediaDataDecoder::Decode(
   compressedFrame->mKeyframe =
       aInputImage._frameType == webrtc::FrameType::kVideoFrameKey;
   {
-    media::Await(do_AddRef(mThreadPool), mDecoder->Decode(compressedFrame),
-                 [&](const MediaDataDecoder::DecodedData& aResults) {
-                   mResults = aResults;
-                   mError = NS_OK;
-                 },
-                 [&](const MediaResult& aError) { mError = aError; });
+    media::Await(
+        do_AddRef(mThreadPool), mDecoder->Decode(compressedFrame),
+        [&](const MediaDataDecoder::DecodedData& aResults) {
+          mResults = aResults;
+          mError = NS_OK;
+        },
+        [&](const MediaResult& aError) { mError = aError; });
 
     for (auto& frame : mResults) {
       MOZ_ASSERT(frame->mType == MediaData::Type::VIDEO_DATA);

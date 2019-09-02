@@ -56,13 +56,13 @@ static const float kLargeOpFactor = float(M_SQRT2);
 static const float kIntegralFactor = 2.0;
 
 static void NormalizeDefaultFont(nsFont& aFont, float aFontSizeInflation) {
-  if (aFont.fontlist.GetDefaultFontType() != eFamily_none) {
+  if (aFont.fontlist.GetDefaultFontType() != StyleGenericFontFamily::None) {
     nsTArray<FontFamilyName> names;
     names.AppendElements(aFont.fontlist.GetFontlist()->mNames);
     names.AppendElement(FontFamilyName(aFont.fontlist.GetDefaultFontType()));
 
     aFont.fontlist.SetFontlist(std::move(names));
-    aFont.fontlist.SetDefaultFontType(eFamily_none);
+    aFont.fontlist.SetDefaultFontType(StyleGenericFontFamily::None);
   }
   aFont.size = NSToCoordRound(aFont.size * aFontSizeInflation);
 }
@@ -166,8 +166,8 @@ class nsPropertiesTable final : public nsGlyphTable {
   explicit nsPropertiesTable(const nsACString& aPrimaryFontName)
       : mState(NS_TABLE_STATE_EMPTY) {
     MOZ_COUNT_CTOR(nsPropertiesTable);
-    mGlyphCodeFonts.AppendElement(
-        FontFamilyName(aPrimaryFontName, eUnquotedName));
+    mGlyphCodeFonts.AppendElement(FontFamilyName(
+        aPrimaryFontName, StyleFontFamilyNameSyntax::Identifiers));
   }
 
   ~nsPropertiesTable() { MOZ_COUNT_DTOR(nsPropertiesTable); }
@@ -286,7 +286,8 @@ nsGlyphCode nsPropertiesTable::ElementAt(DrawTarget* /* aDrawTarget */,
       Clean(value);
       mGlyphCodeFonts.AppendElement(FontFamilyName(
           NS_ConvertUTF16toUTF8(value),
-          eUnquotedName));  // i.e., mGlyphCodeFonts[i] holds this font name
+          StyleFontFamilyNameSyntax::Identifiers));  // i.e., mGlyphCodeFonts[i]
+                                                     // holds this font name
     }
   }
 
@@ -419,7 +420,8 @@ class nsOpenTypeTable final : public nsGlyphTable {
 
   explicit nsOpenTypeTable(gfxFont* aFont)
       : mFont(aFont),
-        mFontFamilyName(aFont->GetFontEntry()->FamilyName(), eUnquotedName),
+        mFontFamilyName(aFont->GetFontEntry()->FamilyName(),
+                        StyleFontFamilyNameSyntax::Identifiers),
         mGlyphID(0) {
     MOZ_COUNT_CTOR(nsOpenTypeTable);
   }
@@ -516,7 +518,7 @@ already_AddRefed<gfxTextRun> nsOpenTypeTable::MakeTextRun(
       gfxTextRun::Create(&params, 1, aFontGroup, gfx::ShapedTextFlags(),
                          nsTextFrameUtils::Flags());
   textRun->AddGlyphRun(aFontGroup->GetFirstValidFont(),
-                       gfxTextRange::MatchType::kFontGroup, 0, false,
+                       FontMatchType::Kind::kFontGroup, 0, false,
                        gfx::ShapedTextFlags::TEXT_ORIENT_HORIZONTAL);
   // We don't care about CSS writing mode here;
   // math runs are assumed to be horizontal.
@@ -890,7 +892,7 @@ bool nsMathMLChar::SetFontFamily(nsPresContext* aPresContext,
     // or if the same family name has been found
     gfxFont* firstFont = fm->GetThebesFontGroup()->GetFirstValidFont();
     FontFamilyList firstFontList(firstFont->GetFontEntry()->FamilyName(),
-                                 eUnquotedName);
+                                 StyleFontFamilyNameSyntax::Identifiers);
     if (aGlyphTable == &gGlyphTableList->mUnicodeTable ||
         firstFontList == familyList) {
       aFont.fontlist = familyList;
@@ -1280,8 +1282,8 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
 
   // for comparisons, force use of unquoted names
   FontFamilyName unquotedFamilyName(aFamily);
-  if (unquotedFamilyName.mType == eFamily_named_quoted) {
-    unquotedFamilyName.mType = eFamily_named;
+  if (unquotedFamilyName.mSyntax == StyleFontFamilyNameSyntax::Quoted) {
+    unquotedFamilyName.mSyntax = StyleFontFamilyNameSyntax::Identifiers;
   }
 
   // Check font family if it is not a generic one
@@ -1290,7 +1292,7 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
   nsFont font = sc->StyleFont()->mFont;
   NormalizeDefaultFont(font, context->mFontSizeInflation);
   RefPtr<gfxFontGroup> fontGroup;
-  FontFamilyList family(unquotedFamilyName);
+  FontFamilyList family(nsTArray<FontFamilyName>{unquotedFamilyName});
   if (!aGeneric &&
       !context->mChar->SetFontFamily(context->mPresContext, nullptr, kNullGlyph,
                                      family, font, &fontGroup))
@@ -1343,7 +1345,8 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
 static void AppendFallbacks(nsTArray<FontFamilyName>& aNames,
                             const nsTArray<nsCString>& aFallbacks) {
   for (const nsCString& fallback : aFallbacks) {
-    aNames.AppendElement(FontFamilyName(fallback, eUnquotedName));
+    aNames.AppendElement(
+        FontFamilyName(fallback, StyleFontFamilyNameSyntax::Identifiers));
   }
 }
 
@@ -1679,11 +1682,11 @@ nscoord nsMathMLChar::GetMaxWidth(nsIFrame* aForFrame, DrawTarget* aDrawTarget,
   return std::max(bm.width, bm.rightBearing) - std::min(0, bm.leftBearing);
 }
 
-class nsDisplayMathMLSelectionRect final : public nsDisplayItem {
+class nsDisplayMathMLSelectionRect final : public nsPaintedDisplayItem {
  public:
   nsDisplayMathMLSelectionRect(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                                const nsRect& aRect)
-      : nsDisplayItem(aBuilder, aFrame), mRect(aRect) {
+      : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect) {
     MOZ_COUNT_CTOR(nsDisplayMathMLSelectionRect);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -1706,16 +1709,16 @@ void nsDisplayMathMLSelectionRect::Paint(nsDisplayListBuilder* aBuilder,
                                   *drawTarget);
   // get color to use for selection from the look&feel object
   nscolor bgColor = LookAndFeel::GetColor(
-      LookAndFeel::eColorID_TextSelectBackground, NS_RGB(0, 0, 0));
+      LookAndFeel::ColorID::TextSelectBackground, NS_RGB(0, 0, 0));
   drawTarget->FillRect(rect, ColorPattern(ToDeviceColor(bgColor)));
 }
 
-class nsDisplayMathMLCharForeground final : public nsDisplayItem {
+class nsDisplayMathMLCharForeground final : public nsPaintedDisplayItem {
  public:
   nsDisplayMathMLCharForeground(nsDisplayListBuilder* aBuilder,
                                 nsIFrame* aFrame, nsMathMLChar* aChar,
-                                uint32_t aIndex, bool aIsSelected)
-      : nsDisplayItem(aBuilder, aFrame),
+                                uint16_t aIndex, bool aIsSelected)
+      : nsPaintedDisplayItem(aBuilder, aFrame),
         mChar(aChar),
         mIndex(aIndex),
         mIsSelected(aIsSelected) {
@@ -1755,22 +1758,20 @@ class nsDisplayMathMLCharForeground final : public nsDisplayItem {
     return GetBounds(aBuilder, &snap);
   }
 
-  virtual uint32_t GetPerFrameKey() const override {
-    return (mIndex << TYPE_BITS) | nsDisplayItem::GetPerFrameKey();
-  }
+  virtual uint16_t CalculatePerFrameKey() const override { return mIndex; }
 
  private:
   nsMathMLChar* mChar;
-  uint32_t mIndex;
+  uint16_t mIndex;
   bool mIsSelected;
 };
 
 #ifdef DEBUG
-class nsDisplayMathMLCharDebug final : public nsDisplayItem {
+class nsDisplayMathMLCharDebug final : public nsPaintedDisplayItem {
  public:
   nsDisplayMathMLCharDebug(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                            const nsRect& aRect)
-      : nsDisplayItem(aBuilder, aFrame), mRect(aRect) {
+      : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect) {
     MOZ_COUNT_CTOR(nsDisplayMathMLCharDebug);
   }
 #  ifdef NS_BUILD_REFCNT_LOGGING
@@ -1795,7 +1796,7 @@ void nsDisplayMathMLCharDebug::Paint(nsDisplayListBuilder* aBuilder,
   nsRect rect = mRect + ToReferenceFrame();
 
   PaintBorderFlags flags = aBuilder->ShouldSyncDecodeImages()
-                               ? PaintBorderFlags::SYNC_DECODE_IMAGES
+                               ? PaintBorderFlags::SyncDecodeImages
                                : PaintBorderFlags();
 
   // Since this is used only for debugging, we don't need to worry about
@@ -1829,15 +1830,15 @@ void nsMathMLChar::Display(nsDisplayListBuilder* aBuilder, nsIFrame* aForFrame,
   // purposes. Normally, users will set the background on the container frame.
   // paint the selection background -- beware MathML frames overlap a lot
   if (aSelectedRect && !aSelectedRect->IsEmpty()) {
-    aLists.BorderBackground()->AppendToTop(
-        MakeDisplayItem<nsDisplayMathMLSelectionRect>(aBuilder, aForFrame,
-                                                      *aSelectedRect));
+    aLists.BorderBackground()->AppendNewToTop<nsDisplayMathMLSelectionRect>(
+        aBuilder, aForFrame, *aSelectedRect);
   } else if (mRect.width && mRect.height) {
     if (!usingParentStyle &&
         NS_GET_A(computedStyle->StyleBackground()->BackgroundColor(
             computedStyle)) > 0) {
       nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
-          aBuilder, aForFrame, mRect, aLists.BorderBackground(),
+          aBuilder, aForFrame, mRect + aBuilder->ToReferenceFrame(aForFrame),
+          aLists.BorderBackground(),
           /* aAllowWillPaintBorderOptimization */ true, computedStyle);
     }
     // else
@@ -1845,13 +1846,13 @@ void nsMathMLChar::Display(nsDisplayListBuilder* aBuilder, nsIFrame* aForFrame,
 
 #if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
     // for visual debug
-    aLists.BorderBackground()->AppendToTop(
-        MakeDisplayItem<nsDisplayMathMLCharDebug>(aBuilder, aForFrame, mRect));
+    aLists.BorderBackground()->AppendNewToTop<nsDisplayMathMLCharDebug>(
+        aBuilder, aForFrame, mRect);
 #endif
   }
-  aLists.Content()->AppendToTop(MakeDisplayItem<nsDisplayMathMLCharForeground>(
+  aLists.Content()->AppendNewToTop<nsDisplayMathMLCharForeground>(
       aBuilder, aForFrame, this, aIndex,
-      aSelectedRect && !aSelectedRect->IsEmpty()));
+      aSelectedRect && !aSelectedRect->IsEmpty());
 }
 
 void nsMathMLChar::ApplyTransforms(gfxContext* aThebesContext,
@@ -1896,7 +1897,7 @@ void nsMathMLChar::PaintForeground(nsIFrame* aForFrame,
       &nsStyleText::mWebkitTextFillColor);
   if (aIsSelected) {
     // get color to use for selection from the look&feel object
-    fgColor = LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectForeground,
+    fgColor = LookAndFeel::GetColor(LookAndFeel::ColorID::TextSelectForeground,
                                     fgColor);
   }
   aRenderingContext.SetColor(Color::FromABGR(fgColor));
@@ -2025,7 +2026,7 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
   unionRect.x += mBoundingMetrics.leftBearing;
   unionRect.width =
       mBoundingMetrics.rightBearing - mBoundingMetrics.leftBearing;
-  unionRect.Inflate(oneDevPixel, oneDevPixel);
+  unionRect.Inflate(oneDevPixel);
 
   gfxTextRun::DrawParams params(aThebesContext);
 
@@ -2187,7 +2188,7 @@ nsresult nsMathMLChar::PaintHorizontally(nsPresContext* aPresContext,
   }
 
   nsRect unionRect = aRect;
-  unionRect.Inflate(oneDevPixel, oneDevPixel);
+  unionRect.Inflate(oneDevPixel);
 
   gfxTextRun::DrawParams params(aThebesContext);
 

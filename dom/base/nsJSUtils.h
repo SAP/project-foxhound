@@ -16,6 +16,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/StaticPrefs.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include "GeckoProfiler.h"
 #include "jsapi.h"
@@ -57,7 +58,7 @@ class nsJSUtils {
   static uint64_t GetCurrentlyRunningCodeInnerWindowID(JSContext* aContext);
 
   static nsresult CompileFunction(mozilla::dom::AutoJSAPI& jsapi,
-                                  JS::AutoObjectVector& aScopeChain,
+                                  JS::HandleVector<JSObject*> aScopeChain,
                                   JS::CompileOptions& aOptions,
                                   const nsACString& aName, uint32_t aArgCount,
                                   const char** aArgArray,
@@ -80,7 +81,7 @@ class nsJSUtils {
     JS::Rooted<JS::Value> mRetValue;
 
     // Scope chain in which the execution takes place.
-    JS::AutoObjectVector mScopeChain;
+    JS::RootedVector<JSObject*> mScopeChain;
 
     // The compiled script.
     JS::Rooted<JSScript*> mScript;
@@ -107,6 +108,12 @@ class nsJSUtils {
 
     bool mScriptUsed;
 #endif
+
+   private:
+    // Compile a script contained in a SourceText.
+    template <typename Unit>
+    nsresult InternalCompile(JS::CompileOptions& aCompileOptions,
+                             JS::SourceText<Unit>& aSrcBuf);
 
    public:
     // Enter compartment in which the code would be executed.  The JSContext
@@ -142,7 +149,7 @@ class nsJSUtils {
     }
 
     // Set the scope chain in which the code should be executed.
-    void SetScopeChain(const JS::AutoObjectVector& aScopeChain);
+    void SetScopeChain(JS::HandleVector<JSObject*> aScopeChain);
 
     // After getting a notification that an off-thread compilation terminated,
     // this function will take the result of the parser and move it to the main
@@ -152,6 +159,8 @@ class nsJSUtils {
     // Compile a script contained in a SourceText.
     nsresult Compile(JS::CompileOptions& aCompileOptions,
                      JS::SourceText<char16_t>& aSrcBuf);
+    nsresult Compile(JS::CompileOptions& aCompileOptions,
+                     JS::SourceText<mozilla::Utf8Unit>& aSrcBuf);
 
     // Compile a script contained in a string.
     nsresult Compile(JS::CompileOptions& aCompileOptions,
@@ -210,6 +219,12 @@ class nsJSUtils {
                                 JS::CompileOptions& aCompileOptions,
                                 JS::MutableHandle<JSObject*> aModule);
 
+  static nsresult CompileModule(JSContext* aCx,
+                                JS::SourceText<mozilla::Utf8Unit>& aSrcBuf,
+                                JS::Handle<JSObject*> aEvaluationGlobal,
+                                JS::CompileOptions& aCompileOptions,
+                                JS::MutableHandle<JSObject*> aModule);
+
   static nsresult InitModuleSourceElement(JSContext* aCx,
                                           JS::Handle<JSObject*> aModule,
                                           nsIScriptElement* aElement);
@@ -221,9 +236,9 @@ class nsJSUtils {
 
   // Returns false if an exception got thrown on aCx.  Passing a null
   // aElement is allowed; that wil produce an empty aScopeChain.
-  static bool GetScopeChainForElement(JSContext* aCx,
-                                      mozilla::dom::Element* aElement,
-                                      JS::AutoObjectVector& aScopeChain);
+  static bool GetScopeChainForElement(
+      JSContext* aCx, mozilla::dom::Element* aElement,
+      JS::MutableHandleVector<JSObject*> aScopeChain);
 
   // Returns a scope chain suitable for XBL execution.
   //
@@ -231,12 +246,14 @@ class nsJSUtils {
   // <binding> element had the simpleScopeChain attribute.
   //
   // This is to prevent footguns like bug 1446342.
-  static bool GetScopeChainForXBL(JSContext* aCx,
-                                  mozilla::dom::Element* aBoundElement,
-                                  const nsXBLPrototypeBinding& aProtoBinding,
-                                  JS::AutoObjectVector& aScopeChain);
+  static bool GetScopeChainForXBL(
+      JSContext* aCx, mozilla::dom::Element* aBoundElement,
+      const nsXBLPrototypeBinding& aProtoBinding,
+      JS::MutableHandleVector<JSObject*> aScopeChain);
 
   static void ResetTimeZone();
+
+  static bool DumpEnabled();
 };
 
 template <typename T>

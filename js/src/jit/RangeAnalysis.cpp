@@ -1733,6 +1733,8 @@ static Range* GetTypedArrayRange(TempAllocator& alloc, Scalar::Type type) {
     case Scalar::Int32:
       return Range::NewInt32Range(alloc, INT32_MIN, INT32_MAX);
 
+    case Scalar::BigInt64:
+    case Scalar::BigUint64:
     case Scalar::Int64:
     case Scalar::Float32:
     case Scalar::Float64:
@@ -2225,9 +2227,9 @@ static inline bool SymbolicBoundIsValid(MBasicBlock* header, MBoundsCheck* ins,
 
 bool RangeAnalysis::tryHoistBoundsCheck(MBasicBlock* header,
                                         MBoundsCheck* ins) {
-  // The bounds check's length must be loop invariant.
+  // The bounds check's length must be loop invariant or a constant.
   MDefinition* length = DefinitionOrBetaInputDefinition(ins->length());
-  if (length->block()->isMarked()) {
+  if (length->block()->isMarked() && !length->isConstant()) {
     return false;
   }
 
@@ -2299,6 +2301,13 @@ bool RangeAnalysis::tryHoistBoundsCheck(MBasicBlock* header,
 
   // Hoist the loop invariant upper bounds checks.
   if (upperTerm != length || upperConstant >= 0) {
+    // Hoist the bound check's length if it isn't already loop invariant.
+    if (length->block()->isMarked()) {
+      MOZ_ASSERT(length->isConstant());
+      MInstruction* lengthIns = length->toInstruction();
+      lengthIns->block()->moveBefore(preLoop->lastIns(), lengthIns);
+    }
+
     MBoundsCheck* upperCheck = MBoundsCheck::New(alloc(), upperTerm, length);
     upperCheck->setMinimum(upperConstant);
     upperCheck->setMaximum(upperConstant);

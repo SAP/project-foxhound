@@ -3,14 +3,22 @@
 
 "use strict";
 
-const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "AppMenuNotifications",
-                               "resource://gre/modules/AppMenuNotifications.jsm");
-ChromeUtils.defineModuleGetter(this, "UpdateListener",
-                               "resource://gre/modules/UpdateListener.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "AppMenuNotifications",
+  "resource://gre/modules/AppMenuNotifications.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "UpdateListener",
+  "resource://gre/modules/UpdateListener.jsm"
+);
 
-const BIN_SUFFIX = (AppConstants.platform == "win" ? ".exe" : "");
+const BIN_SUFFIX = AppConstants.platform == "win" ? ".exe" : "";
 const FILE_UPDATER_BIN =
   "updater" + (AppConstants.platform == "macosx" ? ".app" : BIN_SUFFIX);
 const FILE_UPDATER_BIN_BAK = FILE_UPDATER_BIN + ".bak";
@@ -27,15 +35,22 @@ Services.scriptloader.loadSubScript(DATA_URI_SPEC + "testConstants.js", this);
 var gURLData = URL_HOST + "/" + REL_PATH_DATA;
 const URL_MANUAL_UPDATE = gURLData + "downloadPage.html";
 
+const gBadSizeResult = Cr.NS_ERROR_UNEXPECTED.toString();
+
 /* import-globals-from ../data/shared.js */
 Services.scriptloader.loadSubScript(DATA_URI_SPEC + "shared.js", this);
 
 let gOriginalUpdateAutoValue = null;
 
+// Some elements append a trailing /. After the chrome tests are removed this
+// code can be changed so URL_HOST already has a trailing /.
+const gDetailsURL = URL_HOST + "/";
+const gDefaultWhatsNewURL = URL_HTTP_UPDATE_SJS + "?uiURL=DETAILS";
+
 // Set to true to log additional information for debugging. To log additional
-// information for individual tests set gDebugTest to false here and to true in
-// the test's onload function.
-gDebugTest = true;
+// information for individual tests set gDebugTest to false here and to true
+// globally in the test.
+gDebugTest = false;
 
 // This is to accommodate the TV task which runs the tests with --verify.
 requestLongerTimeout(10);
@@ -46,12 +61,23 @@ requestLongerTimeout(10);
 add_task(async function setupTestCommon() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      [PREF_APP_UPDATE_BADGEWAITTIME, 1800],
+      [PREF_APP_UPDATE_DOWNLOAD_ATTEMPTS, 0],
+      [PREF_APP_UPDATE_DOWNLOAD_MAXATTEMPTS, 2],
       [PREF_APP_UPDATE_LOG, gDebugTest],
+      [PREF_APP_UPDATE_PROMPTWAITTIME, 3600],
+      [PREF_APP_UPDATE_SERVICE_ENABLED, false],
+      // Disable activity stream to prevent errors when opening pages during
+      // TV runs. See bug 1548422 for an example.
+      ["browser.library.activity-stream.enabled", false],
     ],
   });
 
   setUpdateTimerPrefs();
+  reloadUpdateManagerData(true);
   removeUpdateFiles(true);
+  UpdateListener.reset();
+  AppMenuNotifications.removeNotification(/.*/);
   // Most app update mochitest-browser-chrome tests expect auto update to be
   // enabled. Those that don't will explicitly change this.
   await setAppUpdateAutoEnabledHelper(true);
@@ -61,9 +87,12 @@ add_task(async function setupTestCommon() {
  * Common tasks to perform for all tests after each one has finished.
  */
 registerCleanupFunction(async () => {
+  AppMenuNotifications.removeNotification(/.*/);
   gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "");
   gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "");
+  gEnv.set("MOZ_TEST_STAGING_ERROR", "");
   UpdateListener.reset();
+  AppMenuNotifications.removeNotification(/.*/);
   reloadUpdateManagerData(true);
   // Pass false when the log files are needed for troubleshooting the tests.
   removeUpdateFiles(true);
@@ -99,10 +128,10 @@ registerCleanupFunction(async () => {
  * @throws If the file already exists.
  */
 async function continueFileHandler(leafName) {
-  // The total time to wait with 200 retries and the default interval of 100 is
-  // approximately 20 seconds.
+  // The total time to wait with 300 retries and the default interval of 100 is
+  // approximately 30 seconds.
   let interval = 100;
-  let retries = 200;
+  let retries = 300;
   let continueFile;
   if (leafName == CONTINUE_STAGING) {
     // The total time to wait with 600 retries and an interval of 200 is
@@ -110,6 +139,9 @@ async function continueFileHandler(leafName) {
     interval = 200;
     retries = 600;
     continueFile = getGREBinDir();
+    if (AppConstants.platform == "macosx") {
+      continueFile = continueFile.parent.parent;
+    }
     continueFile.append(leafName);
   } else {
     continueFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
@@ -120,8 +152,10 @@ async function continueFileHandler(leafName) {
     }
   }
   if (continueFile.exists()) {
-    throw new Error("The continue file should not exist, path: " +
-                    continueFile.path);
+    logTestInfo(
+      "The continue file should not exist, path: " + continueFile.path
+    );
+    continueFile.remove(false);
   }
   debugDump("Creating continue file, path: " + continueFile.path);
   continueFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
@@ -130,18 +164,24 @@ async function continueFileHandler(leafName) {
   // after the test that created it.
   registerCleanupFunction(() => {
     if (continueFile.exists()) {
-      logTestInfo("Removing continue file during test cleanup, path: " +
-                  continueFile.path);
+      logTestInfo(
+        "Removing continue file during test cleanup, path: " + continueFile.path
+      );
       continueFile.remove(false);
     }
   });
-  return BrowserTestUtils.waitForCondition(() => (
-    !continueFile.exists()),
+  return TestUtils.waitForCondition(
+    () => !continueFile.exists(),
     "Waiting for file to be deleted, path: " + continueFile.path,
-    interval, retries
+    interval,
+    retries
   ).catch(e => {
-    logTestInfo("Continue file was not removed after checking " +
-                retries + " times, path: " + continueFile.path);
+    logTestInfo(
+      "Continue file was not removed after checking " +
+        retries +
+        " times, path: " +
+        continueFile.path
+    );
   });
 }
 
@@ -158,7 +198,9 @@ function lockWriteTestFile() {
   if (AppConstants.platform != "win") {
     throw new Error("Windows only test function called");
   }
-  let file = getUpdateDirFile(FILE_UPDATE_TEST).QueryInterface(Ci.nsILocalFileWin);
+  let file = getUpdateDirFile(FILE_UPDATE_TEST).QueryInterface(
+    Ci.nsILocalFileWin
+  );
   // Remove the file if it exists just in case.
   if (file.exists()) {
     file.fileAttributesWin |= file.WFA_READWRITE;
@@ -238,129 +280,6 @@ async function setAppUpdateAutoEnabledHelper(enabled) {
 }
 
 /**
- * Runs a typical update test. Will set various common prefs for using the
- * updater doorhanger, runs the provided list of steps, and makes sure
- * everything is cleaned up afterwards.
- *
- * @param  updateParams
- *         Params which will be sent to app_update.sjs.
- * @param  checkAttempts
- *         How many times to check for updates. Useful for testing the UI
- *         for check failures.
- * @param  steps
- *         A list of test steps to perform, specifying expected doorhangers
- *         and additional validation/cleanup callbacks.
- * @return A promise which will resolve once all of the steps have been run
- *         and cleanup has been performed.
- */
-function runUpdateTest(updateParams, checkAttempts, steps) {
-  return (async function() {
-    gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
-    await SpecialPowers.pushPrefEnv({
-      set: [
-        [PREF_APP_UPDATE_DOWNLOADPROMPTATTEMPTS, 0],
-        [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
-        [PREF_APP_UPDATE_IDLETIME, 0],
-        [PREF_APP_UPDATE_URL_MANUAL, URL_MANUAL_UPDATE],
-      ],
-    });
-
-    await setupTestUpdater();
-
-    let url = URL_HTTP_UPDATE_SJS +
-              "?" + updateParams +
-              getVersionParams();
-
-    setUpdateURL(url);
-
-    executeSoon(() => {
-      (async function() {
-        gAUS.checkForBackgroundUpdates();
-        for (var i = 0; i < checkAttempts - 1; i++) {
-          await waitForEvent("update-error", "check-attempt-failed");
-          gAUS.checkForBackgroundUpdates();
-        }
-      })();
-    });
-
-    for (let step of steps) {
-      await processStep(step);
-    }
-  })();
-}
-
-/**
- * Runs a test which processes an update. Similar to runUpdateTest.
- *
- * @param  updates
- *         A list of updates to process.
- * @param  steps
- *         A list of test steps to perform, specifying expected doorhangers
- *         and additional validation/cleanup callbacks.
- * @return A promise which will resolve once all of the steps have been run
- *         and cleanup has been performed.
- */
-function runUpdateProcessingTest(updates, steps) {
-  return (async function() {
-    gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
-    await SpecialPowers.pushPrefEnv({
-      set: [
-        [PREF_APP_UPDATE_DOWNLOADPROMPTATTEMPTS, 0],
-        [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
-        [PREF_APP_UPDATE_IDLETIME, 0],
-        [PREF_APP_UPDATE_URL_MANUAL, URL_MANUAL_UPDATE],
-      ],
-    });
-
-    await setupTestUpdater();
-
-    writeUpdatesToXMLFile(getLocalUpdatesXMLString(updates), true);
-
-    writeUpdatesToXMLFile(getLocalUpdatesXMLString(""), false);
-    writeStatusFile(STATE_FAILED_CRC_ERROR);
-    reloadUpdateManagerData();
-
-    testPostUpdateProcessing();
-
-    for (let step of steps) {
-      await processStep(step);
-    }
-  })();
-}
-
-function processStep(step) {
-  if (typeof(step) == "function") {
-    return step();
-  }
-
-  const {notificationId, button, beforeClick, cleanup} = step;
-  return (async function() {
-    await BrowserTestUtils.waitForEvent(PanelUI.notificationPanel, "popupshown");
-    const shownNotification = AppMenuNotifications.activeNotification.id;
-
-    is(shownNotification, notificationId, "The right notification showed up.");
-    if (shownNotification != notificationId) {
-      if (cleanup) {
-        await cleanup();
-      }
-      return;
-    }
-
-    let buttonEl = getNotificationButton(window, notificationId, button);
-    if (beforeClick) {
-      await beforeClick();
-    }
-
-
-    buttonEl.click();
-
-    if (cleanup) {
-      await cleanup();
-    }
-  })();
-}
-
-/**
  * Gets the specified button for the notification.
  *
  * @param  win
@@ -372,30 +291,28 @@ function processStep(step) {
  * @return The button element.
  */
 function getNotificationButton(win, notificationId, button) {
-  let notification =
-    win.document.getElementById(`appMenu-${notificationId}-notification`);
-  is(notification.hidden, false, `${notificationId} notification is showing`);
+  let notification = win.document.getElementById(
+    `appMenu-${notificationId}-notification`
+  );
+  ok(!notification.hidden, `${notificationId} notification is showing`);
   return notification[button];
 }
 
 /**
  * Ensures that the "What's new" link with the provided ID is displayed and
- * matches the url parameter provided. If no URL is provided, it will instead
- * ensure that the link matches the default link URL.
+ * matches the url parameter provided.
  *
  * @param  win
  *         The window to get the "What's new" link for.
  * @param  id
  *         The ID of the "What's new" link element.
- * @param  url (optional)
- *         The URL to check against. If none is provided, a default will be used.
+ * @param  url
+ *         The URL to check against.
  */
 function checkWhatsNewLink(win, id, url) {
   let whatsNewLink = win.document.getElementById(id);
-  is(whatsNewLink.href,
-     url || URL_HTTP_UPDATE_SJS + "?uiURL=DETAILS",
-     "What's new link points to the test_details URL");
-  is(whatsNewLink.hidden, false, "What's new link is not hidden.");
+  ok(!whatsNewLink.hidden, "What's new link is not hidden.");
+  is(whatsNewLink.href, url, `What's new link href should equal ${url}`);
 }
 
 /**
@@ -410,8 +327,11 @@ function setupTestUpdater() {
       try {
         restoreUpdaterBackup();
       } catch (e) {
-        logTestInfo("Attempt to restore the backed up updater failed... " +
-                    "will try again, Exception: " + e);
+        logTestInfo(
+          "Attempt to restore the backed up updater failed... " +
+            "will try again, Exception: " +
+            e
+        );
         await TestUtils.waitForTick();
         await setupTestUpdater();
         return;
@@ -448,8 +368,11 @@ function moveRealUpdater() {
         precomplete.moveTo(greDir, FILE_PRECOMPLETE_BAK);
       }
     } catch (e) {
-      logTestInfo("Attempt to move the real updater out of the way failed... " +
-                  "will try again, Exception: " + e);
+      logTestInfo(
+        "Attempt to move the real updater out of the way failed... " +
+          "will try again, Exception: " +
+          e
+      );
       await TestUtils.waitForTick();
       await moveRealUpdater();
       return;
@@ -489,8 +412,11 @@ function copyTestUpdater(attempt = 0) {
       writeFile(precomplete, PRECOMPLETE_CONTENTS);
     } catch (e) {
       if (attempt < MAX_UPDATE_COPY_ATTEMPTS) {
-        logTestInfo("Attempt to copy the test updater failed... " +
-                    "will try again, Exception: " + e);
+        logTestInfo(
+          "Attempt to copy the test updater failed... " +
+            "will try again, Exception: " +
+            e
+        );
         await TestUtils.waitForTick();
         await copyTestUpdater(attempt++);
       }
@@ -557,8 +483,11 @@ function finishTestRestoreUpdaterBackup() {
       // time after the updater process exits.
       restoreUpdaterBackup();
     } catch (e) {
-      logTestInfo("Attempt to restore the backed up updater failed... " +
-                  "will try again, Exception: " + e);
+      logTestInfo(
+        "Attempt to restore the backed up updater failed... " +
+          "will try again, Exception: " +
+          e
+      );
 
       await TestUtils.waitForTick();
       await finishTestRestoreUpdaterBackup();
@@ -579,11 +508,14 @@ function waitForAboutDialog() {
         debugDump("About dialog shown...");
         Services.wm.removeListener(listener);
 
-         async function aboutDialogOnLoad() {
+        async function aboutDialogOnLoad() {
           domwindow.removeEventListener("load", aboutDialogOnLoad, true);
           let chromeURI = "chrome://browser/content/aboutDialog.xul";
-          is(domwindow.document.location.href, chromeURI,
-             "About dialog appeared");
+          is(
+            domwindow.document.location.href,
+            chromeURI,
+            "About dialog appeared"
+          );
           resolve(domwindow);
         }
 
@@ -599,50 +531,228 @@ function waitForAboutDialog() {
 }
 
 /**
- * Runs an About Dialog update test. This will set various common prefs for
+ * Return the first UpdatePatch with the given type.
+ *
+ * @param   type
+ *          The type of the patch ("complete" or "partial")
+ * @return  A nsIUpdatePatch object matching the type specified
+ */
+function getPatchOfType(type) {
+  let update = gUpdateManager.activeUpdate;
+  if (update) {
+    for (let i = 0; i < update.patchCount; ++i) {
+      let patch = update.getPatchAt(i);
+      if (patch && patch.type == type) {
+        return patch;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Runs a Doorhanger update test. This will set various common prefs for
  * updating and runs the provided list of steps.
  *
- * @param  updateParams
- *         Params which will be sent to app_update.sjs.
- * @param  backgroundUpdate
- *         If true a background check will be performed before opening the About
- *         Dialog.
+ * @param  params
+ *         An object containing parameters used to run the test.
  * @param  steps
  *         An array of test steps to perform. A step will either be an object
  *         containing expected conditions and actions or a function to call.
  * @return A promise which will resolve once all of the steps have been run.
  */
-function runAboutDialogUpdateTest(updateParams, backgroundUpdate, steps) {
-  // Some elements append a trailing /. After the chrome tests are removed this
-  // code can be changed so URL_HOST already has a trailing /.
-  let detailsURL = URL_HOST + "/";
-  let aboutDialog;
-  function processAboutDialogStep(step) {
-    if (typeof(step) == "function") {
+function runDoorhangerUpdateTest(params, steps) {
+  function processDoorhangerStep(step) {
+    if (typeof step == "function") {
       return step();
     }
 
-    const {panelId, checkActiveUpdate, continueFile} = step;
+    const { notificationId, button, checkActiveUpdate, pageURLs } = step;
+    return (async function() {
+      await BrowserTestUtils.waitForEvent(
+        PanelUI.notificationPanel,
+        "popupshown"
+      );
+      const shownNotificationId = AppMenuNotifications.activeNotification.id;
+      is(
+        shownNotificationId,
+        notificationId,
+        "The right notification showed up."
+      );
+
+      if (checkActiveUpdate) {
+        ok(!!gUpdateManager.activeUpdate, "There should be an active update");
+        is(
+          gUpdateManager.activeUpdate.state,
+          checkActiveUpdate.state,
+          `The active update state should equal ${checkActiveUpdate.state}`
+        );
+      } else {
+        ok(
+          !gUpdateManager.activeUpdate,
+          "There should not be an active update"
+        );
+      }
+
+      if (pageURLs && pageURLs.whatsNew !== undefined) {
+        checkWhatsNewLink(
+          window,
+          `${notificationId}-whats-new`,
+          pageURLs.whatsNew
+        );
+      }
+
+      let buttonEl = getNotificationButton(window, notificationId, button);
+      buttonEl.click();
+
+      if (pageURLs && pageURLs.manual !== undefined) {
+        await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+        is(
+          gBrowser.selectedBrowser.currentURI.spec,
+          pageURLs.manual,
+          `The page's url should equal ${pageURLs.manual}`
+        );
+        gBrowser.removeTab(gBrowser.selectedTab);
+      }
+    })();
+  }
+
+  return (async function() {
+    gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
+        [PREF_APP_UPDATE_URL_DETAILS, gDetailsURL],
+        [PREF_APP_UPDATE_URL_MANUAL, URL_MANUAL_UPDATE],
+      ],
+    });
+
+    await setupTestUpdater();
+
+    let queryString = params.queryString ? params.queryString : "";
+    let updateURL =
+      URL_HTTP_UPDATE_SJS +
+      "?detailsURL=" +
+      gDetailsURL +
+      queryString +
+      getVersionParams();
+    setUpdateURL(updateURL);
+
+    if (params.checkAttempts) {
+      // Perform a background check doorhanger test.
+      executeSoon(() => {
+        (async function() {
+          gAUS.checkForBackgroundUpdates();
+          for (var i = 0; i < params.checkAttempts - 1; i++) {
+            await waitForEvent("update-error", "check-attempt-failed");
+            gAUS.checkForBackgroundUpdates();
+          }
+        })();
+      });
+    } else {
+      // Perform a startup processing doorhanger test.
+      writeStatusFile(STATE_FAILED_CRC_ERROR);
+      writeUpdatesToXMLFile(getLocalUpdatesXMLString(params.updates), true);
+      reloadUpdateManagerData();
+      testPostUpdateProcessing();
+    }
+
+    for (let step of steps) {
+      await processDoorhangerStep(step);
+    }
+  })();
+}
+
+/**
+ * Runs an About Dialog update test. This will set various common prefs for
+ * updating and runs the provided list of steps.
+ *
+ * @param  params
+ *         An object containing parameters used to run the test.
+ * @param  steps
+ *         An array of test steps to perform. A step will either be an object
+ *         containing expected conditions and actions or a function to call.
+ * @return A promise which will resolve once all of the steps have been run.
+ */
+function runAboutDialogUpdateTest(params, steps) {
+  let aboutDialog;
+  function processAboutDialogStep(step) {
+    if (typeof step == "function") {
+      return step();
+    }
+
+    const { panelId, checkActiveUpdate, continueFile, downloadInfo } = step;
     return (async function() {
       let updateDeck = aboutDialog.document.getElementById("updateDeck");
-      await BrowserTestUtils.waitForCondition(() =>
-        (updateDeck.selectedPanel && updateDeck.selectedPanel.id == panelId),
-        "Waiting for expected panel ID - got: \"" +
-        updateDeck.selectedPanel.id + "\", expected \"" + panelId + "\"",
-        undefined, 200);
+      // Also continue if the selected panel ID is 'apply' since there are no
+      // other panels after 'apply'.
+      await TestUtils.waitForCondition(
+        () =>
+          updateDeck.selectedPanel &&
+          (updateDeck.selectedPanel.id == panelId ||
+            updateDeck.selectedPanel.id == "apply"),
+        "Waiting for the expected panel ID: " + panelId,
+        undefined,
+        200
+      ).catch(e => {
+        // Instead of throwing let the check below fail the test so the panel
+        // ID and the expected panel ID is printed in the log.
+        logTestInfo(e);
+      });
       let selectedPanel = updateDeck.selectedPanel;
       is(selectedPanel.id, panelId, "The panel ID should equal " + panelId);
 
       if (checkActiveUpdate) {
         ok(!!gUpdateManager.activeUpdate, "There should be an active update");
-        is(gUpdateManager.activeUpdate.state, checkActiveUpdate.state,
-           "The active update state should equal " + checkActiveUpdate.state);
+        is(
+          gUpdateManager.activeUpdate.state,
+          checkActiveUpdate.state,
+          "The active update state should equal " + checkActiveUpdate.state
+        );
       } else {
-        ok(!gUpdateManager.activeUpdate,
-           "There should not be an active update");
+        ok(
+          !gUpdateManager.activeUpdate,
+          "There should not be an active update"
+        );
       }
 
-      if (continueFile) {
+      if (panelId == "downloading") {
+        for (let i = 0; i < downloadInfo.length; ++i) {
+          let data = downloadInfo[i];
+          // The About Dialog tests always specify a continue file.
+          await continueFileHandler(continueFile);
+          let patch = getPatchOfType(data.patchType);
+          // The update is removed early when the last download fails so check
+          // that there is a patch before proceeding.
+          let isLastPatch = i == downloadInfo.length - 1;
+          if (!isLastPatch || patch) {
+            let resultName = data.bitsResult ? "bitsResult" : "internalResult";
+            patch.QueryInterface(Ci.nsIWritablePropertyBag);
+            await TestUtils.waitForCondition(
+              () => patch.getProperty(resultName) == data[resultName],
+              "Waiting for expected patch property " +
+                resultName +
+                " value: " +
+                data[resultName],
+              undefined,
+              200
+            ).catch(e => {
+              // Instead of throwing let the check below fail the test so the
+              // property value and the expected property value is printed in
+              // the log.
+              logTestInfo(e);
+            });
+            is(
+              patch.getProperty(resultName),
+              data[resultName],
+              "The patch property " +
+                resultName +
+                " value should equal " +
+                data[resultName]
+            );
+          }
+        }
+      } else if (continueFile) {
         await continueFileHandler(continueFile);
       }
 
@@ -652,16 +762,20 @@ function runAboutDialogUpdateTest(updateParams, backgroundUpdate, steps) {
         // downloadFailed and manualUpdate panels use the app.update.url.manual
         // preference.
         let link = selectedPanel.querySelector("label.text-link");
-        is(link.href, detailsURL,
-           "The panel's link href should equal the expected value");
+        is(
+          link.href,
+          gDetailsURL,
+          `The panel's link href should equal ${gDetailsURL}`
+        );
       }
 
       let buttonPanels = ["downloadAndInstall", "apply"];
       if (buttonPanels.includes(panelId)) {
         let buttonEl = selectedPanel.querySelector("button");
-        await BrowserTestUtils.waitForCondition(() =>
-          (aboutDialog.document.activeElement == buttonEl),
-          "The button should receive focus");
+        await TestUtils.waitForCondition(
+          () => aboutDialog.document.activeElement == buttonEl,
+          "The button should receive focus"
+        );
         ok(!buttonEl.disabled, "The button should be enabled");
         // Don't click the button on the apply panel since this will restart the
         // application.
@@ -676,26 +790,46 @@ function runAboutDialogUpdateTest(updateParams, backgroundUpdate, steps) {
     gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
     await SpecialPowers.pushPrefEnv({
       set: [
-        [PREF_APP_UPDATE_SERVICE_ENABLED, false],
         [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
-        [PREF_APP_UPDATE_URL_MANUAL, detailsURL],
+        [PREF_APP_UPDATE_URL_MANUAL, gDetailsURL],
       ],
     });
 
     await setupTestUpdater();
 
-    let updateURL = URL_HTTP_UPDATE_SJS + "?detailsURL=" + detailsURL +
-                    updateParams + getVersionParams();
-    if (backgroundUpdate) {
-      if (Services.prefs.getBoolPref(PREF_APP_UPDATE_STAGING_ENABLED)) {
-        // Since MOZ_TEST_SKIP_UPDATE_STAGE is checked before
-        // MOZ_TEST_SLOW_SKIP_UPDATE_STAGE in updater.cpp this removes the need
-        // for the continue file to continue staging the update.
-        gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
-      }
+    let queryString = params.queryString ? params.queryString : "";
+    let updateURL =
+      URL_HTTP_UPDATE_SJS +
+      "?detailsURL=" +
+      gDetailsURL +
+      queryString +
+      getVersionParams();
+    if (params.backgroundUpdate) {
       setUpdateURL(updateURL);
       gAUS.checkForBackgroundUpdates();
-      await waitForEvent("update-downloaded");
+      if (params.continueFile) {
+        await continueFileHandler(params.continueFile);
+      }
+      if (params.waitForUpdateState) {
+        await TestUtils.waitForCondition(
+          () =>
+            gUpdateManager.activeUpdate &&
+            gUpdateManager.activeUpdate.state == params.waitForUpdateState,
+          "Waiting for update state: " + params.waitForUpdateState,
+          undefined,
+          200
+        ).catch(e => {
+          // Instead of throwing let the check below fail the test so the panel
+          // ID and the expected panel ID is printed in the log.
+          logTestInfo(e);
+        });
+        // Display the UI after the update state equals the expected value.
+        is(
+          gUpdateManager.activeUpdate.state,
+          params.waitForUpdateState,
+          "The update state value should equal " + params.waitForUpdateState
+        );
+      }
     } else {
       updateURL += "&slowUpdateCheck=1&useSlowDownloadMar=1";
       setUpdateURL(updateURL);
@@ -716,88 +850,151 @@ function runAboutDialogUpdateTest(updateParams, backgroundUpdate, steps) {
  * Runs an about:preferences update test. This will set various common prefs for
  * updating and runs the provided list of steps.
  *
- * @param  updateParams
- *         Params which will be sent to app_update.sjs.
- * @param  backgroundUpdate
- *         If true a background check will be performed before opening the About
- *         Dialog.
+ * @param  params
+ *         An object containing parameters used to run the test.
  * @param  steps
  *         An array of test steps to perform. A step will either be an object
  *         containing expected conditions and actions or a function to call.
  * @return A promise which will resolve once all of the steps have been run.
  */
-function runAboutPrefsUpdateTest(updateParams, backgroundUpdate, steps) {
-  // Some elements append a trailing /. After the chrome tests are removed this
-  // code can be changed so URL_HOST already has a trailing /.
-  let detailsURL = URL_HOST + "/";
+function runAboutPrefsUpdateTest(params, steps) {
   let tab;
   function processAboutPrefsStep(step) {
-    if (typeof(step) == "function") {
+    if (typeof step == "function") {
       return step();
     }
 
-    const {panelId, checkActiveUpdate, continueFile} = step;
+    const { panelId, checkActiveUpdate, continueFile, downloadInfo } = step;
     return (async function() {
-      await ContentTask.spawn(tab.linkedBrowser, {panelId},
-                              async ({panelId}) => {
-        let updateDeck = content.document.getElementById("updateDeck");
-        await ContentTaskUtils.waitForCondition(() =>
-          (updateDeck.selectedPanel && updateDeck.selectedPanel.id == panelId),
-          "Waiting for expected panel ID - got: \"" +
-          updateDeck.selectedPanel.id + "\", expected \"" + panelId + "\"",
-          undefined, 200);
-        is(updateDeck.selectedPanel.id, panelId,
-           "The panel ID should equal " + panelId);
-      });
+      await ContentTask.spawn(
+        tab.linkedBrowser,
+        { panelId },
+        async ({ panelId }) => {
+          let updateDeck = content.document.getElementById("updateDeck");
+          // Also continue if the selected panel ID is 'apply' since there are no
+          // other panels after 'apply'.
+          await ContentTaskUtils.waitForCondition(
+            () =>
+              updateDeck.selectedPanel &&
+              (updateDeck.selectedPanel.id == panelId ||
+                updateDeck.selectedPanel.id == "apply"),
+            "Waiting for the expected panel ID: " + panelId,
+            undefined,
+            200
+          ).catch(e => {
+            // Instead of throwing let the check below fail the test so the panel
+            // ID and the expected panel ID is printed in the log. Use info here
+            // instead of logTestInfo since logTestInfo isn't available in the
+            // content task.
+            info(e);
+          });
+          is(
+            updateDeck.selectedPanel.id,
+            panelId,
+            "The panel ID should equal " + panelId
+          );
+        }
+      );
 
       if (checkActiveUpdate) {
         ok(!!gUpdateManager.activeUpdate, "There should be an active update");
-        is(gUpdateManager.activeUpdate.state, checkActiveUpdate.state,
-           "The active update state should equal " + checkActiveUpdate.state);
+        is(
+          gUpdateManager.activeUpdate.state,
+          checkActiveUpdate.state,
+          "The active update state should equal " + checkActiveUpdate.state
+        );
       } else {
-        ok(!gUpdateManager.activeUpdate,
-           "There should not be an active update");
+        ok(
+          !gUpdateManager.activeUpdate,
+          "There should not be an active update"
+        );
       }
 
-      if (continueFile) {
+      if (panelId == "downloading") {
+        for (let i = 0; i < downloadInfo.length; ++i) {
+          let data = downloadInfo[i];
+          // The About Dialog tests always specify a continue file.
+          await continueFileHandler(continueFile);
+          let patch = getPatchOfType(data.patchType);
+          // The update is removed early when the last download fails so check
+          // that there is a patch before proceeding.
+          let isLastPatch = i == downloadInfo.length - 1;
+          if (!isLastPatch || patch) {
+            let resultName = data.bitsResult ? "bitsResult" : "internalResult";
+            patch.QueryInterface(Ci.nsIWritablePropertyBag);
+            await TestUtils.waitForCondition(
+              () => patch.getProperty(resultName) == data[resultName],
+              "Waiting for expected patch property " +
+                resultName +
+                " value: " +
+                data[resultName],
+              undefined,
+              200
+            ).catch(e => {
+              // Instead of throwing let the check below fail the test so the
+              // property value and the expected property value is printed in
+              // the log.
+              logTestInfo(e);
+            });
+            is(
+              patch.getProperty(resultName),
+              data[resultName],
+              "The patch property " +
+                resultName +
+                " value should equal " +
+                data[resultName]
+            );
+          }
+        }
+      } else if (continueFile) {
         await continueFileHandler(continueFile);
       }
 
-      await ContentTask.spawn(tab.linkedBrowser, {panelId, detailsURL},
-                              async ({panelId, detailsURL}) => {
-        let linkPanels = ["downloadFailed", "manualUpdate", "unsupportedSystem"];
-        if (linkPanels.includes(panelId)) {
-          let selectedPanel =
-            content.document.getElementById("updateDeck").selectedPanel;
-          // The unsupportedSystem panel uses the update's detailsURL and the
-          // downloadFailed and manualUpdate panels use the app.update.url.manual
-          // preference.
-          let selector = "label.text-link";
-          // The downloadFailed panel in about:preferences uses an anchor
-          // instead of a label for the link.
-          if (selectedPanel.id == "downloadFailed") {
-            selector = "a.text-link";
+      await ContentTask.spawn(
+        tab.linkedBrowser,
+        { panelId, gDetailsURL },
+        async ({ panelId, gDetailsURL }) => {
+          let linkPanels = [
+            "downloadFailed",
+            "manualUpdate",
+            "unsupportedSystem",
+          ];
+          if (linkPanels.includes(panelId)) {
+            let selectedPanel = content.document.getElementById("updateDeck")
+              .selectedPanel;
+            // The unsupportedSystem panel uses the update's detailsURL and the
+            // downloadFailed and manualUpdate panels use the app.update.url.manual
+            // preference.
+            let selector = "label.text-link";
+            // The downloadFailed panel in about:preferences uses an anchor
+            // instead of a label for the link.
+            if (selectedPanel.id == "downloadFailed") {
+              selector = "a.text-link";
+            }
+            let link = selectedPanel.querySelector(selector);
+            is(
+              link.href,
+              gDetailsURL,
+              `The panel's link href should equal ${gDetailsURL}`
+            );
           }
-          let link = selectedPanel.querySelector(selector);
-          is(link.href, detailsURL,
-             "The panel's link href should equal the expected value");
-        }
 
-        let buttonPanels = ["downloadAndInstall", "apply"];
-        if (buttonPanels.includes(panelId)) {
-          let selectedPanel =
-            content.document.getElementById("updateDeck").selectedPanel;
-          let buttonEl = selectedPanel.querySelector("button");
-          // Note: The about:preferences doesn't focus the button like the
-          // About Dialog does.
-          ok(!buttonEl.disabled, "The button should be enabled");
-          // Don't click the button on the apply panel since this will restart
-          // the application.
-          if (selectedPanel.id != "apply") {
-            buttonEl.click();
+          let buttonPanels = ["downloadAndInstall", "apply"];
+          if (buttonPanels.includes(panelId)) {
+            let selectedPanel = content.document.getElementById("updateDeck")
+              .selectedPanel;
+            let buttonEl = selectedPanel.querySelector("button");
+            // Note: The about:preferences doesn't focus the button like the
+            // About Dialog does.
+            ok(!buttonEl.disabled, "The button should be enabled");
+            // Don't click the button on the apply panel since this will restart
+            // the application.
+            if (selectedPanel.id != "apply") {
+              buttonEl.click();
+            }
           }
         }
-      });
+      );
     })();
   }
 
@@ -805,39 +1002,424 @@ function runAboutPrefsUpdateTest(updateParams, backgroundUpdate, steps) {
     gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
     await SpecialPowers.pushPrefEnv({
       set: [
-        [PREF_APP_UPDATE_SERVICE_ENABLED, false],
         [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
-        [PREF_APP_UPDATE_URL_MANUAL, detailsURL],
+        [PREF_APP_UPDATE_URL_MANUAL, gDetailsURL],
       ],
     });
 
     await setupTestUpdater();
 
-    let updateURL = URL_HTTP_UPDATE_SJS + "?detailsURL=" + detailsURL +
-                    updateParams + getVersionParams();
-    if (backgroundUpdate) {
-      if (Services.prefs.getBoolPref(PREF_APP_UPDATE_STAGING_ENABLED)) {
-        // Since MOZ_TEST_SKIP_UPDATE_STAGE is checked before
-        // MOZ_TEST_SLOW_SKIP_UPDATE_STAGE in updater.cpp this removes the need
-        // for the continue file to continue staging the update.
-        gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
-      }
+    let queryString = params.queryString ? params.queryString : "";
+    let updateURL =
+      URL_HTTP_UPDATE_SJS +
+      "?detailsURL=" +
+      gDetailsURL +
+      queryString +
+      getVersionParams();
+    if (params.backgroundUpdate) {
       setUpdateURL(updateURL);
       gAUS.checkForBackgroundUpdates();
-      await waitForEvent("update-downloaded");
+      if (params.continueFile) {
+        await continueFileHandler(params.continueFile);
+      }
+      if (params.waitForUpdateState) {
+        // Wait until the update state equals the expected value before
+        // displaying the UI.
+        await TestUtils.waitForCondition(
+          () =>
+            gUpdateManager.activeUpdate &&
+            gUpdateManager.activeUpdate.state == params.waitForUpdateState,
+          "Waiting for update state: " + params.waitForUpdateState,
+          undefined,
+          200
+        ).catch(e => {
+          // Instead of throwing let the check below fail the test so the panel
+          // ID and the expected panel ID is printed in the log.
+          logTestInfo(e);
+        });
+        is(
+          gUpdateManager.activeUpdate.state,
+          params.waitForUpdateState,
+          "The update state value should equal " + params.waitForUpdateState
+        );
+      }
     } else {
       updateURL += "&slowUpdateCheck=1&useSlowDownloadMar=1";
       setUpdateURL(updateURL);
     }
 
-    tab = await BrowserTestUtils.openNewForegroundTab(gBrowser,
-                                                      "about:preferences");
+    tab = await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      "about:preferences"
+    );
     registerCleanupFunction(async () => {
       await BrowserTestUtils.removeTab(tab);
+    });
+
+    // Scroll the UI into view so it is easier to troubleshoot tests.
+    await ContentTask.spawn(tab.linkedBrowser, null, async () => {
+      content.document.getElementById("updatesCategory").scrollIntoView();
     });
 
     for (let step of steps) {
       await processAboutPrefsStep(step);
     }
   })();
+}
+
+/**
+ * Removes the modified update-settings.ini file so the updater will fail to
+ * stage an update.
+ */
+function removeUpdateSettingsIni() {
+  if (Services.prefs.getBoolPref(PREF_APP_UPDATE_STAGING_ENABLED)) {
+    let greDir = getGREDir();
+    let updateSettingsIniBak = greDir.clone();
+    updateSettingsIniBak.append(FILE_UPDATE_SETTINGS_INI_BAK);
+    if (updateSettingsIniBak.exists()) {
+      let updateSettingsIni = greDir.clone();
+      updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
+      updateSettingsIni.remove(false);
+    }
+  }
+}
+
+/**
+ * Runs a telemetry update test. This will set various common prefs for
+ * updating, checks for an update, and waits for the specified observer
+ * notification.
+ *
+ * @param  updateParams
+ *         Params which will be sent to app_update.sjs.
+ * @param  event
+ *         The observer notification to wait for before proceeding.
+ * @param  stageFailure (optional)
+ *         Whether to force a staging failure by removing the modified
+ *         update-settings.ini file.
+ * @return A promise which will resolve after the .
+ */
+function runTelemetryUpdateTest(updateParams, event, stageFailure = false) {
+  return (async function() {
+    Services.telemetry.clearScalars();
+    gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "1");
+    await SpecialPowers.pushPrefEnv({
+      set: [[PREF_APP_UPDATE_DISABLEDFORTESTING, false]],
+    });
+
+    await setupTestUpdater();
+
+    if (stageFailure) {
+      removeUpdateSettingsIni();
+    }
+
+    let updateURL =
+      URL_HTTP_UPDATE_SJS +
+      "?detailsURL=" +
+      gDetailsURL +
+      updateParams +
+      getVersionParams();
+    setUpdateURL(updateURL);
+    gAUS.checkForBackgroundUpdates();
+    await waitForEvent(event);
+  })();
+}
+
+/**
+ * Gets an object with the expected update phase values that can be passed to
+ * checkTelemetryUpdatePhases for update phase telemetry tests.
+ *
+ * @param  overrides
+ *         Params which can override the default values.
+ * @return An object that can be passed to checkTelemetryUpdatePhases for update
+ *         phase telemetry tests.
+ */
+/* This function is intentionally complex so tests don't have to be */
+/* eslint-disable-next-line complexity */
+function getTelemetryUpdatePhaseValues(overrides) {
+  let bitsEnabled = Services.prefs.getBoolPref(PREF_APP_UPDATE_BITS_ENABLED);
+
+  // Set values that could never be recorded due to values that would prevent
+  // them from occurring. This makes it so callers only have to specify a couple
+  // of values.
+  if (overrides.noPartialPatch) {
+    if (!overrides.noInternalPartial) {
+      overrides.noInternalPartial = true;
+    }
+    if (!overrides.noBitsPartial) {
+      overrides.noBitsPartial = true;
+    }
+  }
+
+  if (overrides.noCompletePatch) {
+    if (!overrides.noInternalComplete) {
+      overrides.noInternalComplete = true;
+    }
+    if (!overrides.noBitsComplete) {
+      overrides.noBitsComplete = true;
+    }
+  }
+
+  if (
+    overrides.noPartialPatch ||
+    overrides.partialBadSize ||
+    overrides.noInternalPartial ||
+    overrides.noBitsPartial
+  ) {
+    if (!overrides.noStagePartial) {
+      overrides.noStagePartial = true;
+    }
+    if (!overrides.noApplyPartial) {
+      overrides.noApplyPartial = true;
+    }
+  }
+
+  if (
+    overrides.noCompletePatch ||
+    overrides.completeBadSize ||
+    overrides.noInternalComplete ||
+    overrides.noBitsComplete
+  ) {
+    if (!overrides.noStageComplete) {
+      overrides.noStageComplete = true;
+    }
+    if (!overrides.noApplyComplete) {
+      overrides.noApplyComplete = true;
+    }
+  }
+
+  if (!Services.prefs.getBoolPref(PREF_APP_UPDATE_STAGING_ENABLED)) {
+    if (!overrides.noStagePartial) {
+      overrides.noStagePartial = true;
+    }
+    if (!overrides.noStageComplete) {
+      overrides.noStageComplete = true;
+    }
+  }
+
+  let marSize = parseInt(SIZE_SIMPLE_MAR);
+  let partialSize = overrides.partialBadSize
+    ? parseInt(SIZE_SIMPLE_MAR + "1")
+    : marSize;
+  let completeSize = overrides.completeBadSize
+    ? parseInt(SIZE_SIMPLE_MAR + "1")
+    : marSize;
+
+  let partialDownloadBytes = overrides.partialBadSize ? 1 : marSize;
+  let completeDownloadBytes = overrides.completeBadSize ? 1 : marSize;
+
+  let obj = {};
+  obj.basePrefix = overrides.forSession ? "update.session." : "update.startup.";
+  obj.from_app_version = Services.appinfo.version;
+
+  obj.mars = {};
+  obj.mars.mar_partial_size_bytes = overrides.noPartialPatch
+    ? null
+    : partialSize;
+  obj.mars.mar_complete_size_bytes = overrides.noCompletePatch
+    ? null
+    : completeSize;
+
+  obj.intervals = {};
+  obj.intervals.check = 1;
+  if (bitsEnabled) {
+    obj.intervals.download_bits_partial = overrides.noBitsPartial ? null : 1;
+    obj.intervals.download_bits_complete = overrides.noBitsComplete ? null : 1;
+    if (overrides.partialBadSize) {
+      obj.intervals.download_internal_partial = overrides.noInternalPartial
+        ? null
+        : 1;
+    } else {
+      obj.intervals.download_internal_partial = null;
+    }
+    if (overrides.completeBadSize) {
+      obj.intervals.download_internal_complete = overrides.noInternalComplete
+        ? null
+        : 1;
+    } else {
+      obj.intervals.download_internal_complete = null;
+    }
+  } else {
+    obj.intervals.download_bits_partial = null;
+    obj.intervals.download_bits_complete = null;
+    obj.intervals.download_internal_partial = overrides.noInternalPartial
+      ? null
+      : 1;
+    obj.intervals.download_internal_complete = overrides.noInternalComplete
+      ? null
+      : 1;
+  }
+  obj.intervals.stage_partial = overrides.noStagePartial ? null : 1;
+  obj.intervals.stage_complete = overrides.noStageComplete ? null : 1;
+  obj.intervals.apply_partial = overrides.noApplyPartial ? null : 1;
+  obj.intervals.apply_complete = overrides.noApplyComplete ? null : 1;
+
+  obj.downloads = {};
+  obj.downloads.bits_partial_ = {};
+  obj.downloads.bits_complete_ = {};
+  obj.downloads.internal_partial_ = {};
+  obj.downloads.internal_complete_ = {};
+  if (bitsEnabled) {
+    obj.downloads.bits_partial_.bytes = overrides.noBitsPartial
+      ? null
+      : partialDownloadBytes;
+    obj.downloads.bits_partial_.seconds = overrides.noBitsPartial ? null : 1;
+    obj.downloads.bits_complete_.bytes = overrides.noBitsComplete
+      ? null
+      : completeDownloadBytes;
+    obj.downloads.bits_complete_.seconds = overrides.noBitsComplete ? null : 1;
+    if (overrides.partialBadSize) {
+      obj.downloads.internal_partial_.seconds = overrides.noInternalPartial
+        ? null
+        : 1;
+      obj.downloads.internal_partial_.bytes = overrides.noInternalPartial
+        ? null
+        : partialDownloadBytes;
+    } else {
+      obj.downloads.internal_partial_.bytes = null;
+      obj.downloads.internal_partial_.seconds = null;
+    }
+    if (overrides.completeBadSize) {
+      obj.downloads.internal_complete_.seconds = overrides.noInternalComplete
+        ? null
+        : 1;
+      obj.downloads.internal_complete_.bytes = overrides.noInternalComplete
+        ? null
+        : completeDownloadBytes;
+    } else {
+      obj.downloads.internal_complete_.bytes = null;
+      obj.downloads.internal_complete_.seconds = null;
+    }
+  } else {
+    obj.downloads.bits_partial_.bytes = null;
+    obj.downloads.bits_partial_.seconds = null;
+    obj.downloads.bits_complete_.bytes = null;
+    obj.downloads.bits_complete_.seconds = null;
+    obj.downloads.internal_partial_.bytes = overrides.noInternalPartial
+      ? null
+      : partialDownloadBytes;
+    obj.downloads.internal_partial_.seconds = overrides.noInternalPartial
+      ? null
+      : 1;
+    obj.downloads.internal_complete_.bytes = overrides.noInternalComplete
+      ? null
+      : completeDownloadBytes;
+    obj.downloads.internal_complete_.seconds = overrides.noInternalComplete
+      ? null
+      : 1;
+  }
+
+  return obj;
+}
+
+/**
+ * Checks the telemetry values for app update phases under either update.startup
+ * or update.session based on the object passed to this function.
+ *
+ * @param  expected
+ *         An object containing the expected results to compare against the
+ *         actual results.
+ */
+function checkTelemetryUpdatePhases(expected) {
+  let scalars = TelemetryTestUtils.getProcessScalars("parent");
+  let basePrefix = expected.basePrefix;
+  let namePrefix = basePrefix;
+  {
+    let name = namePrefix + "from_app_version";
+    if (expected.from_app_version) {
+      Assert.ok(!!scalars[name], "The " + name + " value should exist.");
+      Assert.equal(
+        scalars[name],
+        expected.from_app_version,
+        "The " + name + " value should equal the expected value."
+      );
+    } else {
+      Assert.ok(!scalars[name], "The " + name + " value should not exist.");
+    }
+  }
+
+  for (let [nameSuffix, value] of Object.entries(expected.mars)) {
+    let name = namePrefix + nameSuffix;
+    if (value) {
+      Assert.ok(!!scalars[name], "The " + name + " value should exist.");
+      Assert.equal(
+        scalars[name],
+        value,
+        "The " + name + " value should equal the expected value."
+      );
+    } else {
+      Assert.ok(!scalars[name], "The " + name + " value should not exist.");
+    }
+  }
+
+  namePrefix = basePrefix + "intervals.";
+  for (let [suffix, value] of Object.entries(expected.intervals)) {
+    let name = namePrefix + suffix;
+    if (value) {
+      Assert.ok(!!scalars[name], "The " + name + " value should exist.");
+      Assert.greaterOrEqual(
+        scalars[name],
+        value,
+        "The " +
+          name +
+          " value should be equal to or " +
+          "greater than " +
+          value +
+          "."
+      );
+    } else {
+      Assert.ok(!scalars[name], "The " + name + " value should not exist.");
+    }
+  }
+
+  namePrefix = basePrefix + "downloads.";
+  for (let [nameMid, values] of Object.entries(expected.downloads)) {
+    let name = namePrefix + nameMid + "bytes";
+    if (values.bytes) {
+      Assert.ok(!!scalars[name], "The " + name + " value should exist.");
+      Assert.greaterOrEqual(
+        scalars[name],
+        values.bytes,
+        "The " +
+          name +
+          " value should be equal to or " +
+          "greater than " +
+          values.bytes +
+          "."
+      );
+    } else {
+      Assert.ok(!scalars[name], "The " + name + " value should not exist.");
+    }
+
+    name = namePrefix + nameMid + "seconds";
+    if (values.seconds) {
+      Assert.ok(!!scalars[name], "The " + name + " value should exist.");
+      Assert.greaterOrEqual(
+        scalars[name],
+        values.seconds,
+        "The " +
+          name +
+          " value should be equal to or " +
+          "greater than " +
+          values.seconds +
+          "."
+      );
+    } else {
+      Assert.ok(!scalars[name], "The " + name + " value should not exist.");
+    }
+  }
+}
+
+/**
+ * Checks whether telemetry for update.startup or update.session is set by
+ * checking if there is a value for the from_app_version scalar.
+ *
+ * @param  isStartup
+ *         When true update.startup.from_app_version will be checked and when
+ *         false update.session.from_app_version will be checked.
+ */
+function checkTelemetryUpdatePhaseEmpty(isStartup) {
+  let scalars = TelemetryTestUtils.getProcessScalars("parent");
+  let name =
+    "update." + (isStartup ? "startup" : "session") + ".from_app_version";
+  Assert.ok(!scalars[name], "The " + name + " value should not exist.");
 }

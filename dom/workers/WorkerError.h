@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_workers_WorkerError_h
 #define mozilla_dom_workers_WorkerError_h
 
+#include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "jsapi.h"
 
@@ -37,7 +38,7 @@ class WorkerErrorNote : public WorkerErrorBase {
 
 class WorkerPrivate;
 
-class WorkerErrorReport : public WorkerErrorBase {
+class WorkerErrorReport : public WorkerErrorBase, public SerializedStackHolder {
  public:
   nsString mLine;
   uint32_t mFlags;
@@ -45,7 +46,7 @@ class WorkerErrorReport : public WorkerErrorBase {
   bool mMutedError;
   nsTArray<WorkerErrorNote> mNotes;
 
-  WorkerErrorReport() : mFlags(0), mExnType(JSEXN_ERR), mMutedError(false) {}
+  WorkerErrorReport();
 
   void AssignErrorReport(JSErrorReport* aReport);
 
@@ -54,15 +55,17 @@ class WorkerErrorReport : public WorkerErrorBase {
   // (if any).
   static void ReportError(
       JSContext* aCx, WorkerPrivate* aWorkerPrivate, bool aFireAtScope,
-      DOMEventTargetHelper* aTarget, const WorkerErrorReport& aReport,
+      DOMEventTargetHelper* aTarget, UniquePtr<WorkerErrorReport> aReport,
       uint64_t aInnerWindowId,
       JS::Handle<JS::Value> aException = JS::NullHandleValue);
 
-  static void LogErrorToConsole(const WorkerErrorReport& aReport,
+  static void LogErrorToConsole(JSContext* aCx, WorkerErrorReport& aReport,
                                 uint64_t aInnerWindowId);
 
   static void LogErrorToConsole(const mozilla::dom::ErrorData& aReport,
-                                uint64_t aInnerWindowId);
+                                uint64_t aInnerWindowId,
+                                JS::HandleObject aStack = nullptr,
+                                JS::HandleObject aStackGlobal = nullptr);
 
   static void CreateAndDispatchGenericErrorRunnableToParent(
       WorkerPrivate* aWorkerPrivate);

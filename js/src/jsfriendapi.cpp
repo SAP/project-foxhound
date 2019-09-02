@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "builtin/BigInt.h"
+#include "builtin/MapObject.h"
 #include "builtin/Promise.h"
 #include "builtin/TestingFunctions.h"
 #include "gc/GCInternals.h"
@@ -25,6 +26,7 @@
 #include "js/Wrapper.h"
 #include "proxy/DeadObjectProxy.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/DateObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/Realm.h"
@@ -53,16 +55,6 @@ JS::RootingContext::RootingContext()
     nativeStackLimit[i] = UINTPTR_MAX;
   }
 #endif
-}
-
-JS_FRIEND_API void js::SetSourceHook(JSContext* cx,
-                                     mozilla::UniquePtr<SourceHook> hook) {
-  cx->runtime()->sourceHook.ref() = std::move(hook);
-}
-
-JS_FRIEND_API mozilla::UniquePtr<SourceHook> js::ForgetSourceHook(
-    JSContext* cx) {
-  return std::move(cx->runtime()->sourceHook.ref());
 }
 
 JS_FRIEND_API void JS_SetGrayGCRootsTracer(JSContext* cx, JSTraceDataOp traceOp,
@@ -272,7 +264,7 @@ JS_FRIEND_API bool js::GetBuiltinClass(JSContext* cx, HandleObject obj,
     return Proxy::getBuiltinClass(cx, obj, cls);
   }
 
-  if (obj->is<PlainObject>() || obj->is<UnboxedPlainObject>()) {
+  if (obj->is<PlainObject>()) {
     *cls = ESClass::Object;
   } else if (obj->is<ArrayObject>()) {
     *cls = ESClass::Array;
@@ -861,7 +853,7 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
   if (showThisProps && thisVal.isObject()) {
     RootedObject obj(cx, &thisVal.toObject());
 
-    AutoIdVector keys(cx);
+    RootedIdVector keys(cx);
     if (!GetPropertyKeys(cx, obj, JSITER_OWNONLY, &keys)) {
       if (cx->isThrowingOutOfMemory()) {
         return false;
@@ -1004,15 +996,17 @@ extern JS_FRIEND_API int JS::IsGCPoisoning() {
 #endif
 }
 
-struct DumpHeapTracer : public JS::CallbackTracer, public WeakMapTracer {
+struct DumpHeapTracer final : public JS::CallbackTracer, public WeakMapTracer {
   const char* prefix;
   FILE* output;
+  mozilla::MallocSizeOf mallocSizeOf;
 
-  DumpHeapTracer(FILE* fp, JSContext* cx)
+  DumpHeapTracer(FILE* fp, JSContext* cx, mozilla::MallocSizeOf mallocSizeOf)
       : JS::CallbackTracer(cx, DoNotTraceWeakMaps),
         js::WeakMapTracer(cx->runtime()),
         prefix(""),
-        output(fp) {}
+        output(fp),
+        mallocSizeOf(mallocSizeOf) {}
 
  private:
   void trace(JSObject* map, JS::GCCellPtr key, JS::GCCellPtr value) override {
@@ -1074,7 +1068,16 @@ static void DumpHeapVisitCell(JSRuntime* rt, void* data, void* thing,
   char cellDesc[1024 * 32];
   JS_GetTraceThingInfo(cellDesc, sizeof(cellDesc), dtrc, thing, traceKind,
                        true);
-  fprintf(dtrc->output, "%p %c %s\n", thing, MarkDescriptor(thing), cellDesc);
+
+  fprintf(dtrc->output, "%p %c %s", thing, MarkDescriptor(thing), cellDesc);
+  if (dtrc->mallocSizeOf) {
+    auto size =
+        JS::ubi::Node(JS::GCCellPtr(thing, traceKind)).size(dtrc->mallocSizeOf);
+    fprintf(dtrc->output, " SIZE:: %" PRIu64 "\n", size);
+  } else {
+    fprintf(dtrc->output, "\n");
+  }
+
   js::TraceChildren(dtrc, thing, traceKind);
 }
 
@@ -1090,12 +1093,13 @@ void DumpHeapTracer::onChild(const JS::GCCellPtr& thing) {
 }
 
 void js::DumpHeap(JSContext* cx, FILE* fp,
-                  js::DumpHeapNurseryBehaviour nurseryBehaviour) {
+                  js::DumpHeapNurseryBehaviour nurseryBehaviour,
+                  mozilla::MallocSizeOf mallocSizeOf) {
   if (nurseryBehaviour == js::CollectNurseryBeforeDump) {
     cx->runtime()->gc.evictNursery(JS::GCReason::API);
   }
 
-  DumpHeapTracer dtrc(fp, cx);
+  DumpHeapTracer dtrc(fp, cx, mallocSizeOf);
 
   fprintf(dtrc.output, "# Roots.\n");
   {
@@ -1149,25 +1153,6 @@ JS_FRIEND_API bool js::IsSharableCompartment(JS::Compartment* comp) {
 
   // Good to go.
   return true;
-}
-
-void JS::ObjectPtr::finalize(JSRuntime* rt) {
-  if (IsIncrementalBarrierNeeded(rt->mainContextFromOwnThread())) {
-    IncrementalPreWriteBarrier(value);
-  }
-  value = nullptr;
-}
-
-void JS::ObjectPtr::finalize(JSContext* cx) { finalize(cx->runtime()); }
-
-void JS::ObjectPtr::updateWeakPointerAfterGC() {
-  if (js::gc::IsAboutToBeFinalizedUnbarriered(value.unsafeGet())) {
-    value = nullptr;
-  }
-}
-
-void JS::ObjectPtr::trace(JSTracer* trc, const char* name) {
-  JS::TraceEdge(trc, &value, name);
 }
 
 JS_FRIEND_API JSObject* js::GetTestingFunctions(JSContext* cx) {

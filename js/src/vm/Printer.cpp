@@ -10,7 +10,6 @@
 #include "mozilla/Printf.h"
 #include "mozilla/RangedPtr.h"
 
-#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -293,7 +292,7 @@ static bool QuoteString(Sprinter* sp, const mozilla::Range<const CharT> chars,
     char16_t c = *t;
     while (c < 127 && c != '\\') {
       if (target == QuoteTarget::String) {
-        if (!isprint(c) || c == quote || c == '\t') {
+        if (!IsAsciiPrintable(c) || c == quote || c == '\t') {
           break;
         }
       } else {
@@ -434,7 +433,7 @@ bool Fprinter::put(const char* s, size_t len) {
     reportOutOfMemory();
     return false;
   }
-#ifdef XP_WIN32
+#ifdef XP_WIN
   if ((file_ == stderr) && (IsDebuggerPresent())) {
     UniqueChars buf = DuplicateString(s, len);
     if (!buf) {

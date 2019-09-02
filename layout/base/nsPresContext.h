@@ -19,16 +19,13 @@
 #include "nsColor.h"
 #include "nsCoord.h"
 #include "nsCOMPtr.h"
-#include "nsIPresShell.h"
-#include "nsIPresShellInlines.h"
 #include "nsRect.h"
 #include "nsStringFwd.h"
 #include "nsFont.h"
 #include "gfxFontConstants.h"
 #include "nsAtom.h"
-#include "nsITimer.h"
 #include "nsCRT.h"
-#include "nsIWidgetListener.h"
+#include "nsIWidgetListener.h"  // for nsSizeMode
 #include "nsGkAtoms.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsChangeHint.h"
@@ -51,6 +48,7 @@ class nsIPrintSettings;
 class nsDocShell;
 class nsIDocShell;
 class nsITheme;
+class nsITimer;
 class nsIContent;
 class nsIFrame;
 class nsFrameManager;
@@ -62,6 +60,9 @@ class gfxUserFontEntry;
 class gfxUserFontSet;
 class gfxTextPerfMetrics;
 class nsCSSFontFeatureValuesRule;
+class nsCSSFrameConstructor;
+class nsDisplayList;
+class nsDisplayListBuilder;
 class nsPluginFrame;
 class nsTransitionManager;
 class nsAnimationManager;
@@ -76,6 +77,7 @@ class EffectCompositor;
 class Encoding;
 class EventStateManager;
 class CounterStyleManager;
+class PresShell;
 class RestyleManager;
 namespace layers {
 class ContainerLayer;
@@ -156,20 +158,20 @@ class nsPresContext : public nsISupports,
    * Set and detach presentation shell that this context is bound to.
    * A presentation context may only be bound to a single shell.
    */
-  void AttachShell(nsIPresShell* aShell);
-  void DetachShell();
+  void AttachPresShell(mozilla::PresShell* aPresShell);
+  void DetachPresShell();
 
   nsPresContextType Type() const { return mType; }
 
   /**
    * Get the PresentationShell that this context is bound to.
    */
-  nsIPresShell* PresShell() const {
-    NS_ASSERTION(mShell, "Null pres shell");
-    return mShell;
+  mozilla::PresShell* PresShell() const {
+    NS_ASSERTION(mPresShell, "Null pres shell");
+    return mPresShell;
   }
 
-  nsIPresShell* GetPresShell() const { return mShell; }
+  mozilla::PresShell* GetPresShell() const { return mPresShell; }
 
   void DispatchCharSetChange(NotNull<const Encoding*> aCharSet);
 
@@ -211,23 +213,19 @@ class nsPresContext : public nsISupports,
   virtual bool IsRoot() { return false; }
 
   mozilla::dom::Document* Document() const {
-    NS_ASSERTION(
-        !mShell || !mShell->GetDocument() || mShell->GetDocument() == mDocument,
-        "nsPresContext doesn't have the same document as nsPresShell!");
+#ifdef DEBUG
+    ValidatePresShellAndDocumentReleation();
+#endif  // #ifdef DEBUG
     return mDocument;
   }
 
-  mozilla::ServoStyleSet* StyleSet() const {
-    return GetPresShell()->StyleSet();
-  }
+  inline mozilla::ServoStyleSet* StyleSet() const;
 
   bool HasPendingMediaQueryUpdates() const {
     return !!mPendingMediaFeatureValuesChange;
   }
 
-  nsCSSFrameConstructor* FrameConstructor() {
-    return PresShell()->FrameConstructor();
-  }
+  inline nsCSSFrameConstructor* FrameConstructor();
 
   mozilla::AnimationEventDispatcher* AnimationEventDispatcher() {
     return mAnimationEventDispatcher;
@@ -271,18 +269,7 @@ class nsPresContext : public nsISupports,
   /**
    * Handle changes in the values of media features (used in media queries).
    */
-  void MediaFeatureValuesChanged(const mozilla::MediaFeatureChange& aChange) {
-    if (mShell) {
-      mShell->EnsureStyleFlush();
-    }
-
-    if (!mPendingMediaFeatureValuesChange) {
-      mPendingMediaFeatureValuesChange.emplace(aChange);
-      return;
-    }
-
-    *mPendingMediaFeatureValuesChange |= aChange;
-  }
+  void MediaFeatureValuesChanged(const mozilla::MediaFeatureChange& aChange);
 
   void FlushPendingMediaFeatureValuesChanged();
 
@@ -306,11 +293,6 @@ class nsPresContext : public nsISupports,
    * our document's compatibility mode.
    */
   nsCompatibility CompatibilityMode() const;
-
-  /**
-   * Notify the context that the document's compatibility mode has changed
-   */
-  void CompatibilityModeChanged();
 
   /**
    * Access the image animation mode for this context
@@ -491,6 +473,10 @@ class nsPresContext : public nsISupports,
 
  protected:
   void UpdateEffectiveTextZoom();
+
+#ifdef DEBUG
+  void ValidatePresShellAndDocumentReleation() const;
+#endif  // #ifdef DEBUG
 
  public:
   /**
@@ -712,10 +698,10 @@ class nsPresContext : public nsISupports,
   bool IsVisualMode() const { return mIsVisual; }
 
   enum class InteractionType : uint32_t {
-    eClickInteraction,
-    eKeyInteraction,
-    eMouseMoveInteraction,
-    eScrollInteraction
+    ClickInteraction,
+    KeyInteraction,
+    MouseMoveInteraction,
+    ScrollInteraction
   };
 
   void RecordInteractionTime(InteractionType aType,
@@ -935,7 +921,7 @@ class nsPresContext : public nsISupports,
    * until ReflowStarted is called. In all cases where this returns true,
    * the passed-in frame (which should be the frame whose reflow will be
    * interrupted if true is returned) will be passed to
-   * nsIPresShell::FrameNeedsToContinueReflow.
+   * PresShell::FrameNeedsToContinueReflow.
    */
   bool CheckForInterrupt(nsIFrame* aFrame);
   /**
@@ -964,7 +950,25 @@ class nsPresContext : public nsISupports,
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
 
+  /**
+   * Deprecated. Please use the InProcess or CrossProcess variants
+   * to specify which behaviour you want.
+   */
   bool IsRootContentDocument() const;
+
+  /**
+   * We are a root content document in process if: we are not a resource doc, we
+   * are not chrome, and we either have no parent in the current process or our
+   * parent is chrome.
+   */
+  bool IsRootContentDocumentInProcess() const;
+
+  /**
+   * We are a root content document cross process if: we are not a resource doc,
+   * we are not chrome, and we either have no parent in any process or our
+   * parent is chrome.
+   */
+  bool IsRootContentDocumentCrossProcess() const;
 
   bool HadNonBlankPaint() const { return mHadNonBlankPaint; }
   bool HadContentfulPaint() const { return mHadContentfulPaint; }
@@ -1072,6 +1076,18 @@ class nsPresContext : public nsISupports,
 
   void InvalidatePaintedLayers();
 
+  uint32_t GetNextFrameRateMultiplier() const {
+    return mNextFrameRateMultiplier;
+  }
+
+  void DidUseFrameRateMultiplier() {
+    if (!mNextFrameRateMultiplier) {
+      mNextFrameRateMultiplier = 1;
+    } else if (mNextFrameRateMultiplier < 8) {
+      mNextFrameRateMultiplier = mNextFrameRateMultiplier * 2;
+    }
+  }
+
  protected:
   // May be called multiple times (unlink, destructor)
   void Destroy();
@@ -1097,9 +1113,9 @@ class nsPresContext : public nsISupports,
   // please make the ownership explicit (pinkerton, scc).
 
   nsPresContextType mType;
-  // the nsPresShell owns a strong reference to the nsPresContext, and is
+  // the PresShell owns a strong reference to the nsPresContext, and is
   // responsible for nulling this pointer before it is destroyed
-  nsIPresShell* MOZ_NON_OWNING_REF mShell;  // [WEAK]
+  mozilla::PresShell* MOZ_NON_OWNING_REF mPresShell;  // [WEAK]
   RefPtr<mozilla::dom::Document> mDocument;
   RefPtr<nsDeviceContext> mDeviceContext;  // [STRONG] could be weak, but
                                            // better safe than sorry.
@@ -1175,6 +1191,9 @@ class nsPresContext : public nsISupports,
   uint16_t mImageAnimationModePref;
 
   uint32_t mInterruptChecksToSkip;
+
+  // During page load we use slower frame rate.
+  uint32_t mNextFrameRateMultiplier;
 
   // Counters for tests and tools that want to detect frame construction
   // or reflow.

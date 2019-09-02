@@ -13,23 +13,29 @@ var gThreadClient;
 function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-grips");
-  Cu.evalInSandbox(function stopMe() {
-    debugger;
-  }.toString(), gDebuggee);
+  Cu.evalInSandbox(
+    function stopMe() {
+      debugger;
+    }.toString(),
+    gDebuggee
+  );
 
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-grips",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             add_pause_listener();
-                           });
+    attachTestTabAndResume(gClient, "test-grips", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      add_pause_listener();
+    });
   });
   do_test_pending();
 }
 
 function add_pause_listener() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     const [funcGrip, objGrip] = packet.frame.arguments;
     const func = gThreadClient.pauseGrip(funcGrip);
     const obj = gThreadClient.pauseGrip(objGrip);
@@ -40,11 +46,14 @@ function add_pause_listener() {
 }
 
 function eval_code() {
-  Cu.evalInSandbox([
-    "this.line0 = Error().lineNumber;",
-    "function f() {}",
-    "stopMe(f, {});",
-  ].join("\n"), gDebuggee);
+  Cu.evalInSandbox(
+    [
+      "this.line0 = Error().lineNumber;",
+      "function f() {}",
+      "stopMe(f, {});",
+    ].join("\n"),
+    gDebuggee
+  );
 }
 
 function test_definition_site(func, obj) {
@@ -62,6 +71,6 @@ function test_bad_definition_site(obj) {
   try {
     obj._client.request("definitionSite", () => Assert.ok(false));
   } catch (e) {
-    gThreadClient.resume(() => finishClient(gClient));
+    gThreadClient.resume().then(() => finishClient(gClient));
   }
 }

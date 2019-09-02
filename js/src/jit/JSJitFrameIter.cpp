@@ -10,6 +10,7 @@
 #include "jit/BaselineIC.h"
 #include "jit/JitcodeMap.h"
 #include "jit/JitFrames.h"
+#include "jit/JitScript.h"
 #include "jit/Safepoints.h"
 
 using namespace js;
@@ -121,12 +122,6 @@ void JSJitFrameIter::baselineScriptAndPc(JSScript** scriptRes,
 
   MOZ_ASSERT(pcRes);
 
-  if (baselineFrame()->runningInInterpreter()) {
-    MOZ_ASSERT(baselineFrame()->interpreterScript() == script);
-    *pcRes = baselineFrame()->interpreterPC();
-    return;
-  }
-
   // Use the frame's override pc, if we have one. This should only happen
   // when we're in FinishBailoutToBaseline, handling an exception or toggling
   // debug mode.
@@ -135,7 +130,15 @@ void JSJitFrameIter::baselineScriptAndPc(JSScript** scriptRes,
     return;
   }
 
-  // Else, there must be a VMCallEntry for the current return address.
+  // The Baseline Interpreter stores the bytecode pc in the frame.
+  if (baselineFrame()->runningInInterpreter()) {
+    MOZ_ASSERT(baselineFrame()->interpreterScript() == script);
+    *pcRes = baselineFrame()->interpreterPC();
+    return;
+  }
+
+  // Else, there must be a BaselineScript with a VMCallEntry for the current
+  // return address.
   uint8_t* retAddr = resumePCinCurrentFrame();
   RetAddrEntry& entry =
       script->baselineScript()->retAddrEntryFromReturnAddress(retAddr);
@@ -507,12 +510,16 @@ JSJitProfilingFrameIterator::JSJitProfilingFrameIterator(JSContext* cx,
     }
   }
 
-  MOZ_ASSERT(frameScript()->hasBaselineScript());
-
   // If nothing matches, for now just assume we are at the start of the last
-  // frame's baseline jit code.
+  // frame's baseline jit code or interpreter code.
   type_ = FrameType::BaselineJS;
-  resumePCinCurrentFrame_ = frameScript()->baselineScript()->method()->raw();
+  if (frameScript()->hasBaselineScript()) {
+    resumePCinCurrentFrame_ = frameScript()->baselineScript()->method()->raw();
+  } else {
+    MOZ_ASSERT(JitOptions.baselineInterpreter);
+    resumePCinCurrentFrame_ =
+        cx->runtime()->jitRuntime()->baselineInterpreter().codeRaw();
+  }
 }
 
 template <typename ReturnType = CommonFrameLayout*>
@@ -563,7 +570,7 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
   JSScript* callee = frameScript();
 
   MOZ_ASSERT(entry->isIon() || entry->isBaseline() || entry->isIonCache() ||
-             entry->isDummy());
+             entry->isBaselineInterpreter() || entry->isDummy());
 
   // Treat dummy lookups as an empty frame sequence.
   if (entry->isDummy()) {
@@ -592,6 +599,12 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
       return false;
     }
 
+    type_ = FrameType::BaselineJS;
+    resumePCinCurrentFrame_ = pc;
+    return true;
+  }
+
+  if (entry->isBaselineInterpreter()) {
     type_ = FrameType::BaselineJS;
     resumePCinCurrentFrame_ = pc;
     return true;
@@ -629,16 +642,42 @@ void JSJitProfilingFrameIterator::fixBaselineReturnAddress() {
   // Certain exception handling cases such as debug OSR or resuming a generator
   // with .throw() will use BaselineFrame::setOverridePc() to indicate the
   // effective |pc|. We translate the effective-pc into a Baseline code
-  // address.
-  if (jsbytecode* override = bl->maybeOverridePc()) {
+  // address. Don't do this for frames running in the Baseline Interpreter,
+  // because we don't use the return address in that case.
+  jsbytecode* overridePC = bl->maybeOverridePc();
+  if (overridePC && !bl->runningInInterpreter()) {
     PCMappingSlotInfo slotInfo;
     JSScript* script = bl->script();
+    BaselineScript* blScript = script->baselineScript();
     resumePCinCurrentFrame_ =
-        script->baselineScript()->nativeCodeForPC(script, override, &slotInfo);
+        blScript->nativeCodeForPC(script, overridePC, &slotInfo);
 
     // NOTE: The stack may not be synced at this PC. For the purpose of
     // profiler sampling this is fine.
     return;
+  }
+}
+
+const char* JSJitProfilingFrameIterator::baselineInterpreterLabel() const {
+  MOZ_ASSERT(type_ == FrameType::BaselineJS);
+  return frameScript()->jitScript()->profileString();
+}
+
+void JSJitProfilingFrameIterator::baselineInterpreterScriptPC(
+    JSScript** script, jsbytecode** pc) const {
+  MOZ_ASSERT(type_ == FrameType::BaselineJS);
+  BaselineFrame* blFrame =
+      (BaselineFrame*)(fp_ - BaselineFrame::FramePointerOffset -
+                       BaselineFrame::Size());
+  *script = frameScript();
+  *pc = (*script)->code();
+
+  if (blFrame->runningInInterpreter() &&
+      blFrame->interpreterScript() == *script) {
+    jsbytecode* interpPC = blFrame->interpreterPC();
+    if ((*script)->containsPC(interpPC)) {
+      *pc = interpPC;
+    }
   }
 }
 

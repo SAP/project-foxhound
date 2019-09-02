@@ -4,11 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/ArrayUtils.h"  // mozilla::ArrayLength
+#include "mozilla/Utf8.h"        // mozilla::Utf8Unit
+
 #include "jsfriendapi.h"
 #include "builtin/String.h"
 
 #include "builtin/TestingFunctions.h"
+#include "js/CompilationAndEvaluation.h"  // JS::EvaluateDontInflate
 #include "js/SavedFrameAPI.h"
+#include "js/SourceText.h"  // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
 #include "vm/ArrayObject.h"
 #include "vm/Realm.h"
@@ -97,12 +102,12 @@ BEGIN_TEST(testSavedStacks_RangeBasedForLoops) {
   CHECK(rf == nullptr);
 
   // Stack string
-  const char* SpiderMonkeyStack =
+  static const char SpiderMonkeyStack[] =
       "three@filename.js:4:14\n"
       "two@filename.js:5:6\n"
       "one@filename.js:6:4\n"
       "@filename.js:7:2\n";
-  const char* V8Stack =
+  static const char V8Stack[] =
       "    at three (filename.js:4:14)\n"
       "    at two (filename.js:5:6)\n"
       "    at one (filename.js:6:4)\n"
@@ -153,7 +158,7 @@ BEGIN_TEST(testSavedStacks_ErrorStackSpiderMonkey) {
   JS::RootedString stack(cx, val.toString());
 
   // Stack string
-  const char* SpiderMonkeyStack =
+  static const char SpiderMonkeyStack[] =
       "three@filename.js:4:14\n"
       "two@filename.js:5:6\n"
       "one@filename.js:6:4\n"
@@ -184,7 +189,7 @@ BEGIN_TEST(testSavedStacks_ErrorStackV8) {
   JS::RootedString stack(cx, val.toString());
 
   // Stack string
-  const char* V8Stack =
+  static const char V8Stack[] =
       "Error: foo\n"
       "    at three (filename.js:4:14)\n"
       "    at two (filename.js:5:6)\n"
@@ -292,3 +297,100 @@ BEGIN_TEST(testSavedStacks_selfHostedFrames) {
   return true;
 }
 END_TEST(testSavedStacks_selfHostedFrames)
+
+BEGIN_TEST(test_JS_GetPendingExceptionStack) {
+  CHECK(js::DefineTestingFunctions(cx, global, false, false));
+
+  JSPrincipals* principals = cx->realm()->principals();
+
+  static const char sourceText[] =
+      //          1         2         3
+      // 123456789012345678901234567890123456789
+      "(function one() {                      \n"   // 1
+      "  (function two() {                    \n"   // 2
+      "    (function three() {                \n"   // 3
+      "      throw 5;                         \n"   // 4
+      "    }());                              \n"   // 5
+      "  }());                                \n"   // 6
+      "}())                                   \n";  // 7
+
+  JS::CompileOptions opts(cx);
+  opts.setFileAndLine("filename.js", 1U);
+
+  JS::SourceText<mozilla::Utf8Unit> srcBuf;
+  CHECK(srcBuf.init(cx, sourceText, mozilla::ArrayLength(sourceText) - 1,
+                    JS::SourceOwnership::Borrowed));
+
+  JS::RootedValue val(cx);
+  bool ok = JS::EvaluateDontInflate(cx, opts, srcBuf, &val);
+
+  CHECK(!ok);
+  CHECK(JS_IsExceptionPending(cx));
+  CHECK(val.isUndefined());
+
+  JS::RootedObject stack(cx, JS::GetPendingExceptionStack(cx));
+  CHECK(stack);
+  CHECK(stack->is<js::SavedFrame>());
+  JS::Rooted<js::SavedFrame*> savedFrameStack(cx, &stack->as<js::SavedFrame>());
+
+  JS_GetPendingException(cx, &val);
+  CHECK(val.isInt32());
+  CHECK(val.toInt32() == 5);
+
+  struct {
+    uint32_t line;
+    uint32_t column;
+    const char* source;
+    const char* functionDisplayName;
+  } expected[] = {{4, 7, "filename.js", "three"},
+                  {5, 6, "filename.js", "two"},
+                  {6, 4, "filename.js", "one"},
+                  {7, 2, "filename.js", nullptr}};
+
+  size_t i = 0;
+  for (JS::Handle<js::SavedFrame*> frame :
+       js::SavedFrame::RootedRange(cx, savedFrameStack)) {
+    CHECK(i < 4);
+
+    // Line
+    uint32_t line = 123;
+    JS::SavedFrameResult result = JS::GetSavedFrameLine(
+        cx, principals, frame, &line, JS::SavedFrameSelfHosted::Exclude);
+    CHECK(result == JS::SavedFrameResult::Ok);
+    CHECK_EQUAL(line, expected[i].line);
+
+    // Column
+    uint32_t column = 123;
+    result = JS::GetSavedFrameColumn(cx, principals, frame, &column,
+                                     JS::SavedFrameSelfHosted::Exclude);
+    CHECK(result == JS::SavedFrameResult::Ok);
+    CHECK_EQUAL(column, expected[i].column);
+
+    // Source
+    JS::RootedString str(cx);
+    result = JS::GetSavedFrameSource(cx, principals, frame, &str,
+                                     JS::SavedFrameSelfHosted::Exclude);
+    CHECK(result == JS::SavedFrameResult::Ok);
+    JSLinearString* linear = str->ensureLinear(cx);
+    CHECK(linear);
+    CHECK(js::StringEqualsAscii(linear, expected[i].source));
+
+    // Function display name
+    result = JS::GetSavedFrameFunctionDisplayName(
+        cx, principals, frame, &str, JS::SavedFrameSelfHosted::Exclude);
+    CHECK(result == JS::SavedFrameResult::Ok);
+    if (auto expectedName = expected[i].functionDisplayName) {
+      CHECK(str);
+      linear = str->ensureLinear(cx);
+      CHECK(linear);
+      CHECK(js::StringEqualsAscii(linear, expectedName));
+    } else {
+      CHECK(!str);
+    }
+
+    i++;
+  }
+
+  return true;
+}
+END_TEST(test_JS_GetPendingExceptionStack)

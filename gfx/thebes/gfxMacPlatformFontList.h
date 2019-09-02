@@ -39,10 +39,7 @@ class MacOSFontEntry : public gfxFontEntry {
                  WeightRange aWeight, StretchRange aStretch,
                  SlantStyleRange aStyle, bool aIsDataUserFont, bool aIsLocal);
 
-  virtual ~MacOSFontEntry() {
-    hb_blob_destroy(mTrakTable);
-    ::CGFontRelease(mFontRef);
-  }
+  virtual ~MacOSFontEntry() { ::CGFontRelease(mFontRef); }
 
   gfxFontEntry* Clone() const override;
 
@@ -67,26 +64,12 @@ class MacOSFontEntry : public gfxFontEntry {
 
   bool IsCFF();
 
-  // Return true if the font has a 'trak' table (and we can successfully
-  // interpret it), otherwise false. This will load and cache the table
-  // the first time it is called.
-  bool HasTrackingTable();
-
   bool SupportsOpenTypeFeature(Script aScript, uint32_t aFeatureTag) override;
-
-  // Return the tracking (in font units) to be applied for the given size.
-  // (This is a floating-point number because of possible interpolation.)
-  float TrackingForCSSPx(float aPointSize) const;
 
  protected:
   gfxFont* CreateFontInstance(const gfxFontStyle* aFontStyle) override;
 
   bool HasFontTable(uint32_t aTableTag) override;
-
-  // Helper for HasTrackingTable; check/parse the table and cache pointers
-  // to the subtables we need. Returns false on failure, in which case the
-  // table is unusable.
-  bool ParseTrakTable();
 
   static void DestroyBlobFunc(void* aUserData);
 
@@ -103,7 +86,6 @@ class MacOSFontEntry : public gfxFontEntry {
   bool mHasVariationsInitialized;
   bool mHasAATSmallCaps;
   bool mHasAATSmallCapsInitialized;
-  bool mCheckedForTracking;
 
   // To work around Core Text's mishandling of the default value for 'opsz',
   // we need to record whether the font has an a optical size axis, what its
@@ -120,14 +102,6 @@ class MacOSFontEntry : public gfxFontEntry {
   nsTHashtable<nsUint32HashKey> mAvailableTables;
 
   mozilla::ThreadSafeWeakPtr<mozilla::gfx::UnscaledFontMac> mUnscaledFont;
-
-  // For AAT font being shaped by Core Text, a strong reference to the 'trak'
-  // table (if present).
-  hb_blob_t* mTrakTable;
-  // Cached pointers to tables within 'trak', initialized by ParseTrakTable.
-  const mozilla::AutoSwap_PRInt16* mTrakValues;
-  const mozilla::AutoSwap_PRInt32* mTrakSizeTable;
-  uint16_t mNumTrakSizes;
 };
 
 class gfxMacPlatformFontList : public gfxPlatformFontList {
@@ -139,9 +113,6 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
   gfxFontFamily* CreateFontFamily(const nsACString& aName) const override;
 
   static int32_t AppleWeightToCSSWeight(int32_t aAppleWeight);
-
-  bool GetStandardFamilyName(const nsCString& aFontName,
-                             nsACString& aFamilyName) override;
 
   gfxFontEntry* LookupLocalFont(const nsACString& aFontName,
                                 WeightRange aWeightForEntry,
@@ -155,7 +126,8 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
                                  const uint8_t* aFontData,
                                  uint32_t aLength) override;
 
-  bool FindAndAddFamilies(const nsACString& aFamily,
+  bool FindAndAddFamilies(mozilla::StyleGenericFontFamily aGeneric,
+                          const nsACString& aFamily,
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
@@ -178,7 +150,7 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
       InfallibleTArray<mozilla::dom::SystemFontListEntry>* aList);
 
  protected:
-  gfxFontFamily* GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
 
  private:
   friend class gfxPlatformMac;
@@ -188,9 +160,11 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
 
   // initialize font lists
   nsresult InitFontListForPlatform() override;
+  void InitSharedFontListForPlatform() override;
 
   // special case font faces treated as font families (set via prefs)
   void InitSingleFaceList();
+  void InitAliasesForSingleFaceList();
 
   // initialize system fonts
   void InitSystemFontNames();
@@ -204,9 +178,10 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
 
   // attempt to use platform-specific fallback for the given character
   // return null if no usable result found
-  gfxFontEntry* PlatformGlobalFontFallback(
-      const uint32_t aCh, Script aRunScript, const gfxFontStyle* aMatchStyle,
-      gfxFontFamily** aMatchedFamily) override;
+  gfxFontEntry* PlatformGlobalFontFallback(const uint32_t aCh,
+                                           Script aRunScript,
+                                           const gfxFontStyle* aMatchStyle,
+                                           FontFamily* aMatchedFamily) override;
 
   bool UsesSystemFallback() override { return true; }
 
@@ -222,6 +197,17 @@ class gfxMacPlatformFontList : public gfxPlatformFontList {
   void AddFamily(const nsACString& aFamilyName, bool aSystemFont);
 
   void ActivateFontsFromDir(nsIFile* aDir);
+
+  gfxFontEntry* CreateFontEntry(
+      mozilla::fontlist::Face* aFace,
+      const mozilla::fontlist::Family* aFamily) override;
+
+  void GetFacesInitDataForFamily(
+      const mozilla::fontlist::Family* aFamily,
+      nsTArray<mozilla::fontlist::Face::InitData>& aFaces) const override;
+
+  void ReadFaceNamesForFamily(mozilla::fontlist::Family* aFamily,
+                              bool aNeedFullnamePostscriptNames) override;
 
 #ifdef MOZ_BUNDLED_FONTS
   void ActivateBundledFonts();

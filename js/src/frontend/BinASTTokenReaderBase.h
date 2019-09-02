@@ -7,6 +7,10 @@
 #ifndef frontend_BinASTTokenReaderBase_h
 #define frontend_BinASTTokenReaderBase_h
 
+#include "mozilla/Variant.h"
+
+#include <string.h>
+
 #include "frontend/BinASTToken.h"
 #include "frontend/ErrorReporter.h"
 #include "frontend/TokenStream.h"
@@ -24,6 +28,31 @@ class MOZ_STACK_CLASS BinASTTokenReaderBase {
  public:
   template <typename T>
   using ErrorResult = mozilla::GenericErrorResult<T>;
+
+  // Part of variant `Context`
+  // Reading the root of the tree, before we enter any tagged tuple.
+  struct RootContext {};
+
+  // Part of variant `Context`
+  // Reading an element from a list.
+  struct ListContext {
+    const BinASTInterfaceAndField position;
+    const BinASTList content;
+    ListContext(const BinASTInterfaceAndField position,
+                const BinASTList content)
+        : position(position), content(content) {}
+  };
+
+  // Part of variant `Context`
+  // Reading a field from an interface.
+  struct FieldContext {
+    const BinASTInterfaceAndField position;
+    explicit FieldContext(const BinASTInterfaceAndField position)
+        : position(position) {}
+  };
+
+  // The context in which we read a token.
+  typedef mozilla::Variant<RootContext, ListContext, FieldContext> Context;
 
   // The information needed to skip a subtree.
   class SkippableSubTree {
@@ -134,9 +163,8 @@ class MOZ_STACK_CLASS BinASTTokenReaderBase {
 
 #ifndef FUZZING
     // Perform lookup, without side-effects.
-    if (!std::equal(current_,
-                    current_ + N + (expectNul ? 0 : -1) /*implicit NUL*/,
-                    value)) {
+    if (memcmp(current_, value, N + (expectNul ? 0 : -1) /*implicit NUL*/) !=
+        0) {
       return false;
     }
 #endif

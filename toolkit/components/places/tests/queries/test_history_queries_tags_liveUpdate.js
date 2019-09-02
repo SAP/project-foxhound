@@ -45,8 +45,10 @@ var gTestData = [
 ];
 
 function newQueryWithOptions() {
-  return [ PlacesUtils.history.getNewQuery(),
-           PlacesUtils.history.getNewQueryOptions() ];
+  return [
+    PlacesUtils.history.getNewQuery(),
+    PlacesUtils.history.getNewQueryOptions(),
+  ];
 }
 
 function testQueryContents(aQuery, aOptions, aCallback) {
@@ -95,7 +97,7 @@ add_task(function visits_query() {
 
 add_task(function bookmarks_query() {
   let [query, options] = newQueryWithOptions();
-  query.setParents([PlacesUtils.bookmarks.unfiledGuid], 1);
+  query.setParents([PlacesUtils.bookmarks.unfiledGuid]);
   testQueryContents(query, options, function(root) {
     compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
     for (let i = 0; i < root.childCount; i++) {
@@ -149,7 +151,7 @@ add_task(async function pages_searchterm_is_tag_query() {
   let [query, options] = newQueryWithOptions();
   query.searchTerms = "test-tag";
   let root;
-  testQueryContents(query, options, rv => root = rv);
+  testQueryContents(query, options, rv => (root = rv));
   compareArrayToResult([], root);
   for (let data of gTestData) {
     let uri = NetUtil.newURI(data.uri);
@@ -170,7 +172,7 @@ add_task(async function visits_searchterm_is_tag_query() {
   query.searchTerms = "test-tag";
   options.resultType = Ci.nsINavHistoryQueryOptions.RESULTS_AS_VISIT;
   let root;
-  testQueryContents(query, options, rv => root = rv);
+  testQueryContents(query, options, rv => (root = rv));
   compareArrayToResult([], root);
   for (let data of gTestData) {
     let uri = NetUtil.newURI(data.uri);

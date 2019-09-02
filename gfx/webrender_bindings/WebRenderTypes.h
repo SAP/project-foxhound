@@ -9,6 +9,7 @@
 
 #include "ImageTypes.h"
 #include "mozilla/webrender/webrender_ffi.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/Types.h"
@@ -17,6 +18,7 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/Range.h"
+#include "mozilla/TypeTraits.h"
 #include "mozilla/Variant.h"
 #include "Units.h"
 #include "nsStyleConsts.h"
@@ -36,6 +38,8 @@ typedef uintptr_t usize;
 
 typedef wr::WrWindowId WindowId;
 typedef wr::WrPipelineId PipelineId;
+typedef wr::WrDocumentId DocumentId;
+typedef wr::WrRemovedPipeline RemovedPipeline;
 typedef wr::WrImageKey ImageKey;
 typedef wr::WrFontKey FontKey;
 typedef wr::WrFontInstanceKey FontInstanceKey;
@@ -56,6 +60,89 @@ struct ExternalImageKeyPair {
 
 /* Generate a brand new window id and return it. */
 WindowId NewWindowId();
+
+MOZ_DEFINE_ENUM_CLASS_WITH_BASE(
+    RenderRoot, uint8_t,
+    (
+        // The default render root - within the parent process, this refers
+        // to everything within the top chrome area (urlbar, tab strip, etc.).
+        // Within the content process, this refers to the content area. Any
+        // system that multiplexes data streams from different processes is
+        // responsible for converting RenderRoot::Default into
+        // RenderRoot::Content (or whatever value is appropriate)
+        Default,
+
+        // Everything below the chrome - even if it is not coming from a content
+        // process. For example. the devtools, sidebars, and status panel are
+        // traditionally part of the "chrome," but are assigned a renderroot of
+        // RenderRoot::Content because they occupy screen space in the "content"
+        // area of the browser (visually situated below the "chrome" area).
+        Content,
+
+        // Currently used for the pointerlock and fullscreen warnings. This is
+        // intended to overlay both the Content and Default render roots when
+        // we need a piece of UI that straddles their border.
+        Popover));
+
+typedef EnumSet<RenderRoot, uint8_t> RenderRootSet;
+
+// For simple iteration of all render roots
+const Array<RenderRoot, kRenderRootCount> kRenderRoots(RenderRoot::Default,
+                                                       RenderRoot::Content,
+                                                       RenderRoot::Popover);
+
+const Array<RenderRoot, kRenderRootCount - 1> kNonDefaultRenderRoots(
+    RenderRoot::Content, RenderRoot::Popover);
+
+template <typename T>
+class RenderRootArray : public Array<T, kRenderRootCount> {
+  typedef Array<T, kRenderRootCount> Super;
+
+ public:
+  RenderRootArray() {
+    if (IsPod<T>::value) {
+      // Ensure primitive types get initialized to 0/false.
+      PodArrayZero(*this);
+    }  // else C++ will default-initialize the array elements for us
+  }
+
+  T& operator[](wr::RenderRoot aIndex) {
+    return (*(Super*)this)[(size_t)aIndex];
+  }
+
+  const T& operator[](wr::RenderRoot aIndex) const {
+    return (*(Super*)this)[(size_t)aIndex];
+  }
+
+  T& operator[](size_t aIndex) = delete;
+  const T& operator[](size_t aIndex) const = delete;
+};
+
+template <typename T>
+class NonDefaultRenderRootArray : public Array<T, kRenderRootCount - 1> {
+  typedef Array<T, kRenderRootCount - 1> Super;
+
+ public:
+  NonDefaultRenderRootArray() {
+    // See RenderRootArray constructor
+    if (IsPod<T>::value) {
+      PodArrayZero(*this);
+    }
+  }
+
+  T& operator[](wr::RenderRoot aIndex) {
+    return (*(Super*)this)[(size_t)aIndex - 1];
+  }
+
+  const T& operator[](wr::RenderRoot aIndex) const {
+    return (*(Super*)this)[(size_t)aIndex - 1];
+  }
+
+  T& operator[](size_t aIndex) = delete;
+  const T& operator[](size_t aIndex) const = delete;
+};
+
+RenderRoot RenderRootFromId(DocumentId id);
 
 inline DebugFlags NewDebugFlags(uint32_t aFlags) { return {aFlags}; }
 
@@ -79,6 +166,8 @@ inline Maybe<wr::ImageFormat> SurfaceFormatToImageFormat(
       return Some(wr::ImageFormat::R16);
     case gfx::SurfaceFormat::R8G8:
       return Some(wr::ImageFormat::RG8);
+    case gfx::SurfaceFormat::R16G16:
+      return Some(wr::ImageFormat::RG16);
     case gfx::SurfaceFormat::UNKNOWN:
     default:
       return Nothing();
@@ -649,7 +738,7 @@ template <typename T>
 struct Vec;
 
 template <>
-struct Vec<uint8_t> {
+struct Vec<uint8_t> final {
   wr::WrVecU8 inner;
   Vec() { SetEmpty(); }
   Vec(Vec&) = delete;
@@ -791,12 +880,14 @@ enum class WebRenderError : int8_t {
 };
 
 static inline wr::WrYuvColorSpace ToWrYuvColorSpace(
-    YUVColorSpace aYUVColorSpace) {
+    gfx::YUVColorSpace aYUVColorSpace) {
   switch (aYUVColorSpace) {
-    case YUVColorSpace::BT601:
+    case gfx::YUVColorSpace::BT601:
       return wr::WrYuvColorSpace::Rec601;
-    case YUVColorSpace::BT709:
+    case gfx::YUVColorSpace::BT709:
       return wr::WrYuvColorSpace::Rec709;
+    case gfx::YUVColorSpace::BT2020:
+      return wr::WrYuvColorSpace::Rec2020;
     default:
       MOZ_ASSERT_UNREACHABLE("Tried to convert invalid YUVColorSpace.");
   }

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=627498
 -->
 <head>
   <title>Test hardware acceleration</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -111,8 +111,7 @@ function runTest() {
 
       var shouldGetWR = false;
       try {
-        shouldGetWR = SpecialPowers.DOMWindowUtils.isWebRenderBuilt &&
-                      SpecialPowers.DOMWindowUtils.isWebRenderRequested;
+        shouldGetWR = SpecialPowers.DOMWindowUtils.isWebRenderRequested;
       } catch (e) {}
 
       var advancedLayersEnabled = false;

@@ -6,8 +6,7 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="Accessible XUL textbox and textarea hierarchy tests">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
 
   <script type="application/javascript"
           src="../common.js" />
@@ -43,7 +42,6 @@
       accTree =
         { SECTION: [
           { ENTRY: [ { TEXT_LEAF: [] } ] },
-          { MENUPOPUP: [] }
         ] };
       testAccessibleTree("txc_search", accTree);
 
@@ -54,14 +52,12 @@
         accTree =
           { SECTION: [
             { ENTRY: [ { TEXT_LEAF: [] } ] },
-            { MENUPOPUP: [] }
           ] };
       } else {
         accTree =
           { SECTION: [
             { ENTRY: [ { TEXT_LEAF: [] } ] },
             { PUSHBUTTON: [] },
-            { MENUPOPUP: [] }
           ] };
       }
 
@@ -157,8 +153,8 @@
 
     <vbox flex="1">
       <textbox id="txc" value="hello"/>
-      <textbox id="txc_search" type="search" value="hello"/>
-      <textbox id="txc_search_searchbutton" searchbutton="true" type="search" value="hello"/>
+      <textbox id="txc_search" is="search-textbox" value="hello"/>
+      <textbox id="txc_search_searchbutton" searchbutton="true" is="search-textbox" value="hello"/>
       <textbox id="txc_number" type="number" value="44"/>
       <textbox id="txc_password" type="password" value="hello"/>
       <textbox id="txc_autocomplete" type="autocomplete" value="hello"/>

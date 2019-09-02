@@ -11,6 +11,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -133,39 +134,11 @@ void UIEvent::InitUIEvent(const nsAString& typeArg, bool canBubbleArg,
   mView = viewArg ? viewArg->GetOuterWindow() : nullptr;
 }
 
-int32_t UIEvent::PageX() const {
-  if (mEvent->mFlags.mIsPositionless) {
-    return 0;
-  }
-
-  if (mPrivateDataDuplicated) {
-    return mPagePoint.x;
-  }
-
-  return Event::GetPageCoords(mPresContext, mEvent, mEvent->mRefPoint,
-                              mClientPoint)
-      .x;
-}
-
-int32_t UIEvent::PageY() const {
-  if (mEvent->mFlags.mIsPositionless) {
-    return 0;
-  }
-
-  if (mPrivateDataDuplicated) {
-    return mPagePoint.y;
-  }
-
-  return Event::GetPageCoords(mPresContext, mEvent, mEvent->mRefPoint,
-                              mClientPoint)
-      .y;
-}
-
 already_AddRefed<nsINode> UIEvent::GetRangeParent() {
   if (NS_WARN_IF(!mPresContext)) {
     return nullptr;
   }
-  nsCOMPtr<nsIPresShell> presShell = mPresContext->GetPresShell();
+  RefPtr<PresShell> presShell = mPresContext->GetPresShell();
   if (NS_WARN_IF(!presShell)) {
     return nullptr;
   }
@@ -179,7 +152,7 @@ int32_t UIEvent::RangeOffset() const {
   if (NS_WARN_IF(!mPresContext)) {
     return 0;
   }
-  nsCOMPtr<nsIPresShell> presShell = mPresContext->GetPresShell();
+  RefPtr<PresShell> presShell = mPresContext->GetPresShell();
   if (NS_WARN_IF(!presShell)) {
     return 0;
   }

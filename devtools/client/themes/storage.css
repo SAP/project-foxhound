@@ -14,6 +14,24 @@
   background: var(--theme-sidebar-background);
 }
 
+/* Let the component gain focus when a click hits an empty area */
+#storage-tree {
+  -moz-user-focus: normal;
+}
+
+#storage-tree:focus {
+  outline: 0;
+}
+
+/* Let the component gain focus when a click hits an empty area */
+#storage-table {
+  -moz-user-focus: normal;
+}
+
+#storage-table:focus {
+  outline: 0;
+}
+
 /* The minimum column width needs to be determined by the header width */
 .table-widget-cell {
   min-width: unset;
@@ -43,11 +61,28 @@
 #hostOnly,
 #isHttpOnly,
 #sameSite {
-  min-width: 50px;
+  min-width: 58px;
 }
 
 #isSecure {
-  min-width: 40px;
+  min-width: 48px;
+}
+
+/* Text input in storage table */
+#storage-table input {
+  -moz-appearance: none;
+  -moz-box-flex: 1;
+  /* make sure the outline is not cut off */
+  position: relative;
+  box-sizing: border-box;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--theme-text-color-strong);
+  background-color: var(--theme-body-background);
+}
+
+#storage-table input:focus {
+  outline: 1px solid var(--blue-50);
 }
 
 /* Variables View Sidebar */
@@ -55,6 +90,20 @@
 #storage-sidebar {
   max-width: 500px;
   min-width: 250px;
+}
+
+/* Toolbar */
+
+/*
+  .devtools-input-toolbar forces display: flex; which does not work
+  properly with XUL. Force XUL flexbox instead.
+*/
+#storage-toolbar {
+  display: -moz-box;
+}
+
+#storage-searchbox {
+  -moz-box-flex: 1;
 }
 
 #storage-toolbar .add-button::before {
@@ -85,9 +134,5 @@
 
   #storage-table #path {
     display: none;
-  }
-
-  #storage-table .table-widget-cell {
-    min-width: 100px;
   }
 }

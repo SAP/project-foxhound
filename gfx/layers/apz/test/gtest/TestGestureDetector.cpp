@@ -6,7 +6,6 @@
 
 #include "APZCBasicTester.h"
 #include "APZTestCommon.h"
-#include "gfxPrefs.h"
 
 class APZCGestureDetectorTester : public APZCBasicTester {
  public:
@@ -28,7 +27,7 @@ class APZCGestureDetectorTester : public APZCBasicTester {
 };
 
 TEST_F(APZCGestureDetectorTester, Pan_After_Pinch) {
-  SCOPED_GFX_PREF(TouchActionEnabled, bool, false);
+  SCOPED_GFX_PREF_BOOL("layout.css.touch_action.enabled", false);
 
   FrameMetrics originalMetrics = GetPinchableFrameMetrics();
   apzc->SetFrameMetrics(originalMetrics);
@@ -127,7 +126,7 @@ TEST_F(APZCGestureDetectorTester, Pan_After_Pinch) {
 }
 
 TEST_F(APZCGestureDetectorTester, Pan_With_Tap) {
-  SCOPED_GFX_PREF(TouchActionEnabled, bool, false);
+  SCOPED_GFX_PREF_BOOL("layout.css.touch_action.enabled", false);
 
   FrameMetrics originalMetrics = GetPinchableFrameMetrics();
   apzc->SetFrameMetrics(originalMetrics);
@@ -317,22 +316,22 @@ class APZCFlingStopTester : public APZCGestureDetectorTester {
 };
 
 TEST_F(APZCFlingStopTester, FlingStop) {
-  SCOPED_GFX_PREF(APZFlingMinVelocityThreshold, float, 0.0f);
+  SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   DoFlingStopTest(false);
 }
 
 TEST_F(APZCFlingStopTester, FlingStopTap) {
-  SCOPED_GFX_PREF(APZFlingMinVelocityThreshold, float, 0.0f);
+  SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   DoFlingStopTest(true);
 }
 
 TEST_F(APZCFlingStopTester, FlingStopSlowListener) {
-  SCOPED_GFX_PREF(APZFlingMinVelocityThreshold, float, 0.0f);
+  SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   DoFlingStopWithSlowListener(false);
 }
 
 TEST_F(APZCFlingStopTester, FlingStopPreventDefault) {
-  SCOPED_GFX_PREF(APZFlingMinVelocityThreshold, float, 0.0f);
+  SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   DoFlingStopWithSlowListener(true);
 }
 
@@ -393,7 +392,7 @@ class APZCLongPressTester : public APZCGestureDetectorTester {
         TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time(), &blockId);
     EXPECT_EQ(nsEventStatus_eConsumeDoDefault, status);
 
-    if (gfxPrefs::TouchActionEnabled() &&
+    if (StaticPrefs::layout_css_touch_action_enabled() &&
         status != nsEventStatus_eConsumeNoDefault) {
       // SetAllowedTouchBehavior() must be called after sending touch-start.
       nsTArray<uint32_t> allowedTouchBehaviors;
@@ -459,7 +458,7 @@ class APZCLongPressTester : public APZCGestureDetectorTester {
                                      mcc->Time(), &blockId);
     EXPECT_EQ(nsEventStatus_eConsumeDoDefault, status);
 
-    if (gfxPrefs::TouchActionEnabled() &&
+    if (StaticPrefs::layout_css_touch_action_enabled() &&
         status != nsEventStatus_eConsumeNoDefault) {
       // SetAllowedTouchBehavior() must be called after sending touch-start.
       nsTArray<uint32_t> allowedTouchBehaviors;
@@ -522,24 +521,24 @@ class APZCLongPressTester : public APZCGestureDetectorTester {
 };
 
 TEST_F(APZCLongPressTester, LongPress) {
-  SCOPED_GFX_PREF(TouchActionEnabled, bool, false);
+  SCOPED_GFX_PREF_BOOL("layout.css.touch_action.enabled", false);
   DoLongPressTest(mozilla::layers::AllowedTouchBehavior::NONE);
 }
 
 TEST_F(APZCLongPressTester, LongPressWithTouchAction) {
-  SCOPED_GFX_PREF(TouchActionEnabled, bool, true);
+  SCOPED_GFX_PREF_BOOL("layout.css.touch_action.enabled", true);
   DoLongPressTest(mozilla::layers::AllowedTouchBehavior::HORIZONTAL_PAN |
                   mozilla::layers::AllowedTouchBehavior::VERTICAL_PAN |
                   mozilla::layers::AllowedTouchBehavior::PINCH_ZOOM);
 }
 
 TEST_F(APZCLongPressTester, LongPressPreventDefault) {
-  SCOPED_GFX_PREF(TouchActionEnabled, bool, false);
+  SCOPED_GFX_PREF_BOOL("layout.css.touch_action.enabled", false);
   DoLongPressPreventDefaultTest(mozilla::layers::AllowedTouchBehavior::NONE);
 }
 
 TEST_F(APZCLongPressTester, LongPressPreventDefaultWithTouchAction) {
-  SCOPED_GFX_PREF(TouchActionEnabled, bool, true);
+  SCOPED_GFX_PREF_BOOL("layout.css.touch_action.enabled", true);
   DoLongPressPreventDefaultTest(
       mozilla::layers::AllowedTouchBehavior::HORIZONTAL_PAN |
       mozilla::layers::AllowedTouchBehavior::VERTICAL_PAN |
@@ -707,7 +706,7 @@ TEST_F(APZCGestureDetectorTester, LongPressInterruptedByWheel) {
   uint64_t wheelBlockId = 0;
   nsEventStatus status =
       TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time(), &touchBlockId);
-  if (gfxPrefs::TouchActionEnabled() &&
+  if (StaticPrefs::layout_css_touch_action_enabled() &&
       status != nsEventStatus_eConsumeNoDefault) {
     SetDefaultAllowedTouchBehavior(apzc, touchBlockId);
   }

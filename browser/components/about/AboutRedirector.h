@@ -18,14 +18,14 @@ class AboutRedirector : public nsIAboutModule {
 
   AboutRedirector() {}
 
-  static nsresult Create(nsISupports *aOuter, REFNSIID aIID, void **aResult);
+  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
 
  protected:
   virtual ~AboutRedirector() {}
 
  private:
+  static bool sAboutLoginsEnabled;
   static bool sNewTabPageEnabled;
-  static bool sNewCertErrorPageEnabled;
 };
 
 }  // namespace browser

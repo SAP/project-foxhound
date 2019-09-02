@@ -319,7 +319,7 @@ restart:
     case ParseNodeKind::ComputedName:
     case ParseNodeKind::Spread:
     case ParseNodeKind::MutateProto:
-    case ParseNodeKind::Colon:
+    case ParseNodeKind::PropertyDefinition:
     case ParseNodeKind::Shorthand:
     case ParseNodeKind::ConditionalExpr:
     case ParseNodeKind::TypeOfNameExpr:
@@ -362,6 +362,7 @@ restart:
     case ParseNodeKind::DivExpr:
     case ParseNodeKind::ModExpr:
     case ParseNodeKind::PowExpr:
+    case ParseNodeKind::InitExpr:
     case ParseNodeKind::AssignExpr:
     case ParseNodeKind::AddAssignExpr:
     case ParseNodeKind::SubAssignExpr:
@@ -425,8 +426,9 @@ restart:
       *result = false;
       return true;
 
-    case ParseNodeKind::Limit:  // invalid sentinel value
-      MOZ_CRASH("unexpected ParseNodeKind::Limit in node");
+    case ParseNodeKind::LastUnused:
+    case ParseNodeKind::Limit:
+      MOZ_CRASH("unexpected sentinel ParseNodeKind in node");
   }
 
   MOZ_CRASH("invalid node kind");
@@ -1491,7 +1493,7 @@ class FoldVisitor : public RewritingParseNodeVisitor<FoldVisitor> {
     ListNode* list = &pn->as<ListNode>();
     if (list->hasNonConstInitializer()) {
       for (ParseNode* node : list->contents()) {
-        if (node->getKind() != ParseNodeKind::Colon) {
+        if (node->getKind() != ParseNodeKind::PropertyDefinition) {
           return true;
         }
         BinaryNode* binary = &node->as<BinaryNode>();

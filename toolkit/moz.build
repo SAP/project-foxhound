@@ -4,6 +4,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+SPHINX_TREES['/toolkit'] = 'docs'
+
+EXTRA_COMPONENTS += [
+    'l10n-registry.manifest',
+]
+
 DIRS += [
     'actors',
     'components',
@@ -52,6 +58,9 @@ TEST_HARNESS_FILES.testing.mochitest.browser.toolkit.crashreporter.test.browser 
     'crashreporter/test/browser/crashreport.sjs',
 ]
 
+with Files('docs/**'):
+    BUG_COMPONENT = ('Toolkit', 'General')
+
 with Files('moz.*'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
@@ -72,3 +81,6 @@ with Files('mozapps/preferences/**'):
 
 with Files('pluginproblem/**'):
     BUG_COMPONENT = ('Core', 'Plug-ins')
+
+with Files('l10n-registry.manifest'):
+    BUG_COMPONENT = ('Core', 'Localization')

@@ -7,13 +7,14 @@
 #include "nsWindowMemoryReporter.h"
 #include "nsWindowSizes.h"
 #include "nsGlobalWindow.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
-#include "nsDOMWindowList.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/ResultExtensions.h"
 #include "nsNetCID.h"
 #include "nsPrintfCString.h"
 #include "XPCJSMemoryReporter.h"
@@ -61,19 +62,16 @@ static nsresult AddNonJSSizeOfWindowAndItsDescendents(
 
   windowSizes.addToTabSizes(aSizes);
 
-  nsDOMWindowList* frames = aWindow->GetFrames();
-
-  uint32_t length = frames->GetLength();
+  BrowsingContext* bc = aWindow->GetBrowsingContext();
+  if (!bc) {
+    return NS_OK;
+  }
 
   // Measure this window's descendents.
-  for (uint32_t i = 0; i < length; i++) {
-    nsCOMPtr<nsPIDOMWindowOuter> child = frames->IndexedGetter(i);
-    NS_ENSURE_STATE(child);
-
-    nsGlobalWindowOuter* childWin = nsGlobalWindowOuter::Cast(child);
-
-    nsresult rv = AddNonJSSizeOfWindowAndItsDescendents(childWin, aSizes);
-    NS_ENSURE_SUCCESS(rv, rv);
+  for (const auto& frame : bc->GetChildren()) {
+    if (auto* childWin = nsGlobalWindowOuter::Cast(frame->GetDOMWindow())) {
+      MOZ_TRY(AddNonJSSizeOfWindowAndItsDescendents(childWin, aSizes));
+    }
   }
   return NS_OK;
 }
@@ -332,6 +330,9 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   REPORT_SIZE("/layout/style-sheets", mLayoutStyleSheetsSize,
               "Memory used by document style sheets within a window.");
 
+  REPORT_SIZE("/layout/svg-mapped-declarations", mLayoutSvgMappedDeclarations,
+              "Memory used by mapped declarations of SVG elements");
+
   REPORT_SIZE("/layout/shadow-dom/style-sheets",
               mLayoutShadowDomStyleSheetsSize,
               "Memory used by Shadow DOM style sheets within a window.");
@@ -345,6 +346,11 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
               "Memory used by layout's PresShell, along with any structures "
               "allocated in its arena and not measured elsewhere, "
               "within a window.");
+
+  REPORT_SIZE("/layout/display-list", mLayoutRetainedDisplayListSize,
+              "Memory used by the retained display list data, "
+              "along with any structures allocated in its arena and not "
+              "measured elsewhere, within a window.");
 
   REPORT_SIZE("/layout/style-sets/stylist/rule-tree",
               mLayoutStyleSetsStylistRuleTree,
@@ -416,12 +422,6 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   REPORT_SIZE("/layout/line-boxes", mArenaSizes.mLineBoxes,
               "Memory used by line boxes within a window.");
 
-  REPORT_SIZE("/layout/rule-nodes", mArenaSizes.mRuleNodes,
-              "Memory used by CSS rule nodes within a window.");
-
-  REPORT_SIZE("/layout/style-contexts", mArenaSizes.mComputedStyles,
-              "Memory used by ComputedStyles within a window.");
-
   // There are many different kinds of style structs, but it is likely that
   // only a few matter. Implement a cutoff so we don't bloat about:memory with
   // many uninteresting entries.
@@ -448,7 +448,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
     aWindowTotalSizes->mArenaSizes.NS_ARENA_SIZES_FIELD(classname) += size; \
   }
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 
@@ -645,19 +645,11 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
          windowTotalSizes.mArenaSizes.mLineBoxes,
          "This is the sum of all windows' 'layout/line-boxes' numbers.");
 
-  REPORT("window-objects/layout/rule-nodes",
-         windowTotalSizes.mArenaSizes.mRuleNodes,
-         "This is the sum of all windows' 'layout/rule-nodes' numbers.");
-
-  REPORT("window-objects/layout/style-contexts",
-         windowTotalSizes.mArenaSizes.mComputedStyles,
-         "This is the sum of all windows' 'layout/style-contexts' numbers.");
-
   size_t frameTotal = 0;
 #define FRAME_ID(classname, ...) \
   frameTotal += windowTotalSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(classname);
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 

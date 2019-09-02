@@ -23,20 +23,14 @@ NS_IMPL_ISUPPORTS(nsThebesFontEnumerator, nsIFontEnumerator)
 nsThebesFontEnumerator::nsThebesFontEnumerator() {}
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::EnumerateAllFonts(uint32_t *aCount,
-                                          char16_t ***aResult) {
-  return EnumerateFonts(nullptr, nullptr, aCount, aResult);
+nsThebesFontEnumerator::EnumerateAllFonts(nsTArray<nsString>& aResult) {
+  return EnumerateFonts(nullptr, nullptr, aResult);
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::EnumerateFonts(const char *aLangGroup,
-                                       const char *aGeneric, uint32_t *aCount,
-                                       char16_t ***aResult) {
-  NS_ENSURE_ARG_POINTER(aCount);
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  nsTArray<nsString> fontList;
-
+nsThebesFontEnumerator::EnumerateFonts(const char* aLangGroup,
+                                       const char* aGeneric,
+                                       nsTArray<nsString>& aResult) {
   nsAutoCString generic;
   if (aGeneric)
     generic.Assign(aGeneric);
@@ -51,30 +45,12 @@ nsThebesFontEnumerator::EnumerateFonts(const char *aLangGroup,
     langGroupAtom = NS_Atomize(lowered);
   }
 
-  nsresult rv =
-      gfxPlatform::GetPlatform()->GetFontList(langGroupAtom, generic, fontList);
-
-  if (NS_FAILED(rv)) {
-    *aCount = 0;
-    *aResult = nullptr;
-    /* XXX in this case, do we want to return the CSS generics? */
-    return NS_OK;
-  }
-
-  char16_t **fs = static_cast<char16_t **>(
-      moz_xmalloc(fontList.Length() * sizeof(char16_t *)));
-  for (uint32_t i = 0; i < fontList.Length(); i++) {
-    fs[i] = ToNewUnicode(fontList[i]);
-  }
-
-  *aResult = fs;
-  *aCount = fontList.Length();
-
-  return NS_OK;
+  return gfxPlatform::GetPlatform()->GetFontList(langGroupAtom, generic,
+                                                 aResult);
 }
 
 struct EnumerateFontsPromise final {
-  explicit EnumerateFontsPromise(mozilla::dom::Promise *aPromise)
+  explicit EnumerateFontsPromise(mozilla::dom::Promise* aPromise)
       : mPromise(aPromise) {
     MOZ_ASSERT(aPromise);
     MOZ_ASSERT(NS_IsMainThread());
@@ -119,9 +95,9 @@ class EnumerateFontsResult final : public Runnable {
 
 class EnumerateFontsTask final : public Runnable {
  public:
-  EnumerateFontsTask(nsAtom *aLangGroupAtom, const nsAutoCString &aGeneric,
+  EnumerateFontsTask(nsAtom* aLangGroupAtom, const nsAutoCString& aGeneric,
                      UniquePtr<EnumerateFontsPromise> aEnumerateFontsPromise,
-                     nsIEventTarget *aMainThreadTarget)
+                     nsIEventTarget* aMainThreadTarget)
       : Runnable("EnumerateFontsTask"),
         mLangGroupAtom(aLangGroupAtom),
         mGeneric(aGeneric),
@@ -152,15 +128,15 @@ class EnumerateFontsTask final : public Runnable {
 };
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::EnumerateAllFontsAsync(JSContext *aCx,
+nsThebesFontEnumerator::EnumerateAllFontsAsync(JSContext* aCx,
                                                JS::MutableHandleValue aRval) {
   return EnumerateFontsAsync(nullptr, nullptr, aCx, aRval);
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::EnumerateFontsAsync(const char *aLangGroup,
-                                            const char *aGeneric,
-                                            JSContext *aCx,
+nsThebesFontEnumerator::EnumerateFontsAsync(const char* aLangGroup,
+                                            const char* aGeneric,
+                                            JSContext* aCx,
                                             JS::MutableHandleValue aRval) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -208,7 +184,7 @@ nsThebesFontEnumerator::EnumerateFontsAsync(const char *aLangGroup,
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::HaveFontFor(const char *aLangGroup, bool *aResult) {
+nsThebesFontEnumerator::HaveFontFor(const char* aLangGroup, bool* aResult) {
   NS_ENSURE_ARG_POINTER(aResult);
 
   *aResult = true;
@@ -216,9 +192,9 @@ nsThebesFontEnumerator::HaveFontFor(const char *aLangGroup, bool *aResult) {
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::GetDefaultFont(const char *aLangGroup,
-                                       const char *aGeneric,
-                                       char16_t **aResult) {
+nsThebesFontEnumerator::GetDefaultFont(const char* aLangGroup,
+                                       const char* aGeneric,
+                                       char16_t** aResult) {
   if (NS_WARN_IF(!aResult) || NS_WARN_IF(!aLangGroup) ||
       NS_WARN_IF(!aGeneric)) {
     return NS_ERROR_INVALID_ARG;
@@ -234,15 +210,15 @@ nsThebesFontEnumerator::GetDefaultFont(const char *aLangGroup,
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::UpdateFontList(bool *_retval) {
+nsThebesFontEnumerator::UpdateFontList(bool* _retval) {
   gfxPlatform::GetPlatform()->UpdateFontList();
   *_retval = false;  // always return false for now
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsThebesFontEnumerator::GetStandardFamilyName(const char16_t *aName,
-                                              char16_t **aResult) {
+nsThebesFontEnumerator::GetStandardFamilyName(const char16_t* aName,
+                                              char16_t** aResult) {
   NS_ENSURE_ARG_POINTER(aResult);
   NS_ENSURE_ARG_POINTER(aName);
 

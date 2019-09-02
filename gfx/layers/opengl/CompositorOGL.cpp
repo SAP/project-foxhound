@@ -16,11 +16,11 @@
 #include "gfxCrashReporterUtils.h"  // for ScopedGfxFeatureReporter
 #include "gfxEnv.h"                 // for gfxEnv
 #include "gfxPlatform.h"            // for gfxPlatform
-#include "gfxPrefs.h"               // for gfxPrefs
 #include "gfxRect.h"                // for gfxRect
 #include "gfxUtils.h"               // for gfxUtils, etc
 #include "mozilla/ArrayUtils.h"     // for ArrayLength
 #include "mozilla/Preferences.h"    // for Preferences
+#include "mozilla/StaticPrefs.h"    // for StaticPrefs
 #include "mozilla/gfx/BasePoint.h"  // for BasePoint
 #include "mozilla/gfx/Matrix.h"     // for Matrix4x4, Matrix
 #include "mozilla/gfx/Triangle.h"   // for Triangle
@@ -84,7 +84,7 @@ class AsyncReadbackBufferOGL final : public AsyncReadbackBuffer {
   }
 
  protected:
-  ~AsyncReadbackBufferOGL() override;
+  virtual ~AsyncReadbackBufferOGL();
 
  private:
   GLContext* mGL;
@@ -786,6 +786,7 @@ void CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
 
 #ifdef MOZ_WIDGET_ANDROID
   java::GeckoSurfaceTexture::DestroyUnused((int64_t)mGLContext.get());
+  mGLContext->MakeCurrent();  // DestroyUnused can change the current context!
 #endif
 
   // Default blend function implements "OVER"
@@ -805,10 +806,11 @@ void CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
 
 #if defined(MOZ_WIDGET_ANDROID)
   if ((mSurfaceOrigin.x > 0) || (mSurfaceOrigin.y > 0)) {
-    mGLContext->fClearColor(gfxPrefs::CompositorOverrideClearColorR(),
-                            gfxPrefs::CompositorOverrideClearColorG(),
-                            gfxPrefs::CompositorOverrideClearColorB(),
-                            gfxPrefs::CompositorOverrideClearColorA());
+    mGLContext->fClearColor(
+        StaticPrefs::gfx_compositor_override_clear_color_r(),
+        StaticPrefs::gfx_compositor_override_clear_color_g(),
+        StaticPrefs::gfx_compositor_override_clear_color_b(),
+        StaticPrefs::gfx_compositor_override_clear_color_a());
   } else {
     mGLContext->fClearColor(mClearColor.r, mClearColor.g, mClearColor.b,
                             mClearColor.a);
@@ -1232,8 +1234,8 @@ void CompositorOGL::DrawGeometry(const Geometry& aGeometry,
 
   // Only apply DEAA to quads that have been transformed such that aliasing
   // could be visible
-  bool bEnableAA =
-      gfxPrefs::LayersDEAAEnabled() && !aTransform.Is2DIntegerTranslation();
+  bool bEnableAA = StaticPrefs::layers_deaa_enabled() &&
+                   !aTransform.Is2DIntegerTranslation();
 
   bool colorMatrix = aEffectChain.mSecondaryEffects[EffectTypes::COLOR_MATRIX];
   ShaderConfigOGL config =
@@ -1494,6 +1496,7 @@ void CompositorOGL::DrawGeometry(const Geometry& aGeometry,
 
       program->SetNV12TextureUnits(Y, CbCr);
       program->SetTextureTransform(Matrix4x4());
+      program->SetYUVColorSpace(effectNV12->mYUVColorSpace);
 
       if (maskType != MaskType::MaskNone) {
         BindMaskForProgram(program, sourceMask, LOCAL_GL_TEXTURE2,
@@ -1547,7 +1550,7 @@ void CompositorOGL::DrawGeometry(const Geometry& aGeometry,
       BindAndDrawGeometry(program, aGeometry);
     } break;
     case EffectTypes::COMPONENT_ALPHA: {
-      MOZ_ASSERT(gfxPrefs::ComponentAlphaEnabled());
+      MOZ_ASSERT(StaticPrefs::layers_componentalpha_enabled());
       MOZ_ASSERT(blendMode == gfx::CompositionOp::OP_OVER,
                  "Can't support blend modes with component alpha!");
       EffectComponentAlpha* effectComponentAlpha =
@@ -1971,7 +1974,7 @@ GLuint CompositorOGL::GetTemporaryTexture(GLenum aTarget, GLenum aUnit) {
 }
 
 bool CompositorOGL::SupportsTextureDirectMapping() {
-  if (!gfxPrefs::AllowTextureDirectMapping()) {
+  if (!StaticPrefs::gfx_allow_texture_direct_mapping()) {
     return false;
   }
 
@@ -2025,7 +2028,7 @@ void PerUnitTexturePoolOGL::DestroyTextures() {
 }
 
 bool CompositorOGL::SupportsLayerGeometry() const {
-  return gfxPrefs::OGLLayerGeometry();
+  return StaticPrefs::layers_geometry_opengl_enabled();
 }
 
 void CompositorOGL::RegisterTextureSource(TextureSource* aTextureSource) {

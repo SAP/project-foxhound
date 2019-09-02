@@ -9,19 +9,20 @@
 #include "AccessibleCaretLogger.h"
 #include "AccessibleCaretManager.h"
 #include "Layers.h"
-#include "gfxPrefs.h"
+
 #include "mozilla/AutoRestore.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/Selection.h"
 #include "nsCanvasFrame.h"
 #include "nsDocShell.h"
 #include "nsFocusManager.h"
 #include "nsFrameSelection.h"
-#include "mozilla/dom/Document.h"
 #include "nsITimer.h"
 #include "nsPresContext.h"
 
@@ -320,7 +321,7 @@ MOZ_IMPL_STATE_CLASS_GETTER(PressNoCaretState)
 MOZ_IMPL_STATE_CLASS_GETTER(ScrollState)
 MOZ_IMPL_STATE_CLASS_GETTER(LongTapState)
 
-AccessibleCaretEventHub::AccessibleCaretEventHub(nsIPresShell* aPresShell)
+AccessibleCaretEventHub::AccessibleCaretEventHub(PresShell* aPresShell)
     : mPresShell(aPresShell) {}
 
 void AccessibleCaretEventHub::Init() {
@@ -427,7 +428,7 @@ nsEventStatus AccessibleCaretEventHub::HandleMouseEvent(
     WidgetMouseEvent* aEvent) {
   nsEventStatus rv = nsEventStatus_eIgnore;
 
-  if (aEvent->button != WidgetMouseEvent::eLeftButton) {
+  if (aEvent->mButton != MouseButton::eLeft) {
     return rv;
   }
 
@@ -441,7 +442,7 @@ nsEventStatus AccessibleCaretEventHub::HandleMouseEvent(
       aEvent->mMessage == eMouseLongTap) {
     // Don't reset the source on mouse movement since that can
     // happen anytime, even randomly during a touch sequence.
-    mManager->SetLastInputSource(aEvent->inputSource);
+    mManager->SetLastInputSource(aEvent->mInputSource);
   }
 
   switch (aEvent->mMessage) {
@@ -562,7 +563,7 @@ void AccessibleCaretEventHub::LaunchLongTapInjector() {
     return;
   }
 
-  int32_t longTapDelay = gfxPrefs::UiClickHoldContextMenusDelay();
+  int32_t longTapDelay = StaticPrefs::ui_click_hold_context_menus_delay();
   mLongTapInjectorTimer->InitWithNamedFuncCallback(
       FireLongTap, this, longTapDelay, nsITimer::TYPE_ONE_SHOT,
       "AccessibleCaretEventHub::LaunchLongTapInjector");

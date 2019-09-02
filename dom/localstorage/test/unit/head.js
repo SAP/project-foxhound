@@ -8,7 +8,7 @@
 
 const NS_ERROR_DOM_QUOTA_EXCEEDED_ERR = 22;
 
-var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function is(a, b, msg) {
   Assert.equal(a, b, msg);
@@ -28,10 +28,16 @@ if (!this.runTest) {
 
     enableTesting();
 
-    Assert.ok(typeof testSteps === "function",
-              "There should be a testSteps function");
-    Assert.ok(testSteps.constructor.name === "AsyncFunction",
-              "testSteps should be an async function");
+    Cu.importGlobalProperties(["crypto"]);
+
+    Assert.ok(
+      typeof testSteps === "function",
+      "There should be a testSteps function"
+    );
+    Assert.ok(
+      testSteps.constructor.name === "AsyncFunction",
+      "testSteps should be an async function"
+    );
 
     registerCleanupFunction(resetTesting);
 
@@ -51,17 +57,26 @@ function returnToEventLoop() {
 
 function enableTesting() {
   Services.prefs.setBoolPref("dom.storage.testing", true);
+
+  // xpcshell globals don't have associated clients in the Clients API sense, so
+  // we need to disable client validation so that the unit tests are allowed to
+  // use LocalStorage.
+  Services.prefs.setBoolPref("dom.storage.client_validation", false);
+
   Services.prefs.setBoolPref("dom.quotaManager.testing", true);
 }
 
 function resetTesting() {
   Services.prefs.clearUserPref("dom.quotaManager.testing");
+  Services.prefs.clearUserPref("dom.storage.client_validation");
   Services.prefs.clearUserPref("dom.storage.testing");
 }
 
 function setGlobalLimit(globalLimit) {
-  Services.prefs.setIntPref("dom.quotaManager.temporaryStorage.fixedLimit",
-                            globalLimit);
+  Services.prefs.setIntPref(
+    "dom.quotaManager.temporaryStorage.fixedLimit",
+    globalLimit
+  );
 }
 
 function resetGlobalLimit() {
@@ -74,6 +89,22 @@ function setOriginLimit(originLimit) {
 
 function resetOriginLimit() {
   Services.prefs.clearUserPref("dom.storage.default_quota");
+}
+
+function setTimeout(callback, timeout) {
+  let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+
+  timer.initWithCallback(
+    {
+      notify() {
+        callback();
+      },
+    },
+    timeout,
+    Ci.nsITimer.TYPE_ONE_SHOT
+  );
+
+  return timer;
 }
 
 function init() {
@@ -89,7 +120,7 @@ function initOrigin(principal, persistence) {
 }
 
 function getOriginUsage(principal) {
-  let request = Services.qms.getUsageForPrincipal(principal, function() { });
+  let request = Services.qms.getUsageForPrincipal(principal, function() {});
 
   return request;
 }
@@ -107,8 +138,12 @@ function clearOriginsByPattern(pattern) {
 }
 
 function clearOriginsByPrefix(principal, persistence) {
-  let request =
-    Services.qms.clearStoragesForPrincipal(principal, persistence, null, true);
+  let request = Services.qms.clearStoragesForPrincipal(
+    principal,
+    persistence,
+    null,
+    true
+  );
 
   return request;
 }
@@ -126,8 +161,11 @@ function reset() {
 }
 
 function resetOrigin(principal) {
-  let request =
-    Services.qms.resetStoragesForPrincipal(principal, "default", "ls");
+  let request = Services.qms.resetStoragesForPrincipal(
+    principal,
+    "default",
+    "ls"
+  );
 
   return request;
 }
@@ -138,8 +176,9 @@ function installPackage(packageName) {
   let packageFile = currentDir.clone();
   packageFile.append(packageName + ".zip");
 
-  let zipReader = Cc["@mozilla.org/libjar/zip-reader;1"]
-                  .createInstance(Ci.nsIZipReader);
+  let zipReader = Cc["@mozilla.org/libjar/zip-reader;1"].createInstance(
+    Ci.nsIZipReader
+  );
   zipReader.open(packageFile);
 
   let entryNames = [];
@@ -160,12 +199,14 @@ function installPackage(packageName) {
     } else {
       let istream = zipReader.getInputStream(entryName);
 
-      var ostream = Cc["@mozilla.org/network/file-output-stream;1"]
-                    .createInstance(Ci.nsIFileOutputStream);
+      var ostream = Cc[
+        "@mozilla.org/network/file-output-stream;1"
+      ].createInstance(Ci.nsIFileOutputStream);
       ostream.init(file, -1, parseInt("0644", 8), 0);
 
-      let bostream = Cc["@mozilla.org/network/buffered-output-stream;1"]
-                     .createInstance(Ci.nsIBufferedOutputStream);
+      let bostream = Cc[
+        "@mozilla.org/network/buffered-output-stream;1"
+      ].createInstance(Ci.nsIBufferedOutputStream);
       bostream.init(ostream, 32768);
 
       bostream.writeFrom(istream, istream.available());
@@ -227,12 +268,21 @@ function getCurrentPrincipal() {
   return Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal);
 }
 
+function getDefaultPrincipal() {
+  return getPrincipal("http://example.com");
+}
+
 function getLocalStorage(principal) {
   if (!principal) {
-    principal = getCurrentPrincipal();
+    principal = getDefaultPrincipal();
   }
 
-  return Services.domStorageManager.createStorage(null, principal, "");
+  return Services.domStorageManager.createStorage(
+    null,
+    principal,
+    principal,
+    ""
+  );
 }
 
 function requestFinished(request) {

@@ -7,19 +7,23 @@
 #include "nsWindowsDllInterceptor.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ImportDir.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/Types.h"
 #include "mozilla/WindowsDllBlocklist.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 
+// clang-format off
 #define MOZ_LITERAL_UNICODE_STRING(s)                                        \
   {                                                                          \
     /* Length of the string in bytes, less the null terminator */            \
-    sizeof(s) - sizeof(wchar_t), /* Length of the string in bytes, including \
-                                    the null terminator */                   \
-        sizeof(s),               /* Pointer to the buffer */                 \
-        const_cast<wchar_t*>(s)                                              \
+    sizeof(s) - sizeof(wchar_t),                                             \
+    /* Length of the string in bytes, including the null terminator */       \
+    sizeof(s),                                                               \
+    /* Pointer to the buffer */                                              \
+    const_cast<wchar_t*>(s)                                                  \
   }
+// clang-format on
 
 #define DLL_BLOCKLIST_ENTRY(name, ...) \
   {MOZ_LITERAL_UNICODE_STRING(L##name), __VA_ARGS__},
@@ -166,7 +170,7 @@ static bool CheckBlockInfo(const DllBlockInfo* aInfo, void* aBaseAddress,
 
   if (aInfo->flags &
       (DllBlockInfo::BLOCK_WIN8PLUS_ONLY | DllBlockInfo::BLOCK_WIN8_ONLY)) {
-    RTL_OSVERSIONINFOW osv;
+    RTL_OSVERSIONINFOW osv = {sizeof(osv)};
     NTSTATUS ntStatus = ::RtlGetVersion(&osv);
     if (!NT_SUCCESS(ntStatus)) {
       // huh?
@@ -304,9 +308,14 @@ static NTSTATUS NTAPI patched_NtMapViewOfSection(
   return STATUS_ACCESS_DENIED;
 }
 
+#if defined(_MSC_VER)
+extern "C" IMAGE_DOS_HEADER __ImageBase;
+#endif
+
 namespace mozilla {
 
-LauncherVoidResult InitializeDllBlocklistOOP(HANDLE aChildProcess) {
+LauncherVoidResult InitializeDllBlocklistOOP(const wchar_t* aFullImagePath,
+                                             HANDLE aChildProcess) {
   mozilla::CrossProcessDllInterceptor intcpt(aChildProcess);
   intcpt.Init(L"ntdll.dll");
   bool ok = stub_NtMapViewOfSection.SetDetour(
@@ -325,32 +334,35 @@ LauncherVoidResult InitializeDllBlocklistOOP(HANDLE aChildProcess) {
   // linked into ntdll, so we obtain the IAT from our own executable and graft
   // it onto the child process's IAT, thus enabling the child process's hook to
   // safely make its ntdll calls.
-  mozilla::nt::PEHeaders ourExeImage(::GetModuleHandleW(nullptr));
+
+  HMODULE ourModule;
+#if defined(_MSC_VER)
+  ourModule = reinterpret_cast<HMODULE>(&__ImageBase);
+#else
+  ourModule = ::GetModuleHandleW(nullptr);
+#endif  // defined(_MSC_VER)
+
+  mozilla::nt::PEHeaders ourExeImage(ourModule);
   if (!ourExeImage) {
     return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
   }
 
-  PIMAGE_IMPORT_DESCRIPTOR impDesc = ourExeImage.GetIATForModule("ntdll.dll");
-  if (!impDesc) {
+  // As part of our mitigation of binary tampering, copy our import directory
+  // from the original in our executable file.
+  LauncherVoidResult importDirRestored = RestoreImportDirectory(
+      aFullImagePath, ourExeImage, aChildProcess, ourModule);
+  if (importDirRestored.isErr()) {
+    return importDirRestored;
+  }
+
+  Maybe<nt::PEHeaders::IATThunks> ntdllThunks =
+      ourExeImage.GetIATThunksForModule("ntdll.dll");
+  if (!ntdllThunks) {
     return LAUNCHER_ERROR_FROM_WIN32(ERROR_INVALID_DATA);
   }
 
-  // This is the pointer we need to write
-  auto firstIatThunk =
-      ourExeImage.template RVAToPtr<PIMAGE_THUNK_DATA>(impDesc->FirstThunk);
-  if (!firstIatThunk) {
-    return LAUNCHER_ERROR_FROM_WIN32(ERROR_INVALID_DATA);
-  }
-
-  // Find the length by iterating through the table until we find a null entry
-  PIMAGE_THUNK_DATA curIatThunk = firstIatThunk;
-  while (mozilla::nt::PEHeaders::IsValid(curIatThunk)) {
-    ++curIatThunk;
-  }
-
-  ptrdiff_t iatLength =
-      (curIatThunk - firstIatThunk) * sizeof(IMAGE_THUNK_DATA);
-
+  PIMAGE_THUNK_DATA firstIatThunk = ntdllThunks.value().mFirstThunk;
+  SIZE_T iatLength = ntdllThunks.value().Length();
   SIZE_T bytesWritten;
 
   {  // Scope for prot
@@ -362,7 +374,7 @@ LauncherVoidResult InitializeDllBlocklistOOP(HANDLE aChildProcess) {
 
     ok = !!::WriteProcessMemory(aChildProcess, firstIatThunk, firstIatThunk,
                                 iatLength, &bytesWritten);
-    if (!ok) {
+    if (!ok || bytesWritten != iatLength) {
       return LAUNCHER_ERROR_FROM_LAST();
     }
   }
@@ -371,7 +383,7 @@ LauncherVoidResult InitializeDllBlocklistOOP(HANDLE aChildProcess) {
   uint32_t newFlags = eDllBlocklistInitFlagWasBootstrapped;
   ok = !!::WriteProcessMemory(aChildProcess, &gBlocklistInitFlags, &newFlags,
                               sizeof(newFlags), &bytesWritten);
-  if (!ok) {
+  if (!ok || bytesWritten != sizeof(newFlags)) {
     return LAUNCHER_ERROR_FROM_LAST();
   }
 

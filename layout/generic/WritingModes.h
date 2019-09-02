@@ -287,7 +287,7 @@ class WritingMode {
     // and hypothetical) values.  But this is fine; we only need to
     // distinguish between vertical and horizontal in
     // PhysicalAxisForLogicalAxis.
-    int wm = mWritingMode & eOrientationMask;
+    const auto wm = static_cast<uint8_t>(mWritingMode & eOrientationMask);
     return PhysicalAxisForLogicalAxis(wm, aAxis);
   }
 
@@ -362,8 +362,9 @@ class WritingMode {
     if (IsBlock(aSide)) {
       static_assert(eOrientationMask == 0x01 && eBlockFlowMask == 0x04,
                     "unexpected mask values");
-      int wm = ((mWritingMode & eBlockFlowMask) >> 1) |
-               (mWritingMode & eOrientationMask);
+      const auto wm =
+          static_cast<uint8_t>(((mWritingMode & eBlockFlowMask) >> 1) |
+                               (mWritingMode & eOrientationMask));
       return PhysicalSideForBlockAxis(wm, GetEdge(aSide));
     }
 
@@ -1918,59 +1919,6 @@ const T& StyleRect<T>::GetBEnd(mozilla::WritingMode aWM) const {
 
 }  // namespace mozilla
 
-// Definitions of inline methods for nsStyleSides, declared in nsStyleCoord.h
-// but not defined there because they need WritingMode.
-inline nsStyleUnit nsStyleSides::GetUnit(mozilla::WritingMode aWM,
-                                         mozilla::LogicalSide aSide) const {
-  return GetUnit(aWM.PhysicalSide(aSide));
-}
-
-inline nsStyleUnit nsStyleSides::GetIStartUnit(mozilla::WritingMode aWM) const {
-  return GetUnit(aWM, mozilla::eLogicalSideIStart);
-}
-
-inline nsStyleUnit nsStyleSides::GetBStartUnit(mozilla::WritingMode aWM) const {
-  return GetUnit(aWM, mozilla::eLogicalSideBStart);
-}
-
-inline nsStyleUnit nsStyleSides::GetIEndUnit(mozilla::WritingMode aWM) const {
-  return GetUnit(aWM, mozilla::eLogicalSideIEnd);
-}
-
-inline nsStyleUnit nsStyleSides::GetBEndUnit(mozilla::WritingMode aWM) const {
-  return GetUnit(aWM, mozilla::eLogicalSideBEnd);
-}
-
-inline bool nsStyleSides::HasBlockAxisAuto(mozilla::WritingMode aWM) const {
-  return GetBStartUnit(aWM) == eStyleUnit_Auto ||
-         GetBEndUnit(aWM) == eStyleUnit_Auto;
-}
-
-inline bool nsStyleSides::HasInlineAxisAuto(mozilla::WritingMode aWM) const {
-  return GetIStartUnit(aWM) == eStyleUnit_Auto ||
-         GetIEndUnit(aWM) == eStyleUnit_Auto;
-}
-
-inline nsStyleCoord nsStyleSides::Get(mozilla::WritingMode aWM,
-                                      mozilla::LogicalSide aSide) const {
-  return Get(aWM.PhysicalSide(aSide));
-}
-
-inline nsStyleCoord nsStyleSides::GetIStart(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideIStart);
-}
-
-inline nsStyleCoord nsStyleSides::GetBStart(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideBStart);
-}
-
-inline nsStyleCoord nsStyleSides::GetIEnd(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideIEnd);
-}
-
-inline nsStyleCoord nsStyleSides::GetBEnd(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideBEnd);
-}
 
 // Definitions of inline methods for nsStylePosition, declared in
 // nsStyleStruct.h but not defined there because they need WritingMode.

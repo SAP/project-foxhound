@@ -18,6 +18,7 @@
 #include "mozilla/dom/TreeWalker.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs.h"
 #include "nsCaret.h"
 #include "nsContainerFrame.h"
@@ -70,7 +71,7 @@ std::ostream& operator<<(
 }
 #undef AC_PROCESS_ENUM_TO_STREAM
 
-AccessibleCaretManager::AccessibleCaretManager(nsIPresShell* aPresShell)
+AccessibleCaretManager::AccessibleCaretManager(PresShell* aPresShell)
     : mPresShell(aPresShell) {
   if (!mPresShell) {
     return;
@@ -713,7 +714,7 @@ already_AddRefed<nsFrameSelection> AccessibleCaretManager::GetFrameSelection()
   // Prevent us from touching the nsFrameSelection associated with other
   // PresShell.
   RefPtr<nsFrameSelection> fs = focusFrame->GetFrameSelection();
-  if (!fs || fs->GetShell() != mPresShell) {
+  if (!fs || fs->GetPresShell() != mPresShell) {
     return nullptr;
   }
 
@@ -785,7 +786,7 @@ void AccessibleCaretManager::ChangeFocusToOrClearOldFocus(
     nsIContent* focusableContent = aFrame->GetContent();
     MOZ_ASSERT(focusableContent, "Focusable frame must have content!");
     RefPtr<Element> focusableElement = Element::FromNode(focusableContent);
-    fm->SetFocus(focusableElement, nsIFocusManager::FLAG_BYMOUSE);
+    fm->SetFocus(focusableElement, nsIFocusManager::FLAG_BYLONGPRESS);
   } else {
     nsPIDOMWindowOuter* win = mPresShell->GetDocument()->GetWindow();
     if (win) {

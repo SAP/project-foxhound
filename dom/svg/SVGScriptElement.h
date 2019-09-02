@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_SVGScriptElement_h
 #define mozilla_dom_SVGScriptElement_h
 
-#include "SVGElement.h"
-#include "SVGString.h"
+#include "SVGAnimatedString.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/dom/ScriptElement.h"
+#include "mozilla/dom/SVGElement.h"
 
 nsresult NS_NewSVGScriptElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -50,8 +50,7 @@ class SVGScriptElement final : public SVGScriptElementBase,
   virtual bool HasScriptContent() override;
 
   // nsIContent specializations:
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,
                                 const nsAttrValue* aOldValue,
@@ -69,10 +68,10 @@ class SVGScriptElement final : public SVGScriptElementBase,
   void SetType(const nsAString& aType, ErrorResult& rv);
   void GetCrossOrigin(nsAString& aCrossOrigin);
   void SetCrossOrigin(const nsAString& aCrossOrigin, ErrorResult& aError);
-  already_AddRefed<SVGAnimatedString> Href();
+  already_AddRefed<DOMSVGAnimatedString> Href();
 
  protected:
-  ~SVGScriptElement();
+  ~SVGScriptElement() = default;
 
   virtual StringAttributesInfo GetStringInfo() override;
 
@@ -81,7 +80,7 @@ class SVGScriptElement final : public SVGScriptElementBase,
   virtual bool GetAsyncState() override { return false; }
 
   enum { HREF, XLINK_HREF };
-  SVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 };
 

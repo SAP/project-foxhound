@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+---
 loader: taskgraph.loader.transform:loader
 
 kind-dependencies:
@@ -32,7 +32,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: linux32/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-linux
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             artifacts:
@@ -53,7 +53,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: linux64/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-linux
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             artifacts:
@@ -74,7 +74,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: macosx64/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-linux
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             artifacts:
@@ -96,7 +96,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: win32/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+        worker-type: b-win2012
         worker:
             max-run-time: 1800
             artifacts:
@@ -116,7 +116,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: win64/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+        worker-type: b-win2012
         worker:
             max-run-time: 1800
             artifacts:
@@ -132,11 +132,11 @@ jobs:
             - win64-clang-cl
     win64-aarch64/opt:
         attributes:
-            build_platform: windows2012-aarch64
+            build_platform: win64-aarch64
             build_type: opt
         treeherder:
             platform: win64-aarch64/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+        worker-type: b-win2012
         worker:
             max-run-time: 1800
             artifacts:
@@ -156,7 +156,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: android-api-16/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-android
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             artifacts:
@@ -183,7 +183,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: android-5-0-aarch64/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-android
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             artifacts:
@@ -210,7 +210,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: android-4-2-x86/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-android
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             artifacts:
@@ -237,7 +237,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: android-5-0-x86_64/opt
-        worker-type: aws-provisioner-v1/gecko-{level}-b-android
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             artifacts:

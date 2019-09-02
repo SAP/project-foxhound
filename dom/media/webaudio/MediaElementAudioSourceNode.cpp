@@ -14,7 +14,8 @@ namespace mozilla {
 namespace dom {
 
 MediaElementAudioSourceNode::MediaElementAudioSourceNode(AudioContext* aContext)
-    : MediaStreamAudioSourceNode(aContext) {}
+    : MediaStreamAudioSourceNode(aContext, TrackChangeBehavior::FollowChanges) {
+}
 
 /* static */
 already_AddRefed<MediaElementAudioSourceNode>
@@ -23,10 +24,6 @@ MediaElementAudioSourceNode::Create(
     ErrorResult& aRv) {
   if (aAudioContext.IsOffline()) {
     aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
-  }
-
-  if (aAudioContext.CheckClosed(aRv)) {
     return nullptr;
   }
 
@@ -57,7 +54,7 @@ void MediaElementAudioSourceNode::ListenForAllowedToPlay(
     const MediaElementAudioSourceOptions& aOptions) {
   aOptions.mMediaElement->GetAllowedToPlayPromise()
       ->Then(
-          AbstractMainThread(), __func__,
+          GetAbstractMainThread(), __func__,
           // Capture by reference to bypass the mozilla-refcounted-inside-lambda
           // static analysis. We capture a non-owning reference so as to allow
           // cycle collection of the node. The reference is cleared via

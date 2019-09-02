@@ -18,6 +18,7 @@
 #include "nsIProxyInfo.h"
 #include "nsIProxiedChannel.h"
 #include "nsIResumableChannel.h"
+#include "nsWeakReference.h"
 
 class nsIURI;
 using mozilla::net::ADivertableParentChannel;
@@ -28,6 +29,7 @@ class nsFtpChannel final : public nsBaseChannel,
                            public nsIResumableChannel,
                            public nsIProxiedChannel,
                            public nsIForcePendingChannel,
+                           public nsSupportsWeakReference,
                            public nsIChannelWithDivertableParentListener {
  public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -36,7 +38,7 @@ class nsFtpChannel final : public nsBaseChannel,
   NS_DECL_NSIPROXIEDCHANNEL
   NS_DECL_NSICHANNELWITHDIVERTABLEPARENTLISTENER
 
-  nsFtpChannel(nsIURI *uri, nsIProxyInfo *pi)
+  nsFtpChannel(nsIURI* uri, nsIProxyInfo* pi)
       : mProxyInfo(pi),
         mStartPos(0),
         mResumeRequested(false),
@@ -46,16 +48,16 @@ class nsFtpChannel final : public nsBaseChannel,
     SetURI(uri);
   }
 
-  void UpdateURI(nsIURI *aURI) {
+  void UpdateURI(nsIURI* aURI) {
     MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread(), "Not thread-safe.");
     mURI = aURI;
   }
 
-  nsIProxyInfo *ProxyInfo() { return mProxyInfo; }
+  nsIProxyInfo* ProxyInfo() { return mProxyInfo; }
 
-  void SetProxyInfo(nsIProxyInfo *pi) { mProxyInfo = pi; }
+  void SetProxyInfo(nsIProxyInfo* pi) { mProxyInfo = pi; }
 
-  NS_IMETHOD IsPending(bool *result) override;
+  NS_IMETHOD IsPending(bool* result) override;
 
   // This is a short-cut to calling nsIRequest::IsPending().
   // Overrides Pending in nsBaseChannel.
@@ -68,10 +70,10 @@ class nsFtpChannel final : public nsBaseChannel,
   uint64_t StartPos() { return mStartPos; }
 
   // ID of the entity to resume downloading
-  const nsCString &EntityID() { return mEntityID; }
-  void SetEntityID(const nsACString &entityID) { mEntityID = entityID; }
+  const nsCString& EntityID() { return mEntityID; }
+  void SetEntityID(const nsACString& entityID) { mEntityID = entityID; }
 
-  NS_IMETHOD GetLastModifiedTime(PRTime *lastModifiedTime) override {
+  NS_IMETHOD GetLastModifiedTime(PRTime* lastModifiedTime) override {
     *lastModifiedTime = mLastModifiedTime;
     return NS_OK;
   }
@@ -82,10 +84,10 @@ class nsFtpChannel final : public nsBaseChannel,
   }
 
   // Data stream to upload
-  nsIInputStream *UploadStream() { return mUploadStream; }
+  nsIInputStream* UploadStream() { return mUploadStream; }
 
   // Helper function for getting the nsIFTPEventSink.
-  void GetFTPEventSink(nsCOMPtr<nsIFTPEventSink> &aResult);
+  void GetFTPEventSink(nsCOMPtr<nsIFTPEventSink>& aResult);
 
   NS_IMETHOD Suspend() override;
   NS_IMETHOD Resume() override;
@@ -95,9 +97,9 @@ class nsFtpChannel final : public nsBaseChannel,
 
  protected:
   virtual ~nsFtpChannel() = default;
-  virtual nsresult OpenContentStream(bool async, nsIInputStream **result,
-                                     nsIChannel **channel) override;
-  virtual bool GetStatusArg(nsresult status, nsString &statusArg) override;
+  virtual nsresult OpenContentStream(bool async, nsIInputStream** result,
+                                     nsIChannel** channel) override;
+  virtual bool GetStatusArg(nsresult status, nsString& statusArg) override;
   virtual void OnCallbacksChanged() override;
 
  private:

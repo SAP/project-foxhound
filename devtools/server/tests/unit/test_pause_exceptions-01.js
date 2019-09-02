@@ -24,21 +24,24 @@ function run_test() {
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-stack",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_pause_frame();
-                           });
+    attachTestTabAndResume(gClient, "test-stack", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_pause_frame();
+    });
   });
   do_test_pending();
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
-    gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
+    gThreadClient.once("paused", function(packet) {
       Assert.equal(packet.why.type, "exception");
       Assert.equal(packet.why.exception, 42);
-      gThreadClient.resume(() => finishClient(gClient));
+      gThreadClient.resume().then(() => finishClient(gClient));
     });
 
     gThreadClient.pauseOnExceptions(true, false);

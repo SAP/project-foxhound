@@ -9,13 +9,14 @@
 
 "use strict";
 
-const TEST_URI = "http://example.com/browser/devtools/client/webconsole/" +
-                 "test/mochitest/test-eval-in-stackframe.html";
+const TEST_URI =
+  "http://example.com/browser/devtools/client/webconsole/" +
+  "test/mochitest/test-eval-in-stackframe.html";
 
 add_task(async function() {
   info("open the console");
   const hud = await openNewTabAndConsole(TEST_URI);
-  const {jsterm} = hud;
+  const { jsterm } = hud;
 
   info("open the debugger");
   await openDebugger();
@@ -51,13 +52,20 @@ add_task(async function() {
   message = await onMessageReceived;
   ok(message, "`foo + foo2` was evaluated as expected with debugger paused");
 
-  info("Checking the first command, which is the last to resolve since it paused");
-  ok(firstCallEvaluationResult === unresolvedSymbol, "firstCall was not evaluated yet");
+  info(
+    "Checking the first command, which is the last to resolve since it paused"
+  );
+  ok(
+    firstCallEvaluationResult === unresolvedSymbol,
+    "firstCall was not evaluated yet"
+  );
 
   info("Resuming the thread");
-  dbg.actions.resume(dbg.getState());
+  dbg.actions.resume(dbg.selectors.getThreadContext());
 
   message = await onFirstCallMessageReceived;
-  ok(firstCallEvaluationResult !== unresolvedSymbol,
-    "firstCall() returned correct value");
+  ok(
+    firstCallEvaluationResult !== unresolvedSymbol,
+    "firstCall() returned correct value"
+  );
 });

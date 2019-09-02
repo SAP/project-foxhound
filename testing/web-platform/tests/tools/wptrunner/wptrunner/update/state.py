@@ -1,8 +1,7 @@
 import os
-import cPickle as pickle
+from six.moves import cPickle as pickle  # noqa: N813
 
 here = os.path.abspath(os.path.split(__file__)[0])
-
 
 class BaseState(object):
     def __new__(cls, logger):
@@ -76,8 +75,9 @@ class BaseState(object):
     def keys(self):
         return self._data[self._index].keys()
 
+
     @classmethod
-    def load(self):
+    def load(cls):
         raise NotImplementedError
 
     def save(self):
@@ -89,6 +89,7 @@ class SavedState(BaseState):
        the event that the program is interrupted before all steps are complete.
        Note that this only works well if the values are immutable; mutating an
        existing value will not cause the data to be serialized."""
+    filename = os.path.join(here, ".wpt-update.lock")
 
     @classmethod
     def load(cls, logger):

@@ -4,18 +4,41 @@
 
 "use strict";
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {BaseAction} = ChromeUtils.import("resource://normandy/actions/BaseAction.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { BaseAction } = ChromeUtils.import(
+  "resource://normandy/actions/BaseAction.jsm"
+);
 ChromeUtils.defineModuleGetter(
-  this, "Sampling", "resource://gre/modules/components-utils/Sampling.jsm");
-ChromeUtils.defineModuleGetter(this, "ActionSchemas", "resource://normandy/actions/schemas/index.js");
-ChromeUtils.defineModuleGetter(this, "ClientEnvironment", "resource://normandy/lib/ClientEnvironment.jsm");
-ChromeUtils.defineModuleGetter(this, "PreferenceExperiments", "resource://normandy/lib/PreferenceExperiments.jsm");
+  this,
+  "Sampling",
+  "resource://gre/modules/components-utils/Sampling.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ActionSchemas",
+  "resource://normandy/actions/schemas/index.js"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ClientEnvironment",
+  "resource://normandy/lib/ClientEnvironment.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PreferenceExperiments",
+  "resource://normandy/lib/PreferenceExperiments.jsm"
+);
 const SHIELD_OPT_OUT_PREF = "app.shield.optoutstudies.enabled";
-XPCOMUtils.defineLazyPreferenceGetter(this, "shieldOptOutPref", SHIELD_OPT_OUT_PREF, false);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "shieldOptOutPref",
+  SHIELD_OPT_OUT_PREF,
+  false
+);
 
 var EXPORTED_SYMBOLS = ["PreferenceExperimentAction"];
-
 
 /**
  * Enrolls a user in a preference experiment, in which we assign the
@@ -24,7 +47,7 @@ var EXPORTED_SYMBOLS = ["PreferenceExperimentAction"];
  */
 class PreferenceExperimentAction extends BaseAction {
   get schema() {
-    return ActionSchemas["preference-experiment"];
+    return ActionSchemas["multiple-preference-experiment"];
   }
 
   constructor() {
@@ -34,7 +57,9 @@ class PreferenceExperimentAction extends BaseAction {
 
   _preExecution() {
     if (!shieldOptOutPref) {
-      this.log.info("User has opted out of preference experiments. Disabling this action.");
+      this.log.info(
+        "User has opted out of preference experiments. Disabling this action."
+      );
       this.disable();
     }
   }
@@ -44,10 +69,9 @@ class PreferenceExperimentAction extends BaseAction {
       branches,
       isHighPopulation,
       isEnrollmentPaused,
-      preferenceBranchType,
-      preferenceName,
-      preferenceType,
       slug,
+      userFacingName,
+      userFacingDescription,
     } = recipe.arguments;
 
     this.seenExperimentNames.push(slug);
@@ -55,14 +79,23 @@ class PreferenceExperimentAction extends BaseAction {
     // If we're not in the experiment, enroll!
     const hasSlug = await PreferenceExperiments.has(slug);
     if (!hasSlug) {
-      // If there's already an active experiment using this preference, abort.
+      // Check all preferences that could be used by this experiment.
+      // If there's already an active experiment that has set that preference, abort.
       const activeExperiments = await PreferenceExperiments.getAllActive();
-      const hasConflicts = activeExperiments.some(exp => exp.preferenceName === preferenceName);
-      if (hasConflicts) {
-        throw new Error(
-          `Experiment ${slug} ignored; another active experiment is already using the
-          ${preferenceName} preference.`
+      for (const branch of branches) {
+        const conflictingPrefs = Object.keys(branch.preferences).filter(
+          preferenceName => {
+            return activeExperiments.some(exp =>
+              exp.preferences.hasOwnProperty(preferenceName)
+            );
+          }
         );
+        if (conflictingPrefs.length > 0) {
+          throw new Error(
+            `Experiment ${slug} ignored; another active experiment is already using the
+            ${conflictingPrefs[0]} preference.`
+          );
+        }
       }
 
       // Determine if enrollment is currently paused for this experiment.
@@ -76,12 +109,12 @@ class PreferenceExperimentAction extends BaseAction {
       const experimentType = isHighPopulation ? "exp-highpop" : "exp";
       await PreferenceExperiments.start({
         name: slug,
+        actionName: this.name,
         branch: branch.slug,
-        preferenceName,
-        preferenceValue: branch.value,
-        preferenceBranchType,
-        preferenceType,
+        preferences: branch.preferences,
         experimentType,
+        userFacingName,
+        userFacingDescription,
       });
     } else {
       // If the experiment exists, and isn't expired, bump the lastSeen date.
@@ -118,17 +151,25 @@ class PreferenceExperimentAction extends BaseAction {
    */
   async _finalize() {
     const activeExperiments = await PreferenceExperiments.getAllActive();
-    return Promise.all(activeExperiments.map(experiment => {
-      if (this.seenExperimentNames.includes(experiment.name)) {
-        return null;
-      }
+    return Promise.all(
+      activeExperiments.map(experiment => {
+        if (this.name != experiment.actionName) {
+          // Another action is responsible for cleaning this one
+          // up. Leave it alone.
+          return null;
+        }
 
-      return PreferenceExperiments.stop(experiment.name, {
-        resetValue: true,
-        reason: "recipe-not-seen",
-      }).catch(e => {
-        this.log.warn(`Stopping experiment ${experiment.name} failed: ${e}`);
-      });
-    }));
+        if (this.seenExperimentNames.includes(experiment.name)) {
+          return null;
+        }
+
+        return PreferenceExperiments.stop(experiment.name, {
+          resetValue: true,
+          reason: "recipe-not-seen",
+        }).catch(e => {
+          this.log.warn(`Stopping experiment ${experiment.name} failed: ${e}`);
+        });
+      })
+    );
   }
 }

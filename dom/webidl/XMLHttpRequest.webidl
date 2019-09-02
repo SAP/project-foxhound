@@ -20,9 +20,6 @@ enum XMLHttpRequestResponseType {
   "document",
   "json",
   "text",
-
-  // Mozilla-specific stuff
-  "moz-chunked-arraybuffer",
 };
 
 /**
@@ -45,7 +42,7 @@ dictionary MozXMLHttpRequestParameters
   boolean mozSystem = false;
 };
 
-[Constructor(optional MozXMLHttpRequestParameters params),
+[Constructor(optional MozXMLHttpRequestParameters params = {}),
  // There are apparently callers, specifically CoffeeScript, who do
  // things like this:
  //   c = new(window.ActiveXObject || XMLHttpRequest)("Microsoft.XMLHTTP")
@@ -129,7 +126,7 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   any getInterface(any iid);
 
   [ChromeOnly, Exposed=Window]
-  void setOriginAttributes(optional OriginAttributesDictionary originAttributes);
+  void setOriginAttributes(optional OriginAttributesDictionary originAttributes = {});
 
   [ChromeOnly, Throws]
   void sendInputStream(InputStream body);

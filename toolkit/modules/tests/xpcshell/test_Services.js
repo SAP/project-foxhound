@@ -59,10 +59,9 @@ function run_test() {
   if ("nsIAndroidBridge" in Ci) {
     checkService("androidBridge", Ci.nsIAndroidBridge);
   }
-  if ("@mozilla.org/browser/enterprisepolicies;1" in Cc) {
+  if ("@mozilla.org/enterprisepolicies;1" in Cc) {
     checkService("policies", Ci.nsIEnterprisePolicies);
   }
-
 
   // In xpcshell tests, the "@mozilla.org/xre/app-info;1" component implements
   // only the nsIXULRuntime interface, but not nsIXULAppInfo.  To test the
@@ -73,7 +72,7 @@ function run_test() {
 
   // We need to reload the module to update the lazy getter.
   Cu.unload("resource://gre/modules/Services.jsm");
-  ({Services} = ChromeUtils.import("resource://gre/modules/Services.jsm"));
+  ({ Services } = ChromeUtils.import("resource://gre/modules/Services.jsm"));
 
   checkService("appinfo", Ci.nsIXULAppInfo);
 

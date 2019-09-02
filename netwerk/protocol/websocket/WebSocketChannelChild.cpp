@@ -6,11 +6,11 @@
 
 #include "WebSocketLog.h"
 #include "base/compiler_specific.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/net/NeckoChild.h"
 #include "WebSocketChannelChild.h"
 #include "nsContentUtils.h"
-#include "nsITabChild.h"
+#include "nsIBrowserChild.h"
 #include "nsNetUtil.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -183,14 +183,17 @@ class EventTargetDispatcher : public ChannelEvent {
 class StartEvent : public WebSocketEvent {
  public:
   StartEvent(const nsCString& aProtocol, const nsCString& aExtensions,
-             const nsString& aEffectiveURL, bool aEncrypted)
+             const nsString& aEffectiveURL, bool aEncrypted,
+             uint64_t aHttpChannelId)
       : mProtocol(aProtocol),
         mExtensions(aExtensions),
         mEffectiveURL(aEffectiveURL),
-        mEncrypted(aEncrypted) {}
+        mEncrypted(aEncrypted),
+        mHttpChannelId(aHttpChannelId) {}
 
   void Run(WebSocketChannelChild* aChild) override {
-    aChild->OnStart(mProtocol, mExtensions, mEffectiveURL, mEncrypted);
+    aChild->OnStart(mProtocol, mExtensions, mEffectiveURL, mEncrypted,
+                    mHttpChannelId);
   }
 
  private:
@@ -198,13 +201,17 @@ class StartEvent : public WebSocketEvent {
   nsCString mExtensions;
   nsString mEffectiveURL;
   bool mEncrypted;
+  uint64_t mHttpChannelId;
 };
 
 mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnStart(
     const nsCString& aProtocol, const nsCString& aExtensions,
-    const nsString& aEffectiveURL, const bool& aEncrypted) {
+    const nsString& aEffectiveURL, const bool& aEncrypted,
+    const uint64_t& aHttpChannelId) {
   mEventQ->RunOrEnqueue(new EventTargetDispatcher(
-      this, new StartEvent(aProtocol, aExtensions, aEffectiveURL, aEncrypted),
+      this,
+      new StartEvent(aProtocol, aExtensions, aEffectiveURL, aEncrypted,
+                     aHttpChannelId),
       mTargetThread));
 
   return IPC_OK();
@@ -213,12 +220,14 @@ mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnStart(
 void WebSocketChannelChild::OnStart(const nsCString& aProtocol,
                                     const nsCString& aExtensions,
                                     const nsString& aEffectiveURL,
-                                    const bool& aEncrypted) {
+                                    const bool& aEncrypted,
+                                    const uint64_t& aHttpChannelId) {
   LOG(("WebSocketChannelChild::RecvOnStart() %p\n", this));
   SetProtocol(aProtocol);
   mNegotiatedExtensions = aExtensions;
   mEffectiveURL = aEffectiveURL;
   mEncrypted = aEncrypted;
+  mHttpChannelId = aHttpChannelId;
 
   if (mListenerMT) {
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
@@ -425,14 +434,16 @@ WebSocketChannelChild::AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
   MOZ_ASSERT(aListener && !mListenerMT,
              "Invalid state for WebSocketChannelChild::AsyncOpen");
 
-  mozilla::dom::TabChild* tabChild = nullptr;
-  nsCOMPtr<nsITabChild> iTabChild;
-  NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup, NS_GET_IID(nsITabChild),
-                                getter_AddRefs(iTabChild));
-  if (iTabChild) {
-    tabChild = static_cast<mozilla::dom::TabChild*>(iTabChild.get());
+  mozilla::dom::BrowserChild* browserChild = nullptr;
+  nsCOMPtr<nsIBrowserChild> iBrowserChild;
+  NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup,
+                                NS_GET_IID(nsIBrowserChild),
+                                getter_AddRefs(iBrowserChild));
+  if (iBrowserChild) {
+    browserChild =
+        static_cast<mozilla::dom::BrowserChild*>(iBrowserChild.get());
   }
-  if (MissingRequiredTabChild(tabChild, "websocket")) {
+  if (MissingRequiredBrowserChild(browserChild, "websocket")) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -468,7 +479,7 @@ WebSocketChannelChild::AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
   SetupNeckoTarget();
 
   gNeckoChild->SendPWebSocketConstructor(
-      this, tabChild, IPC::SerializedLoadContext(this), mSerial);
+      this, browserChild, IPC::SerializedLoadContext(this), mSerial);
   if (!SendAsyncOpen(uri, nsCString(aOrigin), aInnerWindowID, mProtocol,
                      mEncrypted, mPingInterval, mClientSetPingInterval,
                      mPingResponseTimeout, mClientSetPingTimeout, loadInfoArgs,

@@ -17,13 +17,18 @@ namespace frontend {
 void SharedContext::computeAllowSyntax(Scope* scope) {
   for (ScopeIter si(scope); si; si++) {
     if (si.kind() == ScopeKind::Function) {
-      JSFunction* fun = si.scope()->as<FunctionScope>().canonicalFunction();
+      FunctionScope* funScope = &si.scope()->as<FunctionScope>();
+      JSFunction* fun = funScope->canonicalFunction();
       if (fun->isArrow()) {
         continue;
       }
       allowNewTarget_ = true;
       allowSuperProperty_ = fun->allowSuperProperty();
       allowSuperCall_ = fun->isDerivedClassConstructor();
+      if (funScope->isFieldInitializer() == IsFieldInitializer::Yes) {
+        allowSuperCall_ = false;
+        allowArguments_ = false;
+      }
       return;
     }
   }
@@ -150,15 +155,21 @@ FunctionBox::FunctionBox(JSContext* cx, TraceListNode* traceListHead,
       needsHomeObject_(false),
       isDerivedClassConstructor_(false),
       hasThisBinding_(false),
-      hasInnerFunctions_(false) {
+      hasInnerFunctions_(false),
+      isArrow_(fun->isArrow()),
+      isNamedLambda_(fun->isNamedLambda()),
+      isGetter_(fun->isGetter()),
+      isSetter_(fun->isSetter()),
+      isMethod_(fun->isMethod()),
+      kind_(fun->kind()),
+      explicitName_(fun->explicitName()) {
   // Functions created at parse time may be set singleton after parsing and
   // baked into JIT code, so they must be allocated tenured. They are held by
   // the JSScript so cannot be collected during a minor GC anyway.
   MOZ_ASSERT(fun->isTenured());
 }
 
-void FunctionBox::initFromLazyFunction() {
-  JSFunction* fun = function();
+void FunctionBox::initFromLazyFunction(JSFunction* fun) {
   if (fun->lazyScript()->isDerivedClassConstructor()) {
     setDerivedClassConstructor();
   }
@@ -170,7 +181,7 @@ void FunctionBox::initFromLazyFunction() {
   } else {
     enclosingScope_ = nullptr;
   }
-  initWithEnclosingScope(enclosingScope_);
+  initWithEnclosingScope(enclosingScope_, fun);
 }
 
 void FunctionBox::initStandaloneFunction(Scope* enclosingScope) {
@@ -183,17 +194,17 @@ void FunctionBox::initStandaloneFunction(Scope* enclosingScope) {
 }
 
 void FunctionBox::initWithEnclosingParseContext(ParseContext* enclosing,
+                                                JSFunction* fun,
                                                 FunctionSyntaxKind kind) {
   SharedContext* sc = enclosing->sc();
   useAsm = sc->isFunctionBox() && sc->asFunctionBox()->useAsmOrInsideUseAsm();
-
-  JSFunction* fun = function();
 
   // Arrow functions don't have their own `this` binding.
   if (fun->isArrow()) {
     allowNewTarget_ = sc->allowNewTarget();
     allowSuperProperty_ = sc->allowSuperProperty();
     allowSuperCall_ = sc->allowSuperCall();
+    allowArguments_ = sc->allowArguments();
     needsThisTDZChecks_ = sc->needsThisTDZChecks();
     thisBinding_ = sc->thisBinding();
   } else {
@@ -227,10 +238,21 @@ void FunctionBox::initWithEnclosingParseContext(ParseContext* enclosing,
   }
 }
 
-void FunctionBox::initWithEnclosingScope(Scope* enclosingScope) {
-  if (!function()->isArrow()) {
+void FunctionBox::initFieldInitializer(ParseContext* enclosing, JSFunction* fun,
+                                       HasHeritage hasHeritage) {
+  this->initWithEnclosingParseContext(enclosing, fun,
+                                      FunctionSyntaxKind::Expression);
+  allowSuperProperty_ = true;
+  allowSuperCall_ = false;
+  allowArguments_ = false;
+  needsThisTDZChecks_ = hasHeritage == HasHeritage::Yes;
+}
+
+void FunctionBox::initWithEnclosingScope(Scope* enclosingScope,
+                                         JSFunction* fun) {
+  if (!isArrow()) {
     allowNewTarget_ = true;
-    allowSuperProperty_ = function()->allowSuperProperty();
+    allowSuperProperty_ = fun->allowSuperProperty();
 
     if (isDerivedClassConstructor()) {
       setDerivedClassConstructor();

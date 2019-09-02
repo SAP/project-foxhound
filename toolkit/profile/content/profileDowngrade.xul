@@ -25,10 +25,11 @@
 #else
         buttonlabelaccept="&window.quit-nonwin;"
 #endif
-        ondialogaccept="quit()" ondialogcancel="quit()"
-        buttons="accept,extra1" buttonpack="end">
+        buttons="accept,extra1" buttonpack="end"
+        nobuttonspacer="true">
 
-  <script type="application/javascript" src="profileDowngrade.js"/>
+  <script src="profileDowngrade.js"/>
+  <script src="chrome://global/content/customElements.js"/>
 
   <hbox flex="1" align="start">
     <image id="info" role="presentation"/>

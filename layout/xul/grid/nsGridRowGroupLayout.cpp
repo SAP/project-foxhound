@@ -47,8 +47,8 @@ void nsGridRowGroupLayout::AddWidth(nsSize& aSize, nscoord aSize2,
                                     bool aIsHorizontal) {
   nscoord& size = GET_WIDTH(aSize, aIsHorizontal);
 
-  if (size == NS_INTRINSICSIZE || aSize2 == NS_INTRINSICSIZE)
-    size = NS_INTRINSICSIZE;
+  if (size == NS_UNCONSTRAINEDSIZE || aSize2 == NS_UNCONSTRAINEDSIZE)
+    size = NS_UNCONSTRAINEDSIZE;
   else
     size += aSize2;
 }
@@ -140,7 +140,7 @@ void nsGridRowGroupLayout::DirtyRows(nsIFrame* aBox, nsBoxLayoutState& aState) {
     // mark us dirty
     // XXXldb We probably don't want to walk up the ancestor chain
     // calling MarkIntrinsicISizesDirty for every row group.
-    aState.PresShell()->FrameNeedsReflow(aBox, nsIPresShell::eTreeChange,
+    aState.PresShell()->FrameNeedsReflow(aBox, IntrinsicDirty::TreeChange,
                                          NS_FRAME_IS_DIRTY);
     nsIFrame* child = nsBox::GetChildXULBox(aBox);
 

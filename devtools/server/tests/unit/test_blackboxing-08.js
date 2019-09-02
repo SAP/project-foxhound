@@ -7,17 +7,17 @@
  * Test blackbox ranges
  */
 
-async function testFinish({threadClient, debuggerClient}) {
-  await resume(threadClient);
+async function testFinish({ threadClient, debuggerClient }) {
+  await threadClient.resume();
   await close(debuggerClient);
 
   do_test_finished();
 }
 
-async function invokeAndPause({global, debuggerClient}, expression) {
+async function invokeAndPause({ global, threadClient }, expression) {
   return executeOnNextTickAndWaitForPause(
     () => Cu.evalInSandbox(expression, global),
-    debuggerClient
+    threadClient
   );
 }
 
@@ -29,23 +29,23 @@ function run_test() {
     await invokeAndPause(dbg, `chaining()`);
 
     const { sources } = await getSources(threadClient);
-    const sourceClient = threadClient.source(sources[0]);
+    const sourceFront = threadClient.source(sources[0]);
 
-    await setBreakpoint(threadClient, { sourceUrl: sourceClient.url, line: 7 });
-    await setBreakpoint(threadClient, { sourceUrl: sourceClient.url, line: 11 });
+    await setBreakpoint(threadClient, { sourceUrl: sourceFront.url, line: 7 });
+    await setBreakpoint(threadClient, { sourceUrl: sourceFront.url, line: 11 });
 
     // 1. lets blackbox function a, and assert that we pause in b
-    const range = {start: { line: 6, column: 0 }, end: { line: 8, colum: 1 }};
-    blackBox(sourceClient, range);
-    resume(threadClient);
+    const range = { start: { line: 6, column: 0 }, end: { line: 8, colum: 1 } };
+    blackBox(sourceFront, range);
+    await threadClient.resume();
     const paused = await waitForPause(threadClient);
     equal(paused.frame.where.line, 11, "paused inside of b");
-    await resume(threadClient);
+    await threadClient.resume();
 
     // 2. lets unblackbox function a, and assert that we pause in a
-    unBlackBox(sourceClient, range);
+    unBlackBox(sourceFront, range);
     await invokeAndPause(dbg, `chaining()`);
-    resume(threadClient);
+    await threadClient.resume();
     const paused2 = await waitForPause(threadClient);
     equal(paused2.frame.where.line, 7, "paused inside of a");
 

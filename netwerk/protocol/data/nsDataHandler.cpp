@@ -47,10 +47,10 @@ nsDataHandler::GetProtocolFlags(uint32_t* result) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDataHandler::NewURI(const nsACString& aSpec,
-                      const char* aCharset,  // ignore charset info
-                      nsIURI* aBaseURI, nsIURI** result) {
+/* static */ nsresult nsDataHandler::CreateNewURI(const nsACString& aSpec,
+                                                  const char* aCharset,
+                                                  nsIURI* aBaseURI,
+                                                  nsIURI** result) {
   nsresult rv;
   nsCOMPtr<nsIURI> uri;
 

@@ -24,16 +24,17 @@
 template <class>
 class nsCOMPtr;
 class nsIContent;
-class nsIPresShell;
 class nsIWidget;
 
 namespace mozilla {
+
+class PresShell;
+
 namespace layers {
 
 class ActiveElementManager;
 
-typedef std::function<void(const ScrollableLayerGuid&,
-                           uint64_t /* input block id */,
+typedef std::function<void(uint64_t /* input block id */,
                            bool /* prevent default */)>
     ContentReceivedInputBlockCallback;
 
@@ -41,7 +42,7 @@ typedef std::function<void(const ScrollableLayerGuid&,
  * A content-side component that keeps track of state for handling APZ
  * gestures and sending APZ notifications.
  */
-class APZEventState {
+class APZEventState final {
   typedef GeckoContentController::APZStateChange APZStateChange;
   typedef ScrollableLayerGuid::ViewID ViewID;
 
@@ -53,17 +54,13 @@ class APZEventState {
 
   void ProcessSingleTap(const CSSPoint& aPoint,
                         const CSSToLayoutDeviceScale& aScale,
-                        Modifiers aModifiers, const ScrollableLayerGuid& aGuid,
-                        int32_t aClickCount);
+                        Modifiers aModifiers, int32_t aClickCount);
   MOZ_CAN_RUN_SCRIPT
-  void ProcessLongTap(const nsCOMPtr<nsIPresShell>& aUtils,
-                      const CSSPoint& aPoint,
+  void ProcessLongTap(PresShell* aPresShell, const CSSPoint& aPoint,
                       const CSSToLayoutDeviceScale& aScale,
-                      Modifiers aModifiers, const ScrollableLayerGuid& aGuid,
-                      uint64_t aInputBlockId);
+                      Modifiers aModifiers, uint64_t aInputBlockId);
   MOZ_CAN_RUN_SCRIPT
-  void ProcessLongTapUp(const nsCOMPtr<nsIPresShell>& aPresShell,
-                        const CSSPoint& aPoint,
+  void ProcessLongTapUp(PresShell* aPresShell, const CSSPoint& aPoint,
                         const CSSToLayoutDeviceScale& aScale,
                         Modifiers aModifiers);
   void ProcessTouchEvent(const WidgetTouchEvent& aEvent,
@@ -71,10 +68,8 @@ class APZEventState {
                          uint64_t aInputBlockId, nsEventStatus aApzResponse,
                          nsEventStatus aContentResponse);
   void ProcessWheelEvent(const WidgetWheelEvent& aEvent,
-                         const ScrollableLayerGuid& aGuid,
                          uint64_t aInputBlockId);
   void ProcessMouseEvent(const WidgetMouseEvent& aEvent,
-                         const ScrollableLayerGuid& aGuid,
                          uint64_t aInputBlockId);
   void ProcessAPZStateChange(ViewID aViewId, APZStateChange aChange, int aArg);
   void ProcessClusterHit();
@@ -83,8 +78,7 @@ class APZEventState {
   ~APZEventState();
   bool SendPendingTouchPreventedResponse(bool aPreventDefault);
   MOZ_CAN_RUN_SCRIPT
-  bool FireContextmenuEvents(const nsCOMPtr<nsIPresShell>& aPresShell,
-                             const CSSPoint& aPoint,
+  bool FireContextmenuEvents(PresShell* aPresShell, const CSSPoint& aPoint,
                              const CSSToLayoutDeviceScale& aScale,
                              Modifiers aModifiers,
                              const nsCOMPtr<nsIWidget>& aWidget);

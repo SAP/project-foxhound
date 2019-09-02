@@ -21,7 +21,7 @@
 
 #include "gfxContext.h"
 #include "gfxUtils.h"
-#include "gfxPrefs.h"
+
 #include "nsIWidget.h"
 
 #include "GLContext.h"
@@ -147,7 +147,7 @@ class LayerScopeWebSocketManager {
     }
 
    private:
-    virtual ~SocketListener() {}
+    virtual ~SocketListener() = default;
   };
 
   /*
@@ -380,7 +380,7 @@ class DebugGLData : public LinkedListElement<DebugGLData> {
  public:
   explicit DebugGLData(Packet::DataType aDataType) : mDataType(aDataType) {}
 
-  virtual ~DebugGLData() {}
+  virtual ~DebugGLData() = default;
 
   virtual bool Write() = 0;
 
@@ -405,7 +405,7 @@ class DebugGLFrameStatusData final : public DebugGLData {
   explicit DebugGLFrameStatusData(Packet::DataType aDataType)
       : DebugGLData(aDataType), mFrameStamp(0) {}
 
-  virtual bool Write() override {
+  bool Write() override {
     Packet packet;
     packet.set_type(mDataType);
 
@@ -441,7 +441,7 @@ class DebugGLTextureData final : public DebugGLData {
     pack(img);
   }
 
-  virtual bool Write() override { return WriteToStream(*mPacket); }
+  bool Write() override { return WriteToStream(*mPacket); }
 
  private:
   void pack(DataSourceSurface* aImage) {
@@ -507,7 +507,7 @@ class DebugGLColorData final : public DebugGLData {
         mColor(color.ToABGR()),
         mSize(width, height) {}
 
-  virtual bool Write() override {
+  bool Write() override {
     Packet packet;
     packet.set_type(mDataType);
 
@@ -531,7 +531,7 @@ class DebugGLLayersData final : public DebugGLData {
   explicit DebugGLLayersData(UniquePtr<Packet> aPacket)
       : DebugGLData(Packet::LAYERS), mPacket(std::move(aPacket)) {}
 
-  virtual bool Write() override {
+  bool Write() override {
     mPacket->set_type(mDataType);
     return WriteToStream(*mPacket);
   }
@@ -548,7 +548,7 @@ class DebugGLMetaData final : public DebugGLData {
   explicit DebugGLMetaData(Packet::DataType aDataType)
       : DebugGLData(aDataType), mComposedByHwc(false) {}
 
-  virtual bool Write() override {
+  bool Write() override {
     Packet packet;
     packet.set_type(mDataType);
 
@@ -581,7 +581,7 @@ class DebugGLDrawData final : public DebugGLData {
     }
   }
 
-  virtual bool Write() override {
+  bool Write() override {
     Packet packet;
     packet.set_type(mDataType);
 
@@ -640,7 +640,7 @@ class DebugDataSender {
     }
 
    private:
-    virtual ~AppendTask() {}
+    virtual ~AppendTask() = default;
 
     DebugGLData* mData;
     // Keep a strong reference to DebugDataSender to prevent this object
@@ -661,7 +661,7 @@ class DebugDataSender {
     }
 
    private:
-    virtual ~ClearTask() {}
+    virtual ~ClearTask() = default;
 
     RefPtr<DebugDataSender> mHost;
   };
@@ -691,7 +691,7 @@ class DebugDataSender {
     }
 
    private:
-    virtual ~SendTask() {}
+    virtual ~SendTask() = default;
 
     RefPtr<DebugDataSender> mHost;
   };
@@ -707,7 +707,7 @@ class DebugDataSender {
   void Send() { mThread->Dispatch(new SendTask(this), NS_DISPATCH_NORMAL); }
 
  protected:
-  virtual ~DebugDataSender() {}
+  virtual ~DebugDataSender() = default;
   void RemoveData() {
     MOZ_ASSERT(mThread->SerialEventTarget()->IsOnCurrentThread());
     if (mList.isEmpty()) return;
@@ -1420,7 +1420,7 @@ LayerScopeWebSocketManager::LayerScopeWebSocketManager()
   NS_NewNamedThread("LayerScope", getter_AddRefs(mDebugSenderThread));
 
   mServerSocket = do_CreateInstance(NS_SERVERSOCKET_CONTRACTID);
-  int port = gfxPrefs::LayerScopePort();
+  int port = StaticPrefs::gfx_layerscope_port();
   mServerSocket->Init(port, false, -1);
   mServerSocket->AsyncListen(new SocketListener);
 }
@@ -1465,7 +1465,7 @@ NS_IMETHODIMP LayerScopeWebSocketManager::SocketListener::OnSocketAccepted(
 // ----------------------------------------------
 /*static*/
 void LayerScope::Init() {
-  if (!gfxPrefs::LayerScopeEnabled() || XRE_IsGPUProcess()) {
+  if (!StaticPrefs::gfx_layerscope_enabled() || XRE_IsGPUProcess()) {
     return;
   }
 
@@ -1563,7 +1563,7 @@ bool LayerScope::CheckSendable() {
   // Only compositor threads check LayerScope status
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread() || gIsGtest);
 
-  if (!gfxPrefs::LayerScopeEnabled()) {
+  if (!StaticPrefs::gfx_layerscope_enabled()) {
     return false;
   }
   if (!gLayerScopeManager.GetSocketManager()) {

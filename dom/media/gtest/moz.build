@@ -16,6 +16,7 @@ LOCAL_INCLUDES += [
 UNIFIED_SOURCES += [
     'MockMediaResource.cpp',
     'TestAudioBuffers.cpp',
+    'TestAudioCallbackDriver.cpp',
     'TestAudioCompactor.cpp',
     'TestAudioMixer.cpp',
     'TestAudioPacketizer.cpp',
@@ -23,10 +24,9 @@ UNIFIED_SOURCES += [
     'TestAudioTrackEncoder.cpp',
     'TestBitWriter.cpp',
     'TestBlankVideoDataCreator.cpp',
-    'TestCDMStorage.cpp',
+    'TestBufferReader.cpp',
     'TestDataMutex.cpp',
-    'TestGMPCrossOrigin.cpp',
-    'TestGMPRemoveAndDelete.cpp',
+    'TestDriftCompensation.cpp',
     'TestGMPUtils.cpp',
     'TestGroupId.cpp',
     'TestIntervalSet.cpp',
@@ -34,10 +34,12 @@ UNIFIED_SOURCES += [
     'TestMediaDataEncoder.cpp',
     'TestMediaEventSource.cpp',
     'TestMediaMIMETypes.cpp',
+    'TestMediaSpan.cpp',
     'TestMP3Demuxer.cpp',
     'TestMP4Demuxer.cpp',
     'TestOpusParser.cpp',
     'TestRust.cpp',
+    'TestTimeUnit.cpp',
     'TestVideoSegment.cpp',
     'TestVideoUtils.cpp',
     'TestVPXDecoding.cpp',
@@ -48,11 +50,23 @@ if CONFIG['MOZ_WEBM_ENCODER']:
     UNIFIED_SOURCES += [
         'TestVideoTrackEncoder.cpp',
         'TestWebMWriter.cpp',
+        'YUVBufferGenerator.cpp',
+    ]
+    LOCAL_INCLUDES += [
+        '/gfx/2d/',
     ]
 
-if CONFIG['MOZ_WEBRTC']:
+if CONFIG['OS_TARGET'] != 'Android':
+    UNIFIED_SOURCES += [
+        'TestCDMStorage.cpp',
+        'TestGMPCrossOrigin.cpp',
+        'TestGMPRemoveAndDelete.cpp',
+    ]
+
+if CONFIG['MOZ_WEBRTC'] and CONFIG['OS_TARGET'] != 'Android':
     UNIFIED_SOURCES += [
         'TestAudioDeviceEnumerator.cpp',
+        'TestVideoFrameConverter.cpp',
     ]
 
 TEST_HARNESS_FILES.gtest += [
@@ -73,6 +87,7 @@ TEST_HARNESS_FILES.gtest += [
     'test_case_1224361.vp8.ivf',
     'test_case_1224363.vp8.ivf',
     'test_case_1224369.vp8.ivf',
+    'test_vbri.mp3',
 ]
 
 TEST_DIRS += [
@@ -96,8 +111,5 @@ FINAL_LIBRARY = 'xul-gtest'
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
-if CONFIG['CC_TYPE'] == 'clang':
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
     CXXFLAGS += ['-Wno-unused-private-field']
-
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

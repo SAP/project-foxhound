@@ -85,11 +85,7 @@ already_AddRefed<nsIPrincipal> PrincipalInfoToPrincipal(
         return nullptr;
       }
 
-      OriginAttributes attrs;
-      if (info.attrs().mAppId != nsIScriptSecurityManager::UNKNOWN_APP_ID) {
-        attrs = info.attrs();
-      }
-      principal = BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+      principal = BasePrincipal::CreateCodebasePrincipal(uri, info.attrs());
       if (NS_WARN_IF(!principal)) {
         return nullptr;
       }
@@ -113,22 +109,6 @@ already_AddRefed<nsIPrincipal> PrincipalInfoToPrincipal(
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return nullptr;
         }
-      }
-
-      if (info.securityPolicies().Length() > 0) {
-        nsCOMPtr<nsIContentSecurityPolicy> csp =
-            do_CreateInstance(NS_CSPCONTEXT_CONTRACTID, &rv);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return nullptr;
-        }
-
-        rv = csp->SetRequestContext(nullptr, principal);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return nullptr;
-        }
-        static_cast<nsCSPContext*>(csp.get())->SetIPCPolicies(
-            info.securityPolicies());
-        principal->SetCsp(csp);
       }
 
       if (!info.baseDomain().IsVoid()) {
@@ -177,12 +157,63 @@ already_AddRefed<nsIPrincipal> PrincipalInfoToPrincipal(
   MOZ_CRASH("Should never get here!");
 }
 
-nsresult PopulateContentSecurityPolicies(
-    nsIContentSecurityPolicy* aCSP,
-    nsTArray<ContentSecurityPolicy>& aPolicies) {
-  MOZ_ASSERT(aCSP);
-  MOZ_ASSERT(aPolicies.IsEmpty());
+already_AddRefed<nsIContentSecurityPolicy> CSPInfoToCSP(
+    const CSPInfo& aCSPInfo, Document* aRequestingDoc,
+    nsresult* aOptionalResult) {
   MOZ_ASSERT(NS_IsMainThread());
+
+  nsresult stackResult;
+  nsresult& rv = aOptionalResult ? *aOptionalResult : stackResult;
+
+  nsCOMPtr<nsIContentSecurityPolicy> csp = new nsCSPContext();
+
+  if (aRequestingDoc) {
+    rv = csp->SetRequestContextWithDocument(aRequestingDoc);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return nullptr;
+    }
+  } else {
+    nsCOMPtr<nsIPrincipal> requestingPrincipal =
+        PrincipalInfoToPrincipal(aCSPInfo.requestPrincipalInfo(), &rv);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return nullptr;
+    }
+
+    nsCOMPtr<nsIURI> selfURI;
+    if (!aCSPInfo.selfURISpec().IsEmpty()) {
+      rv = NS_NewURI(getter_AddRefs(selfURI), aCSPInfo.selfURISpec());
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return nullptr;
+      }
+    }
+    rv = csp->SetRequestContextWithPrincipal(requestingPrincipal, selfURI,
+                                             aCSPInfo.referrer(),
+                                             aCSPInfo.innerWindowID());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return nullptr;
+    }
+  }
+
+  for (uint32_t i = 0; i < aCSPInfo.policyInfos().Length(); i++) {
+    const PolicyInfo& policyInfo = aCSPInfo.policyInfos()[i];
+    rv = csp->AppendPolicy(NS_ConvertUTF8toUTF16(policyInfo.policy()),
+                           policyInfo.reportOnly(),
+                           policyInfo.deliveredViaMetaTag());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return nullptr;
+    }
+  }
+  return csp.forget();
+}
+
+nsresult CSPToCSPInfo(nsIContentSecurityPolicy* aCSP, CSPInfo* aCSPInfo) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aCSP);
+  MOZ_ASSERT(aCSPInfo);
+
+  if (!aCSP || !aCSPInfo) {
+    return NS_ERROR_FAILURE;
+  }
 
   uint32_t count = 0;
   nsresult rv = aCSP->GetPolicyCount(&count);
@@ -190,30 +221,52 @@ nsresult PopulateContentSecurityPolicies(
     return rv;
   }
 
+  nsCOMPtr<nsIPrincipal> requestPrincipal = aCSP->GetRequestPrincipal();
+
+  PrincipalInfo requestingPrincipalInfo;
+  rv = PrincipalToPrincipalInfo(requestPrincipal, &requestingPrincipalInfo);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  nsCOMPtr<nsIURI> selfURI = aCSP->GetSelfURI();
+  nsAutoCString selfURISpec;
+  if (selfURI) {
+    selfURI->GetSpec(selfURISpec);
+  }
+
+  nsAutoString referrer;
+  aCSP->GetReferrer(referrer);
+
+  uint64_t windowID = aCSP->GetInnerWindowID();
+
+  nsTArray<PolicyInfo> policyInfos;
   for (uint32_t i = 0; i < count; ++i) {
     const nsCSPPolicy* policy = aCSP->GetPolicy(i);
     MOZ_ASSERT(policy);
 
     nsAutoString policyString;
     policy->toString(policyString);
-
-    aPolicies.AppendElement(
-        ContentSecurityPolicy(policyString, policy->getReportOnlyFlag(),
-                              policy->getDeliveredViaMetaTagFlag()));
+    policyInfos.AppendElement(PolicyInfo(NS_ConvertUTF16toUTF8(policyString),
+                                         policy->getReportOnlyFlag(),
+                                         policy->getDeliveredViaMetaTagFlag()));
   }
-
+  *aCSPInfo = CSPInfo(std::move(policyInfos), requestingPrincipalInfo,
+                      selfURISpec, referrer, windowID);
   return NS_OK;
 }
 
 nsresult PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
-                                  PrincipalInfo* aPrincipalInfo) {
+                                  PrincipalInfo* aPrincipalInfo,
+                                  bool aSkipBaseDomain) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aPrincipalInfo);
 
+  nsresult rv;
   if (aPrincipal->GetIsNullPrincipal()) {
     nsCOMPtr<nsIURI> uri;
-    nsresult rv = aPrincipal->GetURI(getter_AddRefs(uri));
+    rv = aPrincipal->GetURI(getter_AddRefs(uri));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -233,19 +286,7 @@ nsresult PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIScriptSecurityManager> secMan =
-      nsContentUtils::GetSecurityManager();
-  if (!secMan) {
-    return NS_ERROR_FAILURE;
-  }
-
-  bool isSystemPrincipal;
-  nsresult rv = secMan->IsSystemPrincipal(aPrincipal, &isSystemPrincipal);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (isSystemPrincipal) {
+  if (aPrincipal->IsSystemPrincipal()) {
     *aPrincipalInfo = SystemPrincipalInfo();
     return NS_OK;
   }
@@ -259,7 +300,7 @@ nsresult PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
     PrincipalInfo info;
 
     for (auto& prin : expanded->AllowList()) {
-      rv = PrincipalToPrincipalInfo(prin, &info);
+      rv = PrincipalToPrincipalInfo(prin, &info, aSkipBaseDomain);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
@@ -311,27 +352,20 @@ nsresult PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
     }
   }
 
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = aPrincipal->GetCsp(getter_AddRefs(csp));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  nsTArray<ContentSecurityPolicy> policies;
-  if (csp) {
-    PopulateContentSecurityPolicies(csp, policies);
-  }
-
   // This attribute is not crucial.
   nsCString baseDomain;
-  if (NS_FAILED(aPrincipal->GetBaseDomain(baseDomain))) {
-    NS_WARNING("Failed to get base domain!");
+  if (aSkipBaseDomain) {
     baseDomain.SetIsVoid(true);
+  } else {
+    if (NS_FAILED(aPrincipal->GetBaseDomain(baseDomain))) {
+      NS_WARNING("Failed to get base domain!");
+      baseDomain.SetIsVoid(true);
+    }
   }
 
   *aPrincipalInfo =
       ContentPrincipalInfo(aPrincipal->OriginAttributesRef(), originNoSuffix,
-                           spec, domain, std::move(policies), baseDomain);
+                           spec, domain, baseDomain);
   return NS_OK;
 }
 
@@ -511,6 +545,16 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
   static_cast<CookieSettings*>(cookieSettings.get())
       ->Serialize(cookieSettingsArgs);
 
+  Maybe<CSPInfo> maybeCspToInheritInfo;
+  nsCOMPtr<nsIContentSecurityPolicy> cspToInherit =
+      aLoadInfo->GetCspToInherit();
+  if (cspToInherit) {
+    CSPInfo cspToInheritInfo;
+    Unused << NS_WARN_IF(
+        NS_FAILED(CSPToCSPInfo(cspToInherit, &cspToInheritInfo)));
+    maybeCspToInheritInfo.emplace(cspToInheritInfo);
+  }
+
   *aOptionalLoadInfoArgs = Some(LoadInfoArgs(
       loadingPrincipalInfo, triggeringPrincipalInfo, principalToInheritInfo,
       sandboxedLoadingPrincipalInfo, topLevelPrincipalInfo,
@@ -520,9 +564,9 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetUpgradeInsecureRequests(),
       aLoadInfo->GetBrowserUpgradeInsecureRequests(),
       aLoadInfo->GetBrowserWouldUpgradeInsecureRequests(),
-      aLoadInfo->GetVerifySignedContent(), aLoadInfo->GetEnforceSRI(),
       aLoadInfo->GetForceAllowDataURI(),
       aLoadInfo->GetAllowInsecureRedirectToDataURI(),
+      aLoadInfo->GetBypassCORSChecks(),
       aLoadInfo->GetSkipContentPolicyCheckForWebRequest(),
       aLoadInfo->GetForceInheritPrincipalDropped(),
       aLoadInfo->GetInnerWindowID(), aLoadInfo->GetOuterWindowID(),
@@ -540,8 +584,8 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetDocumentHasLoaded(), cspNonce,
-      aLoadInfo->GetIsFromProcessingFrameAttributes(),
-      aLoadInfo->GetOpenerPolicy(), cookieSettingsArgs));
+      aLoadInfo->GetIsFromProcessingFrameAttributes(), cookieSettingsArgs,
+      aLoadInfo->GetRequestBlockingReason(), maybeCspToInheritInfo));
 
   return NS_OK;
 }
@@ -665,19 +709,27 @@ nsresult LoadInfoArgsToLoadInfo(
   CookieSettings::Deserialize(loadInfoArgs.cookieSettings(),
                               getter_AddRefs(cookieSettings));
 
+  nsCOMPtr<nsIContentSecurityPolicy> cspToInherit;
+  Maybe<mozilla::ipc::CSPInfo> cspToInheritInfo =
+      loadInfoArgs.cspToInheritInfo();
+  if (cspToInheritInfo.isSome()) {
+    cspToInherit = CSPInfoToCSP(cspToInheritInfo.ref(), nullptr);
+  }
+
   RefPtr<mozilla::LoadInfo> loadInfo = new mozilla::LoadInfo(
       loadingPrincipal, triggeringPrincipal, principalToInherit,
       sandboxedLoadingPrincipal, topLevelPrincipal,
       topLevelStorageAreaPrincipal, resultPrincipalURI, cookieSettings,
-      clientInfo, reservedClientInfo, initialClientInfo, controller,
-      loadInfoArgs.securityFlags(), loadInfoArgs.contentPolicyType(),
+      cspToInherit, clientInfo, reservedClientInfo, initialClientInfo,
+      controller, loadInfoArgs.securityFlags(),
+      loadInfoArgs.contentPolicyType(),
       static_cast<LoadTainting>(loadInfoArgs.tainting()),
       loadInfoArgs.upgradeInsecureRequests(),
       loadInfoArgs.browserUpgradeInsecureRequests(),
       loadInfoArgs.browserWouldUpgradeInsecureRequests(),
-      loadInfoArgs.verifySignedContent(), loadInfoArgs.enforceSRI(),
       loadInfoArgs.forceAllowDataURI(),
       loadInfoArgs.allowInsecureRedirectToDataURI(),
+      loadInfoArgs.bypassCORSChecks(),
       loadInfoArgs.skipContentPolicyCheckForWebRequest(),
       loadInfoArgs.forceInheritPrincipalDropped(), loadInfoArgs.innerWindowID(),
       loadInfoArgs.outerWindowID(), loadInfoArgs.parentOuterWindowID(),
@@ -692,13 +744,12 @@ nsresult LoadInfoArgsToLoadInfo(
       loadInfoArgs.isPreflight(), loadInfoArgs.loadTriggeredFromExternal(),
       loadInfoArgs.serviceWorkerTaintingSynthesized(),
       loadInfoArgs.documentHasUserInteracted(),
-      loadInfoArgs.documentHasLoaded(), loadInfoArgs.cspNonce());
+      loadInfoArgs.documentHasLoaded(), loadInfoArgs.cspNonce(),
+      loadInfoArgs.requestBlockingReason());
 
   if (loadInfoArgs.isFromProcessingFrameAttributes()) {
     loadInfo->SetIsFromProcessingFrameAttributes();
   }
-
-  loadInfo->SetOpenerPolicy(loadInfoArgs.openerPolicy());
 
   loadInfo.forget(outLoadInfo);
   return NS_OK;
@@ -708,11 +759,12 @@ void LoadInfoToParentLoadInfoForwarder(
     nsILoadInfo* aLoadInfo, ParentLoadInfoForwarderArgs* aForwarderArgsOut) {
   if (!aLoadInfo) {
     *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
-        false, Nothing(), nsILoadInfo::TAINTING_BASIC,
+        false, false, Nothing(), nsILoadInfo::TAINTING_BASIC,
         false,  // serviceWorkerTaintingSynthesized
         false,  // documentHasUserInteracted
         false,  // documentHasLoaded
-        nsILoadInfo::OPENER_POLICY_NULL, Maybe<CookieSettingsArgs>());
+        Maybe<CookieSettingsArgs>(),
+        nsILoadInfo::BLOCKING_REASON_NONE);  // requestBlockingReason
     return;
   }
 
@@ -724,9 +776,6 @@ void LoadInfoToParentLoadInfoForwarder(
 
   uint32_t tainting = nsILoadInfo::TAINTING_BASIC;
   Unused << aLoadInfo->GetTainting(&tainting);
-
-  nsILoadInfo::CrossOriginOpenerPolicy openerPolicy =
-      aLoadInfo->GetOpenerPolicy();
 
   Maybe<CookieSettingsArgs> cookieSettingsArgs;
 
@@ -740,10 +789,12 @@ void LoadInfoToParentLoadInfoForwarder(
   }
 
   *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
-      aLoadInfo->GetAllowInsecureRedirectToDataURI(), ipcController, tainting,
+      aLoadInfo->GetAllowInsecureRedirectToDataURI(),
+      aLoadInfo->GetBypassCORSChecks(), ipcController, tainting,
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
-      aLoadInfo->GetDocumentHasLoaded(), openerPolicy, cookieSettingsArgs);
+      aLoadInfo->GetDocumentHasLoaded(), cookieSettingsArgs,
+      aLoadInfo->GetRequestBlockingReason());
 }
 
 nsresult MergeParentLoadInfoForwarder(
@@ -756,6 +807,9 @@ nsresult MergeParentLoadInfoForwarder(
 
   rv = aLoadInfo->SetAllowInsecureRedirectToDataURI(
       aForwarderArgs.allowInsecureRedirectToDataURI());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aLoadInfo->SetBypassCORSChecks(aForwarderArgs.bypassCORSChecks());
   NS_ENSURE_SUCCESS(rv, rv);
 
   aLoadInfo->ClearController();
@@ -771,13 +825,12 @@ nsresult MergeParentLoadInfoForwarder(
     aLoadInfo->MaybeIncreaseTainting(aForwarderArgs.tainting());
   }
 
-  MOZ_ALWAYS_SUCCEEDS(
-      aLoadInfo->SetOpenerPolicy(aForwarderArgs.openerPolicy()));
-
   MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetDocumentHasUserInteracted(
       aForwarderArgs.documentHasUserInteracted()));
   MOZ_ALWAYS_SUCCEEDS(
       aLoadInfo->SetDocumentHasLoaded(aForwarderArgs.documentHasLoaded()));
+  MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetRequestBlockingReason(
+      aForwarderArgs.requestBlockingReason()));
 
   const Maybe<CookieSettingsArgs>& cookieSettingsArgs =
       aForwarderArgs.cookieSettings();

@@ -15,6 +15,7 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDevToolsAPI
 import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.UiThreadUtils
+import org.junit.Ignore
 
 import android.os.Bundle
 import android.os.Debug
@@ -101,6 +102,8 @@ class SessionLifecycleTest : BaseSessionTest() {
 
     @Test(expected = IllegalStateException::class)
     fun readFromParcel_throwOnAlreadyOpen() {
+        //disable readFromParcel_throwOnAlreadyOpen for frequent failures Bug 1532186
+        assumeThat(sessionRule.env.isDebugBuild, equalTo(true))
         // Throw exception if retrying to open again; otherwise we would leak the old open window.
         sessionRule.session.toParcel { parcel ->
             sessionRule.createOpenSession().readFromParcel(parcel)
@@ -415,6 +418,7 @@ class SessionLifecycleTest : BaseSessionTest() {
         sessionRule.waitForPageStop()
     }
 
+    @Ignore // Bug 1533934 - disabled createFromParcel on pgo for frequent failures
     @Test fun createFromParcel() {
         val session = sessionRule.createOpenSession()
 

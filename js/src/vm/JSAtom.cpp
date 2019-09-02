@@ -20,6 +20,7 @@
 #include "jstypes.h"
 
 #include "builtin/String.h"
+#include "gc/GC.h"
 #include "gc/Marking.h"
 #include "js/CharacterEncoding.h"
 #include "js/Symbol.h"
@@ -182,7 +183,7 @@ MOZ_ALWAYS_INLINE bool js::AtomHasher::match(const AtomStateEntry& entry,
 
 inline JSAtom* js::AtomStateEntry::asPtr(JSContext* cx) const {
   JSAtom* atom = asPtrUnbarriered();
-  if (!cx->helperThread()) {
+  if (!cx->isHelperThreadContext()) {
     JSString::readBarrier(atom);
   }
   return atom;
@@ -283,18 +284,21 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
   emptyString = commonNames->empty;
 
   // Create the well-known symbols.
-  wellKnownSymbols = js_new<WellKnownSymbols>();
-  if (!wellKnownSymbols) {
+  auto wks = js_new<WellKnownSymbols>();
+  if (!wks) {
     return false;
   }
 
+  // Prevent GC until we have fully initialized the well known symbols table.
+  // Faster than zeroing the array and null checking during every GC.
+  gc::AutoSuppressGC nogc(cx);
+
   ImmutablePropertyNamePtr* descriptions =
       commonNames->wellKnownSymbolDescriptions();
-  ImmutableSymbolPtr* symbols =
-      reinterpret_cast<ImmutableSymbolPtr*>(wellKnownSymbols.ref());
+  ImmutableSymbolPtr* symbols = reinterpret_cast<ImmutableSymbolPtr*>(wks);
   for (size_t i = 0; i < JS::WellKnownSymbolLimit; i++) {
-    JS::Symbol* symbol =
-        JS::Symbol::new_(cx, JS::SymbolCode(i), descriptions[i]);
+    HandlePropertyName description = descriptions[i];
+    JS::Symbol* symbol = JS::Symbol::new_(cx, JS::SymbolCode(i), description);
     if (!symbol) {
       ReportOutOfMemory(cx);
       return false;
@@ -302,6 +306,7 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
     symbols[i].init(symbol);
   }
 
+  wellKnownSymbols = wks;
   return true;
 }
 
@@ -402,6 +407,7 @@ inline void AtomsTable::tracePinnedAtomsInSet(JSTracer* trc, AtomSet& atoms) {
   for (auto r = atoms.all(); !r.empty(); r.popFront()) {
     const AtomStateEntry& entry = r.front();
     MOZ_ASSERT(entry.isPinned() == entry.asPtrUnbarriered()->isPinned());
+    MOZ_DIAGNOSTIC_ASSERT(entry.asPtrUnbarriered());
     if (entry.isPinned()) {
       JSAtom* atom = entry.asPtrUnbarriered();
       TraceRoot(trc, &atom, "interned_atom");
@@ -477,8 +483,12 @@ void AtomsTable::sweepAll(JSRuntime* rt) {
     AtomSet& atoms = partitions[i]->atoms;
     for (AtomSet::Enum e(atoms); !e.empty(); e.popFront()) {
       JSAtom* atom = e.front().asPtrUnbarriered();
+      MOZ_DIAGNOSTIC_ASSERT(atom);
       if (IsAboutToBeFinalizedUnbarriered(&atom)) {
+        MOZ_ASSERT(!atom->isPinned());
         e.removeFront();
+      } else {
+        MOZ_ASSERT(atom == e.front().asPtrUnbarriered());
       }
     }
   }
@@ -590,8 +600,12 @@ bool AtomsTable::sweepIncrementally(SweepIterator& atomsToSweep,
     }
 
     JSAtom* atom = atomsToSweep.front();
+    MOZ_DIAGNOSTIC_ASSERT(atom);
     if (IsAboutToBeFinalizedUnbarriered(&atom)) {
+      MOZ_ASSERT(!atom->isPinned());
       atomsToSweep.removeFront();
+    } else {
+      MOZ_ASSERT(atom == atomsToSweep.front());
     }
     atomsToSweep.popFront();
   }
@@ -894,7 +908,8 @@ static MOZ_ALWAYS_INLINE JSFlatString* MakeUTF8AtomHelper(JSContext* cx,
   // expects functions to fail gracefully with nullptr on OOM, without throwing.
   //
   // Flat strings are null-terminated. Leave room with length + 1
-  UniquePtr<CharT[], JS::FreePolicy> newStr(js_pod_malloc<CharT>(length + 1));
+  UniquePtr<CharT[], JS::FreePolicy> newStr(
+      js_pod_arena_malloc<CharT>(js::StringBufferArena, length + 1));
   if (!newStr) {
     return nullptr;
   }
@@ -930,8 +945,7 @@ static MOZ_ALWAYS_INLINE JSAtom* AllocateNewAtom(
   JSFlatString* flat = MakeFlatStringForAtomization(cx, chars, length);
   if (!flat) {
     // Grudgingly forgo last-ditch GC. The alternative would be to release
-    // the lock, manually GC here, and retry from the top. If you fix this,
-    // please also fix or comment the similar case in Symbol::new_.
+    // the lock, manually GC here, and retry from the top.
     ReportOutOfMemory(cx);
     return nullptr;
   }
@@ -1119,7 +1133,7 @@ static JSAtom* ToAtomSlow(
 
   Value v = arg;
   if (!v.isPrimitive()) {
-    MOZ_ASSERT(!cx->helperThread());
+    MOZ_ASSERT(!cx->isHelperThreadContext());
     if (!allowGC) {
       return nullptr;
     }
@@ -1158,7 +1172,7 @@ static JSAtom* ToAtomSlow(
     return cx->names().null;
   }
   if (v.isSymbol()) {
-    MOZ_ASSERT(!cx->helperThread());
+    MOZ_ASSERT(!cx->isHelperThreadContext());
     if (allowGC) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_SYMBOL_TO_STRING);
@@ -1191,7 +1205,7 @@ JSAtom* js::ToAtom(JSContext* cx,
 
   JSAtom* atom = AtomizeString(cx, str);
   if (!atom && !allowGC) {
-    MOZ_ASSERT_IF(!cx->helperThread(), cx->isThrowingOutOfMemory());
+    MOZ_ASSERT_IF(!cx->isHelperThreadContext(), cx->isThrowingOutOfMemory());
     cx->recoverFromOutOfMemory();
   }
   return atom;

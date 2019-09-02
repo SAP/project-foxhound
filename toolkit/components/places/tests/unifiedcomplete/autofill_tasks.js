@@ -47,81 +47,99 @@ function addAutofillTasks(origins) {
 
   // "ex" should match http://example.com/.
   add_task(async function basic() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search,
       autofilled: url,
       completed: "http://" + url,
-      matches: [{
-        value: url,
-        comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "EX" should match http://example.com/.
   add_task(async function basicCase() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: searchCase,
       autofilled: searchCase + url.substr(searchCase.length),
       completed: "http://" + url,
-      matches: [{
-        value: url,
-        comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "ex" should match http://www.example.com/.
   add_task(async function noWWWShouldMatchWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://www." + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://www." + url,
+      },
+    ]);
     await check_autocomplete({
       search,
       autofilled: url,
       completed: "http://www." + url,
-      matches: [{
-        value: url,
-        comment: "www." + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: url,
+          comment: "www." + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "EX" should match http://www.example.com/.
   add_task(async function noWWWShouldMatchWWWCase() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://www." + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://www." + url,
+      },
+    ]);
     await check_autocomplete({
       search: searchCase,
       autofilled: searchCase + url.substr(searchCase.length),
       completed: "http://www." + url,
-      matches: [{
-        value: url,
-        comment: "www." + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: url,
+          comment: "www." + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "www.ex" should *not* match http://example.com/.
   add_task(async function wwwShouldNotMatchNoWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "www." + search,
       matches: [],
@@ -131,81 +149,99 @@ function addAutofillTasks(origins) {
 
   // "http://ex" should match http://example.com/.
   add_task(async function prefix() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "http://" + search,
       autofilled: "http://" + url,
       completed: "http://" + url,
-      matches: [{
-        value: "http://" + url,
-        comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: "http://" + url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "HTTP://EX" should match http://example.com/.
   add_task(async function prefixCase() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "HTTP://" + searchCase,
       autofilled: "HTTP://" + searchCase + url.substr(searchCase.length),
       completed: "http://" + url,
-      matches: [{
-        value: "http://" + url,
-        comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: "http://" + url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "http://ex" should match http://www.example.com/.
   add_task(async function prefixNoWWWShouldMatchWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://www." + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://www." + url,
+      },
+    ]);
     await check_autocomplete({
       search: "http://" + search,
       autofilled: "http://" + url,
       completed: "http://www." + url,
-      matches: [{
-        value: "http://" + url,
-        comment: "www." + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: "http://" + url,
+          comment: "www." + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "HTTP://EX" should match http://www.example.com/.
   add_task(async function prefixNoWWWShouldMatchWWWCase() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://www." + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://www." + url,
+      },
+    ]);
     await check_autocomplete({
       search: "HTTP://" + searchCase,
       autofilled: "HTTP://" + searchCase + url.substr(searchCase.length),
       completed: "http://www." + url,
-      matches: [{
-        value: "http://" + url,
-        comment: "www." + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: "http://" + url,
+          comment: "www." + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "http://www.ex" should *not* match http://example.com/.
   add_task(async function prefixWWWShouldNotMatchNoWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "http://www." + search,
       matches: [],
@@ -215,61 +251,75 @@ function addAutofillTasks(origins) {
 
   // "http://ex" should *not* match https://example.com/.
   add_task(async function httpPrefixShouldNotMatchHTTPS() {
-    await PlacesTestUtils.addVisits([{
-      uri: "https://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "https://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "http://" + search,
-      matches: [{
-        value: "https://" + url,
-        comment: "test visit for https://" + url,
-        style: ["favicon"],
-      }],
+      matches: [
+        {
+          value: "https://" + url,
+          comment: "test visit for https://" + url,
+          style: ["favicon"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "ex" should match https://example.com/.
   add_task(async function httpsBasic() {
-    await PlacesTestUtils.addVisits([{
-      uri: "https://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "https://" + url,
+      },
+    ]);
     await check_autocomplete({
       search,
       autofilled: url,
       completed: "https://" + url,
-      matches: [{
-        value: url,
-        comment: "https://" + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: url,
+          comment: "https://" + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "ex" should match https://www.example.com/.
   add_task(async function httpsNoWWWShouldMatchWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "https://www." + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "https://www." + url,
+      },
+    ]);
     await check_autocomplete({
       search,
       autofilled: url,
       completed: "https://www." + url,
-      matches: [{
-        value: url,
-        comment: "https://www." + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: url,
+          comment: "https://www." + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "www.ex" should *not* match https://example.com/.
   add_task(async function httpsWWWShouldNotMatchNoWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "https://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "https://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "www." + search,
       matches: [],
@@ -279,45 +329,55 @@ function addAutofillTasks(origins) {
 
   // "https://ex" should match https://example.com/.
   add_task(async function httpsPrefix() {
-    await PlacesTestUtils.addVisits([{
-      uri: "https://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "https://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "https://" + search,
       autofilled: "https://" + url,
       completed: "https://" + url,
-      matches: [{
-        value: "https://" + url,
-        comment: "https://" + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: "https://" + url,
+          comment: "https://" + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "https://ex" should match https://www.example.com/.
   add_task(async function httpsPrefixNoWWWShouldMatchWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "https://www." + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "https://www." + url,
+      },
+    ]);
     await check_autocomplete({
       search: "https://" + search,
       autofilled: "https://" + url,
       completed: "https://www." + url,
-      matches: [{
-        value: "https://" + url,
-        comment: "https://www." + comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: "https://" + url,
+          comment: "https://www." + comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
     await cleanup();
   });
 
   // "https://www.ex" should *not* match https://example.com/.
   add_task(async function httpsPrefixWWWShouldNotMatchNoWWW() {
-    await PlacesTestUtils.addVisits([{
-      uri: "https://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "https://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "https://www." + search,
       matches: [],
@@ -327,16 +387,20 @@ function addAutofillTasks(origins) {
 
   // "https://ex" should *not* match http://example.com/.
   add_task(async function httpsPrefixShouldNotMatchHTTP() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search: "https://" + search,
-      matches: [{
-        value: "http://" + url,
-        comment: "test visit for http://" + url,
-        style: ["favicon"],
-      }],
+      matches: [
+        {
+          value: "http://" + url,
+          comment: "test visit for http://" + url,
+          style: ["favicon"],
+        },
+      ],
     });
     await cleanup();
   });
@@ -344,31 +408,38 @@ function addAutofillTasks(origins) {
   // "https://ex" should *not* match http://example.com/, even if the latter is
   // more frecent and both could be autofilled.
   add_task(async function httpsPrefixShouldNotMatchMoreFrecentHTTP() {
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-      transition: PlacesUtils.history.TRANSITIONS.TYPED,
-    }, {
-      uri: "http://" + url,
-    }, {
-      uri: "https://" + url,
-      transition: PlacesUtils.history.TRANSITIONS.TYPED,
-    }, {
-      uri: "http://otherpage",
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+        transition: PlacesUtils.history.TRANSITIONS.TYPED,
+      },
+      {
+        uri: "http://" + url,
+      },
+      {
+        uri: "https://" + url,
+        transition: PlacesUtils.history.TRANSITIONS.TYPED,
+      },
+      {
+        uri: "http://otherpage",
+      },
+    ]);
     await check_autocomplete({
       search: "https://" + search,
       autofilled: "https://" + url,
       completed: "https://" + url,
-      matches: [{
-        value: "https://" + url,
-        comment: "https://" + comment,
-        style: ["autofill", "heuristic"],
-      },
-      {
-        value: "http://" + url,
-        comment: "test visit for http://" + url,
-        style: ["favicon"],
-      }],
+      matches: [
+        {
+          value: "https://" + url,
+          comment: "https://" + comment,
+          style: ["autofill", "heuristic"],
+        },
+        {
+          value: "http://" + url,
+          comment: "test visit for http://" + url,
+          style: ["favicon"],
+        },
+      ],
     });
     await cleanup();
   });
@@ -376,25 +447,27 @@ function addAutofillTasks(origins) {
   // Autofill should respond to frecency changes.
   add_task(async function frecency() {
     // Start with an http visit.  It should be completed.
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
+    await PlacesTestUtils.addVisits([
+      {
+        uri: "http://" + url,
+      },
+    ]);
     await check_autocomplete({
       search,
       autofilled: url,
       completed: "http://" + url,
-      matches: [{
-        value: url,
-        comment,
-        style: ["autofill", "heuristic"],
-      }],
+      matches: [
+        {
+          value: url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
     });
 
     // Add two https visits.  https should now be completed.
     for (let i = 0; i < 2; i++) {
-      await PlacesTestUtils.addVisits([
-        { uri: "https://" + url },
-      ]);
+      await PlacesTestUtils.addVisits([{ uri: "https://" + url }]);
     }
     await check_autocomplete({
       search,
@@ -417,9 +490,7 @@ function addAutofillTasks(origins) {
     // Add two more http visits, three total.  http should now be completed
     // again.
     for (let i = 0; i < 2; i++) {
-      await PlacesTestUtils.addVisits([
-        { uri: "http://" + url },
-      ]);
+      await PlacesTestUtils.addVisits([{ uri: "http://" + url }]);
     }
     await check_autocomplete({
       search,
@@ -441,9 +512,7 @@ function addAutofillTasks(origins) {
 
     // Add four www https visits.  www https should now be completed.
     for (let i = 0; i < 4; i++) {
-      await PlacesTestUtils.addVisits([
-        { uri: "https://www." + url },
-      ]);
+      await PlacesTestUtils.addVisits([{ uri: "https://www." + url }]);
     }
     await check_autocomplete({
       search,
@@ -469,9 +538,7 @@ function addAutofillTasks(origins) {
     });
 
     // Remove the www https page.
-    await PlacesUtils.history.remove([
-      "https://www." + url,
-    ]);
+    await PlacesUtils.history.remove(["https://www." + url]);
 
     // http should now be completed again.
     await check_autocomplete({
@@ -493,9 +560,7 @@ function addAutofillTasks(origins) {
     });
 
     // Remove the http page.
-    await PlacesUtils.history.remove([
-      "http://" + url,
-    ]);
+    await PlacesUtils.history.remove(["http://" + url]);
 
     // https should now be completed again.
     await check_autocomplete({
@@ -514,9 +579,7 @@ function addAutofillTasks(origins) {
     // Add a visit with a different host so that "ex" doesn't autofill it.
     // https://example.com/ should still have a higher frecency though, so it
     // should still be autofilled.
-    await PlacesTestUtils.addVisits([
-      { uri: "https://not-" + url },
-    ]);
+    await PlacesTestUtils.addVisits([{ uri: "https://not-" + url }]);
     await check_autocomplete({
       search,
       autofilled: url,
@@ -539,9 +602,7 @@ function addAutofillTasks(origins) {
     // https://example.com/ falls below the autofill threshold.  It should not
     // be autofilled now.
     for (let i = 0; i < 10; i++) {
-      await PlacesTestUtils.addVisits([
-        { uri: "https://not-" + url },
-      ]);
+      await PlacesTestUtils.addVisits([{ uri: "https://not-" + url }]);
     }
 
     // Enable actions.  In the `origins` case, the failure to make an autofill
@@ -588,9 +649,7 @@ function addAutofillTasks(origins) {
     }
 
     // Remove the visits to the different host.
-    await PlacesUtils.history.remove([
-      "https://not-" + url,
-    ]);
+    await PlacesUtils.history.remove(["https://not-" + url]);
 
     // https should be completed again.
     await check_autocomplete({
@@ -607,9 +666,7 @@ function addAutofillTasks(origins) {
     });
 
     // Remove the https visits.
-    await PlacesUtils.history.remove([
-      "https://" + url,
-    ]);
+    await PlacesUtils.history.remove(["https://" + url]);
 
     // Now nothing should be completed.
     await check_autocomplete({
@@ -625,9 +682,11 @@ function addAutofillTasks(origins) {
   add_task(async function bookmarkBelowThreshold() {
     // Add some visits to a URL so that the origin autofill threshold is large.
     for (let i = 0; i < 3; i++) {
-      await PlacesTestUtils.addVisits([{
-        uri: "http://not-" + url,
-      }]);
+      await PlacesTestUtils.addVisits([
+        {
+          uri: "http://not-" + url,
+        },
+      ]);
     }
 
     // Now bookmark another URL.
@@ -637,16 +696,22 @@ function addAutofillTasks(origins) {
 
     // Make sure the bookmarked origin and place frecencies are below the
     // threshold so that the origin/URL otherwise would not be autofilled.
-    let placeFrecency =
-      await PlacesTestUtils.fieldInDB("http://" + url, "frecency");
+    let placeFrecency = await PlacesTestUtils.fieldInDB(
+      "http://" + url,
+      "frecency"
+    );
     let originFrecency = await getOriginFrecency("http://", host);
     let threshold = await getOriginAutofillThreshold();
-    Assert.ok(placeFrecency < threshold,
-              `Place frecency should be below the threshold: ` +
-              `placeFrecency=${placeFrecency} threshold=${threshold}`);
-    Assert.ok(originFrecency < threshold,
-              `Origin frecency should be below the threshold: ` +
-              `originFrecency=${originFrecency} threshold=${threshold}`);
+    Assert.ok(
+      placeFrecency < threshold,
+      `Place frecency should be below the threshold: ` +
+        `placeFrecency=${placeFrecency} threshold=${threshold}`
+    );
+    Assert.ok(
+      originFrecency < threshold,
+      `Origin frecency should be below the threshold: ` +
+        `originFrecency=${originFrecency} threshold=${threshold}`
+    );
 
     // The bookmark should be autofilled.
     await check_autocomplete({
@@ -680,8 +745,10 @@ function addAutofillTasks(origins) {
     // The frecencies of the place and origin should be >= the threshold.  In
     // fact they should be the same as the threshold since the place is the only
     // place in the database.
-    let placeFrecency =
-      await PlacesTestUtils.fieldInDB("http://" + url, "frecency");
+    let placeFrecency = await PlacesTestUtils.fieldInDB(
+      "http://" + url,
+      "frecency"
+    );
     let originFrecency = await getOriginFrecency("http://", host);
     let threshold = await getOriginAutofillThreshold();
     Assert.equal(placeFrecency, threshold);
@@ -695,77 +762,6 @@ function addAutofillTasks(origins) {
       matches: [
         {
           value: url,
-          comment,
-          style: ["autofill", "heuristic"],
-        },
-      ],
-    });
-
-    await cleanup();
-  });
-
-  // Autofill should respect the browser.urlbar.suggest.history pref -- i.e., it
-  // should complete only bookmarked pages when that pref is false.
-  add_task(async function suggestHistoryFalse() {
-    // Force only bookmarked pages to be suggested and therefore only bookmarked
-    // pages to be completed.
-    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
-
-    // Add a non-bookmarked page.  It should not be suggested or completed.
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
-    await check_autocomplete({
-      search,
-      matches: [],
-    });
-
-    // Bookmark the page.  It should be suggested and completed.
-    await addBookmark({
-      uri: "http://" + url,
-    });
-    await check_autocomplete({
-      search,
-      autofilled: url,
-      completed: "http://" + url,
-      matches: [
-        {
-          value: url,
-          comment,
-          style: ["autofill", "heuristic"],
-        },
-      ],
-    });
-
-    await cleanup();
-  });
-
-  // Same as previous but the search contains a prefix.
-  add_task(async function suggestHistoryFalsePrefix() {
-    // Force only bookmarked pages to be suggested and therefore only bookmarked
-    // pages to be completed.
-    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
-
-    // Add a non-bookmarked page.  It should not be suggested or completed.
-    await PlacesTestUtils.addVisits([{
-      uri: "http://" + url,
-    }]);
-    await check_autocomplete({
-      search: "http://" + search,
-      matches: [],
-    });
-
-    // Bookmark the page.  It should be suggested and completed.
-    await addBookmark({
-      uri: "http://" + url,
-    });
-    await check_autocomplete({
-      search: "http://" + search,
-      autofilled: "http://" + url,
-      completed: "http://" + url,
-      matches: [
-        {
-          value: "http://" + url,
           comment,
           style: ["autofill", "heuristic"],
         },
@@ -790,8 +786,10 @@ function addAutofillTasks(origins) {
     // tests disable the idle service, so in practice it should always be -1,
     // but in order to avoid possible intermittent failures in the future, don't
     // assume that.)
-    let placeFrecency =
-      await PlacesTestUtils.fieldInDB("http://" + url, "frecency");
+    let placeFrecency = await PlacesTestUtils.fieldInDB(
+      "http://" + url,
+      "frecency"
+    );
     Assert.ok(placeFrecency <= 0);
 
     // Make sure the origin's frecency is 0.
@@ -817,8 +815,503 @@ function addAutofillTasks(origins) {
 
     await cleanup();
   });
-}
 
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: visit
+  //   prefix search: no
+  //   prefix matches search: n/a
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestHistoryFalse_visit() {
+    await PlacesTestUtils.addVisits("http://" + url);
+    await check_autocomplete({
+      search,
+      autofilled: url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await check_autocomplete({
+      search,
+      matches: [],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: visit
+  //   prefix search: yes
+  //   prefix matches search: yes
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestHistoryFalse_visit_prefix() {
+    await PlacesTestUtils.addVisits("http://" + url);
+    await check_autocomplete({
+      search: "http://" + search,
+      autofilled: "http://" + url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: "http://" + url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: bookmark
+  //   prefix search: no
+  //   prefix matches search: n/a
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: yes
+  add_task(async function suggestHistoryFalse_bookmark_0() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await addBookmark({
+      uri: "http://" + url,
+    });
+    await check_autocomplete({
+      search,
+      autofilled: url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: bookmark
+  //   prefix search: no
+  //   prefix matches search: n/a
+  //   origin matches search: no
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestHistoryFalse_bookmark_1() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await addBookmark({
+      uri: "http://non-matching-" + url,
+    });
+    await check_autocomplete({
+      search,
+      matches: [
+        {
+          value: "http://non-matching-" + url,
+          comment: "A bookmark",
+          style: ["bookmark"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: bookmark
+  //   prefix search: yes
+  //   prefix matches search: yes
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: yes
+  add_task(async function suggestHistoryFalse_bookmark_prefix_0() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await addBookmark({
+      uri: "http://" + url,
+    });
+    await check_autocomplete({
+      search: "http://" + search,
+      autofilled: "http://" + url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: "http://" + url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: bookmark
+  //   prefix search: yes
+  //   prefix matches search: no
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestHistoryFalse_bookmark_prefix_1() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await addBookmark({
+      uri: "ftp://" + url,
+    });
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [
+        {
+          value: "ftp://" + url,
+          comment: "A bookmark",
+          style: ["bookmark"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: bookmark
+  //   prefix search: yes
+  //   prefix matches search: yes
+  //   origin matches search: no
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestHistoryFalse_bookmark_prefix_2() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await addBookmark({
+      uri: "http://non-matching-" + url,
+    });
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [
+        {
+          value: "http://non-matching-" + url,
+          comment: "A bookmark",
+          style: ["bookmark"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = false
+  //   suggest.bookmark = true
+  //   search for: bookmark
+  //   prefix search: yes
+  //   prefix matches search: no
+  //   origin matches search: no
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestHistoryFalse_bookmark_prefix_3() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
+    await addBookmark({
+      uri: "ftp://non-matching-" + url,
+    });
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [
+        {
+          value: "ftp://non-matching-" + url,
+          comment: "A bookmark",
+          style: ["bookmark"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: visit
+  //   prefix search: no
+  //   prefix matches search: n/a
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: yes
+  add_task(async function suggestBookmarkFalse_visit_0() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await PlacesTestUtils.addVisits("http://" + url);
+    await check_autocomplete({
+      search,
+      autofilled: url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: visit
+  //   prefix search: no
+  //   prefix matches search: n/a
+  //   origin matches search: no
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestBookmarkFalse_visit_1() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await PlacesTestUtils.addVisits("http://non-matching-" + url);
+    await check_autocomplete({
+      search,
+      matches: [
+        {
+          value: "http://non-matching-" + url,
+          comment: "test visit for http://non-matching-" + url,
+          style: ["favicon"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: visit
+  //   prefix search: yes
+  //   prefix matches search: yes
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: yes
+  add_task(async function suggestBookmarkFalse_visit_prefix_0() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await PlacesTestUtils.addVisits("http://" + url);
+    await check_autocomplete({
+      search: "http://" + search,
+      autofilled: "http://" + url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: "http://" + url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: visit
+  //   prefix search: yes
+  //   prefix matches search: no
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestBookmarkFalse_visit_prefix_1() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await PlacesTestUtils.addVisits("ftp://" + url);
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [
+        {
+          value: "ftp://" + url,
+          comment: "test visit for ftp://" + url,
+          style: ["favicon"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: visit
+  //   prefix search: yes
+  //   prefix matches search: yes
+  //   origin matches search: no
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestBookmarkFalse_visit_prefix_2() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await PlacesTestUtils.addVisits("http://non-matching-" + url);
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [
+        {
+          value: "http://non-matching-" + url,
+          comment: "test visit for http://non-matching-" + url,
+          style: ["favicon"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: visit
+  //   prefix search: yes
+  //   prefix matches search: no
+  //   origin matches search: no
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestBookmarkFalse_visit_prefix_3() {
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await PlacesTestUtils.addVisits("ftp://non-matching-" + url);
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [
+        {
+          value: "ftp://non-matching-" + url,
+          comment: "test visit for ftp://non-matching-" + url,
+          style: ["favicon"],
+        },
+      ],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: bookmark
+  //   prefix search: no
+  //   prefix matches search: n/a
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestBookmarkFalse_bookmark() {
+    await addBookmark({
+      uri: "http://" + url,
+    });
+    await check_autocomplete({
+      search,
+      autofilled: url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [],
+    });
+    await cleanup();
+  });
+
+  // Tests interaction between the suggest.history and suggest.bookmark prefs.
+  //
+  // Config:
+  //   suggest.history = true
+  //   suggest.bookmark = false
+  //   search for: bookmark
+  //   prefix search: yes
+  //   prefix matches search: yes
+  //   origin matches search: yes
+  //
+  // Expected result:
+  //   should autofill: no
+  add_task(async function suggestBookmarkFalse_bookmark_prefix() {
+    await addBookmark({
+      uri: "http://" + url,
+    });
+    await check_autocomplete({
+      search: "http://" + search,
+      autofilled: "http://" + url,
+      completed: "http://" + url,
+      matches: [
+        {
+          value: "http://" + url,
+          comment,
+          style: ["autofill", "heuristic"],
+        },
+      ],
+    });
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    await check_autocomplete({
+      search: "http://" + search,
+      matches: [],
+    });
+    await cleanup();
+  });
+}
 
 /**
  * Returns the frecency of an origin.
@@ -831,11 +1324,14 @@ function addAutofillTasks(origins) {
  */
 async function getOriginFrecency(prefix, host) {
   let db = await PlacesUtils.promiseDBConnection();
-  let rows = await db.execute(`
+  let rows = await db.execute(
+    `
     SELECT frecency
     FROM moz_origins
     WHERE prefix = :prefix AND host = :host
-  `, { prefix, host });
+  `,
+    { prefix, host }
+  );
   Assert.equal(rows.length, 1);
   return rows[0].getResultByIndex(0);
 }
@@ -875,5 +1371,8 @@ async function getOriginAutofillThreshold() {
     return sum;
   }
   let stddevMultiplier = UrlbarPrefs.get("autoFill.stddevMultiplier");
-  return (sum / count) + (stddevMultiplier * Math.sqrt((squares - ((sum * sum) / count)) / count));
+  return (
+    sum / count +
+    stddevMultiplier * Math.sqrt((squares - (sum * sum) / count) / count)
+  );
 }

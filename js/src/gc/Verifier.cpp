@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "gc/Verifier.h"
+
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
@@ -266,7 +268,7 @@ static bool IsMarkedOrAllocated(TenuredCell* cell) {
   return cell->isMarkedAny();
 }
 
-struct CheckEdgeTracer : public JS::CallbackTracer {
+struct CheckEdgeTracer final : public JS::CallbackTracer {
   VerifyNode* node;
   explicit CheckEdgeTracer(JSRuntime* rt)
       : JS::CallbackTracer(rt), node(nullptr) {}
@@ -446,23 +448,6 @@ void js::gc::GCRuntime::finishVerifier() {
 #endif /* JS_GC_ZEAL */
 
 #if defined(JS_GC_ZEAL) || defined(DEBUG)
-
-// Like gc::MarkColor but allows the possibility of the cell being
-// unmarked. Order is important here, with white being 'least marked'
-// and black being 'most marked'.
-enum class CellColor : uint8_t { White = 0, Gray = 1, Black = 2 };
-
-static CellColor GetCellColor(Cell* cell) {
-  if (cell->isMarkedBlack()) {
-    return CellColor::Black;
-  }
-
-  if (cell->isMarkedGray()) {
-    return CellColor::Gray;
-  }
-
-  return CellColor::White;
-}
 
 static const char* CellColorName(CellColor color) {
   switch (color) {
@@ -763,7 +748,7 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
                                       Cell* value) {
   bool ok = true;
 
-  DebugOnly<Zone*> zone = map->zone();
+  Zone* zone = map->zone();
   MOZ_ASSERT(CurrentThreadCanAccessZone(zone));
   MOZ_ASSERT(zone->isGCMarking());
 
@@ -789,10 +774,16 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
   }
 
   CellColor keyColor = GetCellColor(key);
-  CellColor valueColor =
-      valueZone->isGCMarking() ? GetCellColor(value) : CellColor::Black;
 
-  if (valueColor < Min(mapColor, keyColor)) {
+  // Values belonging to other runtimes or in uncollected zones are treated as
+  // black.
+  CellColor valueColor = CellColor::Black;
+  if (value->runtimeFromAnyThread() == zone->runtimeFromAnyThread() &&
+      valueZone->isGCMarking()) {
+    valueColor = GetCellColor(value);
+  }
+
+  if (valueColor < ExpectedWeakMapValueColor(mapColor, keyColor)) {
     fprintf(stderr, "WeakMap value is less marked than map and key\n");
     fprintf(stderr, "(map %p is %s, key %p is %s, value %p is %s)\n", map,
             CellColorName(mapColor), key, CellColorName(keyColor), value,
@@ -821,7 +812,7 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
     delegateColor = CellColor::Black;
   }
 
-  if (keyColor < Min(mapColor, delegateColor)) {
+  if (keyColor < ExpectedWeakMapKeyColor(mapColor, delegateColor)) {
     fprintf(stderr, "WeakMap key is less marked than map and delegate\n");
     fprintf(stderr, "(map %p is %s, delegate %p is %s, key %p is %s)\n", map,
             CellColorName(mapColor), delegate, CellColorName(delegateColor),

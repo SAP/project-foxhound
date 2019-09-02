@@ -720,6 +720,9 @@ bool JS::OrdinaryHasInstance(JSContext* cx, HandleObject objArg, HandleValue v,
   /* Step 2. */
   if (obj->is<JSFunction>() && obj->isBoundFunction()) {
     /* Steps 2a-b. */
+    if (!CheckRecursionLimit(cx)) {
+      return false;
+    }
     obj = obj->as<JSFunction>().getBoundFunctionTarget();
     return InstanceofOperator(cx, obj, v, bp);
   }
@@ -866,9 +869,10 @@ JSString* js::FunctionToString(JSContext* cx, HandleFunction fun,
   bool addParentheses =
       haveSource && isToSource && (fun->isLambda() && !fun->isArrow());
 
-  if (haveSource && !script->scriptSource()->hasSourceText() &&
-      !JSScript::loadSource(cx, script->scriptSource(), &haveSource)) {
-    return nullptr;
+  if (haveSource) {
+    if (!ScriptSource::loadSource(cx, script->scriptSource(), &haveSource)) {
+      return nullptr;
+    }
   }
 
   // Fast path for the common case, to avoid StringBuffer overhead.
@@ -891,7 +895,7 @@ JSString* js::FunctionToString(JSContext* cx, HandleFunction fun,
     return str;
   }
 
-  StringBuffer out(cx);
+  JSStringBuilder out(cx);
   if (addParentheses) {
     if (!out.append('(')) {
       return nullptr;
@@ -1216,8 +1220,7 @@ bool JSFunction::isDerivedClassConstructor() {
     // There is only one plausible lazy self-hosted derived
     // constructor.
     if (isSelfHostedBuiltin()) {
-      JSAtom* name =
-          &getExtendedSlot(LAZY_FUNCTION_NAME_SLOT).toString()->asAtom();
+      JSAtom* name = GetClonedSelfHostedFunctionName(this);
 
       // This function is called from places without access to a
       // JSContext. Trace some plumbing to get what we want.
@@ -1339,7 +1342,7 @@ JSLinearString* JSFunction::getBoundFunctionName(JSContext* cx,
   MOZ_ASSERT(
       StringEqualsAscii(cx->names().boundWithSpace, boundWithSpaceChars));
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (name->hasTwoByteChars() && !sb.ensureTwoByteChars()) {
     return nullptr;
   }
@@ -1682,8 +1685,7 @@ bool JSFunction::createScriptForLazilyInterpretedFunction(JSContext* cx,
 
   /* Lazily cloned self-hosted script. */
   MOZ_ASSERT(fun->isSelfHostedBuiltin());
-  RootedAtom funAtom(
-      cx, &fun->getExtendedSlot(LAZY_FUNCTION_NAME_SLOT).toString()->asAtom());
+  RootedAtom funAtom(cx, GetClonedSelfHostedFunctionName(fun));
   if (!funAtom) {
     return false;
   }
@@ -1730,9 +1732,7 @@ void JSFunction::maybeRelazify(JSRuntime* rt) {
   }
 
   // To delazify self-hosted builtins we need the name of the function
-  // to clone. This name is stored in the first extended slot. Since
-  // that slot is sometimes also used for other purposes, make sure it
-  // contains a string.
+  // to clone. This name is stored in the first extended slot.
   if (isSelfHostedBuiltin() &&
       (!isExtended() || !getExtendedSlot(LAZY_FUNCTION_NAME_SLOT).isString())) {
     return;
@@ -1749,7 +1749,7 @@ void JSFunction::maybeRelazify(JSRuntime* rt) {
   } else {
     MOZ_ASSERT(isSelfHostedBuiltin());
     MOZ_ASSERT(isExtended());
-    MOZ_ASSERT(getExtendedSlot(LAZY_FUNCTION_NAME_SLOT).toString()->isAtom());
+    MOZ_ASSERT(GetClonedSelfHostedFunctionName(this));
   }
 
   realm->scheduleDelazificationForDebugger();
@@ -1798,7 +1798,7 @@ static bool CreateDynamicFunction(JSContext* cx, const CallArgs& args,
                            maybeScript, pcOffset)
       .setScriptOrModule(maybeScript);
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
 
   if (isAsync) {
     if (!sb.append("async ")) {
@@ -1894,7 +1894,7 @@ static bool CreateDynamicFunction(JSContext* cx, const CallArgs& args,
    * Thus 'var x = 42; f = new Function("return x"); print(f())' prints 42,
    * and so would a call to f from another top-level's script or function.
    */
-  RootedAtom anonymousAtom(cx, cx->names().anonymous);
+  HandlePropertyName anonymousAtom = cx->names().anonymous;
 
   // Initialize the function with the default prototype:
   // Leave as nullptr to get the default from clasp for normal functions.
@@ -2115,11 +2115,7 @@ JSFunction* js::NewFunctionWithProto(
   } else {
     MOZ_ASSERT(fun->isNative());
     MOZ_ASSERT(native);
-    if (fun->isWasmOptimized()) {
-      fun->initWasmNative(native);
-    } else {
-      fun->initNative(native, nullptr);
-    }
+    fun->initNative(native, nullptr);
   }
   if (allocKind == gc::AllocKind::FUNCTION_EXTENDED) {
     fun->initializeExtended();

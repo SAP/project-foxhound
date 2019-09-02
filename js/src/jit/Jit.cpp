@@ -20,8 +20,11 @@ using namespace js::jit;
 static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
                                                       RunState& state,
                                                       uint8_t* code) {
-  MOZ_ASSERT(state.script()->hasBaselineScript());
+  // We don't want to call the interpreter stub here (because
+  // C++ -> interpreterStub -> C++ is slower than staying in C++).
   MOZ_ASSERT(code);
+  MOZ_ASSERT(code != cx->runtime()->jitRuntime()->interpreterStub().value);
+
   MOZ_ASSERT(IsBaselineEnabled(cx));
 
   if (!CheckRecursionLimit(cx)) {
@@ -55,7 +58,11 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
       if (numActualArgs > BASELINE_MAX_ARGS_LENGTH) {
         return EnterJitStatus::NotEntered;
       }
-      code = script->baselineScript()->method()->raw();
+      if (script->hasBaselineScript()) {
+        code = script->baselineScript()->method()->raw();
+      } else {
+        code = cx->runtime()->jitRuntime()->baselineInterpreter().codeRaw();
+      }
     }
 
     constructing = state.asInvoke()->constructing();
@@ -131,12 +138,19 @@ EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
 
   uint8_t* code = script->jitCodeRaw();
   do {
-    // Make sure we have a BaselineScript: we don't want to call the
-    // interpreter stub here. Note that Baseline code contains warm-up
-    // checks in the prologue to Ion-compile if needed.
-    if (script->hasBaselineScript()) {
-      break;
+    // Make sure we can enter Baseline Interpreter or JIT code. Note that
+    // the prologue has warm-up checks to tier up if needed.
+    if (JitOptions.baselineInterpreter) {
+      if (script->jitScript()) {
+        break;
+      }
+    } else {
+      if (script->hasBaselineScript()) {
+        break;
+      }
     }
+
+    script->incWarmUpCounter();
 
     // Try to Ion-compile.
     if (jit::IsIonEnabled(cx)) {
@@ -152,13 +166,26 @@ EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
 
     // Try to Baseline-compile.
     if (jit::IsBaselineEnabled(cx)) {
-      jit::MethodStatus status = jit::CanEnterBaselineMethod(cx, state);
+      jit::MethodStatus status =
+          jit::CanEnterBaselineMethod<BaselineTier::Compiler>(cx, state);
       if (status == jit::Method_Error) {
         return EnterJitStatus::Error;
       }
       if (status == jit::Method_Compiled) {
         code = script->jitCodeRaw();
         break;
+      }
+
+      if (JitOptions.baselineInterpreter) {
+        jit::MethodStatus status =
+            jit::CanEnterBaselineMethod<BaselineTier::Interpreter>(cx, state);
+        if (status == jit::Method_Error) {
+          return EnterJitStatus::Error;
+        }
+        if (status == jit::Method_Compiled) {
+          code = script->jitCodeRaw();
+          break;
+        }
       }
     }
 

@@ -16,6 +16,7 @@
 class nsIContent;
 class nsIDocumentEncoder;
 class nsIOutputStream;
+class nsIPrincipal;
 class nsISelectionController;
 class nsITransferable;
 
@@ -55,26 +56,59 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
   // Overrides of nsIEditor
   NS_IMETHOD GetDocumentIsEmpty(bool* aDocumentIsEmpty) override;
 
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD DeleteSelection(EDirection aAction,
                              EStripWrappers aStripWrappers) override;
 
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD SetDocumentCharacterSet(const nsACString& characterSet) override;
 
-  // If there are some good name to create non-virtual Undo()/Redo() methods,
-  // we should create them and those methods should just run them.
-  MOZ_CAN_RUN_SCRIPT
-  NS_IMETHOD Undo(uint32_t aCount) final;
-  MOZ_CAN_RUN_SCRIPT
-  NS_IMETHOD Redo(uint32_t aCount) final;
+  /**
+   * Do "undo" or "redo".
+   *
+   * @param aCount              How many count of transactions should be
+   *                            handled.
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult UndoAsAction(uint32_t aCount,
+                                           nsIPrincipal* aPrincipal = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult RedoAsAction(uint32_t aCount,
+                                           nsIPrincipal* aPrincipal = nullptr);
 
-  NS_IMETHOD Cut() override;
-  NS_IMETHOD CanCut(bool* aCanCut) override;
+  /**
+   * Do "cut".
+   *
+   * @param aPrincipal          If you know current context is subject
+   *                            principal or system principal, set it.
+   *                            When nullptr, this checks it automatically.
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult CutAsAction(nsIPrincipal* aPrincipal = nullptr);
+
+  bool CanCut() const;
   NS_IMETHOD Copy() override;
-  NS_IMETHOD CanCopy(bool* aCanCopy) override;
-  NS_IMETHOD CanDelete(bool* aCanDelete) override;
-  NS_IMETHOD CanPaste(int32_t aSelectionType, bool* aCanPaste) override;
-  MOZ_CAN_RUN_SCRIPT
-  NS_IMETHOD PasteTransferable(nsITransferable* aTransferable) override;
+  bool CanCopy() const;
+  bool CanDelete() const;
+  virtual bool CanPaste(int32_t aClipboardType) const;
+
+  // Shouldn't be used internally, but we need these using declarations for
+  // avoiding warnings of clang.
+  using EditorBase::CanCopy;
+  using EditorBase::CanCut;
+  using EditorBase::CanDelete;
+  using EditorBase::CanPaste;
+
+  /**
+   * Paste aTransferable at Selection.
+   *
+   * @param aTransferable       Must not be nullptr.
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
+   */
+  MOZ_CAN_RUN_SCRIPT virtual nsresult PasteTransferableAsAction(
+      nsITransferable* aTransferable, nsIPrincipal* aPrincipal = nullptr);
 
   NS_IMETHOD OutputToString(const nsAString& aFormatType, uint32_t aFlags,
                             nsAString& aOutputString) override;
@@ -87,6 +121,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
   virtual bool CanPasteTransferable(nsITransferable* aTransferable);
 
   // Overrides of EditorBase
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult Init(Document& aDoc, Element* aRoot,
                         nsISelectionController* aSelCon, uint32_t aFlags,
                         const nsAString& aValue) override;
@@ -105,6 +140,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
     return NS_SUCCEEDED(rv) && isEmpty;
   }
 
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult HandleKeyPressEvent(
       WidgetKeyboardEvent* aKeyboardEvent) override;
 
@@ -119,9 +155,13 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    *                            nsIClipboard::kSelectionClipboard.
    * @param aDispatchPasteEvent true if this should dispatch ePaste event
    *                            before pasting.  Otherwise, false.
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
    */
-  MOZ_CAN_RUN_SCRIPT
-  nsresult PasteAsAction(int32_t aClipboardType, bool aDispatchPasteEvent);
+  MOZ_CAN_RUN_SCRIPT nsresult PasteAsAction(int32_t aClipboardType,
+                                            bool aDispatchPasteEvent,
+                                            nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * InsertTextAsAction() inserts aStringToInsert at selection.
@@ -130,8 +170,12 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * as part of edit action, you probably should use InsertTextAsSubAction().
    *
    * @param aStringToInsert     The string to insert.
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
    */
-  nsresult InsertTextAsAction(const nsAString& aStringToInsert);
+  nsresult InsertTextAsAction(const nsAString& aStringToInsert,
+                              nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * PasteAsQuotationAsAction() pastes content in clipboard as quotation.
@@ -142,10 +186,13 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    *                            nsIClipboard::kSelectionClipboard.
    * @param aDispatchPasteEvent true if this should dispatch ePaste event
    *                            before pasting.  Otherwise, false.
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
    */
-  MOZ_CAN_RUN_SCRIPT
-  virtual nsresult PasteAsQuotationAsAction(int32_t aClipboardType,
-                                            bool aDispatchPasteEvent);
+  MOZ_CAN_RUN_SCRIPT virtual nsresult PasteAsQuotationAsAction(
+      int32_t aClipboardType, bool aDispatchPasteEvent,
+      nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * DeleteSelectionAsAction() removes selection content or content around
@@ -156,9 +203,13 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @param aDirection          How much range should be removed.
    * @param aStripWrappers      Whether the parent blocks should be removed
    *                            when they become empty.
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
    */
-  nsresult DeleteSelectionAsAction(EDirection aDirection,
-                                   EStripWrappers aStripWrappers);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  DeleteSelectionAsAction(EDirection aDirection, EStripWrappers aStripWrappers,
+                          nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * The maximum number of characters allowed.
@@ -171,9 +222,13 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * Replace existed string with a string.
    * This is fast path to replace all string when using single line control.
    *
-   * @ param aString   the string to be set
+   * @param aString             The string to be set
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
    */
-  nsresult SetText(const nsAString& aString);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  SetTextAsAction(const nsAString& aString, nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * Replace text in aReplaceRange or all text in this editor with aString and
@@ -182,15 +237,24 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @param aString             The string to set.
    * @param aReplaceRange       The range to be replaced.
    *                            If nullptr, all contents will be replaced.
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
    */
-  nsresult ReplaceTextAsAction(const nsAString& aString,
-                               nsRange* aReplaceRange = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  ReplaceTextAsAction(const nsAString& aString, nsRange* aReplaceRange,
+                      nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * InsertLineBreakAsAction() is called when user inputs a line break with
    * Enter or something.
+   *
+   * @param aPrincipal          Set subject principal if it may be called by
+   *                            JS.  If set to nullptr, will be treated as
+   *                            called by system.
    */
-  virtual nsresult InsertLineBreakAsAction();
+  MOZ_CAN_RUN_SCRIPT virtual nsresult InsertLineBreakAsAction(
+      nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * OnCompositionStart() is called when editor receives eCompositionStart
@@ -244,6 +308,14 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
     return NS_OK;
   }
 
+  /**
+   * Similar to the setter for wrapWidth, but just sets the editor
+   * internal state without actually changing the content being edited
+   * to wrap at that column.  This should only be used by callers who
+   * are sure that their content is already set up correctly.
+   */
+  void SetWrapColumn(int32_t aWrapColumn) { mWrapColumn = aWrapColumn; }
+
  protected:  // May be called by friends.
   /****************************************************************************
    * Some classes like TextEditRules, HTMLEditRules, WSRunObject which are
@@ -255,9 +327,11 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    ****************************************************************************/
 
   // Overrides of EditorBase
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult RemoveAttributeOrEquivalent(
       Element* aElement, nsAtom* aAttribute,
       bool aSuppressTransaction) override;
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult SetAttributeOrEquivalent(Element* aElement,
                                             nsAtom* aAttribute,
                                             const nsAString& aValue,
@@ -282,6 +356,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @param aStripWrappers      Whether the parent blocks should be removed
    *                            when they become empty.
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult DeleteSelectionAsSubAction(EDirection aDirection,
                                       EStripWrappers aStripWrappers);
 
@@ -293,6 +368,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @param aStripWrappers      Whether the parent blocks should be removed
    *                            when they become empty.
    */
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult DeleteSelectionWithTransaction(
       EDirection aAction, EStripWrappers aStripWrappers);
 
@@ -302,13 +378,14 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    *
    * @ param aString   The string to be set.
    */
-  nsresult SetTextAsSubAction(const nsAString& aString);
+  MOZ_CAN_RUN_SCRIPT nsresult SetTextAsSubAction(const nsAString& aString);
 
   /**
    * ReplaceSelectionAsSubAction() replaces selection with aString.
    *
    * @param aString    The string to replace.
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult ReplaceSelectionAsSubAction(const nsAString& aString);
 
   /**
@@ -326,10 +403,8 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @return                    The new <br> node.  If failed to create new
    *                            <br> node, returns nullptr.
    */
-  template <typename PT, typename CT>
-  already_AddRefed<Element> InsertBrElementWithTransaction(
-      const EditorDOMPointBase<PT, CT>& aPointToInsert,
-      EDirection aSelect = eNone);
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Element> InsertBrElementWithTransaction(
+      const EditorDOMPoint& aPointToInsert, EDirection aSelect = eNone);
 
   /**
    * Extends the selection for given deletion operation
@@ -352,9 +427,11 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
  protected:  // Called by helper classes.
   virtual void OnStartToHandleTopLevelEditSubAction(
       EditSubAction aEditSubAction, nsIEditor::EDirection aDirection) override;
+  MOZ_CAN_RUN_SCRIPT
   virtual void OnEndHandlingTopLevelEditSubAction() override;
 
   void BeginEditorInit();
+  MOZ_CAN_RUN_SCRIPT
   nsresult EndEditorInit();
 
  protected:  // Shouldn't be used by friend classes
@@ -365,6 +442,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
   /**
    * Make the given selection span the entire document.
    */
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult SelectEntireDocument() override;
 
   /**
@@ -425,6 +503,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    */
   bool IsSafeToInsertData(Document* aSourceDoc);
 
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult InitRules();
 
   /**
@@ -467,6 +546,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * @param aTag                The element name to be created.
    * @return                    Created new element.
    */
+  MOZ_CAN_RUN_SCRIPT
   already_AddRefed<Element> DeleteSelectionAndCreateElement(nsAtom& aTag);
 
   /**
@@ -476,7 +556,7 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
    * adjusted to be collapsed right before or after the node instead (which is
    * always possible, since the node was split).
    */
-  nsresult DeleteSelectionAndPrepareToCreateNode();
+  MOZ_CAN_RUN_SCRIPT nsresult DeleteSelectionAndPrepareToCreateNode();
 
   /**
    * Shared outputstring; returns whether selection is collapsed and resulting
@@ -486,11 +566,12 @@ class TextEditor : public EditorBase, public nsIPlaintextEditor {
                               nsAString& aResult);
 
   enum PasswordFieldAllowed { ePasswordFieldAllowed, ePasswordFieldNotAllowed };
-  bool CanCutOrCopy(PasswordFieldAllowed aPasswordFieldAllowed);
+  bool CanCutOrCopy(PasswordFieldAllowed aPasswordFieldAllowed) const;
   bool FireClipboardEvent(EventMessage aEventMessage, int32_t aSelectionType,
                           bool* aActionTaken = nullptr);
 
-  bool UpdateMetaCharset(Document& aDocument, const nsACString& aCharacterSet);
+  MOZ_CAN_RUN_SCRIPT bool UpdateMetaCharset(Document& aDocument,
+                                            const nsACString& aCharacterSet);
 
   /**
    * EnsureComposition() should be called by composition event handlers.  This

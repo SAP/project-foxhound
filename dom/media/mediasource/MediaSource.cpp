@@ -117,11 +117,11 @@ nsresult MediaSource::IsTypeSupported(const nsAString& aType,
   }
   if (mimeType == MEDIAMIMETYPE("video/webm")) {
     if (!(Preferences::GetBool("media.mediasource.webm.enabled", false) ||
-          StaticPrefs::MediaCapabilitiesEnabled() ||
+          StaticPrefs::media_media_capabilities_enabled() ||
           containerType->ExtendedType().Codecs().Contains(
               NS_LITERAL_STRING("vp8")) ||
 #ifdef MOZ_AV1
-          (StaticPrefs::MediaAv1Enabled() &&
+          (StaticPrefs::media_av1_enabled() &&
            IsAV1CodecString(
                containerType->ExtendedType().Codecs().AsString())) ||
 #endif
@@ -361,12 +361,62 @@ void MediaSource::EndOfStream(const MediaResult& aError) {
   mDecoder->DecodeError(aError);
 }
 
+static bool AreExtraParametersSane(const nsAString& aType) {
+  Maybe<MediaContainerType> containerType = MakeMediaContainerType(aType);
+  if (!containerType) {
+    return false;
+  }
+  auto extendedType = containerType->ExtendedType();
+  auto bitrate = extendedType.GetBitrate();
+  if (bitrate && *bitrate > 10000000) {
+    return false;
+  }
+  if (containerType->Type().HasVideoMajorType()) {
+    auto width = extendedType.GetWidth();
+    if (width && *width > MAX_VIDEO_WIDTH) {
+      return false;
+    }
+    auto height = extendedType.GetHeight();
+    if (height && *height > MAX_VIDEO_HEIGHT) {
+      return false;
+    }
+    auto framerate = extendedType.GetFramerate();
+    if (framerate && *framerate > 1000) {
+      return false;
+    }
+    auto eotf = extendedType.GetEOTF();
+    if (eotf && *eotf == EOTF::NOT_SUPPORTED) {
+      return false;
+    }
+  } else if (containerType->Type().HasAudioMajorType()) {
+    auto channels = extendedType.GetChannels();
+    if (channels && *channels > 6) {
+      return false;
+    }
+    auto samplerate = extendedType.GetSamplerate();
+    if (samplerate && *samplerate > 192000) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool IsYouTube(const GlobalObject& aOwner) {
+  nsCString domain;
+  return aOwner.GetSubjectPrincipal() &&
+         NS_SUCCEEDED(aOwner.GetSubjectPrincipal()->GetBaseDomain(domain)) &&
+         domain.EqualsLiteral("youtube.com");
+}
+
 /* static */
 bool MediaSource::IsTypeSupported(const GlobalObject& aOwner,
                                   const nsAString& aType) {
   MOZ_ASSERT(NS_IsMainThread());
   DecoderDoctorDiagnostics diagnostics;
   nsresult rv = IsTypeSupported(aType, &diagnostics);
+  if (NS_SUCCEEDED(rv) && IsYouTube(aOwner) && !AreExtraParametersSane(aType)) {
+    rv = NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+  }
   nsCOMPtr<nsPIDOMWindowInner> window =
       do_QueryInterface(aOwner.GetAsSupports());
   diagnostics.StoreFormatDiagnostics(window ? window->GetExtantDoc() : nullptr,
@@ -565,10 +615,22 @@ void MediaSource::DurationChange(double aNewDuration, ErrorResult& aRv) {
   mDecoder->SetMediaSourceDuration(aNewDuration);
 }
 
-void MediaSource::GetMozDebugReaderData(nsAString& aString) {
-  nsAutoCString result;
-  mDecoder->GetMozDebugReaderData(result);
-  aString = NS_ConvertUTF8toUTF16(result);
+already_AddRefed<Promise> MediaSource::MozDebugReaderData(ErrorResult& aRv) {
+  // Creating a JS promise
+  nsPIDOMWindowInner* win = GetOwner();
+  if (!win) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+  RefPtr<Promise> domPromise = Promise::Create(win->AsGlobal(), aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+  MOZ_ASSERT(domPromise);
+  MediaSourceDecoderDebugInfo info;
+  mDecoder->GetDebugInfo(info);
+  domPromise->MaybeResolve(info);
+  return domPromise.forget();
 }
 
 nsPIDOMWindowInner* MediaSource::GetParentObject() const { return GetOwner(); }

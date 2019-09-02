@@ -357,7 +357,9 @@ PK11_SymKeyFromHandle(PK11SlotInfo *slot, PK11SymKey *parent, PK11Origin origin,
 }
 
 /*
- * turn key handle into an appropriate key object
+ * Restore a symmetric wrapping key that was saved using PK11_SetWrapKey.
+ *
+ * This function is provided for ABI compatibility; see PK11_SetWrapKey below.
  */
 PK11SymKey *
 PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
@@ -365,33 +367,51 @@ PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
 {
     PK11SymKey *symKey = NULL;
 
-    if (slot->series != series)
+    PK11_EnterSlotMonitor(slot);
+    if (slot->series != series ||
+        slot->refKeys[wrap] == CK_INVALID_HANDLE) {
+        PK11_ExitSlotMonitor(slot);
         return NULL;
-    if (slot->refKeys[wrap] == CK_INVALID_HANDLE)
-        return NULL;
-    if (type == CKM_INVALID_MECHANISM)
+    }
+
+    if (type == CKM_INVALID_MECHANISM) {
         type = slot->wrapMechanism;
+    }
 
     symKey = PK11_SymKeyFromHandle(slot, NULL, PK11_OriginDerive,
                                    slot->wrapMechanism, slot->refKeys[wrap], PR_FALSE, wincx);
+    PK11_ExitSlotMonitor(slot);
     return symKey;
 }
 
 /*
- * This function is not thread-safe because it sets wrapKey->sessionOwner
- * without using a lock or atomic routine.  It can only be called when
- * only one thread has a reference to wrapKey.
+ * This function sets an attribute on the current slot with a wrapping key.  The
+ * data saved is ephemeral; it needs to be run every time the program is
+ * invoked.
+ *
+ * Since NSS 3.45, this function is marginally more thread safe.  It uses the
+ * slot lock (if present) and fails silently if a value is already set.  Use
+ * PK11_GetWrapKey() after calling this function to get the current wrapping key
+ * in case there was an update on another thread.
+ *
+ * Either way, using this function is inadvisable.  It's provided for ABI
+ * compatibility only.
  */
 void
 PK11_SetWrapKey(PK11SlotInfo *slot, int wrap, PK11SymKey *wrapKey)
 {
-    /* save the handle and mechanism for the wrapping key */
-    /* mark the key and session as not owned by us to they don't get freed
-     * when the key goes way... that lets us reuse the key later */
-    slot->refKeys[wrap] = wrapKey->objectID;
-    wrapKey->owner = PR_FALSE;
-    wrapKey->sessionOwner = PR_FALSE;
-    slot->wrapMechanism = wrapKey->type;
+    PK11_EnterSlotMonitor(slot);
+    if (wrap < PR_ARRAY_SIZE(slot->refKeys) &&
+        slot->refKeys[wrap] == CK_INVALID_HANDLE) {
+        /* save the handle and mechanism for the wrapping key */
+        /* mark the key and session as not owned by us so they don't get freed
+         * when the key goes way... that lets us reuse the key later */
+        slot->refKeys[wrap] = wrapKey->objectID;
+        wrapKey->owner = PR_FALSE;
+        wrapKey->sessionOwner = PR_FALSE;
+        slot->wrapMechanism = wrapKey->type;
+    }
+    PK11_ExitSlotMonitor(slot);
 }
 
 /*
@@ -1598,6 +1618,7 @@ PK11_DeriveWithTemplate(PK11SymKey *baseKey, CK_MECHANISM_TYPE derive,
         PK11_FreeSymKey(newBaseKey);
     if (crv != CKR_OK) {
         PK11_FreeSymKey(symKey);
+        PORT_SetError(PK11_MapError(crv));
         return NULL;
     }
     return symKey;
@@ -1837,6 +1858,35 @@ loser:
     if (intermediateResult != NULL)
         PK11_FreeSymKey(intermediateResult);
     return NULL;
+}
+
+/*
+ * This regenerate a public key from a private key. This function is currently
+ * NSS private. If we want to make it public, we need to add and optional
+ * template or at least flags (a.la. PK11_DeriveWithFlags).
+ */
+CK_OBJECT_HANDLE
+PK11_DerivePubKeyFromPrivKey(SECKEYPrivateKey *privKey)
+{
+    PK11SlotInfo *slot = privKey->pkcs11Slot;
+    CK_MECHANISM mechanism;
+    CK_OBJECT_HANDLE objectID = CK_INVALID_HANDLE;
+    CK_RV crv;
+
+    mechanism.mechanism = CKM_NSS_PUB_FROM_PRIV;
+    mechanism.pParameter = NULL;
+    mechanism.ulParameterLen = 0;
+
+    PK11_EnterSlotMonitor(slot);
+    crv = PK11_GETTAB(slot)->C_DeriveKey(slot->session, &mechanism,
+                                         privKey->pkcs11ID, NULL, 0,
+                                         &objectID);
+    PK11_ExitSlotMonitor(slot);
+    if (crv != CKR_OK) {
+        PORT_SetError(PK11_MapError(crv));
+        return CK_INVALID_HANDLE;
+    }
+    return objectID;
 }
 
 /*

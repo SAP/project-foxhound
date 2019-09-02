@@ -6,24 +6,24 @@
 
 #include "nsNumberControlFrame.h"
 
+#include "mozilla/BasicEvents.h"
+#include "mozilla/EventStates.h"
+#include "mozilla/FloatingPoint.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/MutationEventBinding.h"
 #include "HTMLInputElement.h"
 #include "ICUUtils.h"
 #include "nsIFocusManager.h"
-#include "nsIPresShell.h"
 #include "nsFocusManager.h"
 #include "nsFontMetrics.h"
 #include "nsCheckboxRadioFrame.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
 #include "nsStyleConsts.h"
-#include "mozilla/BasicEvents.h"
-#include "mozilla/EventStates.h"
 #include "nsContentUtils.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsCSSPseudoElements.h"
 #include "nsThreadUtils.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/dom/MutationEventBinding.h"
 
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/AccTypes.h"
@@ -32,7 +32,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsIFrame* NS_NewNumberControlFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewNumberControlFrame(PresShell* aPresShell,
                                    ComputedStyle* aStyle) {
   return new (aPresShell)
       nsNumberControlFrame(aStyle, aPresShell->GetPresContext());
@@ -129,7 +129,7 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
       aReflowInput.ComputedLogicalBorderPadding().IStartEnd(myWM);
 
   nscoord borderBoxBSize;
-  if (contentBoxBSize != NS_INTRINSICSIZE) {
+  if (contentBoxBSize != NS_UNCONSTRAINEDSIZE) {
     borderBoxBSize =
         contentBoxBSize +
         aReflowInput.ComputedLogicalBorderPadding().BStartEnd(myWM);
@@ -138,7 +138,7 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
   nsIFrame* outerWrapperFrame = mOuterWrapper->GetPrimaryFrame();
 
   if (!outerWrapperFrame) {  // display:none?
-    if (contentBoxBSize == NS_INTRINSICSIZE) {
+    if (contentBoxBSize == NS_UNCONSTRAINEDSIZE) {
       contentBoxBSize = 0;
       borderBoxBSize =
           aReflowInput.ComputedLogicalBorderPadding().BStartEnd(myWM);
@@ -181,7 +181,7 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     nscoord wrappersMarginBoxBSize =
         wrappersDesiredSize.BSize(myWM) + wrapperMargin.BStartEnd(myWM);
 
-    if (contentBoxBSize == NS_INTRINSICSIZE) {
+    if (contentBoxBSize == NS_UNCONSTRAINEDSIZE) {
       // We are intrinsically sized -- we should shrinkwrap the outer wrapper's
       // block-size:
       contentBoxBSize = wrappersMarginBoxBSize;
@@ -213,12 +213,15 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
                       &wrapperReflowInput, myWM, wrapperOffset, borderBoxSize,
                       0);
 
-    nsSize contentBoxSize = LogicalSize(myWM, contentBoxISize, contentBoxBSize)
-                                .GetPhysicalSize(myWM);
-    aDesiredSize.SetBlockStartAscent(
-        wrappersDesiredSize.BlockStartAscent() +
-        outerWrapperFrame->BStart(aReflowInput.GetWritingMode(),
-                                  contentBoxSize));
+    if (!aReflowInput.mStyleDisplay->IsContainLayout()) {
+      nsSize contentBoxSize =
+          LogicalSize(myWM, contentBoxISize, contentBoxBSize)
+              .GetPhysicalSize(myWM);
+      aDesiredSize.SetBlockStartAscent(
+          wrappersDesiredSize.BlockStartAscent() +
+          outerWrapperFrame->BStart(aReflowInput.GetWritingMode(),
+                                    contentBoxSize));
+    }  // else: we're layout-contained, and so we have no baseline.
   }
 
   LogicalSize logicalDesiredSize(myWM, borderBoxISize, borderBoxBSize);
@@ -289,7 +292,10 @@ class FocusTextField : public Runnable {
 
   NS_IMETHOD Run() override {
     if (mNumber->AsElement()->State().HasState(NS_EVENT_STATE_FOCUS)) {
-      HTMLInputElement::FromNode(mTextField)->Focus(IgnoreErrors());
+      // This job shouldn't be triggered by a WebIDL interface, hence the
+      // default options can be used.
+      FocusOptions options;
+      HTMLInputElement::FromNode(mTextField)->Focus(options, IgnoreErrors());
     }
 
     return NS_OK;
@@ -532,7 +538,11 @@ void nsNumberControlFrame::HandleFocusEvent(WidgetEvent* aEvent) {
   if (aEvent->mOriginalTarget != mTextField) {
     // Move focus to our text field
     RefPtr<HTMLInputElement> textField = HTMLInputElement::FromNode(mTextField);
-    textField->Focus(IgnoreErrors());
+
+    // Use default FocusOptions, because this method isn't supposed to be called
+    // from a WebIDL interface.
+    FocusOptions options;
+    textField->Focus(options, IgnoreErrors());
   }
 }
 

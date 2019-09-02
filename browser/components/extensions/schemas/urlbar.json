@@ -1,0 +1,168 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+[
+  {
+    "namespace": "manifest",
+    "types": [{
+      "$extend": "Permission",
+      "choices": [{
+        "type": "string",
+        "enum": [
+          "urlbar"
+        ]
+      }]
+    }]
+  },
+  {
+    "namespace": "urlbar",
+    "description": "Use the <code>browser.urlbar</code> API to experiment with new features in the URLBar. Restricted to Mozilla privileged WebExtensions.",
+    "permissions": [
+      "urlbar"
+    ],
+    "types": [
+      {
+        "id": "Query",
+        "type": "object",
+        "description": "A query performed in the urlbar.",
+        "properties": {
+          "isPrivate": {
+            "type": "boolean",
+            "description": "Whether the query's browser context is private."
+          },
+          "maxResults": {
+            "type": "integer",
+            "description": "The maximum number of results shown to the user."
+          },
+          "searchString": {
+            "type": "string",
+            "description": "The query's search string."
+          },
+          "acceptableSources": {
+            "type": "array",
+            "description": "List of acceptable source types to return.",
+            "items": {
+              "$ref": "SourceType"
+            }
+          }
+        }
+      },
+      {
+        "id": "Result",
+        "type": "object",
+        "description": "A result of a query. Queries can have many results. Each result is created by a provider.",
+        "properties": {
+          "payload": {
+            "type": "object",
+            "description": "An object with arbitrary properties depending on the result's type."
+          },
+          "source": {
+            "$ref": "SourceType",
+            "description": "The result's source."
+          },
+          "type": {
+            "$ref": "ResultType",
+            "description": "The result's type."
+          }
+        }
+      },
+      {
+        "id": "ResultType",
+        "type": "string",
+        "enum": ["remote_tab", "search", "tab", "url"],
+        "description": "Possible types of results. <code>remote_tab</code>: A synced tab from another device. <code>search</code>: A search suggestion from a search engine. <code>tab</code>: An open tab in the browser. <code>url</code>: A URL that's not one of the other types."
+      },
+      {
+        "id": "SourceType",
+        "type": "string",
+        "enum": ["bookmarks", "history", "search", "tabs", "local", "network"],
+        "description": "Possible sources of results. <code>bookmarks</code>: The result comes from the user's bookmarks. <code>history</code>: The result comes from the user's history. <code>search</code>: The result comes from a search engine. <code>tabs</code>: The result is an open tab in the browser or a synced tab from another device. "
+      }
+    ],
+    "properties": {
+      "openViewOnFocus": {
+        "$ref": "types.Setting",
+        "description": "Enables or disables the open-view-on-focus mode."
+      },
+      "engagementTelemetry": {
+        "$ref": "types.Setting",
+        "description": "Enables or disables the engagement telemetry."
+      }
+    },
+    "events": [
+      {
+        "name": "onBehaviorRequested",
+        "type": "function",
+        "description": "Before a query starts, this event is fired for the given provider. Its purpose is to request the provider's behavior for the query. The listener should return a behavior in response. By default, providers are inactive, so if your provider should always be inactive, you don't need to listen for this event.",
+        "parameters": [
+          {
+            "name": "query",
+            "$ref": "Query",
+            "description": "The query for which the behavior is requested."
+          }
+        ],
+        "extraParameters": [
+          {
+            "name": "providerName",
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "The name of the provider whose behavior the listener returns."
+          }
+        ],
+        "returns": {
+          "type": "string",
+          "enum": ["active", "inactive", "restricting"],
+          "description": "The behavior of the provider for the query."
+        }
+      },
+      {
+        "name": "onQueryCanceled",
+        "type": "function",
+        "description": "This event is fired for the given provider when a query is canceled. The listener should stop any ongoing fetch or creation of results and clean up its resources.",
+        "parameters": [
+          {
+            "name": "query",
+            "$ref": "Query",
+            "description": "The query that was canceled."
+          }
+        ],
+        "extraParameters": [
+          {
+            "name": "providerName",
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "The name of the provider that is creating results for the query."
+          }
+        ]
+      },
+      {
+        "name": "onResultsRequested",
+        "type": "function",
+        "description": "When a query starts, this event is fired for the given provider if the provider is active for the query and there are no other providers that are restricting. Its purpose is to request the provider's results for the query. The listener should return a list of results in response.",
+        "parameters": [
+          {
+            "name": "query",
+            "$ref": "Query",
+            "description": "The query for which results are requested."
+          }
+        ],
+        "extraParameters": [
+          {
+            "name": "providerName",
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "The name of the provider whose results the listener returns."
+          }
+        ],
+        "returns": {
+          "type": "array",
+          "items": {
+            "$ref": "Result"
+          },
+          "description": "The results that the provider fetched for the query."
+        }
+      }
+    ]
+  }
+]

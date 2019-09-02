@@ -42,6 +42,7 @@ class UiCompositorControllerParent final
                                               const int32_t& aWidth);
   mozilla::ipc::IPCResult RecvInvalidateAndRender();
   mozilla::ipc::IPCResult RecvMaxToolbarHeight(const int32_t& aHeight);
+  mozilla::ipc::IPCResult RecvFixedBottomOffset(const int32_t& aOffset);
   mozilla::ipc::IPCResult RecvPinned(const bool& aPinned,
                                      const int32_t& aReason);
   mozilla::ipc::IPCResult RecvToolbarAnimatorMessageFromUI(
@@ -53,7 +54,7 @@ class UiCompositorControllerParent final
   mozilla::ipc::IPCResult RecvToolbarPixelsToCompositor(
       Shmem&& aMem, const ScreenIntSize& aSize);
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  void DeallocPUiCompositorControllerParent() override;
+  void ActorDealloc() override;
 
   // Class specific functions
 #if defined(MOZ_WIDGET_ANDROID)
@@ -71,7 +72,7 @@ class UiCompositorControllerParent final
 
  private:
   explicit UiCompositorControllerParent(const LayersId& aRootLayerTreeId);
-  ~UiCompositorControllerParent();
+  virtual ~UiCompositorControllerParent();
   void InitializeForSameProcess();
   void InitializeForOutOfProcess();
   void Initialize();

@@ -9,65 +9,50 @@
 
 "use strict";
 
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-
-var ios = Cc["@mozilla.org/network/io-service;1"]
-            .getService(Ci.nsIIOService);
-var pps = Cc["@mozilla.org/network/protocol-proxy-service;1"]
-            .getService();
-var prefs = Cc["@mozilla.org/preferences-service;1"]
-                     .getService(Ci.nsIPrefBranch);
+var ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
+var pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
+var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
+  Ci.nsIPrefBranch
+);
 
 /**
  * Test nsIProtocolHandler that allows proxying, but doesn't allow HTTP
  * proxying.
  */
-function TestProtocolHandler() {
-}
+function TestProtocolHandler() {}
 TestProtocolHandler.prototype = {
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsIProtocolHandler) ||
-        iid.equals(Ci.nsISupports))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIProtocolHandler]),
   scheme: "moz-test",
   defaultPort: -1,
-  protocolFlags: Ci.nsIProtocolHandler.URI_NOAUTH |
-                 Ci.nsIProtocolHandler.URI_NORELATIVE |
-                 Ci.nsIProtocolHandler.ALLOWS_PROXY |
-                 Ci.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD,
-  newURI: function(spec, originCharset, baseURI) {
-    return Cc["@mozilla.org/network/simple-uri-mutator;1"]
-             .createInstance(Ci.nsIURIMutator)
-             .setSpec(spec)
-             .finalize();
-  },
-  newChannel: function(uri, aLoadInfo) {
+  protocolFlags:
+    Ci.nsIProtocolHandler.URI_NOAUTH |
+    Ci.nsIProtocolHandler.URI_NORELATIVE |
+    Ci.nsIProtocolHandler.ALLOWS_PROXY |
+    Ci.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD,
+  newChannel(uri, aLoadInfo) {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
-  allowPort: function(port, scheme) {
+  allowPort(port, scheme) {
     return true;
-  }
+  },
 };
 
-function TestProtocolHandlerFactory() {
-}
+function TestProtocolHandlerFactory() {}
 TestProtocolHandlerFactory.prototype = {
-  createInstance: function(delegate, iid) {
+  createInstance(delegate, iid) {
     return new TestProtocolHandler().QueryInterface(iid);
   },
-  lockFactory: function(lock) {
-  }
+  lockFactory(lock) {},
 };
 
 function register_test_protocol_handler() {
-  var reg = Components.manager.QueryInterface(
-      Ci.nsIComponentRegistrar);
-  reg.registerFactory(Components.ID("{4ea7dd3a-8cae-499c-9f18-e1de773ca25b}"),
-                      "TestProtocolHandler",
-                      "@mozilla.org/network/protocol;1?name=moz-test",
-                      new TestProtocolHandlerFactory());
+  var reg = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
+  reg.registerFactory(
+    Components.ID("{4ea7dd3a-8cae-499c-9f18-e1de773ca25b}"),
+    "TestProtocolHandler",
+    "@mozilla.org/network/protocol;1?name=moz-test",
+    new TestProtocolHandlerFactory()
+  );
 }
 
 function check_proxy(pi, type, host, port, flags, timeout, hasNext) {
@@ -75,14 +60,17 @@ function check_proxy(pi, type, host, port, flags, timeout, hasNext) {
   Assert.equal(pi.type, type);
   Assert.equal(pi.host, host);
   Assert.equal(pi.port, port);
-  if (flags != -1)
+  if (flags != -1) {
     Assert.equal(pi.flags, flags);
-  if (timeout != -1)
+  }
+  if (timeout != -1) {
     Assert.equal(pi.failoverTimeout, timeout);
-  if (hasNext)
+  }
+  if (hasNext) {
     Assert.notEqual(pi.failoverProxy, null);
-  else
+  } else {
     Assert.equal(pi.failoverProxy, null);
+  }
 }
 
 const SYNC = 0;
@@ -106,48 +94,48 @@ TestFilter.prototype = {
   _async: false,
   _throwing: false,
 
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsIProtocolProxyFilter) ||
-        iid.equals(Ci.nsISupports))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIProtocolProxyFilter]),
 
-  applyFilter: function(pps, uri, pi, cb) {
+  applyFilter(pps, uri, pi, cb) {
     if (this._result == THROW) {
       throw Cr.NS_ERROR_FAILURE;
     }
 
-    var pi_tail = pps.newProxyInfo(this._type, this._host, this._port,
-                                   this._flags, this._timeout, null);
-    if (pi)
+    var pi_tail = pps.newProxyInfo(
+      this._type,
+      this._host,
+      this._port,
+      "",
+      "",
+      this._flags,
+      this._timeout,
+      null
+    );
+    if (pi) {
       pi.failoverProxy = pi_tail;
-    else
+    } else {
       pi = pi_tail;
+    }
 
     if (this._result == ASYNC) {
-      executeSoon(() => { cb.onProxyFilterResult(pi) });
+      executeSoon(() => {
+        cb.onProxyFilterResult(pi);
+      });
     } else {
       cb.onProxyFilterResult(pi);
     }
-  }
+  },
 };
 
-function resolveCallback() { }
+function resolveCallback() {}
 resolveCallback.prototype = {
   nextFunction: null,
 
-  QueryInterface : function (iid) {
-    const interfaces = [Ci.nsIProtocolProxyCallback,
-                        Ci.nsISupports];
-    if (!interfaces.some( function(v) { return iid.equals(v) } ))
-      throw Cr.NS_ERROR_NO_INTERFACE;
-    return this;
-  },
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIProtocolProxyCallback]),
 
-  onProxyAvailable : function (req, channel, pi, status) {
+  onProxyAvailable(req, channel, pi, status) {
     this.nextFunction(pi);
-  }
+  },
 };
 
 // ==============================================================
@@ -166,7 +154,7 @@ function run_filter_test1() {
   cb.nextFunction = filter_test1_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -181,7 +169,7 @@ function filter_test1_1(pi) {
   cb.nextFunction = filter_test1_2;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -195,7 +183,7 @@ function filter_test1_2(pi) {
   cb.nextFunction = filter_test1_3;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -215,7 +203,7 @@ function run_filter2_sync_async() {
   cb.nextFunction = filter_test2_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -230,8 +218,7 @@ function filter_test2_1(pi) {
   run_filter3_async_sync();
 }
 
-function run_filter3_async_sync()
-{
+function run_filter3_async_sync() {
   filter1 = new TestFilter("http", "foo", 8080, 0, 10, ASYNC);
   filter2 = new TestFilter("http", "bar", 8090, 0, 10, SYNC);
   pps.registerFilter(filter1, 20);
@@ -241,7 +228,7 @@ function run_filter3_async_sync()
   cb.nextFunction = filter_test3_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -256,8 +243,7 @@ function filter_test3_1(pi) {
   run_filter4_throwing_sync_sync();
 }
 
-function run_filter4_throwing_sync_sync()
-{
+function run_filter4_throwing_sync_sync() {
   filter1 = new TestFilter("", "", 0, 0, 0, THROW);
   filter2 = new TestFilter("http", "foo", 8080, 0, 10, SYNC);
   filter3 = new TestFilter("http", "bar", 8090, 0, 10, SYNC);
@@ -269,7 +255,7 @@ function run_filter4_throwing_sync_sync()
   cb.nextFunction = filter_test4_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla2.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -285,8 +271,7 @@ function filter_test4_1(pi) {
   run_filter5_sync_sync_throwing();
 }
 
-function run_filter5_sync_sync_throwing()
-{
+function run_filter5_sync_sync_throwing() {
   filter1 = new TestFilter("http", "foo", 8080, 0, 10, SYNC);
   filter2 = new TestFilter("http", "bar", 8090, 0, 10, SYNC);
   filter3 = new TestFilter("", "", 0, 0, 0, THROW);
@@ -298,7 +283,7 @@ function run_filter5_sync_sync_throwing()
   cb.nextFunction = filter_test5_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -314,8 +299,7 @@ function filter_test5_1(pi) {
   run_filter5_2_throwing_async_async();
 }
 
-function run_filter5_2_throwing_async_async()
-{
+function run_filter5_2_throwing_async_async() {
   filter1 = new TestFilter("", "", 0, 0, 0, THROW);
   filter2 = new TestFilter("http", "foo", 8080, 0, 10, ASYNC);
   filter3 = new TestFilter("http", "bar", 8090, 0, 10, ASYNC);
@@ -327,7 +311,7 @@ function run_filter5_2_throwing_async_async()
   cb.nextFunction = filter_test5_2;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -343,8 +327,7 @@ function filter_test5_2(pi) {
   run_filter6_async_async_throwing();
 }
 
-function run_filter6_async_async_throwing()
-{
+function run_filter6_async_async_throwing() {
   filter1 = new TestFilter("http", "foo", 8080, 0, 10, ASYNC);
   filter2 = new TestFilter("http", "bar", 8090, 0, 10, ASYNC);
   filter3 = new TestFilter("", "", 0, 0, 0, THROW);
@@ -356,7 +339,7 @@ function run_filter6_async_async_throwing()
   cb.nextFunction = filter_test6_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -372,8 +355,7 @@ function filter_test6_1(pi) {
   run_filter7_async_throwing_async();
 }
 
-function run_filter7_async_throwing_async()
-{
+function run_filter7_async_throwing_async() {
   filter1 = new TestFilter("http", "foo", 8080, 0, 10, ASYNC);
   filter2 = new TestFilter("", "", 0, 0, 0, THROW);
   filter3 = new TestFilter("http", "bar", 8090, 0, 10, ASYNC);
@@ -385,7 +367,7 @@ function run_filter7_async_throwing_async()
   cb.nextFunction = filter_test7_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -401,8 +383,7 @@ function filter_test7_1(pi) {
   run_filter8_sync_throwing_sync();
 }
 
-function run_filter8_sync_throwing_sync()
-{
+function run_filter8_sync_throwing_sync() {
   filter1 = new TestFilter("http", "foo", 8080, 0, 10, SYNC);
   filter2 = new TestFilter("", "", 0, 0, 0, THROW);
   filter3 = new TestFilter("http", "bar", 8090, 0, 10, SYNC);
@@ -414,7 +395,7 @@ function run_filter8_sync_throwing_sync()
   cb.nextFunction = filter_test8_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
@@ -430,8 +411,7 @@ function filter_test8_1(pi) {
   run_filter9_throwing();
 }
 
-function run_filter9_throwing()
-{
+function run_filter9_throwing() {
   filter1 = new TestFilter("", "", 0, 0, 0, THROW);
   pps.registerFilter(filter1, 20);
 
@@ -439,13 +419,12 @@ function run_filter9_throwing()
   cb.nextFunction = filter_test9_1;
   var channel = NetUtil.newChannel({
     uri: "http://www.mozilla.org/",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
   var req = pps.asyncResolve(channel, 0, cb);
 }
 
-function filter_test9_1(pi)
-{
+function filter_test9_1(pi) {
   Assert.equal(pi, null);
   do_test_finished();
 }

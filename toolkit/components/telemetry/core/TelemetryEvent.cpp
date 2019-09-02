@@ -320,12 +320,12 @@ unsigned int GetDataset(const StaticMutexAutoLock& lock,
   }
 
   if (!gDynamicEventInfo) {
-    return nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN;
+    return nsITelemetry::DATASET_PRERELEASE_CHANNELS;
   }
 
   return (*gDynamicEventInfo)[eventKey.id].recordOnRelease
-             ? nsITelemetry::DATASET_RELEASE_CHANNEL_OPTOUT
-             : nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN;
+             ? nsITelemetry::DATASET_ALL_CHANNELS
+             : nsITelemetry::DATASET_PRERELEASE_CHANNELS;
 }
 
 nsCString GetCategory(const StaticMutexAutoLock& lock,
@@ -586,7 +586,7 @@ nsresult SerializeEventsArray(const EventRecordArray& events, JSContext* cx,
     // [timestamp, category, method, object, value]
     // [timestamp, category, method, object, null, extra]
     // [timestamp, category, method, object, value, extra]
-    JS::AutoValueVector items(cx);
+    JS::RootedVector<JS::Value> items(cx);
 
     // Add timestamp.
     JS::Rooted<JS::Value> val(cx);
@@ -912,7 +912,7 @@ nsresult TelemetryEvent::RecordEvent(const nsACString& aCategory,
                           PromiseFlatCString(aCategory).get(),
                           PromiseFlatCString(aMethod).get(),
                           PromiseFlatCString(aObject).get());
-      return NS_ERROR_INVALID_ARG;
+      return NS_OK;
     }
     case RecordEventResult::InvalidExtraKey: {
       nsPrintfCString msg(R"(Invalid extra key for event ["%s", "%s", "%s"].)",
@@ -1344,7 +1344,10 @@ void TelemetryEvent::SetEventRecordingEnabled(const nsACString& category,
   if (!gCategoryNames.Contains(category)) {
     LogToBrowserConsole(
         nsIScriptError::warningFlag,
-        NS_LITERAL_STRING("Unkown category for SetEventRecordingEnabled."));
+        NS_ConvertUTF8toUTF16(
+            NS_LITERAL_CSTRING(
+                "Unknown category for SetEventRecordingEnabled: ") +
+            category));
     return;
   }
 

@@ -61,6 +61,7 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mCORSMode(imgIRequest::CORS_NONE),
       mReferrerPolicy(mozilla::net::RP_Unset),
       mImageErrorCode(NS_OK),
+      mImageAvailable(false),
       mMutex("imgRequest"),
       mProgressTracker(new ProgressTracker()),
       mIsMultiPartChannel(false),
@@ -468,7 +469,7 @@ void imgRequest::AdjustPriorityInternal(int32_t aDelta) {
 }
 
 void imgRequest::BoostPriority(uint32_t aCategory) {
-  if (!gfxPrefs::ImageLayoutNetworkPriority()) {
+  if (!StaticPrefs::image_layout_network_priority()) {
     return;
   }
 
@@ -486,6 +487,10 @@ void imgRequest::BoostPriority(uint32_t aCategory) {
   int32_t delta = 0;
 
   if (newRequestedCategory & imgIRequest::CATEGORY_FRAME_INIT) {
+    --delta;
+  }
+
+  if (newRequestedCategory & imgIRequest::CATEGORY_FRAME_STYLE) {
     --delta;
   }
 
@@ -974,6 +979,7 @@ void imgRequest::FinishPreparingForNewPart(const NewPartResult& aResult) {
 
   if (aResult.mIsFirstPart) {
     // Notify listeners that we have an image.
+    mImageAvailable = true;
     RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
     progressTracker->OnImageAvailable();
     MOZ_ASSERT(progressTracker->HasImage());
@@ -987,6 +993,8 @@ void imgRequest::FinishPreparingForNewPart(const NewPartResult& aResult) {
     aResult.mImage->StartDecoding(imgIContainer::FLAG_NONE);
   }
 }
+
+bool imgRequest::ImageAvailable() const { return mImageAvailable; }
 
 NS_IMETHODIMP
 imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
@@ -1048,7 +1056,8 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
       } else {
         nsCOMPtr<nsIRunnable> runnable =
             new FinishPreparingForNewPartRunnable(this, std::move(result));
-        eventTarget->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
+        eventTarget->Dispatch(CreateMediumHighRunnable(runnable.forget()),
+                              NS_DISPATCH_NORMAL);
       }
     }
 

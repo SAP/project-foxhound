@@ -100,7 +100,7 @@ bool AbstractGeneratorObject::suspend(JSContext* cx, HandleObject obj,
 
 void AbstractGeneratorObject::finalSuspend(HandleObject obj) {
   auto* genObj = &obj->as<AbstractGeneratorObject>();
-  MOZ_ASSERT(genObj->isRunning() || genObj->isClosing());
+  MOZ_ASSERT(genObj->isRunning());
   genObj->setClosed();
 }
 
@@ -137,18 +137,19 @@ void js::SetGeneratorClosed(JSContext* cx, AbstractFramePtr frame) {
 
 bool js::GeneratorThrowOrReturn(JSContext* cx, AbstractFramePtr frame,
                                 Handle<AbstractGeneratorObject*> genObj,
-                                HandleValue arg, uint32_t resumeKind) {
-  if (resumeKind == AbstractGeneratorObject::THROW) {
-    cx->setPendingException(arg);
+                                HandleValue arg,
+                                GeneratorResumeKind resumeKind) {
+  MOZ_ASSERT(genObj->isRunning());
+  if (resumeKind == GeneratorResumeKind::Throw) {
+    cx->setPendingExceptionAndCaptureStack(arg);
   } else {
-    MOZ_ASSERT(resumeKind == AbstractGeneratorObject::RETURN);
+    MOZ_ASSERT(resumeKind == GeneratorResumeKind::Return);
 
-    MOZ_ASSERT(arg.isObject());
+    MOZ_ASSERT_IF(genObj->is<GeneratorObject>(), arg.isObject());
     frame.setReturnValue(arg);
 
     RootedValue closing(cx, MagicValue(JS_GENERATOR_CLOSING));
-    cx->setPendingException(closing);
-    genObj->setClosing();
+    cx->setPendingException(closing, nullptr);
   }
   return false;
 }
@@ -273,12 +274,12 @@ bool GlobalObject::initGenerators(JSContext* cx, Handle<GlobalObject*> global) {
     return false;
   }
 
-  RootedValue function(cx, global->getConstructor(JSProto_Function));
-  if (!function.toObjectOrNull()) {
+  RootedObject proto(
+      cx, GlobalObject::getOrCreateFunctionConstructor(cx, cx->global()));
+  if (!proto) {
     return false;
   }
-  RootedObject proto(cx, &function.toObject());
-  RootedAtom name(cx, cx->names().GeneratorFunction);
+  HandlePropertyName name = cx->names().GeneratorFunction;
   RootedObject genFunction(
       cx, NewFunctionWithProto(cx, Generator, 1, JSFunction::NATIVE_CTOR,
                                nullptr, name, proto, gc::AllocKind::FUNCTION,
@@ -308,14 +309,14 @@ bool AbstractGeneratorObject::isAfterAwait() {
 }
 
 bool AbstractGeneratorObject::isAfterYieldOrAwait(JSOp op) {
-  if (isClosed() || isClosing() || isRunning()) {
+  if (isClosed() || isRunning()) {
     return false;
   }
 
   JSScript* script = callee().nonLazyScript();
   jsbytecode* code = script->code();
   uint32_t nextOffset = script->resumeOffsets()[resumeIndex()];
-  if (code[nextOffset] != JSOP_DEBUGAFTERYIELD) {
+  if (code[nextOffset] != JSOP_AFTERYIELD) {
     return false;
   }
 

@@ -10,6 +10,7 @@
 #include "vm/JSContext.h"
 
 #include "builtin/Object.h"
+#include "gc/Zone.h"
 #include "jit/JitFrames.h"
 #include "proxy/Proxy.h"
 #include "vm/BigIntType.h"
@@ -302,7 +303,8 @@ inline void JSContext::minorGC(JS::GCReason reason) {
   runtime()->gc.minorGC(reason);
 }
 
-inline void JSContext::setPendingException(JS::HandleValue v) {
+inline void JSContext::setPendingException(JS::HandleValue v,
+                                           js::HandleSavedFrame stack) {
 #if defined(NIGHTLY_BUILD)
   do {
     // Do not intercept exceptions if we are already
@@ -335,6 +337,7 @@ inline void JSContext::setPendingException(JS::HandleValue v) {
   this->overRecursed_ = false;
   this->throwing = true;
   this->unwrappedException() = v;
+  this->unwrappedExceptionStack() = stack;
   check(v);
 }
 
@@ -369,7 +372,7 @@ inline void JSContext::setZone(js::Zone* zone,
     return;
   }
 
-  if (isAtomsZone == AtomsZone && helperThread()) {
+  if (isAtomsZone == AtomsZone && isHelperThreadContext()) {
     MOZ_ASSERT(!zone_->wasGCStarted());
     freeLists_ = atomsZoneFreeLists_;
   } else {

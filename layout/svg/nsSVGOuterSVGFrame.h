@@ -16,6 +16,10 @@
 class gfxContext;
 class nsSVGForeignObjectFrame;
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
 ////////////////////////////////////////////////////////////////////////
 // nsSVGOuterSVGFrame class
 
@@ -23,8 +27,8 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
                                  public nsISVGSVGFrame {
   typedef mozilla::image::imgDrawingParams imgDrawingParams;
 
-  friend nsContainerFrame* NS_NewSVGOuterSVGFrame(nsIPresShell* aPresShell,
-                                                  ComputedStyle* aStyle);
+  friend nsContainerFrame* NS_NewSVGOuterSVGFrame(
+      mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
 
  protected:
   explicit nsSVGOuterSVGFrame(ComputedStyle* aStyle,
@@ -46,7 +50,7 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
   virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
   virtual mozilla::IntrinsicSize GetIntrinsicSize() override;
-  virtual nsSize GetIntrinsicRatio() override;
+  virtual mozilla::AspectRatio GetIntrinsicRatio() override;
 
   virtual mozilla::LogicalSize ComputeSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
@@ -71,7 +75,8 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
 
   bool IsFrameOfType(uint32_t aFlags) const override {
     return nsSVGDisplayContainerFrame::IsFrameOfType(
-        aFlags & ~eSupportsContainLayoutAndPaint);
+        aFlags &
+        ~(eSupportsContainLayoutAndPaint | eReplaced | eReplacedSizing));
   }
 
 #ifdef DEBUG_FRAME_DUMP
@@ -186,6 +191,11 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
 
   bool mViewportInitialized;
   bool mIsRootContent;
+
+ private:
+  template <typename... Args>
+  bool IsContainingWindowElementOfType(nsIFrame** aContainingWindowFrame,
+                                       Args... aArgs) const;
 };
 
 ////////////////////////////////////////////////////////////////////////
@@ -216,7 +226,7 @@ class nsSVGOuterSVGFrame final : public nsSVGDisplayContainerFrame,
  */
 class nsSVGOuterSVGAnonChildFrame final : public nsSVGDisplayContainerFrame {
   friend nsContainerFrame* NS_NewSVGOuterSVGAnonChildFrame(
-      nsIPresShell* aPresShell, ComputedStyle* aStyle);
+      mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
 
   explicit nsSVGOuterSVGAnonChildFrame(ComputedStyle* aStyle,
                                        nsPresContext* aPresContext)

@@ -7,8 +7,8 @@
 #ifndef jstaint_h
 #define jstaint_h
 
-#include "Taint.h"
 #include "jsapi.h"
+#include "Taint.h"
 
 //
 // Taint related helper functions.

@@ -6,10 +6,19 @@
 
 var EXPORTED_SYMBOLS = ["MainProcessTarget"];
 
-const {Connection} = ChromeUtils.import("chrome://remote/content/Connection.jsm");
-const {Session} = ChromeUtils.import("chrome://remote/content/sessions/Session.jsm");
-const {WebSocketDebuggerTransport} = ChromeUtils.import("chrome://remote/content/server/WebSocketTransport.jsm");
-const {WebSocketServer} = ChromeUtils.import("chrome://remote/content/server/WebSocket.jsm");
+const { Target } = ChromeUtils.import(
+  "chrome://remote/content/targets/Target.jsm"
+);
+const { Session } = ChromeUtils.import(
+  "chrome://remote/content/sessions/Session.jsm"
+);
+const { RemoteAgent } = ChromeUtils.import(
+  "chrome://remote/content/RemoteAgent.jsm"
+);
+
+const UUIDGen = Cc["@mozilla.org/uuid-generator;1"].getService(
+  Ci.nsIUUIDGenerator
+);
 
 /**
  * The main process Target.
@@ -17,22 +26,25 @@ const {WebSocketServer} = ChromeUtils.import("chrome://remote/content/server/Web
  * Matches BrowserDevToolsAgentHost from chromium, and only support a couple of Domains:
  * https://cs.chromium.org/chromium/src/content/browser/devtools/browser_devtools_agent_host.cc?dr=CSs&g=0&l=80-91
  */
-class MainProcessTarget {
-  /**
+class MainProcessTarget extends Target {
+  /*
    * @param Targets targets
    */
   constructor(targets) {
-    this.targets = targets;
-    this.sessions = new Map();
+    super(targets, Session);
 
-    this.type = "main-process";
+    this.type = "browser";
+    this.id = UUIDGen.generateUUID()
+      .toString()
+      .slice(1, -1);
+
+    // Define the HTTP path to query this target
+    this.path = `/devtools/browser/${this.id}`;
   }
 
   get wsDebuggerURL() {
-    const RemoteAgent = Cc["@mozilla.org/remote/agent"]
-        .getService(Ci.nsISupports).wrappedJSObject;
-    const {host, port} = RemoteAgent;
-    return `ws://${host}:${port}/devtools/page/${this.id}`;
+    const { host, port } = RemoteAgent;
+    return `ws://${host}:${port}${this.path}`;
   }
 
   toString() {
@@ -44,28 +56,11 @@ class MainProcessTarget {
       description: "Main process target",
       devtoolsFrontendUrl: "",
       faviconUrl: "",
-      id: "main-process",
+      id: this.id,
       title: "Main process target",
       type: this.type,
       url: "",
       webSocketDebuggerUrl: this.wsDebuggerURL,
     };
-  }
-
-  // nsIHttpRequestHandler
-
-  async handle(request, response) {
-    const so = await WebSocketServer.upgrade(request, response);
-    const transport = new WebSocketDebuggerTransport(so);
-    const conn = new Connection(transport);
-    this.sessions.set(conn, new Session(conn, this));
-  }
-
-  // XPCOM
-
-  get QueryInterface() {
-    return ChromeUtils.generateQI([
-      Ci.nsIHttpRequestHandler,
-    ]);
   }
 }

@@ -152,20 +152,6 @@ nsresult StartupCache::Init() {
       return rv;
     }
 
-    nsCOMPtr<nsIFile> profDir;
-    NS_GetSpecialDirectory("ProfDS", getter_AddRefs(profDir));
-    if (profDir) {
-      bool same;
-      if (NS_SUCCEEDED(profDir->Equals(file, &same)) && !same) {
-        // We no longer store the startup cache in the main profile
-        // directory, so we should cleanup the old one.
-        if (NS_SUCCEEDED(
-                profDir->AppendNative(NS_LITERAL_CSTRING("startupCache")))) {
-          profDir->Remove(true);
-        }
-      }
-    }
-
     rv = file->AppendNative(NS_LITERAL_CSTRING("startupCache"));
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -218,13 +204,13 @@ nsresult StartupCache::Init() {
 nsresult StartupCache::LoadArchive() {
   if (gIgnoreDiskCache) return NS_ERROR_FAILURE;
 
-  bool exists;
-  mArchive = nullptr;
-  nsresult rv = mFile->Exists(&exists);
-  if (NS_FAILED(rv) || !exists) return NS_ERROR_FILE_NOT_FOUND;
-
   mArchive = new nsZipArchive();
-  rv = mArchive->OpenArchive(mFile);
+  nsresult rv = mArchive->OpenArchive(mFile);
+
+  if (NS_FAILED(rv)) {
+    mArchive = nullptr;
+  }
+
   return rv;
 }
 

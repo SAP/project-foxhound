@@ -16,8 +16,8 @@ const defaultPlugins = [
 ];
 
 function transform(filePath) {
-// Use the extra plugins only for the debugger
-  const plugins = filePath.includes("devtools/client/debugger/new")
+  // Use the extra plugins only for the debugger
+  const plugins = filePath.includes("devtools/client/debugger")
     ? require("./build-debugger")(filePath)
     : defaultPlugins;
 
@@ -27,10 +27,7 @@ function transform(filePath) {
   return out.code;
 }
 
-const deps = [
-  __filename,
-  _path.resolve(__dirname, "babel.js"),
-];
+const deps = [__filename, _path.resolve(__dirname, "babel.js")];
 
 for (let i = 2; i < process.argv.length; i++) {
   const srcPath = process.argv[i];

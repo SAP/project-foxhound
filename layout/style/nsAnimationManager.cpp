@@ -20,13 +20,12 @@
 #include "mozilla/dom/KeyframeEffect.h"
 
 #include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "nsStyleChangeList.h"
 #include "nsLayoutUtils.h"
 #include "nsIFrame.h"
 #include "mozilla/dom/Document.h"
 #include "nsDOMMutationObserver.h"
-#include "nsIPresShell.h"
-#include "nsIPresShellInlines.h"
 #include "nsRFPService.h"
 #include <algorithm>  // std::stable_sort
 #include <math.h>
@@ -607,6 +606,6 @@ void nsAnimationManager::DoUpdateAnimations(
   // Cancel removed animations
   for (size_t newAnimIdx = newAnimations.Length(); newAnimIdx-- != 0;) {
     aBuilder.NotifyNewOrRemovedAnimation(*newAnimations[newAnimIdx]);
-    newAnimations[newAnimIdx]->CancelFromStyle();
+    newAnimations[newAnimIdx]->CancelFromStyle(PostRestyleMode::IfNeeded);
   }
 }

@@ -28,27 +28,21 @@
   padding-inline-start: 14px;
 }
 
-.search-box > .textbox-input-box:-moz-locale-dir(rtl) {
+.search-box > .textbox-input-box:dir(rtl) {
   background-position: right center;
 }
 
 .textbox-search-clear {
-  width: 16px;
-  height: 16px;
-  background-image: url(chrome://global/skin/icons/Search-close.png);
+  width: 12px;
+  height: 12px;
+  background-image: url(chrome://global/skin/icons/searchfield-cancel.svg);
   background-repeat: no-repeat;
+  background-size: 12px 12px;
+  margin-top: 2px;
 }
 
 .textbox-search-clear:not([disabled]) {
   cursor: default;
-}
-
-.textbox-search-clear:not([disabled]):hover {
-  background-position: -16px 0;
-}
-
-.textbox-search-clear:not([disabled]):hover:active {
-  background-position: -32px 0;
 }
 
 .client .item.tab > .item-title-container {

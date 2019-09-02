@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=970964
 -->
 <head>
   <title>Test for Bug 970964</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -72,7 +72,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
   return windowUtils.sendTouchEvent(aType,
                                     ids, xs, ys, rxs, rys,
                                     rotations, forces,
-                                    ids.length, aModifiers, 0);
+                                    aModifiers, 0);
 }
 
 function getDefaultArgEvent(eventname) {

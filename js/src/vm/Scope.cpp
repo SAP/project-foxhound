@@ -13,12 +13,12 @@
 
 #include "builtin/ModuleObject.h"
 #include "gc/Allocator.h"
-#include "gc/FreeOp.h"
 #include "util/StringBuffer.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/JSScript.h"
 #include "wasm/WasmInstance.h"
 
+#include "gc/FreeOp-inl.h"
 #include "gc/ObjectKind-inl.h"
 #include "vm/Shape-inl.h"
 
@@ -141,6 +141,11 @@ static Shape* CreateEnvironmentShape(JSContext* cx, BindingIter& bi,
   return shape;
 }
 
+template <class Data>
+inline size_t SizeOfAllocatedData(Data* data) {
+  return SizeOfData<Data>(data->length);
+}
+
 template <typename ConcreteScope>
 static UniquePtr<typename ConcreteScope::Data> CopyScopeData(
     JSContext* cx, typename ConcreteScope::Data* data) {
@@ -154,7 +159,7 @@ static UniquePtr<typename ConcreteScope::Data> CopyScopeData(
     }
   }
 
-  size_t size = SizeOfData<typename ConcreteScope::Data>(data->length);
+  size_t size = SizeOfAllocatedData(data);
   void* bytes = cx->pod_malloc<char>(size);
   if (!bytes) {
     return nullptr;
@@ -334,6 +339,10 @@ template <typename ConcreteScope>
 inline void Scope::initData(
     MutableHandle<UniquePtr<typename ConcreteScope::Data>> data) {
   MOZ_ASSERT(!data_);
+
+  AddCellMemory(this, SizeOfAllocatedData(data.get().get()),
+                MemoryUse::ScopeData);
+
   data_ = data.get().release();
 }
 
@@ -453,12 +462,10 @@ Scope* Scope::clone(JSContext* cx, HandleScope scope, HandleScope enclosing) {
 
 void Scope::finalize(FreeOp* fop) {
   MOZ_ASSERT(CurrentThreadIsGCSweeping());
-  if (data_) {
-    // We don't need to call the destructors for any GCPtrs in Data because
-    // this only happens during a GC.
-    fop->free_(data_);
-    data_ = nullptr;
-  }
+  applyScopeDataTyped([this, fop](auto data) {
+    fop->delete_(this, data, SizeOfAllocatedData(data), MemoryUse::ScopeData);
+  });
+  data_ = nullptr;
 }
 
 size_t Scope::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
@@ -648,10 +655,6 @@ static inline uint32_t FunctionScopeEnvShapeFlags(bool hasParameterExprs) {
   return BaseShape::QUALIFIED_VAROBJ | BaseShape::DELEGATE;
 }
 
-Zone* FunctionScope::Data::zone() const {
-  return canonicalFunction ? canonicalFunction->zone() : nullptr;
-}
-
 /* static */
 FunctionScope* FunctionScope::create(JSContext* cx, Handle<Data*> dataArg,
                                      bool hasParameterExprs,
@@ -666,14 +669,17 @@ FunctionScope* FunctionScope::create(JSContext* cx, Handle<Data*> dataArg,
     return nullptr;
   }
 
-  return createWithData(cx, &data, hasParameterExprs, needsEnvironment, fun,
-                        enclosing);
+  return createWithData(
+      cx, &data, hasParameterExprs,
+      dataArg ? dataArg->isFieldInitializer : IsFieldInitializer::No,
+      needsEnvironment, fun, enclosing);
 }
 
 /* static */
 FunctionScope* FunctionScope::createWithData(
     JSContext* cx, MutableHandle<UniquePtr<Data>> data, bool hasParameterExprs,
-    bool needsEnvironment, HandleFunction fun, HandleScope enclosing) {
+    IsFieldInitializer isFieldInitializer, bool needsEnvironment,
+    HandleFunction fun, HandleScope enclosing) {
   MOZ_ASSERT(data);
   MOZ_ASSERT(fun->isTenured());
 
@@ -689,6 +695,7 @@ FunctionScope* FunctionScope::createWithData(
     return nullptr;
   }
 
+  data->isFieldInitializer = isFieldInitializer;
   data->hasParameterExprs = hasParameterExprs;
   data->canonicalFunction.init(fun);
 
@@ -773,14 +780,18 @@ XDRResult FunctionScope::XDR(XDRState<mode>* xdr, HandleFunction fun,
 
     uint8_t needsEnvironment;
     uint8_t hasParameterExprs;
+    uint8_t isFieldInitializer;
     uint32_t nextFrameSlot;
     if (mode == XDR_ENCODE) {
       needsEnvironment = scope->hasEnvironment();
       hasParameterExprs = data->hasParameterExprs;
+      isFieldInitializer =
+          (data->isFieldInitializer == IsFieldInitializer::Yes ? 1 : 0);
       nextFrameSlot = data->nextFrameSlot;
     }
     MOZ_TRY(xdr->codeUint8(&needsEnvironment));
     MOZ_TRY(xdr->codeUint8(&hasParameterExprs));
+    MOZ_TRY(xdr->codeUint8(&isFieldInitializer));
     MOZ_TRY(xdr->codeUint16(&data->nonPositionalFormalStart));
     MOZ_TRY(xdr->codeUint16(&data->varStart));
     MOZ_TRY(xdr->codeUint32(&nextFrameSlot));
@@ -792,8 +803,10 @@ XDRResult FunctionScope::XDR(XDRState<mode>* xdr, HandleFunction fun,
         MOZ_ASSERT(!data->nextFrameSlot);
       }
 
-      scope.set(createWithData(cx, &uniqueData.ref(), hasParameterExprs,
-                               needsEnvironment, fun, enclosing));
+      scope.set(createWithData(
+          cx, &uniqueData.ref(), hasParameterExprs,
+          isFieldInitializer ? IsFieldInitializer::Yes : IsFieldInitializer::No,
+          needsEnvironment, fun, enclosing));
       if (!scope) {
         return xdr->fail(JS::TranscodeResult_Throw);
       }

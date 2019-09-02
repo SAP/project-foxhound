@@ -54,6 +54,24 @@ static const char* ToReadyStateStr(const TextTrackReadyState aState) {
   return "Unknown";
 }
 
+static const char* ToTextTrackKindStr(const TextTrackKind aKind) {
+  switch (aKind) {
+    case TextTrackKind::Subtitles:
+      return "Subtitles";
+    case TextTrackKind::Captions:
+      return "Captions";
+    case TextTrackKind::Descriptions:
+      return "Descriptions";
+    case TextTrackKind::Chapters:
+      return "Chapters";
+    case TextTrackKind::Metadata:
+      return "Metadata";
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid kind.");
+  }
+  return "Unknown";
+}
+
 NS_IMPL_CYCLE_COLLECTION_INHERITED(TextTrack, DOMEventTargetHelper, mCueList,
                                    mActiveCueList, mTextTrackList,
                                    mTrackElement)
@@ -112,7 +130,8 @@ void TextTrack::SetMode(TextTrackMode aValue) {
   if (mMode == aValue) {
     return;
   }
-  WEBVTT_LOG("Set mode=%s", ToStateStr(aValue));
+  WEBVTT_LOG("Set mode=%s for track kind %s", ToStateStr(aValue),
+             ToTextTrackKindStr(mKind));
   mMode = aValue;
 
   HTMLMediaElement* mediaElement = GetMediaElement();
@@ -129,6 +148,12 @@ void TextTrack::SetMode(TextTrackMode aValue) {
   if (mediaElement) {
     mediaElement->NotifyTextTrackModeChanged();
   }
+  // https://html.spec.whatwg.org/multipage/media.html#sourcing-out-of-band-text-tracks:start-the-track-processing-model
+  // Run the `start-the-track-processing-model` to track's corresponding track
+  // element whenever track's mode changes.
+  if (mTrackElement) {
+    mTrackElement->MaybeDispatchLoadResource();
+  }
   // Ensure the TimeMarchesOn is called in case that the mCueList
   // is empty.
   NotifyCueUpdated(nullptr);
@@ -143,7 +168,7 @@ void TextTrack::GetId(nsAString& aId) const {
 }
 
 void TextTrack::AddCue(TextTrackCue& aCue) {
-  WEBVTT_LOG("AddCue %p", &aCue);
+  WEBVTT_LOG("AddCue %p [%f:%f]", &aCue, aCue.StartTime(), aCue.EndTime());
   TextTrack* oldTextTrack = aCue.GetTrack();
   if (oldTextTrack) {
     ErrorResult dummy;
@@ -169,6 +194,14 @@ void TextTrack::RemoveCue(TextTrackCue& aCue, ErrorResult& aRv) {
   HTMLMediaElement* mediaElement = GetMediaElement();
   if (mediaElement) {
     mediaElement->NotifyCueRemoved(aCue);
+  }
+}
+
+void TextTrack::ClearAllCues() {
+  WEBVTT_LOG("ClearAllCues");
+  ErrorResult dummy;
+  while (!mCueList->IsEmpty()) {
+    RemoveCue(*(*mCueList)[0], dummy);
   }
 }
 
@@ -222,7 +255,10 @@ void TextTrack::SetTrackElement(HTMLTrackElement* aTrackElement) {
   mTrackElement = aTrackElement;
 }
 
-void TextTrack::SetCuesInactive() { mCueList->SetCuesInactive(); }
+void TextTrack::SetCuesInactive() {
+  WEBVTT_LOG("SetCuesInactive");
+  mCueList->SetCuesInactive();
+}
 
 void TextTrack::NotifyCueUpdated(TextTrackCue* aCue) {
   WEBVTT_LOG("NotifyCueUpdated, cue=%p", aCue);
@@ -313,16 +349,25 @@ void TextTrack::GetCurrentCuesAndOtherCues(
   const double playbackTime = mediaElement->CurrentTime();
   for (uint32_t idx = 0; idx < mCueList->Length(); idx++) {
     TextTrackCue* cue = (*mCueList)[idx];
+    WEBVTT_LOG("cue %p [%f:%f], playbackTime=%f", cue, cue->StartTime(),
+               cue->EndTime(), playbackTime);
     if (cue->StartTime() <= playbackTime && cue->EndTime() > playbackTime) {
       WEBVTT_LOG("Add cue %p [%f:%f] to current cue list", cue,
                  cue->StartTime(), cue->EndTime());
       aCurrentCues->AddCue(*cue);
     } else {
-      // Negative length cue, which is possible because user can set cue's end
-      // time arbitrary.
+      // As the spec didn't have a restriction for the negative duration, it
+      // does happen sometime if user sets it explictly. It would be treated as
+      // a `missing cue` later in the `TimeMarchesOn` but it won't be displayed.
       if (cue->EndTime() < cue->StartTime()) {
-        WEBVTT_LOG("[BAD TIME] skip cue %p [%f:%f] with negative length",
-                   cue, cue->StartTime(), cue->EndTime());
+        // Add cue into `otherCue` only when its start time is contained by the
+        // current time interval.
+        if (aInterval.Contains(
+                media::TimeUnit::FromSeconds(cue->StartTime()))) {
+          WEBVTT_LOG("[Negative duration] Add cue %p [%f:%f] to other cue list",
+                     cue, cue->StartTime(), cue->EndTime());
+          aOtherCues->AddCue(*cue);
+        }
         continue;
       }
       media::TimeInterval cueInterval(

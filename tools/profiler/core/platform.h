@@ -31,33 +31,15 @@
 
 #include "PlatformMacros.h"
 
+#include "GeckoProfiler.h"
+
 #include "mozilla/Logging.h"
 #include "mozilla/UniquePtr.h"
-#include "nsStringFwd.h"
-#include "nsTArray.h"
+#include "mozilla/Vector.h"
+#include "nsString.h"
 
 #include <functional>
 #include <stdint.h>
-
-// We need a definition of gettid(), but old glibc versions don't provide a
-// wrapper for it.
-#if defined(__GLIBC__)
-#  include <unistd.h>
-#  include <sys/syscall.h>
-#  define gettid() static_cast<pid_t>(syscall(SYS_gettid))
-#elif defined(GP_OS_darwin)
-#  include <unistd.h>
-#  include <sys/syscall.h>
-#  define gettid() static_cast<pid_t>(syscall(SYS_thread_selfid))
-#elif defined(GP_OS_android)
-#  include <unistd.h>
-#elif defined(GP_OS_windows)
-#  include <windows.h>
-#  include <process.h>
-#  ifndef getpid
-#    define getpid _getpid
-#  endif
-#endif
 
 extern mozilla::LazyLogModule gProfilerLog;
 
@@ -66,28 +48,16 @@ extern mozilla::LazyLogModule gProfilerLog;
 #define LOG_TEST MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Info)
 #define LOG(arg, ...)                            \
   MOZ_LOG(gProfilerLog, mozilla::LogLevel::Info, \
-          ("[%d] " arg, getpid(), ##__VA_ARGS__))
+          ("[%d] " arg, profiler_current_process_id(), ##__VA_ARGS__))
 
 // These are for MOZ_LOG="prof:4" or higher. It should be used for logging that
 // is somewhat more verbose than LOG.
 #define DEBUG_LOG_TEST MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Debug)
 #define DEBUG_LOG(arg, ...)                       \
   MOZ_LOG(gProfilerLog, mozilla::LogLevel::Debug, \
-          ("[%d] " arg, getpid(), ##__VA_ARGS__))
+          ("[%d] " arg, profiler_current_process_id(), ##__VA_ARGS__))
 
 typedef uint8_t* Address;
-
-// ----------------------------------------------------------------------------
-// Thread
-//
-// This class has static methods for the different platform specific
-// functions. Add methods here to cope with differences between the
-// supported platforms.
-
-class Thread {
- public:
-  static int GetCurrentId();
-};
 
 // ----------------------------------------------------------------------------
 // Miscellaneous
@@ -111,17 +81,19 @@ void AppendSharedLibraries(mozilla::JSONWriter& aWriter);
 
 // Convert the array of strings to a bitfield.
 uint32_t ParseFeaturesFromStringArray(const char** aFeatures,
-                                      uint32_t aFeatureCount);
+                                      uint32_t aFeatureCount,
+                                      bool aIsStartup = false);
 
 void profiler_get_profile_json_into_lazily_allocated_buffer(
     const std::function<char*(size_t)>& aAllocator, double aSinceTime,
     bool aIsShuttingDown);
 
-// Flags to conveniently track various JS features.
-enum class JSSamplingFlags {
+// Flags to conveniently track various JS instrumentations.
+enum class JSInstrumentationFlags {
   StackSampling = 0x1,
   TrackOptimizations = 0x2,
-  TraceLogging = 0x4
+  TraceLogging = 0x4,
+  Allocations = 0x8
 };
 
 // Record an exit profile from a child process.
@@ -129,6 +101,6 @@ void profiler_received_exit_profile(const nsCString& aExitProfile);
 
 // Extract all received exit profiles that have not yet expired (i.e., they
 // still intersect with this process' buffer range).
-nsTArray<nsCString> profiler_move_exit_profiles();
+mozilla::Vector<nsCString> profiler_move_exit_profiles();
 
 #endif /* ndef TOOLS_PLATFORM_H_ */

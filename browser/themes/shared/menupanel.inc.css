@@ -41,6 +41,10 @@
   list-style-image: url(chrome://global/skin/icons/performance.svg);
 }
 
+#appMenu-whatsnew-button {
+  list-style-image: url(chrome://browser/skin/whatsnew.svg);
+}
+
 #appMenu-help-button {
   list-style-image: url(chrome://global/skin/icons/help.svg);
 }
@@ -127,11 +131,11 @@
   list-style-image: url("chrome://browser/skin/bookmarks-toolbar.svg");
 }
 
-#appMenu-library-bookmarks-button,
 #panelMenuBookmarkThisPage {
   list-style-image: url("chrome://browser/skin/bookmark-hollow.svg");
 }
 
+#appMenu-library-bookmarks-button,
 #panelMenuBookmarkThisPage[starred] {
   list-style-image: url("chrome://browser/skin/bookmark.svg");
 }

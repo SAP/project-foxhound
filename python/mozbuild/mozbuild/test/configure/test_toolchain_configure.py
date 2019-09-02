@@ -13,11 +13,15 @@ from mozunit import main
 
 from common import BaseConfigureTest
 from mozbuild.configure.util import Version
-from mozbuild.util import memoize
+from mozbuild.util import (
+    memoize,
+    ReadOnlyNamespace,
+)
 from mozpack import path as mozpath
 from test_toolchain_helpers import (
     FakeCompiler,
     CompilerResult,
+    PrependFlags,
 )
 
 
@@ -187,25 +191,22 @@ def CLANGXX(version):
 
 CLANG_3_3 = CLANG('3.3.0') + DEFAULT_C99
 CLANGXX_3_3 = CLANGXX('3.3.0')
-CLANG_3_6 = CLANG('3.6.2') + DEFAULT_C11
-CLANGXX_3_6 = CLANGXX('3.6.2') + {
-    '-std=gnu++11': {
-        '__has_builtin(__builtin_bitreverse8)': '1',
-    },
-    '-std=gnu++14': {
-        '__has_builtin(__builtin_bitreverse8)': '1',
-    },
+CLANG_4_0 = CLANG('4.0.2') + DEFAULT_C11 + {
+    '__has_attribute(diagnose_if)': '1',
 }
-DEFAULT_CLANG = CLANG_3_6
-DEFAULT_CLANGXX = CLANGXX_3_6
+CLANGXX_4_0 = CLANGXX('4.0.2') + {
+    '__has_attribute(diagnose_if)': '1',
+}
+DEFAULT_CLANG = CLANG_4_0
+DEFAULT_CLANGXX = CLANGXX_4_0
 
 
 def CLANG_PLATFORM(gcc_platform):
     base = {
         '--target=x86_64-linux-gnu': GCC_PLATFORM_X86_64_LINUX[None],
-        '--target=x86_64-darwin11.2.0': GCC_PLATFORM_X86_64_OSX[None],
+        '--target=x86_64-apple-darwin11.2.0': GCC_PLATFORM_X86_64_OSX[None],
         '--target=i686-linux-gnu': GCC_PLATFORM_X86_LINUX[None],
-        '--target=i686-darwin11.2.0': GCC_PLATFORM_X86_OSX[None],
+        '--target=i686-apple-darwin11.2.0': GCC_PLATFORM_X86_OSX[None],
         '--target=arm-linux-gnu': GCC_PLATFORM_ARM_LINUX[None],
     }
     undo_gcc_platform = {
@@ -252,6 +253,13 @@ VS_PLATFORM_X86_64 = {
 # Note: In reality, the -std=gnu* options are only supported when preceded by
 # -Xclang.
 CLANG_CL_3_9 = (CLANG_BASE('3.9.0') + VS('18.00.00000') + DEFAULT_C11 +
+                SUPPORTS_GNU99 + SUPPORTS_GNUXX11 + SUPPORTS_CXX14) + {
+    '*.cpp': {
+        '__STDC_VERSION__': False,
+        '__cplusplus': '201103L',
+    },
+}
+CLANG_CL_8_0 = (CLANG_BASE('8.0.0') + VS('18.00.00000') + DEFAULT_C11 +
                 SUPPORTS_GNU99 + SUPPORTS_GNUXX11 + SUPPORTS_CXX14) + {
     '*.cpp': {
         '__STDC_VERSION__': False,
@@ -433,8 +441,8 @@ class LinuxToolchainTest(BaseToolchainTest):
         '/usr/bin/g++-7': GXX_7 + GCC_PLATFORM_X86_64_LINUX,
         '/usr/bin/clang': DEFAULT_CLANG + CLANG_PLATFORM_X86_64_LINUX,
         '/usr/bin/clang++': DEFAULT_CLANGXX + CLANG_PLATFORM_X86_64_LINUX,
-        '/usr/bin/clang-3.6': CLANG_3_6 + CLANG_PLATFORM_X86_64_LINUX,
-        '/usr/bin/clang++-3.6': CLANGXX_3_6 + CLANG_PLATFORM_X86_64_LINUX,
+        '/usr/bin/clang-4.0': CLANG_4_0 + CLANG_PLATFORM_X86_64_LINUX,
+        '/usr/bin/clang++-4.0': CLANGXX_4_0 + CLANG_PLATFORM_X86_64_LINUX,
         '/usr/bin/clang-3.3': CLANG_3_3 + CLANG_PLATFORM_X86_64_LINUX,
         '/usr/bin/clang++-3.3': CLANGXX_3_3 + CLANG_PLATFORM_X86_64_LINUX,
     }
@@ -476,30 +484,24 @@ class LinuxToolchainTest(BaseToolchainTest):
     DEFAULT_GCC_RESULT = GCC_6_RESULT + {'compiler': '/usr/bin/gcc'}
     DEFAULT_GXX_RESULT = GXX_6_RESULT + {'compiler': '/usr/bin/g++'}
 
-    CLANG_3_3_RESULT = CompilerResult(
-        flags=[],
-        version='3.3.0',
-        type='clang',
-        compiler='/usr/bin/clang-3.3',
-        language='C',
-    )
-    CLANGXX_3_3_RESULT = 'Only clang/llvm 3.9 or newer is supported.'
-    CLANG_3_6_RESULT = CompilerResult(
+    CLANG_3_3_RESULT = 'Only clang/llvm 4.0 or newer is supported.'
+    CLANGXX_3_3_RESULT = 'Only clang/llvm 4.0 or newer is supported.'
+    CLANG_4_0_RESULT = CompilerResult(
         flags=['-std=gnu99'],
-        version='3.6.2',
+        version='4.0.2',
         type='clang',
-        compiler='/usr/bin/clang-3.6',
+        compiler='/usr/bin/clang-4.0',
         language='C',
     )
-    CLANGXX_3_6_RESULT = CompilerResult(
+    CLANGXX_4_0_RESULT = CompilerResult(
         flags=['-std=gnu++14'],
-        version='3.6.2',
+        version='4.0.2',
         type='clang',
-        compiler='/usr/bin/clang++-3.6',
+        compiler='/usr/bin/clang++-4.0',
         language='C++',
     )
-    DEFAULT_CLANG_RESULT = CLANG_3_6_RESULT + {'compiler': '/usr/bin/clang'}
-    DEFAULT_CLANGXX_RESULT = CLANGXX_3_6_RESULT + {'compiler': '/usr/bin/clang++'}
+    DEFAULT_CLANG_RESULT = CLANG_4_0_RESULT + {'compiler': '/usr/bin/clang'}
+    DEFAULT_CLANGXX_RESULT = CLANGXX_4_0_RESULT + {'compiler': '/usr/bin/clang++'}
 
     def test_default(self):
         # We'll try clang and gcc, and find clang first.
@@ -628,10 +630,10 @@ class LinuxToolchainTest(BaseToolchainTest):
     def test_guess_cxx_clang(self):
         # When CXX is not set, we guess it from CC.
         self.do_toolchain_test(self.PATHS, {
-            'c_compiler': self.CLANG_3_6_RESULT,
-            'cxx_compiler': self.CLANGXX_3_6_RESULT,
+            'c_compiler': self.CLANG_4_0_RESULT,
+            'cxx_compiler': self.CLANGXX_4_0_RESULT,
         }, environ={
-            'CC': 'clang-3.6',
+            'CC': 'clang-4.0',
         })
 
     def test_unsupported_clang(self):
@@ -795,6 +797,13 @@ class LinuxX86_64CrossToolchainTest(BaseToolchainTest):
         })
 
 
+def xcrun(stdin, args):
+    if args == ('--show-sdk-path',):
+        return 0, os.path.join(os.path.abspath(os.path.dirname(__file__)),
+                               'fake_macos_sdk'), ''
+    raise NotImplementedError()
+
+
 class OSXToolchainTest(BaseToolchainTest):
     HOST = 'x86_64-apple-darwin11.2.0'
     PATHS = {
@@ -804,10 +813,11 @@ class OSXToolchainTest(BaseToolchainTest):
         '/usr/bin/g++-7': GXX_7 + GCC_PLATFORM_X86_64_OSX,
         '/usr/bin/clang': DEFAULT_CLANG + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/clang++': DEFAULT_CLANGXX + CLANG_PLATFORM_X86_64_OSX,
-        '/usr/bin/clang-3.6': CLANG_3_6 + CLANG_PLATFORM_X86_64_OSX,
-        '/usr/bin/clang++-3.6': CLANGXX_3_6 + CLANG_PLATFORM_X86_64_OSX,
+        '/usr/bin/clang-4.0': CLANG_4_0 + CLANG_PLATFORM_X86_64_OSX,
+        '/usr/bin/clang++-4.0': CLANGXX_4_0 + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/clang-3.3': CLANG_3_3 + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/clang++-3.3': CLANGXX_3_3 + CLANG_PLATFORM_X86_64_OSX,
+        '/usr/bin/xcrun': xcrun,
     }
     CLANG_3_3_RESULT = LinuxToolchainTest.CLANG_3_3_RESULT
     CLANGXX_3_3_RESULT = LinuxToolchainTest.CLANGXX_3_3_RESULT
@@ -817,12 +827,15 @@ class OSXToolchainTest(BaseToolchainTest):
     GXX_5_RESULT = LinuxToolchainTest.GXX_5_RESULT
     GCC_7_RESULT = LinuxToolchainTest.GCC_7_RESULT
     GXX_7_RESULT = LinuxToolchainTest.GXX_7_RESULT
+    SYSROOT_FLAGS = {
+        'flags': PrependFlags(['-isysroot', xcrun('', ('--show-sdk-path',))[1]]),
+    }
 
     def test_clang(self):
         # We only try clang because gcc is known not to work.
         self.do_toolchain_test(self.PATHS, {
-            'c_compiler': self.DEFAULT_CLANG_RESULT,
-            'cxx_compiler': self.DEFAULT_CLANGXX_RESULT,
+            'c_compiler': self.DEFAULT_CLANG_RESULT + self.SYSROOT_FLAGS,
+            'cxx_compiler': self.DEFAULT_CLANGXX_RESULT + self.SYSROOT_FLAGS,
         })
 
     def test_not_gcc(self):
@@ -848,8 +861,8 @@ class OSXToolchainTest(BaseToolchainTest):
     def test_forced_gcc(self):
         # GCC can still be forced if the user really wants it.
         self.do_toolchain_test(self.PATHS, {
-            'c_compiler': self.GCC_7_RESULT,
-            'cxx_compiler': self.GXX_7_RESULT,
+            'c_compiler': self.GCC_7_RESULT + self.SYSROOT_FLAGS,
+            'cxx_compiler': self.GXX_7_RESULT + self.SYSROOT_FLAGS,
         }, environ={
             'CC': 'gcc-7',
             'CXX': 'g++-7',
@@ -871,7 +884,8 @@ class WindowsToolchainTest(BaseToolchainTest):
     # real Windows paths.
     PATHS = {
         '/usr/bin/cl': VS_2017u8 + VS_PLATFORM_X86,
-        '/usr/bin/clang-cl': CLANG_CL_3_9 + CLANG_CL_PLATFORM_X86,
+        '/usr/bin/clang-cl-3.9': CLANG_CL_3_9 + CLANG_CL_PLATFORM_X86,
+        '/usr/bin/clang-cl': CLANG_CL_8_0 + CLANG_CL_PLATFORM_X86,
         '/usr/bin/gcc': DEFAULT_GCC + GCC_PLATFORM_X86_WIN,
         '/usr/bin/g++': DEFAULT_GXX + GCC_PLATFORM_X86_WIN,
         '/usr/bin/gcc-4.9': GCC_4_9 + GCC_PLATFORM_X86_WIN,
@@ -882,21 +896,23 @@ class WindowsToolchainTest(BaseToolchainTest):
         '/usr/bin/g++-6': GXX_6 + GCC_PLATFORM_X86_WIN,
         '/usr/bin/clang': DEFAULT_CLANG + CLANG_PLATFORM_X86_WIN,
         '/usr/bin/clang++': DEFAULT_CLANGXX + CLANG_PLATFORM_X86_WIN,
-        '/usr/bin/clang-3.6': CLANG_3_6 + CLANG_PLATFORM_X86_WIN,
-        '/usr/bin/clang++-3.6': CLANGXX_3_6 + CLANG_PLATFORM_X86_WIN,
+        '/usr/bin/clang-4.0': CLANG_4_0 + CLANG_PLATFORM_X86_WIN,
+        '/usr/bin/clang++-4.0': CLANGXX_4_0 + CLANG_PLATFORM_X86_WIN,
         '/usr/bin/clang-3.3': CLANG_3_3 + CLANG_PLATFORM_X86_WIN,
         '/usr/bin/clang++-3.3': CLANGXX_3_3 + CLANG_PLATFORM_X86_WIN,
     }
 
-    CLANG_CL_3_9_RESULT = CompilerResult(
-        version='3.9.0',
+    CLANG_CL_3_9_RESULT = 'Only clang-cl 8.0 or newer is supported (found version 3.9.0)'
+    CLANG_CL_8_0_RESULT = CompilerResult(
+        version='8.0.0',
         flags=['-Xclang', '-std=gnu99'],
         type='clang-cl',
         compiler='/usr/bin/clang-cl',
         language='C',
     )
-    CLANGXX_CL_3_9_RESULT = CompilerResult(
-        version='3.9.0',
+    CLANGXX_CL_3_9_RESULT = 'Only clang-cl 8.0 or newer is supported (found version 3.9.0)'
+    CLANGXX_CL_8_0_RESULT = CompilerResult(
+        version='8.0.0',
         flags=['-Xclang', '-std=c++14'],
         type='clang-cl',
         compiler='/usr/bin/clang-cl',
@@ -922,10 +938,17 @@ class WindowsToolchainTest(BaseToolchainTest):
             'CC': '/usr/bin/cl',
         })
 
-    def test_clang_cl(self):
+    def test_unsupported_clang_cl(self):
         self.do_toolchain_test(self.PATHS, {
             'c_compiler': self.CLANG_CL_3_9_RESULT,
-            'cxx_compiler': self.CLANGXX_CL_3_9_RESULT,
+        }, environ={
+            'CC': '/usr/bin/clang-cl-3.9',
+        })
+
+    def test_clang_cl(self):
+        self.do_toolchain_test(self.PATHS, {
+            'c_compiler': self.CLANG_CL_8_0_RESULT,
+            'cxx_compiler': self.CLANGXX_CL_8_0_RESULT,
         })
 
     def test_gcc(self):
@@ -976,7 +999,8 @@ class Windows64ToolchainTest(WindowsToolchainTest):
     # real Windows paths.
     PATHS = {
         '/usr/bin/cl': VS_2017u8 + VS_PLATFORM_X86_64,
-        '/usr/bin/clang-cl': CLANG_CL_3_9 + CLANG_CL_PLATFORM_X86_64,
+        '/usr/bin/clang-cl': CLANG_CL_8_0 + CLANG_CL_PLATFORM_X86_64,
+        '/usr/bin/clang-cl-3.9': CLANG_CL_3_9 + CLANG_CL_PLATFORM_X86_64,
         '/usr/bin/gcc': DEFAULT_GCC + GCC_PLATFORM_X86_64_WIN,
         '/usr/bin/g++': DEFAULT_GXX + GCC_PLATFORM_X86_64_WIN,
         '/usr/bin/gcc-4.9': GCC_4_9 + GCC_PLATFORM_X86_64_WIN,
@@ -989,8 +1013,8 @@ class Windows64ToolchainTest(WindowsToolchainTest):
         '/usr/bin/g++-7': GXX_7 + GCC_PLATFORM_X86_64_WIN,
         '/usr/bin/clang': DEFAULT_CLANG + CLANG_PLATFORM_X86_64_WIN,
         '/usr/bin/clang++': DEFAULT_CLANGXX + CLANG_PLATFORM_X86_64_WIN,
-        '/usr/bin/clang-3.6': CLANG_3_6 + CLANG_PLATFORM_X86_64_WIN,
-        '/usr/bin/clang++-3.6': CLANGXX_3_6 + CLANG_PLATFORM_X86_64_WIN,
+        '/usr/bin/clang-4.0': CLANG_4_0 + CLANG_PLATFORM_X86_64_WIN,
+        '/usr/bin/clang++-4.0': CLANGXX_4_0 + CLANG_PLATFORM_X86_64_WIN,
         '/usr/bin/clang-3.3': CLANG_3_3 + CLANG_PLATFORM_X86_64_WIN,
         '/usr/bin/clang++-3.3': CLANGXX_3_3 + CLANG_PLATFORM_X86_64_WIN,
     }
@@ -1310,17 +1334,17 @@ class OSXCrossToolchainTest(BaseToolchainTest):
 
     def test_osx_cross(self):
         self.do_toolchain_test(self.PATHS, {
-            'c_compiler': self.DEFAULT_CLANG_RESULT + {
-                'flags': ['--target=i686-darwin11.2.0'],
+            'c_compiler': self.DEFAULT_CLANG_RESULT + OSXToolchainTest.SYSROOT_FLAGS + {
+                'flags': ['--target=i686-apple-darwin11.2.0'],
             },
-            'cxx_compiler': self.DEFAULT_CLANGXX_RESULT + {
-                'flags': ['--target=i686-darwin11.2.0'],
+            'cxx_compiler': self.DEFAULT_CLANGXX_RESULT + OSXToolchainTest.SYSROOT_FLAGS + {
+                'flags': ['--target=i686-apple-darwin11.2.0'],
             },
             'host_c_compiler': self.DEFAULT_CLANG_RESULT,
             'host_cxx_compiler': self.DEFAULT_CLANGXX_RESULT,
         }, environ={
             'CC': 'clang',
-        })
+        }, args=['--with-macos-sdk=%s' % OSXToolchainTest.SYSROOT_FLAGS['flags'][1]])
 
     def test_cannot_osx_cross(self):
         self.do_toolchain_test(self.PATHS, {
@@ -1328,7 +1352,7 @@ class OSXCrossToolchainTest(BaseToolchainTest):
                           'match --target kernel (Darwin)',
         }, environ={
             'CC': 'gcc',
-        })
+        }, args=['--with-macos-sdk=%s' % OSXToolchainTest.SYSROOT_FLAGS['flags'][1]])
 
 
 class WindowsCrossToolchainTest(BaseToolchainTest):
@@ -1338,12 +1362,12 @@ class WindowsCrossToolchainTest(BaseToolchainTest):
 
     def test_clang_cl_cross(self):
         paths = {
-            '/usr/bin/clang-cl': CLANG_CL_3_9 + CLANG_CL_PLATFORM_X86_64,
+            '/usr/bin/clang-cl': CLANG_CL_8_0 + CLANG_CL_PLATFORM_X86_64,
         }
         paths.update(LinuxToolchainTest.PATHS)
         self.do_toolchain_test(paths, {
-            'c_compiler': WindowsToolchainTest.CLANG_CL_3_9_RESULT,
-            'cxx_compiler': WindowsToolchainTest.CLANGXX_CL_3_9_RESULT,
+            'c_compiler': WindowsToolchainTest.CLANG_CL_8_0_RESULT,
+            'cxx_compiler': WindowsToolchainTest.CLANGXX_CL_8_0_RESULT,
             'host_c_compiler': self.DEFAULT_CLANG_RESULT,
             'host_cxx_compiler': self.DEFAULT_CLANGXX_RESULT,
         })
@@ -1366,43 +1390,75 @@ class OpenBSDToolchainTest(BaseToolchainTest):
         })
 
 
-class RustTest(BaseConfigureTest):
-    def invoke_cargo(self, stdin, args):
+@memoize
+def gen_invoke_cargo(version, rustup_wrapper=False):
+    def invoke_cargo(stdin, args):
+        args = tuple(args)
+        if not rustup_wrapper and args == ('+stable',):
+            return (101, '', 'we are the real thing')
         if args == ('--version', '--verbose'):
-            return 0, 'cargo 2.0\nrelease: 2.0', ''
+            return 0, 'cargo %s\nrelease: %s' % (version, version), ''
         raise NotImplementedError('unsupported arguments')
+    return invoke_cargo
 
-    def invoke_rustc(self, stdin, args):
+
+@memoize
+def gen_invoke_rustc(version, rustup_wrapper=False):
+    def invoke_rustc(stdin, args):
+        args = tuple(args)
+        # TODO: we don't have enough machinery set up to test the `rustup which`
+        # fallback yet.
+        if not rustup_wrapper and args == ('+stable',):
+            return (1, '', 'error: couldn\'t read +stable: No such file or directory')
         if args == ('--version', '--verbose'):
-            return 0, 'rustc 2.0\nrelease: 2.0\nhost: x86_64-unknown-linux-gnu', ''
+            return (0, 'rustc %s\nrelease: %s\nhost: x86_64-unknown-linux-gnu'
+                       % (version, version), '')
         if args == ('--print', 'target-list'):
-            # Raw list returned by rustc version 1.19, + ios, which somehow
+            # Raw list returned by rustc version 1.32, + ios, which somehow
             # don't appear in the default list.
             # https://github.com/rust-lang/rust/issues/36156
             rust_targets = [
                 'aarch64-apple-ios',
+                'aarch64-fuchsia',
                 'aarch64-linux-android',
+                'aarch64-pc-windows-msvc',
+                'aarch64-unknown-cloudabi',
                 'aarch64-unknown-freebsd',
-                'aarch64-unknown-fuchsia',
+                'aarch64-unknown-hermit',
                 'aarch64-unknown-linux-gnu',
+                'aarch64-unknown-linux-musl',
+                'aarch64-unknown-netbsd',
+                'aarch64-unknown-none',
+                'aarch64-unknown-openbsd',
                 'arm-linux-androideabi',
                 'arm-unknown-linux-gnueabi',
                 'arm-unknown-linux-gnueabihf',
                 'arm-unknown-linux-musleabi',
                 'arm-unknown-linux-musleabihf',
+                'armebv7r-none-eabi',
+                'armebv7r-none-eabihf',
+                'armv4t-unknown-linux-gnueabi',
                 'armv5te-unknown-linux-gnueabi',
+                'armv5te-unknown-linux-musleabi',
+                'armv6-unknown-netbsd-eabihf',
                 'armv7-linux-androideabi',
+                'armv7-unknown-cloudabi-eabihf',
                 'armv7-unknown-linux-gnueabihf',
                 'armv7-unknown-linux-musleabihf',
+                'armv7-unknown-netbsd-eabihf',
+                'armv7r-none-eabi',
+                'armv7r-none-eabihf',
                 'armv7s-apple-ios',
                 'asmjs-unknown-emscripten',
                 'i386-apple-ios',
                 'i586-pc-windows-msvc',
                 'i586-unknown-linux-gnu',
+                'i586-unknown-linux-musl',
                 'i686-apple-darwin',
                 'i686-linux-android',
                 'i686-pc-windows-gnu',
                 'i686-pc-windows-msvc',
+                'i686-unknown-cloudabi',
                 'i686-unknown-dragonfly',
                 'i686-unknown-freebsd',
                 'i686-unknown-haiku',
@@ -1410,7 +1466,6 @@ class RustTest(BaseConfigureTest):
                 'i686-unknown-linux-musl',
                 'i686-unknown-netbsd',
                 'i686-unknown-openbsd',
-                'le32-unknown-nacl',
                 'mips-unknown-linux-gnu',
                 'mips-unknown-linux-musl',
                 'mips-unknown-linux-uclibc',
@@ -1419,62 +1474,100 @@ class RustTest(BaseConfigureTest):
                 'mipsel-unknown-linux-gnu',
                 'mipsel-unknown-linux-musl',
                 'mipsel-unknown-linux-uclibc',
+                'msp430-none-elf',
                 'powerpc-unknown-linux-gnu',
+                'powerpc-unknown-linux-gnuspe',
+                'powerpc-unknown-linux-musl',
+                'powerpc-unknown-netbsd',
                 'powerpc64-unknown-linux-gnu',
+                'powerpc64-unknown-linux-musl',
                 'powerpc64le-unknown-linux-gnu',
+                'powerpc64le-unknown-linux-musl',
+                'riscv32imac-unknown-none-elf',
+                'riscv32imc-unknown-none-elf',
                 's390x-unknown-linux-gnu',
+                'sparc-unknown-linux-gnu',
                 'sparc64-unknown-linux-gnu',
                 'sparc64-unknown-netbsd',
                 'sparcv9-sun-solaris',
                 'thumbv6m-none-eabi',
+                'thumbv7a-pc-windows-msvc',
                 'thumbv7em-none-eabi',
                 'thumbv7em-none-eabihf',
                 'thumbv7m-none-eabi',
+                'thumbv8m.base-none-eabi',
+                'wasm32-experimental-emscripten',
                 'wasm32-unknown-emscripten',
+                'wasm32-unknown-unknown',
                 'x86_64-apple-darwin',
                 'x86_64-apple-ios',
+                'x86_64-fortanix-unknown-sgx',
+                'x86_64-fuchsia',
                 'x86_64-linux-android',
                 'x86_64-pc-windows-gnu',
                 'x86_64-pc-windows-msvc',
                 'x86_64-rumprun-netbsd',
                 'x86_64-sun-solaris',
                 'x86_64-unknown-bitrig',
+                'x86_64-unknown-cloudabi',
                 'x86_64-unknown-dragonfly',
                 'x86_64-unknown-freebsd',
-                'x86_64-unknown-fuchsia',
                 'x86_64-unknown-haiku',
+                'x86_64-unknown-hermit',
+                'x86_64-unknown-l4re-uclibc',
                 'x86_64-unknown-linux-gnu',
+                'x86_64-unknown-linux-gnux32',
                 'x86_64-unknown-linux-musl',
                 'x86_64-unknown-netbsd',
                 'x86_64-unknown-openbsd',
                 'x86_64-unknown-redox',
             ]
-            return 0, '\n'.join(rust_targets), ''
+            # Additional targets from 1.33
+            if Version(version) >= '1.33.0':
+                rust_targets += [
+                    'thumbv7neon-linux-androideabi',
+                    'thumbv7neon-unknown-linux-gnueabihf',
+                    'x86_64-unknown-uefi',
+                    'thumbv8m.main-none-eabi',
+                    'thumbv8m.main-none-eabihf',
+                ]
+            return 0, '\n'.join(sorted(rust_targets)), ''
         if (len(args) == 6 and args[:2] == ('--crate-type', 'staticlib') and
             args[2].startswith('--target=') and args[3] == '-o'):
             with open(args[4], 'w') as fh:
                 fh.write('foo')
             return 0, '', ''
         raise NotImplementedError('unsupported arguments')
+    return invoke_rustc
 
-    def get_rust_target(self, target, compiler_type='gcc'):
+
+class RustTest(BaseConfigureTest):
+    def get_rust_target(self, target, compiler_type='gcc', version='1.33.0',
+                        arm_target=None):
         environ = {
             'PATH': os.pathsep.join(
                 mozpath.abspath(p) for p in ('/bin', '/usr/bin')),
         }
 
         paths = {
-            mozpath.abspath('/usr/bin/cargo'): self.invoke_cargo,
-            mozpath.abspath('/usr/bin/rustc'): self.invoke_rustc,
+            mozpath.abspath('/usr/bin/cargo'): gen_invoke_cargo(version),
+            mozpath.abspath('/usr/bin/rustc'): gen_invoke_rustc(version),
         }
 
         self.TARGET = target
-        sandbox = self.get_sandbox(paths, {}, [], environ)
+        # --enable-project=tools/crashreporter for more relaxed rust
+        # dependency.
+        sandbox = self.get_sandbox(
+            paths, {}, ['--enable-project=tools/crashreporter'], environ)
 
         # Trick the sandbox into not running the target compiler check
         dep = sandbox._depends[sandbox['c_compiler']]
         getattr(sandbox, '__value_for_depends')[(dep,)] = \
             CompilerResult(type=compiler_type)
+        # Same for the arm_target checks.
+        dep = sandbox._depends[sandbox['arm_target']]
+        getattr(sandbox, '__value_for_depends')[(dep,)] = \
+            arm_target or ReadOnlyNamespace(arm_arch=7, thumb2=False, fpu='vfpv2')
         return sandbox._value_for(sandbox['rust_target_triple'])
 
     def test_rust_target(self):
@@ -1532,6 +1625,57 @@ class RustTest(BaseConfigureTest):
             ('x86_64-pc-mingw32', 'clang', 'x86_64-pc-windows-gnu'),
         ):
             self.assertEqual(self.get_rust_target(autoconf, building_with_gcc), rust)
+
+        # Arm special cases
+        self.assertEqual(
+            self.get_rust_target('arm-unknown-linux-androideabi',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='neon', thumb2=True)),
+            'thumbv7neon-linux-androideabi')
+
+        self.assertEqual(
+            self.get_rust_target('arm-unknown-linux-androideabi',
+                                 version='1.32.0',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='neon', thumb2=True)),
+            'armv7-linux-androideabi')
+
+        self.assertEqual(
+            self.get_rust_target('arm-unknown-linux-androideabi',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='neon', thumb2=False)),
+            'armv7-linux-androideabi')
+
+        self.assertEqual(
+            self.get_rust_target('arm-unknown-linux-androideabi',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='vfpv2', thumb2=True)),
+            'armv7-linux-androideabi')
+
+        self.assertEqual(
+            self.get_rust_target('armv7-unknown-linux-gnueabihf',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='neon', thumb2=True)),
+            'thumbv7neon-unknown-linux-gnueabihf')
+
+        self.assertEqual(
+            self.get_rust_target('armv7-unknown-linux-gnueabihf',
+                                 version='1.32.0',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='neon', thumb2=True)),
+            'armv7-unknown-linux-gnueabihf')
+
+        self.assertEqual(
+            self.get_rust_target('armv7-unknown-linux-gnueabihf',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='neon', thumb2=False)),
+            'armv7-unknown-linux-gnueabihf')
+
+        self.assertEqual(
+            self.get_rust_target('armv7-unknown-linux-gnueabihf',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='vfpv2', thumb2=True)),
+            'armv7-unknown-linux-gnueabihf')
 
 
 if __name__ == '__main__':

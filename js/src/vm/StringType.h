@@ -452,6 +452,13 @@ class JSString : public js::gc::Cell {
   MOZ_ALWAYS_INLINE
   uint32_t flags() const { return uint32_t(d.flags_); }
 
+  template <typename CharT>
+  static MOZ_ALWAYS_INLINE void checkStringCharsArena(const CharT* chars) {
+#ifdef MOZ_DEBUG
+    js::AssertJSStringBufferInCorrectArena(chars);
+#endif
+  }
+
  public:
   MOZ_ALWAYS_INLINE
   size_t length() const {
@@ -773,12 +780,12 @@ class JSString : public js::gc::Cell {
 
   static void addCellAddressToStoreBuffer(js::gc::StoreBuffer* buffer,
                                           js::gc::Cell** cellp) {
-    buffer->putCell(cellp);
+    buffer->putCell(reinterpret_cast<JSString**>(cellp));
   }
 
   static void removeCellAddressFromStoreBuffer(js::gc::StoreBuffer* buffer,
                                                js::gc::Cell** cellp) {
-    buffer->unputCell(cellp);
+    buffer->unputCell(reinterpret_cast<JSString**>(cellp));
   }
 
   static void writeBarrierPost(void* cellp, JSString* prev, JSString* next) {
@@ -790,12 +797,12 @@ class JSString : public js::gc::Cell {
       if (prev && prev->storeBuffer()) {
         return;
       }
-      buffer->putCell(static_cast<js::gc::Cell**>(cellp));
+      buffer->putCell(static_cast<JSString**>(cellp));
       return;
     }
 
     if (prev && (buffer = prev->storeBuffer())) {
-      buffer->unputCell(static_cast<js::gc::Cell**>(cellp));
+      buffer->unputCell(static_cast<JSString**>(cellp));
     }
   }
 
@@ -808,7 +815,7 @@ class JSString : public js::gc::Cell {
 class JSRope : public JSString {
   template <typename CharT>
   js::UniquePtr<CharT[], JS::FreePolicy> copyCharsInternal(
-      JSContext* cx, bool nullTerminate) const;
+      JSContext* cx, bool nullTerminate, arena_id_t destArenaId) const;
 
   enum UsingBarrier { WithIncrementalBarrier, NoBarrier };
 
@@ -832,15 +839,18 @@ class JSRope : public JSString {
       size_t length, js::gc::InitialHeap = js::gc::DefaultHeap);
 
   js::UniquePtr<JS::Latin1Char[], JS::FreePolicy> copyLatin1Chars(
-      JSContext* maybecx) const;
-  JS::UniqueTwoByteChars copyTwoByteChars(JSContext* maybecx) const;
+      JSContext* maybecx, arena_id_t destArenaId) const;
+  JS::UniqueTwoByteChars copyTwoByteChars(JSContext* maybecx,
+                                          arena_id_t destArenaId) const;
 
   js::UniquePtr<JS::Latin1Char[], JS::FreePolicy> copyLatin1CharsZ(
-      JSContext* maybecx) const;
-  JS::UniqueTwoByteChars copyTwoByteCharsZ(JSContext* maybecx) const;
+      JSContext* maybecx, arena_id_t destArenaId) const;
+  JS::UniqueTwoByteChars copyTwoByteCharsZ(JSContext* maybecx,
+                                           arena_id_t destArenaId) const;
 
   template <typename CharT>
-  js::UniquePtr<CharT[], JS::FreePolicy> copyChars(JSContext* maybecx) const;
+  js::UniquePtr<CharT[], JS::FreePolicy> copyChars(
+      JSContext* maybecx, arena_id_t destArenaId) const;
 
   // Hash function specific for ropes that avoids allocating a temporary
   // string. There are still allocations internally so it's technically
@@ -1093,6 +1103,8 @@ class JSFlatString : public JSLinearString {
   MOZ_ALWAYS_INLINE JSAtom* morphAtomizedStringIntoPermanentAtom(
       js::HashNumber hash);
 
+  inline size_t allocSize() const;
+
   inline void finalize(js::FreeOp* fop);
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
@@ -1293,8 +1305,6 @@ class JSAtom : public JSFlatString {
  public:
   /* Returns the PropertyName for this.  isIndex() must be false. */
   inline js::PropertyName* asPropertyName();
-
-  inline void finalize(js::FreeOp* fop);
 
   MOZ_ALWAYS_INLINE
   bool isPermanent() const { return JSString::isPermanentAtom(); }
@@ -1895,14 +1905,15 @@ MOZ_ALWAYS_INLINE const JS::Latin1Char* JSLinearString::chars(
 
 template <>
 MOZ_ALWAYS_INLINE js::UniquePtr<JS::Latin1Char[], JS::FreePolicy>
-JSRope::copyChars<JS::Latin1Char>(JSContext* maybecx) const {
-  return copyLatin1Chars(maybecx);
+JSRope::copyChars<JS::Latin1Char>(JSContext* maybecx,
+                                  arena_id_t destArenaId) const {
+  return copyLatin1Chars(maybecx, destArenaId);
 }
 
 template <>
 MOZ_ALWAYS_INLINE JS::UniqueTwoByteChars JSRope::copyChars<char16_t>(
-    JSContext* maybecx) const {
-  return copyTwoByteChars(maybecx);
+    JSContext* maybecx, arena_id_t destArenaId) const {
+  return copyTwoByteChars(maybecx, destArenaId);
 }
 
 template <>
@@ -1966,12 +1977,16 @@ MOZ_ALWAYS_INLINE bool JSInlineString::lengthFits<char16_t>(size_t length) {
 
 template <>
 MOZ_ALWAYS_INLINE void JSString::setNonInlineChars(const char16_t* chars) {
+  // Check that the new buffer is located in the StringBufferArena
+  checkStringCharsArena(chars);
   d.s.u2.nonInlineCharsTwoByte = chars;
 }
 
 template <>
 MOZ_ALWAYS_INLINE void JSString::setNonInlineChars(
     const JS::Latin1Char* chars) {
+  // Check that the new buffer is located in the StringBufferArena
+  checkStringCharsArena(chars);
   d.s.u2.nonInlineCharsLatin1 = chars;
 }
 

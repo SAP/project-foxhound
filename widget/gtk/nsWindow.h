@@ -139,7 +139,7 @@ class nsWindow final : public nsBaseWidget {
   void SetZIndex(int32_t aZIndex) override;
   virtual void SetSizeMode(nsSizeMode aMode) override;
   virtual void Enable(bool aState) override;
-  virtual nsresult SetFocus(bool aRaise = false) override;
+  virtual void SetFocus(Raise) override;
   virtual LayoutDeviceIntRect GetScreenBounds() override;
   virtual LayoutDeviceIntRect GetClientBounds() override;
   virtual LayoutDeviceIntSize GetClientSize() override;
@@ -272,7 +272,9 @@ class nsWindow final : public nsBaseWidget {
   GtkWidget* GetMozContainerWidget();
   GdkWindow* GetGdkWindow() { return mGdkWindow; }
   GtkWidget* GetGtkWidget() { return mShell; }
+  nsIFrame* GetFrame();
   bool IsDestroyed() { return mIsDestroyed; }
+  bool IsWaylandPopup();
 
   void DispatchDragEvent(mozilla::EventMessage aMsg,
                          const LayoutDeviceIntPoint& aRefPoint, guint aTime);
@@ -460,6 +462,10 @@ class nsWindow final : public nsBaseWidget {
   nsWindow* GetTransientForWindowIfPopup();
   bool IsHandlingTouchSequence(GdkEventSequence* aSequence);
 
+  void NativeMoveResizeWaylandPopup(GdkPoint* aPosition, GdkRectangle* aSize);
+
+  GtkTextDirection GetTextDirection();
+
 #ifdef MOZ_X11
   typedef enum {GTK_WIDGET_COMPOSIDED_DEFAULT = 0,
                 GTK_WIDGET_COMPOSIDED_DISABLED = 1,
@@ -485,6 +491,8 @@ class nsWindow final : public nsBaseWidget {
 #if GTK_CHECK_VERSION(3, 4, 0)
   // This field omits duplicate scroll events caused by GNOME bug 726878.
   guint32 mLastScrollEventTime;
+
+  bool mPanInProgress = false;
 
   // for touch event handling
   nsRefPtrHashtable<nsPtrHashKey<GdkEventSequence>, mozilla::dom::Touch>
@@ -604,6 +612,11 @@ class nsWindow final : public nsBaseWidget {
   virtual int32_t RoundsWidgetCoordinatesTo() override;
 
   void ForceTitlebarRedraw();
+
+  GtkWidget* ConfigureWaylandPopupWindows();
+  void HideWaylandWindow();
+  void HideWaylandTooltips();
+  void HideWaylandPopupAndAllChildren();
 
   /**
    * |mIMContext| takes all IME related stuff.

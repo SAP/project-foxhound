@@ -17,18 +17,18 @@
         xmlns:html="http://www.w3.org/1999/xhtml"
         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        onwizardfinish="return onFinish();"
         onload="initWizard();"
         style="&window.size;">
-  <script type="application/javascript"
-          src="chrome://global/content/customElements.js"/>
+  <script src="chrome://global/content/customElements.js"/>
+  <script src="chrome://global/content/globalOverlay.js"/>
+  <script src="chrome://global/content/editMenuOverlay.js"/>
 
   <stringbundle id="bundle_profileManager"
                 src="chrome://mozapps/locale/profile/profileSelection.properties"/>
 
-  <script type="application/javascript" src="chrome://mozapps/content/profile/createProfileWizard.js"/>
+  <script src="chrome://mozapps/content/profile/createProfileWizard.js"/>
 
-  <wizardpage id="explanation" onpageshow="enableNextButton();">
+  <wizardpage id="explanation">
     <description>&profileCreationExplanation_1.text;</description>
     <description>&profileCreationExplanation_2.text;</description>
     <description>&profileCreationExplanation_3.text;</description>
@@ -44,13 +44,13 @@
 #endif
   </wizardpage>
 
-  <wizardpage id="createProfile" onpageshow="initSecondWizardPage();">
-    <description>&profileCreationIntro.text;</description> 
+  <wizardpage id="createProfile">
+    <description>&profileCreationIntro.text;</description>
 
-    <label accesskey="&profilePrompt.accesskey;" control="ProfileName">&profilePrompt.label;</label> 
-    <textbox id="profileName" value="&profileDefaultName;"
-             oninput="updateProfileName(this.value);"/>
-    
+    <label accesskey="&profilePrompt.accesskey;" control="ProfileName">&profilePrompt.label;</label>
+    <html:input id="profileName" value="&profileDefaultName;"
+                oninput="updateProfileName(this.value);"/>
+
     <separator/>
 
     <description>&profileDirectoryExplanation.text;</description>
@@ -60,7 +60,7 @@
     </vbox>
 
     <hbox>
-      <button label="&button.choosefolder.label;" oncommand="chooseProfileFolder();" 
+      <button label="&button.choosefolder.label;" oncommand="chooseProfileFolder();"
               accesskey="&button.choosefolder.accesskey;"/>
 
       <button id="useDefault" label="&button.usedefault.label;"

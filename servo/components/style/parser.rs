@@ -51,7 +51,7 @@ pub struct ParserContext<'a> {
     /// The quirks mode of this stylesheet.
     pub quirks_mode: QuirksMode,
     /// The active error reporter, or none if error reporting is disabled.
-    error_reporter: Option<&'a ParseErrorReporter>,
+    error_reporter: Option<&'a dyn ParseErrorReporter>,
     /// The currently active namespaces.
     pub namespaces: Option<&'a Namespaces>,
     /// The use counters we want to record while parsing style rules, if any.
@@ -67,7 +67,7 @@ impl<'a> ParserContext<'a> {
         rule_type: Option<CssRuleType>,
         parsing_mode: ParsingMode,
         quirks_mode: QuirksMode,
-        error_reporter: Option<&'a ParseErrorReporter>,
+        error_reporter: Option<&'a dyn ParseErrorReporter>,
         use_counters: Option<&'a UseCounters>,
     ) -> Self {
         Self {
@@ -89,7 +89,7 @@ impl<'a> ParserContext<'a> {
         rule_type: Option<CssRuleType>,
         parsing_mode: ParsingMode,
         quirks_mode: QuirksMode,
-        error_reporter: Option<&'a ParseErrorReporter>,
+        error_reporter: Option<&'a dyn ParseErrorReporter>,
         use_counters: Option<&'a UseCounters>,
     ) -> Self {
         Self::new(
@@ -136,6 +136,12 @@ impl<'a> ParserContext<'a> {
             .expect("Rule type expected, but none was found.")
     }
 
+    /// Returns whether CSS error reporting is enabled.
+    #[inline]
+    pub fn error_reporting_enabled(&self) -> bool {
+        self.error_reporter.is_some()
+    }
+
     /// Record a CSS parse error with this context’s error reporting.
     pub fn log_css_error(&self, location: SourceLocation, error: ContextualParseError) {
         let error_reporter = match self.error_reporter {
@@ -146,9 +152,22 @@ impl<'a> ParserContext<'a> {
         error_reporter.report_error(self.url_data, location, error)
     }
 
+    /// Whether we're in a user-agent stylesheet.
+    #[inline]
+    pub fn in_ua_sheet(&self) -> bool {
+        self.stylesheet_origin == Origin::UserAgent
+    }
+
     /// Returns whether chrome-only rules should be parsed.
+    #[inline]
     pub fn chrome_rules_enabled(&self) -> bool {
         self.url_data.is_chrome() || self.stylesheet_origin == Origin::User
+    }
+
+    /// Whether we're in a user-agent stylesheet or chrome rules are enabled.
+    #[inline]
+    pub fn in_ua_or_chrome_sheet(&self) -> bool {
+        self.in_ua_sheet() || self.chrome_rules_enabled()
     }
 }
 

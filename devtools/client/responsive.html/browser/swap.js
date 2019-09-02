@@ -86,9 +86,9 @@ function swapToInnerBrowser({ tab, containerURL, getInnerBrowser }) {
     if (!ourTab.linkedBrowser.isRemoteBrowser || !otherBrowser.isRemoteBrowser) {
       throw new Error("Both browsers should be remote before swapping.");
     }
-    const contentTabId = ourTab.linkedBrowser.frameLoader.tabParent.tabId;
+    const contentTabId = ourTab.linkedBrowser.frameLoader.remoteTab.tabId;
     gBrowser._swapBrowserDocShells(ourTab, otherBrowser);
-    if (otherBrowser.frameLoader.tabParent.tabId != contentTabId) {
+    if (otherBrowser.frameLoader.remoteTab.tabId != contentTabId) {
       // Bug 1408602: Try to unwind to save tab content from being lost.
       throw new Error("Swapping tab content between browsers failed.");
     }
@@ -141,7 +141,7 @@ function swapToInnerBrowser({ tab, containerURL, getInnerBrowser }) {
       // Bug 1510806 has been filed to fix this properly, by making RDM resilient
       // to process flips.
       if (mustChangeProcess &&
-          tab.linkedBrowser.remoteType == "privileged") {
+          tab.linkedBrowser.remoteType == "privilegedabout") {
         debug(`Tab must flip away from the privileged content process ` +
               `on navigation`);
         gBrowser.updateBrowserRemoteness(tab.linkedBrowser, {
@@ -212,6 +212,15 @@ function swapToInnerBrowser({ tab, containerURL, getInnerBrowser }) {
       await tabLoaded(containerTab);
       debug("Wait until inner browser available");
       innerBrowser = await getInnerBrowser(containerBrowser);
+
+      Object.defineProperty(innerBrowser, "outerBrowser", {
+        get() {
+          return tab.linkedBrowser;
+        },
+        configurable: true,
+        enumerable: true,
+      });
+
       addXULBrowserDecorations(innerBrowser);
       if (innerBrowser.isRemoteBrowser != tab.linkedBrowser.isRemoteBrowser) {
         throw new Error("The inner browser's remoteness must match the " +

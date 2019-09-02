@@ -6,12 +6,22 @@
 
 const { Cc, Ci } = require("chrome");
 const { dumpn } = require("devtools/shared/DevToolsUtils");
+const EventEmitter = require("devtools/shared/event-emitter");
 const { getFileForBinary } = require("./adb-binary");
 const { setTimeout } = require("resource://gre/modules/Timer.jsm");
-const { Services } = require("resource://gre/modules/Services.jsm");
 
-loader.lazyRequireGetter(this, "runCommand", "devtools/shared/adb/commands/index", true);
-loader.lazyRequireGetter(this, "check", "devtools/shared/adb/adb-running-checker", true);
+loader.lazyRequireGetter(
+  this,
+  "runCommand",
+  "devtools/shared/adb/commands/index",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "check",
+  "devtools/shared/adb/adb-running-checker",
+  true
+);
 
 // Waits until a predicate returns true or re-tries the predicate calls
 // |retry| times, we wait for 100ms between each calls.
@@ -29,8 +39,10 @@ async function waitUntil(predicate, retry = 20) {
 }
 
 // Class representing the ADB process.
-class AdbProcess {
+class AdbProcess extends EventEmitter {
   constructor() {
+    super();
+
     this._ready = false;
     this._didRunInitially = false;
   }
@@ -49,18 +61,23 @@ class AdbProcess {
 
   async _runProcess(process, params) {
     return new Promise((resolve, reject) => {
-      process.runAsync(params, params.length, {
-        observe(subject, topic, data) {
-          switch (topic) {
-            case "process-finished":
-              resolve();
-              break;
-            case "process-failed":
-              reject();
-              break;
-          }
+      process.runAsync(
+        params,
+        params.length,
+        {
+          observe(subject, topic, data) {
+            switch (topic) {
+              case "process-finished":
+                resolve();
+                break;
+              case "process-failed":
+                reject();
+                break;
+            }
+          },
         },
-      }, false);
+        false
+      );
     });
   }
 
@@ -69,8 +86,8 @@ class AdbProcess {
   async start() {
     return new Promise(async (resolve, reject) => {
       const onSuccessfulStart = () => {
-        Services.obs.notifyObservers(null, "adb-ready");
         this._ready = true;
+        this.emit("adb-ready");
         resolve();
       };
 
@@ -83,7 +100,9 @@ class AdbProcess {
       dumpn("Didn't find ADB process running, restarting");
 
       this._didRunInitially = true;
-      const process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+      const process = Cc["@mozilla.org/process/util;1"].createInstance(
+        Ci.nsIProcess
+      );
 
       // FIXME: Bug 1481691 - We should avoid extracting files every time.
       const adbFile = await this._getAdbFile();
@@ -96,8 +115,7 @@ class AdbProcess {
       try {
         await this._runProcess(process, params);
         isStarted = await waitUntil(check);
-      } catch (e) {
-      }
+      } catch (e) {}
 
       if (isStarted) {
         onSuccessfulStart();

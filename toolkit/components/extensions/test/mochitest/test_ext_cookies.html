@@ -2,9 +2,8 @@
 <html>
 <head>
   <title>WebExtension test</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -33,6 +32,52 @@ add_task(async function test_cookies() {
       });
       browser.test.assertEq(1, results.length, "executeScript returns one result");
       return results[0];
+    }
+
+    async function testIpCookie(ipAddress, setHostOnly) {
+      const IP_TEST_HOST = ipAddress;
+      const IP_TEST_URL = `http://${IP_TEST_HOST}/`;
+      const IP_THE_FUTURE = Date.now() + 5 * 60;
+      const IP_STORE_ID = "firefox-default";
+
+      let expectedCookie = {
+        name: "name1",
+        value: "value1",
+        domain: IP_TEST_HOST,
+        hostOnly: true,
+        path: "/",
+        secure: false,
+        httpOnly: false,
+        sameSite: "no_restriction",
+        session: false,
+        expirationDate: IP_THE_FUTURE,
+        storeId: IP_STORE_ID,
+        firstPartyDomain: "",
+      };
+
+      await browser.browsingData.removeCookies({});
+      let ip_cookie = await browser.cookies.set({
+        url: IP_TEST_URL,
+        domain: setHostOnly ? ipAddress : undefined,
+        name: "name1",
+        value: "value1",
+        expirationDate: IP_THE_FUTURE,
+      });
+      assertExpected(expectedCookie, ip_cookie);
+
+      let ip_cookies = await browser.cookies.getAll({name: "name1"});
+      browser.test.assertEq(1, ip_cookies.length, "ip cookie can be added");
+      assertExpected(expectedCookie, ip_cookies[0]);
+
+      ip_cookies = await browser.cookies.getAll({domain: IP_TEST_HOST, name: "name1"});
+      browser.test.assertEq(1, ip_cookies.length, "can get ip cookie by host");
+      assertExpected(expectedCookie, ip_cookies[0]);
+
+      let ip_details = await browser.cookies.remove({url: IP_TEST_URL, name: "name1"});
+      assertExpected({url: IP_TEST_URL, name: "name1", storeId: IP_STORE_ID, firstPartyDomain: ""}, ip_details);
+
+      ip_cookies = await browser.cookies.getAll({name: "name1"});
+      browser.test.assertEq(0, ip_cookies.length, "ip cookie can be removed");
     }
 
     async function openPrivateWindowAndTab(TEST_URL) {
@@ -67,6 +112,11 @@ add_task(async function test_cookies() {
       url.port = port;
       return url.href;
     }
+
+    await testIpCookie("[2a03:4000:6:310e:216:3eff:fe53:99b]", false);
+    await testIpCookie("[2a03:4000:6:310e:216:3eff:fe53:99b]", true);
+    await testIpCookie("192.168.1.1", false);
+    await testIpCookie("192.168.1.1", true);
 
     const TEST_URL = "http://example.org/";
     const TEST_SECURE_URL = "https://example.org/";
@@ -299,7 +349,7 @@ add_task(async function test_cookies() {
     incognitoOverride: "spanning",
     background,
     manifest: {
-      permissions: ["cookies", "*://example.org/", "webNavigation", "browsingData"],
+      permissions: ["cookies", "*://example.org/", "*://[2a03:4000:6:310e:216:3eff:fe53:99b]/", "*://192.168.1.1/", "webNavigation", "browsingData"],
     },
   });
 

@@ -22,11 +22,6 @@
 
 #include <stdarg.h>
 
-#if defined(GP_OS_windows)
-#  include <windows.h>
-#  define getpid GetCurrentProcessId
-#endif
-
 #define MAX_SIZE_LOG (1024 * 128)
 
 // NS_ENSURE_TRUE_VOID() without the warning on the debug build.
@@ -220,7 +215,7 @@ TraceInfoHolder GetOrCreateTraceInfo() {
   }
 
   if (!info) {
-    info = AllocTraceInfo(Thread::GetCurrentId());
+    info = AllocTraceInfo(profiler_current_thread_id());
     sTraceInfoTLS.set(info);
   }
 
@@ -233,7 +228,7 @@ uint64_t GenNewUniqueTaskId() {
   TraceInfoHolder info = GetOrCreateTraceInfo();
   ENSURE_TRUE(info, 0);
 
-  int tid = Thread::GetCurrentId();
+  int tid = profiler_current_thread_id();
   uint64_t taskid = ((uint64_t)tid << 32) | ++info->mLastUniqueTaskId;
   return taskid;
 }
@@ -306,8 +301,8 @@ void LogBegin(uint64_t aTaskId, uint64_t aSourceEventId) {
     log->mBegin.mType = ACTION_BEGIN;
     log->mBegin.mTaskId = aTaskId;
     log->mBegin.mTime = GetTimestamp();
-    log->mBegin.mPid = getpid();
-    log->mBegin.mTid = Thread::GetCurrentId();
+    log->mBegin.mPid = profiler_current_process_id();
+    log->mBegin.mTid = profiler_current_thread_id();
 
     MOZ_ASSERT(log->mBegin.mPid >= 0,
                "native process ID is < 0 (signed integer overflow)");
@@ -390,8 +385,8 @@ void StartLogging() {
 
 void StopLogging() { SetLogStarted(false); }
 
-UniquePtr<nsTArray<nsCString>> GetLoggedData(TimeStamp aTimeStamp) {
-  auto result = MakeUnique<nsTArray<nsCString>>();
+UniquePtr<Vector<nsCString>> GetLoggedData(TimeStamp aTimeStamp) {
+  auto result = MakeUnique<Vector<nsCString>>();
 
   // TODO: This is called from a signal handler. Use semaphore instead.
   StaticMutexAutoLock lock(sMutex);
@@ -410,7 +405,8 @@ UniquePtr<nsTArray<nsCString>> GetLoggedData(TimeStamp aTimeStamp) {
     nsTArray<nsCString>& strs = info->mStrs;
     for (TraceInfoLogNode* node = info->mLogsHead; node; node = node->mNext) {
       TraceInfoLogType& log = node->mLog;
-      nsCString& buffer = *result->AppendElement();
+      MOZ_RELEASE_ASSERT(result->append(nsCString()));
+      nsCString& buffer = result->back();
 
       switch (log.mType) {
         case ACTION_DISPATCH:

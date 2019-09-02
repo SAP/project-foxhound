@@ -25,24 +25,28 @@
   </linkset>
 
   <script src="chrome://browser/content/preferences/sitePermissions.js"/>
-  <script type="application/javascript" src="chrome://browser/content/preferences/in-content/extensionControlled.js"/>
+  <script src="chrome://browser/content/preferences/in-content/extensionControlled.js"/>
 
   <keyset>
     <key data-l10n-id="permissions-close-key" modifiers="accel" oncommand="window.close();"/>
   </keyset>
 
   <vbox class="contentPane">
+
+    <hbox align="center" id="setAutoplayPref" hidden="true">
+      <label data-l10n-id="permissions-autoplay-menu"/>
+    </hbox>
     <description id="permissionsText" control="url"/>
     <separator class="thin"/>
     <hbox align="start">
       <textbox id="searchBox" flex="1" data-l10n-id="permissions-searchbox"
-               type="search" oncommand="gSitePermissionsManager.buildPermissionsList();"/>
+               is="search-textbox" oncommand="gSitePermissionsManager.buildPermissionsList();"/>
     </hbox>
     <separator class="thin"/>
     <listheader>
-      <treecol id="siteCol" data-l10n-id="permissions-site-name" flex="3" width="50"
+      <treecol id="siteCol" data-l10n-id="permissions-site-name" flex="3" width="75"
                onclick="gSitePermissionsManager.buildPermissionsList(event.target)"/>
-      <treecol id="statusCol" data-l10n-id="permissions-status" flex="1" width="50"
+      <treecol id="statusCol" data-l10n-id="permissions-status" flex="1" width="75"
                data-isCurrentSortCol="true"
                onclick="gSitePermissionsManager.buildPermissionsList(event.target);"/>
     </listheader>
@@ -66,7 +70,7 @@
   <checkbox id="permissionsDisableCheckbox"/>
   <description id="permissionsDisableDescription"/>
   <spacer flex="1"/>
-  <hbox id="browserNotificationsPermissionExtensionContent" 
+  <hbox id="browserNotificationsPermissionExtensionContent"
         class="extension-controlled" align="center" hidden="true">
     <description control="disableNotificationsPermissionExtension" flex="1"/>
     <button id="disableNotificationsPermissionExtension"
@@ -74,7 +78,7 @@
             data-l10n-id="disable-extension"/>
   </hbox>
   <hbox class="actionButtons" align="right" flex="1">
-    <button oncommand="close();" icon="close" id="cancel"
+    <button oncommand="window.close();" icon="close" id="cancel"
             data-l10n-id="permissions-button-cancel" />
     <button id="btnApplyChanges" oncommand="gSitePermissionsManager.onApplyChanges();" icon="save"
             data-l10n-id="permissions-button-ok" />

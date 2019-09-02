@@ -9,14 +9,13 @@ import copy
 import datetime
 import json
 import os
-import re
 import sys
 import subprocess
 
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
-from mozharness.base.log import FATAL
+from mozharness.base.log import WARNING, FATAL
 from mozharness.base.script import BaseScript, PreScriptAction
 from mozharness.mozilla.automation import TBPL_RETRY
 from mozharness.mozilla.mozbase import MozbaseMixin
@@ -27,8 +26,9 @@ from mozharness.mozilla.testing.codecoverage import (
     code_coverage_config_options
 )
 
-SUITE_DEFAULT_E10S = ['geckoview-junit', 'mochitest', 'reftest']
+SUITE_DEFAULT_E10S = ['geckoview-junit', 'mochitest', 'reftest', 'robocop']
 SUITE_NO_E10S = ['cppunittest', 'geckoview-junit', 'xpcshell']
+SUITE_REPEATABLE = ['mochitest', 'reftest']
 
 
 class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMixin,
@@ -81,11 +81,27 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
          "help": "Set log level (debug|info|warning|error|critical|fatal)",
          }
     ], [
-        ['--e10s', ],
-        {"action": "store_true",
+        ['--disable-e10s', ],
+        {"action": "store_false",
          "dest": "e10s",
+         "default": True,
+         "help": "Run tests without multiple processes (e10s).",
+         }
+    ], [
+        ['--enable-webrender'],
+        {"action": "store_true",
+         "dest": "enable_webrender",
          "default": False,
-         "help": "Run tests with multiple processes.",
+         "help": "Run with WebRender enabled.",
+         }
+    ], [
+        ['--repeat'],
+        {"action": "store",
+         "type": "int",
+         "dest": "repeat",
+         "default": 0,
+         "help": "Repeat the tests the given number of times. Supported "
+                 "by mochitest, reftest, crashtest, ignored otherwise."
          }
     ]] + copy.deepcopy(testing_config_options) + \
         copy.deepcopy(code_coverage_config_options)
@@ -119,21 +135,22 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
         self.test_packages_url = c.get('test_packages_url')
         self.test_manifest = c.get('test_manifest')
         self.robocop_path = os.path.join(abs_dirs['abs_work_dir'], "robocop.apk")
-        self.test_suite = c.get('test_suite')
+        suite = c.get('test_suite')
+        if suite and '-chunked' in suite:
+            suite = suite[:suite.index('-chunked')]
+        self.test_suite = suite
         self.this_chunk = c.get('this_chunk')
         self.total_chunks = c.get('total_chunks')
-        if self.test_suite and self.test_suite not in self.config["suite_definitions"]:
-            # accept old-style test suite name like "mochitest-3"
-            m = re.match("(.*)-(\d*)", self.test_suite)
-            if m:
-                self.test_suite = m.group(1)
-                if self.this_chunk is None:
-                    self.this_chunk = m.group(2)
         self.xre_path = None
         self.device_serial = 'emulator-5554'
         self.log_raw_level = c.get('log_raw_level')
         self.log_tbpl_level = c.get('log_tbpl_level')
         self.e10s = c.get('e10s')
+        self.enable_webrender = c.get('enable_webrender')
+        if self.enable_webrender:
+            # AndroidMixin uses this when launching the emulator. We only want
+            # GLES3 if we're running WebRender
+            self.use_gles3 = True
 
     def query_abs_dirs(self):
         if self.abs_dirs:
@@ -176,6 +193,13 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
         except Exception:
             test_dir = test_suite
         return os.path.join(dirs['abs_test_install_dir'], test_dir)
+
+    def _get_mozharness_test_paths(self, suite):
+        test_paths = os.environ.get('MOZHARNESS_TEST_PATHS')
+        if not test_paths:
+            return
+
+        return json.loads(test_paths).get(suite)
 
     def _build_command(self):
         c = self.config
@@ -225,9 +249,10 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
                 dirs['abs_marionette_tests_dir'],
                 self.config.get('marionette_test_manifest', '')
             ),
+            'gtest_dir': os.path.join(dirs['abs_test_install_dir'], 'gtest'),
         }
 
-        user_paths = json.loads(os.environ.get('MOZHARNESS_TEST_PATHS', '""'))
+        user_paths = self._get_mozharness_test_paths(self.test_suite)
 
         for option in self.config["suite_definitions"][self.test_suite]["options"]:
             opt = option.split('=')[0]
@@ -255,16 +280,28 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
                 cmd.extend(['--disable-e10s'])
             elif category not in SUITE_DEFAULT_E10S and self.e10s:
                 cmd.extend(['--e10s'])
+        if c.get('repeat'):
+            if category in SUITE_REPEATABLE:
+                cmd.extend(["--repeat=%s" % c.get('repeat')])
+            else:
+                self.log("--repeat not supported in {}".format(category), level=WARNING)
 
         if not (self.verify_enabled or self.per_test_coverage):
             if user_paths:
-                if self.test_suite in user_paths:
-                    cmd.extend(user_paths[self.test_suite])
+                cmd.extend(user_paths)
             elif not (self.verify_enabled or self.per_test_coverage):
                 if self.this_chunk is not None:
                     cmd.extend(['--this-chunk', self.this_chunk])
                 if self.total_chunks is not None:
                     cmd.extend(['--total-chunks', self.total_chunks])
+
+        # Only enable WebRender if the flag is enabled. All downstream harnesses
+        # are expected to force-disable WebRender if not explicitly enabled,
+        # so that we don't have it accidentally getting enabled because the
+        # underlying hardware running the test becomes part of the WR-qualified
+        # set.
+        if self.enable_webrender:
+            cmd.extend(['--enable-webrender'])
 
         try_options, try_tests = self.try_args(self.test_suite)
         cmd.extend(try_options)
@@ -287,11 +324,10 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
 
         # For each test category, provide a list of supported sub-suites and a mapping
         # between the per_test_base suite name and the android suite name.
-        all = [('mochitest', {'plain': 'mochitest',
-                              'chrome': 'mochitest-chrome',
+        all = [('mochitest', {'mochitest-plain': 'mochitest-plain',
+                              'mochitest-chrome': 'mochitest-chrome',
                               'mochitest-media': 'mochitest-media',
-                              'plain-clipboard': 'mochitest-plain-clipboard',
-                              'plain-gpu': 'mochitest-plain-gpu'}),
+                              'mochitest-plain-gpu': 'mochitest-plain-gpu'}),
                ('reftest', {'reftest': 'reftest',
                             'crashtest': 'crashtest',
                             'jsreftest': 'jsreftest'}),

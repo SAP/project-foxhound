@@ -120,7 +120,7 @@ namespace layers {
  * alternative of making mIndex a int32_t that can store -1, but then having
  * to cast to uint32_t all over the place.
  */
-class MOZ_STACK_CLASS LayerMetricsWrapper {
+class MOZ_STACK_CLASS LayerMetricsWrapper final {
  public:
   enum StartAt {
     TOP,
@@ -282,6 +282,12 @@ class MOZ_STACK_CLASS LayerMetricsWrapper {
     return false;
   }
 
+  bool Combines3DTransformWithAncestors() const {
+    MOZ_ASSERT(IsValid());
+
+    return mLayer->Combines3DTransformWithAncestors();
+  }
+
   EventRegions GetEventRegions() const {
     MOZ_ASSERT(IsValid());
 
@@ -330,6 +336,8 @@ class MOZ_STACK_CLASS LayerMetricsWrapper {
     }
     return Nothing();
   }
+
+  Maybe<wr::RenderRoot> GetReferentRenderRoot() const { return Nothing(); }
 
   Maybe<ParentLayerIntRect> GetClipRect() const {
     MOZ_ASSERT(IsValid());
@@ -408,12 +416,7 @@ class MOZ_STACK_CLASS LayerMetricsWrapper {
   Maybe<ScrollableLayerGuid::ViewID> IsAsyncZoomContainer() const {
     MOZ_ASSERT(IsValid());
 
-    Maybe<ScrollableLayerGuid::ViewID> result = mLayer->IsAsyncZoomContainer();
-
-    // The async zoom container layer should not have any scroll metadata.
-    MOZ_ASSERT(result.isNothing() || mLayer->GetScrollMetadataCount() == 0);
-
-    return result;
+    return mLayer->IsAsyncZoomContainer();
   }
 
   // Expose an opaque pointer to the layer. Mostly used for printf

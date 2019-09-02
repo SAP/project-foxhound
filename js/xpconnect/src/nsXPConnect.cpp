@@ -24,7 +24,6 @@
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/Promise.h"
 
@@ -38,6 +37,7 @@
 #include "nsIScriptError.h"
 #include "nsContentUtils.h"
 #include "nsScriptError.h"
+#include "nsJSUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -259,7 +259,7 @@ void xpc::ErrorBase::AppendErrorDetailsTo(nsCString& error) {
 }
 
 void xpc::ErrorNote::LogToStderr() {
-  if (!DOMPrefs::DumpEnabled()) {
+  if (!nsJSUtils::DumpEnabled()) {
     return;
   }
 
@@ -272,7 +272,7 @@ void xpc::ErrorNote::LogToStderr() {
 }
 
 void xpc::ErrorReport::LogToStderr() {
-  if (!DOMPrefs::DumpEnabled()) {
+  if (!nsJSUtils::DumpEnabled()) {
     return;
   }
 
@@ -345,9 +345,10 @@ void xpc::ErrorReport::LogToConsoleWithStack(
   errorObject->SetErrorMessageName(mErrorMsgName);
   errorObject->SetTimeWarpTarget(aTimeWarpTarget);
 
-  nsresult rv = errorObject->InitWithWindowID(mErrorMsg, mFileName, mSourceLine,
-                                              mLineNumber, mColumn, mFlags,
-                                              mCategory, mWindowID);
+  nsresult rv = errorObject->InitWithWindowID(
+      mErrorMsg, mFileName, mSourceLine, mLineNumber, mColumn, mFlags,
+      mCategory, mWindowID,
+      mCategory.Equals(NS_LITERAL_CSTRING("chrome javascript")));
   NS_ENSURE_SUCCESS_VOID(rv);
 
   rv = errorObject->InitSourceId(mSourceId);
@@ -548,8 +549,8 @@ nsresult InitClassesWithNewWrappedGlobal(JSContext* aJSContext,
   MOZ_ASSERT(helper.GetScriptableFlags() & XPC_SCRIPTABLE_IS_GLOBAL_OBJECT);
   RefPtr<XPCWrappedNative> wrappedGlobal;
   nsresult rv = XPCWrappedNative::WrapNewGlobal(
-      helper, aPrincipal, aFlags & xpc::INIT_JS_STANDARD_CLASSES, aOptions,
-      getter_AddRefs(wrappedGlobal));
+      aJSContext, helper, aPrincipal, aFlags & xpc::INIT_JS_STANDARD_CLASSES,
+      aOptions, getter_AddRefs(wrappedGlobal));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Grab a copy of the global and enter its compartment.
@@ -560,24 +561,30 @@ nsresult InitClassesWithNewWrappedGlobal(JSContext* aJSContext,
     return UnexpectedFailure(NS_ERROR_FAILURE);
   }
 
+  {  // Scope for JSAutoRealm
+    JSAutoRealm ar(aJSContext, global);
+    if (!JS_DefineProfilingFunctions(aJSContext, global)) {
+      return UnexpectedFailure(NS_ERROR_OUT_OF_MEMORY);
+    }
+  }
+
   aNewGlobal.set(global);
   return NS_OK;
 }
 
 }  // namespace xpc
 
-static nsresult NativeInterface2JSObject(HandleObject aScope,
+static nsresult NativeInterface2JSObject(JSContext* aCx, HandleObject aScope,
                                          nsISupports* aCOMObj,
                                          nsWrapperCache* aCache,
                                          const nsIID* aIID, bool aAllowWrapping,
                                          MutableHandleValue aVal) {
-  AutoJSContext cx;
-  JSAutoRealm ar(cx, aScope);
+  JSAutoRealm ar(aCx, aScope);
 
   nsresult rv;
   xpcObjectHelper helper(aCOMObj, aCache);
-  if (!XPCConvert::NativeInterface2JSObject(aVal, helper, aIID, aAllowWrapping,
-                                            &rv)) {
+  if (!XPCConvert::NativeInterface2JSObject(aCx, aVal, helper, aIID,
+                                            aAllowWrapping, &rv)) {
     return rv;
   }
 
@@ -598,8 +605,8 @@ nsXPConnect::WrapNative(JSContext* aJSContext, JSObject* aScopeArg,
 
   RootedObject aScope(aJSContext, aScopeArg);
   RootedValue v(aJSContext);
-  nsresult rv =
-      NativeInterface2JSObject(aScope, aCOMObj, nullptr, &aIID, true, &v);
+  nsresult rv = NativeInterface2JSObject(aJSContext, aScope, aCOMObj, nullptr,
+                                         &aIID, true, &v);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -622,8 +629,8 @@ nsXPConnect::WrapNativeToJSVal(JSContext* aJSContext, JSObject* aScopeArg,
   MOZ_ASSERT(aCOMObj, "bad param");
 
   RootedObject aScope(aJSContext, aScopeArg);
-  return NativeInterface2JSObject(aScope, aCOMObj, aCache, aIID, aAllowWrapping,
-                                  aVal);
+  return NativeInterface2JSObject(aJSContext, aScope, aCOMObj, aCache, aIID,
+                                  aAllowWrapping, aVal);
 }
 
 NS_IMETHODIMP
@@ -797,7 +804,6 @@ nsXPConnect::DebugDumpObject(nsISupports* p, int16_t depth) {
   }
 
   nsCOMPtr<nsIXPConnect> xpc;
-  nsCOMPtr<nsIXPCWrappedJSClass> wjsc;
   nsCOMPtr<nsIXPConnectWrappedNative> wn;
   nsCOMPtr<nsIXPConnectWrappedJS> wjs;
 
@@ -805,10 +811,6 @@ nsXPConnect::DebugDumpObject(nsISupports* p, int16_t depth) {
           p->QueryInterface(NS_GET_IID(nsIXPConnect), getter_AddRefs(xpc)))) {
     XPC_LOG_ALWAYS(("Dumping a nsIXPConnect..."));
     xpc->DebugDump(depth);
-  } else if (NS_SUCCEEDED(p->QueryInterface(NS_GET_IID(nsIXPCWrappedJSClass),
-                                            getter_AddRefs(wjsc)))) {
-    XPC_LOG_ALWAYS(("Dumping a nsIXPCWrappedJSClass..."));
-    wjsc->DebugDump(depth);
   } else if (NS_SUCCEEDED(p->QueryInterface(
                  NS_GET_IID(nsIXPConnectWrappedNative), getter_AddRefs(wn)))) {
     XPC_LOG_ALWAYS(("Dumping a nsIXPConnectWrappedNative..."));
@@ -843,7 +845,7 @@ nsXPConnect::VariantToJS(JSContext* ctx, JSObject* scopeArg, nsIVariant* value,
   MOZ_ASSERT(js::IsObjectInContextCompartment(scope, ctx));
 
   nsresult rv = NS_OK;
-  if (!XPCVariant::VariantDataToJS(value, &rv, _retval)) {
+  if (!XPCVariant::VariantDataToJS(ctx, value, &rv, _retval)) {
     if (NS_FAILED(rv)) {
       return rv;
     }

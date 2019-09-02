@@ -11,7 +11,9 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarProviderOpenTabs"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "resource://gre/modules/Log.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
@@ -21,8 +23,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logger",
-  () => Log.repository.getLogger("Urlbar.Provider.OpenTabs"));
+XPCOMUtils.defineLazyGetter(this, "logger", () =>
+  Log.repository.getLogger("Urlbar.Provider.OpenTabs")
+);
 
 /**
  * Class used to create the provider.
@@ -75,7 +78,7 @@ class ProviderOpenTabs extends UrlbarProvider {
         await addToMemoryTable(conn, url, userContextId).catch(Cu.reportError);
       }
     }
-    return this._db = conn;
+    return (this._db = conn);
   }
 
   /**
@@ -95,13 +98,27 @@ class ProviderOpenTabs extends UrlbarProvider {
   }
 
   /**
-   * Returns the sources returned by this provider.
-   * @returns {array} one or multiple types from UrlbarUtils.RESULT_SOURCE.*
+   * Whether this provider should be invoked for the given context.
+   * If this method returns false, the providers manager won't start a query
+   * with this provider, to save on resources.
+   * @param {UrlbarQueryContext} queryContext The query context object
+   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  get sources() {
-    return [
-      UrlbarUtils.RESULT_SOURCE.TABS,
-    ];
+  isActive(queryContext) {
+    // For now we don't actually use this provider to query open tabs, instead
+    // we join the temp table in UnifiedComplete.
+    return false;
+  }
+
+  /**
+   * Whether this provider wants to restrict results to just itself.
+   * Other providers won't be invoked, unless this provider doesn't
+   * support the current query.
+   * @param {UrlbarQueryContext} queryContext The query context object
+   * @returns {boolean} Whether this provider wants to restrict results.
+   */
+  isRestricting(queryContext) {
+    return false;
   }
 
   /**
@@ -154,20 +171,30 @@ class ProviderOpenTabs extends UrlbarProvider {
     let instance = {};
     this.queries.set(queryContext, instance);
     let conn = await this.promiseDb();
-    await conn.executeCached(`
+    await conn.executeCached(
+      `
       SELECT url, userContextId
       FROM moz_openpages_temp
-    `, {}, (row, cancel) => {
-      if (!this.queries.has(queryContext)) {
-        cancel();
-        return;
+    `,
+      {},
+      (row, cancel) => {
+        if (!this.queries.has(queryContext)) {
+          cancel();
+          return;
+        }
+        addCallback(
+          this,
+          new UrlbarResult(
+            UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+            UrlbarUtils.RESULT_SOURCE.TABS,
+            {
+              url: row.getResultByName("url"),
+              userContextId: row.getResultByName("userContextId"),
+            }
+          )
+        );
       }
-      addCallback(this, new UrlbarResult(UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-                                         UrlbarUtils.RESULT_SOURCE.TABS, {
-        url: row.getResultByName("url"),
-        userContextId: row.getResultByName("userContextId"),
-      }));
-    });
+    );
     // We are done.
     this.queries.delete(queryContext);
   }
@@ -193,7 +220,8 @@ var UrlbarProviderOpenTabs = new ProviderOpenTabs();
  */
 async function addToMemoryTable(conn, url, userContextId) {
   return UrlbarProvidersManager.runInCriticalSection(async () => {
-    await conn.executeCached(`
+    await conn.executeCached(
+      `
       INSERT OR REPLACE INTO moz_openpages_temp (url, userContextId, open_count)
       VALUES ( :url,
                 :userContextId,
@@ -204,7 +232,9 @@ async function addToMemoryTable(conn, url, userContextId) {
                         1
                       )
               )
-    `, { url, userContextId });
+    `,
+      { url, userContextId }
+    );
   });
 }
 
@@ -217,11 +247,14 @@ async function addToMemoryTable(conn, url, userContextId) {
  */
 async function removeFromMemoryTable(conn, url, userContextId) {
   return UrlbarProvidersManager.runInCriticalSection(async () => {
-    await conn.executeCached(`
+    await conn.executeCached(
+      `
       UPDATE moz_openpages_temp
       SET open_count = open_count - 1
       WHERE url = :url
         AND userContextId = :userContextId
-    `, { url, userContextId });
+    `,
+      { url, userContextId }
+    );
   });
 }

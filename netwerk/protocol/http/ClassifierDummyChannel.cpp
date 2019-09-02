@@ -45,7 +45,8 @@ ClassifierDummyChannel::StorageAllowed(
   aChannel->GetURI(getter_AddRefs(uri));
 
   if (StaticPrefs::privacy_trackingprotection_annotate_channels()) {
-    dom::ContentChild* cc = static_cast<dom::ContentChild*>(gNeckoChild->Manager());
+    dom::ContentChild* cc =
+        static_cast<dom::ContentChild*>(gNeckoChild->Manager());
     if (cc->IsShuttingDown()) {
       return eStorageDenied;
     }
@@ -331,7 +332,7 @@ ClassifierDummyChannel::TakeAllSecurityMessages(
 }
 
 NS_IMETHODIMP
-ClassifierDummyChannel::SetCookie(const char* aCookieHeader) {
+ClassifierDummyChannel::SetCookie(const nsACString& aCookieHeader) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -475,10 +476,19 @@ ClassifierDummyChannel::SetBeConservative(bool aBeConservative) {
 }
 
 NS_IMETHODIMP
-ClassifierDummyChannel::GetTrr(bool* aTrr) { return NS_ERROR_NOT_IMPLEMENTED; }
+ClassifierDummyChannel::GetIsTRRServiceChannel(bool* aTrr) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 NS_IMETHODIMP
-ClassifierDummyChannel::SetTrr(bool aTrr) { return NS_ERROR_NOT_IMPLEMENTED; }
+ClassifierDummyChannel::SetIsTRRServiceChannel(bool aTrr) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+ClassifierDummyChannel::GetIsResolvedByTRR(bool* aResolvedByTRR) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 NS_IMETHODIMP
 ClassifierDummyChannel::GetTlsFlags(uint32_t* aTlsFlags) {
@@ -550,12 +560,6 @@ ClassifierDummyChannel::SetTopWindowURIIfUnknown(nsIURI* aTopWindowURI) {
 }
 
 NS_IMETHODIMP
-ClassifierDummyChannel::SetTopWindowPrincipal(
-    nsIPrincipal* aTopWindowPrincipal) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 ClassifierDummyChannel::GetProxyURI(nsIURI** aProxyURI) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -615,13 +619,25 @@ ClassifierDummyChannel::SetNavigationStartTimeStamp(
 }
 
 NS_IMETHODIMP
-ClassifierDummyChannel::CancelByChannelClassifier(nsresult aErrorCode) {
+ClassifierDummyChannel::CancelByURLClassifier(nsresult aErrorCode) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 void ClassifierDummyChannel::SetIPv4Disabled() {}
 
 void ClassifierDummyChannel::SetIPv6Disabled() {}
+
+bool ClassifierDummyChannel::GetHasSandboxedAuxiliaryNavigations() {
+  return false;
+}
+
+void ClassifierDummyChannel::SetHasSandboxedAuxiliaryNavigations(
+    bool aHasSandboxedAuxiliaryNavigations) {}
+
+NS_IMETHODIMP ClassifierDummyChannel::GetCrossOriginOpenerPolicy(
+    nsILoadInfo::CrossOriginOpenerPolicy* aPolicy) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 }  // namespace net
 }  // namespace mozilla

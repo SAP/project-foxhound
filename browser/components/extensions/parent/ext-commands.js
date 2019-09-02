@@ -2,8 +2,11 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-ChromeUtils.defineModuleGetter(this, "ExtensionShortcuts",
-                               "resource://gre/modules/ExtensionShortcuts.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "ExtensionShortcuts",
+  "resource://gre/modules/ExtensionShortcuts.jsm"
+);
 
 this.commands = class extends ExtensionAPI {
   static onUninstall(extensionId) {
@@ -13,14 +16,14 @@ this.commands = class extends ExtensionAPI {
   async onManifestEntry(entryName) {
     let shortcuts = new ExtensionShortcuts({
       extension: this.extension,
-      onCommand: (name) => this.emit("command", name),
+      onCommand: name => this.emit("command", name),
     });
     this.extension.shortcuts = shortcuts;
     await shortcuts.loadCommands();
     await shortcuts.register();
   }
 
-  onShutdown(reason) {
+  onShutdown() {
     this.extension.shortcuts.unregister();
   }
 
@@ -28,8 +31,8 @@ this.commands = class extends ExtensionAPI {
     return {
       commands: {
         getAll: () => this.extension.shortcuts.allCommands(),
-        update: (args) => this.extension.shortcuts.updateCommand(args),
-        reset: (name) => this.extension.shortcuts.resetCommand(name),
+        update: args => this.extension.shortcuts.updateCommand(args),
+        reset: name => this.extension.shortcuts.resetCommand(name),
         onCommand: new EventManager({
           context,
           name: "commands.onCommand",

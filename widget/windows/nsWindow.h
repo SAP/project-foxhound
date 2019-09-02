@@ -128,6 +128,7 @@ class nsWindow final : public nsWindowBase {
   virtual void ConstrainPosition(bool aAllowSlop, int32_t* aX,
                                  int32_t* aY) override;
   virtual void SetSizeConstraints(const SizeConstraints& aConstraints) override;
+  virtual void LockAspectRatio(bool aShouldLock) override;
   virtual const SizeConstraints GetSizeConstraints() override;
   virtual void Move(double aX, double aY) override;
   virtual void Resize(double aWidth, double aHeight, bool aRepaint) override;
@@ -143,7 +144,7 @@ class nsWindow final : public nsWindowBase {
   virtual void SuppressAnimation(bool aSuppress) override;
   virtual void Enable(bool aState) override;
   virtual bool IsEnabled() const override;
-  virtual nsresult SetFocus(bool aRaise) override;
+  virtual void SetFocus(Raise) override;
   virtual LayoutDeviceIntRect GetBounds() override;
   virtual LayoutDeviceIntRect GetScreenBounds() override;
   virtual MOZ_MUST_USE nsresult
@@ -237,7 +238,7 @@ class nsWindow final : public nsWindowBase {
   virtual bool DispatchMouseEvent(
       mozilla::EventMessage aEventMessage, WPARAM wParam, LPARAM lParam,
       bool aIsContextMenuKey = false,
-      int16_t aButton = mozilla::WidgetMouseEvent::eLeftButton,
+      int16_t aButton = mozilla::MouseButton::eLeft,
       uint16_t aInputSource =
           mozilla::dom::MouseEvent_Binding::MOZ_SOURCE_MOUSE,
       WinPointerInfo* aPointerInfo = nullptr);
@@ -483,6 +484,7 @@ class nsWindow final : public nsWindowBase {
     return mTransparencyMode;
   }
   void UpdateGlass();
+  bool WithinDraggableRegion(int32_t clientX, int32_t clientY);
 
  protected:
 #endif  // MOZ_XUL
@@ -548,6 +550,7 @@ class nsWindow final : public nsWindowBase {
   bool mIsRTL;
   bool mFullscreenMode;
   bool mMousePresent;
+  bool mMouseInDraggableArea;
   bool mDestroyCalled;
   bool mOpeningAnimationSuppressed;
   bool mAlwaysOnTop;
@@ -601,6 +604,8 @@ class nsWindow final : public nsWindowBase {
   int32_t mCaptionHeight;
 
   double mDefaultScale;
+
+  float mAspectRatio;
 
   nsCOMPtr<nsIIdleServiceInternal> mIdleService;
 
@@ -659,6 +664,8 @@ class nsWindow final : public nsWindowBase {
   // Whether we we're created as a child window (aka ChildWindow) or not.
   bool mIsChildWindow : 1;
 
+  int32_t mCachedHitTestResult;
+
   // The point in time at which the last paint completed. We use this to avoid
   //  painting too rapidly in response to frequent input events.
   TimeStamp mLastPaintEndTime;
@@ -669,7 +676,6 @@ class nsWindow final : public nsWindowBase {
   // Caching for hit test results
   POINT mCachedHitTestPoint;
   TimeStamp mCachedHitTestTime;
-  int32_t mCachedHitTestResult;
 
   RefPtr<mozilla::widget::WinCompositorWidget> mBasicLayersSurface;
 

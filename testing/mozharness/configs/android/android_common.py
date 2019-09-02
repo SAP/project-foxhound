@@ -43,7 +43,7 @@ config = {
         'run-tests',
     ],
     "tooltool_cache": os.environ.get("TOOLTOOL_CACHE"),
-    "tooltool_servers": ['http://relengapi/tooltool/'],
+    "tooltool_servers": ['http://taskcluster/tooltool.mozilla-releng.net/'],
     "hostutils_manifest_path": "testing/config/tooltool-manifests/linux64/hostutils.manifest",
     "avds_dir": "/builds/worker/workspace/build/.android",
     # "log_format": "%(levelname)8s - %(message)s",
@@ -58,7 +58,7 @@ config = {
     # "screenshot_times": [60, 120, 180, 240],
 
     "suite_definitions": {
-        "mochitest": {
+        "mochitest-plain": {
             "run_filename": "runtestsremote.py",
             "testsdir": "mochitest",
             "options": [
@@ -129,28 +129,6 @@ config = {
                 "--log-tbpl-level=%(log_tbpl_level)s",
                 "--screenshot-on-fail",
                 "--subsuite=gpu",
-                "--deviceSerial=%(device_serial)s",
-            ],
-        },
-        "mochitest-plain-clipboard": {
-            "run_filename": "runtestsremote.py",
-            "testsdir": "mochitest",
-            "options": [
-                "--app=%(app)s",
-                "--remote-webserver=%(remote_webserver)s",
-                "--xre-path=%(xre_path)s",
-                "--utility-path=%(utility_path)s",
-                "--http-port=%(http_port)s",
-                "--ssl-port=%(ssl_port)s",
-                "--certificate-path=%(certs_path)s",
-                "--symbols-path=%(symbols_path)s",
-                "--quiet",
-                "--log-raw=%(raw_log_file)s",
-                "--log-raw-level=%(log_raw_level)s",
-                "--log-errorsummary=%(error_summary_file)s",
-                "--log-tbpl-level=%(log_tbpl_level)s",
-                "--screenshot-on-fail",
-                "--subsuite=clipboard",
                 "--deviceSerial=%(device_serial)s",
             ],
         },
@@ -347,6 +325,18 @@ config = {
                 "--deviceSerial=%(device_serial)s",
                 "--log-raw=%(raw_log_file)s",
                 "--log-raw-level=%(log_raw_level)s",
+            ],
+        },
+        "gtest": {
+            "run_filename": "remotegtests.py",
+            "testsdir": "gtest",
+            "install": True,
+            "options": [
+                "--symbols-path=%(symbols_path)s",
+                "--tests-path=%(gtest_dir)s",
+                "--libxul=%(gtest_dir)s/gtest_bin/gtest/libxul.so",
+                "--package=%(app)s",
+                "--deviceSerial=%(device_serial)s",
             ],
         },
 

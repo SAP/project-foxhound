@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1378010
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1378010</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
   const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
@@ -136,6 +136,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1378010
     await testWindowSizePositive(1234);
     await testFileCreationNegative(["-url", "http://mochi.test:8888/chrome/browser/components/shell/test/headless.html", "-screenshot", "-window-size", "hello"], "screenshot.png");
     await testFileCreationNegative(["-url", "http://mochi.test:8888/chrome/browser/components/shell/test/headless.html", "-screenshot", "-window-size", "800,"], "screenshot.png");
+
+    // Test when the requested URL redirects
+    await testFileCreationPositive(["-url", "http://mochi.test:8888/chrome/browser/components/shell/test/headless_redirect.html", "-screenshot", screenshotPath], screenshotPath);
 
     SimpleTest.finish();
   })();

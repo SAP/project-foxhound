@@ -114,6 +114,9 @@ class Bootstrap {
 
   virtual void XRE_SetAndroidChildFds(JNIEnv* aEnv,
                                       const XRE_AndroidChildFds& fds) = 0;
+#  ifdef MOZ_PROFILE_GENERATE
+  virtual void XRE_WriteLLVMProfData() = 0;
+#  endif
 #endif
 
 #ifdef LIBFUZZER
@@ -125,6 +128,11 @@ class Bootstrap {
 #endif
 };
 
+enum class LibLoadingStrategy {
+  NoReadAhead,
+  ReadAhead,
+};
+
 /**
  * Creates and returns the singleton instnace of the bootstrap object.
  * @param `b` is an outparam. We use a parameter and not a return value
@@ -134,7 +142,9 @@ class Bootstrap {
  */
 #ifdef XPCOM_GLUE
 typedef void (*GetBootstrapType)(Bootstrap::UniquePtr&);
-Bootstrap::UniquePtr GetBootstrap(const char* aXPCOMFile = nullptr);
+Bootstrap::UniquePtr GetBootstrap(
+    const char* aXPCOMFile = nullptr,
+    LibLoadingStrategy aLibLoadingStrategy = LibLoadingStrategy::NoReadAhead);
 #else
 extern "C" NS_EXPORT void NS_FROZENCALL
 XRE_GetBootstrap(Bootstrap::UniquePtr& b);

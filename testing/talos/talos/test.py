@@ -271,26 +271,6 @@ class QuantumPageloadTest(PageloaderTest):
 
 
 @register_test()
-class tpaint(PageloaderTest):
-    """
-    Tests the amount of time it takes the open a new window. This test does
-    not include startup time. Multiple test windows are opened in succession,
-    results reported are the average amount of time required to create and
-    display a window in the running instance of the browser.
-    (Measures ctrl-n performance.)
-    """
-    tpmanifest = '${talos}/tests/tpaint/tpaint.manifest'
-    tppagecycles = 20
-    timeout = 300
-    gecko_profile_interval = 1
-    gecko_profile_entries = 2000000
-    tpmozafterpaint = True
-    filters = filter.ignore_first.prepare(5) + filter.median.prepare()
-    unit = 'ms'
-    preferences = {'security.data_uri.block_toplevel_data_uri_navigations': False}
-
-
-@register_test()
 class twinopen(PageloaderTest):
     """
     Tests the amount of time it takes an open browser to open a new browser
@@ -914,72 +894,6 @@ class perf_reftest_singletons(PageloaderTest):
     unit = 'ms'
     lower_is_better = True
     alert_threshold = 5.0
-
-
-@register_test()
-class tp6_google(QuantumPageloadTest):
-    """
-    Quantum Pageload Test - Google
-    """
-    tpmanifest = '${talos}/tests/quantum_pageload/quantum_pageload_google.manifest'
-    fnbpaint = False
-    tphero = True
-
-
-@register_test()
-class tp6_google_heavy(tp6_google):
-    """
-    tp6_google test ran against a heavy-user profile
-    """
-    profile = 'simple'
-
-
-@register_test()
-class tp6_youtube(QuantumPageloadTest):
-    """
-    Quantum Pageload Test - YouTube
-    """
-    tpmanifest = '${talos}/tests/quantum_pageload/quantum_pageload_youtube.manifest'
-
-
-@register_test()
-class tp6_youtube_heavy(tp6_youtube):
-    """
-    tp6_youtube test ran against a heavy-user profile
-    """
-    profile = 'simple'
-
-
-@register_test()
-class tp6_amazon(QuantumPageloadTest):
-    """
-    Quantum Pageload Test - Amazon
-    """
-    tpmanifest = '${talos}/tests/quantum_pageload/quantum_pageload_amazon.manifest'
-
-
-@register_test()
-class tp6_amazon_heavy(tp6_amazon):
-    """
-    tp6_amazon test ran against a heavy-user profile
-    """
-    profile = 'simple'
-
-
-@register_test()
-class tp6_facebook(QuantumPageloadTest):
-    """
-    Quantum Pageload Test - Facebook
-    """
-    tpmanifest = '${talos}/tests/quantum_pageload/quantum_pageload_facebook.manifest'
-
-
-@register_test()
-class tp6_facebook_heavy(tp6_facebook):
-    """
-    tp6_facebook test ran against a heavy-user profile
-    """
-    profile = 'simple'
 
 
 @register_test()

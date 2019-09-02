@@ -22,6 +22,7 @@
 #include "prenv.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIURI.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/Selection.h"
@@ -164,13 +165,13 @@ static void LogDocState(dom::Document* aDocumentNode) {
 }
 
 static void LogPresShell(dom::Document* aDocumentNode) {
-  nsIPresShell* ps = aDocumentNode->GetShell();
-  printf("presshell: %p", static_cast<void*>(ps));
+  PresShell* presShell = aDocumentNode->GetPresShell();
+  printf("presshell: %p", static_cast<void*>(presShell));
 
   nsIScrollableFrame* sf = nullptr;
-  if (ps) {
-    printf(", is %s destroying", (ps->IsDestroying() ? "" : "not"));
-    sf = ps->GetRootScrollFrameAsScrollable();
+  if (presShell) {
+    printf(", is %s destroying", (presShell->IsDestroying() ? "" : "not"));
+    sf = presShell->GetRootScrollFrameAsScrollable();
   }
   printf(", root scroll frame: %p", static_cast<void*>(sf));
 }
@@ -311,7 +312,9 @@ static void LogRequest(nsIRequest* aRequest) {
     if (loadFlags & nsIChannel::LOAD_TARGETED) printf("targeted; ");
     if (loadFlags & nsIChannel::LOAD_CALL_CONTENT_SNIFFERS)
       printf("call content sniffers; ");
-    if (loadFlags & nsIChannel::LOAD_CLASSIFY_URI) printf("classify uri; ");
+    if (loadFlags & nsIChannel::LOAD_BYPASS_URL_CLASSIFIER) {
+      printf("bypass classify uri; ");
+    }
   } else {
     printf("    no request");
   }

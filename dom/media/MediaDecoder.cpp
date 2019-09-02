@@ -248,7 +248,10 @@ void MediaDecoder::AddOutputStream(DOMMediaStream* aStream) {
   MOZ_ASSERT(mDecoderStateMachine, "Must be called after Load().");
   AbstractThread::AutoEnter context(AbstractMainThread());
   mDecoderStateMachine->EnsureOutputStreamManager(
-      aStream->GetInputStream()->Graph(), ToMaybe(mInfo.get()));
+      aStream->GetInputStream()->Graph());
+  if (mInfo) {
+    mDecoderStateMachine->EnsureOutputStreamManagerHasTracks(*mInfo);
+  }
   mDecoderStateMachine->AddOutputStream(aStream);
 }
 
@@ -301,7 +304,7 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
       mMinimizePreroll(aInit.mMinimizePreroll),
       mFiredMetadataLoaded(false),
       mIsDocumentVisible(false),
-      mElementVisibility(Visibility::UNTRACKED),
+      mElementVisibility(Visibility::Untracked),
       mIsElementInTree(false),
       mForcedHidden(false),
       mHasSuspendTaint(aInit.mHasSuspendTaint),
@@ -656,6 +659,7 @@ void MediaDecoder::MetadataLoaded(
       aInfo->mMediaSeekableOnlyInBufferedRanges;
   mInfo = aInfo.release();
   GetOwner()->ConstructMediaTracks(mInfo);
+  mDecoderStateMachine->EnsureOutputStreamManagerHasTracks(*mInfo);
 
   // Make sure the element and the frame (if any) are told about
   // our new size.
@@ -1024,7 +1028,7 @@ void MediaDecoder::UpdateVideoDecodeMode() {
   // If the element is in-tree with UNTRACKED visibility, that means the element
   // is not close enough to the viewport so we have not start to update its
   // visibility. In this case, it's equals to invisible.
-  if (mIsElementInTree && mElementVisibility == Visibility::UNTRACKED) {
+  if (mIsElementInTree && mElementVisibility == Visibility::Untracked) {
     LOG("UpdateVideoDecodeMode(), set Suspend because element hasn't be "
         "updated visibility state.");
     mDecoderStateMachine->SetVideoDecodeMode(VideoDecodeMode::Suspend);
@@ -1035,7 +1039,7 @@ void MediaDecoder::UpdateVideoDecodeMode() {
   // A element is visible only if its document is visible and the element
   // itself is visible.
   if (mIsDocumentVisible &&
-      mElementVisibility == Visibility::APPROXIMATELY_VISIBLE) {
+      mElementVisibility == Visibility::ApproximatelyVisible) {
     LOG("UpdateVideoDecodeMode(), set Normal because the element visible.");
     mDecoderStateMachine->SetVideoDecodeMode(VideoDecodeMode::Normal);
   } else {
@@ -1243,13 +1247,13 @@ RefPtr<SetCDMPromise> MediaDecoder::SetCDMProxy(CDMProxy* aProxy) {
                                        &MediaFormatReader::SetCDMProxy, aProxy);
 }
 
-bool MediaDecoder::IsOpusEnabled() { return StaticPrefs::MediaOpusEnabled(); }
+bool MediaDecoder::IsOpusEnabled() { return StaticPrefs::media_opus_enabled(); }
 
-bool MediaDecoder::IsOggEnabled() { return StaticPrefs::MediaOggEnabled(); }
+bool MediaDecoder::IsOggEnabled() { return StaticPrefs::media_ogg_enabled(); }
 
-bool MediaDecoder::IsWaveEnabled() { return StaticPrefs::MediaWaveEnabled(); }
+bool MediaDecoder::IsWaveEnabled() { return StaticPrefs::media_wave_enabled(); }
 
-bool MediaDecoder::IsWebMEnabled() { return StaticPrefs::MediaWebMEnabled(); }
+bool MediaDecoder::IsWebMEnabled() { return StaticPrefs::media_webm_enabled(); }
 
 NS_IMETHODIMP
 MediaMemoryTracker::CollectReports(nsIHandleReportCallback* aHandleReport,
@@ -1320,67 +1324,36 @@ MediaDecoderOwner::NextFrameStatus MediaDecoder::NextFrameBufferedStatus() {
              : MediaDecoderOwner::NEXT_FRAME_UNAVAILABLE;
 }
 
-nsCString MediaDecoder::GetDebugInfo() {
-  return nsPrintfCString(
-      "MediaDecoder=%p: channels=%u rate=%u hasAudio=%d hasVideo=%d "
-      "mPlayState=%s",
-      this, mInfo ? mInfo->mAudio.mChannels : 0,
-      mInfo ? mInfo->mAudio.mRate : 0, mInfo ? mInfo->HasAudio() : 0,
-      mInfo ? mInfo->HasVideo() : 0, PlayStateStr());
+void MediaDecoder::GetDebugInfo(dom::MediaDecoderDebugInfo& aInfo) {
+  aInfo.mInstance = NS_ConvertUTF8toUTF16(nsPrintfCString("%p", this));
+  aInfo.mChannels = mInfo ? mInfo->mAudio.mChannels : 0;
+  aInfo.mRate = mInfo ? mInfo->mAudio.mRate : 0;
+  aInfo.mHasAudio = mInfo ? mInfo->HasAudio() : false;
+  aInfo.mHasVideo = mInfo ? mInfo->HasVideo() : false;
+  aInfo.mPlayState = NS_ConvertUTF8toUTF16(PlayStateStr());
+  aInfo.mContainerType =
+      NS_ConvertUTF8toUTF16(ContainerType().Type().AsString());
+  mReader->GetDebugInfo(aInfo.mReader);
 }
 
-RefPtr<GenericPromise> MediaDecoder::DumpDebugInfo() {
+RefPtr<GenericPromise> MediaDecoder::RequestDebugInfo(
+    MediaDecoderDebugInfo& aInfo) {
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
-  nsCString str = GetDebugInfo();
-
-  nsAutoCString readerStr;
-  GetMozDebugReaderData(readerStr);
-  if (!readerStr.IsEmpty()) {
-    str += "\nreader data:\n";
-    str += readerStr;
-  }
+  GetDebugInfo(aInfo);
 
   if (!GetStateMachine()) {
-    DUMP("%s", str.get());
     return GenericPromise::CreateAndResolve(true, __func__);
   }
 
-  return GetStateMachine()->RequestDebugInfo()->Then(
-      SystemGroup::AbstractMainThreadFor(TaskCategory::Other), __func__,
-      [str](const nsACString& aString) {
-        DUMP("%s", str.get());
-        DUMP("%s", aString.Data());
-        return GenericPromise::CreateAndResolve(true, __func__);
-      },
-      [str]() {
-        DUMP("%s", str.get());
-        return GenericPromise::CreateAndResolve(true, __func__);
-      });
-}
-
-RefPtr<MediaDecoder::DebugInfoPromise> MediaDecoder::RequestDebugInfo() {
-  MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
-
-  auto str = GetDebugInfo();
-  if (!GetStateMachine()) {
-    return DebugInfoPromise::CreateAndResolve(str, __func__);
-  }
-
-  return GetStateMachine()->RequestDebugInfo()->Then(
-      SystemGroup::AbstractMainThreadFor(TaskCategory::Other), __func__,
-      [str](const nsACString& aString) {
-        nsCString result = str + nsCString("\n") + aString;
-        return DebugInfoPromise::CreateAndResolve(result, __func__);
-      },
-      [str]() { return DebugInfoPromise::CreateAndResolve(str, __func__); });
-}
-
-void MediaDecoder::GetMozDebugReaderData(nsACString& aString) {
-  aString += nsPrintfCString("Container Type: %s\n",
-                             ContainerType().Type().AsString().get());
-  if (mReader) {
-    mReader->GetMozDebugReaderData(aString);
-  }
+  return GetStateMachine()
+      ->RequestDebugInfo(aInfo.mStateMachine)
+      ->Then(
+          SystemGroup::AbstractMainThreadFor(TaskCategory::Other), __func__,
+          []() { return GenericPromise::CreateAndResolve(true, __func__); },
+          []() {
+            UNREACHABLE();
+            return GenericPromise::CreateAndResolve(false, __func__);
+          });
 }
 
 void MediaDecoder::NotifyAudibleStateChanged() {

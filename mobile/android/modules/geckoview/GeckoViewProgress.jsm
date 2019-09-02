@@ -6,15 +6,27 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewProgress"];
 
-const {GeckoViewModule} = ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { GeckoViewModule } = ChromeUtils.import(
+  "resource://gre/modules/GeckoViewModule.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-XPCOMUtils.defineLazyServiceGetter(this, "OverrideService",
-  "@mozilla.org/security/certoverride;1", "nsICertOverrideService");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "OverrideService",
+  "@mozilla.org/security/certoverride;1",
+  "nsICertOverrideService"
+);
 
-XPCOMUtils.defineLazyServiceGetter(this, "IDNService",
-  "@mozilla.org/network/idn-service;1", "nsIIDNService");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "IDNService",
+  "@mozilla.org/network/idn-service;1",
+  "nsIIDNService"
+);
 
 var IdentityHandler = {
   // The definitions below should be kept in sync with those in GeckoView.ProgressListener.SecurityInformation
@@ -56,11 +68,13 @@ var IdentityHandler = {
 
   getMixedDisplayMode: function getMixedDisplayMode(aState) {
     if (aState & Ci.nsIWebProgressListener.STATE_LOADED_MIXED_DISPLAY_CONTENT) {
-        return this.MIXED_MODE_CONTENT_LOADED;
+      return this.MIXED_MODE_CONTENT_LOADED;
     }
 
-    if (aState & Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_DISPLAY_CONTENT) {
-        return this.MIXED_MODE_CONTENT_BLOCKED;
+    if (
+      aState & Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_DISPLAY_CONTENT
+    ) {
+      return this.MIXED_MODE_CONTENT_BLOCKED;
     }
 
     return this.MIXED_MODE_UNKNOWN;
@@ -68,8 +82,10 @@ var IdentityHandler = {
 
   getMixedActiveMode: function getActiveDisplayMode(aState) {
     // Only show an indicator for loaded mixed content if the pref to block it is enabled
-    if ((aState & Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT) &&
-        !Services.prefs.getBoolPref("security.mixed_content.block_active_content")) {
+    if (
+      aState & Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT &&
+      !Services.prefs.getBoolPref("security.mixed_content.block_active_content")
+    ) {
       return this.MIXED_MODE_CONTENT_LOADED;
     }
 
@@ -85,10 +101,10 @@ var IdentityHandler = {
    * (if available). Return the data needed to update the UI.
    */
   checkIdentity: function checkIdentity(aState, aBrowser) {
-    let identityMode = this.getIdentityMode(aState);
-    let mixedDisplay = this.getMixedDisplayMode(aState);
-    let mixedActive = this.getMixedActiveMode(aState);
-    let result = {
+    const identityMode = this.getIdentityMode(aState);
+    const mixedDisplay = this.getMixedDisplayMode(aState);
+    const mixedActive = this.getMixedActiveMode(aState);
+    const result = {
       mode: {
         identity: identityMode,
         mixed_display: mixedDisplay,
@@ -102,9 +118,11 @@ var IdentityHandler = {
 
     // Don't show identity data for pages with an unknown identity or if any
     // mixed content is loaded (mixed display content is loaded by default).
-    if (identityMode === this.IDENTITY_MODE_UNKNOWN ||
-        (aState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) ||
-        (aState & Ci.nsIWebProgressListener.STATE_IS_INSECURE)) {
+    if (
+      identityMode === this.IDENTITY_MODE_UNKNOWN ||
+      aState & Ci.nsIWebProgressListener.STATE_IS_BROKEN ||
+      aState & Ci.nsIWebProgressListener.STATE_IS_INSECURE
+    ) {
       result.secure = false;
       return result;
     }
@@ -122,7 +140,7 @@ var IdentityHandler = {
       result.host = uri.host;
     }
 
-    let cert = aBrowser.securityUI.secInfo.serverCert;
+    const cert = aBrowser.securityUI.secInfo.serverCert;
 
     result.organization = cert.organization;
     result.subjectName = cert.subjectName;
@@ -131,9 +149,13 @@ var IdentityHandler = {
 
     try {
       result.securityException = OverrideService.hasMatchingOverride(
-          uri.host, uri.port, cert, {}, {});
-    } catch (e) {
-    }
+        uri.host,
+        uri.port,
+        cert,
+        {},
+        {}
+      );
+    } catch (e) {}
 
     return result;
   },
@@ -145,21 +167,23 @@ class GeckoViewProgress extends GeckoViewModule {
   }
 
   onEnable() {
-    debug `onEnable`;
+    debug`onEnable`;
 
-    let flags = Ci.nsIWebProgress.NOTIFY_STATE_NETWORK |
-                Ci.nsIWebProgress.NOTIFY_SECURITY |
-                Ci.nsIWebProgress.NOTIFY_LOCATION;
-    this.progressFilter =
-      Cc["@mozilla.org/appshell/component/browser-status-filter;1"]
-      .createInstance(Ci.nsIWebProgress);
+    const flags =
+      Ci.nsIWebProgress.NOTIFY_STATE_NETWORK |
+      Ci.nsIWebProgress.NOTIFY_SECURITY |
+      Ci.nsIWebProgress.NOTIFY_LOCATION;
+    this.progressFilter = Cc[
+      "@mozilla.org/appshell/component/browser-status-filter;1"
+    ].createInstance(Ci.nsIWebProgress);
     this.progressFilter.addProgressListener(this, flags);
     this.browser.addProgressListener(this.progressFilter, flags);
     Services.obs.addObserver(this, "oop-frameloader-crashed");
+    this.registerListener("GeckoView:FlushSessionState");
   }
 
   onDisable() {
-    debug `onDisable`;
+    debug`onDisable`;
 
     if (this.progressFilter) {
       this.progressFilter.removeProgressListener(this);
@@ -167,18 +191,28 @@ class GeckoViewProgress extends GeckoViewModule {
     }
 
     Services.obs.removeObserver(this, "oop-frameloader-crashed");
+    this.unregisterListener("GeckoView:FlushSessionState");
+  }
+
+  onEvent(aEvent, aData, aCallback) {
+    debug`onEvent: event=${aEvent}, data=${aData}`;
+
+    switch (aEvent) {
+      case "GeckoView:FlushSessionState":
+        this.messageManager.sendAsyncMessage("GeckoView:FlushSessionState");
+        break;
+    }
   }
 
   onSettingsUpdate() {
     const settings = this.settings;
-    debug `onSettingsUpdate: ${settings}`;
+    debug`onSettingsUpdate: ${settings}`;
   }
 
   onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
-    debug `onStateChange: isTopLevel=${aWebProgress.isTopLevel},
+    debug`onStateChange: isTopLevel=${aWebProgress.isTopLevel},
                           flags=${aStateFlags}, status=${aStatus}
                           loadType=${aWebProgress.loadType}`;
-
 
     if (!aWebProgress.isTopLevel) {
       return;
@@ -189,7 +223,7 @@ class GeckoViewProgress extends GeckoViewModule {
     const isStart = (aStateFlags & Ci.nsIWebProgressListener.STATE_START) != 0;
     const isStop = (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) != 0;
 
-    debug `onStateChange: uri=${uriSpec} isSuccess=${isSuccess}
+    debug`onStateChange: uri=${uriSpec} isSuccess=${isSuccess}
            isStart=${isStart} isStop=${isStop}`;
 
     if (isStart) {
@@ -203,7 +237,7 @@ class GeckoViewProgress extends GeckoViewModule {
     } else if (isStop && !aWebProgress.isLoadingDocument) {
       this._inProgress = false;
 
-      let message = {
+      const message = {
         type: "GeckoView:PageStop",
         success: isSuccess,
       };
@@ -213,7 +247,7 @@ class GeckoViewProgress extends GeckoViewModule {
   }
 
   onSecurityChange(aWebProgress, aRequest, aState) {
-    debug `onSecurityChange`;
+    debug`onSecurityChange`;
 
     // Don't need to do anything if the data we use to update the UI hasn't changed
     if (this._state === aState && !this._hostChanged) {
@@ -223,9 +257,9 @@ class GeckoViewProgress extends GeckoViewModule {
     this._state = aState;
     this._hostChanged = false;
 
-    let identity = IdentityHandler.checkIdentity(aState, this.browser);
+    const identity = IdentityHandler.checkIdentity(aState, this.browser);
 
-    let message = {
+    const message = {
       type: "GeckoView:SecurityChanged",
       identity: identity,
     };
@@ -234,7 +268,7 @@ class GeckoViewProgress extends GeckoViewModule {
   }
 
   onLocationChange(aWebProgress, aRequest, aLocationURI, aFlags) {
-    debug `onLocationChange: location=${aLocationURI.displaySpec},
+    debug`onLocationChange: location=${aLocationURI.displaySpec},
                              flags=${aFlags}`;
 
     this._hostChanged = true;
@@ -242,7 +276,7 @@ class GeckoViewProgress extends GeckoViewModule {
 
   // nsIObserver event handler
   observe(aSubject, aTopic, aData) {
-    debug `observe: topic=${aTopic}`;
+    debug`observe: topic=${aTopic}`;
 
     switch (aTopic) {
       case "oop-frameloader-crashed": {
@@ -260,4 +294,4 @@ class GeckoViewProgress extends GeckoViewModule {
   }
 }
 
-const {debug, warn} = GeckoViewProgress.initLogging("GeckoViewProgress"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewProgress.initLogging("GeckoViewProgress"); // eslint-disable-line no-unused-vars

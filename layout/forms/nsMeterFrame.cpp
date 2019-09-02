@@ -6,18 +6,18 @@
 
 #include "nsMeterFrame.h"
 
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLMeterElement.h"
 #include "nsIContent.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
-#include "mozilla/dom/Document.h"
-#include "nsIPresShell.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsCheckboxRadioFrame.h"
 #include "nsFontMetrics.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/HTMLMeterElement.h"
 #include "nsCSSPseudoElements.h"
 #include "nsStyleConsts.h"
 #include <algorithm>
@@ -26,7 +26,7 @@ using namespace mozilla;
 using mozilla::dom::Element;
 using mozilla::dom::HTMLMeterElement;
 
-nsIFrame* NS_NewMeterFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewMeterFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsMeterFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -175,7 +175,7 @@ nsresult nsMeterFrame::AttributeChanged(int32_t aNameSpaceID,
        aAttribute == nsGkAtoms::min)) {
     nsIFrame* barFrame = mBarDiv->GetPrimaryFrame();
     NS_ASSERTION(barFrame, "The meter frame should have a child with a frame!");
-    PresShell()->FrameNeedsReflow(barFrame, nsIPresShell::eResize,
+    PresShell()->FrameNeedsReflow(barFrame, IntrinsicDirty::Resize,
                                   NS_FRAME_IS_DIRTY);
     InvalidateFrame();
   }

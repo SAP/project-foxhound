@@ -10,7 +10,7 @@ function macWindowMenuDidShow() {
     if (win.document.documentElement.getAttribute("inwindowmenu") == "false") {
       continue;
     }
-    let item = document.createElement("menuitem");
+    let item = document.createXULElement("menuitem");
     item.setAttribute("label", win.document.title);
     if (win == window) {
       item.setAttribute("checked", "true");
@@ -35,8 +35,9 @@ function macWindowMenuDidHide() {
 }
 
 function zoomWindow() {
-  if (window.windowState == window.STATE_NORMAL)
+  if (window.windowState == window.STATE_NORMAL) {
     window.maximize();
-  else
+  } else {
     window.restore();
+  }
 }

@@ -136,6 +136,7 @@ class BasicCompositor;
 class TextureReadLock;
 struct GPUStats;
 class AsyncReadbackBuffer;
+class RecordedFrame;
 
 enum SurfaceInitMode { INIT_MODE_NONE, INIT_MODE_CLEAR };
 
@@ -186,7 +187,7 @@ class Compositor : public TextureSourceProvider {
                       CompositorBridgeParent* aParent = nullptr);
 
   virtual bool Initialize(nsCString* const out_failureReason) = 0;
-  virtual void Destroy() override;
+  void Destroy() override;
   bool IsDestroyed() const { return mIsDestroyed; }
 
   virtual void DetachWidget() { mWidget = nullptr; }
@@ -469,9 +470,8 @@ class Compositor : public TextureSourceProvider {
   virtual LayersBackend GetBackendType() const = 0;
 
   virtual CompositorD3D11* AsCompositorD3D11() { return nullptr; }
-  virtual BasicCompositor* AsBasicCompositor() { return nullptr; }
 
-  virtual Compositor* AsCompositor() override { return this; }
+  Compositor* AsCompositor() override { return this; }
 
   TimeStamp GetLastCompositionEndTime() const override {
     return mLastCompositionEndTime;
@@ -518,8 +518,23 @@ class Compositor : public TextureSourceProvider {
   // A stale Compositor has no CompositorBridgeParent; it will not process
   // frames and should not be used.
   void SetInvalid();
-  virtual bool IsValid() const override;
+  bool IsValid() const override;
   CompositorBridgeParent* GetCompositorBridgeParent() const { return mParent; }
+
+  /**
+   * Request the compositor to allow recording its frames.
+   *
+   * This is a noop on |CompositorOGL|.
+   */
+  virtual void RequestAllowFrameRecording(bool aWillRecord) {}
+
+  /**
+   * Record the current frame for readback by the |CompositionRecorder|.
+   *
+   * If this compositor does not support this feature, a null pointer is
+   * returned instead.
+   */
+  already_AddRefed<RecordedFrame> RecordFrame(const TimeStamp& aTimeStamp);
 
  protected:
   void DrawDiagnosticsInternal(DiagnosticFlags aFlags,
@@ -636,7 +651,7 @@ class AsyncReadbackBuffer {
 
  protected:
   explicit AsyncReadbackBuffer(const gfx::IntSize& aSize) : mSize(aSize) {}
-  virtual ~AsyncReadbackBuffer() {}
+  virtual ~AsyncReadbackBuffer() = default;
 
   gfx::IntSize mSize;
 };

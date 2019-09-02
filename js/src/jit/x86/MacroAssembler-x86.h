@@ -11,6 +11,7 @@
 #include "jit/MoveResolver.h"
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 #include "js/HeapAPI.h"
+#include "vm/BigIntType.h"  // JS::BigInt
 #include "vm/Realm.h"
 
 namespace js {
@@ -217,6 +218,9 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   void loadValue(const BaseIndex& src, ValueOperand val) {
     loadValue(Operand(src), val);
   }
+  void loadUnalignedValue(const Address& src, ValueOperand dest) {
+    loadValue(src, dest);
+  }
   void tagValue(JSValueType type, Register payload, ValueOperand dest) {
     MOZ_ASSERT(dest.typeReg() != dest.payloadReg());
     if (payload != dest.payloadReg()) {
@@ -321,17 +325,17 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   }
   Condition testNumber(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmp32(tag, ImmTag(JSVAL_UPPER_INCL_TAG_OF_NUMBER_SET));
+    cmp32(tag, ImmTag(JS::detail::ValueUpperInclNumberTag));
     return cond == Equal ? BelowOrEqual : Above;
   }
   Condition testGCThing(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmp32(tag, ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+    cmp32(tag, ImmTag(JS::detail::ValueLowerInclGCThingTag));
     return cond == Equal ? AboveOrEqual : Below;
   }
   Condition testGCThing(Condition cond, const Address& address) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmp32(tagOf(address), ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+    cmp32(tagOf(address), ImmTag(JS::detail::ValueLowerInclGCThingTag));
     return cond == Equal ? AboveOrEqual : Below;
   }
   Condition testMagic(Condition cond, const Address& address) {
@@ -351,7 +355,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   }
   Condition testPrimitive(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmp32(tag, ImmTag(JSVAL_UPPER_EXCL_TAG_OF_PRIMITIVE_SET));
+    cmp32(tag, ImmTag(JS::detail::ValueUpperExclPrimitiveTag));
     return cond == Equal ? Below : AboveOrEqual;
   }
   Condition testError(Condition cond, Register tag) {
@@ -509,7 +513,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   }
   Condition testGCThing(Condition cond, const BaseIndex& address) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmp32(tagOf(address), ImmTag(JSVAL_LOWER_INCL_TAG_OF_GCTHING_SET));
+    cmp32(tagOf(address), ImmTag(JS::detail::ValueLowerInclGCThingTag));
     return cond == Equal ? AboveOrEqual : Below;
   }
 
@@ -775,7 +779,8 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   void unboxObject(const BaseIndex& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
   }
-  void unboxDouble(const Address& src, FloatRegister dest) {
+  template <typename T>
+  void unboxDouble(const T& src, FloatRegister dest) {
     loadDouble(Operand(src), dest);
   }
   void unboxDouble(const ValueOperand& src, FloatRegister dest) {

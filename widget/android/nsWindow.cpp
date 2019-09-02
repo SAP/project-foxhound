@@ -13,20 +13,23 @@
 
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/RWLock.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/TypeTraits.h"
+#include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 
-#include "mozilla/a11y/SessionAccessibility.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/layers/RenderTrace.h"
-#include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/Unused.h"
+#include "mozilla/a11y/SessionAccessibility.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/layers/RenderTrace.h"
 #include <algorithm>
 
 using mozilla::Unused;
@@ -53,27 +56,27 @@ using mozilla::dom::ContentParent;
 #include "nsLayoutUtils.h"
 #include "nsViewManager.h"
 
-#include "nsContentUtils.h"
 #include "WidgetUtils.h"
+#include "nsContentUtils.h"
 
+#include "nsGfxCIID.h"
 #include "nsGkAtoms.h"
 #include "nsWidgetsCID.h"
-#include "nsGfxCIID.h"
 
 #include "gfxContext.h"
 
+#include "AndroidContentController.h"
+#include "GLContext.h"
+#include "GLContextProvider.h"
 #include "Layers.h"
-#include "mozilla/layers/LayerManagerComposite.h"
-#include "mozilla/layers/AsyncCompositionManager.h"
+#include "ScopedGLHelpers.h"
 #include "mozilla/layers/APZEventState.h"
 #include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/APZThreadUtils.h"
-#include "mozilla/layers/IAPZCTreeManager.h"
-#include "GLContext.h"
-#include "GLContextProvider.h"
-#include "ScopedGLHelpers.h"
+#include "mozilla/layers/AsyncCompositionManager.h"
 #include "mozilla/layers/CompositorOGL.h"
-#include "AndroidContentController.h"
+#include "mozilla/layers/IAPZCTreeManager.h"
+#include "mozilla/layers/LayerManagerComposite.h"
 
 #include "nsTArray.h"
 
@@ -81,18 +84,18 @@ using mozilla::dom::ContentParent;
 #include "AndroidBridgeUtilities.h"
 #include "AndroidUiThread.h"
 #include "FennecJNINatives.h"
-#include "GeneratedJNINatives.h"
 #include "GeckoEditableSupport.h"
+#include "GeneratedJNINatives.h"
 #include "KeyEvent.h"
 #include "MotionEvent.h"
 #include "ScreenHelperAndroid.h"
 
 #include "imgIEncoder.h"
 
-#include "nsString.h"
 #include "GeckoProfiler.h"  // For AUTO_PROFILER_LABEL
 #include "nsIXULRuntime.h"
 #include "nsPrintfCString.h"
+#include "nsString.h"
 
 #include "mozilla/ipc/Shmem.h"
 
@@ -357,18 +360,18 @@ class nsWindow::GeckoViewSupport final
  * it separate from GeckoViewSupport.
  */
 class nsWindow::NPZCSupport final
-    : public PanZoomController::Natives<NPZCSupport> {
+    : public PanZoomController::NativeProvider::Natives<NPZCSupport> {
   using LockedWindowPtr = WindowPtr<NPZCSupport>::Locked;
 
   static bool sNegateWheelScroll;
 
   WindowPtr<NPZCSupport> mWindow;
-  PanZoomController::WeakRef mNPZC;
+  PanZoomController::NativeProvider::WeakRef mNPZC;
   int mPreviousButtons;
 
   template <typename Lambda>
   class InputEvent final : public nsAppShell::Event {
-    PanZoomController::GlobalRef mNPZC;
+    PanZoomController::NativeProvider::GlobalRef mNPZC;
     Lambda mLambda;
 
    public:
@@ -380,7 +383,7 @@ class nsWindow::NPZCSupport final
 
       JNIEnv* const env = jni::GetGeckoThreadEnv();
       NPZCSupport* npzcSupport =
-          GetNative(PanZoomController::LocalRef(env, mNPZC));
+          GetNative(PanZoomController::NativeProvider::LocalRef(env, mNPZC));
 
       if (!npzcSupport || !npzcSupport->mWindow) {
         // We already shut down.
@@ -404,10 +407,10 @@ class nsWindow::NPZCSupport final
   }
 
  public:
-  typedef PanZoomController::Natives<NPZCSupport> Base;
+  typedef PanZoomController::NativeProvider::Natives<NPZCSupport> Base;
 
   NPZCSupport(NativePtr<NPZCSupport>* aPtr, nsWindow* aWindow,
-              const PanZoomController::LocalRef& aNPZC)
+              const PanZoomController::NativeProvider::LocalRef& aNPZC)
       : mWindow(aPtr, aWindow), mNPZC(aNPZC), mPreviousButtons(0) {
     MOZ_ASSERT(mWindow);
 
@@ -458,7 +461,7 @@ class nsWindow::NPZCSupport final
     // the race condition.
 
     if (RefPtr<nsThread> uiThread = GetAndroidUiThread()) {
-      auto npzc = PanZoomController::GlobalRef(mNPZC);
+      auto npzc = PanZoomController::NativeProvider::GlobalRef(mNPZC);
       if (!npzc) {
         return;
       }
@@ -472,7 +475,9 @@ class nsWindow::NPZCSupport final
     }
   }
 
-  const PanZoomController::Ref& GetJavaNPZC() const { return mNPZC; }
+  const PanZoomController::NativeProvider::Ref& GetJavaNPZC() const {
+    return mNPZC;
+  }
 
  public:
   void SetIsLongpressEnabled(bool aIsLongpressEnabled) {
@@ -561,19 +566,19 @@ class nsWindow::NPZCSupport final
     int16_t result = 0;
 
     if (buttons & java::sdk::MotionEvent::BUTTON_PRIMARY) {
-      result |= WidgetMouseEventBase::eLeftButtonFlag;
+      result |= MouseButtonsFlag::eLeftFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_SECONDARY) {
-      result |= WidgetMouseEventBase::eRightButtonFlag;
+      result |= MouseButtonsFlag::eRightFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_TERTIARY) {
-      result |= WidgetMouseEventBase::eMiddleButtonFlag;
+      result |= MouseButtonsFlag::eMiddleFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_BACK) {
-      result |= WidgetMouseEventBase::e4thButtonFlag;
+      result |= MouseButtonsFlag::e4thFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_FORWARD) {
-      result |= WidgetMouseEventBase::e5thButtonFlag;
+      result |= MouseButtonsFlag::e5thFlag;
     }
 
     return result;
@@ -651,15 +656,13 @@ class nsWindow::NPZCSupport final
     return true;
   }
 
-  bool HandleMotionEvent(const PanZoomController::LocalRef& aInstance,
-                         int32_t aAction, int32_t aActionIndex, int64_t aTime,
-                         int32_t aMetaState, float aScreenX, float aScreenY,
-                         jni::IntArray::Param aPointerId,
-                         jni::FloatArray::Param aX, jni::FloatArray::Param aY,
-                         jni::FloatArray::Param aOrientation,
-                         jni::FloatArray::Param aPressure,
-                         jni::FloatArray::Param aToolMajor,
-                         jni::FloatArray::Param aToolMinor) {
+  bool HandleMotionEvent(
+      const PanZoomController::NativeProvider::LocalRef& aInstance,
+      int32_t aAction, int32_t aActionIndex, int64_t aTime, int32_t aMetaState,
+      float aScreenX, float aScreenY, jni::IntArray::Param aPointerId,
+      jni::FloatArray::Param aX, jni::FloatArray::Param aY,
+      jni::FloatArray::Param aOrientation, jni::FloatArray::Param aPressure,
+      jni::FloatArray::Param aToolMajor, jni::FloatArray::Param aToolMinor) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
 
     RefPtr<IAPZCTreeManager> controller;
@@ -862,20 +865,27 @@ class nsWindow::LayerViewSupport final
         return;
       }
 
-      uiThread->Dispatch(NS_NewRunnableFunction(
-          "LayerViewSupport::OnDetach",
-          [compositor, disposer = RefPtr<Runnable>(aDisposer),
-           result = &mCapturePixelsResults] {
-            while (!result->empty()) {
-              result->front()->CompleteExceptionally(
-                  java::sdk::IllegalStateException::New(
-                      "The compositor has detached from the session")
-                      .Cast<jni::Throwable>());
-              result->pop();
-            }
-            compositor->OnCompositorDetached();
-            disposer->Run();
-          }));
+      if (LockedWindowPtr window{mWindow}) {
+        uiThread->Dispatch(NS_NewRunnableFunction(
+            "LayerViewSupport::OnDetach",
+            [compositor, disposer = RefPtr<Runnable>(aDisposer),
+             results = &mCapturePixelsResults, lock = &window] {
+              if (lock) {
+                while (!results->empty()) {
+                  auto aResult = java::GeckoResult::LocalRef(results->front());
+                  if (aResult) {
+                    aResult->CompleteExceptionally(
+                        java::sdk::IllegalStateException::New(
+                            "The compositor has detached from the session")
+                            .Cast<jni::Throwable>());
+                    results->pop();
+                  }
+                }
+                compositor->OnCompositorDetached();
+                disposer->Run();
+              }
+            }));
+      }
     }
   }
 
@@ -938,14 +948,14 @@ class nsWindow::LayerViewSupport final
       mWindow->mNPZCSupport.Detach(mWindow->mNPZCSupport->GetJavaNPZC());
     }
 
-    auto npzc = PanZoomController::LocalRef(
-        jni::GetGeckoThreadEnv(), PanZoomController::Ref::From(aNPZC));
+    auto npzc = PanZoomController::NativeProvider::LocalRef(
+        jni::GetGeckoThreadEnv(),
+        PanZoomController::NativeProvider::Ref::From(aNPZC));
     mWindow->mNPZCSupport.Attach(npzc, mWindow, npzc);
 
     DispatchToUiThread("LayerViewSupport::AttachNPZC",
-                       [npzc = PanZoomController::GlobalRef(npzc)] {
-                         npzc->SetAttached(true);
-                       });
+                       [npzc = PanZoomController::NativeProvider::GlobalRef(
+                            npzc)] { npzc->SetAttached(true); });
   }
 
   void OnBoundsChanged(int32_t aLeft, int32_t aTop, int32_t aWidth,
@@ -1056,6 +1066,15 @@ class nsWindow::LayerViewSupport final
     }
   }
 
+  void SetFixedBottomOffset(int32_t aOffset) {
+    MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+
+    if (RefPtr<UiCompositorControllerChild> child =
+            GetUiCompositorControllerChild()) {
+      child->SetFixedBottomOffset(aOffset);
+    }
+  }
+
   void SetPinned(bool aPinned, int32_t aReason) {
     RefPtr<UiCompositorControllerChild> child =
         GetUiCompositorControllerChild();
@@ -1116,9 +1135,15 @@ class nsWindow::LayerViewSupport final
 
   void RequestScreenPixels(jni::Object::Param aResult) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-    mCapturePixelsResults.push(
-        java::GeckoResult::GlobalRef(java::GeckoResult::LocalRef(aResult)));
-    if (mCapturePixelsResults.size() == 1) {
+
+    int size = 0;
+    if (LockedWindowPtr window{mWindow}) {
+      mCapturePixelsResults.push(
+          java::GeckoResult::GlobalRef(java::GeckoResult::LocalRef(aResult)));
+      size = mCapturePixelsResults.size();
+    }
+
+    if (size == 1) {
       if (RefPtr<UiCompositorControllerChild> child =
               GetUiCompositorControllerChild()) {
         child->RequestScreenPixels();
@@ -1128,7 +1153,10 @@ class nsWindow::LayerViewSupport final
 
   void RecvScreenPixels(Shmem&& aMem, const ScreenIntSize& aSize) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-    auto aResult = java::GeckoResult::LocalRef(mCapturePixelsResults.front());
+    java::GeckoResult::LocalRef aResult = nullptr;
+    if (LockedWindowPtr window{mWindow}) {
+      aResult = java::GeckoResult::LocalRef(mCapturePixelsResults.front());
+    }
     if (aResult) {
       auto pixels = mozilla::jni::ByteBuffer::New(FlipScreenPixels(aMem, aSize),
                                                   aMem.Size<int8_t>());
@@ -1136,7 +1164,10 @@ class nsWindow::LayerViewSupport final
           aSize.width, aSize.height, java::sdk::Config::ARGB_8888());
       bitmap->CopyPixelsFromBuffer(pixels);
       aResult->Complete(bitmap);
-      mCapturePixelsResults.pop();
+
+      if (LockedWindowPtr window{mWindow}) {
+        mCapturePixelsResults.pop();
+      }
     }
 
     // Pixels have been copied, so Dealloc Shmem
@@ -1144,8 +1175,10 @@ class nsWindow::LayerViewSupport final
             GetUiCompositorControllerChild()) {
       child->DeallocPixelBuffer(aMem);
 
-      if (!mCapturePixelsResults.empty()) {
-        child->RequestScreenPixels();
+      if (LockedWindowPtr window{mWindow}) {
+        if (!mCapturePixelsResults.empty()) {
+          child->RequestScreenPixels();
+        }
       }
     }
   }
@@ -1419,7 +1452,8 @@ nsWindow::nsWindow()
     : mScreenId(0),  // Use 0 (primary screen) as the default value.
       mIsVisible(false),
       mParent(nullptr),
-      mIsFullScreen(false) {}
+      mIsFullScreen(false),
+      mIsDisablingWebRender(false) {}
 
 nsWindow::~nsWindow() {
   gTopLevelWindows.RemoveElement(this);
@@ -1668,6 +1702,7 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
   ALOG("nsWindow[%p]::Resize [%f %f %f %f] (repaint %d)", (void*)this, aX, aY,
        aWidth, aHeight, aRepaint);
 
+  bool needPositionDispatch = aX != mBounds.x || aY != mBounds.y;
   bool needSizeDispatch = aWidth != mBounds.width || aHeight != mBounds.height;
 
   mBounds.x = NSToIntRound(aX);
@@ -1677,6 +1712,10 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
 
   if (needSizeDispatch) {
     OnSizeChanged(gfx::IntSize::Truncate(aWidth, aHeight));
+  }
+
+  if (needPositionDispatch) {
+    NotifyWindowMoved(mBounds.x, mBounds.y);
   }
 
   // Should we skip honoring aRepaint here?
@@ -1729,11 +1768,9 @@ nsWindow* nsWindow::FindTopLevel() {
   return this;
 }
 
-nsresult nsWindow::SetFocus(bool aRaise) {
-  nsWindow* top = FindTopLevel();
-  top->BringToFront();
-
-  return NS_OK;
+void nsWindow::SetFocus(Raise) {
+  // FIXME: Shouldn't this account for the argument?
+  FindTopLevel()->BringToFront();
 }
 
 void nsWindow::BringToFront() {
@@ -1831,6 +1868,13 @@ mozilla::layers::LayerManager* nsWindow::GetLayerManager(
   if (mLayerManager) {
     return mLayerManager;
   }
+
+  if (mIsDisablingWebRender) {
+    CreateLayerManager();
+    mIsDisablingWebRender = false;
+    return mLayerManager;
+  }
+
   return nullptr;
 }
 
@@ -1863,6 +1907,11 @@ void nsWindow::CreateLayerManager() {
     printf_stderr(" -- creating basic, not accelerated\n");
     mLayerManager = CreateBasicLayerManager();
   }
+}
+
+void nsWindow::NotifyDisablingWebRender() {
+  mIsDisablingWebRender = true;
+  RedrawAll();
 }
 
 void nsWindow::OnSizeChanged(const gfx::IntSize& aSize) {
@@ -1965,11 +2014,11 @@ void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;
     hittest.mIgnoreRootScrollFrame = true;
-    hittest.inputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
+    hittest.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
     nsEventStatus status;
     DispatchEvent(&hittest, status);
 
-    if (mAPZEventState && hittest.hitCluster) {
+    if (mAPZEventState && hittest.mHitCluster) {
       mAPZEventState->ProcessClusterHit();
     }
   }
@@ -2099,8 +2148,8 @@ nsresult nsWindow::SynthesizeNativeTouchPoint(uint32_t aPointerId,
 
   DispatchToUiThread(
       "nsWindow::SynthesizeNativeTouchPoint",
-      [npzc = PanZoomController::GlobalRef(npzc), aPointerId, eventType, aPoint,
-       aPointerPressure, aPointerOrientation] {
+      [npzc = PanZoomController::NativeProvider::GlobalRef(npzc), aPointerId,
+       eventType, aPoint, aPointerPressure, aPointerOrientation] {
         npzc->SynthesizeNativeTouchPoint(aPointerId, eventType, aPoint.x,
                                          aPoint.y, aPointerPressure,
                                          aPointerOrientation);
@@ -2120,11 +2169,12 @@ nsresult nsWindow::SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
   aPoint.x -= bounds.x;
   aPoint.y -= bounds.y;
 
-  DispatchToUiThread(
-      "nsWindow::SynthesizeNativeMouseEvent",
-      [npzc = PanZoomController::GlobalRef(npzc), aNativeMessage, aPoint] {
-        npzc->SynthesizeNativeMouseEvent(aNativeMessage, aPoint.x, aPoint.y);
-      });
+  DispatchToUiThread("nsWindow::SynthesizeNativeMouseEvent",
+                     [npzc = PanZoomController::NativeProvider::GlobalRef(npzc),
+                      aNativeMessage, aPoint] {
+                       npzc->SynthesizeNativeMouseEvent(aNativeMessage,
+                                                        aPoint.x, aPoint.y);
+                     });
   return NS_OK;
 }
 
@@ -2138,12 +2188,12 @@ nsresult nsWindow::SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
   aPoint.x -= bounds.x;
   aPoint.y -= bounds.y;
 
-  DispatchToUiThread("nsWindow::SynthesizeNativeMouseMove",
-                     [npzc = PanZoomController::GlobalRef(npzc), aPoint] {
-                       npzc->SynthesizeNativeMouseEvent(
-                           sdk::MotionEvent::ACTION_HOVER_MOVE, aPoint.x,
-                           aPoint.y);
-                     });
+  DispatchToUiThread(
+      "nsWindow::SynthesizeNativeMouseMove",
+      [npzc = PanZoomController::NativeProvider::GlobalRef(npzc), aPoint] {
+        npzc->SynthesizeNativeMouseEvent(sdk::MotionEvent::ACTION_HOVER_MOVE,
+                                         aPoint.x, aPoint.y);
+      });
   return NS_OK;
 }
 

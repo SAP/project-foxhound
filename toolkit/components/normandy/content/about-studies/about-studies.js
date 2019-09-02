@@ -16,7 +16,10 @@ const r = React.createElement;
  * @param {Object} data
  */
 function sendPageEvent(action, data) {
-  const event = new CustomEvent("ShieldPageEvent", { bubbles: true, detail: { action, data } });
+  const event = new CustomEvent("ShieldPageEvent", {
+    bubbles: true,
+    detail: { action, data },
+  });
   document.dispatchEvent(event);
 }
 
@@ -64,7 +67,13 @@ class AboutStudies extends React.Component {
   }
 
   render() {
-    const { translations, learnMoreHref, studiesEnabled, addonStudies, prefStudies } = this.state;
+    const {
+      translations,
+      learnMoreHref,
+      studiesEnabled,
+      addonStudies,
+      prefStudies,
+    } = this.state;
 
     // Wait for all values to be loaded before rendering. Some of the values may
     // be falsey, so an explicit null check is needed.
@@ -72,11 +81,11 @@ class AboutStudies extends React.Component {
       return null;
     }
 
-    return (
-      r("div", { className: "about-studies-container main-content" },
-        r(WhatsThisBox, { translations, learnMoreHref, studiesEnabled }),
-        r(StudyList, { translations, addonStudies, prefStudies }),
-      )
+    return r(
+      "div",
+      { className: "about-studies-container main-content" },
+      r(WhatsThisBox, { translations, learnMoreHref, studiesEnabled }),
+      r(StudyList, { translations, addonStudies, prefStudies })
     );
   }
 }
@@ -92,18 +101,35 @@ class WhatsThisBox extends React.Component {
   render() {
     const { learnMoreHref, studiesEnabled, translations } = this.props;
 
-    return (
-      r("div", { className: "info-box" },
-        r("div", { className: "info-box-content" },
-          r("span", {},
-            studiesEnabled ? translations.enabledList : translations.disabledList,
-          ),
-          r("a", { id: "shield-studies-learn-more", href: learnMoreHref }, translations.learnMore),
+    return r(
+      "div",
+      { className: "info-box" },
+      r(
+        "div",
+        { className: "info-box-content" },
+        r(
+          "span",
+          {},
+          studiesEnabled ? translations.enabledList : translations.disabledList
+        ),
+        r(
+          "a",
+          { id: "shield-studies-learn-more", href: learnMoreHref },
+          translations.learnMore
+        ),
 
-          r("button", { id: "shield-studies-update-preferences", onClick: this.handleUpdateClick },
-            r("div", { className: "button-box" },
-              navigator.platform.includes("Win") ? translations.updateButtonWin : translations.updateButtonUnix
-            ),
+        r(
+          "button",
+          {
+            id: "shield-studies-update-preferences",
+            onClick: this.handleUpdateClick,
+          },
+          r(
+            "div",
+            { className: "button-box" },
+            navigator.platform.includes("Win")
+              ? translations.updateButtonWin
+              : translations.updateButtonUnix
           )
         )
       )
@@ -127,7 +153,10 @@ class StudyList extends React.Component {
 
     // Since we are modifying the study objects, it is polite to make copies
     for (const study of addonStudies) {
-      const clonedStudy = Object.assign({}, study, {type: "addon", sortDate: study.studyStartDate});
+      const clonedStudy = Object.assign({}, study, {
+        type: "addon",
+        sortDate: study.studyStartDate,
+      });
       if (study.active) {
         activeStudies.push(clonedStudy);
       } else {
@@ -136,7 +165,10 @@ class StudyList extends React.Component {
     }
 
     for (const study of prefStudies) {
-      const clonedStudy = Object.assign({}, study, {type: "pref", sortDate: new Date(study.lastSeen)});
+      const clonedStudy = Object.assign({}, study, {
+        type: "pref",
+        sortDate: new Date(study.lastSeen),
+      });
       if (study.expired) {
         inactiveStudies.push(clonedStudy);
       } else {
@@ -147,24 +179,36 @@ class StudyList extends React.Component {
     activeStudies.sort((a, b) => b.sortDate - a.sortDate);
     inactiveStudies.sort((a, b) => b.sortDate - a.sortDate);
 
-    return (
-      r("div", {},
-        r("h2", {}, translations.activeStudiesList),
-        r("ul", { className: "study-list active-study-list" },
-          activeStudies.map(study => (
-            study.type === "addon"
-            ? r(AddonStudyListItem, { key: study.name, study, translations })
-            : r(PreferenceStudyListItem, { key: study.name, study, translations })
-          )),
-        ),
-        r("h2", {}, translations.completedStudiesList),
-        r("ul", { className: "study-list inactive-study-list" },
-          inactiveStudies.map(study => (
-            study.type === "addon"
-            ? r(AddonStudyListItem, { key: study.name, study, translations })
-            : r(PreferenceStudyListItem, { key: study.name, study, translations })
-          )),
-        ),
+    return r(
+      "div",
+      {},
+      r("h2", {}, translations.activeStudiesList),
+      r(
+        "ul",
+        { className: "study-list active-study-list" },
+        activeStudies.map(study =>
+          study.type === "addon"
+            ? r(AddonStudyListItem, { key: study.slug, study, translations })
+            : r(PreferenceStudyListItem, {
+                key: study.name,
+                study,
+                translations,
+              })
+        )
+      ),
+      r("h2", {}, translations.completedStudiesList),
+      r(
+        "ul",
+        { className: "study-list inactive-study-list" },
+        inactiveStudies.map(study =>
+          study.type === "addon"
+            ? r(AddonStudyListItem, { key: study.slug, study, translations })
+            : r(PreferenceStudyListItem, {
+                key: study.name,
+                study,
+                translations,
+              })
+        )
       )
     );
   }
@@ -192,32 +236,51 @@ class AddonStudyListItem extends React.Component {
 
   render() {
     const { study, translations } = this.props;
-    return (
-      r("li", {
+    return r(
+      "li",
+      {
         className: classnames("study addon-study", { disabled: !study.active }),
-        "data-study-name": study.name,
+        "data-study-slug": study.slug, // used to identify this row in tests
       },
-        r("div", { className: "study-icon" },
-          study.name.replace(/-?add-?on-?/, "").replace(/-?study-?/, "").slice(0, 1)
-        ),
-        r("div", { className: "study-details" },
-          r("div", { className: "study-header" },
-            r("span", { className: "study-name" }, study.name),
-            r("span", {}, "\u2022"), // &bullet;
-            r("span", { className: "study-status" }, study.active ? translations.activeStatus : translations.completeStatus),
-          ),
-          r("div", { className: "study-description" },
-            study.description
-          ),
-        ),
-        r("div", { className: "study-actions" },
-          study.active &&
-          r("button", { className: "remove-button", onClick: this.handleClickRemove },
-            r("div", { className: "button-box" },
-              translations.removeButton
-            ),
+      r(
+        "div",
+        { className: "study-icon" },
+        study.userFacingName
+          .replace(/-?add-?on-?/i, "")
+          .replace(/-?study-?/i, "")
+          .slice(0, 1)
+      ),
+      r(
+        "div",
+        { className: "study-details" },
+        r(
+          "div",
+          { className: "study-header" },
+          r("span", { className: "study-name" }, study.userFacingName),
+          r("span", {}, "\u2022"), // &bullet;
+          r(
+            "span",
+            { className: "study-status" },
+            study.active
+              ? translations.activeStatus
+              : translations.completeStatus
           )
         ),
+        r(
+          "div",
+          { className: "study-description" },
+          study.userFacingDescription
+        )
+      ),
+      r(
+        "div",
+        { className: "study-actions" },
+        study.active &&
+          r(
+            "button",
+            { className: "remove-button", onClick: this.handleClickRemove },
+            r("div", { className: "button-box" }, translations.removeButton)
+          )
       )
     );
   }
@@ -225,9 +288,10 @@ class AddonStudyListItem extends React.Component {
 AddonStudyListItem.propTypes = {
   study: PropTypes.shape({
     recipeId: PropTypes.number.isRequired,
-    name: PropTypes.string.isRequired,
+    slug: PropTypes.string.isRequired,
+    userFacingName: PropTypes.string.isRequired,
     active: PropTypes.bool.isRequired,
-    description: PropTypes.string.isRequired,
+    userFacingDescription: PropTypes.string.isRequired,
   }).isRequired,
   translations: PropTypes.object.isRequired,
 };
@@ -251,43 +315,71 @@ class PreferenceStudyListItem extends React.Component {
   render() {
     const { study, translations } = this.props;
 
-    // Sanitize the values by setting them as the text content of an element,
-    // and then getting the HTML representation of that text. This will have the
-    // browser safely sanitize them. Use outerHTML to also include the <code>
-    // element in the string.
-    const sanitizer = document.createElement("code");
-    sanitizer.textContent = study.preferenceName;
-    const sanitizedPreferenceName = sanitizer.outerHTML;
-    sanitizer.textContent = study.preferenceValue;
-    const sanitizedPreferenceValue = sanitizer.outerHTML;
-    const description = translations.preferenceStudyDescription
-      .replace(/%(?:1\$)?S/, sanitizedPreferenceName)
-      .replace(/%(?:2\$)?S/, sanitizedPreferenceValue);
+    let userFacingName = study.userFacingName;
+    if (!userFacingName) {
+      userFacingName = study.name
+        .replace(/-?pref-?(flip|study)-?/, "")
+        .replace(/-?study-?/, "")
+        .slice(0, 1);
+    }
 
-    return (
-      r("li", {
+    let description = study.userFacingDescription;
+    if (!description) {
+      // Assume there is exactly one preference (old-style preference experiment).
+      const [preferenceName, { preferenceValue }] = Object.entries(
+        study.preferences
+      )[0];
+      // Sanitize the values by setting them as the text content of an element,
+      // and then getting the HTML representation of that text. This will have the
+      // browser safely sanitize them. Use outerHTML to also include the <code>
+      // element in the string.
+      const sanitizer = document.createElement("code");
+      sanitizer.textContent = preferenceName;
+      const sanitizedPreferenceName = sanitizer.outerHTML;
+      sanitizer.textContent = preferenceValue;
+      const sanitizedPreferenceValue = sanitizer.outerHTML;
+      description = translations.preferenceStudyDescription
+        .replace(/%(?:1\$)?S/, sanitizedPreferenceName)
+        .replace(/%(?:2\$)?S/, sanitizedPreferenceValue);
+    }
+
+    return r(
+      "li",
+      {
         className: classnames("study pref-study", { disabled: study.expired }),
-        "data-study-name": study.name,
+        "data-study-slug": study.name, // used to identify this row in tests
       },
-        r("div", { className: "study-icon" },
-          study.name.replace(/-?pref-?(flip|study)-?/, "").replace(/-?study-?/, "").slice(0, 1)
-        ),
-        r("div", { className: "study-details" },
-          r("div", { className: "study-header" },
-            r("span", { className: "study-name" }, study.name),
-            r("span", {}, "\u2022"), // &bullet;
-            r("span", { className: "study-status" }, study.expired ? translations.completeStatus : translations.activeStatus),
-          ),
-          r("div", { className: "study-description", dangerouslySetInnerHTML: { __html: description }}),
-        ),
-        r("div", { className: "study-actions" },
-          !study.expired &&
-          r("button", { className: "remove-button", onClick: this.handleClickRemove },
-            r("div", { className: "button-box" },
-              translations.removeButton
-            ),
+      r("div", { className: "study-icon" }, userFacingName),
+      r(
+        "div",
+        { className: "study-details" },
+        r(
+          "div",
+          { className: "study-header" },
+          r("span", { className: "study-name" }, study.name),
+          r("span", {}, "\u2022"), // &bullet;
+          r(
+            "span",
+            { className: "study-status" },
+            study.expired
+              ? translations.completeStatus
+              : translations.activeStatus
           )
         ),
+        r("div", {
+          className: "study-description",
+          dangerouslySetInnerHTML: { __html: description },
+        })
+      ),
+      r(
+        "div",
+        { className: "study-actions" },
+        !study.expired &&
+          r(
+            "button",
+            { className: "remove-button", onClick: this.handleClickRemove },
+            r("div", { className: "button-box" }, translations.removeButton)
+          )
       )
     );
   }
@@ -297,7 +389,11 @@ PreferenceStudyListItem.propTypes = {
     name: PropTypes.string.isRequired,
     expired: PropTypes.bool.isRequired,
     preferenceName: PropTypes.string.isRequired,
-    preferenceValue: PropTypes.oneOf(PropTypes.string, PropTypes.bool, PropTypes.number).isRequired,
+    preferenceValue: PropTypes.oneOf(
+      PropTypes.string,
+      PropTypes.bool,
+      PropTypes.number
+    ).isRequired,
   }).isRequired,
   translations: PropTypes.object.isRequired,
 };

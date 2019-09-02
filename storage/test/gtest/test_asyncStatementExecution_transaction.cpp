@@ -20,8 +20,8 @@ using namespace mozilla::storage;
  * @param aArg
  *        An integer pointer that will be incremented for each commit.
  */
-int commit_hook(void *aArg) {
-  int *arg = static_cast<int *>(aArg);
+int commit_hook(void* aArg) {
+  int* arg = static_cast<int*>(aArg);
   (*arg)++;
   return 0;
 }
@@ -39,24 +39,24 @@ int commit_hook(void *aArg) {
  * @param aTransactionExpected
  *        Whether a transaction is expected or not.
  */
-void check_transaction(mozIStorageConnection *aDB,
-                       mozIStorageBaseStatement **aStmts, uint32_t aStmtsLen,
+void check_transaction(mozIStorageConnection* aDB,
+                       const nsTArray<RefPtr<mozIStorageBaseStatement>>& aStmts,
                        bool aTransactionExpected) {
   // -- install a transaction commit hook.
   int commit = 0;
-  static_cast<Connection *>(aDB)->setCommitHook(commit_hook, &commit);
+  static_cast<Connection*>(aDB)->setCommitHook(commit_hook, &commit);
 
   RefPtr<AsyncStatementSpinner> asyncSpin(new AsyncStatementSpinner());
   nsCOMPtr<mozIStoragePendingStatement> asyncPend;
-  do_check_success(aDB->ExecuteAsync(aStmts, aStmtsLen, asyncSpin,
-                                     getter_AddRefs(asyncPend)));
+  do_check_success(
+      aDB->ExecuteAsync(aStmts, asyncSpin, getter_AddRefs(asyncPend)));
   do_check_true(asyncPend);
 
   // -- complete the execution
   asyncSpin->SpinUntilCompleted();
 
   // -- uninstall the transaction commit hook.
-  static_cast<Connection *>(aDB)->setCommitHook(nullptr);
+  static_cast<Connection*>(aDB)->setCommitHook(nullptr);
 
   // -- check transaction
   do_check_eq(aTransactionExpected, !!commit);
@@ -67,7 +67,7 @@ void check_transaction(mozIStorageConnection *aDB,
   }
 
   // -- cleanup
-  for (uint32_t i = 0; i < aStmtsLen; ++i) {
+  for (uint32_t i = 0; i < aStmts.Length(); ++i) {
     aStmts[i]->Finalize();
   }
   blocking_async_close(aDB);
@@ -80,7 +80,8 @@ void check_transaction(mozIStorageConnection *aDB,
  * Test that executing multiple readonly AsyncStatements doesn't create a
  * transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, MultipleAsyncReadStatements) {
+TEST(storage_asyncStatementExecution_transaction, MultipleAsyncReadStatements)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -92,19 +93,21 @@ TEST(storage_asyncStatementExecution_transaction, MultipleAsyncReadStatements) {
   db->CreateAsyncStatement(NS_LITERAL_CSTRING("SELECT * FROM sqlite_master"),
                            getter_AddRefs(stmt2));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt1,
-      stmt2,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt1.forget(),
+      stmt2.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), false);
+  check_transaction(db, nsTArray<RefPtr<mozIStorageBaseStatement>>(stmts),
+                    false);
 }
 
 /**
  * Test that executing multiple readonly Statements doesn't create a
  * transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, MultipleReadStatements) {
+TEST(storage_asyncStatementExecution_transaction, MultipleReadStatements)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -116,12 +119,12 @@ TEST(storage_asyncStatementExecution_transaction, MultipleReadStatements) {
   db->CreateStatement(NS_LITERAL_CSTRING("SELECT * FROM sqlite_master"),
                       getter_AddRefs(stmt2));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt1,
-      stmt2,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt1.forget(),
+      stmt2.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), false);
+  check_transaction(db, stmts, false);
 }
 
 /**
@@ -129,7 +132,8 @@ TEST(storage_asyncStatementExecution_transaction, MultipleReadStatements) {
  * transaction.
  */
 TEST(storage_asyncStatementExecution_transaction,
-     MultipleAsyncReadWriteStatements) {
+     MultipleAsyncReadWriteStatements)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -142,18 +146,19 @@ TEST(storage_asyncStatementExecution_transaction,
       NS_LITERAL_CSTRING("CREATE TABLE test (id INTEGER PRIMARY KEY)"),
       getter_AddRefs(stmt2));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt1,
-      stmt2,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt1.forget(),
+      stmt2.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }
 
 /**
  * Test that executing multiple Statements causing writes creates a transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, MultipleReadWriteStatements) {
+TEST(storage_asyncStatementExecution_transaction, MultipleReadWriteStatements)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -166,20 +171,20 @@ TEST(storage_asyncStatementExecution_transaction, MultipleReadWriteStatements) {
       NS_LITERAL_CSTRING("CREATE TABLE test (id INTEGER PRIMARY KEY)"),
       getter_AddRefs(stmt2));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt1,
-      stmt2,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt1.forget(),
+      stmt2.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }
 
 /**
  * Test that executing multiple AsyncStatements causing writes creates a
  * single transaction.
  */
-TEST(storage_asyncStatementExecution_transaction,
-     MultipleAsyncWriteStatements) {
+TEST(storage_asyncStatementExecution_transaction, MultipleAsyncWriteStatements)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -193,19 +198,20 @@ TEST(storage_asyncStatementExecution_transaction,
       NS_LITERAL_CSTRING("CREATE TABLE test2 (id INTEGER PRIMARY KEY)"),
       getter_AddRefs(stmt2));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt1,
-      stmt2,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt1.forget(),
+      stmt2.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }
 
 /**
  * Test that executing multiple Statements causing writes creates a
  * single transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, MultipleWriteStatements) {
+TEST(storage_asyncStatementExecution_transaction, MultipleWriteStatements)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -219,19 +225,20 @@ TEST(storage_asyncStatementExecution_transaction, MultipleWriteStatements) {
       NS_LITERAL_CSTRING("CREATE TABLE test2 (id INTEGER PRIMARY KEY)"),
       getter_AddRefs(stmt2));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt1,
-      stmt2,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt1.forget(),
+      stmt2.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }
 
 /**
  * Test that executing a single read-only AsyncStatement doesn't create a
  * transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, SingleAsyncReadStatement) {
+TEST(storage_asyncStatementExecution_transaction, SingleAsyncReadStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -239,18 +246,19 @@ TEST(storage_asyncStatementExecution_transaction, SingleAsyncReadStatement) {
   db->CreateAsyncStatement(NS_LITERAL_CSTRING("SELECT * FROM sqlite_master"),
                            getter_AddRefs(stmt));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), false);
+  check_transaction(db, stmts, false);
 }
 
 /**
  * Test that executing a single read-only Statement doesn't create a
  * transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, SingleReadStatement) {
+TEST(storage_asyncStatementExecution_transaction, SingleReadStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -258,18 +266,19 @@ TEST(storage_asyncStatementExecution_transaction, SingleReadStatement) {
   db->CreateStatement(NS_LITERAL_CSTRING("SELECT * FROM sqlite_master"),
                       getter_AddRefs(stmt));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), false);
+  check_transaction(db, stmts, false);
 }
 
 /**
  * Test that executing a single AsyncStatement causing writes creates a
  * transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, SingleAsyncWriteStatement) {
+TEST(storage_asyncStatementExecution_transaction, SingleAsyncWriteStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -278,17 +287,18 @@ TEST(storage_asyncStatementExecution_transaction, SingleAsyncWriteStatement) {
       NS_LITERAL_CSTRING("CREATE TABLE test (id INTEGER PRIMARY KEY)"),
       getter_AddRefs(stmt));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }
 
 /**
  * Test that executing a single Statement causing writes creates a transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, SingleWriteStatement) {
+TEST(storage_asyncStatementExecution_transaction, SingleWriteStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -297,11 +307,11 @@ TEST(storage_asyncStatementExecution_transaction, SingleWriteStatement) {
       NS_LITERAL_CSTRING("CREATE TABLE test (id INTEGER PRIMARY KEY)"),
       getter_AddRefs(stmt));
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }
 
 /**
@@ -309,7 +319,8 @@ TEST(storage_asyncStatementExecution_transaction, SingleWriteStatement) {
  * doesn't create a transaction.
  */
 TEST(storage_asyncStatementExecution_transaction,
-     MultipleParamsAsyncReadStatement) {
+     MultipleParamsAsyncReadStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -330,18 +341,19 @@ TEST(storage_asyncStatementExecution_transaction,
   stmt->BindParameters(paramsArray);
   paramsArray = nullptr;
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), false);
+  check_transaction(db, stmts, false);
 }
 
 /**
  * Test that executing a single read-only Statement with multiple params
  * doesn't create a transaction.
  */
-TEST(storage_asyncStatementExecution_transaction, MultipleParamsReadStatement) {
+TEST(storage_asyncStatementExecution_transaction, MultipleParamsReadStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create statements and execute them
@@ -361,11 +373,11 @@ TEST(storage_asyncStatementExecution_transaction, MultipleParamsReadStatement) {
   stmt->BindParameters(paramsArray);
   paramsArray = nullptr;
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), false);
+  check_transaction(db, stmts, false);
 }
 
 /**
@@ -373,7 +385,8 @@ TEST(storage_asyncStatementExecution_transaction, MultipleParamsReadStatement) {
  * creates a transaction.
  */
 TEST(storage_asyncStatementExecution_transaction,
-     MultipleParamsAsyncWriteStatement) {
+     MultipleParamsAsyncWriteStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create a table for writes
@@ -402,19 +415,19 @@ TEST(storage_asyncStatementExecution_transaction,
   stmt->BindParameters(paramsArray);
   paramsArray = nullptr;
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }
 
 /**
  * Test that executing a single write Statement with multiple params
  * creates a transaction.
  */
-TEST(storage_asyncStatementExecution_transaction,
-     MultipleParamsWriteStatement) {
+TEST(storage_asyncStatementExecution_transaction, MultipleParamsWriteStatement)
+{
   nsCOMPtr<mozIStorageConnection> db(getMemoryDatabase());
 
   // -- create a table for writes
@@ -442,9 +455,9 @@ TEST(storage_asyncStatementExecution_transaction,
   stmt->BindParameters(paramsArray);
   paramsArray = nullptr;
 
-  mozIStorageBaseStatement *stmts[] = {
-      stmt,
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      stmt.forget(),
   };
 
-  check_transaction(db, stmts, ArrayLength(stmts), true);
+  check_transaction(db, stmts, true);
 }

@@ -12,7 +12,6 @@
 
 #include "ds/InlineTable.h"
 #include "frontend/ParseNode.h"
-#include "frontend/TokenStream.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/JSFunction.h"
 #include "vm/JSScript.h"
@@ -115,6 +114,7 @@ class SharedContext {
   bool allowNewTarget_ : 1;
   bool allowSuperProperty_ : 1;
   bool allowSuperCall_ : 1;
+  bool allowArguments_ : 1;
   bool inWith_ : 1;
   bool needsThisTDZChecks_ : 1;
 
@@ -140,11 +140,6 @@ class SharedContext {
   // should be tested (see JSScript::argIsAliased).
   bool bindingsAccessedDynamically_ : 1;
 
-  // Whether this script, or any of its inner scripts contains a debugger
-  // statement which could potentially read or write anywhere along the
-  // scope chain.
-  bool hasDebuggerStatement_ : 1;
-
   // A direct eval occurs in the body of the script.
   bool hasDirectEval_ : 1;
 
@@ -164,11 +159,11 @@ class SharedContext {
         allowNewTarget_(false),
         allowSuperProperty_(false),
         allowSuperCall_(false),
+        allowArguments_(true),
         inWith_(false),
         needsThisTDZChecks_(false),
         hasExplicitUseStrict_(false),
         bindingsAccessedDynamically_(false),
-        hasDebuggerStatement_(false),
         hasDirectEval_(false) {}
 
   // If this is the outermost SharedContext, the Scope that encloses
@@ -202,6 +197,7 @@ class SharedContext {
   bool allowNewTarget() const { return allowNewTarget_; }
   bool allowSuperProperty() const { return allowSuperProperty_; }
   bool allowSuperCall() const { return allowSuperCall_; }
+  bool allowArguments() const { return allowArguments_; }
   bool inWith() const { return inWith_; }
   bool needsThisTDZChecks() const { return needsThisTDZChecks_; }
 
@@ -209,12 +205,10 @@ class SharedContext {
   bool bindingsAccessedDynamically() const {
     return bindingsAccessedDynamically_;
   }
-  bool hasDebuggerStatement() const { return hasDebuggerStatement_; }
   bool hasDirectEval() const { return hasDirectEval_; }
 
   void setExplicitUseStrict() { hasExplicitUseStrict_ = true; }
   void setBindingsAccessedDynamically() { bindingsAccessedDynamically_ = true; }
-  void setHasDebuggerStatement() { hasDebuggerStatement_ = true; }
   void setHasDirectEval() { hasDirectEval_ = true; }
 
   inline bool allBindingsClosedOver();
@@ -274,6 +268,8 @@ inline EvalSharedContext* SharedContext::asEvalContext() {
   return static_cast<EvalSharedContext*>(this);
 }
 
+enum class HasHeritage : bool { No, Yes };
+
 class FunctionBox : public ObjectBox, public SharedContext {
   // The parser handles tracing the fields below via the TraceListNode linked
   // list.
@@ -300,7 +296,7 @@ class FunctionBox : public ObjectBox, public SharedContext {
   // has expressions.
   VarScope::Data* extraVarScopeBindings_;
 
-  void initWithEnclosingScope(Scope* enclosingScope);
+  void initWithEnclosingScope(Scope* enclosingScope, JSFunction* fun);
 
  public:
   // Back pointer used by asm.js for error messages.
@@ -390,6 +386,17 @@ class FunctionBox : public ObjectBox, public SharedContext {
   // Whether this function has nested functions.
   bool hasInnerFunctions_ : 1;
 
+  // Whether this function is an arrow function
+  bool isArrow_ : 1;
+
+  bool isNamedLambda_ : 1;
+  bool isGetter_ : 1;
+  bool isSetter_ : 1;
+  bool isMethod_ : 1;
+
+  JSFunction::FunctionKind kind_;
+  JSAtom* explicitName_;
+
   FunctionBox(JSContext* cx, TraceListNode* traceListHead, JSFunction* fun,
               uint32_t toStringStart, Directives directives, bool extraWarnings,
               GeneratorKind generatorKind, FunctionAsyncKind asyncKind);
@@ -416,10 +423,12 @@ class FunctionBox : public ObjectBox, public SharedContext {
         &extraVarScopeBindings_);
   }
 
-  void initFromLazyFunction();
+  void initFromLazyFunction(JSFunction* fun);
   void initStandaloneFunction(Scope* enclosingScope);
-  void initWithEnclosingParseContext(ParseContext* enclosing,
+  void initWithEnclosingParseContext(ParseContext* enclosing, JSFunction* fun,
                                      FunctionSyntaxKind kind);
+  void initFieldInitializer(ParseContext* enclosing, JSFunction* fun,
+                            HasHeritage hasHeritage);
 
   inline bool isLazyFunctionWithoutEnclosingScope() const {
     return function()->isInterpretedLazy() &&
@@ -489,10 +498,10 @@ class FunctionBox : public ObjectBox, public SharedContext {
 
   bool needsFinalYield() const { return isGenerator() || isAsync(); }
   bool needsDotGeneratorName() const { return isGenerator() || isAsync(); }
-  bool needsIteratorResult() const { return isGenerator(); }
+  bool needsIteratorResult() const { return isGenerator() && !isAsync(); }
   bool needsPromiseResult() const { return isAsync() && !isGenerator(); }
 
-  bool isArrow() const { return function()->isArrow(); }
+  bool isArrow() const { return isArrow_; }
 
   bool hasRest() const { return hasRest_; }
   void setHasRest() { hasRest_ = true; }
@@ -510,6 +519,14 @@ class FunctionBox : public ObjectBox, public SharedContext {
   bool needsHomeObject() const { return needsHomeObject_; }
   bool isDerivedClassConstructor() const { return isDerivedClassConstructor_; }
   bool hasInnerFunctions() const { return hasInnerFunctions_; }
+  bool isNamedLambda() const { return isNamedLambda_; }
+  bool isGetter() const { return isGetter_; }
+  bool isSetter() const { return isSetter_; }
+  bool isMethod() const { return isMethod_; }
+
+  JSFunction::FunctionKind kind() { return kind_; }
+
+  JSAtom* explicitName() const { return function()->explicitName(); }
 
   void setHasExtensibleScope() { hasExtensibleScope_ = true; }
   void setHasThisBinding() { hasThisBinding_ = true; }
@@ -549,30 +566,15 @@ class FunctionBox : public ObjectBox, public SharedContext {
     startColumn = column;
   }
 
-  void setEnd(const TokenStreamAnyChars& anyChars) {
+  void setEnd(uint32_t end) {
     // For all functions except class constructors, the buffer and
     // toString ending positions are the same. Class constructors override
     // the toString ending position with the end of the class definition.
-    uint32_t offset = anyChars.currentToken().pos.end;
-    bufEnd = offset;
-    toStringEnd = offset;
+    bufEnd = toStringEnd = end;
   }
 
   void trace(JSTracer* trc) override;
 };
-
-template <typename Unit, class AnyCharsAccess>
-inline void GeneralTokenStreamChars<Unit, AnyCharsAccess>::setFunctionStart(
-    FunctionBox* funbox) const {
-  const TokenStreamAnyChars& anyChars = anyCharsAccess();
-
-  uint32_t bufStart = anyChars.currentToken().pos.begin;
-
-  uint32_t startLine, startColumn;
-  computeLineAndColumn(bufStart, &startLine, &startColumn);
-
-  funbox->setStart(bufStart, startLine, startColumn);
-}
 
 inline FunctionBox* SharedContext::asFunctionBox() {
   MOZ_ASSERT(isFunctionBox());

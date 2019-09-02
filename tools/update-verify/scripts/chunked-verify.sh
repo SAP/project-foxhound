@@ -21,7 +21,7 @@ else
   EXTRA_PARAMS=""
 fi
 $PYTHON $MY_DIR/chunked-verify.py --chunks $chunks --this-chunk $thisChunk \
---verify-config $VERIFY_CONFIG $EXTRA_PARAMS \
+--verify-config $VERIFY_CONFIG --diff-summary $PWD/diff-summary.log $EXTRA_PARAMS \
 2>&1 | tee $SCRIPTS_DIR/../verify_log.txt
 
 print_failed_msg()
@@ -50,7 +50,7 @@ echo "--------------------------------------"
 # Testing for failures first is important because it's OK to to mark as failed
 # when there's failures+warnings, but not OK to mark as warnings in the same
 # situation.
-( ! grep 'FAIL:' $SCRIPTS_DIR/../verify_log.txt ) || print_failed_msg
+( ! grep 'TEST-UNEXPECTED-FAIL:' $SCRIPTS_DIR/../verify_log.txt ) || print_failed_msg
 ( ! grep 'WARN:' $SCRIPTS_DIR/../verify_log.txt ) || print_warning_msg
 
 echo "-------------------------"

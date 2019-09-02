@@ -17,11 +17,14 @@ function run_test() {
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-black-box",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_black_box();
-                           });
+    attachTestTabAndResume(gClient, "test-black-box", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_black_box();
+    });
   });
   do_test_pending();
 }
@@ -30,7 +33,7 @@ const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
 function test_black_box() {
-  gClient.addOneTimeListener("paused", async function(event, packet) {
+  gThreadClient.once("paused", async function(packet) {
     const source = await getSourceById(gThreadClient, packet.frame.where.actor);
     gThreadClient.setBreakpoint({ sourceUrl: source.url, line: 4 }, {});
     await gThreadClient.resume();
@@ -38,6 +41,7 @@ function test_black_box() {
   });
 
   /* eslint-disable no-multi-spaces, no-undef */
+  // prettier-ignore
   Cu.evalInSandbox(
     "" + function doStuff(k) { // line 1
       debugger;                // line 2 - Break here
@@ -48,7 +52,7 @@ function test_black_box() {
     BLACK_BOXED_URL,
     1
   );
-
+  // prettier-ignore
   Cu.evalInSandbox(
     "" + function runTest() { // line 1
       doStuff(                // line 2
@@ -66,33 +70,38 @@ function test_black_box() {
   /* eslint-enable no-multi-spaces, no-undef */
 }
 
-function test_black_box_dbg_statement() {
-  gThreadClient.getSources(async function({error, sources}) {
-    Assert.ok(!error, "Should not get an error: " + error);
-    const sourceClient = await getSource(gThreadClient, BLACK_BOXED_URL);
+async function test_black_box_dbg_statement() {
+  await gThreadClient.getSources();
+  const sourceFront = await getSource(gThreadClient, BLACK_BOXED_URL);
 
-    await blackBox(sourceClient);
+  await blackBox(sourceFront);
 
-    gThreadClient.addOneTimeListener("paused", async function(event, packet) {
-      Assert.equal(packet.why.type, "breakpoint",
-                   "We should pass over the debugger statement.");
+  gThreadClient.once("paused", async function(packet) {
+    Assert.equal(
+      packet.why.type,
+      "breakpoint",
+      "We should pass over the debugger statement."
+    );
 
-      const source = await getSourceById(gThreadClient, packet.frame.where.actor);
-      gThreadClient.removeBreakpoint({ sourceUrl: source.url, line: 4 }, {});
+    const source = await getSourceById(gThreadClient, packet.frame.where.actor);
+    gThreadClient.removeBreakpoint({ sourceUrl: source.url, line: 4 }, {});
 
-      await gThreadClient.resume();
-      await test_unblack_box_dbg_statement(sourceClient);
-    });
-    gDebuggee.runTest();
+    await gThreadClient.resume();
+    await test_unblack_box_dbg_statement(sourceFront);
   });
+  gDebuggee.runTest();
 }
 
-async function test_unblack_box_dbg_statement(sourceClient) {
-  await unBlackBox(sourceClient);
+async function test_unblack_box_dbg_statement(sourceFront) {
+  await unBlackBox(sourceFront);
 
-  gClient.addOneTimeListener("paused", function(event, packet) {
-    Assert.equal(packet.why.type, "debuggerStatement",
-                 "We should stop at the debugger statement again");
+  gThreadClient.once("paused", async function(packet) {
+    Assert.equal(
+      packet.why.type,
+      "debuggerStatement",
+      "We should stop at the debugger statement again"
+    );
+    await gThreadClient.resume();
     finishClient(gClient);
   });
   gDebuggee.runTest();

@@ -8,6 +8,7 @@ FINAL_LIBRARY = 'mozglue'
 
 EXPORTS.mozilla += [
     'AutoProfilerLabel.h',
+    'decimal/Decimal.h',
     'PlatformConditionVariable.h',
     'PlatformMutex.h',
     'Printf.h',
@@ -34,8 +35,6 @@ SOURCES += [
 
 OS_LIBS += CONFIG['REALTIME_LIBS']
 
-DEFINES['IMPL_MFBT'] = True
-
 if CONFIG['OS_ARCH'] == 'WINNT':
     DIRS += [
         'interceptor',
@@ -45,12 +44,15 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     ]
     EXPORTS.mozilla += [
         'DynamicallyLinkedFunctionPtr.h',
+        'ImportDir.h',
         'NativeNt.h',
         'WindowsMapRemoteView.h',
+        'WindowsProcessMitigations.h',
     ]
     SOURCES += [
         'TimeStamp_windows.cpp',
         'WindowsMapRemoteView.cpp',
+        'WindowsProcessMitigations.cpp',
     ]
     OS_LIBS += ['dbghelp']
 elif CONFIG['HAVE_CLOCK_MONOTONIC']:
@@ -74,3 +76,11 @@ else:
         'ConditionVariable_posix.cpp',
         'Mutex_posix.cpp',
     ]
+
+SOURCES += [
+    'decimal/Decimal.cpp',
+]
+
+if CONFIG['CC_TYPE'] == 'clang':
+    # Suppress warnings from third-party V8 Decimal code.
+    SOURCES['decimal/Decimal.cpp'].flags += ['-Wno-implicit-fallthrough']

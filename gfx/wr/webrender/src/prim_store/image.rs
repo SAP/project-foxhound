@@ -4,26 +4,27 @@
 
 use api::{
     AlphaType, ColorDepth, ColorF, ColorU,
-    ImageKey as ApiImageKey, ImageRendering, LayoutPrimitiveInfo,
+    ImageKey as ApiImageKey, ImageRendering,
     PremultipliedColorF, Shadow, YuvColorSpace, YuvFormat,
 };
 use api::units::*;
-use display_list_flattener::{CreateShadow, IsVisible};
-use frame_builder::FrameBuildingState;
-use gpu_cache::{GpuDataRequest};
-use intern::{Internable, InternDebug, Handle as InternHandle};
-use prim_store::{
+use crate::display_list_flattener::{CreateShadow, IsVisible};
+use crate::frame_builder::FrameBuildingState;
+use crate::gpu_cache::{GpuCache, GpuDataRequest};
+use crate::intern::{Internable, InternDebug, Handle as InternHandle};
+use crate::internal_types::LayoutPrimitiveInfo;
+use crate::prim_store::{
     EdgeAaSegmentMask, OpacityBindingIndex, PrimitiveInstanceKind,
     PrimitiveOpacity, PrimitiveSceneData, PrimKey, PrimKeyCommonData,
     PrimTemplate, PrimTemplateCommonData, PrimitiveStore, SegmentInstanceIndex,
     SizeKey, InternablePrimitive,
 };
-use render_task::{
+use crate::render_task::{
     BlitSource, RenderTask, RenderTaskCacheEntryHandle, RenderTaskCacheKey,
     RenderTaskCacheKeyKind
 };
-use resource_cache::ImageRequest;
-use util::pack_as_float;
+use crate::resource_cache::{ImageRequest, ResourceCache};
+use crate::util::pack_as_float;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -187,7 +188,6 @@ impl ImageData {
                         };
                     }
 
-                    let mut request_source_image = false;
                     let mut is_opaque = image_properties.descriptor.is_opaque;
                     let request = ImageRequest {
                         key: self.key,
@@ -230,10 +230,6 @@ impl ImageData {
                                 None,
                                 image_properties.descriptor.is_opaque,
                                 |render_tasks| {
-                                    // We need to render the image cache this frame,
-                                    // so will need access to the source texture.
-                                    request_source_image = true;
-
                                     // Create a task to blit from the texture cache to
                                     // a normal transient render task surface. This will
                                     // copy only the sub-rect, if specified.
@@ -258,17 +254,7 @@ impl ImageData {
                                 }
                             ));
                         }
-                        ImageSource::Default => {
-                            // Normal images just reference the source texture each frame.
-                            request_source_image = true;
-                        }
-                    }
-
-                    if request_source_image && !is_tiled {
-                        frame_state.resource_cache.request_image(
-                            request,
-                            frame_state.gpu_cache,
-                        );
+                        ImageSource::Default => {}
                     }
 
                     if is_opaque {
@@ -445,20 +431,26 @@ impl YuvImageData {
             self.write_prim_gpu_blocks(&mut request);
         };
 
+        common.opacity = PrimitiveOpacity::translucent();
+    }
+
+    pub fn request_resources(
+        &mut self,
+        resource_cache: &mut ResourceCache,
+        gpu_cache: &mut GpuCache,
+    ) {
         let channel_num = self.format.get_plane_num();
         debug_assert!(channel_num <= 3);
         for channel in 0 .. channel_num {
-            frame_state.resource_cache.request_image(
+            resource_cache.request_image(
                 ImageRequest {
                     key: self.yuv_key[channel],
                     rendering: self.image_rendering,
                     tile: None,
                 },
-                frame_state.gpu_cache,
+                gpu_cache,
             );
         }
-
-        common.opacity = PrimitiveOpacity::translucent();
     }
 
     pub fn write_prim_gpu_blocks(&self, request: &mut GpuDataRequest) {
@@ -533,10 +525,10 @@ fn test_struct_sizes() {
     //     test expectations and move on.
     // (b) You made a structure larger. This is not necessarily a problem, but should only
     //     be done with care, and after checking if talos performance regresses badly.
-    assert_eq!(mem::size_of::<Image>(), 56, "Image size changed");
-    assert_eq!(mem::size_of::<ImageTemplate>(), 108, "ImageTemplate size changed");
-    assert_eq!(mem::size_of::<ImageKey>(), 68, "ImageKey size changed");
-    assert_eq!(mem::size_of::<YuvImage>(), 36, "YuvImage size changed");
-    assert_eq!(mem::size_of::<YuvImageTemplate>(), 56, "YuvImageTemplate size changed");
-    assert_eq!(mem::size_of::<YuvImageKey>(), 48, "YuvImageKey size changed");
+    assert_eq!(mem::size_of::<Image>(), 52, "Image size changed");
+    assert_eq!(mem::size_of::<ImageTemplate>(), 104, "ImageTemplate size changed");
+    assert_eq!(mem::size_of::<ImageKey>(), 64, "ImageKey size changed");
+    assert_eq!(mem::size_of::<YuvImage>(), 28, "YuvImage size changed");
+    assert_eq!(mem::size_of::<YuvImageTemplate>(), 48, "YuvImageTemplate size changed");
+    assert_eq!(mem::size_of::<YuvImageKey>(), 40, "YuvImageKey size changed");
 }

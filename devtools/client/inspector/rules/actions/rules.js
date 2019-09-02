@@ -7,13 +7,13 @@
 const {
   UPDATE_ADD_RULE_ENABLED,
   UPDATE_HIGHLIGHTED_SELECTOR,
+  UPDATE_PRINT_SIMULATION_HIDDEN,
   UPDATE_RULES,
   UPDATE_SOURCE_LINK_ENABLED,
   UPDATE_SOURCE_LINK,
 } = require("./index");
 
 module.exports = {
-
   /**
    * Updates whether or not the add new rule button should be enabled.
    *
@@ -37,6 +37,19 @@ module.exports = {
     return {
       type: UPDATE_HIGHLIGHTED_SELECTOR,
       highlightedSelector,
+    };
+  },
+
+  /**
+   * Updates whether or not the print simulation button is hidden.
+   *
+   * @param  {Boolean} hidden
+   *         Whether or not the print simulation button is hidden.
+   */
+  updatePrintSimulationHidden(hidden) {
+    return {
+      type: UPDATE_PRINT_SIMULATION_HIDDEN,
+      hidden,
     };
   },
 
@@ -81,5 +94,4 @@ module.exports = {
       sourceLink,
     };
   },
-
 };

@@ -14,14 +14,13 @@
 
 #include "APZTestCommon.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
+
 #include "mozilla/layers/APZSampler.h"
 #include "mozilla/layers/APZUpdater.h"
 
 class APZCTreeManagerTester : public APZCTesterBase {
  protected:
   virtual void SetUp() {
-    gfxPrefs::GetSingleton();
     gfxPlatform::GetPlatform();
     APZThreadUtils::SetThreadAssertionsEnabled(false);
     APZThreadUtils::SetControllerThread(MessageLoop::current());
@@ -52,6 +51,16 @@ class APZCTreeManagerTester : public APZCTesterBase {
         apzc->SampleContentTransformForFrame(&viewTransformOut, pointOut);
       }
     }
+  }
+
+  // A convenience function for letting a test modify the frame metrics
+  // stored on a particular layer. The layer doesn't let us modify it in-place,
+  // so we take care of the copying in this function.
+  template <typename Callback>
+  void ModifyFrameMetrics(Layer* aLayer, Callback aCallback) {
+    ScrollMetadata metadata = aLayer->GetScrollMetadata(0);
+    aCallback(metadata.GetMetrics());
+    aLayer->SetScrollMetadata(metadata);
   }
 
   nsTArray<RefPtr<Layer> > layers;

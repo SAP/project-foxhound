@@ -43,6 +43,7 @@
 #include "nsIContent.h"
 #include "nsIDocumentEncoder.h"
 #include "nsINode.h"
+#include "nsIPrincipal.h"
 #include "nsISelectionController.h"
 #include "nsISupportsPrimitives.h"
 #include "nsITransferable.h"
@@ -63,11 +64,6 @@ class nsISupports;
 namespace mozilla {
 
 using namespace dom;
-
-template already_AddRefed<Element> TextEditor::InsertBrElementWithTransaction(
-    const EditorDOMPoint& aPointToInsert, EDirection aSelect);
-template already_AddRefed<Element> TextEditor::InsertBrElementWithTransaction(
-    const EditorRawDOMPoint& aPointToInsert, EDirection aSelect);
 
 TextEditor::TextEditor()
     : mWrapColumn(0),
@@ -242,9 +238,8 @@ TextEditor::SetDocumentCharacterSet(const nsACString& characterSet) {
   }
 
   // Create a new meta charset tag
-  EditorRawDOMPoint atStartOfHeadNode(headNode, 0);
   RefPtr<Element> metaElement =
-      CreateNodeWithTransaction(*nsGkAtoms::meta, atStartOfHeadNode);
+      CreateNodeWithTransaction(*nsGkAtoms::meta, EditorDOMPoint(headNode, 0));
   if (NS_WARN_IF(!metaElement)) {
     return NS_OK;
   }
@@ -321,7 +316,8 @@ nsresult TextEditor::InitRules() {
     // instantiate the rules for this text editor
     mRules = new TextEditRules();
   }
-  return mRules->Init(this);
+  RefPtr<TextEditRules> textEditRules(mRules);
+  return textEditRules->Init(this);
 }
 
 nsresult TextEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
@@ -351,7 +347,7 @@ nsresult TextEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
     case NS_VK_ALT:
       // These keys are handled on EditorBase
       return EditorBase::HandleKeyPressEvent(aKeyboardEvent);
-    case NS_VK_BACK:
+    case NS_VK_BACK: {
       if (aKeyboardEvent->IsControl() || aKeyboardEvent->IsAlt() ||
           aKeyboardEvent->IsMeta() || aKeyboardEvent->IsOS()) {
         return NS_OK;
@@ -359,7 +355,8 @@ nsresult TextEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
       DeleteSelectionAsAction(nsIEditor::ePrevious, nsIEditor::eStrip);
       aKeyboardEvent->PreventDefault();  // consumed
       return NS_OK;
-    case NS_VK_DELETE:
+    }
+    case NS_VK_DELETE: {
       // on certain platforms (such as windows) the shift key
       // modifies what delete does (cmd_cut in this case).
       // bailing here to allow the keybindings to do the cut.
@@ -371,6 +368,7 @@ nsresult TextEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
       DeleteSelectionAsAction(nsIEditor::eNext, nsIEditor::eStrip);
       aKeyboardEvent->PreventDefault();  // consumed
       return NS_OK;
+    }
     case NS_VK_TAB: {
       if (IsTabbable()) {
         return NS_OK;  // let it be used for focus switching
@@ -419,8 +417,9 @@ nsresult TextEditor::OnInputText(const nsAString& aStringToInsert) {
   return NS_OK;
 }
 
-nsresult TextEditor::InsertLineBreakAsAction() {
-  AutoEditActionDataSetter editActionData(*this, EditAction::eInsertLineBreak);
+nsresult TextEditor::InsertLineBreakAsAction(nsIPrincipal* aPrincipal) {
+  AutoEditActionDataSetter editActionData(*this, EditAction::eInsertLineBreak,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -435,10 +434,8 @@ nsresult TextEditor::InsertLineBreakAsAction() {
   return NS_OK;
 }
 
-template <typename PT, typename CT>
 already_AddRefed<Element> TextEditor::InsertBrElementWithTransaction(
-    const EditorDOMPointBase<PT, CT>& aPointToInsert,
-    EDirection aSelect /* = eNone */) {
+    const EditorDOMPoint& aPointToInsert, EDirection aSelect /* = eNone */) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   if (NS_WARN_IF(!aPointToInsert.IsSet())) {
@@ -594,7 +591,7 @@ nsresult TextEditor::ExtendSelectionForDelete(nsIEditor::EDirection* aAction) {
 
         if (insertionPoint.IsInTextNode()) {
           const nsTextFragment* data =
-              insertionPoint.GetContainerAsText()->GetText();
+              &insertionPoint.GetContainerAsText()->TextFragment();
           uint32_t offset = insertionPoint.Offset();
           if ((offset > 1 && NS_IS_LOW_SURROGATE(data->CharAt(offset - 1)) &&
                NS_IS_HIGH_SURROGATE(data->CharAt(offset - 2))) ||
@@ -636,14 +633,13 @@ nsresult TextEditor::ExtendSelectionForDelete(nsIEditor::EDirection* aAction) {
 NS_IMETHODIMP
 TextEditor::DeleteSelection(EDirection aAction, EStripWrappers aStripWrappers) {
   nsresult rv = DeleteSelectionAsAction(aAction, aStripWrappers);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  return NS_OK;
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to do delete selection");
+  return rv;
 }
 
 nsresult TextEditor::DeleteSelectionAsAction(EDirection aDirection,
-                                             EStripWrappers aStripWrappers) {
+                                             EStripWrappers aStripWrappers,
+                                             nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(aStripWrappers == eStrip || aStripWrappers == eNoStrip);
   // Showing this assertion is fine if this method is called by outside via
   // mutation event listener or something.  Otherwise, this is called by
@@ -675,7 +671,7 @@ nsresult TextEditor::DeleteSelectionAsAction(EDirection aDirection,
       break;
   }
 
-  AutoEditActionDataSetter editActionData(*this, editAction);
+  AutoEditActionDataSetter editActionData(*this, editAction, aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -868,7 +864,7 @@ already_AddRefed<Element> TextEditor::DeleteSelectionAndCreateElement(
     return nullptr;
   }
 
-  EditorRawDOMPoint pointToInsert(SelectionRefPtr()->AnchorRef());
+  EditorDOMPoint pointToInsert(SelectionRefPtr()->AnchorRef());
   if (!pointToInsert.IsSet()) {
     return nullptr;
   }
@@ -967,13 +963,12 @@ nsresult TextEditor::DeleteSelectionAndPrepareToCreateNode() {
 NS_IMETHODIMP
 TextEditor::InsertText(const nsAString& aStringToInsert) {
   nsresult rv = InsertTextAsAction(aStringToInsert);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  return NS_OK;
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to insert text");
+  return rv;
 }
 
-nsresult TextEditor::InsertTextAsAction(const nsAString& aStringToInsert) {
+nsresult TextEditor::InsertTextAsAction(const nsAString& aStringToInsert,
+                                        nsIPrincipal* aPrincipal) {
   // Showing this assertion is fine if this method is called by outside via
   // mutation event listener or something.  Otherwise, this is called by
   // wrong method.
@@ -982,7 +977,8 @@ nsresult TextEditor::InsertTextAsAction(const nsAString& aStringToInsert) {
                "operation "
                "unless mutation event listener nests some operations");
 
-  AutoEditActionDataSetter editActionData(*this, EditAction::eInsertText);
+  AutoEditActionDataSetter editActionData(*this, EditAction::eInsertText,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -1095,10 +1091,12 @@ nsresult TextEditor::InsertLineBreakAsSubAction() {
   return NS_OK;
 }
 
-nsresult TextEditor::SetText(const nsAString& aString) {
+nsresult TextEditor::SetTextAsAction(const nsAString& aString,
+                                     nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(aString.FindChar(static_cast<char16_t>('\r')) == kNotFound);
 
-  AutoEditActionDataSetter editActionData(*this, EditAction::eSetText);
+  AutoEditActionDataSetter editActionData(*this, EditAction::eSetText,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -1111,9 +1109,11 @@ nsresult TextEditor::SetText(const nsAString& aString) {
   return NS_OK;
 }
 
-nsresult TextEditor::ReplaceTextAsAction(
-    const nsAString& aString, nsRange* aReplaceRange /* = nullptr */) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::eReplaceText);
+nsresult TextEditor::ReplaceTextAsAction(const nsAString& aString,
+                                         nsRange* aReplaceRange,
+                                         nsIPrincipal* aPrincipal) {
+  AutoEditActionDataSetter editActionData(*this, EditAction::eReplaceText,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -1153,7 +1153,8 @@ nsresult TextEditor::ReplaceTextAsAction(
     return rv;
   }
   ErrorResult error;
-  SelectionRefPtr()->AddRange(*aReplaceRange, error);
+  SelectionRefPtr()->AddRangeAndSelectFramesAndNotifyListeners(*aReplaceRange,
+                                                               error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();
   }
@@ -1198,18 +1199,25 @@ nsresult TextEditor::SetTextAsSubAction(const nsAString& aString) {
     // shouldn't receive such selectionchange before the first mutation.
     AutoUpdateViewBatch preventSelectionChangeEvent(*this);
 
+    Element* rootElement = GetRoot();
+    if (NS_WARN_IF(!rootElement)) {
+      return NS_ERROR_FAILURE;
+    }
+
     // We want to select trailing BR node to remove all nodes to replace all,
     // but TextEditor::SelectEntireDocument doesn't select that BR node.
     if (rules->DocumentIsEmpty()) {
-      // if it's empty, don't select entire doc - that would select
-      // the bogus node
-      Element* rootElement = GetRoot();
-      if (NS_WARN_IF(!rootElement)) {
-        return NS_ERROR_FAILURE;
-      }
       rv = SelectionRefPtr()->Collapse(rootElement, 0);
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rv),
+          "Failed to move caret to start of the editor root element");
     } else {
-      rv = EditorBase::SelectEntireDocument();
+      ErrorResult error;
+      SelectionRefPtr()->SelectAllChildren(*rootElement, error);
+      NS_WARNING_ASSERTION(
+          !error.Failed(),
+          "Failed to select all children of the editor root element");
+      rv = error.StealNSResult();
     }
     if (NS_SUCCEEDED(rv)) {
       rv = ReplaceSelectionAsSubAction(aString);
@@ -1591,12 +1599,6 @@ TextEditor::SetWrapWidth(int32_t aWrapColumn) {
 }
 
 NS_IMETHODIMP
-TextEditor::SetWrapColumn(int32_t aWrapColumn) {
-  mWrapColumn = aWrapColumn;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 TextEditor::GetNewlineHandling(int32_t* aNewlineHandling) {
   NS_ENSURE_ARG_POINTER(aNewlineHandling);
 
@@ -1611,8 +1613,7 @@ TextEditor::SetNewlineHandling(int32_t aNewlineHandling) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-TextEditor::Undo(uint32_t aCount) {
+nsresult TextEditor::UndoAsAction(uint32_t aCount, nsIPrincipal* aPrincipal) {
   // If we don't have transaction in the undo stack, we shouldn't notify
   // anybody of trying to undo since it's not useful notification but we
   // need to pay some runtime cost.
@@ -1628,7 +1629,7 @@ TextEditor::Undo(uint32_t aCount) {
     return NS_OK;
   }
 
-  AutoEditActionDataSetter editActionData(*this, EditAction::eUndo);
+  AutoEditActionDataSetter editActionData(*this, EditAction::eUndo, aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -1673,8 +1674,7 @@ TextEditor::Undo(uint32_t aCount) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-TextEditor::Redo(uint32_t aCount) {
+nsresult TextEditor::RedoAsAction(uint32_t aCount, nsIPrincipal* aPrincipal) {
   // If we don't have transaction in the redo stack, we shouldn't notify
   // anybody of trying to redo since it's not useful notification but we
   // need to pay some runtime cost.
@@ -1690,7 +1690,7 @@ TextEditor::Redo(uint32_t aCount) {
     return NS_OK;
   }
 
-  AutoEditActionDataSetter editActionData(*this, EditAction::eRedo);
+  AutoEditActionDataSetter editActionData(*this, EditAction::eRedo, aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -1735,7 +1735,8 @@ TextEditor::Redo(uint32_t aCount) {
   return NS_OK;
 }
 
-bool TextEditor::CanCutOrCopy(PasswordFieldAllowed aPasswordFieldAllowed) {
+bool TextEditor::CanCutOrCopy(
+    PasswordFieldAllowed aPasswordFieldAllowed) const {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   if (aPasswordFieldAllowed == ePasswordFieldNotAllowed && IsPasswordEditor()) {
@@ -1759,9 +1760,9 @@ bool TextEditor::FireClipboardEvent(EventMessage aEventMessage,
     return false;
   }
 
-  if (!nsCopySupport::FireClipboardEvent(aEventMessage, aSelectionType,
-                                         presShell, SelectionRefPtr(),
-                                         aActionTaken)) {
+  if (!nsCopySupport::FireClipboardEvent(
+          aEventMessage, aSelectionType, presShell,
+          MOZ_KnownLive(SelectionRefPtr()), aActionTaken)) {
     return false;
   }
 
@@ -1770,9 +1771,8 @@ bool TextEditor::FireClipboardEvent(EventMessage aEventMessage,
   return !mDidPreDestroy;
 }
 
-NS_IMETHODIMP
-TextEditor::Cut() {
-  AutoEditActionDataSetter editActionData(*this, EditAction::eCut);
+nsresult TextEditor::CutAsAction(nsIPrincipal* aPrincipal) {
+  AutoEditActionDataSetter editActionData(*this, EditAction::eCut, aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -1785,25 +1785,25 @@ TextEditor::Cut() {
                                                *nsGkAtoms::DeleteTxnName);
     DeleteSelectionAsSubAction(eNone, eStrip);
   }
-  return actionTaken ? NS_OK : NS_ERROR_FAILURE;
+  return EditorBase::ToGenericNSResult(
+      actionTaken ? NS_OK : NS_ERROR_EDITOR_ACTION_CANCELED);
 }
 
-NS_IMETHODIMP
-TextEditor::CanCut(bool* aCanCut) {
-  if (NS_WARN_IF(!aCanCut)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
+bool TextEditor::CanCut() const {
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
-    return NS_ERROR_NOT_INITIALIZED;
+    return false;
   }
 
-  // Cut is always enabled in HTML documents
-  RefPtr<Document> doc = GetDocument();
-  *aCanCut = (doc && doc->IsHTMLOrXHTML()) ||
-             (IsModifiable() && CanCutOrCopy(ePasswordFieldNotAllowed));
-  return NS_OK;
+  // Cut is always enabled in HTML documents, but if the document is chrome,
+  // let it control it.
+  Document* document = GetDocument();
+  if (document && document->IsHTMLOrXHTML() &&
+      !nsContentUtils::IsChromeDoc(document)) {
+    return true;
+  }
+
+  return IsModifiable() && CanCutOrCopy(ePasswordFieldNotAllowed);
 }
 
 NS_IMETHODIMP
@@ -1816,40 +1816,34 @@ TextEditor::Copy() {
   bool actionTaken = false;
   FireClipboardEvent(eCopy, nsIClipboard::kGlobalClipboard, &actionTaken);
 
-  return actionTaken ? NS_OK : NS_ERROR_FAILURE;
+  return EditorBase::ToGenericNSResult(
+      actionTaken ? NS_OK : NS_ERROR_EDITOR_ACTION_CANCELED);
 }
 
-NS_IMETHODIMP
-TextEditor::CanCopy(bool* aCanCopy) {
-  if (NS_WARN_IF(!aCanCopy)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
+bool TextEditor::CanCopy() const {
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
-    return NS_ERROR_NOT_INITIALIZED;
+    return false;
   }
 
-  // Copy is always enabled in HTML documents
-  RefPtr<Document> doc = GetDocument();
-  *aCanCopy =
-      (doc && doc->IsHTMLOrXHTML()) || CanCutOrCopy(ePasswordFieldNotAllowed);
-  return NS_OK;
+  // Copy is always enabled in HTML documents, but if the document is chrome,
+  // let it control it.
+  Document* document = GetDocument();
+  if (document && document->IsHTMLOrXHTML() &&
+      !nsContentUtils::IsChromeDoc(document)) {
+    return true;
+  }
+
+  return CanCutOrCopy(ePasswordFieldNotAllowed);
 }
 
-NS_IMETHODIMP
-TextEditor::CanDelete(bool* aCanDelete) {
-  if (NS_WARN_IF(!aCanDelete)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
+bool TextEditor::CanDelete() const {
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
-    return NS_ERROR_NOT_INITIALIZED;
+    return false;
   }
 
-  *aCanDelete = IsModifiable() && CanCutOrCopy(ePasswordFieldAllowed);
-  return NS_OK;
+  return IsModifiable() && CanCutOrCopy(ePasswordFieldAllowed);
 }
 
 already_AddRefed<nsIDocumentEncoder> TextEditor::GetAndInitDocEncoder(
@@ -1981,11 +1975,13 @@ nsresult TextEditor::ComputeValueInternal(const nsAString& aFormatType,
 }
 
 nsresult TextEditor::PasteAsQuotationAsAction(int32_t aClipboardType,
-                                              bool aDispatchPasteEvent) {
+                                              bool aDispatchPasteEvent,
+                                              nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(aClipboardType == nsIClipboard::kGlobalClipboard ||
              aClipboardType == nsIClipboard::kSelectionClipboard);
 
-  AutoEditActionDataSetter editActionData(*this, EditAction::ePasteAsQuotation);
+  AutoEditActionDataSetter editActionData(*this, EditAction::ePasteAsQuotation,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -2143,31 +2139,28 @@ nsresult TextEditor::SelectEntireDocument() {
     return NS_ERROR_NULL_POINTER;
   }
 
+  Element* rootElement = GetRoot();
+  if (NS_WARN_IF(!rootElement)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
   // Protect the edit rules object from dying
   RefPtr<TextEditRules> rules(mRules);
 
-  // is doc empty?
+  // If we're empty, don't select all children because that would select the
+  // bogus node.
   if (rules->DocumentIsEmpty()) {
-    // get root node
-    Element* rootElement = GetRoot();
-    if (NS_WARN_IF(!rootElement)) {
-      return NS_ERROR_FAILURE;
-    }
-
-    // if it's empty don't select entire doc - that would select the bogus node
-    return SelectionRefPtr()->Collapse(rootElement, 0);
-  }
-
-  SelectionBatcher selectionBatcher(SelectionRefPtr());
-  nsresult rv = EditorBase::SelectEntireDocument();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+    nsresult rv = SelectionRefPtr()->Collapse(rootElement, 0);
+    NS_WARNING_ASSERTION(
+        NS_SUCCEEDED(rv),
+        "Failed to move caret to start of the editor root element");
     return rv;
   }
 
   // Don't select the trailing BR node if we have one
   nsCOMPtr<nsIContent> childNode;
-  rv = EditorBase::GetEndChildNode(*SelectionRefPtr(),
-                                   getter_AddRefs(childNode));
+  nsresult rv = EditorBase::GetEndChildNode(*SelectionRefPtr(),
+                                            getter_AddRefs(childNode));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -2176,13 +2169,22 @@ nsresult TextEditor::SelectEntireDocument() {
   }
 
   if (childNode && TextEditUtils::IsMozBR(childNode)) {
-    int32_t parentOffset;
-    nsINode* parentNode = GetNodeLocation(childNode, &parentOffset);
-
-    return SelectionRefPtr()->Extend(parentNode, parentOffset);
+    ErrorResult error;
+    MOZ_KnownLive(SelectionRefPtr())
+        ->SetStartAndEndInLimiter(RawRangeBoundary(rootElement, 0),
+                                  EditorRawDOMPoint(childNode), error);
+    NS_WARNING_ASSERTION(!error.Failed(),
+                         "Failed to select all children of the editor root "
+                         "element except the moz-<br> element");
+    return error.StealNSResult();
   }
 
-  return NS_OK;
+  ErrorResult error;
+  SelectionRefPtr()->SelectAllChildren(*rootElement, error);
+  NS_WARNING_ASSERTION(
+      !error.Failed(),
+      "Failed to select all children of the editor root element");
+  return error.StealNSResult();
 }
 
 EventTarget* TextEditor::GetDOMEventTarget() { return mEventTarget; }

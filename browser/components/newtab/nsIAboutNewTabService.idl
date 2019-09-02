@@ -45,19 +45,9 @@ interface nsIAboutNewTabService : nsISupports
   readonly attribute bool activityStreamEnabled;
 
   /**
-   * Returns true if the the prerendering pref for activity stream is true
-   */
-  readonly attribute bool activityStreamPrerender;
-
-  /**
    * Returns true if the the debug pref for activity stream is true
    */
   readonly attribute bool activityStreamDebug;
-
-  /**
-   * Returns the locale of the activity stream interface
-   */
-  readonly attribute ACString activityStreamLocale;
 
   /**
    * Resets to the default resource and also resets the

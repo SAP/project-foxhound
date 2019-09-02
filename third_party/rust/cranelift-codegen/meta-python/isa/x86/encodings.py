@@ -3,7 +3,7 @@ x86 Encodings.
 """
 from __future__ import absolute_import
 from cdsl.predicates import IsZero32BitFloat, IsZero64BitFloat
-from cdsl.predicates import IsUnsignedInt, Not, And
+from cdsl.predicates import IsUnsignedInt
 from base.predicates import IsColocatedFunc, IsColocatedData, LengthEquals
 from base import instructions as base
 from base import types
@@ -15,8 +15,8 @@ from . import settings as cfg
 from . import instructions as x86
 from .legalize import x86_expand
 from base.legalize import narrow, widen, expand_flags
-from base.settings import allones_funcaddrs, is_pic
-from .settings import use_sse41
+from .settings import use_sse41, not_all_ones_funcaddrs_and_not_is_pic, \
+    all_ones_funcaddrs_and_not_is_pic, is_pic, not_is_pic
 
 try:
     from typing import TYPE_CHECKING, Any  # noqa
@@ -233,6 +233,8 @@ for inst,           rrr in [
     X86_64.enc(inst.i32.any, *r.rc(0xd3, rrr=rrr))
 
 for inst,           rrr in [
+        (base.rotl_imm, 0),
+        (base.rotr_imm, 1),
         (base.ishl_imm, 4),
         (base.ushr_imm, 5),
         (base.sshr_imm, 7)]:
@@ -339,6 +341,25 @@ enc_x86_64(x86.pop.i64, r.popq, 0x58)
 X86_64.enc(base.copy_special, *r.copysp.rex(0x89, w=1))
 X86_32.enc(base.copy_special, *r.copysp(0x89))
 
+# Stack-slot-to-the-same-stack-slot copy, which is guaranteed to turn
+# into a no-op.  Ideally we could to make this encoding available for
+# all types, and write `base.copy_nop.any`, but it appears that the
+# controlling type variable must not polymorphic.  So we make do with
+# the following limited set, and guard the generating transformation in
+# regalloc/reload.rs accordingly.
+#
+# The same encoding is generated for both the 64- and 32-bit architectures.
+# Note that we can't use `enc_both` here, because that attempts to create a
+# variant with a REX prefix in the 64-bit-architecture case.  But since
+# there's no actual instruction for the REX prefix to modify the meaning of,
+# it will modify the meaning of whatever instruction happens to follow this
+# one, which is obviously wrong.  Note also that we can and indeed *must*
+# claim that there's a 64-bit encoding for the 32-bit arch case, even though
+# no such single instruction actually exists for the 32-bit arch case.
+for ty in [types.i64, types.i32, types.i16, types.i8, types.f64, types.f32]:
+    X86_64.enc(base.copy_nop.bind(ty), r.stacknull, 0)
+    X86_32.enc(base.copy_nop.bind(ty), r.stacknull, 0)
+
 # Adjust SP down by a dynamic value (or up, with a negative operand).
 X86_32.enc(base.adjust_sp_down.i32, *r.adjustsp(0x29))
 X86_64.enc(base.adjust_sp_down.i64, *r.adjustsp.rex(0x29, w=1))
@@ -407,15 +428,15 @@ enc_both(base.regspill.f64, r.fregspill32, 0xf2, 0x0f, 0x11)
 
 # Non-PIC, all-ones funcaddresses.
 X86_32.enc(base.func_addr.i32, *r.fnaddr4(0xb8),
-           isap=And(Not(allones_funcaddrs), Not(is_pic)))
+           isap=not_all_ones_funcaddrs_and_not_is_pic)
 X86_64.enc(base.func_addr.i64, *r.fnaddr8.rex(0xb8, w=1),
-           isap=And(Not(allones_funcaddrs), Not(is_pic)))
+           isap=not_all_ones_funcaddrs_and_not_is_pic)
 
 # Non-PIC, all-zeros funcaddresses.
 X86_32.enc(base.func_addr.i32, *r.allones_fnaddr4(0xb8),
-           isap=And(allones_funcaddrs, Not(is_pic)))
+           isap=all_ones_funcaddrs_and_not_is_pic)
 X86_64.enc(base.func_addr.i64, *r.allones_fnaddr8.rex(0xb8, w=1),
-           isap=And(allones_funcaddrs, Not(is_pic)))
+           isap=all_ones_funcaddrs_and_not_is_pic)
 
 # 64-bit, colocated, both PIC and non-PIC. Use the lea instruction's
 # pc-relative field.
@@ -432,9 +453,9 @@ X86_64.enc(base.func_addr.i64, *r.got_fnaddr8.rex(0x8b, w=1),
 
 # Non-PIC
 X86_32.enc(base.symbol_value.i32, *r.gvaddr4(0xb8),
-           isap=Not(is_pic))
+           isap=not_is_pic)
 X86_64.enc(base.symbol_value.i64, *r.gvaddr8.rex(0xb8, w=1),
-           isap=Not(is_pic))
+           isap=not_is_pic)
 
 # PIC, colocated
 X86_64.enc(base.symbol_value.i64, *r.pcrel_gvaddr8.rex(0x8d, w=1),
@@ -481,8 +502,10 @@ X86_64.enc(base.x_return, *r.ret(0xc3))
 #
 # Branches
 #
-enc_both(base.jump, r.jmpb, 0xeb)
-enc_both(base.jump, r.jmpd, 0xe9)
+X86_32.enc(base.jump, *r.jmpb(0xeb))
+X86_64.enc(base.jump, *r.jmpb(0xeb))
+X86_32.enc(base.jump, *r.jmpd(0xe9))
+X86_64.enc(base.jump, *r.jmpd(0xe9))
 
 enc_both(base.brif, r.brib, 0x70)
 enc_both(base.brif, r.brid, 0x0f, 0x80)
@@ -631,7 +654,7 @@ X86_64.enc(base.uextend.i32.i16, *r.urm_noflags(0x0f, 0xb7))
 
 # movzbq, encoded as movzbl because it's equivalent and shorter
 X86_64.enc(base.uextend.i64.i8, *r.urm_noflags.rex(0x0f, 0xb6))
-X86_64.enc(base.uextend.i64.i8, *r.urm_noflags(0x0f, 0xb6))
+X86_64.enc(base.uextend.i64.i8, *r.urm_noflags_abcd(0x0f, 0xb6))
 
 # movzwq, encoded as movzwl because it's equivalent and shorter
 X86_64.enc(base.uextend.i64.i16, *r.urm_noflags.rex(0x0f, 0xb7))

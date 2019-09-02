@@ -293,29 +293,33 @@ static MOZ_ALWAYS_INLINE bool AllocChars(JSString* str, size_t length,
   *capacity = numChars - 1;
 
   JS_STATIC_ASSERT(JSString::MAX_LENGTH * sizeof(CharT) < UINT32_MAX);
-  *chars = str->zone()->pod_malloc<CharT>(numChars);
+  *chars = str->zone()->pod_malloc<CharT>(numChars, js::StringBufferArena);
   return *chars != nullptr;
 }
 
-UniqueLatin1Chars JSRope::copyLatin1CharsZ(JSContext* maybecx) const {
-  return copyCharsInternal<Latin1Char>(maybecx, true);
+UniqueLatin1Chars JSRope::copyLatin1CharsZ(JSContext* maybecx,
+                                           arena_id_t destArenaId) const {
+  return copyCharsInternal<Latin1Char>(maybecx, true, destArenaId);
 }
 
-UniqueTwoByteChars JSRope::copyTwoByteCharsZ(JSContext* maybecx) const {
-  return copyCharsInternal<char16_t>(maybecx, true);
+UniqueTwoByteChars JSRope::copyTwoByteCharsZ(JSContext* maybecx,
+                                             arena_id_t destArenaId) const {
+  return copyCharsInternal<char16_t>(maybecx, true, destArenaId);
 }
 
-UniqueLatin1Chars JSRope::copyLatin1Chars(JSContext* maybecx) const {
-  return copyCharsInternal<Latin1Char>(maybecx, false);
+UniqueLatin1Chars JSRope::copyLatin1Chars(JSContext* maybecx,
+                                          arena_id_t destArenaId) const {
+  return copyCharsInternal<Latin1Char>(maybecx, false, destArenaId);
 }
 
-UniqueTwoByteChars JSRope::copyTwoByteChars(JSContext* maybecx) const {
-  return copyCharsInternal<char16_t>(maybecx, false);
+UniqueTwoByteChars JSRope::copyTwoByteChars(JSContext* maybecx,
+                                            arena_id_t destArenaId) const {
+  return copyCharsInternal<char16_t>(maybecx, false, destArenaId);
 }
 
 template <typename CharT>
 UniquePtr<CharT[], JS::FreePolicy> JSRope::copyCharsInternal(
-    JSContext* maybecx, bool nullTerminate) const {
+    JSContext* maybecx, bool nullTerminate, arena_id_t destArenaId) const {
   // Left-leaning ropes are far more common than right-leaning ropes, so
   // perform a non-destructive traversal of the rope, right node first,
   // splatting each node's characters into a contiguous buffer.
@@ -324,9 +328,9 @@ UniquePtr<CharT[], JS::FreePolicy> JSRope::copyCharsInternal(
 
   UniquePtr<CharT[], JS::FreePolicy> out;
   if (maybecx) {
-    out.reset(maybecx->pod_malloc<CharT>(n + 1));
+    out.reset(maybecx->pod_malloc<CharT>(n + 1, destArenaId));
   } else {
-    out.reset(js_pod_malloc<CharT>(n + 1));
+    out.reset(js_pod_arena_malloc<CharT>(destArenaId, n + 1));
   }
 
   if (!out) {
@@ -569,6 +573,13 @@ JSFlatString* JSRope::flattenInternal(JSContext* maybecx) {
       str->setNonInlineChars(wholeChars);
       uint32_t left_len = left.length();
       pos = wholeChars + left_len;
+
+      // Remove memory association for left node we're about to make into a
+      // dependent string.
+      if (left.isTenured()) {
+        RemoveCellMemory(&left, left.allocSize(), MemoryUse::StringContents);
+      }
+
       if (IsSame<CharT, char16_t>::value) {
         left.setLengthAndFlags(left_len, DEPENDENT_FLAGS);
       } else {
@@ -651,6 +662,11 @@ finish_node : {
     }
     str->setNonInlineChars(wholeChars);
     str->d.s.u3.capacity = wholeCapacity;
+
+    if (str->isTenured()) {
+      AddCellMemory(str, str->asFlat().allocSize(), MemoryUse::StringContents);
+    }
+
     return &this->asFlat();
   }
   uintptr_t flattenData;
@@ -695,7 +711,7 @@ JSFlatString* JSRope::flattenInternal(JSContext* maybecx) {
 
 JSFlatString* JSRope::flatten(JSContext* maybecx) {
   mozilla::Maybe<AutoGeckoProfilerEntry> entry;
-  if (maybecx && !maybecx->helperThread()) {
+  if (maybecx && !maybecx->isHelperThreadContext()) {
     entry.emplace(maybecx, "JSRope::flatten");
   }
 
@@ -863,7 +879,7 @@ static void FillFromCompatibleAndTerminate(Dest* dest, Src* src,
 template <typename CharT>
 JSFlatString* JSDependentString::undependInternal(JSContext* cx) {
   size_t n = length();
-  auto s = cx->make_pod_array<CharT>(n + 1);
+  auto s = cx->make_pod_array<CharT>(n + 1, js::StringBufferArena);
   if (!s) {
     return nullptr;
   }
@@ -873,6 +889,8 @@ JSFlatString* JSDependentString::undependInternal(JSContext* cx) {
       ReportOutOfMemory(cx);
       return nullptr;
     }
+  } else {
+    AddCellMemory(this, (n + 1) * sizeof(CharT), MemoryUse::StringContents);
   }
 
   AutoCheckCannotGC nogc;
@@ -1101,14 +1119,14 @@ bool JSFlatString::isIndexSlow(const CharT* s, size_t length,
   RangedPtr<const CharT> cp(s, length + 1);
   const RangedPtr<const CharT> end(s + length, s, length + 1);
 
-  uint32_t index = JS7_UNDEC(*cp++);
+  uint32_t index = AsciiDigitToNumber(*cp++);
   uint32_t oldIndex = 0;
   uint32_t c = 0;
 
   if (index != 0) {
     while (IsAsciiDigit(*cp)) {
       oldIndex = index;
-      c = JS7_UNDEC(*cp);
+      c = AsciiDigitToNumber(*cp);
       index = 10 * index + c;
       cp++;
     }
@@ -1450,16 +1468,9 @@ JSFlatString* JSExternalString::ensureFlat(JSContext* cx) {
   // Taintfox: propagate taint
   StringTaint taint = this->taint();
 
-  auto s = cx->make_pod_array<char16_t>(n + 1);
+  auto s = cx->make_pod_array<char16_t>(n + 1, js::StringBufferArena);
   if (!s) {
     return nullptr;
-  }
-
-  if (!isTenured()) {
-    if (!cx->runtime()->gc.nursery().registerMallocedBuffer(s.get())) {
-      ReportOutOfMemory(cx);
-      return nullptr;
-    }
   }
 
   // Copy the chars before finalizing the string.
@@ -1471,6 +1482,9 @@ JSFlatString* JSExternalString::ensureFlat(JSContext* cx) {
   // Release the external chars.
   // Taintfox: this will also remove any taint information
   finalize(cx->runtime()->defaultFreeOp());
+
+  MOZ_ASSERT(isTenured());
+  AddCellMemory(this, (n + 1) * sizeof(char16_t), MemoryUse::StringContents);
 
   // Transform the string into a non-external, flat string. Note that the
   // resulting string will still be in an AllocKind::EXTERNAL_STRING arena,
@@ -1591,8 +1605,11 @@ static JSFlatString* NewStringDeflated(JSContext* cx, const char16_t* s,
         cx, mozilla::Range<const char16_t>(s, n));
   }
 
-  auto news = cx->make_pod_array<Latin1Char>(n + 1);
+  auto news = cx->make_pod_array<Latin1Char>(n + 1, js::StringBufferArena);
   if (!news) {
+    if (!allowGC) {
+      cx->recoverFromOutOfMemory();
+    }
     return nullptr;
   }
 
@@ -1623,7 +1640,7 @@ static JSFlatString* NewStringDeflatedFromLittleEndianNoGC(
     return str;
   }
 
-  auto news = cx->make_pod_array<Latin1Char>(length + 1);
+  auto news = cx->make_pod_array<Latin1Char>(length + 1, js::StringBufferArena);
   if (!news) {
     cx->recoverFromOutOfMemory();
     return nullptr;
@@ -1754,7 +1771,7 @@ JSFlatString* NewStringCopyNDontDeflate(JSContext* cx, const CharT* s,
     return NewInlineString<allowGC>(cx, mozilla::Range<const CharT>(s, n));
   }
 
-  auto news = cx->make_pod_array<CharT>(n + 1);
+  auto news = cx->make_pod_array<CharT>(n + 1, js::StringBufferArena);
   if (!news) {
     if (!allowGC) {
       cx->recoverFromOutOfMemory();
@@ -1796,7 +1813,7 @@ static JSFlatString* NewUndeflatedStringFromLittleEndianNoGC(
     return str;
   }
 
-  auto news = cx->make_pod_array<char16_t>(length + 1);
+  auto news = cx->make_pod_array<char16_t>(length + 1, js::StringBufferArena);
   if (!news) {
     cx->recoverFromOutOfMemory();
     return nullptr;
@@ -1858,7 +1875,8 @@ JSFlatString* NewStringCopyUTF8N(JSContext* cx, const JS::UTF8Chars utf8) {
   size_t length;
   if (encoding == JS::SmallestEncoding::Latin1) {
     UniqueLatin1Chars latin1(
-        UTF8CharsToNewLatin1CharsZ(cx, utf8, &length).get());
+        UTF8CharsToNewLatin1CharsZ(cx, utf8, &length, js::StringBufferArena)
+            .get());
     if (!latin1) {
       return nullptr;
     }
@@ -1869,7 +1887,8 @@ JSFlatString* NewStringCopyUTF8N(JSContext* cx, const JS::UTF8Chars utf8) {
   MOZ_ASSERT(encoding == JS::SmallestEncoding::UTF16);
 
   UniqueTwoByteChars utf16(
-      UTF8CharsToNewTwoByteCharsZ(cx, utf8, &length).get());
+      UTF8CharsToNewTwoByteCharsZ(cx, utf8, &length, js::StringBufferArena)
+          .get());
   if (!utf16) {
     return nullptr;
   }
@@ -2247,7 +2266,7 @@ JSString* js::ToStringSlow(
 
   Value v = arg;
   if (!v.isPrimitive()) {
-    MOZ_ASSERT(!cx->helperThread());
+    MOZ_ASSERT(!cx->isHelperThreadContext());
     if (!allowGC) {
       return nullptr;
     }
@@ -2270,7 +2289,7 @@ JSString* js::ToStringSlow(
   } else if (v.isNull()) {
     str = cx->names().null;
   } else if (v.isSymbol()) {
-    MOZ_ASSERT(!cx->helperThread());
+    MOZ_ASSERT(!cx->isHelperThreadContext());
     if (allowGC) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_SYMBOL_TO_STRING);
@@ -2320,7 +2339,7 @@ static JSString* SymbolToSource(JSContext* cx, Symbol* symbol) {
     return desc;
   }
 
-  StringBuffer buf(cx);
+  JSStringBuilder buf(cx);
   if (code == SymbolCode::InSymbolRegistry ? !buf.append("Symbol.for(")
                                            : !buf.append("Symbol(")) {
     return nullptr;

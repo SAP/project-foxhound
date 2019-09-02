@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
 from firefox_puppeteer import PuppeteerMixin
 from firefox_puppeteer.api.l10n import L10n
 from marionette_driver import By
@@ -26,18 +27,6 @@ class TestL10n(PuppeteerMixin, MarionetteTestCase):
 
         self.assertRaises(NoSuchElementException,
                           self.l10n.localize_entity, dtds, 'notExistent')
-
-    def test_dtd_entity_content(self):
-        dtds = ['chrome://branding/locale/brand.dtd',
-                'chrome://global/locale/aboutTelemetry.dtd']
-
-        value = self.l10n.localize_entity(dtds, 'aboutTelemetry.homeSection')
-
-        self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
-        self.marionette.navigate('about:telemetry')
-
-        elm = self.marionette.find_element(By.ID, 'sectionTitle')
-        self.assertEqual(value, elm.text)
 
     def test_properties(self):
         properties = ['chrome://global/locale/filepicker.properties',

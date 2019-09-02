@@ -6,20 +6,81 @@ var EXPORTED_SYMBOLS = ["PrefsEngine", "PrefRec"];
 
 const PREF_SYNC_PREFS_PREFIX = "services.sync.prefs.sync.";
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
-const {Store, SyncEngine, Tracker} = ChromeUtils.import("resource://services-sync/engines.js");
-const {CryptoWrapper} = ChromeUtils.import("resource://services-sync/record.js");
-const {Svc, Utils} = ChromeUtils.import("resource://services-sync/util.js");
-const {SCORE_INCREMENT_XLARGE} = ChromeUtils.import("resource://services-sync/constants.js");
-const {CommonUtils} = ChromeUtils.import("resource://services-common/utils.js");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
+const { Store, SyncEngine, Tracker } = ChromeUtils.import(
+  "resource://services-sync/engines.js"
+);
+const { CryptoWrapper } = ChromeUtils.import(
+  "resource://services-sync/record.js"
+);
+const { Svc, Utils } = ChromeUtils.import("resource://services-sync/util.js");
+const { SCORE_INCREMENT_XLARGE } = ChromeUtils.import(
+  "resource://services-sync/constants.js"
+);
+const { CommonUtils } = ChromeUtils.import(
+  "resource://services-common/utils.js"
+);
 
-ChromeUtils.defineModuleGetter(this, "LightweightThemeManager",
-                          "resource://gre/modules/LightweightThemeManager.jsm");
+XPCOMUtils.defineLazyGetter(this, "PREFS_GUID", () =>
+  CommonUtils.encodeBase64URL(Services.appinfo.ID)
+);
 
-XPCOMUtils.defineLazyGetter(this, "PREFS_GUID",
-                            () => CommonUtils.encodeBase64URL(Services.appinfo.ID));
+ChromeUtils.defineModuleGetter(
+  this,
+  "AddonManager",
+  "resource://gre/modules/AddonManager.jsm"
+);
+
+// In bug 1538015, we decided that it isn't always safe to allow all "incoming"
+// preferences to be applied locally. So we have introduced another preference,
+// which if false (the default) will ignore all incoming preferences which don't
+// already have the "control" preference locally set. If this new
+// preference is set to true, then we continue our old behavior of allowing all
+// preferences to be updated, even those which don't already have a local
+// "control" pref.
+const PREF_SYNC_PREFS_ARBITRARY =
+  "services.sync.prefs.dangerously_allow_arbitrary";
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "ALLOW_ARBITRARY",
+  PREF_SYNC_PREFS_ARBITRARY
+);
+
+// The SUMO supplied URL we log with more information about how custom prefs can
+// continue to be synced. SUMO have told us that this URL will remain "stable".
+const PREFS_DOC_URL_TEMPLATE =
+  "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/sync-custom-preferences";
+XPCOMUtils.defineLazyGetter(this, "PREFS_DOC_URL", () =>
+  Services.urlFormatter.formatURL(PREFS_DOC_URL_TEMPLATE)
+);
+
+// Check for a local control pref or PREF_SYNC_PREFS_ARBITRARY
+this.isAllowedPrefName = function(prefName) {
+  if (prefName == PREF_SYNC_PREFS_ARBITRARY) {
+    return false; // never allow this.
+  }
+  if (ALLOW_ARBITRARY) {
+    // user has set the "dangerous" pref, so everything is allowed.
+    return true;
+  }
+  // The pref must already have a control pref set, although it doesn't matter
+  // here whether that value is true or false. We can't use prefHasUserValue
+  // here because we also want to check prefs still with default values.
+  try {
+    Services.prefs.getBoolPref(PREF_SYNC_PREFS_PREFIX + prefName);
+    // pref exists!
+    return true;
+  } catch (_) {
+    return false;
+  }
+};
 
 function PrefRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
@@ -30,7 +91,6 @@ PrefRec.prototype = {
 };
 
 Utils.deferGetSet(PrefRec, "cleartext", ["value"]);
-
 
 function PrefsEngine(service) {
   SyncEngine.call(this, "Prefs", service);
@@ -84,14 +144,18 @@ function isUnsyncableURLPref(prefName) {
 
 function PrefStore(name, engine) {
   Store.call(this, name, engine);
-  Svc.Obs.add("profile-before-change", function() {
-    this.__prefs = null;
-  }, this);
+  Svc.Obs.add(
+    "profile-before-change",
+    function() {
+      this.__prefs = null;
+    },
+    this
+  );
 }
 PrefStore.prototype = {
   __proto__: Store.prototype,
 
- __prefs: null,
+  __prefs: null,
   get _prefs() {
     if (!this.__prefs) {
       this.__prefs = new Preferences();
@@ -100,17 +164,29 @@ PrefStore.prototype = {
   },
 
   _getSyncPrefs() {
-    let syncPrefs = Services.prefs.getBranch(PREF_SYNC_PREFS_PREFIX)
-                                  .getChildList("", {})
-                                  .filter(pref => !isUnsyncableURLPref(pref));
+    let syncPrefs = Services.prefs
+      .getBranch(PREF_SYNC_PREFS_PREFIX)
+      .getChildList("")
+      .filter(pref => isAllowedPrefName(pref) && !isUnsyncableURLPref(pref));
     // Also sync preferences that determine which prefs get synced.
     let controlPrefs = syncPrefs.map(pref => PREF_SYNC_PREFS_PREFIX + pref);
     return controlPrefs.concat(syncPrefs);
   },
 
   _isSynced(pref) {
-    return pref.startsWith(PREF_SYNC_PREFS_PREFIX) ||
-           this._prefs.get(PREF_SYNC_PREFS_PREFIX + pref, false);
+    if (pref.startsWith(PREF_SYNC_PREFS_PREFIX)) {
+      // this is an incoming control pref, which is ignored if there's not already
+      // a local control pref for the preference.
+      let controlledPref = pref.slice(PREF_SYNC_PREFS_PREFIX.length);
+      return isAllowedPrefName(controlledPref);
+    }
+
+    // This is the pref itself - it must be both allowed, and have a control
+    // pref which is true.
+    if (!this._prefs.get(PREF_SYNC_PREFS_PREFIX + pref, false)) {
+      return false;
+    }
+    return isAllowedPrefName(pref);
   },
 
   _getAllPrefs() {
@@ -121,34 +197,64 @@ PrefStore.prototype = {
       // which have unsyncable urls.
       if (this._isSynced(pref) && !isUnsyncableURLPref(pref)) {
         // Missing and default prefs get the null value.
-        values[pref] = this._prefs.isSet(pref) ? this._prefs.get(pref, null) : null;
+        values[pref] = this._prefs.isSet(pref)
+          ? this._prefs.get(pref, null)
+          : null;
       }
     }
     return values;
   },
 
-  _updateLightWeightTheme(themeID) {
-    let themeObject = null;
-    if (themeID) {
-      themeObject = LightweightThemeManager.getUsedTheme(themeID);
-    }
-    LightweightThemeManager.currentTheme = themeObject;
-  },
-
   _setAllPrefs(values) {
-    let selectedThemeIDPref = "lightweightThemes.selectedThemeID";
+    const selectedThemeIDPref = "extensions.activeThemeID";
     let selectedThemeIDBefore = this._prefs.get(selectedThemeIDPref, null);
     let selectedThemeIDAfter = selectedThemeIDBefore;
 
     // Update 'services.sync.prefs.sync.foo.pref' before 'foo.pref', otherwise
     // _isSynced returns false when 'foo.pref' doesn't exist (e.g., on a new device).
-    let prefs = Object.keys(values).sort(a => -a.indexOf(PREF_SYNC_PREFS_PREFIX));
+    let prefs = Object.keys(values).sort(
+      a => -a.indexOf(PREF_SYNC_PREFS_PREFIX)
+    );
     for (let pref of prefs) {
+      let value = values[pref];
       if (!this._isSynced(pref)) {
+        // An extra complication just so we can warn when we decline to sync a
+        // preference due to no local control pref.
+        if (!pref.startsWith(PREF_SYNC_PREFS_PREFIX)) {
+          // this is an incoming pref - if the incoming value is not null and
+          // there's no local control pref, then it means we would have previously
+          // applied a value, but now will decline to.
+          // We need to check this here rather than in _isSynced because the
+          // default list of prefs we sync has changed, so we don't want to report
+          // this message when we wouldn't have actually applied a value.
+          // We should probably remove all of this in ~ Firefox 80.
+          if (value !== null) {
+            // null means "use the default value"
+            let controlPref = PREF_SYNC_PREFS_PREFIX + pref;
+            let controlPrefExists;
+            try {
+              Services.prefs.getBoolPref(controlPref);
+              controlPrefExists = true;
+            } catch (ex) {
+              controlPrefExists = false;
+            }
+            if (!controlPrefExists) {
+              // This is a long message and written to both the sync log and the
+              // console, but note that users who have not customized the control
+              // prefs will never see this.
+              let msg =
+                `Not syncing the preference '${pref}' because it has no local ` +
+                `control preference (${PREF_SYNC_PREFS_PREFIX}${pref}) and ` +
+                `the preference ${PREF_SYNC_PREFS_ARBITRARY} isn't true. ` +
+                `See ${PREFS_DOC_URL} for more information`;
+              console.warn(msg);
+              this._log.warn(msg);
+            }
+          }
+        }
         continue;
       }
 
-      let value = values[pref];
       if (typeof value == "string" && UNSYNCABLE_URL_REGEXP.test(value)) {
         this._log.trace(`Skipping incoming unsyncable url for pref: ${pref}`);
         continue;
@@ -174,10 +280,34 @@ PrefStore.prototype = {
           }
       }
     }
-
-    // Notify the lightweight theme manager if the selected theme has changed.
+    // Themes are a little messy. Themes which have been installed are handled
+    // by the addons engine - but default themes aren't seen by that engine.
+    // So if there's a new default theme ID and that ID corresponds to a
+    // system addon, then we arrange to enable that addon here.
     if (selectedThemeIDBefore != selectedThemeIDAfter) {
-      this._updateLightWeightTheme(selectedThemeIDAfter);
+      this._maybeEnableBuiltinTheme(selectedThemeIDAfter).catch(e => {
+        this._log.error("Failed to maybe update the default theme", e);
+      });
+    }
+  },
+
+  async _maybeEnableBuiltinTheme(themeId) {
+    let addon = null;
+    try {
+      addon = await AddonManager.getAddonByID(themeId);
+    } catch (ex) {
+      this._log.trace(
+        `There's no addon with ID '${themeId} - it can't be a builtin theme`
+      );
+      return;
+    }
+    if (addon && addon.isBuiltin && addon.type == "theme") {
+      this._log.trace(`Enabling builtin theme '${themeId}'`);
+      await addon.enable();
+    } else {
+      this._log.trace(
+        `Have incoming theme ID of '${themeId}' but it's not a builtin theme`
+      );
     }
   },
 
@@ -193,7 +323,7 @@ PrefStore.prototype = {
   },
 
   async itemExists(id) {
-    return (id === PREFS_GUID);
+    return id === PREFS_GUID;
   },
 
   async createRecord(id, collection) {
@@ -249,7 +379,7 @@ PrefTracker.prototype = {
     this.modified = false;
   },
 
- __prefs: null,
+  __prefs: null,
   get _prefs() {
     if (!this.__prefs) {
       this.__prefs = new Preferences();
@@ -277,8 +407,10 @@ PrefTracker.prototype = {
         }
         // Trigger a sync for MULTI-DEVICE for a change that determines
         // which prefs are synced or a regular pref change.
-        if (data.indexOf(PREF_SYNC_PREFS_PREFIX) == 0 ||
-            this._prefs.get(PREF_SYNC_PREFS_PREFIX + data, false)) {
+        if (
+          data.indexOf(PREF_SYNC_PREFS_PREFIX) == 0 ||
+          this._prefs.get(PREF_SYNC_PREFS_PREFIX + data, false)
+        ) {
           this.score += SCORE_INCREMENT_XLARGE;
           this.modified = true;
           this._log.trace("Preference " + data + " changed");

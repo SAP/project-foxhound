@@ -43,7 +43,7 @@
 //!   measured as well as the thing it points to. E.g.
 //!   `<Box<_> as MallocSizeOf>::size_of(field, ops)`.
 //!
-//!   Note: WebRender has a reduced for of this crate, so that we can avoid
+//!   Note: WebRender has a reduced fork of this crate, so that we can avoid
 //!   publishing this crate on crates.io.
 
 extern crate app_units;
@@ -58,8 +58,6 @@ extern crate hyper;
 extern crate hyper_serde;
 #[cfg(feature = "servo")]
 extern crate keyboard_types;
-#[cfg(feature = "servo")]
-extern crate mozjs as js;
 extern crate selectors;
 #[cfg(feature = "servo")]
 extern crate serde;
@@ -94,7 +92,7 @@ use void::Void;
 type VoidPtrToSizeFn = unsafe extern "C" fn(ptr: *const c_void) -> usize;
 
 /// A closure implementing a stateful predicate on pointers.
-type VoidPtrToBoolFnMut = FnMut(*const c_void) -> bool;
+type VoidPtrToBoolFnMut = dyn FnMut(*const c_void) -> bool;
 
 /// Operations used when measuring heap usage of data structures.
 pub struct MallocSizeOfOps {
@@ -749,6 +747,7 @@ where
             Component::ExplicitUniversalType |
             Component::LocalName(..) |
             Component::ID(..) |
+            Component::Part(..) |
             Component::Class(..) |
             Component::AttributeInNoNamespaceExists { .. } |
             Component::AttributeInNoNamespace { .. } |
@@ -787,15 +786,6 @@ impl MallocSizeOf for Void {
 
 #[cfg(feature = "servo")]
 impl<Static: string_cache::StaticAtomSet> MallocSizeOf for string_cache::Atom<Static> {
-    fn size_of(&self, _ops: &mut MallocSizeOfOps) -> usize {
-        0
-    }
-}
-
-// This is measured properly by the heap measurement implemented in
-// SpiderMonkey.
-#[cfg(feature = "servo")]
-impl<T: Copy + js::rust::GCMethods> MallocSizeOf for js::jsapi::Heap<T> {
     fn size_of(&self, _ops: &mut MallocSizeOfOps) -> usize {
         0
     }

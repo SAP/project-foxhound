@@ -292,17 +292,6 @@ void AndroidBridge::GetExtensionFromMimeType(const nsACString& aMimeType,
   }
 }
 
-bool AndroidBridge::GetClipboardText(nsAString& aText) {
-  ALOG_BRIDGE("AndroidBridge::GetClipboardText");
-
-  auto text = Clipboard::GetText(GeckoAppShell::GetApplicationContext());
-
-  if (text) {
-    aText = text->ToString();
-  }
-  return !!text;
-}
-
 int AndroidBridge::GetScreenDepth() {
   ALOG_BRIDGE("%s", __PRETTY_FUNCTION__);
 
@@ -678,8 +667,6 @@ uint32_t AndroidBridge::GetScreenOrientation() {
   ALOG_BRIDGE("AndroidBridge::GetScreenOrientation");
 
   int16_t orientation = GeckoAppShell::GetScreenOrientation();
-
-  if (!orientation) return hal::eScreenOrientation_None;
 
   return static_cast<hal::ScreenOrientation>(orientation);
 }

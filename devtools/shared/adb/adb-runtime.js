@@ -4,8 +4,11 @@
 
 "use strict";
 
-const { RuntimeTypes } = require("devtools/client/webide/modules/runtime-types");
+const {
+  RuntimeTypes,
+} = require("devtools/client/webide/modules/runtime-types");
 const { prepareTCPConnection } = require("devtools/shared/adb/commands/index");
+const { shell } = require("devtools/shared/adb/commands/index");
 
 class AdbRuntime {
   constructor(adbDevice, socketPath) {
@@ -15,8 +18,22 @@ class AdbRuntime {
     this._socketPath = socketPath;
   }
 
+  async init() {
+    const packageName = this._packageName();
+    const query = `dumpsys package ${packageName} | grep versionName`;
+    const versionNameString = await shell(this._adbDevice.id, query);
+    const matches = versionNameString.match(/versionName=([\d.]+)/);
+    if (matches && matches[1]) {
+      this._versionName = matches[1];
+    }
+  }
+
   get id() {
     return this._adbDevice.id + "|" + this._socketPath;
+  }
+
+  get isFenix() {
+    return this._packageName().includes("org.mozilla.fenix");
   }
 
   get deviceId() {
@@ -27,8 +44,39 @@ class AdbRuntime {
     return this._adbDevice.name;
   }
 
+  get versionName() {
+    return this._versionName;
+  }
+
   get shortName() {
-    return `Firefox ${this._channel()}`;
+    const packageName = this._packageName();
+
+    switch (packageName) {
+      case "org.mozilla.firefox":
+        return "Firefox";
+      case "org.mozilla.firefox_beta":
+        return "Firefox Beta";
+      case "org.mozilla.fennec":
+      case "org.mozilla.fennec_aurora":
+        // This package name is now the one for Firefox Nightly distributed
+        // through the Google Play Store since "dawn project"
+        // cf. https://bugzilla.mozilla.org/show_bug.cgi?id=1357351#c8
+        return "Firefox Nightly";
+      case "org.mozilla.fenix":
+        // The current Nightly build for Fenix is available under this package name
+        // but the official packages will use fenix, fenix.beta and fenix.nightly.
+        return "Firefox Preview";
+      case "org.mozilla.fenix.beta":
+        return "Firefox Preview Beta";
+      case "org.mozilla.fenix.nightly":
+        return "Firefox Preview Nightly";
+      default:
+        return "Firefox Custom";
+    }
+  }
+
+  get socketPath() {
+    return this._socketPath;
   }
 
   get name() {
@@ -43,65 +91,14 @@ class AdbRuntime {
     });
   }
 
-  isUnknown() {
-    return false;
-  }
-
-  _channel() {
-    const packageName = this._packageName();
-
-    switch (packageName) {
-      case "org.mozilla.firefox":
-        return "";
-      case "org.mozilla.firefox_beta":
-        return "Beta";
-      case "org.mozilla.fennec":
-      case "org.mozilla.fennec_aurora":
-        // This package name is now the one for Firefox Nightly distributed
-        // through the Google Play Store since "dawn project"
-        // cf. https://bugzilla.mozilla.org/show_bug.cgi?id=1357351#c8
-        return "Nightly";
-      default:
-        return "Custom";
-    }
-  }
-
   _packageName() {
     // If using abstract socket address, it is "@org.mozilla.firefox/..."
     // If using path base socket, it is "/data/data/<package>...""
     // Until Fennec 62 only supports path based UNIX domain socket, but
     // Fennec 63+ supports both path based and abstract socket.
-    return this._socketPath.startsWith("@") ?
-      this._socketPath.substr(1).split("/")[0] :
-      this._socketPath.split("/")[3];
+    return this._socketPath.startsWith("@")
+      ? this._socketPath.substr(1).split("/")[0]
+      : this._socketPath.split("/")[3];
   }
 }
 exports.AdbRuntime = AdbRuntime;
-
-/**
- * UnknownAdbRuntime instance will be used to represent devices which have USB debugging
- * enabled but where Firefox (or another debuggable gecko-based runtime) is either not
- * started or not ready for USB debugging.
- */
-class UnknownAdbRuntime extends AdbRuntime {
-  constructor(adbDevice) {
-    super(adbDevice);
-  }
-
-  get id() {
-    return this._adbDevice.id;
-  }
-
-  get shortName() {
-    return "Unknown runtime";
-  }
-
-  connect(connection) {
-    throw new Error("Cannot connect on unknown runtime");
-  }
-
-  isUnknown() {
-    return true;
-  }
-}
-exports.UnknownAdbRuntime = UnknownAdbRuntime;

@@ -7,7 +7,7 @@
 using namespace mozilla;
 using namespace mozilla::safebrowsing;
 
-static const char* kFilesInV2[] = {".pset", ".sbstore"};
+static const char* kFilesInV2[] = {".vlpset", ".sbstore"};
 static const char* kFilesInV4[] = {".vlpset", ".metadata"};
 
 #define V2_TABLE "gtest-malware-simple"
@@ -32,7 +32,8 @@ void CheckFileExist(const char* table, const T (&files)[N], bool expectExists) {
   }
 }
 
-TEST(UrlClassifierFailUpdate, CheckTableReset) {
+TEST(UrlClassifierFailUpdate, CheckTableReset)
+{
   const bool FULL_UPDATE = true;
   const bool PARTIAL_UPDATE = false;
 
@@ -44,7 +45,7 @@ TEST(UrlClassifierFailUpdate, CheckTableReset) {
 
     ApplyUpdate(update);
 
-    // A successful V2 update should create .pset & .sbstore files
+    // A successful V2 update should create .vlpset & .sbstore files
     CheckFileExist(V2_TABLE, kFilesInV2, true);
   }
 

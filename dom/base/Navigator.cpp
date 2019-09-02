@@ -73,9 +73,10 @@
 #include "WidgetUtils.h"
 #include "nsIPresentationService.h"
 #include "nsIScriptError.h"
+#include "ReferrerInfo.h"
 
 #include "nsIExternalProtocolHandler.h"
-#include "TabChild.h"
+#include "BrowserChild.h"
 #include "URIUtils.h"
 
 #include "mozilla/dom/MediaDevices.h"
@@ -578,7 +579,7 @@ void Navigator::GetBuildID(nsAString& aBuildID, CallerType aCallerType,
 }
 
 void Navigator::GetDoNotTrack(nsAString& aResult) {
-  bool doNotTrack = nsContentUtils::DoNotTrackEnabled();
+  bool doNotTrack = StaticPrefs::privacy_donottrackheader_enabled();
   if (!doNotTrack) {
     nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(mWindow);
     doNotTrack = loadContext && loadContext->UseTrackingProtection();
@@ -957,9 +958,6 @@ void Navigator::RegisterProtocolHandler(const nsAString& aScheme,
   }
 
   nsCOMPtr<Document> doc = mWindow->GetDoc();
-  if (!mWindow->IsSecureContext()) {
-    doc->WarnOnceAbout(Document::eRegisterProtocolHandlerInsecure);
-  }
 
   // Determine if doc is allowed to assign this handler
   nsIURI* docURI = doc->GetDocumentURIObject();
@@ -974,8 +972,9 @@ void Navigator::RegisterProtocolHandler(const nsAString& aScheme,
   if (XRE_IsContentProcess()) {
     nsAutoString scheme(aScheme);
     nsAutoString title(aTitle);
-    RefPtr<TabChild> tabChild = TabChild::GetFrom(mWindow);
-    tabChild->SendRegisterProtocolHandler(scheme, handlerURI, title, docURI);
+    RefPtr<BrowserChild> browserChild = BrowserChild::GetFrom(mWindow);
+    browserChild->SendRegisterProtocolHandler(scheme, handlerURI, title,
+                                              docURI);
     return;
   }
 
@@ -1128,9 +1127,6 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
     return false;
   }
 
-  nsLoadFlags loadFlags =
-      nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_CLASSIFY_URI;
-
   // No need to use CORS for sendBeacon unless it's a BLOB
   nsSecurityFlags securityFlags =
       aType == eBeaconTypeBlob
@@ -1140,11 +1136,7 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
 
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannel(getter_AddRefs(channel), uri, doc, securityFlags,
-                     nsIContentPolicy::TYPE_BEACON,
-                     nullptr,  // aPerformanceStorage
-                     nullptr,  // aLoadGroup
-                     nullptr,  // aCallbacks
-                     loadFlags);
+                     nsIContentPolicy::TYPE_BEACON);
 
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
@@ -1157,8 +1149,10 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
     aRv.Throw(NS_ERROR_DOM_BAD_URI);
     return false;
   }
-  mozilla::net::ReferrerPolicy referrerPolicy = doc->GetReferrerPolicy();
-  rv = httpChannel->SetReferrerWithPolicy(documentURI, referrerPolicy);
+
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+  referrerInfo->InitWithDocument(doc);
+  rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   nsCOMPtr<nsIInputStream> in;
@@ -1240,8 +1234,8 @@ void Navigator::MozGetUserMedia(const MediaStreamConstraints& aConstraints,
     return;
   }
 
-  MediaManager::GetUserMediaSuccessCallback onsuccess(&aOnSuccess);
-  MediaManager::GetUserMediaErrorCallback onerror(&aOnError);
+  RefPtr<NavigatorUserMediaSuccessCallback> onsuccess(&aOnSuccess);
+  RefPtr<NavigatorUserMediaErrorCallback> onerror(&aOnError);
 
   nsWeakPtr weakWindow = nsWeakPtr(do_GetWeakReference(mWindow));
 
@@ -1250,23 +1244,23 @@ void Navigator::MozGetUserMedia(const MediaStreamConstraints& aConstraints,
       ->Then(
           GetMainThreadSerialEventTarget(), __func__,
           [weakWindow, onsuccess = std::move(onsuccess)](
-              const RefPtr<DOMMediaStream>& aStream) {
+              const RefPtr<DOMMediaStream>& aStream) MOZ_CAN_RUN_SCRIPT {
             nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(weakWindow);
             if (!window || !window->GetOuterWindow() ||
                 window->GetOuterWindow()->GetCurrentInnerWindow() != window) {
               return;  // Leave Promise pending after navigation by design.
             }
-            MediaManager::CallOnSuccess(&onsuccess, *aStream);
+            MediaManager::CallOnSuccess(*onsuccess, *aStream);
           },
-          [weakWindow,
-           onerror = std::move(onerror)](const RefPtr<MediaMgrError>& aError) {
+          [weakWindow, onerror = std::move(onerror)](
+              const RefPtr<MediaMgrError>& aError) MOZ_CAN_RUN_SCRIPT {
             nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(weakWindow);
             if (!window || !window->GetOuterWindow() ||
                 window->GetOuterWindow()->GetCurrentInnerWindow() != window) {
               return;  // Leave Promise pending after navigation by design.
             }
             auto error = MakeRefPtr<MediaStreamError>(window, *aError);
-            MediaManager::CallOnError(&onerror, *error);
+            MediaManager::CallOnError(*onerror, *error);
           });
 }
 
@@ -1280,10 +1274,24 @@ void Navigator::MozGetUserMediaDevices(
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
     return;
   }
-
-  MediaManager* manager = MediaManager::Get();
+  if (Document* doc = mWindow->GetExtantDoc()) {
+    if (!mWindow->IsSecureContext()) {
+      doc->SetDocumentAndPageUseCounter(
+          eUseCounter_custom_MozGetUserMediaInsec);
+    }
+    nsINode* node = doc;
+    while ((node = nsContentUtils::GetCrossDocParentNode(node))) {
+      if (NS_FAILED(nsContentUtils::CheckSameOrigin(doc, node))) {
+        doc->SetDocumentAndPageUseCounter(
+            eUseCounter_custom_MozGetUserMediaXOrigin);
+        break;
+      }
+    }
+  }
+  RefPtr<MediaManager> manager = MediaManager::Get();
   // XXXbz aOnError seems to be unused?
-  aRv = manager->GetUserMediaDevices(mWindow, aConstraints, aOnSuccess,
+  nsCOMPtr<nsPIDOMWindowInner> window(mWindow);
+  aRv = manager->GetUserMediaDevices(window, aConstraints, aOnSuccess,
                                      aInnerWindowID, aCallID);
 }
 
@@ -1516,11 +1524,13 @@ JSObject* Navigator::WrapObject(JSContext* cx,
 }
 
 /* static */
-bool Navigator::HasUserMediaSupport(JSContext* /* unused */,
-                                    JSObject* /* unused */) {
-  // Make enabling peerconnection enable getUserMedia() as well
-  return Preferences::GetBool("media.navigator.enabled", false) ||
-         Preferences::GetBool("media.peerconnection.enabled", false);
+bool Navigator::HasUserMediaSupport(JSContext* cx, JSObject* obj) {
+  // Make enabling peerconnection enable getUserMedia() as well.
+  // Emulate [SecureContext] unless media.devices.insecure.enabled=true
+  return (StaticPrefs::media_navigator_enabled() ||
+          StaticPrefs::media_peerconnection_enabled()) &&
+         (IsSecureContextOrObjectIsFromSecureContext(cx, obj) ||
+          StaticPrefs::media_devices_insecure_enabled());
 }
 
 /* static */
@@ -1754,16 +1764,15 @@ already_AddRefed<Promise> Navigator::RequestMediaKeySystemAccess(
 
   if (!mWindow->IsSecureContext()) {
     Document* doc = mWindow->GetExtantDoc();
-    nsString uri;
+    AutoTArray<nsString, 1> params;
+    nsString* uri = params.AppendElement();
     if (doc) {
-      Unused << doc->GetDocumentURI(uri);
+      Unused << doc->GetDocumentURI(*uri);
     }
-    const char16_t* params[] = {uri.get()};
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                    NS_LITERAL_CSTRING("Media"), doc,
-                                    nsContentUtils::eDOM_PROPERTIES,
-                                    "MediaEMEInsecureContextDeprecatedWarning",
-                                    params, ArrayLength(params));
+    nsContentUtils::ReportToConsole(
+        nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Media"), doc,
+        nsContentUtils::eDOM_PROPERTIES,
+        "MediaEMEInsecureContextDeprecatedWarning", params);
   }
 
   Document* doc = mWindow->GetExtantDoc();

@@ -1,4 +1,3 @@
-
 // -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,491 +6,495 @@
 "use strict";
 do_get_profile(); // must be called before getting nsIX509CertDB
 
-const {RemoteSecuritySettings} = ChromeUtils.import("resource://gre/modules/psm/RemoteSecuritySettings.jsm");
-const {RemoteSettings} = ChromeUtils.import("resource://services-settings/remote-settings.js");
-const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
-const {TelemetryTestUtils} = ChromeUtils.import("resource://testing-common/TelemetryTestUtils.jsm");
+const { RemoteSettings } = ChromeUtils.import(
+  "resource://services-settings/remote-settings.js"
+);
+const { RemoteSecuritySettings } = ChromeUtils.import(
+  "resource://gre/modules/psm/RemoteSecuritySettings.jsm"
+);
+const { TestUtils } = ChromeUtils.import(
+  "resource://testing-common/TestUtils.jsm"
+);
+const { X509 } = ChromeUtils.import("resource://gre/modules/psm/X509.jsm");
 
-let remoteSecSetting = new RemoteSecuritySettings();
+const { IntermediatePreloadsClient } = RemoteSecuritySettings.init();
+
 let server;
 
 let intermediate1Data;
 let intermediate2Data;
 
-const INTERMEDIATES_DL_PER_POLL_PREF     = "security.remote_settings.intermediates.downloads_per_poll";
-const INTERMEDIATES_ENABLED_PREF         = "security.remote_settings.intermediates.enabled";
+const INTERMEDIATES_DL_PER_POLL_PREF =
+  "security.remote_settings.intermediates.downloads_per_poll";
+const INTERMEDIATES_ENABLED_PREF =
+  "security.remote_settings.intermediates.enabled";
 
-function cyclingIteratorGenerator(items, count = null) {
-  return () => cyclingIterator(items, count);
-}
-
-function* cyclingIterator(items, count = null) {
-  if (count == null) {
-    count = items.length;
-  }
-  for (let i = 0; i < count; i++) {
-    yield items[i % items.length];
-  }
-}
-
-function getHash(aStr) {
-  let hasher = Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
+function getHashCommon(aStr, useBase64) {
+  let hasher = Cc["@mozilla.org/security/hash;1"].createInstance(
+    Ci.nsICryptoHash
+  );
   hasher.init(Ci.nsICryptoHash.SHA256);
-  let stringStream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(Ci.nsIStringInputStream);
+  let stringStream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+    Ci.nsIStringInputStream
+  );
   stringStream.data = aStr;
   hasher.updateFromStream(stringStream, -1);
 
-  // convert the binary hash data to a hex string.
-  return hexify(hasher.finish(false));
+  return hasher.finish(useBase64);
 }
 
-function countTelemetryReports(histogram) {
-  let count = 0;
-  for (let x in histogram.values) {
-    count += histogram.values[x];
-  }
-  return count;
+// Get a hexified SHA-256 hash of the given string.
+function getHash(aStr) {
+  return hexify(getHashCommon(aStr, false));
 }
 
-function clearTelemetry() {
-  Services.telemetry.getHistogramById("INTERMEDIATE_PRELOADING_ERRORS")
-    .clear();
-  Services.telemetry.getHistogramById("INTERMEDIATE_PRELOADING_UPDATE_TIME_MS")
-    .clear();
-  Services.telemetry.clearScalars();
+function getSubjectBytes(certDERString) {
+  let bytes = stringToArray(certDERString);
+  let cert = new X509.Certificate();
+  cert.parse(bytes);
+  return arrayToString(cert.tbsCertificate.subject._der._bytes);
 }
 
-function syncAndPromiseUpdate() {
-  let updatedPromise = TestUtils.topicObserved("remote-security-settings:intermediates-updated");
-
-  // sync() requires us to implement the whole kinto changes-observing interface,
-  // so let's use maybeSync().
-  return remoteSecSetting.maybeSync()
-  // maybeSync() doesn't send the poll-end notification, so we have to fake it
-  .then(r => Services.obs.notifyObservers(null, "remote-settings:changes-poll-end"))
-  .then(r => updatedPromise)
-  // topicObserved gives back a 2-array
-  .then(results => results[1]);
+function getSPKIBytes(certDERString) {
+  let bytes = stringToArray(certDERString);
+  let cert = new X509.Certificate();
+  cert.parse(bytes);
+  return arrayToString(cert.tbsCertificate.subjectPublicKeyInfo._der._bytes);
 }
 
-function setupKintoPreloadServer(certGenerator, options = {
-  attachmentCB: null,
-  hashFunc: null,
-  lengthFunc: null,
-}) {
-  const dummyServerURL = `http://localhost:${server.identity.primaryPort}/v1`;
-  Services.prefs.setCharPref("services.settings.server", dummyServerURL);
-  Services.prefs.setBoolPref("services.settings.verify_signature", false);
+/**
+ * Simulate a Remote Settings synchronization by filling up the
+ * local data with fake records.
+ *
+ * @param {*} filenames List of pem files for which we will create
+ *                      records.
+ * @param {*} options Options for records to generate.
+ */
+async function syncAndDownload(filenames, options = {}) {
+  const {
+    hashFunc = getHash,
+    lengthFunc = arr => arr.length,
+    clear = true,
+  } = options;
 
-  const configPath = "/v1/";
-  const recordsPath = "/v1/buckets/security-state/collections/intermediates/records";
-  const attachmentsPath = "/attachments/";
-
-  if (options.hashFunc == null) {
-    options.hashFunc = getHash;
-  }
-  if (options.lengthFunc == null) {
-    options.lengthFunc = arr => arr.length;
+  const localDB = await IntermediatePreloadsClient.client.openCollection();
+  if (clear) {
+    await localDB.clear();
   }
 
-  function setHeader(response, headers) {
-    for (let headerLine of headers) {
-      let headerElements = headerLine.split(":");
-      response.setHeader(headerElements[0], headerElements[1].trimLeft());
-    }
-    response.setHeader("Date", (new Date()).toUTCString());
-  }
+  let count = 1;
+  for (const filename of filenames) {
+    const file = do_get_file(`test_intermediate_preloads/${filename}`);
+    const certBytes = readFile(file);
+    const certDERBytes = atob(pemToBase64(certBytes));
 
-  // Basic server information, all static
-  server.registerPathHandler(configPath, (request, response) => {
-    try {
-      const respData = getResponseData(request, server.identity.primaryPort);
-      if (!respData) {
-        do_throw(`unexpected ${request.method} request for ${request.path}?${request.queryString}`);
-        return;
-      }
-
-      response.setStatusLine(null, respData.status.status,
-                             respData.status.statusText);
-      setHeader(response, respData.responseHeaders);
-      response.write(respData.responseBody);
-    } catch (e) {
-      info(e);
-    }
-  });
-
-  // Lists of certs
-  server.registerPathHandler(recordsPath, (request, response) => {
-    response.setStatusLine(null, 200, "OK");
-    setHeader(response, [
-        "Access-Control-Allow-Origin: *",
-        "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",
-        "Content-Type: application/json; charset=UTF-8",
-        "Server: waitress",
-        "Etag: \"1000\"",
-    ]);
-
-    let output = [];
-    let count = 1;
-    let certDB = Cc["@mozilla.org/security/x509certdb;1"]
-                 .getService(Ci.nsIX509CertDB);
-
-    let certIterator = certGenerator();
-    let result = certIterator.next();
-    while (!result.done) {
-      let certBytes = result.value;
-      let cert = certDB.constructX509FromBase64(pemToBase64(certBytes));
-
-      output.push({
-        "details": {
-          "who": "",
-          "why": "",
-          "name": "",
-          "created": "",
-        },
-        "subject": "",
-        "attachment": {
-          "hash": options.hashFunc(certBytes),
-          "size": options.lengthFunc(certBytes),
-          "filename": `intermediate certificate #${count}.pem`,
-          "location": `int${count}`,
-          "mimetype": "application/x-pem-file",
-        },
-        "whitelist": false,
-        "pubKeyHash": cert.sha256Fingerprint,
-        "crlite_enrolled": true,
-        "id": `78cf8900-fdea-4ce5-f8fb-${count}`,
-        "last_modified": Date.now(),
-      });
-
-      count++;
-      result = certIterator.next();
-    }
-
-    response.write(JSON.stringify({ data: output }));
-  });
-
-  // Certificate data
-  server.registerPrefixHandler(attachmentsPath, (request, response) => {
-    setHeader(response, [
-        "Access-Control-Allow-Origin: *",
-        "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",
-        "Content-Type: application/x-pem-file; charset=UTF-8",
-        "Server: waitress",
-        "Etag: \"1000\"",
-    ]);
-
-    let identifier = request.path.match(/\d+$/)[0];
-    let count = 1;
-
-    let certIterator = certGenerator();
-    let result = certIterator.next();
-    while (!result.done) {
-      // Could do the modulus of the certIterator to get the right data,
-      // but that requires plumbing through knowledge of those offsets, so
-      // let's just loop. It's not that slow.
-
-      if (count == identifier) {
-        response.setStatusLine(null, 200, "OK");
-        response.write(result.value);
-        if (options.attachmentCB) {
-          options.attachmentCB(identifier, true);
-        }
-        return;
-      }
-
-      count++;
-      result = certIterator.next();
-    }
-
-    response.setStatusLine(null, 404, `Identifier ${identifier} Not Found`);
-    if (options.attachmentCB) {
-      options.attachmentCB(identifier, false);
-    }
-  });
-}
-
-add_task(async function test_preload_empty() {
-  Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
-
-  let countDownloadAttempts = 0;
-  setupKintoPreloadServer(
-    cyclingIteratorGenerator([]),
-    found => { countDownloadAttempts++; }
-  );
-
-  let certDB = Cc["@mozilla.org/security/x509certdb;1"]
-               .getService(Ci.nsIX509CertDB);
-
-  // load the first root and end entity, ignore the initial intermediate
-  addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
-
-  let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
-  notEqual(ee_cert, null, "EE cert should have successfully loaded");
-
-  equal(await syncAndPromiseUpdate(), "success", "Preloading update should have run");
-
-  equal(countDownloadAttempts, 0, "There should have been no downloads");
-
-  // check that ee cert 1 is unknown
-  await checkCertErrorGeneric(certDB, ee_cert, SEC_ERROR_UNKNOWN_ISSUER,
-                              certificateUsageSSLServer);
-});
-
-add_task(async function test_preload_disabled() {
-  Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, false);
-
-  let countDownloadAttempts = 0;
-  setupKintoPreloadServer(
-    cyclingIteratorGenerator([intermediate1Data]),
-    {attachmentCB: (identifier, attachmentFound) => { countDownloadAttempts++; }}
-  );
-
-  equal(await syncAndPromiseUpdate(), "disabled", "Preloading update should not have run");
-
-  equal(countDownloadAttempts, 0, "There should have been no downloads");
-});
-
-add_task(async function test_preload_invalid_hash() {
-  Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
-  const invalidHash = "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d";
-
-  let countDownloadAttempts = 0;
-  setupKintoPreloadServer(
-    cyclingIteratorGenerator([intermediate1Data]),
-    {
-      attachmentCB: (identifier, attachmentFound) => { countDownloadAttempts++; },
-      hashFunc: data => invalidHash,
-    }
-  );
-
-  clearTelemetry();
-
-  equal(await syncAndPromiseUpdate(), "success", "Preloading update should have run");
-
-  let errors_histogram = Services.telemetry
-                          .getHistogramById("INTERMEDIATE_PRELOADING_ERRORS")
-                          .snapshot();
-
-  equal(countTelemetryReports(errors_histogram), 2, "There should be two error reports");
-  equal(errors_histogram.values[7], 1, "There should be one invalid hash error");
-  equal(errors_histogram.values[1], 1, "There should be one generic download error");
-
-  equal(countDownloadAttempts, 1, "There should have been one download attempt");
-
-  let certDB = Cc["@mozilla.org/security/x509certdb;1"]
-               .getService(Ci.nsIX509CertDB);
-
-  // load the first root and end entity, ignore the initial intermediate
-  addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
-
-  let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
-  notEqual(ee_cert, null, "EE cert should have successfully loaded");
-
-  // We should still have a missing intermediate.
-  await checkCertErrorGeneric(certDB, ee_cert, SEC_ERROR_UNKNOWN_ISSUER,
-                              certificateUsageSSLServer);
-});
-
-add_task(async function test_preload_invalid_length() {
-  Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
-
-  let countDownloadAttempts = 0;
-  setupKintoPreloadServer(
-    cyclingIteratorGenerator([intermediate1Data]),
-    {
-      attachmentCB: (identifier, attachmentFound) => { countDownloadAttempts++; },
-      lengthFunc: data => 42,
-    }
-  );
-
-  clearTelemetry();
-
-  equal(await syncAndPromiseUpdate(), "success", "Preloading update should have run");
-
-  let errors_histogram = Services.telemetry
-                          .getHistogramById("INTERMEDIATE_PRELOADING_ERRORS")
-                          .snapshot();
-
-  equal(countTelemetryReports(errors_histogram), 2, "There should be only two error reports");
-  equal(errors_histogram.values[8], 1, "There should be one invalid length error");
-  equal(errors_histogram.values[1], 1, "There should be one generic download error");
-
-  equal(countDownloadAttempts, 1, "There should have been one download attempt");
-
-  let certDB = Cc["@mozilla.org/security/x509certdb;1"]
-               .getService(Ci.nsIX509CertDB);
-
-  // load the first root and end entity, ignore the initial intermediate
-  addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
-
-  let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
-  notEqual(ee_cert, null, "EE cert should have successfully loaded");
-
-  // We should still have a missing intermediate.
-  await checkCertErrorGeneric(certDB, ee_cert, SEC_ERROR_UNKNOWN_ISSUER,
-                              certificateUsageSSLServer);
-});
-
-add_task(async function test_preload_basic() {
-  Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
-  Services.prefs.setIntPref(INTERMEDIATES_DL_PER_POLL_PREF, 100);
-
-  let countDownloadAttempts = 0;
-  setupKintoPreloadServer(
-    cyclingIteratorGenerator([intermediate1Data, intermediate2Data]),
-    {attachmentCB: (identifier, attachmentFound) => { countDownloadAttempts++; }}
-  );
-
-  let certDB = Cc["@mozilla.org/security/x509certdb;1"]
-               .getService(Ci.nsIX509CertDB);
-
-  // load the first root and end entity, ignore the initial intermediate
-  addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
-
-  let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
-  notEqual(ee_cert, null, "EE cert should have successfully loaded");
-
-  // load the second end entity, ignore both intermediate and root
-  let ee_cert_2 = constructCertFromFile("test_intermediate_preloads/ee2.pem");
-  notEqual(ee_cert_2, null, "EE cert 2 should have successfully loaded");
-
-  // check that the missing intermediate causes an unknown issuer error, as
-  // expected, in both cases
-  await checkCertErrorGeneric(certDB, ee_cert, SEC_ERROR_UNKNOWN_ISSUER,
-                              certificateUsageSSLServer);
-  await checkCertErrorGeneric(certDB, ee_cert_2, SEC_ERROR_UNKNOWN_ISSUER,
-                              certificateUsageSSLServer);
-
-  equal(await syncAndPromiseUpdate(), "success", "Preloading update should have run");
-
-  equal(countDownloadAttempts, 2, "There should have been 2 downloads");
-
-  // check that ee cert 1 verifies now the update has happened and there is
-  // an intermediate
-  await checkCertErrorGeneric(certDB, ee_cert, PRErrorCodeSuccess,
-                              certificateUsageSSLServer);
-
-  // check that ee cert 2 does not verify - since we don't know the issuer of
-  // this certificate
-  await checkCertErrorGeneric(certDB, ee_cert_2, SEC_ERROR_UNKNOWN_ISSUER,
-                              certificateUsageSSLServer);
-});
-
-
-add_task(async function test_preload_200() {
-  Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
-  Services.prefs.setIntPref(INTERMEDIATES_DL_PER_POLL_PREF, 100);
-
-  let countDownloadedAttachments = 0;
-  let countMissingAttachments = 0;
-  setupKintoPreloadServer(
-    cyclingIteratorGenerator([intermediate1Data, intermediate2Data], 200),
-    {
-      attachmentCB: (identifier, attachmentFound) => {
-        if (!attachmentFound) {
-          countMissingAttachments++;
-        } else {
-          countDownloadedAttachments++;
-        }
+    const record = {
+      details: {
+        who: "",
+        why: "",
+        name: "",
+        created: "",
       },
-    }
+      derHash: getHashCommon(certDERBytes, true),
+      subject: "",
+      subjectDN: btoa(getSubjectBytes(certDERBytes)),
+      attachment: {
+        hash: hashFunc(certBytes),
+        size: lengthFunc(certBytes),
+        filename: `intermediate certificate #${count}.pem`,
+        location: `security-state-workspace/intermediates/${filename}`,
+        mimetype: "application/x-pem-file",
+      },
+      whitelist: false,
+      pubKeyHash: getHashCommon(getSPKIBytes(certDERBytes), true),
+      crlite_enrolled: true,
+    };
+
+    await localDB.create(record);
+    count++;
+  }
+  // This promise will wait for the end of downloading.
+  const updatedPromise = TestUtils.topicObserved(
+    "remote-security-settings:intermediates-updated"
   );
+  // Simulate polling for changes, trigger the download of attachments.
+  Services.obs.notifyObservers(null, "remote-settings:changes-poll-end");
+  const results = await updatedPromise;
+  return results[1]; // topicObserved gives back a 2-array
+}
 
-  clearTelemetry();
+/**
+ * Return the list of records whose attachmnet was downloaded.
+ */
+async function locallyDownloaded() {
+  return IntermediatePreloadsClient.client.get({
+    filters: { cert_import_complete: true },
+    syncIfEmpty: false,
+  });
+}
 
-  equal(await syncAndPromiseUpdate(), "success", "Preloading update should have run");
+add_task(
+  {
+    skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
+  },
+  async function test_preload_empty() {
+    Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
 
-  equal(countMissingAttachments, 0, "There should have been no missing attachments");
-  equal(countDownloadedAttachments, 100, "There should have been only 100 downloaded");
+    let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+      Ci.nsIX509CertDB
+    );
 
-  const scalars = TelemetryTestUtils.getProcessScalars("parent");
-  TelemetryTestUtils.assertScalar(scalars, "security.intermediate_preloading_num_preloaded",
-                                  102, "Should have preloaded 102 certs (2 from earlier test)");
-  TelemetryTestUtils.assertScalar(scalars, "security.intermediate_preloading_num_pending",
-                                  98, "Should report 98 pending");
+    // load the first root and end entity, ignore the initial intermediate
+    addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
 
-  let time_histogram = Services.telemetry
-                         .getHistogramById("INTERMEDIATE_PRELOADING_UPDATE_TIME_MS")
-                         .snapshot();
-  let errors_histogram = Services.telemetry
-                           .getHistogramById("INTERMEDIATE_PRELOADING_ERRORS")
-                           .snapshot();
-  equal(countTelemetryReports(time_histogram), 1, "Should report time once");
-  equal(countTelemetryReports(errors_histogram), 0, "There should be no error reports");
+    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    notEqual(ee_cert, null, "EE cert should have successfully loaded");
 
-  equal(await syncAndPromiseUpdate(), "success", "Preloading update should have run");
+    equal(
+      await syncAndDownload([]),
+      "success",
+      "Preloading update should have run"
+    );
 
-  equal(countMissingAttachments, 0, "There should have been no missing attachments");
-  equal(countDownloadedAttachments, 198,
-        "There should have been now 198 downloaded, because 2 existed in an earlier test");
-});
+    equal(
+      (await locallyDownloaded()).length,
+      0,
+      "There should have been no downloads"
+    );
 
+    // check that ee cert 1 is unknown
+    await checkCertErrorGeneric(
+      certDB,
+      ee_cert,
+      SEC_ERROR_UNKNOWN_ISSUER,
+      certificateUsageSSLServer
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
+  },
+  async function test_preload_disabled() {
+    Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, false);
+
+    equal(
+      await syncAndDownload(["int.pem"]),
+      "disabled",
+      "Preloading update should not have run"
+    );
+
+    equal(
+      (await locallyDownloaded()).length,
+      0,
+      "There should have been no downloads"
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
+  },
+  async function test_preload_invalid_hash() {
+    Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
+    const invalidHash =
+      "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d";
+
+    const result = await syncAndDownload(["int.pem"], {
+      hashFunc: () => invalidHash,
+    });
+    equal(result, "success", "Preloading update should have run");
+
+    equal(
+      (await locallyDownloaded()).length,
+      0,
+      "There should be no local entry"
+    );
+
+    let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+      Ci.nsIX509CertDB
+    );
+
+    // load the first root and end entity, ignore the initial intermediate
+    addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
+
+    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    notEqual(ee_cert, null, "EE cert should have successfully loaded");
+
+    // We should still have a missing intermediate.
+    await checkCertErrorGeneric(
+      certDB,
+      ee_cert,
+      SEC_ERROR_UNKNOWN_ISSUER,
+      certificateUsageSSLServer
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
+  },
+  async function test_preload_invalid_length() {
+    Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
+
+    const result = await syncAndDownload(["int.pem"], {
+      lengthFunc: () => 42,
+    });
+    equal(result, "success", "Preloading update should have run");
+
+    equal(
+      (await locallyDownloaded()).length,
+      0,
+      "There should be no local entry"
+    );
+
+    let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+      Ci.nsIX509CertDB
+    );
+
+    // load the first root and end entity, ignore the initial intermediate
+    addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
+
+    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    notEqual(ee_cert, null, "EE cert should have successfully loaded");
+
+    // We should still have a missing intermediate.
+    await checkCertErrorGeneric(
+      certDB,
+      ee_cert,
+      SEC_ERROR_UNKNOWN_ISSUER,
+      certificateUsageSSLServer
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
+  },
+  async function test_preload_basic() {
+    Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
+    Services.prefs.setIntPref(INTERMEDIATES_DL_PER_POLL_PREF, 100);
+
+    let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+      Ci.nsIX509CertDB
+    );
+
+    // load the first root and end entity, ignore the initial intermediate
+    addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
+
+    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    notEqual(ee_cert, null, "EE cert should have successfully loaded");
+
+    // load the second end entity, ignore both intermediate and root
+    let ee_cert_2 = constructCertFromFile("test_intermediate_preloads/ee2.pem");
+    notEqual(ee_cert_2, null, "EE cert 2 should have successfully loaded");
+
+    // check that the missing intermediate causes an unknown issuer error, as
+    // expected, in both cases
+    await checkCertErrorGeneric(
+      certDB,
+      ee_cert,
+      SEC_ERROR_UNKNOWN_ISSUER,
+      certificateUsageSSLServer
+    );
+    await checkCertErrorGeneric(
+      certDB,
+      ee_cert_2,
+      SEC_ERROR_UNKNOWN_ISSUER,
+      certificateUsageSSLServer
+    );
+
+    let certStorage = Cc["@mozilla.org/security/certstorage;1"].getService(
+      Ci.nsICertStorage
+    );
+    let intermediateBytes = readFile(
+      do_get_file("test_intermediate_preloads/int.pem")
+    );
+    let intermediateDERBytes = atob(pemToBase64(intermediateBytes));
+    let intermediateCert = new X509.Certificate();
+    intermediateCert.parse(stringToArray(intermediateDERBytes));
+    let crliteStateBefore = certStorage.getCRLiteState(
+      intermediateCert.tbsCertificate.subject._der._bytes,
+      intermediateCert.tbsCertificate.subjectPublicKeyInfo._der._bytes
+    );
+    equal(
+      crliteStateBefore,
+      Ci.nsICertStorage.STATE_UNSET,
+      "crlite state should be unset before"
+    );
+
+    const result = await syncAndDownload(["int.pem", "int2.pem"]);
+    equal(result, "success", "Preloading update should have run");
+
+    equal(
+      (await locallyDownloaded()).length,
+      2,
+      "There should have been 2 downloads"
+    );
+
+    // check that ee cert 1 verifies now the update has happened and there is
+    // an intermediate
+    await checkCertErrorGeneric(
+      certDB,
+      ee_cert,
+      PRErrorCodeSuccess,
+      certificateUsageSSLServer
+    );
+
+    let localDB = await IntermediatePreloadsClient.client.openCollection();
+    let { data } = await localDB.list();
+    ok(data.length > 0, "should have some entries");
+    // simulate a sync (syncAndDownload doesn't actually... sync.)
+    await IntermediatePreloadsClient.client.emit("sync", {
+      data: {
+        current: data,
+        created: data,
+        deleted: [],
+        updated: [],
+      },
+    });
+
+    let crliteStateAfter = certStorage.getCRLiteState(
+      intermediateCert.tbsCertificate.subject._der._bytes,
+      intermediateCert.tbsCertificate.subjectPublicKeyInfo._der._bytes
+    );
+    equal(
+      crliteStateAfter,
+      Ci.nsICertStorage.STATE_ENFORCE,
+      "crlite state should be set after"
+    );
+
+    // check that ee cert 2 does not verify - since we don't know the issuer of
+    // this certificate
+    await checkCertErrorGeneric(
+      certDB,
+      ee_cert_2,
+      SEC_ERROR_UNKNOWN_ISSUER,
+      certificateUsageSSLServer
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
+  },
+  async function test_preload_200() {
+    Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
+    Services.prefs.setIntPref(INTERMEDIATES_DL_PER_POLL_PREF, 100);
+
+    const files = [];
+    for (let i = 0; i < 200; i++) {
+      files.push(["int.pem", "int2.pem"][i % 2]);
+    }
+
+    let result = await syncAndDownload(files);
+    equal(result, "success", "Preloading update should have run");
+
+    equal(
+      (await locallyDownloaded()).length,
+      100,
+      "There should have been only 100 downloaded"
+    );
+
+    // Re-run
+    result = await syncAndDownload([], { clear: false });
+    equal(result, "success", "Preloading update should have run");
+
+    equal(
+      (await locallyDownloaded()).length,
+      200,
+      "There should have been 200 downloaded"
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
+  },
+  async function test_delete() {
+    Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
+    Services.prefs.setIntPref(INTERMEDIATES_DL_PER_POLL_PREF, 100);
+
+    let syncResult = await syncAndDownload(["int.pem", "int2.pem"]);
+    equal(syncResult, "success", "Preloading update should have run");
+
+    equal(
+      (await locallyDownloaded()).length,
+      2,
+      "There should have been 2 downloads"
+    );
+
+    let localDB = await IntermediatePreloadsClient.client.openCollection();
+    let { data } = await localDB.list();
+    ok(data.length > 0, "should have some entries");
+    let subject = data[0].subjectDN;
+    let certStorage = Cc["@mozilla.org/security/certstorage;1"].getService(
+      Ci.nsICertStorage
+    );
+    let resultsBefore = certStorage.findCertsBySubject(
+      stringToArray(atob(subject))
+    );
+    equal(
+      resultsBefore.length,
+      1,
+      "should find the intermediate in cert storage before"
+    );
+    // simulate a sync where we deleted the entry
+    await IntermediatePreloadsClient.client.emit("sync", {
+      data: {
+        current: [],
+        created: [],
+        deleted: [data[0]],
+        updated: [],
+      },
+    });
+    let resultsAfter = certStorage.findCertsBySubject(
+      stringToArray(atob(subject))
+    );
+    equal(
+      resultsAfter.length,
+      0,
+      "shouldn't find intermediate in cert storage now"
+    );
+  }
+);
 
 function run_test() {
-  // Ensure that signature verification is disabled to prevent interference
-  // with basic certificate sync tests
-  Services.prefs.setBoolPref("services.blocklist.signing.enforced", false);
-
-  let intermediate1File = do_get_file("test_intermediate_preloads/int.pem", false);
-  intermediate1Data = readFile(intermediate1File);
-
-  let intermediate2File = do_get_file("test_intermediate_preloads/int2.pem", false);
-  intermediate2Data = readFile(intermediate2File);
-
-  // Set up an HTTP Server
   server = new HttpServer();
   server.start(-1);
+  registerCleanupFunction(() => server.stop(() => {}));
 
-  run_next_test();
+  server.registerDirectory(
+    "/cdn/security-state-workspace/intermediates/",
+    do_get_file("test_intermediate_preloads")
+  );
 
-  registerCleanupFunction(function() {
-    server.stop(() => { });
-  });
-}
-
-// get a response for a given request from sample data
-function getResponseData(req, port) {
-  info(`Resource requested: ${req.method}:${req.path}?${req.queryString}\n\n`);
-  const cannedResponses = {
-    "OPTIONS": {
-      "responseHeaders": [
-        "Access-Control-Allow-Headers: Content-Length,Expires,Backoff,Retry-After,Last-Modified,Total-Records,ETag,Pragma,Cache-Control,authorization,content-type,if-none-match,Alert,Next-Page",
-        "Access-Control-Allow-Methods: GET,HEAD,OPTIONS,POST,DELETE,OPTIONS",
-        "Access-Control-Allow-Origin: *",
-        "Content-Type: application/json; charset=UTF-8",
-        "Server: waitress",
-      ],
-      "status": {status: 200, statusText: "OK"},
-      "responseBody": "null",
-    },
-    "GET:/v1/": {
-      "responseHeaders": [
-        "Access-Control-Allow-Origin: *",
-        "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",
-        "Content-Type: application/json; charset=UTF-8",
-        "Server: waitress",
-      ],
-      "status": {status: 200, statusText: "OK"},
-      "responseBody": JSON.stringify({
-        "settings": {
-          "batch_max_requests": 25,
-        },
-        "url": `http://localhost:${port}/v1/`,
-        "documentation": "https://kinto.readthedocs.org/",
-        "version": "1.5.1",
-        "commit": "cbc6f58",
-        "hello": "kinto",
-        "capabilities": {
-          "attachments": {
-            "base_url": `http://localhost:${port}/attachments/`,
+  server.registerPathHandler("/v1/", (request, response) => {
+    response.write(
+      JSON.stringify({
+        capabilities: {
+          attachments: {
+            base_url: `http://localhost:${server.identity.primaryPort}/cdn/`,
           },
         },
-      }),
-    },
-  };
-  let result = cannedResponses[`${req.method}:${req.path}?${req.queryString}`] ||
-               cannedResponses[`${req.method}:${req.path}`] ||
-               cannedResponses[req.method];
-  return result;
+      })
+    );
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
+    response.setStatusLine(null, 200, "OK");
+  });
+
+  Services.prefs.setCharPref(
+    "services.settings.server",
+    `http://localhost:${server.identity.primaryPort}/v1`
+  );
+
+  Services.prefs.setCharPref("browser.policies.loglevel", "debug");
+
+  run_next_test();
 }

@@ -35,7 +35,6 @@
 #include "ImageContainer.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
-#include "gfxPrefs.h"
 #include "LayersLogging.h"
 #include "mozilla/layers/TextureWrapperImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
@@ -314,14 +313,14 @@ PluginInstanceParent::AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value,
 }
 
 static inline bool AllowDirectBitmapSurfaceDrawing() {
-  if (!gfxPrefs::PluginAsyncDrawingEnabled()) {
+  if (!StaticPrefs::dom_ipc_plugins_asyncdrawing_enabled()) {
     return false;
   }
   return gfxPlatform::GetPlatform()->SupportsPluginDirectBitmapDrawing();
 }
 
 static inline bool AllowDirectDXGISurfaceDrawing() {
-  if (!gfxPrefs::PluginAsyncDrawingEnabled()) {
+  if (!StaticPrefs::dom_ipc_plugins_asyncdrawing_enabled()) {
     return false;
   }
 #if defined(XP_WIN)
@@ -864,8 +863,7 @@ mozilla::ipc::IPCResult PluginInstanceParent::RecvShow(
 
     bool isPlugin = true;
     RefPtr<gfx::SourceSurface> sourceSurface =
-        gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(nullptr, surface,
-                                                               isPlugin);
+        gfxPlatform::GetSourceSurfaceForSurface(nullptr, surface, isPlugin);
     RefPtr<SourceSurfaceImage> image =
         new SourceSurfaceImage(surface->GetSize(), sourceSurface);
 
@@ -1052,9 +1050,8 @@ nsresult PluginInstanceParent::BeginUpdateBackground(const nsIntRect& aRect,
              "Update outside of background area");
 #endif
 
-  RefPtr<gfx::DrawTarget> dt =
-      gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(
-          mBackground, gfx::IntSize(sz.width, sz.height));
+  RefPtr<gfx::DrawTarget> dt = gfxPlatform::CreateDrawTargetForSurface(
+      mBackground, gfx::IntSize(sz.width, sz.height));
   dt.forget(aDrawTarget);
 
   return NS_OK;
@@ -1075,7 +1072,7 @@ nsresult PluginInstanceParent::EndUpdateBackground(const nsIntRect& aRect) {
   // view of its background, but it does mean that the plugin is
   // drawing onto pixels no older than those in the latest
   // EndUpdateBackground().
-  XSync(DefaultXDisplay(), False);
+  XSync(DefaultXDisplay(), X11False);
 #endif
 
   Unused << SendUpdateBackground(BackgroundDescriptor(), aRect);
@@ -1494,7 +1491,7 @@ int16_t PluginInstanceParent::NPP_HandleEvent(void* event) {
       XUngrabPointer(dpy, npevent->xbutton.time);
 #  endif
       // Wait for the ungrab to complete.
-      XSync(dpy, False);
+      XSync(dpy, X11False);
       break;
   }
 #endif

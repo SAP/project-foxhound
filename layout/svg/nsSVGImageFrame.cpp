@@ -15,11 +15,13 @@
 #include "nsIImageLoadingContent.h"
 #include "nsLayoutUtils.h"
 #include "imgINotificationObserver.h"
+#include "SVGGeometryProperty.h"
 #include "SVGObserverUtils.h"
 #include "nsSVGUtils.h"
 #include "SVGContentUtils.h"
 #include "SVGGeometryFrame.h"
 #include "SVGImageContext.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGImageElement.h"
 #include "nsIReflowCallback.h"
@@ -29,6 +31,7 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
+namespace SVGT = SVGGeometryProperty::Tags;
 
 // ---------------------------------------------------------------------
 // nsQueryFrame methods
@@ -36,7 +39,7 @@ NS_QUERYFRAME_HEAD(nsSVGImageFrame)
   NS_QUERYFRAME_ENTRY(nsSVGImageFrame)
 NS_QUERYFRAME_TAIL_INHERITING(SVGGeometryFrame)
 
-nsIFrame* NS_NewSVGImageFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewSVGImageFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsSVGImageFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -117,14 +120,7 @@ nsresult nsSVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
                                            int32_t aModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
-    if (aAttribute == nsGkAtoms::x || aAttribute == nsGkAtoms::y ||
-        aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height) {
-      nsLayoutUtils::PostRestyleEvent(
-          mContent->AsElement(), RestyleHint{0},
-          nsChangeHint_InvalidateRenderingObservers);
-      nsSVGUtils::ScheduleReflowSVG(this);
-      return NS_OK;
-    } else if (aAttribute == nsGkAtoms::preserveAspectRatio) {
+    if (aAttribute == nsGkAtoms::preserveAspectRatio) {
       // We don't paint the content of the image using display lists, therefore
       // we have to invalidate for this children-only transform changes since
       // there is no layer tree to notice that the transform changed and
@@ -175,7 +171,8 @@ gfx::Matrix nsSVGImageFrame::GetRasterImageTransform(int32_t aNativeWidth,
                                                      int32_t aNativeHeight) {
   float x, y, width, height;
   SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
-  element->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      element, &x, &y, &width, &height);
 
   Matrix viewBoxTM = SVGContentUtils::GetViewBoxTransform(
       width, height, 0, 0, aNativeWidth, aNativeHeight,
@@ -185,15 +182,40 @@ gfx::Matrix nsSVGImageFrame::GetRasterImageTransform(int32_t aNativeWidth,
 }
 
 gfx::Matrix nsSVGImageFrame::GetVectorImageTransform() {
-  float x, y, width, height;
+  float x, y;
   SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
-  element->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y>(element, &x, &y);
 
   // No viewBoxTM needed here -- our height/width overrides any concept of
   // "native size" that the SVG image has, and it will handle viewBox and
   // preserveAspectRatio on its own once we give it a region to draw into.
 
   return gfx::Matrix::Translation(x, y);
+}
+
+bool nsSVGImageFrame::GetIntrinsicImageDimensions(
+    mozilla::gfx::Size& aSize, mozilla::AspectRatio& aAspectRatio) const {
+  if (!mImageContainer) {
+    return false;
+  }
+
+  int32_t width, height;
+  if (NS_FAILED(mImageContainer->GetWidth(&width))) {
+    aSize.width = -1;
+  } else {
+    aSize.width = width;
+  }
+
+  if (NS_FAILED(mImageContainer->GetHeight(&height))) {
+    aSize.height = -1;
+  } else {
+    aSize.height = height;
+  }
+
+  Maybe<AspectRatio> asp = mImageContainer->GetIntrinsicRatio();
+  aAspectRatio = asp.valueOr(AspectRatio{});
+
+  return true;
 }
 
 bool nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
@@ -239,7 +261,8 @@ void nsSVGImageFrame::PaintSVG(gfxContext& aContext,
 
   float x, y, width, height;
   SVGImageElement* imgElem = static_cast<SVGImageElement*>(GetContent());
-  imgElem->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      imgElem, &x, &y, &width, &height);
   NS_ASSERTION(width > 0 && height > 0,
                "Should only be painting things with valid width/height");
 
@@ -288,10 +311,31 @@ void nsSVGImageFrame::PaintSVG(gfxContext& aContext,
                        (mState & NS_FRAME_IS_NONDISPLAY),
                    "Display lists handle dirty rect intersection test");
       dirtyRect = ToAppUnits(*aDirtyRect, appUnitsPerDevPx);
-      // Adjust dirtyRect to match our local coordinate system.
-      nsRect rootRect = nsSVGUtils::TransformFrameRectToOuterSVG(
-          mRect, aTransform, PresContext());
-      dirtyRect.MoveBy(-rootRect.TopLeft());
+
+      // dirtyRect is relative to the outer <svg>, we should transform it
+      // down to <image>.
+      Rect dir(dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height);
+      dir.Scale(1.f / AppUnitsPerCSSPixel());
+
+      // FIXME: This isn't correct if there is an inner <svg> enclosing
+      // the <image>. But that seems to be a quite obscure usecase, we can
+      // add a dedicated utility for that purpose to replace the GetCTM
+      // here if necessary.
+      auto mat = SVGContentUtils::GetCTM(
+          static_cast<SVGImageElement*>(GetContent()), false);
+      if (mat.IsSingular()) {
+        return;
+      }
+
+      mat.Invert();
+      dir = mat.TransformRect(dir);
+
+      // x, y offset of <image> is not included in CTM.
+      dir.MoveBy(-x, -y);
+
+      dir.Scale(AppUnitsPerCSSPixel());
+      dir.Round();
+      dirtyRect = nsRect(dir.x, dir.y, dir.width, dir.height);
     }
 
     uint32_t flags = aImgParams.imageFlags;
@@ -345,8 +389,8 @@ nsIFrame* nsSVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint) {
 
   Rect rect;
   SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
-  element->GetAnimatedLengthValues(&rect.x, &rect.y, &rect.width, &rect.height,
-                                   nullptr);
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      element, &rect.x, &rect.y, &rect.width, &rect.height);
 
   if (!rect.Contains(ToPoint(aPoint))) {
     return nullptr;
@@ -400,7 +444,8 @@ void nsSVGImageFrame::ReflowSVG() {
 
   float x, y, width, height;
   SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
-  element->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      element, &x, &y, &width, &height);
 
   Rect extent(x, y, width, height);
 
@@ -417,9 +462,8 @@ void nsSVGImageFrame::ReflowSVG() {
     SVGObserverUtils::UpdateEffects(this);
 
     if (!mReflowCallbackPosted) {
-      nsIPresShell* shell = PresShell();
       mReflowCallbackPosted = true;
-      shell->PostReflowCallback(this);
+      PresShell()->PostReflowCallback(this);
     }
   }
 

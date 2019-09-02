@@ -15,11 +15,12 @@
 
 "use strict";
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var EXPORTED_SYMBOLS = ["NetworkManager"];
 
-function log(aMsg) { // eslint-disable-line no-unused-vars
+// eslint-disable-next-line no-unused-vars
+function log(aMsg) {
   var msg = "PdfJsNetwork.jsm: " + (aMsg.join ? aMsg.join("") : aMsg);
   Services.console.logStringMessage(msg);
 }
@@ -36,7 +37,7 @@ var NetworkManager = (function NetworkManagerClosure() {
     var length = data.length;
     var array = new Uint8Array(length);
     for (var i = 0; i < length; i++) {
-      array[i] = data.charCodeAt(i) & 0xFF;
+      array[i] = data.charCodeAt(i) & 0xff;
     }
     return array.buffer;
   }
@@ -48,14 +49,14 @@ var NetworkManager = (function NetworkManagerClosure() {
       this.isHttp = /^https?:/i.test(url);
       this.httpHeaders = (this.isHttp && args.httpHeaders) || {};
       this.withCredentials = args.withCredentials || false;
-      this.getXhr = args.getXhr ||
+      this.getXhr =
+        args.getXhr ||
         function NetworkManager_getXhr() {
           return new XMLHttpRequest();
         };
 
       this.currXhrId = 0;
       this.pendingRequests = Object.create(null);
-      this.loadedRequests = Object.create(null);
     }
 
     requestRange(begin, end, listeners) {
@@ -76,9 +77,9 @@ var NetworkManager = (function NetworkManagerClosure() {
     request(args) {
       var xhr = this.getXhr();
       var xhrId = this.currXhrId++;
-      var pendingRequest = this.pendingRequests[xhrId] = {
+      var pendingRequest = (this.pendingRequests[xhrId] = {
         xhr,
-      };
+      });
 
       xhr.open("GET", this.url);
       xhr.withCredentials = this.withCredentials;
@@ -97,14 +98,7 @@ var NetworkManager = (function NetworkManagerClosure() {
         pendingRequest.expectedStatus = 200;
       }
 
-      var useMozChunkedLoading = !!args.onProgressiveData;
-      if (useMozChunkedLoading) {
-        xhr.responseType = "moz-chunked-arraybuffer";
-        pendingRequest.onProgressiveData = args.onProgressiveData;
-        pendingRequest.mozChunked = true;
-      } else {
-        xhr.responseType = "arraybuffer";
-      }
+      xhr.responseType = "arraybuffer";
 
       if (args.onError) {
         xhr.onerror = function(evt) {
@@ -129,11 +123,6 @@ var NetworkManager = (function NetworkManagerClosure() {
       if (!pendingRequest) {
         // Maybe abortRequest was called...
         return;
-      }
-
-      if (pendingRequest.mozChunked) {
-        var chunk = getArrayBuffer(pendingRequest.xhr);
-        pendingRequest.onProgressiveData(chunk);
       }
 
       var onProgress = pendingRequest.onProgress;
@@ -180,18 +169,18 @@ var NetworkManager = (function NetworkManagerClosure() {
       // "A server MAY ignore the Range header". This means it's possible to
       // get a 200 rather than a 206 response from a range request.
       var ok_response_on_range_request =
-          xhrStatus === OK_RESPONSE &&
-          pendingRequest.expectedStatus === PARTIAL_CONTENT_RESPONSE;
+        xhrStatus === OK_RESPONSE &&
+        pendingRequest.expectedStatus === PARTIAL_CONTENT_RESPONSE;
 
-      if (!ok_response_on_range_request &&
-          xhrStatus !== pendingRequest.expectedStatus) {
+      if (
+        !ok_response_on_range_request &&
+        xhrStatus !== pendingRequest.expectedStatus
+      ) {
         if (pendingRequest.onError) {
           pendingRequest.onError(xhr.status);
         }
         return;
       }
-
-      this.loadedRequests[xhrId] = true;
 
       var chunk = getArrayBuffer(xhr);
       if (xhrStatus === PARTIAL_CONTENT_RESPONSE) {
@@ -202,8 +191,6 @@ var NetworkManager = (function NetworkManagerClosure() {
           begin,
           chunk,
         });
-      } else if (pendingRequest.onProgressiveData) {
-        pendingRequest.onDone(null);
       } else if (chunk) {
         pendingRequest.onDone({
           begin: 0,
@@ -221,22 +208,6 @@ var NetworkManager = (function NetworkManagerClosure() {
       return false;
     }
 
-    getRequestXhr(xhrId) {
-      return this.pendingRequests[xhrId].xhr;
-    }
-
-    isStreamingRequest(xhrId) {
-      return !!(this.pendingRequests[xhrId].onProgressiveData);
-    }
-
-    isPendingRequest(xhrId) {
-      return xhrId in this.pendingRequests;
-    }
-
-    isLoadedRequest(xhrId) {
-      return xhrId in this.loadedRequests;
-    }
-
     abortAllRequests() {
       for (var xhrId in this.pendingRequests) {
         this.abortRequest(xhrId | 0);
@@ -252,4 +223,3 @@ var NetworkManager = (function NetworkManagerClosure() {
 
   return NetworkManagerClass;
 })();
-

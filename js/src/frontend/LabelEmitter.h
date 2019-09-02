@@ -11,9 +11,9 @@
 #include "mozilla/Maybe.h"       // Maybe
 
 #include "frontend/BytecodeControlStructures.h"  // LabelControl
+#include "frontend/BytecodeOffset.h"             // BytecodeOffset
 #include "frontend/JumpList.h"                   // JumpList
-
-class JSAtom;
+#include "js/TypeDecls.h"                        // JSAtom
 
 namespace js {
 namespace frontend {
@@ -34,7 +34,7 @@ class MOZ_STACK_CLASS LabelEmitter {
   BytecodeEmitter* bce_;
 
   // The offset of the JSOP_LABEL.
-  ptrdiff_t top_ = 0;
+  BytecodeOffset top_;
 
   mozilla::Maybe<LabelControl> controlInfo_;
 
@@ -60,7 +60,7 @@ class MOZ_STACK_CLASS LabelEmitter {
  public:
   explicit LabelEmitter(BytecodeEmitter* bce) : bce_(bce) {}
 
-  MOZ_MUST_USE bool emitLabel(JSAtom* name);
+  MOZ_MUST_USE bool emitLabel(HandleAtom name);
   MOZ_MUST_USE bool emitEnd();
 };
 

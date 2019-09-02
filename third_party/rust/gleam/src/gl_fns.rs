@@ -50,6 +50,14 @@ impl Gl for GlFns {
         }
     }
 
+    fn map_buffer(&self,
+                  target: GLenum,
+                  access: GLbitfield) -> *mut c_void {
+        unsafe {
+            return self.ffi_gl_.MapBuffer(target, access);
+        }
+    }
+
     fn map_buffer_range(&self,
                         target: GLenum,
                         offset: GLintptr,
@@ -148,6 +156,16 @@ impl Gl for GlFns {
         );
 
         pixels
+    }
+
+    unsafe fn read_pixels_into_pbo(&self,
+                            x: GLint,
+                            y: GLint,
+                            width: GLsizei,
+                            height: GLsizei,
+                            format: GLenum,
+                            pixel_type: GLenum) {
+        self.ffi_gl_.ReadPixels(x, y, width, height, format, pixel_type, ptr::null_mut());
     }
 
     fn sample_coverage(&self, value: GLclampf, invert: bool) {
@@ -1928,6 +1946,32 @@ impl Gl for GlFns {
         }
     }
 
+    fn debug_message_insert_khr(&self, source: GLenum, type_: GLenum, id: GLuint, severity: GLenum, message: &str) {
+        if self.ffi_gl_.DebugMessageInsertKHR.is_loaded() {
+            unsafe {
+                self.ffi_gl_
+                    .DebugMessageInsertKHR(source, type_, id, severity, message.len() as GLsizei, message.as_ptr() as *const _);
+            }
+        }
+    }
+
+    fn push_debug_group_khr(&self, source: GLenum, id: GLuint, message: &str) {
+        if self.ffi_gl_.PushDebugGroupKHR.is_loaded() {
+            unsafe {
+                self.ffi_gl_
+                    .PushDebugGroupKHR(source, id, message.len() as GLsizei, message.as_ptr() as *const _);
+            }
+        }
+    }
+
+    fn pop_debug_group_khr(&self) {
+        if self.ffi_gl_.PopDebugGroupKHR.is_loaded() {
+            unsafe {
+                self.ffi_gl_.PopDebugGroupKHR();
+            }
+        }
+    }
+
     fn fence_sync(&self, condition: GLenum, flags: GLbitfield) -> GLsync {
         unsafe { self.ffi_gl_.FenceSync(condition, flags) as *const _ }
     }
@@ -2093,6 +2137,19 @@ impl Gl for GlFns {
 
             if (count as usize) < CAPACITY {
                 return output;
+            }
+        }
+    }
+
+    fn provoking_vertex_angle(&self, _mode: GLenum) {
+        unimplemented!("This extension is GLES only");
+    }
+
+    // GL_KHR_blend_equation_advanced
+    fn blend_barrier_khr(&self) {
+        if self.ffi_gl_.BlendBarrierKHR.is_loaded() {
+            unsafe {
+                self.ffi_gl_.BlendBarrierKHR();
             }
         }
     }

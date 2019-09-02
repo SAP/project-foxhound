@@ -40,12 +40,12 @@ class nsAttrChildContentList;
 class nsDOMAttributeMap;
 class nsIAnimationObserver;
 class nsIContent;
+class nsIContentSecurityPolicy;
 class nsIFrame;
 class nsIHTMLCollection;
 class nsIMutationObserver;
 class nsINode;
 class nsINodeList;
-class nsIPresShell;
 class nsIPrincipal;
 class nsIURI;
 class nsNodeSupportsWeakRefTearoff;
@@ -56,6 +56,7 @@ struct RawServoSelectorList;
 
 namespace mozilla {
 class EventListenerManager;
+class PresShell;
 class TextEditor;
 namespace dom {
 /**
@@ -82,11 +83,9 @@ class DOMQuad;
 class DOMRectReadOnly;
 class Element;
 class EventHandlerNonNull;
-class L10nCallback;
 template <typename T>
 class Optional;
 class OwningNodeOrString;
-class Promise;
 template <typename>
 class Sequence;
 class SVGUseElement;
@@ -468,7 +467,7 @@ class nsINode : public mozilla::dom::EventTarget {
   MOZ_CAN_RUN_SCRIPT mozilla::dom::Element* GetParentFlexElement();
 
   /**
-   * Return whether the node is an Element node
+   * Return whether the node is an Element node. Faster than using `NodeType()`.
    */
   bool IsElement() const { return GetBoolFlag(NodeIsElement); }
 
@@ -857,6 +856,11 @@ class nsINode : public mozilla::dom::EventTarget {
   }
 
   /**
+   * Return the CSP of this node's document, if any.
+   */
+  nsIContentSecurityPolicy* GetCsp() const;
+
+  /**
    * Get the parent nsIContent for this node.
    * @return the parent, or null if no parent or the parent is not an nsIContent
    */
@@ -936,6 +940,12 @@ class nsINode : public mozilla::dom::EventTarget {
       const override;
   virtual mozilla::EventListenerManager* GetOrCreateListenerManager() override;
 
+  mozilla::Maybe<mozilla::dom::EventCallbackDebuggerNotificationType>
+  GetDebuggerNotificationType() const override {
+    return mozilla::Some(
+        mozilla::dom::EventCallbackDebuggerNotificationType::Node);
+  }
+
   bool ComputeDefaultWantsUntrusted(mozilla::ErrorResult& aRv) final;
 
   virtual bool IsApzAware() const override;
@@ -948,6 +958,7 @@ class nsINode : public mozilla::dom::EventTarget {
                      mozilla::dom::CallerType aCallerType,
                      mozilla::ErrorResult& aRv) override;
 
+  MOZ_CAN_RUN_SCRIPT
   nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
 
   /**
@@ -1181,7 +1192,7 @@ class nsINode : public mozilla::dom::EventTarget {
    * node. Be aware that if this node and the computed selection limiter are
    * not in same subtree, this returns the root content of the closeset subtree.
    */
-  nsIContent* GetSelectionRootContent(nsIPresShell* aPresShell);
+  nsIContent* GetSelectionRootContent(mozilla::PresShell* aPresShell);
 
   nsINodeList* ChildNodes();
 
@@ -1400,6 +1411,8 @@ class nsINode : public mozilla::dom::EventTarget {
     ElementMayHaveStyle,
     // Set if the element has a name attribute set.
     ElementHasName,
+    // Set if the element has a part attribute set.
+    ElementHasPart,
     // Set if the element might have a contenteditable attribute set.
     ElementMayHaveContentEditableAttr,
     // Set if the node is the common ancestor of the start/end nodes of a Range
@@ -1493,6 +1506,7 @@ class nsINode : public mozilla::dom::EventTarget {
   void SetMayHaveClass() { SetBoolFlag(ElementMayHaveClass); }
   bool MayHaveStyle() const { return GetBoolFlag(ElementMayHaveStyle); }
   bool HasName() const { return GetBoolFlag(ElementHasName); }
+  bool HasPartAttribute() const { return GetBoolFlag(ElementHasPart); }
   bool MayHaveContentEditableAttr() const {
     return GetBoolFlag(ElementMayHaveContentEditableAttr);
   }
@@ -1600,6 +1614,7 @@ class nsINode : public mozilla::dom::EventTarget {
   void SetMayHaveStyle() { SetBoolFlag(ElementMayHaveStyle); }
   void SetHasName() { SetBoolFlag(ElementHasName); }
   void ClearHasName() { ClearBoolFlag(ElementHasName); }
+  void SetHasPartAttribute(bool aPart) { SetBoolFlag(ElementHasPart, aPart); }
   void SetMayHaveContentEditableAttr() {
     SetBoolFlag(ElementMayHaveContentEditableAttr);
   }
@@ -1637,10 +1652,6 @@ class nsINode : public mozilla::dom::EventTarget {
   void UnbindObject(nsISupports* aObject);
 
   void GenerateXPath(nsAString& aResult);
-
-  already_AddRefed<mozilla::dom::Promise> Localize(
-      JSContext* aCx, mozilla::dom::L10nCallback& aCallback,
-      mozilla::ErrorResult& aRv);
 
   already_AddRefed<mozilla::dom::AccessibleNode> GetAccessibleNode();
 

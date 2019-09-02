@@ -70,6 +70,9 @@ class TypeVisitor:
     def visitMaybeType(self, m, *args):
         m.basetype.accept(self, *args)
 
+    def visitUniquePtrType(self, m, *args):
+        m.basetype.accept(self, *args)
+
     def visitShmemType(self, s, *args):
         pass
 
@@ -85,7 +88,7 @@ class TypeVisitor:
     def visitEndpointType(self, s, *args):
         pass
 
-    def visitUniquePtrType(self, s, *args):
+    def visitManagedEndpointType(self, s, *args):
         pass
 
 
@@ -212,6 +215,8 @@ class IPDLType(Type):
 
     def isEndpoint(self): return False
 
+    def isManagedEndpoint(self): return False
+
     def isAsync(self): return self.sendSemantics == ASYNC
 
     def isSync(self): return self.sendSemantics == SYNC
@@ -219,6 +224,8 @@ class IPDLType(Type):
     def isInterrupt(self): return self.sendSemantics is INTR
 
     def hasReply(self): return (self.isSync() or self.isInterrupt())
+
+    def hasBaseType(self): return False
 
     @classmethod
     def convertsTo(cls, lesser, greater):
@@ -293,7 +300,6 @@ class ProtocolType(IPDLType):
         self.managers = []           # ProtocolType
         self.manages = []
         self.hasDelete = False
-        self.hasReentrantDelete = False
 
     def isProtocol(self): return True
 
@@ -389,7 +395,7 @@ looks for such a cycle and returns True if found.'''
             return False
         elif t is self or t in self.mutualRec:
             return True
-        elif t.isArray() or t.isMaybe():
+        elif t.hasBaseType():
             isrec = self.mutuallyRecursiveWith(t.basetype, exploring)
             if isrec:
                 self.mutualRec.add(t)
@@ -449,6 +455,8 @@ class ArrayType(IPDLType):
 
     def isArray(self): return True
 
+    def hasBaseType(self): return True
+
     def name(self): return self.basetype.name() + '[]'
 
     def fullname(self): return self.basetype.fullname() + '[]'
@@ -461,6 +469,8 @@ class MaybeType(IPDLType):
     def isAtom(self): return False
 
     def isMaybe(self): return True
+
+    def hasBaseType(self): return True
 
     def name(self): return self.basetype.name() + '?'
 
@@ -519,17 +529,34 @@ class EndpointType(IPDLType):
         return str(self.qname)
 
 
-class UniquePtrType(Type):
-    def __init__(self, innertype):
-        self.innertype = innertype
+class ManagedEndpointType(IPDLType):
+    def __init__(self, qname):
+        self.qname = qname
+
+    def isManagedEndpoint(self): return True
+
+    def name(self):
+        return self.qname.baseid
+
+    def fullname(self):
+        return str(self.qname)
+
+
+class UniquePtrType(IPDLType):
+    def __init__(self, basetype):
+        self.basetype = basetype
+
+    def isAtom(self): return False
 
     def isUniquePtr(self): return True
 
+    def hasBaseType(self): return True
+
     def name(self):
-        return 'UniquePtr<' + self.innertype.fullname() + '>'
+        return 'UniquePtr<' + self.basetype.name() + '>'
 
     def fullname(self):
-        return 'mozilla::UniquePtr<' + self.innertype.fullname() + '>'
+        return 'mozilla::UniquePtr<' + self.basetype.fullname() + '>'
 
 
 def iteractortypes(t, visited=None):
@@ -542,7 +569,7 @@ def iteractortypes(t, visited=None):
         return
     elif t.isActor():
         yield t
-    elif t.isArray() or t.isMaybe():
+    elif t.hasBaseType():
         for actor in iteractortypes(t.basetype, visited):
             yield actor
     elif t.isCompound() and t not in visited:
@@ -765,6 +792,19 @@ class GatherDecls(TcheckVisitor):
                                               fullname + 'Child>', ['mozilla', 'ipc'])),
                 shortname='Endpoint<' + p.name + 'Child>')
 
+            p.parentManagedEndpointDecl = self.declare(
+                loc=p.loc,
+                type=ManagedEndpointType(QualifiedId(p.loc, 'ManagedEndpoint<' +
+                                                     fullname + 'Parent>',
+                                                     ['mozilla', 'ipc'])),
+                shortname='ManagedEndpoint<' + p.name + 'Parent>')
+            p.childManagedEndpointDecl = self.declare(
+                loc=p.loc,
+                type=ManagedEndpointType(QualifiedId(p.loc, 'ManagedEndpoint<' +
+                                                     fullname + 'Child>',
+                                                     ['mozilla', 'ipc'])),
+                shortname='ManagedEndpoint<' + p.name + 'Child>')
+
             # XXX ugh, this sucks.  but we need this information to compute
             # what friend decls we need in generated C++
             p.decl.type._ast = p
@@ -833,6 +873,8 @@ class GatherDecls(TcheckVisitor):
             self.symtab.declare(inc.tu.protocol.decl)
             self.symtab.declare(inc.tu.protocol.parentEndpointDecl)
             self.symtab.declare(inc.tu.protocol.childEndpointDecl)
+            self.symtab.declare(inc.tu.protocol.parentManagedEndpointDecl)
+            self.symtab.declare(inc.tu.protocol.childManagedEndpointDecl)
         else:
             # This is a header.  Import its "exported" globals into
             # our scope.
@@ -948,19 +990,6 @@ class GatherDecls(TcheckVisitor):
                 p.loc,
                 "destructor declaration `%s(...)' required for managed protocol `%s'",
                 _DELETE_MSG, p.name)
-
-        p.decl.type.hasReentrantDelete = p.decl.type.hasDelete and self.symtab.lookup(
-            _DELETE_MSG).type.isInterrupt()
-
-        for managed in p.managesStmts:
-            mgdname = managed.name
-            ctordecl = self.symtab.lookup(mgdname + 'Constructor')
-
-            if not (ctordecl and ctordecl.type.isCtor()):
-                self.error(
-                    managed.loc,
-                    "constructor declaration required for managed protocol `%s' (managed by protocol `%s')",  # NOQA: E501
-                    mgdname, p.name)
 
         # FIXME/cjones declare all the little C++ thingies that will
         # be generated.  they're not relevant to IPDL itself, but
@@ -1144,7 +1173,7 @@ def fullyDefined(t, exploring=None):
 
     if t.isAtom():
         return True
-    elif t.isArray() or t.isMaybe():
+    elif t.hasBaseType():
         return fullyDefined(t.basetype, exploring)
     elif t.defined:
         return True

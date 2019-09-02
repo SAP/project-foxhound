@@ -104,11 +104,9 @@ DynamicImage::GetIntrinsicSize(nsSize* aSize) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-DynamicImage::GetIntrinsicRatio(nsSize* aSize) {
-  IntSize intSize(mDrawable->Size());
-  *aSize = nsSize(intSize.width, intSize.height);
-  return NS_OK;
+Maybe<AspectRatio> DynamicImage::GetIntrinsicRatio() {
+  auto size = mDrawable->Size();
+  return Some(AspectRatio::FromSize(size.width, size.height));
 }
 
 NS_IMETHODIMP_(Orientation)
@@ -221,12 +219,23 @@ DynamicImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
 }
 
 NS_IMETHODIMP
-DynamicImage::StartDecoding(uint32_t aFlags) { return NS_OK; }
+DynamicImage::StartDecoding(uint32_t aFlags, uint32_t aWhichFrame) {
+  return NS_OK;
+}
 
-bool DynamicImage::StartDecodingWithResult(uint32_t aFlags) { return true; }
+bool DynamicImage::StartDecodingWithResult(uint32_t aFlags,
+                                           uint32_t aWhichFrame) {
+  return true;
+}
+
+bool DynamicImage::RequestDecodeWithResult(uint32_t aFlags,
+                                           uint32_t aWhichFrame) {
+  return true;
+}
 
 NS_IMETHODIMP
-DynamicImage::RequestDecodeForSize(const nsIntSize& aSize, uint32_t aFlags) {
+DynamicImage::RequestDecodeForSize(const nsIntSize& aSize, uint32_t aFlags,
+                                   uint32_t aWhichFrame) {
   return NS_OK;
 }
 

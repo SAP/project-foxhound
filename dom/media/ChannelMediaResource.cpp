@@ -11,6 +11,7 @@
 #include "nsIClassOfService.h"
 #include "nsIInputStream.h"
 #include "nsIThreadRetargetableRequest.h"
+#include "nsITimedChannel.h"
 #include "nsHttp.h"
 #include "nsNetUtil.h"
 
@@ -604,6 +605,11 @@ already_AddRefed<nsIPrincipal> ChannelMediaResource::GetCurrentPrincipal() {
   return do_AddRef(mSharedInfo->mPrincipal);
 }
 
+bool ChannelMediaResource::HadCrossOriginRedirects() {
+  MOZ_ASSERT(NS_IsMainThread());
+  return mSharedInfo->mHadCrossOriginRedirects;
+}
+
 bool ChannelMediaResource::CanClone() {
   return !mClosed && mCacheStream.IsAvailableForSharing();
 }
@@ -721,7 +727,6 @@ nsresult ChannelMediaResource::RecreateChannel() {
   MOZ_DIAGNOSTIC_ASSERT(!mClosed);
 
   nsLoadFlags loadFlags = nsICachingChannel::LOAD_BYPASS_LOCAL_CACHE_IF_BUSY |
-                          nsIChannel::LOAD_CLASSIFY_URI |
                           (mLoadInBackground ? nsIRequest::LOAD_BACKGROUND : 0);
 
   MediaDecoderOwner* owner = mCallback->GetMediaOwner();
@@ -815,6 +820,20 @@ void ChannelMediaResource::UpdatePrincipal() {
                                                 principal)) {
     for (auto* r : mSharedInfo->mResources) {
       r->CacheClientNotifyPrincipalChanged();
+    }
+  }
+
+  // ChannelMediaResource can recreate the channel. When this happens, we don't
+  // want to overwrite mHadCrossOriginRedirects because the new channel could
+  // skip intermediate redirects.
+  if (!mSharedInfo->mHadCrossOriginRedirects) {
+    nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(mChannel);
+    if (timedChannel) {
+      bool allRedirectsSameOrigin = false;
+      mSharedInfo->mHadCrossOriginRedirects =
+          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+              &allRedirectsSameOrigin)) &&
+          !allRedirectsSameOrigin;
     }
   }
 }
@@ -912,9 +931,8 @@ double ChannelMediaResource::GetDownloadRate(bool* aIsReliable) {
 
 int64_t ChannelMediaResource::GetLength() { return mCacheStream.GetLength(); }
 
-nsCString ChannelMediaResource::GetDebugInfo() {
-  return NS_LITERAL_CSTRING("ChannelMediaResource: ") +
-         mCacheStream.GetDebugInfo();
+void ChannelMediaResource::GetDebugInfo(dom::MediaResourceDebugInfo& aInfo) {
+  mCacheStream.GetDebugInfo(aInfo.mCacheStream);
 }
 
 // ChannelSuspendAgent

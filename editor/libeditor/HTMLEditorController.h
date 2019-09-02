@@ -8,16 +8,17 @@
 
 #include "nscore.h"  // for nsresult
 
-class nsIControllerCommandTable;
+class nsControllerCommandTable;
 
 namespace mozilla {
 
 class HTMLEditorController final {
  public:
   static nsresult RegisterEditorDocStateCommands(
-      nsIControllerCommandTable* inCommandTable);
+      nsControllerCommandTable* aCommandTable);
   static nsresult RegisterHTMLEditorCommands(
-      nsIControllerCommandTable* inCommandTable);
+      nsControllerCommandTable* aCommandTable);
+  static void Shutdown();
 };
 
 }  // namespace mozilla

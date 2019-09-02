@@ -15,6 +15,7 @@ else:
     Library('mozglue')
 
 if CONFIG['OS_TARGET'] == 'Android':
+    LDFLAGS += ['-Wl,--version-script,%s/mozglue.ver' % SRCDIR]
     SOURCES += [
         'BionicGlue.cpp',
     ]
@@ -36,10 +37,6 @@ if CONFIG['OS_TARGET'] == 'WINNT':
         'user32.dll',
     ]
     RCINCLUDE = 'mozglue.rc'
-
-    if CONFIG['MOZ_PGO'] and CONFIG['CC_TYPE'] == 'clang-cl':
-        SOURCES += ['cygprofile.cpp']
-        SOURCES['cygprofile.cpp'].pgo_generate_only = True
 
 if CONFIG['MOZ_WIDGET_TOOLKIT']:
 
@@ -64,7 +61,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT']:
             'WindowsDllBlocklist.cpp',
         ]
 
-        DisableStlWrapping()
         OS_LIBS += [
             'crypt32',
             'version',
@@ -82,13 +78,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT']:
         EXPORTS.mozilla.glue += [
             'WindowsDllServices.h',
         ]
-        USE_LIBS += [
-            'mscom-mozglue',
-        ]
-        if CONFIG['CPU_ARCH'] == 'aarch64':
-            USE_LIBS += [
-                'interceptor',
-            ]
 
     EXPORTS.mozilla += [
         'arm.h',
@@ -121,7 +110,7 @@ USE_LIBS += [
     'mfbt',
 ]
 
-DEFINES['IMPL_MFBT'] = True
+LIBRARY_DEFINES['IMPL_MFBT'] = True
 LIBRARY_DEFINES['MOZ_HAS_MOZGLUE'] = True
 
 if CONFIG['OS_TARGET'] == 'Darwin':

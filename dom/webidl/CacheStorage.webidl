@@ -14,10 +14,10 @@ interface Principal;
 
 [Exposed=(Window,Worker),
  ChromeConstructor(CacheStorageNamespace namespace, Principal principal),
- Func="mozilla::dom::DOMPrefs::dom_caches_enabled"]
+ Pref="dom.caches.enabled"]
 interface CacheStorage {
   [NewObject]
-  Promise<Response> match(RequestInfo request, optional CacheQueryOptions options);
+  Promise<Response> match(RequestInfo request, optional CacheQueryOptions options = {});
   [NewObject]
   Promise<boolean> has(DOMString cacheName);
   [NewObject]

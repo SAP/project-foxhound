@@ -60,12 +60,6 @@ ac_add_options --enable-application=mobile/android
 # ac_add_options --target=x86_64
 
 {extra_lines}
-# With the following Android NDK:
-ac_add_options --with-android-ndk="{ndk_path}"
-
-# With the following compiler toolchain:
-CC="{moz_state_dir}/clang/bin/clang"
-CXX="{moz_state_dir}/clang/bin/clang++"
 <<<
 '''
 
@@ -298,15 +292,10 @@ def ensure_android_packages(sdkmanager_tool, packages=None, no_interactive=False
     print(output)
 
 
-def suggest_mozconfig(os_name, artifact_mode=False, java_bin_path=None):
+def suggest_mozconfig(os_name, artifact_mode=False):
     moz_state_dir, sdk_path, ndk_path = get_paths(os_name)
 
     extra_lines = []
-    if java_bin_path:
-        extra_lines += [
-            '# With the following java:',
-            'ac_add_options --with-java-bin-path="{}"'.format(java_bin_path),
-        ]
     if extra_lines:
         extra_lines.append('')
 

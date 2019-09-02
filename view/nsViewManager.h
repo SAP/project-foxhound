@@ -20,7 +20,10 @@ class nsIWidget;
 struct nsRect;
 class nsRegion;
 class nsDeviceContext;
-class nsIPresShell;
+
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
 
 class nsViewManager final {
   ~nsViewManager();
@@ -223,12 +226,12 @@ class nsViewManager final {
    * Set the presshell associated with this manager
    * @param aPresShell - new presshell
    */
-  void SetPresShell(nsIPresShell* aPresShell) { mPresShell = aPresShell; }
+  void SetPresShell(mozilla::PresShell* aPresShell) { mPresShell = aPresShell; }
 
   /**
    * Get the pres shell associated with this manager
    */
-  nsIPresShell* GetPresShell() { return mPresShell; }
+  mozilla::PresShell* GetPresShell() const { return mPresShell; }
 
   /**
    * Get the device context associated with this manager
@@ -307,12 +310,12 @@ class nsViewManager final {
    * Flush the accumulated dirty region to the widget and update widget
    * geometry.
    */
-  void ProcessPendingUpdates();
+  MOZ_CAN_RUN_SCRIPT void ProcessPendingUpdates();
 
   /**
    * Just update widget geometry without flushing the dirty region
    */
-  void UpdateWidgetGeometry();
+  MOZ_CAN_RUN_SCRIPT void UpdateWidgetGeometry();
 
   int32_t AppUnitsPerDevPixel() const {
     return mContext->AppUnitsPerDevPixel();
@@ -325,17 +328,19 @@ class nsViewManager final {
   void InvalidateHierarchy();
   void FlushPendingInvalidates();
 
+  MOZ_CAN_RUN_SCRIPT
   void ProcessPendingUpdatesForView(nsView* aView,
                                     bool aFlushDirtyRegion = true);
   void ProcessPendingUpdatesRecurse(
       nsView* aView, AutoTArray<nsCOMPtr<nsIWidget>, 1>& aWidgets);
+  MOZ_CAN_RUN_SCRIPT
   void ProcessPendingUpdatesPaint(nsIWidget* aWidget);
 
   void FlushDirtyRegionToWidget(nsView* aView);
   /**
    * Call WillPaint() on all view observers under this vm root.
    */
-  void CallWillPaintOnObservers();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void CallWillPaintOnObservers();
   void ReparentChildWidgets(nsView* aView, nsIWidget* aNewWidget);
   void ReparentWidgets(nsView* aView, nsView* aParent);
   void InvalidateWidgetArea(nsView* aWidgetView,
@@ -344,6 +349,7 @@ class nsViewManager final {
   void InvalidateViews(nsView* aView);
 
   // aView is the view for aWidget and aRegion is relative to aWidget.
+  MOZ_CAN_RUN_SCRIPT
   void Refresh(nsView* aView, const LayoutDeviceIntRegion& aRegion);
 
   // Utilities
@@ -357,6 +363,7 @@ class nsViewManager final {
    */
   LayoutDeviceIntRect ViewToWidget(nsView* aView, const nsRect& aRect) const;
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void DoSetWindowDimensions(nscoord aWidth, nscoord aHeight);
   bool ShouldDelayResize() const;
 
@@ -376,16 +383,17 @@ class nsViewManager final {
     return RootViewManager()->mRefreshDisableCount == 0;
   }
 
-  void WillPaintWindow(nsIWidget* aWidget);
+  MOZ_CAN_RUN_SCRIPT void WillPaintWindow(nsIWidget* aWidget);
+  MOZ_CAN_RUN_SCRIPT
   bool PaintWindow(nsIWidget* aWidget, const LayoutDeviceIntRegion& aRegion);
-  void DidPaintWindow();
+  MOZ_CAN_RUN_SCRIPT void DidPaintWindow();
 
   // Call this when you need to let the viewmanager know that it now has
   // pending updates.
   void PostPendingUpdate();
 
   RefPtr<nsDeviceContext> mContext;
-  nsIPresShell* mPresShell;
+  mozilla::PresShell* mPresShell;
 
   // The size for a resize that we delayed until the root view becomes
   // visible again.

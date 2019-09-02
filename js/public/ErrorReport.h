@@ -171,12 +171,17 @@ class JSErrorNotes {
   // Create a deep copy of notes.
   js::UniquePtr<JSErrorNotes> copy(JSContext* cx);
 
-  class iterator final
-      : public std::iterator<std::input_iterator_tag, js::UniquePtr<Note>> {
+  class iterator final {
    private:
     js::UniquePtr<Note>* note_;
 
    public:
+    using iterator_category = std::input_iterator_tag;
+    using value_type = js::UniquePtr<Note>;
+    using difference_type = ptrdiff_t;
+    using pointer = value_type*;
+    using reference = value_type&;
+
     explicit iterator(js::UniquePtr<Note>* note = nullptr) : note_(note) {}
 
     bool operator==(iterator other) const { return note_ == other.note_; }
@@ -256,7 +261,7 @@ class JSErrorReport : public JSErrorBase {
  * JSErrorReport flag values.  These may be freely composed.
  */
 #define JSREPORT_ERROR 0x0     /* pseudo-flag for default case */
-#define JSREPORT_WARNING 0x1   /* reported via JS_ReportWarning */
+#define JSREPORT_WARNING 0x1   /* reported via JS::Warn* */
 #define JSREPORT_EXCEPTION 0x2 /* exception was thrown */
 #define JSREPORT_STRICT 0x4    /* error or warning due to strict option */
 

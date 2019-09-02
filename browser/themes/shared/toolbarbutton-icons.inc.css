@@ -250,6 +250,14 @@ toolbar[brighttext] {
   list-style-image: url("chrome://browser/skin/developer.svg");
 }
 
+#profiler-button {
+  list-style-image: url("chrome://devtools/skin/images/profiler-stopwatch.svg");
+}
+
+#PanelUI-profilerIframe {
+  width: 450px;
+}
+
 #preferences-button {
   list-style-image: url("chrome://browser/skin/settings.svg");
 }
@@ -394,10 +402,6 @@ toolbar[brighttext] {
 
 #panic-button[open] {
   fill: rgb(213, 32, 20);
-}
-
-#webide-button {
-  list-style-image: url("chrome://browser/skin/webIDE.svg");
 }
 
 #library-button {
@@ -590,4 +594,8 @@ toolbarbutton.bookmark-item {
 
 .bookmark-item[query][hostContainer] {
   list-style-image: url("chrome://browser/skin/places/folder.svg");
+}
+
+#whats-new-menu-button {
+  list-style-image: url("chrome://browser/skin/whatsnew.svg");
 }

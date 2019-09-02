@@ -3,10 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const PROVIDER_PREF_BRANCH = "browser.newtabpage.activity-stream.asrouter.providers.";
-const DEVTOOLS_PREF = "browser.newtabpage.activity-stream.asrouter.devtoolsEnabled";
+const PROVIDER_PREF_BRANCH =
+  "browser.newtabpage.activity-stream.asrouter.providers.";
+const DEVTOOLS_PREF =
+  "browser.newtabpage.activity-stream.asrouter.devtoolsEnabled";
+const FXA_USERNAME_PREF = "services.sync.username";
 
 const DEFAULT_STATE = {
   _initialized: false,
@@ -16,23 +19,31 @@ const DEFAULT_STATE = {
   _devtoolsPref: DEVTOOLS_PREF,
 };
 
-const MIGRATE_PREFS = [
-  // Old pref, New pref
-  ["browser.newtabpage.activity-stream.asrouter.userprefs.cfr", "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons"],
-];
-
 const USER_PREFERENCES = {
   snippets: "browser.newtabpage.activity-stream.feeds.snippets",
   cfrAddons: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
-  cfrFeatures: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
+  cfrFeatures:
+    "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
 };
 
-const TEST_PROVIDER = {
-  id: "snippets_local_testing",
-  type: "local",
-  localProvider: "SnippetsTestMessageProvider",
-  enabled: true,
-};
+// Preferences that influence targeting attributes. When these change we need
+// to re-evaluate if the message targeting still matches
+const TARGETING_PREFERENCES = [FXA_USERNAME_PREF];
+
+const TEST_PROVIDERS = [
+  {
+    id: "snippets_local_testing",
+    type: "local",
+    localProvider: "SnippetsTestMessageProvider",
+    enabled: true,
+  },
+  {
+    id: "panel_local_testing",
+    type: "local",
+    localProvider: "PanelTestProvider",
+    enabled: true,
+  },
+];
 
 class _ASRouterPreferences {
   constructor() {
@@ -47,7 +58,9 @@ class _ASRouterPreferences {
       try {
         value = JSON.parse(Services.prefs.getStringPref(pref, ""));
       } catch (e) {
-        Cu.reportError(`Could not parse ASRouter preference. Try resetting ${pref} in about:config.`);
+        Cu.reportError(
+          `Could not parse ASRouter preference. Try resetting ${pref} in about:config.`
+        );
       }
       if (value) {
         filtered.push(value);
@@ -56,30 +69,12 @@ class _ASRouterPreferences {
     }, []);
   }
 
-  // XXX Bug 1531734
-  // Required for 67 when the pref change will happen
-  _migratePrefs() {
-    for (let [oldPref, newPref] of MIGRATE_PREFS) {
-      if (!Services.prefs.prefHasUserValue(oldPref)) {
-        continue;
-      }
-      if (Services.prefs.prefHasUserValue(newPref)) {
-        Services.prefs.clearUserPref(oldPref);
-        continue;
-      }
-      // If the pref was user modified we assume it was set to false
-      const oldValue = Services.prefs.getBoolPref(oldPref, false);
-      Services.prefs.clearUserPref(oldPref);
-      Services.prefs.setBoolPref(newPref, oldValue);
-    }
-  }
-
   get providers() {
     if (!this._initialized || this._providers === null) {
       const config = this._getProviderConfig();
       const providers = config.map(provider => Object.freeze(provider));
       if (this.devtoolsEnabled) {
-        providers.unshift(TEST_PROVIDER);
+        providers.unshift(...TEST_PROVIDERS);
       }
       this._providers = Object.freeze(providers);
     }
@@ -91,11 +86,18 @@ class _ASRouterPreferences {
     const providers = this._getProviderConfig();
     const config = providers.find(p => p.id === id);
     if (!config) {
-      Cu.reportError(`Cannot set enabled state for '${id}' because the pref ${this._providerPrefBranch}${id} does not exist or is not correctly formatted.`);
+      Cu.reportError(
+        `Cannot set enabled state for '${id}' because the pref ${
+          this._providerPrefBranch
+        }${id} does not exist or is not correctly formatted.`
+      );
       return;
     }
 
-    Services.prefs.setStringPref(this._providerPrefBranch + id, JSON.stringify({...config, enabled: value}));
+    Services.prefs.setStringPref(
+      this._providerPrefBranch + id,
+      JSON.stringify({ ...config, enabled: value })
+    );
   }
 
   resetProviderPref() {
@@ -109,19 +111,12 @@ class _ASRouterPreferences {
 
   get devtoolsEnabled() {
     if (!this._initialized || this._devtoolsEnabled === null) {
-      this._devtoolsEnabled = Services.prefs.getBoolPref(this._devtoolsPref, false);
+      this._devtoolsEnabled = Services.prefs.getBoolPref(
+        this._devtoolsPref,
+        false
+      );
     }
     return this._devtoolsEnabled;
-  }
-
-  get specialConditions() {
-    let allowLegacySnippets = true;
-    for (const provider of this.providers) {
-      if (provider.id === "snippets" && provider.enabled) {
-        allowLegacySnippets = false;
-      }
-    }
-    return {allowLegacySnippets};
   }
 
   observe(aSubject, aTopic, aPrefName) {
@@ -168,11 +163,13 @@ class _ASRouterPreferences {
     if (this._initialized) {
       return;
     }
-    this._migratePrefs();
     Services.prefs.addObserver(this._providerPrefBranch, this);
     Services.prefs.addObserver(this._devtoolsPref, this);
     for (const id of Object.keys(USER_PREFERENCES)) {
       Services.prefs.addObserver(USER_PREFERENCES[id], this);
+    }
+    for (const targetingPref of TARGETING_PREFERENCES) {
+      Services.prefs.addObserver(targetingPref, this);
     }
     this._initialized = true;
   }
@@ -184,6 +181,9 @@ class _ASRouterPreferences {
       for (const id of Object.keys(USER_PREFERENCES)) {
         Services.prefs.removeObserver(USER_PREFERENCES[id], this);
       }
+      for (const targetingPref of TARGETING_PREFERENCES) {
+        Services.prefs.removeObserver(targetingPref, this);
+      }
     }
     Object.assign(this, DEFAULT_STATE);
     this._callbacks.clear();
@@ -192,6 +192,12 @@ class _ASRouterPreferences {
 this._ASRouterPreferences = _ASRouterPreferences;
 
 this.ASRouterPreferences = new _ASRouterPreferences();
-this.TEST_PROVIDER = TEST_PROVIDER;
+this.TEST_PROVIDERS = TEST_PROVIDERS;
+this.TARGETING_PREFERENCES = TARGETING_PREFERENCES;
 
-const EXPORTED_SYMBOLS = ["_ASRouterPreferences", "ASRouterPreferences", "TEST_PROVIDER"];
+const EXPORTED_SYMBOLS = [
+  "_ASRouterPreferences",
+  "ASRouterPreferences",
+  "TEST_PROVIDERS",
+  "TARGETING_PREFERENCES",
+];

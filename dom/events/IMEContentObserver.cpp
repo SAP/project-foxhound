@@ -13,6 +13,7 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Element.h"
@@ -24,7 +25,6 @@
 #include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
 #include "nsINode.h"
-#include "nsIPresShell.h"
 #include "nsISelectionController.h"
 #include "nsISupports.h"
 #include "nsIWeakReferenceUtils.h"
@@ -305,7 +305,7 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
     return false;
   }
 
-  nsIPresShell* presShell = aPresContext->PresShell();
+  PresShell* presShell = aPresContext->GetPresShell();
 
   // get selection and root content
   nsCOMPtr<nsISelectionController> selCon;
@@ -318,7 +318,7 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
     frame->GetSelectionController(aPresContext, getter_AddRefs(selCon));
   } else {
     // mEditableNode is a document
-    selCon = do_QueryInterface(presShell);
+    selCon = presShell;
   }
 
   if (NS_WARN_IF(!selCon)) {
@@ -835,8 +835,8 @@ bool IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
       charAtPt.mRefPoint.ToUnknownPoint());
   notification.mMouseButtonEventData.mCharRect.Set(
       charAtPt.mReply.mRect.ToUnknownRect());
-  notification.mMouseButtonEventData.mButton = aMouseEvent->button;
-  notification.mMouseButtonEventData.mButtons = aMouseEvent->buttons;
+  notification.mMouseButtonEventData.mButton = aMouseEvent->mButton;
+  notification.mMouseButtonEventData.mButtons = aMouseEvent->mButtons;
   notification.mMouseButtonEventData.mModifiers = aMouseEvent->mModifiers;
 
   nsresult rv = IMEStateManager::NotifyIME(notification, mWidget);
@@ -1460,7 +1460,7 @@ bool IMEContentObserver::IsReflowLocked() const {
   if (NS_WARN_IF(!presContext)) {
     return false;
   }
-  nsIPresShell* presShell = presContext->GetPresShell();
+  PresShell* presShell = presContext->GetPresShell();
   if (NS_WARN_IF(!presShell)) {
     return false;
   }

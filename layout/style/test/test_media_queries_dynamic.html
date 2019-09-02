@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=473400
 -->
 <head>
   <title>Test for Bug 473400</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="run()">
@@ -168,7 +168,7 @@ function run() {
   sheet.insertRule("@media (min-width: 150px) { div { display:flex } }", 0);
   flush_and_assert_change_counters("add non-matching media query",
     // FIXME: We restyle here because
-    // nsIPresShell::RestyleForCSSRuleChanges posts a restyle, but it's
+    // PresShell::NextRestyleIsForCSSRuleChanges() posts a restyle, but it's
     // probably avoidable if we wanted to avoid it.
     { restyle: true, construct: false, reflow: false });
 
@@ -199,7 +199,7 @@ function run() {
   sheet.deleteRule(0);
   flush_and_assert_change_counters("remove non-matching media query",
     // FIXME: We restyle here because
-    // nsIPresShell::RestyleForCSSRuleChanges posts a restyle, but it's
+    // PresShell::NextRestyleIsForCSSRuleChanges() posts a restyle, but it's
     // probably avoidable if we wanted to avoid it.
     { restyle: true, construct: false, reflow: false });
 

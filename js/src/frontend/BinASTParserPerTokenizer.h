@@ -20,6 +20,7 @@
 #include "frontend/BinASTEnum.h"
 #include "frontend/BinASTParserBase.h"
 #include "frontend/BinASTToken.h"
+#include "frontend/BinASTTokenReaderContext.h"
 #include "frontend/BinASTTokenReaderMultipart.h"
 #include "frontend/FullParseHandler.h"
 #include "frontend/ParseContext.h"
@@ -56,6 +57,8 @@ class BinASTParserPerTokenizer : public BinASTParserBase,
   using AutoTaggedTuple = typename Tokenizer::AutoTaggedTuple;
   using BinASTFields = typename Tokenizer::BinASTFields;
   using Chars = typename Tokenizer::Chars;
+  using RootContext = BinASTTokenReaderBase::RootContext;
+  using Context = BinASTTokenReaderBase::Context;
 
  public:
   // Auto-generated types.
@@ -326,6 +329,7 @@ class BinASTParseContext : public ParseContext {
 
 void TraceBinASTParser(JSTracer* trc, JS::AutoGCRooter* parser);
 
+extern template class BinASTParserPerTokenizer<BinASTTokenReaderContext>;
 extern template class BinASTParserPerTokenizer<BinASTTokenReaderMultipart>;
 
 }  // namespace frontend

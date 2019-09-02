@@ -385,7 +385,14 @@ ConvolverNode::ConvolverNode(AudioContext* aContext)
     : AudioNode(aContext, 2, ChannelCountMode::Clamped_max,
                 ChannelInterpretation::Speakers),
       mNormalize(true) {
-  uint64_t windowID = aContext->GetParentObject()->WindowID();
+  uint64_t windowID;
+  if (aContext->GetParentObject()) {
+    windowID = aContext->GetParentObject()->WindowID();
+  } else {
+    // This is used to send a message to the developer console, but the page is
+    // being closed so it doesn't matter too much.
+    windowID = 0;
+  }
   ConvolverNodeEngine* engine =
       new ConvolverNodeEngine(this, mNormalize, windowID);
   mStream = AudioNodeStream::Create(
@@ -396,10 +403,6 @@ ConvolverNode::ConvolverNode(AudioContext* aContext)
 already_AddRefed<ConvolverNode> ConvolverNode::Create(
     JSContext* aCx, AudioContext& aAudioContext,
     const ConvolverOptions& aOptions, ErrorResult& aRv) {
-  if (aAudioContext.CheckClosed(aRv)) {
-    return nullptr;
-  }
-
   RefPtr<ConvolverNode> audioNode = new ConvolverNode(&aAudioContext);
 
   audioNode->Initialize(aOptions, aRv);

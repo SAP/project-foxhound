@@ -9,7 +9,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=209275
 -->
 <head>
   <title>Test for Bug 209275</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 
   <style>
@@ -96,9 +96,6 @@ function setXlinkHref(elem, href) {
 function continueTest() {
   gGen.next();
 }
-
-var iframe = document.getElementById("iframe");
-var iframeCw = iframe.contentWindow;
 
 function* run() {
   var iframe = document.getElementById("iframe");
@@ -257,4 +254,3 @@ window.addEventListener("load", function() {
 </pre>
 </body>
 </html>
-

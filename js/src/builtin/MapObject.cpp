@@ -29,8 +29,6 @@ using namespace js;
 using mozilla::IsNaN;
 using mozilla::NumberEqualsInt32;
 
-using JS::DoubleNaNValue;
-
 /*** HashableValue **********************************************************/
 
 bool HashableValue::setValue(JSContext* cx, HandleValue v) {
@@ -46,13 +44,12 @@ bool HashableValue::setValue(JSContext* cx, HandleValue v) {
     int32_t i;
     if (NumberEqualsInt32(d, &i)) {
       // Normalize int32_t-valued doubles to int32_t for faster hashing and
-      // testing.
+      // testing. Note: we use NumberEqualsInt32 here instead of NumberIsInt32
+      // because we want -0 and 0 to be normalized to the same thing.
       value = Int32Value(i);
-    } else if (IsNaN(d)) {
-      // NaNs with different bits must hash and test identically.
-      value = DoubleNaNValue();
     } else {
-      value = v;
+      // Normalize the sign bit of a NaN.
+      value = JS::CanonicalizedDoubleValue(d);
     }
   } else {
     value = v;
@@ -414,11 +411,11 @@ const JSFunctionSpec MapObject::methods[] = {
     JS_SELF_HOSTED_FN("forEach", "MapForEach", 2, 0),
     // MapEntries only exists to preseve the equal identity of
     // entries and @@iterator.
-    JS_SELF_HOSTED_FN("entries", "MapEntries", 0, 0),
-    JS_SELF_HOSTED_SYM_FN(iterator, "MapEntries", 0, 0), JS_FS_END};
+    JS_SELF_HOSTED_FN("entries", "$MapEntries", 0, 0),
+    JS_SELF_HOSTED_SYM_FN(iterator, "$MapEntries", 0, 0), JS_FS_END};
 
 const JSPropertySpec MapObject::staticProperties[] = {
-    JS_SELF_HOSTED_SYM_GET(species, "MapSpecies", 0), JS_PS_END};
+    JS_SELF_HOSTED_SYM_GET(species, "$MapSpecies", 0), JS_PS_END};
 
 template <class Range>
 static void TraceKey(Range& r, const HashableValue& key, JSTracer* trc) {
@@ -614,7 +611,7 @@ MapObject* MapObject::create(JSContext* cx,
     return nullptr;
   }
 
-  mapObj->initPrivate(map.release());
+  InitObjectPrivate(mapObj, map.release(), MemoryUse::MapObjectTable);
   mapObj->initReservedSlot(NurseryKeysSlot, PrivateValue(nullptr));
   mapObj->initReservedSlot(HasNurseryMemorySlot,
                            JS::BooleanValue(insideNursery));
@@ -624,13 +621,14 @@ MapObject* MapObject::create(JSContext* cx,
 void MapObject::finalize(FreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
   if (ValueMap* map = obj->as<MapObject>().getData()) {
-    fop->delete_(map);
+    fop->delete_(obj, map, MemoryUse::MapObjectTable);
   }
 }
 
 /* static */
 void MapObject::sweepAfterMinorGC(FreeOp* fop, MapObject* mapobj) {
-  if (IsInsideNursery(mapobj) && !IsForwarded(mapobj)) {
+  bool wasInsideNursery = IsInsideNursery(mapobj);
+  if (wasInsideNursery && !IsForwarded(mapobj)) {
     finalize(fop, mapobj);
     return;
   }
@@ -638,6 +636,10 @@ void MapObject::sweepAfterMinorGC(FreeOp* fop, MapObject* mapobj) {
   mapobj = MaybeForwarded(mapobj);
   mapobj->getData()->destroyNurseryRanges();
   SetHasNurseryMemory(mapobj, false);
+
+  if (wasInsideNursery) {
+    AddCellMemory(mapobj, sizeof(ValueMap), MemoryUse::MapObjectTable);
+  }
 }
 
 bool MapObject::construct(JSContext* cx, unsigned argc, Value* vp) {
@@ -1158,12 +1160,12 @@ const JSFunctionSpec SetObject::methods[] = {
     JS_SELF_HOSTED_FN("forEach", "SetForEach", 2, 0),
     // SetValues only exists to preseve the equal identity of
     // values, keys and @@iterator.
-    JS_SELF_HOSTED_FN("values", "SetValues", 0, 0),
-    JS_SELF_HOSTED_FN("keys", "SetValues", 0, 0),
-    JS_SELF_HOSTED_SYM_FN(iterator, "SetValues", 0, 0), JS_FS_END};
+    JS_SELF_HOSTED_FN("values", "$SetValues", 0, 0),
+    JS_SELF_HOSTED_FN("keys", "$SetValues", 0, 0),
+    JS_SELF_HOSTED_SYM_FN(iterator, "$SetValues", 0, 0), JS_FS_END};
 
 const JSPropertySpec SetObject::staticProperties[] = {
-    JS_SELF_HOSTED_SYM_GET(species, "SetSpecies", 0), JS_PS_END};
+    JS_SELF_HOSTED_SYM_GET(species, "$SetSpecies", 0), JS_PS_END};
 
 bool SetObject::keys(JSContext* cx, HandleObject obj,
                      JS::MutableHandle<GCVector<JS::Value>> keys) {
@@ -1223,7 +1225,7 @@ SetObject* SetObject::create(JSContext* cx,
     return nullptr;
   }
 
-  obj->initPrivate(set.release());
+  InitObjectPrivate(obj, set.release(), MemoryUse::MapObjectTable);
   obj->initReservedSlot(NurseryKeysSlot, PrivateValue(nullptr));
   obj->initReservedSlot(HasNurseryMemorySlot, JS::BooleanValue(insideNursery));
   return obj;
@@ -1242,13 +1244,14 @@ void SetObject::finalize(FreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
   SetObject* setobj = static_cast<SetObject*>(obj);
   if (ValueSet* set = setobj->getData()) {
-    fop->delete_(set);
+    fop->delete_(obj, set, MemoryUse::MapObjectTable);
   }
 }
 
 /* static */
 void SetObject::sweepAfterMinorGC(FreeOp* fop, SetObject* setobj) {
-  if (IsInsideNursery(setobj) && !IsForwarded(setobj)) {
+  bool wasInsideNursery = IsInsideNursery(setobj);
+  if (wasInsideNursery && !IsForwarded(setobj)) {
     finalize(fop, setobj);
     return;
   }
@@ -1256,6 +1259,10 @@ void SetObject::sweepAfterMinorGC(FreeOp* fop, SetObject* setobj) {
   setobj = MaybeForwarded(setobj);
   setobj->getData()->destroyNurseryRanges();
   SetHasNurseryMemory(setobj, false);
+
+  if (wasInsideNursery) {
+    AddCellMemory(setobj, sizeof(ValueSet), MemoryUse::MapObjectTable);
+  }
 }
 
 bool SetObject::isBuiltinAdd(HandleValue add) {

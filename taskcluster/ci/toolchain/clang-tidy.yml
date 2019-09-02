@@ -1,12 +1,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
+---
 job-defaults:
     description: "Clang-tidy build"
     index:
         product: static-analysis
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux-large
+    worker-type: b-linux-large
     worker:
         max-run-time: 3600
     run:
@@ -41,7 +41,7 @@ macosx64-clang-tidy:
         job-name: macosx64-clang-tidy
     treeherder:
         symbol: TM(clang-tidy)
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux-large
+    worker-type: b-linux-large
     worker:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-clang.manifest"
@@ -54,7 +54,7 @@ macosx64-clang-tidy:
             - 'taskcluster/scripts/misc/tooltool-download.sh'
     toolchains:
         - linux64-cctools-port
-        - linux64-clang-7
+        - linux64-clang-8
         - linux64-gcc-6
         - linux64-node
 
@@ -65,7 +65,7 @@ win64-clang-tidy:
     treeherder:
         symbol: TW64(clang-tidy)
         tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
+    worker-type: b-win2012
     worker:
         max-run-time: 7200
         env:

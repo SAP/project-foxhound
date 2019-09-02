@@ -10,7 +10,7 @@
 #define nsComputedDOMStyle_h__
 
 #include "mozilla/Attributes.h"
-#include "mozilla/StyleComplexColor.h"
+#include "mozilla/StyleColorInlines.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Element.h"
 #include "nsCOMPtr.h"
@@ -30,21 +30,18 @@ namespace dom {
 class DocGroup;
 class Element;
 }  // namespace dom
+class PresShell;
 struct ComputedGridTrackInfo;
 }  // namespace mozilla
 
 struct ComputedStyleMap;
 struct nsCSSKTableEntry;
 class nsIFrame;
-class nsIPresShell;
 class nsDOMCSSValueList;
 struct nsMargin;
 class nsROCSSPrimitiveValue;
-class nsStyleCoord;
-struct nsStyleFilter;
 class nsStyleGradient;
 struct nsStyleImage;
-class nsStyleSides;
 
 class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
                                  public nsStubMutationObserver {
@@ -153,7 +150,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   void SetFrameComputedStyle(ComputedStyle* aStyle, uint64_t aGeneration);
 
   static already_AddRefed<ComputedStyle> DoGetComputedStyleNoFlush(
-      Element* aElement, nsAtom* aPseudo, nsIPresShell* aPresShell,
+      Element* aElement, nsAtom* aPseudo, mozilla::PresShell* aPresShell,
       StyleType aStyleType);
 
 #define STYLE_STRUCT(name_)                \
@@ -188,42 +185,28 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   already_AddRefed<CSSValue> GetMarginWidthFor(mozilla::Side aSide);
 
-  already_AddRefed<CSSValue> GetFallbackValue(const nsStyleSVGPaint* aPaint);
-
-  already_AddRefed<CSSValue> GetSVGPaintFor(bool aFill);
-
-  already_AddRefed<CSSValue> GetTransformValue(
-      nsCSSValueSharedList* aSpecifiedTransform);
+  already_AddRefed<CSSValue> GetTransformValue(const mozilla::StyleTransform&);
 
   // Appends all aLineNames (may be empty) space-separated to aResult.
   void AppendGridLineNames(nsString& aResult,
-                           const nsTArray<nsString>& aLineNames);
+                           const nsTArray<RefPtr<nsAtom>>& aLineNames);
   // Appends aLineNames as a CSSValue* to aValueList.  If aLineNames is empty
   // a value ("[]") is only appended if aSuppressEmptyList is false.
   void AppendGridLineNames(nsDOMCSSValueList* aValueList,
-                           const nsTArray<nsString>& aLineNames,
+                           const nsTArray<RefPtr<nsAtom>>& aLineNames,
                            bool aSuppressEmptyList = true);
   // Appends aLineNames1/2 (if non-empty) as a CSSValue* to aValueList.
   void AppendGridLineNames(nsDOMCSSValueList* aValueList,
-                           const nsTArray<nsString>& aLineNames1,
-                           const nsTArray<nsString>& aLineNames2);
-  already_AddRefed<CSSValue> GetGridTrackSize(const nsStyleCoord& aMinSize,
-                                              const nsStyleCoord& aMaxSize);
+                           const nsTArray<RefPtr<nsAtom>>& aLineNames1,
+                           const nsTArray<RefPtr<nsAtom>>& aLineNames2);
+  already_AddRefed<nsROCSSPrimitiveValue> GetGridTrackSize(const mozilla::StyleTrackSize&);
+  already_AddRefed<nsROCSSPrimitiveValue> GetGridTrackBreadth(const mozilla::StyleTrackBreadth&);
+  void SetValueToTrackBreadth(nsROCSSPrimitiveValue*, const mozilla::StyleTrackBreadth&);
   already_AddRefed<CSSValue> GetGridTemplateColumnsRows(
       const nsStyleGridTemplate& aTrackList,
       const mozilla::ComputedGridTrackInfo* aTrackInfo);
-  already_AddRefed<CSSValue> GetGridLine(const nsStyleGridLine& aGridLine);
 
   bool GetLineHeightCoord(nscoord& aCoord);
-
-  already_AddRefed<CSSValue> GetCSSShadowArray(nsCSSShadowArray* aArray,
-                                               bool aIsBoxShadow);
-
-  void GetCSSGradientString(const nsStyleGradient* aGradient,
-                            nsAString& aString);
-  void GetImageRectString(nsIURI* aURI, const nsStyleSides& aCropRect,
-                          nsString& aString);
-  already_AddRefed<CSSValue> GetScrollSnapPoints(const nsStyleCoord& aCoord);
 
   bool ShouldHonorMinSizeAutoInAxis(mozilla::PhysicalAxis aAxis);
 
@@ -233,7 +216,6 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
    */
 
   /* Box properties */
-  already_AddRefed<CSSValue> DoGetBoxFlex();
 
   already_AddRefed<CSSValue> DoGetWidth();
   already_AddRefed<CSSValue> DoGetHeight();
@@ -246,23 +228,12 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   already_AddRefed<CSSValue> DoGetRight();
   already_AddRefed<CSSValue> DoGetBottom();
 
-  /* Color */
-  already_AddRefed<CSSValue> DoGetColor();
-
   /* Font properties */
   already_AddRefed<CSSValue> DoGetOsxFontSmoothing();
 
   /* Grid properties */
-  already_AddRefed<CSSValue> DoGetGridAutoFlow();
-  already_AddRefed<CSSValue> DoGetGridAutoColumns();
-  already_AddRefed<CSSValue> DoGetGridAutoRows();
-  already_AddRefed<CSSValue> DoGetGridTemplateAreas();
   already_AddRefed<CSSValue> DoGetGridTemplateColumns();
   already_AddRefed<CSSValue> DoGetGridTemplateRows();
-  already_AddRefed<CSSValue> DoGetGridColumnStart();
-  already_AddRefed<CSSValue> DoGetGridColumnEnd();
-  already_AddRefed<CSSValue> DoGetGridRowStart();
-  already_AddRefed<CSSValue> DoGetGridRowEnd();
 
   /* StyleImageLayer properties */
   already_AddRefed<CSSValue> DoGetImageLayerPosition(
@@ -279,7 +250,6 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   /* Table Properties */
   already_AddRefed<CSSValue> DoGetBorderSpacing();
-  already_AddRefed<CSSValue> DoGetVerticalAlign();
 
   /* Border Properties */
   already_AddRefed<CSSValue> DoGetBorderTopWidth();
@@ -287,84 +257,25 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   already_AddRefed<CSSValue> DoGetBorderLeftWidth();
   already_AddRefed<CSSValue> DoGetBorderRightWidth();
 
-  /* Border Image */
-  already_AddRefed<CSSValue> DoGetBorderImageWidth();
-
-  /* Box Shadow */
-  already_AddRefed<CSSValue> DoGetBoxShadow();
-
   /* Margin Properties */
   already_AddRefed<CSSValue> DoGetMarginTopWidth();
   already_AddRefed<CSSValue> DoGetMarginBottomWidth();
   already_AddRefed<CSSValue> DoGetMarginLeftWidth();
   already_AddRefed<CSSValue> DoGetMarginRightWidth();
 
-  /* Outline Properties */
-  already_AddRefed<CSSValue> DoGetOutlineWidth();
-
   /* Text Properties */
-  already_AddRefed<CSSValue> DoGetInitialLetter();
   already_AddRefed<CSSValue> DoGetLineHeight();
   already_AddRefed<CSSValue> DoGetTextDecoration();
   already_AddRefed<CSSValue> DoGetTextDecorationColor();
-  already_AddRefed<CSSValue> DoGetTextDecorationLine();
   already_AddRefed<CSSValue> DoGetTextDecorationStyle();
-  already_AddRefed<CSSValue> DoGetTextEmphasisPosition();
-  already_AddRefed<CSSValue> DoGetTextEmphasisStyle();
-  already_AddRefed<CSSValue> DoGetTextOverflow();
-  already_AddRefed<CSSValue> DoGetTextShadow();
-  already_AddRefed<CSSValue> DoGetWebkitTextStrokeWidth();
 
   /* Display properties */
-  already_AddRefed<CSSValue> DoGetBinding();
-  already_AddRefed<CSSValue> DoGetDisplay();
-  already_AddRefed<CSSValue> DoGetWillChange();
-  already_AddRefed<CSSValue> DoGetTouchAction();
   already_AddRefed<CSSValue> DoGetTransform();
   already_AddRefed<CSSValue> DoGetTransformOrigin();
   already_AddRefed<CSSValue> DoGetPerspectiveOrigin();
-  already_AddRefed<CSSValue> DoGetScrollSnapPointsX();
-  already_AddRefed<CSSValue> DoGetScrollSnapPointsY();
-  already_AddRefed<CSSValue> DoGetScrollbarColor();
-
-  /* User interface properties */
-  already_AddRefed<CSSValue> DoGetCaretColor();
-  already_AddRefed<CSSValue> DoGetForceBrokenImageIcon();
 
   /* Column properties */
-  already_AddRefed<CSSValue> DoGetColumnCount();
-  already_AddRefed<CSSValue> DoGetColumnWidth();
   already_AddRefed<CSSValue> DoGetColumnRuleWidth();
-
-  /* CSS Transitions */
-  already_AddRefed<CSSValue> DoGetTransitionProperty();
-  already_AddRefed<CSSValue> DoGetTransitionDuration();
-  already_AddRefed<CSSValue> DoGetTransitionDelay();
-
-  /* CSS Animations */
-  already_AddRefed<CSSValue> DoGetAnimationName();
-  already_AddRefed<CSSValue> DoGetAnimationDuration();
-  already_AddRefed<CSSValue> DoGetAnimationDelay();
-  already_AddRefed<CSSValue> DoGetAnimationIterationCount();
-
-  /* CSS Flexbox properties */
-  already_AddRefed<CSSValue> DoGetFlexBasis();
-  already_AddRefed<CSSValue> DoGetFlexGrow();
-  already_AddRefed<CSSValue> DoGetFlexShrink();
-
-  /* CSS Box Alignment properties */
-  already_AddRefed<CSSValue> DoGetColumnGap();
-  already_AddRefed<CSSValue> DoGetRowGap();
-
-  /* SVG properties */
-  already_AddRefed<CSSValue> DoGetFill();
-  already_AddRefed<CSSValue> DoGetStroke();
-  already_AddRefed<CSSValue> DoGetMarkerEnd();
-  already_AddRefed<CSSValue> DoGetMarkerMid();
-  already_AddRefed<CSSValue> DoGetMarkerStart();
-
-  already_AddRefed<CSSValue> DoGetFilter();
-  already_AddRefed<CSSValue> DoGetPaintOrder();
 
   // For working around a MSVC bug. See related comment in
   // GenerateComputedDOMStyleGenerated.py.
@@ -372,15 +283,13 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   /* Helper functions */
   void SetValueFromComplexColor(nsROCSSPrimitiveValue* aValue,
-                                const mozilla::StyleComplexColor& aColor);
+                                const mozilla::StyleColor& aColor);
   void SetValueToPosition(const mozilla::Position& aPosition,
                           nsDOMCSSValueList* aValueList);
-  void SetValueToURLValue(const mozilla::css::URLValue* aURL,
+  void SetValueToURLValue(const mozilla::StyleComputedUrl* aURL,
                           nsROCSSPrimitiveValue* aValue);
 
-  void SetValueToSize(nsROCSSPrimitiveValue* aValue, const mozilla::StyleSize&,
-                      nscoord aMinAppUnits = nscoord_MIN,
-                      nscoord aMaxAppUnits = nscoord_MAX);
+  void SetValueToSize(nsROCSSPrimitiveValue* aValue, const mozilla::StyleSize&);
 
   void SetValueToLengthPercentageOrAuto(nsROCSSPrimitiveValue* aValue,
                                         const LengthPercentageOrAuto&,
@@ -388,35 +297,12 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   void SetValueToLengthPercentage(nsROCSSPrimitiveValue* aValue,
                                   const LengthPercentage&,
-                                  bool aClampNegativeCalc,
-                                  nscoord aMinAppUnits = nscoord_MIN,
-                                  nscoord aMaxAppUnits = nscoord_MAX);
+                                  bool aClampNegativeCalc);
 
   void SetValueToMaxSize(nsROCSSPrimitiveValue* aValue, const StyleMaxSize&);
 
   void SetValueToExtremumLength(nsROCSSPrimitiveValue* aValue,
                                 StyleExtremumLength);
-
-  /**
-   * Method to set aValue to aCoord.  If aCoord is a percentage value and
-   * aPercentageBaseGetter is not null, aPercentageBaseGetter is called.  If it
-   * returns true, the percentage base it outputs in its out param is used
-   * to compute an nscoord value.  If the getter is null or returns false,
-   * the percent value of aCoord is set as a percent value on aValue.  aTable,
-   * if not null, is the keyword table to handle eStyleUnit_Enumerated.  When
-   * calling SetAppUnits on aValue (for coord or percent values), the value
-   * passed in will be clamped to be no less than aMinAppUnits and no more than
-   * aMaxAppUnits.
-   *
-   * XXXbz should caller pass in some sort of bitfield indicating which units
-   * can be expected or something?
-   */
-  void SetValueToCoord(nsROCSSPrimitiveValue* aValue,
-                       const nsStyleCoord& aCoord, bool aClampNegativeCalc,
-                       PercentageBaseGetter aPercentageBaseGetter = nullptr,
-                       const KTableEntry aTable[] = nullptr,
-                       nscoord aMinAppUnits = nscoord_MIN,
-                       nscoord aMaxAppUnits = nscoord_MAX);
 
   /**
    * If aCoord is a eStyleUnit_Coord returns the nscoord.  If it's
@@ -439,12 +325,6 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
     return aDefaultValue;
   }
 
-  /**
-   * Append coord values from four sides. It omits values when possible.
-   */
-  void AppendFourSideCoordValues(nsDOMCSSValueList* aList,
-                                 const nsStyleSides& aValues);
-
   bool GetCBContentWidth(nscoord& aWidth);
   bool GetCBContentHeight(nscoord& aHeight);
   bool GetCBPaddingRectWidth(nscoord& aWidth);
@@ -454,29 +334,9 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   bool GetFrameBorderRectWidth(nscoord& aWidth);
   bool GetFrameBorderRectHeight(nscoord& aHeight);
 
-  /* Helper functions for computing and serializing a nsStyleCoord. */
-  void SetCssTextToCoord(nsAString& aCssText, const nsStyleCoord& aCoord,
-                         bool aClampNegativeCalc);
-  already_AddRefed<CSSValue> CreatePrimitiveValueForStyleFilter(
-      const nsStyleFilter& aStyleFilter);
-
-  template <typename ReferenceBox>
-  already_AddRefed<CSSValue> CreatePrimitiveValueForShapeSource(
-      const mozilla::UniquePtr<mozilla::StyleBasicShape>& aStyleBasicShape,
-      ReferenceBox aReferenceBox, const KTableEntry aBoxKeywordTable[]);
-
-  // Helper function for computing basic shape styles.
-  already_AddRefed<CSSValue> CreatePrimitiveValueForBasicShape(
-      const mozilla::UniquePtr<mozilla::StyleBasicShape>& aStyleBasicShape);
-  void BoxValuesToString(nsAString& aString,
-                         const nsTArray<nsStyleCoord>& aBoxValues,
-                         bool aClampNegativeCalc);
-  void BasicShapeRadiiToString(nsAString& aCssText,
-                               const mozilla::BorderRadius&);
-
-  // Find out if we can safely skip flushing for aDocument (i.e. pending
-  // restyles does not affect mContent).
-  bool NeedsToFlush(Document*) const;
+  // Find out if we can safely skip flushing (i.e. pending restyles do not
+  // affect mElement).
+  bool NeedsToFlush() const;
 
   static ComputedStyleMap* GetComputedStyleMap();
 
@@ -518,7 +378,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
    * While computing style data, the presshell we're working with.  Null
    * otherwise.
    */
-  nsIPresShell* mPresShell;
+  mozilla::PresShell* mPresShell;
 
   /*
    * The kind of styles we should be returning.

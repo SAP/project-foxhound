@@ -13,6 +13,11 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/TaskFactory.h"
 
+namespace mozilla {
+namespace ipc {
+class SharedPreferenceSerializer;
+}
+}  // namespace mozilla
 class nsITimer;
 
 namespace mozilla {
@@ -90,6 +95,16 @@ class RDDProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   // Used for tests and diagnostics
   void KillProcess();
 
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  // To allow filling a MacSandboxInfo from the child
+  // process without an instance of RDDProcessHost.
+  // Only needed for late-start sandbox enabling.
+  static bool StaticFillMacSandboxInfo(MacSandboxInfo& aInfo);
+
+  // Return the sandbox type to be used with this process type.
+  static MacSandboxType GetMacSandboxType();
+#endif
+
  private:
   ~RDDProcessHost();
 
@@ -108,6 +123,16 @@ class RDDProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   void DestroyProcess();
 
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  static bool sLaunchWithMacSandbox;
+
+  // Sandbox the RDD process at launch for all instances
+  bool IsMacSandboxLaunchEnabled() override { return sLaunchWithMacSandbox; }
+
+  // Override so we can turn on RDD process-specific sandbox logging
+  bool FillMacSandboxInfo(MacSandboxInfo& aInfo) override;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(RDDProcessHost);
 
   Listener* mListener;
@@ -118,6 +143,8 @@ class RDDProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   UniquePtr<RDDChild> mRDDChild;
   uint64_t mProcessToken;
+
+  UniquePtr<ipc::SharedPreferenceSerializer> mPrefSerializer;
 
   bool mShutdownRequested;
   bool mChannelClosed;

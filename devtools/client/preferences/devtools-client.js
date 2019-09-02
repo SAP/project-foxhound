@@ -53,14 +53,6 @@ pref("devtools.inspector.showUserAgentShadowRoots", false);
 // Enable the new Rules View
 pref("devtools.inspector.new-rulesview.enabled", false);
 
-// Flexbox preferences
-// Whether or not to show the combined flexbox and box model highlighter.
-#if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION)
-pref("devtools.inspector.flexboxHighlighter.combine", true);
-#else
-pref("devtools.inspector.flexboxHighlighter.combine", false);
-#endif
-
 // Grid highlighter preferences
 pref("devtools.gridinspector.gridOutlineMaxColumns", 50);
 pref("devtools.gridinspector.gridOutlineMaxRows", 50);
@@ -89,12 +81,12 @@ pref("devtools.eyedropper.zoom", 6);
 
 // Enable to collapse attributes that are too long.
 pref("devtools.markup.collapseAttributes", true);
-
 // Length to collapse attributes
 pref("devtools.markup.collapseAttributeLength", 120);
-
 // Whether to auto-beautify the HTML on copy.
 pref("devtools.markup.beautifyOnCopy", false);
+// Whether or not the DOM mutation breakpoints context menu are enabled in the markup view
+pref("devtools.markup.mutationBreakpoints.enabled", false);
 
 // DevTools default color unit
 pref("devtools.defaultColorUnit", "authored");
@@ -176,7 +168,9 @@ pref("devtools.netmonitor.visibleColumns",
   "[\"status\",\"method\",\"domain\",\"file\",\"cause\",\"type\",\"transferred\",\"contentSize\",\"waterfall\"]"
 );
 pref("devtools.netmonitor.columnsData",
-  '[{"name":"status","minWidth":30,"width":5}, {"name":"method","minWidth":30,"width":5}, {"name":"domain","minWidth":30,"width":10}, {"name":"file","minWidth":30,"width":25}, {"name":"cause","minWidth":30,"width":10},{"name":"type","minWidth":30,"width":5},{"name":"transferred","minWidth":30,"width":10},{"name":"contentSize","minWidth":30,"width":5},{"name":"waterfall","minWidth":150,"width":25}]');
+  '[{"name":"status","minWidth":30,"width":5}, {"name":"method","minWidth":30,"width":5}, {"name":"domain","minWidth":30,"width":10}, {"name":"file","minWidth":30,"width":25}, {"name":"url","minWidth":30,"width":25}, {"name":"cause","minWidth":30,"width":10},{"name":"type","minWidth":30,"width":5},{"name":"transferred","minWidth":30,"width":10},{"name":"contentSize","minWidth":30,"width":5},{"name":"waterfall","minWidth":150,"width":25}]');
+pref("devtools.netmonitor.ws.payload-preview-width", 550);
+pref("devtools.netmonitor.ws.payload-preview-height", 450);
 
 // Support for columns resizing pref is now enabled (after merge date 03/18/19).
 pref("devtools.netmonitor.features.resizeColumns", true);
@@ -188,7 +182,7 @@ pref("devtools.netmonitor.saveRequestAndResponseBodies", true);
 
 // The default Network monitor HAR export setting
 pref("devtools.netmonitor.har.defaultLogDir", "");
-pref("devtools.netmonitor.har.defaultFileName", "Archive %date");
+pref("devtools.netmonitor.har.defaultFileName", "%hostname_Archive [%date]");
 pref("devtools.netmonitor.har.jsonp", false);
 pref("devtools.netmonitor.har.jsonpCallback", "");
 pref("devtools.netmonitor.har.includeResponseBodies", true);
@@ -196,6 +190,9 @@ pref("devtools.netmonitor.har.compress", false);
 pref("devtools.netmonitor.har.forceExport", false);
 pref("devtools.netmonitor.har.pageLoadedTimeout", 1500);
 pref("devtools.netmonitor.har.enableAutoExportToFile", false);
+
+// Support for WebSocket monitoring pref (pending complete implementation)
+pref("devtools.netmonitor.features.webSockets", false);
 
 // Scratchpad settings
 // - recentFileMax: The maximum number of recently-opened files
@@ -248,6 +245,9 @@ pref("devtools.webconsole.filter.css", false);
 pref("devtools.webconsole.filter.net", false);
 pref("devtools.webconsole.filter.netxhr", false);
 
+// Webconsole autocomplete preference
+pref("devtools.webconsole.input.autocomplete",true);
+
 // Browser console filters
 pref("devtools.browserconsole.filter.error", true);
 pref("devtools.browserconsole.filter.warn", true);
@@ -282,14 +282,24 @@ pref("devtools.webconsole.sidebarToggle", false);
 // Enable CodeMirror in the JsTerm
 pref("devtools.webconsole.jsterm.codeMirror", true);
 
-// Enable editor mode in the console.
+// Enable editor mode in the console in Nightly builds.
+#if defined(NIGHTLY_BUILD)
+pref("devtools.webconsole.features.editor", true);
+#else
+pref("devtools.webconsole.features.editor", false);
+#endif
+
+// Saved editor mode state in the console.
 pref("devtools.webconsole.input.editor", false);
 
 // Disable the new performance recording panel by default
 pref("devtools.performance.new-panel-enabled", false);
 
-// Enable message grouping in the console, false by default
-pref("devtools.webconsole.groupWarningMessages", false);
+// Enable message grouping in the console, true by default
+pref("devtools.webconsole.groupWarningMessages", true);
+
+// Saved state of the Display content messages checkbox in the browser console.
+pref("devtools.browserconsole.contentMessages", false);
 
 // Enable client-side mapping service for source maps
 pref("devtools.source-map.client-service.enabled", true);
@@ -312,6 +322,8 @@ pref("devtools.editor.detectindentation", true);
 pref("devtools.editor.enableCodeFolding", true);
 pref("devtools.editor.autocomplete", true);
 
+// The angle of the viewport.
+pref("devtools.responsive.viewport.angle", 0);
 // The width of the viewport.
 pref("devtools.responsive.viewport.width", 320);
 // The height of the viewport.
@@ -348,11 +360,17 @@ pref("devtools.responsive.showUserAgentInput", false);
 #endif
 
 // Enable new about:debugging.
-pref("devtools.aboutdebugging.new-enabled", false);
-// Enable the network location feature.
-pref("devtools.aboutdebugging.network", false);
-// Enable the wifi feature.
-pref("devtools.aboutdebugging.wifi", false);
+pref("devtools.aboutdebugging.new-enabled", true);
+
+// Show tab debug targets for This Firefox (on by default for local builds).
+#ifdef MOZILLA_OFFICIAL
+  pref("devtools.aboutdebugging.local-tab-debugging", false);
+#else
+  pref("devtools.aboutdebugging.local-tab-debugging", true);
+#endif
+
+// Show process debug targets.
+pref("devtools.aboutdebugging.process-debugging", true);
 // Stringified array of network locations that users can connect to.
 pref("devtools.aboutdebugging.network-locations", "[]");
 // Debug target pane collapse/expand settings.
@@ -363,11 +381,11 @@ pref("devtools.aboutdebugging.collapsibilities.sharedWorker", false);
 pref("devtools.aboutdebugging.collapsibilities.tab", false);
 pref("devtools.aboutdebugging.collapsibilities.temporaryExtension", false);
 
-// about:debugging: only show system add-ons in local builds by default.
+// about:debugging: only show system and hidden extensions in local builds by default.
 #ifdef MOZILLA_OFFICIAL
-  pref("devtools.aboutdebugging.showSystemAddons", false);
+  pref("devtools.aboutdebugging.showHiddenAddons", false);
 #else
-  pref("devtools.aboutdebugging.showSystemAddons", true);
+  pref("devtools.aboutdebugging.showHiddenAddons", true);
 #endif
 
 // Map top-level await expressions in the console

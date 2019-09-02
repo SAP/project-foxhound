@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsError.h"
-#include "nsIPresShell.h"
 #include "nsNodeUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Likely.h"
@@ -1281,6 +1280,9 @@ void nsHtml5TreeBuilder::StartPlainText() {
   MOZ_ASSERT(!mBuilder, "Must not view source with builder.");
   startTag(nsHtml5ElementName::ELT_LINK,
            nsHtml5PlainTextUtils::NewLinkAttributes(), false);
+
+  startTag(nsHtml5ElementName::ELT_BODY,
+           nsHtml5PlainTextUtils::NewBodyAttributes(), false);
 
   StartPlainTextBody();
 }

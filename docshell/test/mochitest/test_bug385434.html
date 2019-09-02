@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=385434
 -->
 <head>
   <title>Test for Bug 385434</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -26,6 +26,7 @@ SimpleTest.expectAssertions(0, 1); // bug 1333702
 
 var gNumHashchanges = 0;
 var gCallbackOnIframeLoad = false;
+var gSampleEvent;
 
 function statusMsg(msg) {
   var msgElem = document.createElement("p");
@@ -35,7 +36,7 @@ function statusMsg(msg) {
 }
 
 function longWait() {
-  setTimeout(function() { gGen.next() }, 1000);
+  setTimeout(function() { gGen.next(); }, 1000);
 }
 
 // onIframeHashchange, onIframeLoad, and onIframeScroll are all called by the
@@ -169,6 +170,7 @@ function* run_test() {
    *     the event is targeted at the window object
    *     the event's cancelable, bubbles settings are correct
    */
+
   enableIframeLoadCallback();
   frameCw.document.location = "file_bug385434_2.html";
   yield undefined;

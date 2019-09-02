@@ -1,6 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import sys
@@ -140,7 +141,8 @@ class TestConfigSettings(unittest.TestCase):
         a = s.a
 
         # Assigning an undeclared setting raises.
-        with self.assertRaises(AttributeError):
+        exc_type = AttributeError if sys.version_info < (3, 0) else KeyError
+        with self.assertRaises(exc_type):
             a.undefined = True
 
         with self.assertRaises(KeyError):

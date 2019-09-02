@@ -6,7 +6,6 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import argparse
 import copy
-import json
 import os
 import re
 import sys
@@ -18,8 +17,9 @@ import mozharness
 
 from mozharness.base.errors import PythonErrorList
 from mozharness.base.log import OutputParser, DEBUG, ERROR, CRITICAL, INFO
-from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.mozilla.testing.android import AndroidMixin
+from mozharness.mozilla.testing.errors import HarnessErrorList
+from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.base.vcs.vcsbase import MercurialScript
 from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
@@ -30,12 +30,11 @@ scripts_path = os.path.abspath(os.path.dirname(os.path.dirname(mozharness.__file
 external_tools_path = os.path.join(scripts_path, 'external_tools')
 here = os.path.abspath(os.path.dirname(__file__))
 
-RaptorErrorList = PythonErrorList + [
+RaptorErrorList = PythonErrorList + HarnessErrorList + [
     {'regex': re.compile(r'''run-as: Package '.*' is unknown'''), 'level': DEBUG},
-    {'substr': r'''FAIL: Busted:''', 'level': CRITICAL},
-    {'substr': r'''FAIL: failed to cleanup''', 'level': ERROR},
-    {'substr': r'''erfConfigurator.py: Unknown error''', 'level': CRITICAL},
-    {'substr': r'''raptorError''', 'level': CRITICAL},
+    {'substr': r'''raptorDebug''', 'level': DEBUG},
+    {'regex': re.compile(r'''^raptor[a-zA-Z-]*( - )?( )?(?i)error(:)?'''), 'level': ERROR},
+    {'regex': re.compile(r'''^raptor[a-zA-Z-]*( - )?( )?(?i)critical(:)?'''), 'level': CRITICAL},
     {'regex': re.compile(r'''No machine_name called '.*' can be found'''), 'level': CRITICAL},
     {'substr': r"""No such file or directory: 'browser_output.txt'""",
      'level': CRITICAL,
@@ -56,13 +55,18 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
           }],
         [["--app"],
          {"default": "firefox",
-          "choices": ["firefox", "chrome", "geckoview", "fennec", "refbrow", "fenix"],
+          "choices": ["firefox", "chrome", "chromium", "fennec", "geckoview", "refbrow", "fenix"],
           "dest": "app",
           "help": "name of the application we are testing (default: firefox)"
           }],
         [["--activity"],
          {"dest": "activity",
-          "help": "name of the android activity used to launch the android app"
+          "help": "the android activity used to launch the android app. "
+                  "ex: org.mozilla.fenix.browser.BrowserPerformanceTestActivity"
+          }],
+        [["--intent"],
+         {"dest": "intent",
+          "help": "name of the android intent action used to launch the android app"
           }],
         [["--is-release-build"],
          {"action": "store_true",
@@ -81,7 +85,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             "action": "store_true",
             "dest": "enable_webrender",
             "default": False,
-            "help": "Tries to enable the WebRender compositor.",
+            "help": "Enable the WebRender compositor in Gecko.",
         }],
         [["--geckoProfile"], {
             "dest": "gecko_profile",
@@ -126,6 +130,12 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             "type": "int",
             "help": "How long to wait (ms) for one page_cycle to complete, before timing out"
         }],
+        [["--browser-cycles"], {
+            "dest": "browser_cycles",
+            "type": "int",
+            "help": "The number of times a cold load test is repeated (for cold load tests only, "
+                    "where the browser is shutdown and restarted between test iterations)"
+        }],
         [["--host"], {
             "dest": "host",
             "help": "Hostname from which to serve urls (default: 127.0.0.1). "
@@ -134,15 +144,35 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         }],
         [["--power-test"], {
             "dest": "power_test",
+            "action": "store_true",
+            "default": False,
             "help": "Use Raptor to measure power usage. Currently only supported for Geckoview. "
                     "The host ip address must be specified either via the --host command line "
                     "argument.",
+        }],
+        [["--memory-test"], {
+            "dest": "memory_test",
+            "action": "store_true",
+            "default": False,
+            "help": "Use Raptor to measure memory usage.",
+        }],
+        [["--cpu-test"], {
+            "dest": "cpu_test",
+            "action": "store_true",
+            "default": False,
+            "help": "Use Raptor to measure CPU usage"
         }],
         [["--debug-mode"], {
             "dest": "debug_mode",
             "action": "store_true",
             "default": False,
             "help": "Run Raptor in debug mode (open browser console, limited page-cycles, etc.)",
+        }],
+        [["--disable-e10s"], {
+            "dest": "e10s",
+            "action": "store_false",
+            "default": True,
+            "help": "Run without multiple processes (e10s).",
         }],
 
     ] + testing_config_options + copy.deepcopy(code_coverage_config_options)
@@ -152,7 +182,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         kwargs.setdefault('all_actions', ['clobber',
                                           'download-and-extract',
                                           'populate-webroot',
-                                          'install-chrome',
+                                          'install-chromium-distribution',
                                           'create-virtualenv',
                                           'install',
                                           'run-tests',
@@ -160,7 +190,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         kwargs.setdefault('default_actions', ['clobber',
                                               'download-and-extract',
                                               'populate-webroot',
-                                              'install-chrome',
+                                              'install-chromium-distribution',
                                               'create-virtualenv',
                                               'install',
                                               'run-tests',
@@ -189,16 +219,28 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
                             self.app = app
                             break
                 # repeat and get 'activity' argument
-                for activity in ['GeckoViewActivity', 'BrowserTestActivity']:
+                for activity in ['GeckoViewActivity',
+                                 'BrowserTestActivity',
+                                 'browser.BrowserPerformanceTestActivity']:
                     for next_arg in self.config['raptor_cmd_line_args']:
                         if activity in next_arg:
                             self.activity = activity
+                            break
+                # repeat and get 'intent' argument
+                for intent in ['android.intent.action.MAIN',
+                               'android.intent.action.VIEW']:
+                    for next_arg in self.config['raptor_cmd_line_args']:
+                        if intent in next_arg:
+                            self.intent = intent
                             break
         else:
             # raptor initiated in production via mozharness
             self.test = self.config['test']
             self.app = self.config.get("app", "firefox")
             self.binary_path = self.config.get("binary_path", None)
+
+            if self.app in ('refbrow', 'fenix'):
+                self.app_name = self.binary_path
 
         self.installer_url = self.config.get("installer_url")
         self.raptor_json_url = self.config.get("raptor_json_url")
@@ -216,6 +258,8 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         if self.host == 'HOST_IP':
             self.host = os.environ['HOST_IP']
         self.power_test = self.config.get('power_test')
+        self.memory_test = self.config.get('memory_test')
+        self.cpu_test = self.config.get('cpu_test')
         self.is_release_build = self.config.get('is_release_build')
         self.debug_mode = self.config.get('debug_mode', False)
         self.firefox_android_browsers = ["fennec", "geckoview", "refbrow", "fenix"]
@@ -249,38 +293,55 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
         self.abs_dirs = abs_dirs
         return self.abs_dirs
 
-    def install_chrome(self):
-        '''install google chrome in production; installation
+    def install_chromium_distribution(self):
+        '''install Google Chromium distribution in production; installation
         requirements depend on the platform'''
-        if self.app != "chrome":
-            self.info("Google Chrome is not required")
+        linux, mac, win = 'linux', 'mac', 'win'
+        chrome, chromium = 'chrome', 'chromium'
+
+        available_chromium_dists = [chrome, chromium]
+        binary_location = {
+            chromium: {
+                linux: ['chrome-linux', 'chrome'],
+                mac: ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
+                win: ['chrome-win', 'Chrome.exe']
+            },
+        }
+
+        if self.app not in available_chromium_dists:
+            self.info("Google Chrome or Chromium distributions are not required.")
             return
+
+        chromium_dist = self.app
 
         if self.config.get("run_local"):
-            self.info("expecting Google Chrome to be pre-installed locally")
+            self.info("expecting %s to be pre-installed locally" % chromium_dist)
             return
 
-        self.info("Getting fetched chromium build")
-        self.chrome_dest = os.path.normpath(os.path.abspath(os.environ['MOZ_FETCHES_DIR']))
+        self.info("Getting fetched %s build" % chromium_dist)
+        self.chromium_dist_dest = os.path.normpath(os.path.abspath(os.environ['MOZ_FETCHES_DIR']))
 
-        if 'mac' in self.platform_name():
-            self.chrome_path = os.path.join(self.chrome_dest, 'chrome-mac', 'Chromium.app',
-                                            'Contents', 'MacOS', 'Chromium')
+        if mac in self.platform_name():
+            self.chromium_dist_path = os.path.join(self.chromium_dist_dest,
+                                                   *binary_location[chromium_dist][mac])
 
-        elif 'linux' in self.platform_name():
-            self.chrome_path = os.path.join(self.chrome_dest, 'chrome-linux', 'chrome')
+        elif linux in self.platform_name():
+            self.chromium_dist_path = os.path.join(self.chromium_dist_dest,
+                                                   *binary_location[chromium_dist][linux])
 
         else:
-            self.chrome_path = os.path.join(self.chrome_dest, 'chrome-win', 'Chrome.exe')
+            self.chromium_dist_path = os.path.join(self.chromium_dist_dest,
+                                                   *binary_location[chromium_dist][win])
 
-        self.info("chrome dest is: %s" % self.chrome_dest)
-        self.info("chrome path is: %s" % self.chrome_path)
+        self.info("%s dest is: %s" % (chromium_dist, self.chromium_dist_dest))
+        self.info("%s path is: %s" % (chromium_dist, self.chromium_dist_path))
 
         # now ensure chrome binary exists
-        if os.path.exists(self.chrome_path):
-            self.info("successfully installed Google Chrome to: %s" % self.chrome_path)
+        if os.path.exists(self.chromium_dist_path):
+            self.info("successfully installed %s to: %s"
+                      % (chromium_dist, self.chromium_dist_path))
         else:
-            self.info("abort: failed to install Google Chrome")
+            self.info("abort: failed to install %s" % chromium_dist)
 
     def raptor_options(self, args=None, **kw):
         """return options to raptor"""
@@ -305,7 +366,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             if not self.run_local:
                 # when running locally we already set the chrome binary above in init; here
                 # in production we aready installed chrome, so set the binary path to our install
-                kw_options['binary'] = self.chrome_path
+                kw_options['binary'] = self.chromium_dist_path
 
         # options overwritten from **kw
         if 'test' in self.config:
@@ -332,6 +393,12 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             options.extend(['--is-release-build'])
         if self.config.get('power_test', False):
             options.extend(['--power-test'])
+        if self.config.get('memory_test', False):
+            options.extend(['--memory-test'])
+        if self.config.get('cpu_test', False):
+            options.extend(['--cpu-test'])
+        if self.config.get('enable_webrender', False):
+            options.extend(['--enable-webrender'])
         for key, value in kw_options.items():
             options.extend(['--%s' % key, value])
 
@@ -347,6 +414,24 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
 
     # Action methods. {{{1
     # clobber defined in BaseScript
+
+    def clobber(self):
+        # Recreate the upload directory for storing the logcat collected
+        # during apk installation.
+        super(Raptor, self).clobber()
+        upload_dir = self.query_abs_dirs()['abs_blob_upload_dir']
+        if not os.path.isdir(upload_dir):
+            self.mkdir_p(upload_dir)
+
+    def install_apk(self, apk):
+        # Override AnroidMixin's install_apk in order to capture
+        # logcat during the installation. If the installation fails,
+        # the logcat file will be left in the upload directory.
+        self.logcat_start()
+        try:
+            super(Raptor, self).install_apk(apk)
+        finally:
+            self.logcat_stop()
 
     def download_and_extract(self, extract_dirs=None, suite_categories=None):
         if 'MOZ_FETCHES' in os.environ:
@@ -421,6 +506,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
 
     def install(self):
         if self.app in self.firefox_android_browsers:
+            self.device.uninstall_app(self.binary_path)
             self.install_apk(self.installer_path)
         else:
             super(Raptor, self).install()
@@ -435,30 +521,6 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
                                                   'requirements.txt')
             self.info("installing requirements for the view-gecko-profile tool")
             self.install_module(requirements=[view_gecko_profile_req])
-
-    def _validate_treeherder_data(self, parser):
-        # late import is required, because install is done in create_virtualenv
-        import jsonschema
-
-        expected_perfherder = 1
-        if self.config.get('power_test', None):
-            expected_perfherder += 1
-        if len(parser.found_perf_data) != expected_perfherder:
-            self.critical("PERFHERDER_DATA was seen %d times, expected %d."
-                          % (len(parser.found_perf_data), expected_perfherder))
-            return
-
-        schema_path = os.path.join(external_tools_path,
-                                   'performance-artifact-schema.json')
-        self.info("Validating PERFHERDER_DATA against %s" % schema_path)
-        try:
-            with open(schema_path) as f:
-                schema = json.load(f)
-            data = json.loads(parser.found_perf_data[0])
-            jsonschema.validate(data, schema)
-        except Exception as e:
-            self.exception("Error while validating PERFHERDER_DATA")
-            self.info(str(e))
 
     def _artifact_perf_data(self, src, dest):
         if not os.path.isdir(os.path.dirname(dest)):
@@ -497,12 +559,6 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             env['PYTHONPATH'] = self.raptor_path + os.pathsep + env['PYTHONPATH']
         else:
             env['PYTHONPATH'] = self.raptor_path
-
-        # if running in production on a quantum_render build
-        if self.config['enable_webrender']:
-            self.info("webrender is enabled so setting MOZ_WEBRENDER=1 and MOZ_ACCELERATED=1")
-            env['MOZ_WEBRENDER'] = '1'
-            env['MOZ_ACCELERATED'] = '1'
 
         # mitmproxy needs path to mozharness when installing the cert, and tooltool
         env['SCRIPTSPATH'] = scripts_path
@@ -562,27 +618,32 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
             for item in parser.minidump_output:
                 self.run_command(["ls", "-l", item])
 
-        elif '--no-upload-results' not in options:
-            if not self.gecko_profile:
-                self._validate_treeherder_data(parser)
-            if not self.run_local:
-                # copy results to upload dir so they are included as an artifact
-                self.info("copying raptor results to upload dir:")
+        elif not self.run_local:
+            # copy results to upload dir so they are included as an artifact
+            self.info("copying raptor results to upload dir:")
 
-                src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'raptor.json')
-                dest = os.path.join(env['MOZ_UPLOAD_DIR'], 'perfherder-data.json')
-                self.info(str(dest))
+            src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'raptor.json')
+            dest = os.path.join(env['MOZ_UPLOAD_DIR'], 'perfherder-data.json')
+            self.info(str(dest))
+            self._artifact_perf_data(src, dest)
+
+            if self.power_test:
+                src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'raptor-power.json')
                 self._artifact_perf_data(src, dest)
 
-                if self.power_test:
-                    src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'raptor-power.json')
-                    self._artifact_perf_data(src, dest)
+            if self.memory_test:
+                src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'raptor-memory.json')
+                self._artifact_perf_data(src, dest)
 
-                src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'screenshots.html')
-                if os.path.exists(src):
-                    dest = os.path.join(env['MOZ_UPLOAD_DIR'], 'screenshots.html')
-                    self.info(str(dest))
-                    self._artifact_perf_data(src, dest)
+            if self.cpu_test:
+                src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'raptor-cpu.json')
+                self._artifact_perf_data(src, dest)
+
+            src = os.path.join(self.query_abs_dirs()['abs_work_dir'], 'screenshots.html')
+            if os.path.exists(src):
+                dest = os.path.join(env['MOZ_UPLOAD_DIR'], 'screenshots.html')
+                self.info(str(dest))
+                self._artifact_perf_data(src, dest)
 
 
 class RaptorOutputParser(OutputParser):

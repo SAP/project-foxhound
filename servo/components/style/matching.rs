@@ -471,7 +471,7 @@ trait PrivateMatchMethods: TElement {
         debug!("accumulate_damage_for: {:?}", self);
         debug_assert!(!shared_context
             .traversal_flags
-            .contains(TraversalFlags::Forgetful));
+            .contains(TraversalFlags::FinalAnimationTraversal));
 
         let difference = self.compute_style_difference(old_values, new_values, pseudo);
 
@@ -503,31 +503,34 @@ trait PrivateMatchMethods: TElement {
         let old_display = old_values.get_box().clone_display();
         let new_display = new_values.get_box().clone_display();
 
-        // If we used to be a display: none element, and no longer are,
-        // our children need to be restyled because they're unstyled.
-        //
-        // NOTE(emilio): Gecko has the special-case of -moz-binding, but
-        // that gets handled on the frame constructor when processing
-        // the reframe, so no need to handle that here.
-        if old_display == Display::None && old_display != new_display {
-            return ChildCascadeRequirement::MustCascadeChildren;
-        }
-
-        // Blockification of children may depend on our display value,
-        // so we need to actually do the recascade. We could potentially
-        // do better, but it doesn't seem worth it.
-        if old_display.is_item_container() != new_display.is_item_container() {
-            return ChildCascadeRequirement::MustCascadeChildren;
-        }
-
-        // Line break suppression may also be affected if the display
-        // type changes from ruby to non-ruby.
-        #[cfg(feature = "gecko")]
-        {
-            if old_display.is_ruby_type() != new_display.is_ruby_type() {
+        if old_display != new_display {
+            // If we used to be a display: none element, and no longer are, our
+            // children need to be restyled because they're unstyled.
+            if old_display == Display::None {
                 return ChildCascadeRequirement::MustCascadeChildren;
             }
+            // Blockification of children may depend on our display value,
+            // so we need to actually do the recascade. We could potentially
+            // do better, but it doesn't seem worth it.
+            if old_display.is_item_container() != new_display.is_item_container() {
+                return ChildCascadeRequirement::MustCascadeChildren;
+            }
+            // We may also need to blockify and un-blockify descendants if our
+            // display goes from / to display: contents, since the "layout
+            // parent style" changes.
+            if old_display.is_contents() || new_display.is_contents() {
+                return ChildCascadeRequirement::MustCascadeChildren;
+            }
+            // Line break suppression may also be affected if the display
+            // type changes from ruby to non-ruby.
+            #[cfg(feature = "gecko")]
+            {
+                if old_display.is_ruby_type() != new_display.is_ruby_type() {
+                    return ChildCascadeRequirement::MustCascadeChildren;
+                }
+            }
         }
+
 
         // Children with justify-items: auto may depend on our
         // justify-items property value.
@@ -582,7 +585,7 @@ trait PrivateMatchMethods: TElement {
         context: &SharedStyleContext,
         style: &mut Arc<ComputedValues>,
         possibly_expired_animations: &mut Vec<crate::animation::PropertyAnimation>,
-        font_metrics: &crate::font_metrics::FontMetricsProvider,
+        font_metrics: &dyn crate::font_metrics::FontMetricsProvider,
     ) {
         use crate::animation::{self, Animation, AnimationUpdate};
         use crate::dom::TNode;
@@ -718,16 +721,16 @@ pub trait MatchMethods: TElement {
                 let device = context.shared.stylist.device();
 
                 // Needed for the "inherit from body" quirk.
-                let text_color = new_primary_style.get_color().clone_color();
+                let text_color = new_primary_style.get_inherited_text().clone_color();
                 device.set_body_text_color(text_color);
             }
         }
 
-        // Don't accumulate damage if we're in a forgetful traversal.
+        // Don't accumulate damage if we're in the final animation traversal.
         if context
             .shared
             .traversal_flags
-            .contains(TraversalFlags::Forgetful)
+            .contains(TraversalFlags::FinalAnimationTraversal)
         {
             return ChildCascadeRequirement::MustCascadeChildren;
         }

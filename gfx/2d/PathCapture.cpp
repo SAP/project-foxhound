@@ -11,15 +11,16 @@ namespace gfx {
 
 using namespace std;
 
-void PathBuilderCapture::MoveTo(const Point &aPoint) {
+void PathBuilderCapture::MoveTo(const Point& aPoint) {
   PathOp op;
   op.mType = PathOp::OP_MOVETO;
   op.mP1 = aPoint;
   mPathOps.push_back(op);
   mCurrentPoint = aPoint;
+  mBeginPoint = aPoint;
 }
 
-void PathBuilderCapture::LineTo(const Point &aPoint) {
+void PathBuilderCapture::LineTo(const Point& aPoint) {
   PathOp op;
   op.mType = PathOp::OP_LINETO;
   op.mP1 = aPoint;
@@ -27,8 +28,8 @@ void PathBuilderCapture::LineTo(const Point &aPoint) {
   mCurrentPoint = aPoint;
 }
 
-void PathBuilderCapture::BezierTo(const Point &aCP1, const Point &aCP2,
-                                  const Point &aCP3) {
+void PathBuilderCapture::BezierTo(const Point& aCP1, const Point& aCP2,
+                                  const Point& aCP3) {
   PathOp op;
   op.mType = PathOp::OP_BEZIERTO;
   op.mP1 = aCP1;
@@ -38,8 +39,8 @@ void PathBuilderCapture::BezierTo(const Point &aCP1, const Point &aCP2,
   mCurrentPoint = aCP3;
 }
 
-void PathBuilderCapture::QuadraticBezierTo(const Point &aCP1,
-                                           const Point &aCP2) {
+void PathBuilderCapture::QuadraticBezierTo(const Point& aCP1,
+                                           const Point& aCP2) {
   PathOp op;
   op.mType = PathOp::OP_QUADRATICBEZIERTO;
   op.mP1 = aCP1;
@@ -48,30 +49,35 @@ void PathBuilderCapture::QuadraticBezierTo(const Point &aCP1,
   mCurrentPoint = aCP2;
 }
 
-void PathBuilderCapture::Arc(const Point &aOrigin, float aRadius,
+void PathBuilderCapture::Arc(const Point& aCenter, float aRadius,
                              float aStartAngle, float aEndAngle,
                              bool aAntiClockwise) {
   PathOp op;
   op.mType = PathOp::OP_ARC;
-  op.mP1 = aOrigin;
+  op.mP1 = aCenter;
   op.mRadius = aRadius;
   op.mStartAngle = aStartAngle;
   op.mEndAngle = aEndAngle;
   op.mAntiClockwise = aAntiClockwise;
   mPathOps.push_back(op);
+  mCurrentPoint = Point(aCenter.x + aRadius * cosf(aEndAngle),
+                        aCenter.y + aRadius * sinf(aEndAngle));
 }
 
 void PathBuilderCapture::Close() {
   PathOp op;
   op.mType = PathOp::OP_CLOSE;
   mPathOps.push_back(op);
+  mCurrentPoint = mBeginPoint;
 }
 
-Point PathBuilderCapture::CurrentPoint() const { return mCurrentPoint; }
-
 already_AddRefed<Path> PathBuilderCapture::Finish() {
+  Point currentPoint = mCurrentPoint;
+  Point beginPoint = mBeginPoint;
+  mCurrentPoint = Point(0.0, 0.0);
+  mBeginPoint = Point(0.0, 0.0);
   return MakeAndAddRef<PathCapture>(std::move(mPathOps), mFillRule, mDT,
-                                    mCurrentPoint);
+                                    currentPoint, beginPoint);
 }
 
 already_AddRefed<PathBuilder> PathCapture::CopyToBuilder(
@@ -79,11 +85,12 @@ already_AddRefed<PathBuilder> PathCapture::CopyToBuilder(
   RefPtr<PathBuilderCapture> capture = new PathBuilderCapture(aFillRule, mDT);
   capture->mPathOps = mPathOps;
   capture->mCurrentPoint = mCurrentPoint;
+  capture->mBeginPoint = mBeginPoint;
   return capture.forget();
 }
 
 already_AddRefed<PathBuilder> PathCapture::TransformedCopyToBuilder(
-    const Matrix &aTransform, FillRule aFillRule) const {
+    const Matrix& aTransform, FillRule aFillRule) const {
   RefPtr<PathBuilderCapture> capture = new PathBuilderCapture(aFillRule, mDT);
   typedef std::vector<PathOp> pathOpVec;
   for (pathOpVec::const_iterator iter = mPathOps.begin();
@@ -92,9 +99,9 @@ already_AddRefed<PathBuilder> PathCapture::TransformedCopyToBuilder(
     newPathOp.mType = iter->mType;
     if (newPathOp.mType == PathOp::OpType::OP_ARC) {
       struct ArcTransformer {
-        ArcTransformer(pathOpVec &aVector, const Matrix &aTransform)
+        ArcTransformer(pathOpVec& aVector, const Matrix& aTransform)
             : mVector(&aVector), mTransform(&aTransform) {}
-        void BezierTo(const Point &aCP1, const Point &aCP2, const Point &aCP3) {
+        void BezierTo(const Point& aCP1, const Point& aCP2, const Point& aCP3) {
           PathOp newPathOp;
           newPathOp.mType = PathOp::OP_BEZIERTO;
           newPathOp.mP1 = mTransform->TransformPoint(aCP1);
@@ -102,14 +109,14 @@ already_AddRefed<PathBuilder> PathCapture::TransformedCopyToBuilder(
           newPathOp.mP3 = mTransform->TransformPoint(aCP3);
           mVector->push_back(newPathOp);
         }
-        void LineTo(const Point &aPoint) {
+        void LineTo(const Point& aPoint) {
           PathOp newPathOp;
           newPathOp.mType = PathOp::OP_LINETO;
           newPathOp.mP1 = mTransform->TransformPoint(aPoint);
           mVector->push_back(newPathOp);
         }
-        pathOpVec *mVector;
-        const Matrix *mTransform;
+        pathOpVec* mVector;
+        const Matrix* mTransform;
       };
 
       ArcTransformer arcTransformer(capture->mPathOps, aTransform);
@@ -130,42 +137,43 @@ already_AddRefed<PathBuilder> PathCapture::TransformedCopyToBuilder(
     }
   }
   capture->mCurrentPoint = aTransform.TransformPoint(mCurrentPoint);
+  capture->mBeginPoint = aTransform.TransformPoint(mBeginPoint);
   return capture.forget();
 }
-bool PathCapture::ContainsPoint(const Point &aPoint,
-                                const Matrix &aTransform) const {
+bool PathCapture::ContainsPoint(const Point& aPoint,
+                                const Matrix& aTransform) const {
   if (!EnsureRealizedPath()) {
     return false;
   }
   return mRealizedPath->ContainsPoint(aPoint, aTransform);
 }
 
-bool PathCapture::StrokeContainsPoint(const StrokeOptions &aStrokeOptions,
-                                      const Point &aPoint,
-                                      const Matrix &aTransform) const {
+bool PathCapture::StrokeContainsPoint(const StrokeOptions& aStrokeOptions,
+                                      const Point& aPoint,
+                                      const Matrix& aTransform) const {
   if (!EnsureRealizedPath()) {
     return false;
   }
   return mRealizedPath->StrokeContainsPoint(aStrokeOptions, aPoint, aTransform);
 }
 
-Rect PathCapture::GetBounds(const Matrix &aTransform) const {
+Rect PathCapture::GetBounds(const Matrix& aTransform) const {
   if (!EnsureRealizedPath()) {
     return Rect();
   }
   return mRealizedPath->GetBounds(aTransform);
 }
 
-Rect PathCapture::GetStrokedBounds(const StrokeOptions &aStrokeOptions,
-                                   const Matrix &aTransform) const {
+Rect PathCapture::GetStrokedBounds(const StrokeOptions& aStrokeOptions,
+                                   const Matrix& aTransform) const {
   if (!EnsureRealizedPath()) {
     return Rect();
   }
   return mRealizedPath->GetStrokedBounds(aStrokeOptions, aTransform);
 }
 
-void PathCapture::StreamToSink(PathSink *aSink) const {
-  for (const PathOp &op : mPathOps) {
+void PathCapture::StreamToSink(PathSink* aSink) const {
+  for (const PathOp& op : mPathOps) {
     switch (op.mType) {
       case PathOp::OP_MOVETO:
         aSink->MoveTo(op.mP1);
@@ -200,7 +208,7 @@ bool PathCapture::EnsureRealizedPath() const {
   return true;
 }
 
-Path *PathCapture::GetRealizedPath() const {
+Path* PathCapture::GetRealizedPath() const {
   if (!EnsureRealizedPath()) {
     return nullptr;
   }

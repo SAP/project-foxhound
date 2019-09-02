@@ -5,6 +5,9 @@
 // <iframe mozbrowser>.
 
 "use strict";
+
+/* global browserElementTestHelpers */
+
 SimpleTest.waitForExplicitFinish();
 browserElementTestHelpers.setEnabledPref(true);
 
@@ -13,16 +16,16 @@ function addOneShotIframeEventListener(event, fn) {
   function wrapper(e) {
     iframe.removeEventListener(event, wrapper);
     fn(e);
-  };
+  }
 
   iframe.addEventListener(event, wrapper);
 }
 
 function runTest() {
-  iframe = document.createElement('iframe');
-  iframe.setAttribute('mozbrowser', 'true');
+  iframe = document.createElement("iframe");
+  iframe.setAttribute("mozbrowser", "true");
 
-  addOneShotIframeEventListener('mozbrowserloadend', function() {
+  addOneShotIframeEventListener("mozbrowserloadend", function() {
     SimpleTest.executeSoon(test2);
   });
 
@@ -33,7 +36,11 @@ function runTest() {
 function checkCanGoBackAndForward(canGoBack, canGoForward, nextTest) {
   var seenCanGoBackResult = false;
   iframe.getCanGoBack().then(function(result) {
-    is(seenCanGoBackResult, false, "onsuccess handler shouldn't be called twice.");
+    is(
+      seenCanGoBackResult,
+      false,
+      "onsuccess handler shouldn't be called twice."
+    );
     seenCanGoBackResult = true;
     is(result, canGoBack);
     maybeRunNextTest();
@@ -41,7 +48,11 @@ function checkCanGoBackAndForward(canGoBack, canGoForward, nextTest) {
 
   var seenCanGoForwardResult = false;
   iframe.getCanGoForward().then(function(result) {
-    is(seenCanGoForwardResult, false, "onsuccess handler shouldn't be called twice.");
+    is(
+      seenCanGoForwardResult,
+      false,
+      "onsuccess handler shouldn't be called twice."
+    );
     seenCanGoForwardResult = true;
     is(result, canGoForward);
     maybeRunNextTest();
@@ -59,7 +70,7 @@ function test2() {
 }
 
 function test3() {
-  addOneShotIframeEventListener('mozbrowserloadend', function() {
+  addOneShotIframeEventListener("mozbrowserloadend", function() {
     checkCanGoBackAndForward(true, false, test4);
   });
 
@@ -69,7 +80,7 @@ function test3() {
 }
 
 function test4() {
-  addOneShotIframeEventListener('mozbrowserlocationchange', function(e) {
+  addOneShotIframeEventListener("mozbrowserlocationchange", function(e) {
     is(e.detail.url, browserElementTestHelpers.emptyPage3);
     is(e.detail.canGoBack, true);
     is(e.detail.canGoForward, false);
@@ -82,7 +93,7 @@ function test4() {
 }
 
 function test5() {
-  addOneShotIframeEventListener('mozbrowserlocationchange', function(e) {
+  addOneShotIframeEventListener("mozbrowserlocationchange", function(e) {
     is(e.detail.url, browserElementTestHelpers.emptyPage2);
     is(e.detail.canGoBack, true);
     is(e.detail.canGoForward, true);
@@ -92,7 +103,7 @@ function test5() {
 }
 
 function test6() {
-  addOneShotIframeEventListener('mozbrowserlocationchange', function(e) {
+  addOneShotIframeEventListener("mozbrowserlocationchange", function(e) {
     is(e.detail.url, browserElementTestHelpers.emptyPage1);
     is(e.detail.canGoBack, false);
     is(e.detail.canGoForward, true);
@@ -101,4 +112,4 @@ function test6() {
   iframe.goBack();
 }
 
-addEventListener('testready', runTest);
+addEventListener("testready", runTest);

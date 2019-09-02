@@ -129,6 +129,7 @@ nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags,
       mSentClientCert(false),
       mNotedTimeUntilReady(false),
       mFailedVerification(false),
+      mResumed(false),
       mIsShortWritePending(false),
       mShortWritePendingByte(0),
       mShortWriteOriginalAmount(-1),
@@ -373,6 +374,14 @@ nsNSSSocketInfo::GetEarlyDataAccepted(bool* aAccepted) {
 void nsNSSSocketInfo::SetEarlyDataAccepted(bool aAccepted) {
   mEarlyDataAccepted = aAccepted;
 }
+
+NS_IMETHODIMP
+nsNSSSocketInfo::GetResumed(bool* aResumed) {
+  *aResumed = mResumed;
+  return NS_OK;
+}
+
+void nsNSSSocketInfo::SetResumed(bool aResumed) { mResumed = aResumed; }
 
 bool nsNSSSocketInfo::GetDenyClientCert() { return mDenyClientCert; }
 
@@ -2475,6 +2484,13 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     return NS_ERROR_FAILURE;
   }
 
+  if (flags & nsISocketProvider::NO_PERMANENT_STORAGE) {
+    if (SECSuccess != SSL_OptionSet(fd, SSL_ENABLE_SESSION_TICKETS, false) ||
+        SECSuccess != SSL_OptionSet(fd, SSL_NO_CACHE, true)) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
   return NS_OK;
 }
 
@@ -2495,9 +2511,10 @@ nsresult nsSSLIOLayerAddToSocket(int32_t family, const char* host, int32_t port,
     allocatedState = new SharedSSLState(providerTlsFlags);
     sharedState = allocatedState.get();
   } else {
-    sharedState = (providerFlags & nsISocketProvider::NO_PERMANENT_STORAGE)
-                      ? PrivateSSLState()
-                      : PublicSSLState();
+    bool isPrivate = providerFlags & nsISocketProvider::NO_PERMANENT_STORAGE ||
+                     originAttributes.mPrivateBrowsingId !=
+                         OriginAttributes().mPrivateBrowsingId;
+    sharedState = isPrivate ? PrivateSSLState() : PublicSSLState();
   }
 
   nsNSSSocketInfo* infoObject =

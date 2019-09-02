@@ -10,20 +10,20 @@
 #define mozilla_ServoTypes_h
 
 #include "mozilla/RefPtr.h"
-#include "mozilla/SheetType.h"
 #include "mozilla/TypedEnumBits.h"
 #include "nsCoord.h"
 
 struct RawServoFontFaceRule;
 
 namespace mozilla {
+enum class StyleOrigin : uint8_t;
 struct LangGroupFontPrefs;
-}
+}  // namespace mozilla
 
-// used for associating sheet type with specific @font-face rules
+// used for associating origin with specific @font-face rules
 struct nsFontFaceRuleContainer {
   RefPtr<RawServoFontFaceRule> mRule;
-  mozilla::SheetType mSheetType;
+  mozilla::StyleOrigin mOrigin;
 };
 
 namespace mozilla {
@@ -43,17 +43,9 @@ enum class ServoTraversalFlags : uint32_t {
   AnimationOnly = 1 << 0,
   // Traverses as normal mode but tries to update all CSS animations.
   ForCSSRuleChanges = 1 << 1,
-  // A forgetful traversal ignores the previous state of the frame tree, and
-  // thus does not compute damage or maintain other state describing the styles
-  // pre-traversal. A forgetful traversal is usually the right thing if you
-  // aren't going to do a post-traversal.
-  Forgetful = 1 << 3,
-  // Clears all the dirty bits (dirty descendants, animation-only
-  // dirty-descendants, needs frame, descendants need frames) on the elements
-  // traversed. in the subtree.
-  ClearDirtyBits = 1 << 5,
-  // Clears only the animation-only dirty descendants bit in the subtree.
-  ClearAnimationOnlyDirtyDescendants = 1 << 6,
+  // The final animation-only traversal, which shouldn't really care about other
+  // style changes anymore.
+  FinalAnimationTraversal = 1 << 2,
   // Allows the traversal to run in parallel if there are sufficient cores on
   // the machine.
   ParallelTraversal = 1 << 7,
@@ -161,7 +153,6 @@ struct MediumFeaturesChangedResult {
 struct FontSizePrefs {
   void CopyFrom(const mozilla::LangGroupFontPrefs&);
   nscoord mDefaultVariableSize;
-  nscoord mDefaultFixedSize;
   nscoord mDefaultSerifSize;
   nscoord mDefaultSansSerifSize;
   nscoord mDefaultMonospaceSize;

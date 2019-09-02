@@ -94,32 +94,33 @@ void ChromiumCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
               cdm->Init(self->mCallback.get(),
                         self->mDistinctiveIdentifierRequired,
                         self->mPersistentStateRequired, self->mMainThread)
-                  ->Then(self->mMainThread, __func__,
-                         [self, aPromiseId, cdm](bool /* unused */) {
-                           // CDM init succeeded
-                           {
-                             MutexAutoLock lock(self->mCDMMutex);
-                             self->mCDM = cdm;
-                           }
-                           if (self->mIsShutdown) {
-                             self->RejectPromise(
-                                 aPromiseId, NS_ERROR_DOM_INVALID_STATE_ERR,
-                                 NS_LITERAL_CSTRING(
-                                     "ChromiumCDMProxy shutdown during "
-                                     "ChromiumCDMProxy::Init"));
-                             // If shutdown happened while waiting to init, we
-                             // need to explicitly shutdown the CDM to avoid it
-                             // referencing this proxy which is on its way out.
-                             self->ShutdownCDMIfExists();
-                             return;
-                           }
-                           self->OnCDMCreated(aPromiseId);
-                         },
-                         [self, aPromiseId](MediaResult aResult) {
-                           // CDM init failed
-                           self->RejectPromise(aPromiseId, aResult.Code(),
-                                               aResult.Message());
-                         });
+                  ->Then(
+                      self->mMainThread, __func__,
+                      [self, aPromiseId, cdm](bool /* unused */) {
+                        // CDM init succeeded
+                        {
+                          MutexAutoLock lock(self->mCDMMutex);
+                          self->mCDM = cdm;
+                        }
+                        if (self->mIsShutdown) {
+                          self->RejectPromise(
+                              aPromiseId, NS_ERROR_DOM_INVALID_STATE_ERR,
+                              NS_LITERAL_CSTRING(
+                                  "ChromiumCDMProxy shutdown during "
+                                  "ChromiumCDMProxy::Init"));
+                          // If shutdown happened while waiting to init, we
+                          // need to explicitly shutdown the CDM to avoid it
+                          // referencing this proxy which is on its way out.
+                          self->ShutdownCDMIfExists();
+                          return;
+                        }
+                        self->OnCDMCreated(aPromiseId);
+                      },
+                      [self, aPromiseId](MediaResult aResult) {
+                        // CDM init failed
+                        self->RejectPromise(aPromiseId, aResult.Code(),
+                                            aResult.Message());
+                      });
             },
             [self, aPromiseId](MediaResult rv) {
               // service->GetCDM failed

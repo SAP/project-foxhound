@@ -6,7 +6,6 @@
 # (mach). It is packaged as a module because everything is a library.
 
 from __future__ import absolute_import, print_function, unicode_literals
-from collections import Iterable
 
 import argparse
 import codecs
@@ -17,6 +16,9 @@ import os
 import sys
 import traceback
 import uuid
+from collections import Iterable
+
+from six import string_types
 
 from .base import (
     CommandContext,
@@ -27,26 +29,25 @@ from .base import (
     UnrecognizedArgumentError,
     FailedCommandError,
 )
-
+from .config import ConfigSettings
 from .decorators import (
     CommandProvider,
 )
-
-from .config import ConfigSettings
 from .dispatcher import CommandAction
 from .logging import LoggingManager
 from .registrar import Registrar
 
+SUGGEST_MACH_BUSTED = r'''
+You can invoke |./mach busted| to check if this issue is already on file. If it
+isn't, please use |./mach busted file| to report it. If |./mach busted| is
+misbehaving, you can also inspect the dependencies of bug 1543241.
+'''.lstrip()
 
 MACH_ERROR = r'''
 The error occurred in mach itself. This is likely a bug in mach itself or a
 fundamental problem with a loaded module.
 
-Please consider filing a bug against mach by going to the URL:
-
-    https://bugzilla.mozilla.org/enter_bug.cgi?product=Firefox%20Build%20System&component=Mach%20Core
-
-'''.lstrip()
+'''.lstrip() + SUGGEST_MACH_BUSTED
 
 ERROR_FOOTER = r'''
 If filing a bug, please include the full output of mach, including this error
@@ -59,15 +60,13 @@ COMMAND_ERROR = r'''
 The error occurred in the implementation of the invoked mach command.
 
 This should never occur and is likely a bug in the implementation of that
-command. Consider filing a bug for this issue.
-'''.lstrip()
+command.
+'''.lstrip() + SUGGEST_MACH_BUSTED
 
 MODULE_ERROR = r'''
 The error occurred in code that was called by the mach command. This is either
 a bug in the called code itself or in the way that mach is calling it.
-
-You should consider filing a bug for this issue.
-'''.lstrip()
+'''.lstrip() + SUGGEST_MACH_BUSTED
 
 NO_COMMAND_ERROR = r'''
 It looks like you tried to run mach without a command.
@@ -257,11 +256,11 @@ To see more help for a specific command, run:
         if module_name is None:
             # Ensure parent module is present otherwise we'll (likely) get
             # an error due to unknown parent.
-            if b'mach.commands' not in sys.modules:
-                mod = imp.new_module(b'mach.commands')
-                sys.modules[b'mach.commands'] = mod
+            if 'mach.commands' not in sys.modules:
+                mod = imp.new_module('mach.commands')
+                sys.modules['mach.commands'] = mod
 
-            module_name = 'mach.commands.%s' % uuid.uuid1().get_hex()
+            module_name = 'mach.commands.%s' % uuid.uuid4().hex
 
         try:
             imp.load_source(module_name, path)
@@ -340,14 +339,15 @@ To see more help for a specific command, run:
         orig_env = dict(os.environ)
 
         try:
-            if stdin.encoding is None:
-                sys.stdin = codecs.getreader('utf-8')(stdin)
+            if sys.version_info < (3, 0):
+                if stdin.encoding is None:
+                    sys.stdin = codecs.getreader('utf-8')(stdin)
 
-            if stdout.encoding is None:
-                sys.stdout = codecs.getwriter('utf-8')(stdout)
+                if stdout.encoding is None:
+                    sys.stdout = codecs.getwriter('utf-8')(stdout)
 
-            if stderr.encoding is None:
-                sys.stderr = codecs.getwriter('utf-8')(stderr)
+                if stderr.encoding is None:
+                    sys.stderr = codecs.getwriter('utf-8')(stderr)
 
             # Allow invoked processes (which may not have a handle on the
             # original stdout file descriptor) to know if the original stdout
@@ -399,6 +399,8 @@ To see more help for a specific command, run:
         if self.populate_context_handler:
             self.populate_context_handler(context)
             context = ContextWrapper(context, self.populate_context_handler)
+
+        Registrar.register_conditional_names(context)
 
         parser = self.get_argument_parser(context)
 
@@ -603,7 +605,7 @@ To see more help for a specific command, run:
 
             machrc, .machrc
         """
-        if isinstance(paths, basestring):
+        if isinstance(paths, string_types):
             paths = [paths]
 
         valid_names = ('machrc', '.machrc')

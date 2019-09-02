@@ -10,9 +10,9 @@
 #include "UnitTransforms.h"        // for TransformTo
 #include "ClientLayerManager.h"    // for ClientLayerManager, etc
 #include "gfxPlatform.h"           // for gfxPlatform
-#include "gfxPrefs.h"              // for gfxPrefs
 #include "gfxRect.h"               // for gfxRect
 #include "mozilla/Assertions.h"    // for MOZ_ASSERT, etc
+#include "mozilla/StaticPrefs.h"   // for StaticPrefs
 #include "mozilla/gfx/BaseSize.h"  // for BaseSize
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Rect.h"  // for Rect, RectTyped
@@ -69,14 +69,23 @@ static Maybe<LayerRect> ApplyParentLayerToLayerTransform(
 
 static LayerToParentLayerMatrix4x4 GetTransformToAncestorsParentLayer(
     Layer* aStart, const LayerMetricsWrapper& aAncestor) {
+  // If the ancestor layer Combines3DTransformWithAncestors, then the
+  // scroll offset is contained in the transform of the layer at the
+  // root of the 3D context. So we must first find that layer, then
+  // calcuate the transform to its parent.
+  LayerMetricsWrapper root3dAncestor = aAncestor;
+  while (root3dAncestor.Combines3DTransformWithAncestors()) {
+    root3dAncestor = root3dAncestor.GetParent();
+  }
+
   gfx::Matrix4x4 transform;
-  const LayerMetricsWrapper& ancestorParent = aAncestor.GetParent();
+  const LayerMetricsWrapper& ancestorParent = root3dAncestor.GetParent();
   for (LayerMetricsWrapper iter(aStart, LayerMetricsWrapper::StartAt::BOTTOM);
        ancestorParent ? iter != ancestorParent : iter.IsValid();
        iter = iter.GetParent()) {
     transform = transform * iter.GetTransform();
 
-    if (gfxPrefs::LayoutUseContainersForRootFrames()) {
+    if (StaticPrefs::layout_scroll_root_frame_containers()) {
       // When scrolling containers, layout adds a post-scale into the transform
       // of the displayport-ancestor (which we pick up in GetTransform() above)
       // to cancel out the pres shell resolution (for historical reasons). The
@@ -258,7 +267,7 @@ bool ClientTiledPaintedLayer::IsScrollingOnCompositor(
 }
 
 bool ClientTiledPaintedLayer::UseProgressiveDraw() {
-  if (!gfxPrefs::ProgressivePaint()) {
+  if (!StaticPrefs::layers_progressive_paint()) {
     // pref is disabled, so never do progressive
     return false;
   }
@@ -448,6 +457,11 @@ void ClientTiledPaintedLayer::EndPaint() {
 }
 
 void ClientTiledPaintedLayer::RenderLayer() {
+  if (!ClientManager()->IsRepeatTransaction()) {
+    // Only paint the mask layers on the first transaction.
+    RenderMaskLayers(this);
+  }
+
   LayerManager::DrawPaintedLayerCallback callback =
       ClientManager()->GetPaintedLayerCallback();
   void* data = ClientManager()->GetPaintedLayerCallbackData();
@@ -465,7 +479,7 @@ void ClientTiledPaintedLayer::RenderLayer() {
        isHalfTileWidthOrHeight) &&
       SingleTiledContentClient::ClientSupportsLayerSize(layerSize,
                                                         ClientManager()) &&
-      gfxPrefs::LayersSingleTileEnabled();
+      StaticPrefs::layers_single_tile_enabled();
 
   if (mContentClient && mHaveSingleTiledContentClient &&
       !wantSingleTiledContentClient) {
@@ -531,9 +545,6 @@ void ClientTiledPaintedLayer::RenderLayer() {
   }
 
   if (!ClientManager()->IsRepeatTransaction()) {
-    // Only paint the mask layers on the first transaction.
-    RenderMaskLayers(this);
-
     // For more complex cases we need to calculate a bunch of metrics before we
     // can do the paint.
     BeginPaint();

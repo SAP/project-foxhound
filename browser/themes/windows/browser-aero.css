@@ -38,13 +38,6 @@
   }
 }
 
-@media (-moz-windows-default-theme) {
-  .menu-accel,
-  .menu-iconic-accel {
-    color: graytext;
-  }
-}
-
 @media (-moz-windows-compositor) {
   @media not (-moz-os-version: windows-win7) {
     @media not (-moz-os-version: windows-win8) {
@@ -315,7 +308,18 @@
       background-clip: padding-box;
     }
 
-    #main-window[sizemode=normal] #navigator-toolbox::after {
+    #navigator-toolbox::after {
+      content: "";
+      display: -moz-box;
+      border-bottom: 1px solid var(--chrome-content-separator-color);
+    }
+
+    #navigator-toolbox,
+    :root[customizing] #navigator-toolbox::after {
+      border-bottom-style: none;
+    }
+
+    :root[sizemode=normal] #navigator-toolbox::after {
       box-shadow: 1px 0 0 @glassShadowColor@, -1px 0 0 @glassShadowColor@;
       margin-left: 1px;
       margin-right: 1px;

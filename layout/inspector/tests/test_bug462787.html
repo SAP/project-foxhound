@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=462787
 -->
 <head>
   <title>Test for Bug 462787</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -76,6 +76,22 @@ function do_test() {
   }
   catch(e) {
     is(e.name, "TypeError", "got the expected exception");
+  }
+
+  try {
+    InspectorUtils.setContentState(document.documentElement, 3);
+    ok(false, "expected an exception");
+  }
+  catch(e) {
+    ok(true, "Threw");
+  }
+
+  try {
+    InspectorUtils.removeContentState(document.documentElement, 3);
+    ok(false, "expected an exception");
+  }
+  catch(e) {
+    ok(true, "Threw");
   }
 
   SimpleTest.finish();

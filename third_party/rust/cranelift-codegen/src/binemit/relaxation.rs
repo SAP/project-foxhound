@@ -27,7 +27,7 @@
 //! ebb23:
 //! ```
 
-use crate::binemit::CodeOffset;
+use crate::binemit::{CodeInfo, CodeOffset};
 use crate::cursor::{Cursor, FuncCursor};
 use crate::ir::{Function, InstructionData, Opcode};
 use crate::isa::{EncInfo, TargetIsa};
@@ -40,7 +40,7 @@ use log::debug;
 /// Relax branches and compute the final layout of EBB headers in `func`.
 ///
 /// Fill in the `func.offsets` table so the function is ready for binary emission.
-pub fn relax_branches(func: &mut Function, isa: &TargetIsa) -> CodegenResult<CodeOffset> {
+pub fn relax_branches(func: &mut Function, isa: &dyn TargetIsa) -> CodegenResult<CodeInfo> {
     let _tt = timing::relax_branches();
 
     let encinfo = isa.encoding_info();
@@ -62,6 +62,7 @@ pub fn relax_branches(func: &mut Function, isa: &TargetIsa) -> CodegenResult<Cod
             divert.clear();
             cur.func.offsets[ebb] = offset;
             while let Some(inst) = cur.next_inst() {
+                divert.apply(&cur.func.dfg[inst]);
                 let enc = cur.func.encodings[inst];
                 offset += encinfo.byte_size(enc, inst, &divert, &cur.func);
             }
@@ -81,10 +82,6 @@ pub fn relax_branches(func: &mut Function, isa: &TargetIsa) -> CodegenResult<Cod
 
             // Record the offset for `ebb` and make sure we iterate until offsets are stable.
             if cur.func.offsets[ebb] != offset {
-                debug_assert!(
-                    cur.func.offsets[ebb] < offset,
-                    "Code shrinking during relaxation"
-                );
                 cur.func.offsets[ebb] = offset;
                 go_again = true;
             }
@@ -112,6 +109,9 @@ pub fn relax_branches(func: &mut Function, isa: &TargetIsa) -> CodegenResult<Cod
         }
     }
 
+    let code_size = offset;
+    let jumptables = offset;
+
     for (jt, jt_data) in func.jump_tables.iter() {
         func.jt_offsets[jt] = offset;
         // TODO: this should be computed based on the min size needed to hold
@@ -119,7 +119,19 @@ pub fn relax_branches(func: &mut Function, isa: &TargetIsa) -> CodegenResult<Cod
         offset += jt_data.len() as u32 * 4;
     }
 
-    Ok(offset)
+    let jumptables_size = offset - jumptables;
+    let rodata = offset;
+
+    // TODO: Once we have constant pools we'll do some processing here to update offset.
+
+    let rodata_size = offset - rodata;
+
+    Ok(CodeInfo {
+        code_size,
+        jumptables_size,
+        rodata_size,
+        total_size: offset,
+    })
 }
 
 /// Convert `jump` instructions to `fallthrough` instructions where possible and verify that any
@@ -162,7 +174,7 @@ fn relax_branch(
     offset: CodeOffset,
     dest_offset: CodeOffset,
     encinfo: &EncInfo,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) -> CodeOffset {
     let inst = cur.current_inst().unwrap();
     debug!(
@@ -173,12 +185,12 @@ fn relax_branch(
         dest_offset
     );
 
-    // Pick the first encoding that can handle the branch range.
+    // Pick the smallest encoding that can handle the branch range.
     let dfg = &cur.func.dfg;
     let ctrl_type = dfg.ctrl_typevar(inst);
     if let Some(enc) = isa
         .legal_encodings(cur.func, &dfg[inst], ctrl_type)
-        .find(|&enc| {
+        .filter(|&enc| {
             let range = encinfo.branch_range(enc).expect("Branch with no range");
             if !range.contains(offset, dest_offset) {
                 debug!("  trying [{}]: out of range", encinfo.display(enc));
@@ -198,7 +210,9 @@ fn relax_branch(
                 true
             }
         })
+        .min_by_key(|&enc| encinfo.byte_size(enc, inst, &divert, &cur.func))
     {
+        debug_assert!(enc != cur.func.encodings[inst]);
         cur.func.encodings[inst] = enc;
         return encinfo.byte_size(enc, inst, &divert, &cur.func);
     }

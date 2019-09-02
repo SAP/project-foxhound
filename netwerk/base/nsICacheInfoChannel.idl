@@ -23,7 +23,7 @@ interface nsIInputStreamReceiver : nsISupports
   void onInputStreamReady(in nsIInputStream aStream);
 };
 
-[scriptable, uuid(72c34415-c6eb-48af-851f-772fa9ee5972)]
+[scriptable, builtinclass, uuid(72c34415-c6eb-48af-851f-772fa9ee5972)]
 interface nsICacheInfoChannel : nsISupports
 {
   /**
@@ -54,6 +54,15 @@ interface nsICacheInfoChannel : nsISupports
    * and after the channel fires its OnStopRequest notification.
    */
   boolean isFromCache();
+
+  /**
+   * Returns true if the channel raced the cache and network requests.
+   * In order to determine if the response is coming from the cache or the
+   * network, the consumer can check isFromCache().
+   * The method can only be called after the channel fires its OnStartRequest
+   * notification.
+   */
+  boolean isRacing();
 
   /**
    * The unique ID of the corresponding nsICacheEntry from which the response is

@@ -6,6 +6,7 @@
 
 #include "DocumentOrShadowRoot.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/ShadowRoot.h"
@@ -244,12 +245,12 @@ static void QueryNodesFromRect(DocumentOrShadowRoot& aRoot, const nsRect& aRect,
     doc->FlushPendingNotifications(FlushType::Layout);
   }
 
-  nsIPresShell* ps = doc->GetShell();
-  if (!ps) {
+  PresShell* presShell = doc->GetPresShell();
+  if (!presShell) {
     return;
   }
 
-  nsIFrame* rootFrame = ps->GetRootFrame();
+  nsIFrame* rootFrame = presShell->GetRootFrame();
   // XUL docs, unlike HTML, have no frame tree until everything's done loading
   if (!rootFrame) {
     return;  // return null to premature XUL callers as a reminder to wait
@@ -360,7 +361,7 @@ void DocumentOrShadowRoot::NodesFromRect(float aX, float aY, float aTopSize,
                                          float aRightSize, float aBottomSize,
                                          float aLeftSize,
                                          bool aIgnoreRootScrollFrame,
-                                         bool aFlushLayout,
+                                         bool aFlushLayout, bool aOnlyVisible,
                                          nsTArray<RefPtr<nsINode>>& aReturn) {
   // Following the same behavior of elementFromPoint,
   // we don't return anything if either coord is negative
@@ -378,6 +379,9 @@ void DocumentOrShadowRoot::NodesFromRect(float aX, float aY, float aTopSize,
   EnumSet<FrameForPointOption> options;
   if (aIgnoreRootScrollFrame) {
     options += FrameForPointOption::IgnoreRootScrollFrame;
+  }
+  if (aOnlyVisible) {
+    options += FrameForPointOption::OnlyVisible;
   }
 
   auto flush = aFlushLayout ? FlushLayout::Yes : FlushLayout::No;
@@ -587,6 +591,26 @@ nsRadioGroupStruct* DocumentOrShadowRoot::GetOrCreateRadioGroup(
 
 void DocumentOrShadowRoot::Traverse(DocumentOrShadowRoot* tmp,
                                     nsCycleCollectionTraversalCallback& cb) {
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStyleSheets)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDOMStyleSheets)
+  for (StyleSheet* sheet : tmp->mStyleSheets) {
+    if (!sheet->IsApplicable()) {
+      continue;
+    }
+    // The style set or mServoStyles keep more references to it if the sheet is
+    // applicable.
+    if (tmp->mKind == Kind::ShadowRoot) {
+      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mServoStyles->sheets[i]");
+      cb.NoteXPCOMChild(sheet);
+    } else if (tmp->AsNode().AsDocument()->StyleSetFilled()) {
+      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
+          cb, "mStyleSet->mRawSet.stylist.stylesheets.author[i]");
+      cb.NoteXPCOMChild(sheet);
+    }
+  }
+  for (auto iter = tmp->mIdentifierMap.ConstIter(); !iter.Done(); iter.Next()) {
+    iter.Get()->Traverse(&cb);
+  }
   for (auto iter = tmp->mRadioGroups.Iter(); !iter.Done(); iter.Next()) {
     nsRadioGroupStruct* radioGroup = iter.UserData();
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
@@ -603,6 +627,8 @@ void DocumentOrShadowRoot::Traverse(DocumentOrShadowRoot* tmp,
 }
 
 void DocumentOrShadowRoot::Unlink(DocumentOrShadowRoot* tmp) {
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDOMStyleSheets)
+  tmp->mIdentifierMap.Clear();
   tmp->mRadioGroups.Clear();
 }
 

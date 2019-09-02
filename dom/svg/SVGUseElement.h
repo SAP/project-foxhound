@@ -13,8 +13,8 @@
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsStubMutationObserver.h"
-#include "nsSVGLength2.h"
-#include "SVGString.h"
+#include "SVGAnimatedLength.h"
+#include "SVGAnimatedString.h"
 #include "nsTArray.h"
 
 class nsIContent;
@@ -49,9 +49,8 @@ class SVGUseElement final : public SVGUseElementBase,
  public:
   NS_IMPL_FROMNODE_WITH_TAG(SVGUseElement, kNameSpaceID_SVG, use)
 
-  nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                      nsIContent* aBindingParent) override;
-  void UnbindFromTree(bool aDeep = true, bool aNullParent = true) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
@@ -75,11 +74,11 @@ class SVGUseElement final : public SVGUseElementBase,
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedString> Href();
-  already_AddRefed<SVGAnimatedLength> X();
-  already_AddRefed<SVGAnimatedLength> Y();
-  already_AddRefed<SVGAnimatedLength> Width();
-  already_AddRefed<SVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedString> Href();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
 
   nsIURI* GetSourceDocURI();
   URLExtraData* GetContentURLData() const { return mContentURLData; }
@@ -140,11 +139,11 @@ class SVGUseElement final : public SVGUseElementBase,
   void UnlinkSource();
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  nsSVGLength2 mLengthAttributes[4];
+  SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 
   enum { HREF, XLINK_HREF };
-  SVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 
   RefPtr<SVGUseElement> mOriginal;  // if we've been cloned, our "real" copy

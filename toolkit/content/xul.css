@@ -26,7 +26,13 @@
 @namespace xbl url("http://www.mozilla.org/xbl"); /* namespace for XBL elements */
 
 :root {
+  text-rendering: optimizeLegibility;
+  -moz-control-character-visibility: visible;
   --animation-easing-function: cubic-bezier(.07, .95, 0, 1);
+}
+
+:root:-moz-locale-dir(rtl) {
+  direction: rtl;
 }
 
 /* ::::::::::
@@ -73,7 +79,6 @@ xbl|children {
 
 button,
 checkbox,
-datepicker[type="grid"],
 menulist,
 radiogroup,
 tree,
@@ -98,52 +103,19 @@ vbox {
 }
 
 /********** label **********/
-
 label.text-link, label[onclick] {
   -moz-user-focus: normal;
-  -moz-binding: none;
-}
-
-label[control], label.radio-label, label.checkbox-label, label.toolbarbutton-multiline-text {
-  -moz-binding: url("chrome://global/content/bindings/text.xml#label-control");
 }
 
 label html|span.accesskey {
   text-decoration: underline;
 }
 
-/********** button **********/
-
-button {
-  -moz-binding: url("chrome://global/content/bindings/button.xml#button");
-}
-
-button[type="menu"] {
-  -moz-binding: url("chrome://global/content/bindings/button.xml#menu");
-}
-
 /********** toolbarbutton **********/
-
-toolbarbutton {
-  -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#toolbarbutton");
-}
-
-toolbarbutton.badged-button > toolbarbutton,
-toolbarbutton.badged-button {
-  -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#toolbarbutton-badged");
-}
 
 .toolbarbutton-badge:not([value]),
 .toolbarbutton-badge[value=""] {
   display: none;
-}
-
-toolbarbutton[type="menu"] {
-  -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#menu");
-}
-
-toolbarbutton.badged-button[type="menu"] {
-  -moz-binding: url("chrome://global/content/bindings/toolbarbutton.xml#toolbarbutton-badged-menu");
 }
 
 toolbarbutton:not([type="menu"]) > .toolbarbutton-menu-dropmarker,
@@ -185,10 +157,6 @@ popupnotification {
 
 radiogroup {
   -moz-box-orient: vertical;
-}
-
-radio {
-  -moz-binding: url("chrome://global/content/bindings/radio.xml#radio");
 }
 
 /******** groupbox *********/
@@ -250,50 +218,16 @@ toolbarspring {
 
 /********* menu ***********/
 
-menubar > menu {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menu-menubar");
-}
-
-menubar > menu.menu-iconic {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menu-menubar-iconic");
-}
-
-menu {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menu");
-}
-
-menu.menu-iconic {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menu-iconic");
-}
-
 menubar > menu:empty {
   visibility: collapse;
-}
-
-/********* menuitem ***********/
-
-menuitem {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem");
-}
-
-menuitem.menuitem-iconic {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic");
-}
-
-menuitem[type="checkbox"],
-menuitem[type="radio"] {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic");
 }
 
 .menu-text {
   -moz-box-flex: 1;
 }
 
-/********* popup & menupopup ***********/
+/********* menupopup, panel, & tooltip ***********/
 
-/* <popup> is deprecated.  Only <menupopup> and <tooltip> are still valid. */
-
-popup,
 menupopup {
   -moz-binding: url("chrome://global/content/bindings/popup.xml#popup");
   -moz-box-orient: vertical;
@@ -304,7 +238,6 @@ panel {
   -moz-box-orient: vertical;
 }
 
-popup,
 menupopup,
 panel,
 tooltip {
@@ -323,73 +256,72 @@ panel[type="arrow"] {
   -moz-binding: url("chrome://global/content/bindings/popup.xml#arrowpanel");
 }
 
+@supports -moz-bool-pref("xul.panel-animations.enabled") {
 %ifdef MOZ_WIDGET_COCOA
+  /* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
+     instead of "transform" and "opacity" for these animations.
+     The -moz-window* properties apply to the whole window including the window's
+     shadow, and they don't affect the window's "shape", so the system doesn't
+     have to recompute the shadow shape during the animation. This makes them a
+     lot faster. In fact, Gecko no longer triggers shadow shape recomputations
+     for repaints.
+     These properties are not implemented on other platforms. */
+  panel[type="arrow"]:not([animate="false"]) {
+    -moz-window-opacity: 0;
+    -moz-window-transform: translateY(-70px);
+    transition-property: -moz-window-transform, -moz-window-opacity;
+    transition-duration: 0.18s, 0.18s;
+    transition-timing-function:
+      var(--animation-easing-function), ease-out;
+  }
 
-/* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
-   instead of "transform" and "opacity" for these animations.
-   The -moz-window* properties apply to the whole window including the window's
-   shadow, and they don't affect the window's "shape", so the system doesn't
-   have to recompute the shadow shape during the animation. This makes them a
-   lot faster. In fact, Gecko no longer triggers shadow shape recomputations
-   for repaints.
-   These properties are not implemented on other platforms. */
-panel[type="arrow"][side]:not([animate="false"]) {
-  -moz-window-opacity: 0;
-  -moz-window-transform: translateY(-70px);
-  transition-property: -moz-window-transform, -moz-window-opacity;
-  transition-duration: 0.18s, 0.18s;
-  transition-timing-function:
-    var(--animation-easing-function), ease-out;
-}
+  panel[type="arrow"][side="bottom"]:not([animate="false"]) {
+    -moz-window-transform: translateY(70px);
+  }
 
-panel[type="arrow"][side="bottom"]:not([animate="false"]) {
-  -moz-window-transform: translateY(70px);
-}
+  /* [animate] is here only so that this rule has greater specificity than the
+   * rule right above */
+  panel[type="arrow"][animate][animate="open"] {
+    -moz-window-opacity: 1.0;
+    transition-duration: 0.18s, 0.18s;
+    -moz-window-transform: none;
+    transition-timing-function:
+      var(--animation-easing-function), ease-in-out;
+  }
 
-panel[type="arrow"][side][animate="open"] {
-  -moz-window-opacity: 1.0;
-  transition-duration: 0.18s, 0.18s;
-  -moz-window-transform: none;
-  transition-timing-function:
-    var(--animation-easing-function), ease-in-out;
-}
+  panel[type="arrow"][animate][animate="cancel"] {
+    -moz-window-transform: none;
+  }
+%else
+  panel[type="arrow"]:not([animate="false"]) {
+    opacity: 0;
+    transform: translateY(-70px);
+    transition-property: transform, opacity;
+    transition-duration: 0.18s, 0.18s;
+    transition-timing-function:
+      var(--animation-easing-function), ease-out;
+  }
 
-panel[type="arrow"][side][animate="cancel"] {
-  -moz-window-transform: none;
-}
+  panel[type="arrow"][side="bottom"]:not([animate="false"]) {
+    transform: translateY(70px);
+  }
 
-%elifndef MOZ_WIDGET_GTK
+  /* [animate] is here only so that this rule has greater specificity than the
+   * rule right above */
+  panel[type="arrow"][animate][animate="open"] {
+    opacity: 1.0;
+    transition-duration: 0.18s, 0.18s;
+    transform: none;
+    transition-timing-function:
+      var(--animation-easing-function), ease-in-out;
+  }
 
-panel[type="arrow"][side] {
-  will-change: transform, opacity; /* workaround for bug 1414033 */
-}
-
-panel[type="arrow"][side]:not([animate="false"]) {
-  opacity: 0;
-  transform: translateY(-70px);
-  transition-property: transform, opacity;
-  transition-duration: 0.18s, 0.18s;
-  transition-timing-function:
-    var(--animation-easing-function), ease-out;
-}
-
-panel[type="arrow"][side="bottom"]:not([animate="false"]) {
-  transform: translateY(70px);
-}
-
-panel[type="arrow"][side][animate="open"] {
-  opacity: 1.0;
-  transition-duration: 0.18s, 0.18s;
-  transform: none;
-  transition-timing-function:
-    var(--animation-easing-function), ease-in-out;
-}
-
-panel[type="arrow"][side][animate="cancel"] {
-  transform: none;
-}
-
+  panel[type="arrow"][animate][animate="cancel"] {
+    transform: none;
+  }
 %endif
+}
+
 panel[type="arrow"][animating] {
   pointer-events: none;
 }
@@ -476,12 +408,10 @@ tabbox {
 }
 
 tabs {
-  -moz-binding: url("chrome://global/content/bindings/tabbox.xml#tabs");
   -moz-box-orient: horizontal;
 }
 
 tab {
-  -moz-binding: url("chrome://global/content/bindings/tabbox.xml#tab");
   -moz-box-align: center;
   -moz-box-pack: center;
 }
@@ -519,8 +449,8 @@ textbox {
   text-shadow: none;
 }
 
-textbox[type="search"] {
-  -moz-binding: url("chrome://global/content/bindings/textbox.xml#search-textbox");
+textbox[is="search-textbox"] {
+  -moz-binding: none;
 }
 
 /* Prefix with (xul|*):root to workaround HTML tests loading xul.css */
@@ -589,10 +519,6 @@ menulist[popuponly="true"] {
   border: 0 !important;
 }
 
-menulist > menupopup > menuitem {
-  -moz-binding: url("chrome://global/content/bindings/menu.xml#menuitem-iconic-noaccel");
-}
-
 menulist > menupopup > .popup-internal-box > .scrollbutton-up,
 menulist > menupopup > .popup-internal-box > .arrowscrollbox-overflow-start-indicator,
 menulist > menupopup > .popup-internal-box > .arrowscrollbox-overflow-end-indicator,
@@ -602,10 +528,6 @@ menulist > menupopup > .popup-internal-box > .scrollbutton-down {
 
 menulist > menupopup > .popup-internal-box > .arrowscrollbox-scrollbox {
   overflow: auto;
-}
-
-dropmarker > .dropmarker-icon {
-  pointer-events: none;
 }
 
 /********** splitter **********/
@@ -652,7 +574,6 @@ stringbundleset {
 
 dialog,
 dialog:root /* override :root from above */ {
-  -moz-binding: url("chrome://global/content/bindings/dialog.xml#dialog");
   -moz-box-orient: vertical;
 }
 
@@ -666,7 +587,6 @@ page {
 
 wizard,
 wizard:root /* override :root from above */ {
-  -moz-binding: url("chrome://global/content/bindings/wizard.xml#wizard");
   -moz-box-orient: vertical;
   width: 40em;
   height: 30em;
@@ -677,25 +597,12 @@ wizardpage {
   overflow: auto;
 }
 
-.wizard-header {
-  -moz-binding: url("chrome://global/content/bindings/wizard.xml#wizard-header");
-}
-
-.wizard-buttons {
-  -moz-binding: url("chrome://global/content/bindings/wizard.xml#wizard-buttons");
-}
-
 /********** Rich Listbox ********/
 
 richlistbox {
   -moz-user-focus: normal;
   -moz-box-orient: vertical;
 }
-
-richlistitem {
-  -moz-binding: url('chrome://global/content/bindings/richlistbox.xml#richlistitem');
-}
-
 
 /*********** findbar ************/
 findbar {
@@ -708,8 +615,6 @@ tabmodalprompt {
   text-shadow: none;
 }
 
-.button-highlightable-text:not([highlightable="true"]),
-.button-text[highlightable="true"],
 .menulist-highlightable-label:not([highlightable="true"]),
 .menulist-label[highlightable="true"],
 .menu-iconic-highlightable-text:not([highlightable="true"]),

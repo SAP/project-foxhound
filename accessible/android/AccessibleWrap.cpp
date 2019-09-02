@@ -13,10 +13,13 @@
 #include "SessionAccessibility.h"
 #include "nsAccessibilityService.h"
 #include "nsPersistentProperties.h"
+#include "nsIAccessibleAnnouncementEvent.h"
 #include "nsIStringBundle.h"
 #include "nsAccUtils.h"
+#include "nsTextEquivUtils.h"
 
 #include "mozilla/a11y/PDocAccessibleChild.h"
+#include "mozilla/jni/GeckoBundleUtils.h"
 
 #define ROLE_STRINGS_URL "chrome://global/locale/AccessFu.properties"
 
@@ -84,6 +87,8 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
   nsresult rv = Accessible::HandleAccEvent(aEvent);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  accessible->HandleLiveRegionEvent(aEvent);
+
   if (IPCAccessibilityActive()) {
     return NS_OK;
   }
@@ -100,7 +105,7 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
     }
   }
 
-  SessionAccessibility* sessionAcc =
+  RefPtr<SessionAccessibility> sessionAcc =
       SessionAccessibility::GetInstanceFor(accessible);
   if (!sessionAcc) {
     return NS_OK;
@@ -112,7 +117,8 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
       break;
     case nsIAccessibleEvent::EVENT_VIRTUALCURSOR_CHANGED: {
       AccVCChangeEvent* vcEvent = downcast_accEvent(aEvent);
-      auto newPosition = static_cast<AccessibleWrap*>(vcEvent->NewAccessible());
+      RefPtr<AccessibleWrap> newPosition =
+          static_cast<AccessibleWrap*>(vcEvent->NewAccessible());
       auto oldPosition = static_cast<AccessibleWrap*>(vcEvent->OldAccessible());
 
       if (sessionAcc && newPosition) {
@@ -167,6 +173,12 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
       sessionAcc->SendScrollingEvent(accessible, event->ScrollX(),
                                      event->ScrollY(), event->MaxScrollX(),
                                      event->MaxScrollY());
+      break;
+    }
+    case nsIAccessibleEvent::EVENT_ANNOUNCEMENT: {
+      AccAnnouncementEvent* event = downcast_accEvent(aEvent);
+      sessionAcc->SendAnnouncementEvent(accessible, event->Announcement(),
+                                        event->Priority());
       break;
     }
     default:
@@ -312,11 +324,11 @@ void AccessibleWrap::GetRoleDescription(role aRole,
 
   if (aRole == roles::HEADING && aAttributes) {
     // The heading level is an attribute, so we need that.
-    nsString level;
-    rv = aAttributes->GetStringProperty(NS_LITERAL_CSTRING("level"), level);
+    AutoTArray<nsString, 1> formatString;
+    rv = aAttributes->GetStringProperty(NS_LITERAL_CSTRING("level"),
+                                        *formatString.AppendElement());
     if (NS_SUCCEEDED(rv)) {
-      const char16_t* formatString[] = {level.get()};
-      rv = bundle->FormatStringFromName("headingLevel", formatString, 1,
+      rv = bundle->FormatStringFromName("headingLevel", formatString,
                                         aRoleDescription);
       if (NS_SUCCEEDED(rv)) {
         return;
@@ -612,4 +624,78 @@ mozilla::java::GeckoBundle::LocalRef AccessibleWrap::ToBundle(
   GECKOBUNDLE_FINISH(nodeInfo);
 
   return nodeInfo;
+}
+
+void AccessibleWrap::GetTextEquiv(nsString& aText) {
+  if (nsTextEquivUtils::HasNameRule(this, eNameFromSubtreeIfReqRule)) {
+    // This is an accessible that normally doesn't get its name from its
+    // subtree, so we collect the text equivalent explicitly.
+    nsTextEquivUtils::GetTextEquivFromSubtree(this, aText);
+  } else {
+    Name(aText);
+  }
+}
+
+bool AccessibleWrap::HandleLiveRegionEvent(AccEvent* aEvent) {
+  auto eventType = aEvent->GetEventType();
+  if (eventType != nsIAccessibleEvent::EVENT_TEXT_INSERTED &&
+      eventType != nsIAccessibleEvent::EVENT_NAME_CHANGE) {
+    // XXX: Right now only announce text inserted events. aria-relevant=removals
+    // is potentially on the chopping block[1]. We also don't support editable
+    // text because we currently can't descern the source of the change[2].
+    // 1. https://github.com/w3c/aria/issues/712
+    // 2. https://bugzilla.mozilla.org/show_bug.cgi?id=1531189
+    return false;
+  }
+
+  if (aEvent->IsFromUserInput()) {
+    return false;
+  }
+
+  nsCOMPtr<nsIPersistentProperties> attributes = Attributes();
+  nsString live;
+  nsresult rv =
+      attributes->GetStringProperty(NS_LITERAL_CSTRING("container-live"), live);
+  if (!NS_SUCCEEDED(rv)) {
+    return false;
+  }
+
+  uint16_t priority = live.EqualsIgnoreCase("assertive")
+                          ? nsIAccessibleAnnouncementEvent::ASSERTIVE
+                          : nsIAccessibleAnnouncementEvent::POLITE;
+
+  nsString atomic;
+  rv = attributes->GetStringProperty(NS_LITERAL_CSTRING("container-atomic"),
+                                     atomic);
+
+  Accessible* announcementTarget = this;
+  nsAutoString announcement;
+  if (atomic.EqualsIgnoreCase("true")) {
+    Accessible* atomicAncestor = nullptr;
+    for (Accessible* parent = announcementTarget; parent;
+         parent = parent->Parent()) {
+      Element* element = parent->Elm();
+      if (element &&
+          element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::aria_atomic,
+                               nsGkAtoms::_true, eCaseMatters)) {
+        atomicAncestor = parent;
+        break;
+      }
+    }
+
+    if (atomicAncestor) {
+      announcementTarget = atomicAncestor;
+      static_cast<AccessibleWrap*>(atomicAncestor)->GetTextEquiv(announcement);
+    }
+  } else {
+    GetTextEquiv(announcement);
+  }
+
+  announcement.CompressWhitespace();
+  if (announcement.IsEmpty()) {
+    return false;
+  }
+
+  announcementTarget->Announce(announcement, priority);
+  return true;
 }

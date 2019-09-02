@@ -19,50 +19,6 @@
 <!ENTITY navbarOverflow.label                "More tools…">
 
 <!-- Tab context menu -->
-<!ENTITY  reloadTab.label                    "Reload Tab">
-<!ENTITY  reloadTab.accesskey                "R">
-<!ENTITY  selectAllTabs.label                "Select All Tabs">
-<!ENTITY  selectAllTabs.accesskey            "S">
-<!-- LOCALIZATION NOTE (duplicateTab.label): This is a command to duplicate
-a tab (i.e. it is a verb, not adjective). -->
-<!ENTITY  duplicateTab.label                 "Duplicate Tab">
-<!-- LOCALIZATION NOTE (duplicateTab.accesskey, duplicateTabs.accesskey):
-These items have the same accesskey but will never be visible at the same time. -->
-<!ENTITY  duplicateTab.accesskey             "D">
-<!-- LOCALIZATION NOTE (duplicateTabs.label): This is a command to duplicate
-a tab (i.e. it is a verb, not adjective). -->
-<!ENTITY  duplicateTabs.label                "Duplicate Tabs">
-<!-- LOCALIZATION NOTE (duplicateTab.accesskey, duplicateTabs.accesskey):
-These items have the same accesskey but will never be visible at the same time. -->
-<!ENTITY  duplicateTabs.accesskey            "D">
-<!-- LOCALIZATION NOTE (closeTabsToTheEnd.label): This should indicate the
-direction in which tabs are closed, i.e. locales that use RTL mode should say
-left instead of right. -->
-<!ENTITY  closeTabsToTheEnd.label            "Close Tabs to the Right">
-<!ENTITY  closeTabsToTheEnd.accesskey        "i">
-<!ENTITY  closeOtherTabs.label               "Close Other Tabs">
-<!ENTITY  closeOtherTabs.accesskey           "o">
-
-<!ENTITY  closeTabs.label                    "Close Tabs">
-<!ENTITY  closeTabs.accesskey                "S">
-<!ENTITY  pinSelectedTabs.label              "Pin Tabs">
-<!-- LOCALIZATION NOTE(pinTab.accesskey, pinSelectedTabs.accesskey,
-unpinTab.accesskey, unpinSelectedTabs.accesskey): These share the
-same accesskey but will never be visible at the same time. -->
-<!ENTITY  pinSelectedTabs.accesskey          "P">
-<!ENTITY  unpinSelectedTabs.label            "Unpin Tabs">
-<!-- LOCALIZATION NOTE(pinTab.accesskey, pinSelectedTabs.accesskey,
-unpinTab.accesskey, unpinSelectedTabs.accesskey): These share the
-same accesskey but will never be visible at the same time. -->
-<!ENTITY  unpinSelectedTabs.accesskey        "p">
-<!-- LOCALIZATION NOTE(reloadTab.label, reloadTabs.label): have the same accesskey
-but will never be visible at the same time. -->
-<!ENTITY  reloadTabs.label                   "Reload Tabs">
-<!ENTITY  reloadTabs.accesskey               "R">
-<!ENTITY  bookmarkSelectedTabs.label         "Bookmark Tabs…">
-<!-- LOCALIZATION NOTE(bookmarkTab.accesskey, bookmarkSelectedTabs.accesskey):
-These items have the same accesskey but will never be visible at the same time. -->
-<!ENTITY  bookmarkSelectedTabs.accesskey     "B">
 
 <!-- LOCALIZATION NOTE (pinTab.label, unpinTab.label): "Pin" is being
 used as a metaphor for expressing the fact that these tabs are "pinned" to the
@@ -83,28 +39,8 @@ same accesskey but will never be visible at the same time. -->
 <!ENTITY  sendPageToDevice.accesskey         "n">
 <!ENTITY  sendLinkToDevice.label             "Send Link to Device">
 <!ENTITY  sendLinkToDevice.accesskey         "n">
-<!-- LOCALIZATION NOTE (moveTabOptions.label and moveSelectedTabOptions.label):
-These two items have the same accesskey but will never be visible at the same time. -->
-<!ENTITY  moveTabOptions.label               "Move Tab">
-<!ENTITY  moveTabOptions.accesskey           "v">
-<!ENTITY  moveSelectedTabOptions.label       "Move Tabs">
-<!ENTITY  moveSelectedTabOptions.accesskey   "v">
-<!ENTITY  moveToStart.label                  "Move to Start">
-<!ENTITY  moveToStart.accesskey              "S">
-<!ENTITY  moveToEnd.label                    "Move to End">
-<!ENTITY  moveToEnd.accesskey                "E">
-<!ENTITY  moveToNewWindow.label              "Move to New Window">
-<!ENTITY  moveToNewWindow.accesskey          "W">
-<!ENTITY  reopenInContainer.label            "Reopen in Container">
-<!ENTITY  reopenInContainer.accesskey        "e">
-<!ENTITY  bookmarkTab.label                  "Bookmark Tab">
-<!-- LOCALIZATION NOTE(bookmarkTab.accesskey, bookmarkSelectedTabs.accesskey):
-These items have the same accesskey but will never be visible at the same time. -->
-<!ENTITY  bookmarkTab.accesskey              "B">
 <!ENTITY  undoCloseTab.label                 "Undo Close Tab">
 <!ENTITY  undoCloseTab.accesskey             "U">
-<!ENTITY  closeTab.label                     "Close Tab">
-<!ENTITY  closeTab.accesskey                 "c">
 <!ENTITY  hiddenTabs.label                   "Hidden Tabs">
 
 <!ENTITY  listAllTabs.label      "List all tabs">
@@ -143,31 +79,6 @@ when there are no windows but Firefox is still running. -->
 <!ENTITY personalbarCmd.label "Bookmarks Toolbar">
 <!ENTITY personalbarCmd.accesskey "B">
 <!ENTITY bookmarksToolbarItem.label "Bookmarks Toolbar Items">
-
-<!ENTITY toolbarContextMenu.reloadSelectedTab.label "Reload Selected Tab">
-<!-- LOCALIZATION NOTE (toolbarContextMenu.reloadSelectedTab.accesskey,
-toolbarContextMenu.reloadSelectedTabs.accesskey): These share the
-same accesskey but will never be visible at the same time. -->
-<!ENTITY toolbarContextMenu.reloadSelectedTab.accesskey "R">
-<!ENTITY toolbarContextMenu.reloadSelectedTabs.label "Reload Selected Tabs">
-<!-- LOCALIZATION NOTE (toolbarContextMenu.reloadSelectedTab.accesskey,
-toolbarContextMenu.reloadSelectedTabs.accesskey): These share the
-same accesskey but will never be visible at the same time. -->
-<!ENTITY toolbarContextMenu.reloadSelectedTabs.accesskey "R">
-<!ENTITY toolbarContextMenu.bookmarkSelectedTab.label "Bookmark Selected Tab…">
-<!-- LOCALIZATION NOTE (toolbarContextMenu.bookmarkSelectedTab.accesskey,
-toolbarContextMenu.bookmarkSelectedTabs.accesskey): These share the
-same accesskey but will never be visible at the same time. -->
-<!ENTITY toolbarContextMenu.bookmarkSelectedTab.accesskey "T">
-<!ENTITY toolbarContextMenu.bookmarkSelectedTabs.label "Bookmark Selected Tabs…">
-<!-- LOCALIZATION NOTE (toolbarContextMenu.bookmarkSelectedTab.accesskey,
-toolbarContextMenu.bookmarkSelectedTabs.accesskey): These share the
-same accesskey but will never be visible at the same time. -->
-<!ENTITY toolbarContextMenu.bookmarkSelectedTabs.accesskey "T">
-<!ENTITY toolbarContextMenu.selectAllTabs.label "Select All Tabs">
-<!ENTITY toolbarContextMenu.selectAllTabs.accesskey "S">
-<!ENTITY toolbarContextMenu.undoCloseTab.label "Undo Close Tab">
-<!ENTITY toolbarContextMenu.undoCloseTab.accesskey "U">
 
 <!ENTITY pageSourceCmd.label "Page Source">
 <!ENTITY pageSourceCmd.accesskey "o">
@@ -232,7 +143,7 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY fxa.menu.signedInAs.label "Signed in as">
 <!ENTITY fxa.menu.manageAccount.label "Manage Account…">
 <!ENTITY fxa.menu.syncSettings.label "&syncBrand.shortName.label; Settings…">
-<!ENTITY fxa.menu.connectAnotherDevice.label "&syncedTabs.sidebar.connectAnotherDevice;">
+<!ENTITY fxa.menu.connectAnotherDevice2.label "Connect Another Device…">
 <!ENTITY fxa.menu.firefoxAccount "&syncBrand.fxAccount.label;">
 
 <!-- LOCALIZATION NOTE (fullscreenWarning.beforeDomain.label,
@@ -251,6 +162,12 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY exitDOMFullscreenMac.button "Exit Full Screen (esc)">
 <!ENTITY leaveDOMFullScreen.label "Exit Full Screen">
 <!ENTITY leaveDOMFullScreen.accesskey "u">
+
+<!-- LOCALIZATION NOTE (pictureInPicture.label, pictureInPicture.accesskey):
+     these two strings are used when right-clicking on a video in the
+     content area when the Picture-in-Picture feature is enabled. -->
+<!ENTITY pictureInPicture.label "Picture-in-Picture">
+<!ENTITY pictureInPicture.accesskey "u">
 
 <!-- LOCALIZATION NOTE (pointerlockWarning.beforeDomain.label,
      pointerlockWarning.afterDomain.label): these two strings are used
@@ -331,6 +248,7 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY urlbar.canvasBlocked.tooltip            "You have blocked canvas data extraction for this website.">
 <!ENTITY urlbar.flashPluginBlocked.tooltip       "You have blocked this website from using the Adobe Flash plugin.">
 <!ENTITY urlbar.midiBlocked.tooltip              "You have blocked MIDI access for this website.">
+<!ENTITY urlbar.installBlocked.tooltip           "You have blocked add-on installation for this website.">
 
 <!ENTITY urlbar.openHistoryPopup.tooltip                "Show history">
 
@@ -460,6 +378,7 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY appMenuHistory.clearRecent.label "Clear Recent History…">
 <!ENTITY appMenuHistory.restoreSession.label "Restore Previous Session">
 <!ENTITY appMenuHistory.viewSidebar.label "View History Sidebar">
+<!ENTITY appMenuHistory.hideSidebar.label "Hide History Sidebar">
 <!ENTITY appMenuHistory.recentHistory.label "Recent History">
 <!ENTITY appMenuHelp.label "Help">
 
@@ -488,6 +407,7 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY appMenuRemoteTabs.signin.label "Sign in to Sync">
 <!ENTITY appMenuRemoteTabs.managedevices.label "Manage Devices…">
 <!ENTITY appMenuRemoteTabs.sidebar.label "View Synced Tabs Sidebar">
+<!ENTITY appMenuRemoteTabs.hidesidebar.label "Hide Synced Tabs Sidebar">
 <!ENTITY appMenuRemoteTabs.connectdevice.label "Connect Another Device">
 
 <!ENTITY appMenuRecentHighlights.label "Recent Highlights">
@@ -517,6 +437,11 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY customizeMenu.manageExtension.accesskey "E">
 <!ENTITY customizeMenu.removeExtension.label "Remove Extension">
 <!ENTITY customizeMenu.removeExtension.accesskey "v">
+<!-- LOCALIZATION NOTE (reportExtension.label) This label is used in the extensions
+     toolbar buttons context menus, a user can use this command to submit to Mozilla
+     an abuse report related to that extension. "Report" is a verb. -->
+<!ENTITY customizeMenu.reportExtension.label "Report Extension">
+<!ENTITY customizeMenu.reportExtension.accesskey "o">
 
 <!-- LOCALIZATION NOTE (moreMenu.label) This label is used in the new Photon
     app (hamburger) menu. When clicked, it opens a subview that contains
@@ -866,6 +791,7 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 <!ENTITY identity.connectionInternal "This is a secure &brandShortName; page.">
 <!ENTITY identity.extensionPage "This page is loaded from an extension.">
 <!ENTITY identity.insecureLoginForms2 "Logins entered on this page could be compromised.">
+<!ENTITY identity.customRoot "Connection verified by a certificate issuer that is not recognized by Mozilla.">
 
 <!-- Strings for connection state warnings. -->
 <!ENTITY identity.activeBlocked "&brandShortName; has blocked parts of this page that are not secure.">
@@ -884,6 +810,7 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 <!ENTITY identity.description.passiveLoaded3 "Although &brandShortName; has blocked some content, there is still content on the page that is not secure (such as images).">
 <!ENTITY identity.description.activeLoaded "This website contains content that is not secure (such as scripts) and your connection to it is not private.">
 <!ENTITY identity.description.activeLoaded2 "Information you share with this site could be viewed by others (like passwords, messages, credit cards, etc.).">
+<!ENTITY identity.description.customRoot "Mozilla does not recognize this certificate issuer. It may have been added from your operating system or by an administrator.">
 
 <!ENTITY identity.enableMixedContentBlocking.label "Enable protection">
 <!ENTITY identity.enableMixedContentBlocking.accesskey "E">
@@ -913,40 +840,6 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 <!ENTITY syncTabsMenu3.label     "Synced Tabs">
 
 <!ENTITY syncedTabs.sidebar.label              "Synced Tabs">
-<!ENTITY syncedTabs.sidebar.noclients.label    "Sign in to Firefox from your other devices to view their tabs here.">
-<!ENTITY syncedTabs.sidebar.noclients.subtitle "Want to see your tabs from other devices here?">
-<!ENTITY syncedTabs.sidebar.notsignedin.label  "Sign in to view a list of tabs from your other devices.">
-<!ENTITY syncedTabs.sidebar.unverified.label   "Your account needs to be verified.">
-<!ENTITY syncedTabs.sidebar.notabs.label       "No open tabs">
-<!ENTITY syncedTabs.sidebar.openprefs.label    "Open &syncBrand.shortName.label; Preferences">
-<!-- LOCALIZATION NOTE (syncedTabs.sidebar.tabsnotsyncing.label): This is shown
-     when Sync is configured but syncing tabs is disabled. -->
-<!ENTITY syncedTabs.sidebar.tabsnotsyncing.label       "Turn on tab syncing to view a list of tabs from your other devices.">
-<!ENTITY syncedTabs.sidebar.searchPlaceholder  "Search synced tabs">
-<!ENTITY syncedTabs.sidebar.connectAnotherDevice  "Connect Another Device">
-
-<!-- LOCALIZATION NOTE (syncedTabs.context.open.accesskey,
-                        syncedTabs.context.openAllInTabs.accesskey):
-     These access keys are identical because their associated menu items are
-     mutually exclusive -->
-<!ENTITY syncedTabs.context.open.label                       "Open">
-<!ENTITY syncedTabs.context.open.accesskey                   "O">
-<!ENTITY syncedTabs.context.openInNewTab.label               "Open in a New Tab">
-<!ENTITY syncedTabs.context.openInNewTab.accesskey           "w">
-<!ENTITY syncedTabs.context.openInNewWindow.label            "Open in a New Window">
-<!ENTITY syncedTabs.context.openInNewWindow.accesskey        "N">
-<!ENTITY syncedTabs.context.openInNewPrivateWindow.label     "Open in a New Private Window">
-<!ENTITY syncedTabs.context.openInNewPrivateWindow.accesskey "P">
-<!ENTITY syncedTabs.context.bookmarkSingleTab.label          "Bookmark This Tab…">
-<!ENTITY syncedTabs.context.bookmarkSingleTab.accesskey      "B">
-<!ENTITY syncedTabs.context.copy.label                       "Copy">
-<!ENTITY syncedTabs.context.copy.accesskey                   "C">
-
-<!ENTITY syncedTabs.context.openAllInTabs.label              "Open All in Tabs">
-<!ENTITY syncedTabs.context.openAllInTabs.accesskey          "O">
-<!ENTITY syncedTabs.context.managedevices.label              "Manage Devices…">
-<!ENTITY syncedTabs.context.managedevices.accesskey          "D">
-
 
 <!ENTITY syncBrand.shortName.label    "Sync">
 
@@ -958,42 +851,6 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 <!ENTITY syncReAuthItem.label         "Reconnect to &syncBrand.shortName.label;…">
 <!ENTITY syncReAuthItem.accesskey     "R">
 <!ENTITY syncToolbarButton.label      "Sync">
-
-<!ENTITY customizeMode.menuAndToolbars.header3 "Drag your favorite items into the toolbar or overflow menu.">
-<!ENTITY customizeMode.restoreDefaults "Restore Defaults">
-<!ENTITY customizeMode.done "Done">
-<!ENTITY customizeMode.titlebar "Title Bar">
-<!ENTITY customizeMode.extraDragSpace "Drag Space">
-<!ENTITY customizeMode.toolbars2 "Toolbars">
-<!ENTITY customizeMode.lwthemes "Themes">
-<!ENTITY customizeMode.lwthemes.myThemes "My Themes">
-<!ENTITY customizeMode.lwthemes.recommended "Recommended">
-<!ENTITY customizeMode.lwthemes.menuManage "Manage">
-<!ENTITY customizeMode.lwthemes.menuManage.accessKey "M">
-<!ENTITY customizeMode.lwthemes.menuGetMore "Get More Themes">
-<!ENTITY customizeMode.lwthemes.menuGetMore.accessKey "G">
-<!ENTITY customizeMode.overflowList.title2 "Overflow Menu">
-<!ENTITY customizeMode.overflowList.description "Drag and drop items here to keep them within reach but out of your toolbar…">
-<!ENTITY customizeMode.uidensity "Density">
-<!-- LOCALIZATION NOTE (customizeMode.uidensity.menuNormal.*):
-     “Normal” is displayed in the Customize screen, under the Density menu. -->
-<!ENTITY customizeMode.uidensity.menuNormal.label "Normal">
-<!ENTITY customizeMode.uidensity.menuNormal.tooltip "Normal">
-<!ENTITY customizeMode.uidensity.menuNormal.accessKey "N">
-<!-- LOCALIZATION NOTE (customizeMode.uidensity.menuCompact.*):
-     “Compact” is displayed in the Customize screen, under the Density menu.
-     It’s an adjective (Density -> Compact). -->
-<!ENTITY customizeMode.uidensity.menuCompact.label "Compact">
-<!ENTITY customizeMode.uidensity.menuCompact.tooltip "Compact">
-<!ENTITY customizeMode.uidensity.menuCompact.accessKey "C">
-<!-- LOCALIZATION NOTE (customizeMode.uidensity.menuTouch.*):
-     “Touch” is displayed in the Customize screen, under the Density menu.
-     It’s an adjective (Density -> Touch), and it means that control layout is
-     optimized for touch devices. -->
-<!ENTITY customizeMode.uidensity.menuTouch.label "Touch">
-<!ENTITY customizeMode.uidensity.menuTouch.tooltip "Touch">
-<!ENTITY customizeMode.uidensity.menuTouch.accessKey "T">
-<!ENTITY customizeMode.uidensity.autoTouchMode.checkbox.label "Use Touch for Tablet Mode">
 
 <!ENTITY customizeMode.autoHideDownloadsButton.label "Auto-hide">
 
@@ -1061,27 +918,6 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 
 <!ENTITY uiTour.infoPanel.close "Close">
 
-<!-- LOCALIZATION NOTE: (panicButton.view.mainTimeframeDesc, panicButton.view.5min, panicButton.view.2hr, panicButton.view.day):
-     The .mainTimeframeDesc string combined with any of the 3 others is meant to form a complete sentence, e.g. "Forget the last: Five minutes".
-     Please ensure that this remains the case in the translation. -->
-<!ENTITY panicButton.view.mainTimeframeDesc       "Forget the last:">
-<!ENTITY panicButton.view.5min                    "Five minutes">
-<!ENTITY panicButton.view.2hr                     "Two hours">
-<!ENTITY panicButton.view.day                     "24 hours">
-
-<!-- LOCALIZATION NOTE: (panicButton.view.mainLabel, panicButton.view.deleteCookies, panicButton.view.deleteHistory, panicButton.view.deleteTabsAndWindows, panicButton.view.openNewWindow):
-     The .mainActionDesc string combined with any of the 4 others is meant to form a complete sentence, e.g. "Proceeding will: Delete Recent Cookies".
-     Note also that the deleteCookies, deleteHistory and deleteTabsAndWindows strings include <html:strong> tags for emphasis on the words "Cookies", "History", "Tabs" and "Windows".
-     The translation should do the same. -->
-<!ENTITY panicButton.view.mainActionDesc          "Proceeding will:">
-<!ENTITY panicButton.view.deleteCookies           "Delete Recent <html:strong>Cookies</html:strong>">
-<!ENTITY panicButton.view.deleteHistory           "Delete Recent <html:strong>History</html:strong>">
-<!ENTITY panicButton.view.deleteTabsAndWindows    "Close all <html:strong>Tabs</html:strong> and <html:strong>Windows</html:strong>">
-<!ENTITY panicButton.view.openNewWindow           "Open a new clean Window">
-
-<!ENTITY panicButton.view.undoWarning             "This action cannot be undone.">
-<!ENTITY panicButton.view.forgetButton            "Forget!">
-
 <!ENTITY panicButton.thankyou.msg1                "Your recent history is cleared.">
 <!ENTITY panicButton.thankyou.msg2                "Safe browsing!">
 <!ENTITY panicButton.thankyou.buttonlabel         "Thanks!">
@@ -1089,30 +925,9 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 <!ENTITY emeLearnMoreContextMenu.label            "Learn more about DRM…">
 <!ENTITY emeLearnMoreContextMenu.accesskey        "D">
 
-<!ENTITY updateAvailable.message "Update your &brandShorterName; for the latest in speed and privacy.">
-<!ENTITY updateAvailable.whatsnew.label "See what’s new.">
-<!ENTITY updateAvailable.header.message "A new &brandShorterName; update is available.">
-<!ENTITY updateAvailable.acceptButton.label "Download Update">
-<!ENTITY updateAvailable.acceptButton.accesskey "D">
-<!ENTITY updateAvailable.cancelButton.label "Not Now">
-<!ENTITY updateAvailable.cancelButton.accesskey "N">
 <!ENTITY updateAvailable.panelUI.label "Download &brandShorterName; update">
-
-<!ENTITY updateManual.message "Download a fresh copy of &brandShorterName; and we’ll help you to install it.">
-<!ENTITY updateManual.whatsnew.label "See what’s new.">
-<!ENTITY updateManual.header.message "&brandShorterName; can’t update to the latest version.">
-<!ENTITY updateManual.acceptButton.label "Download &brandShorterName;">
-<!ENTITY updateManual.acceptButton.accesskey "D">
-<!ENTITY updateManual.cancelButton.label "Not Now">
-<!ENTITY updateManual.cancelButton.accesskey "N">
 <!ENTITY updateManual.panelUI.label "Download a fresh copy of &brandShorterName;">
-
-<!ENTITY updateRestart.message2 "After a quick restart, &brandShorterName; will restore all your open tabs and windows that are not in Private Browsing mode.">
-<!ENTITY updateRestart.header.message2 "Restart to update &brandShorterName;.">
-<!ENTITY updateRestart.acceptButton.label "Restart and Restore">
-<!ENTITY updateRestart.acceptButton.accesskey "R">
-<!ENTITY updateRestart.cancelButton.label "Not Now">
-<!ENTITY updateRestart.cancelButton.accesskey "N">
+<!ENTITY updateUnsupported.panelUI.label "You cannot perform further updates">
 <!ENTITY updateRestart.panelUI.label2 "Restart to update &brandShorterName;">
 
 <!ENTITY newTabControlled.header.message "Your New Tab has changed.">
@@ -1151,18 +966,3 @@ you can use these alternative items. Otherwise, their values should be empty.  -
      used as a textual label for the indicator used by assistive technology
      users. -->
 <!ENTITY accessibilityIndicator.tooltip "Accessibility Features Enabled">
-
-<!-- LOCALIZATION NOTE: (addonPostInstallMessage.label):
-     The first <image> tag is replaced with the icon for the add-ons menu.
-     The second <image> tag is replaced with the icon for the toolbar menu. -->
-<!ENTITY addonPostInstallMessage.label "Manage your add-ons by clicking <image class='addon-addon-icon'/> in the <image class='addon-toolbar-icon'/> menu.">
-<!ENTITY addonPostInstall.incognito.checkbox.label "Allow this extension to run in Private Windows">
-<!ENTITY addonPostInstall.incognito.checkbox.accesskey "A">
-
-<!ENTITY addonPrivateBrowsing.header2.label "Change to extensions in Private Windows">
-<!ENTITY addonPrivateBrowsing.body2.label "Any new extensions you add to &brandShorterName; won’t work in Private Windows unless you allow this in the settings.">
-<!ENTITY addonPrivateBrowsing.learnMore.label "Learn how to manage extension settings">
-<!ENTITY addonPrivateBrowsing.okButton.label "Okay, Got It">
-<!ENTITY addonPrivateBrowsing.okButton.accesskey "O">
-<!ENTITY addonPrivateBrowsing.manageButton.label "Manage Extensions">
-<!ENTITY addonPrivateBrowsing.manageButton.accesskey "M">

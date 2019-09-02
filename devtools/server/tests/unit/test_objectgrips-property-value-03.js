@@ -9,66 +9,58 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
 });
 
-add_task(threadClientTest(async ({ threadClient, debuggee, client }) => {
-  debuggee.eval(function stopMe() {
-    debugger;
-  }.toString());
+add_task(
+  threadClientTest(async ({ threadClient, debuggee, client }) => {
+    debuggee.eval(
+      function stopMe() {
+        debugger;
+      }.toString()
+    );
 
-  await test_object_grip(debuggee, threadClient);
-}));
+    await test_object_grip(debuggee, threadClient);
+  })
+);
 
 async function test_object_grip(debuggee, threadClient) {
-  eval_and_resume(
-    debuggee,
-    threadClient,
-    `
-      var obj = {
-        get getter() {
-          return objects.indexOf(this);
-        },
-      };
-      var objects = [obj, {}, [], new Boolean(), new Number(), new String()];
-      stopMe(...objects);
-    `,
-    async frame => {
-      const grips = frame.arguments;
-      const objClient = threadClient.pauseGrip(grips[0]);
-      const classes = ["Object", "Object", "Array", "Boolean", "Number", "String"];
-      for (const [i, grip] of grips.entries()) {
-        Assert.equal(grip.class, classes[i]);
-        await check_getter(objClient, grip.actor, i);
-      }
-      await check_getter(objClient, null, 0);
-      await check_getter(objClient, "invalid receiver actorId", 0);
-    }
-  );
-}
-
-function eval_and_resume(debuggee, threadClient, code, callback) {
-  return new Promise((resolve, reject) => {
-    wait_for_pause(threadClient, callback).then(resolve, reject);
-
-    // This synchronously blocks until 'threadClient.resume()' above runs
-    // because the 'paused' event runs everthing in a new event loop.
-    debuggee.eval(code);
-  });
-}
-
-function wait_for_pause(threadClient, callback = () => {}) {
-  return new Promise((resolve, reject) => {
-    threadClient.addOneTimeListener("paused", function(event, packet) {
-      (async () => {
-        try {
-          return await callback(packet.frame);
-        } finally {
-          await threadClient.resume();
+  const script = `
+    var obj = {
+      get getter() {
+        return objects.indexOf(this);
+      },
+    };
+    var objects = [obj, {}, [], new Boolean(), new Number(), new String()];
+    stopMe(...objects);
+  `;
+  return new Promise(resolve => {
+    threadClient.once("paused", async function(packet) {
+      const { frame } = packet;
+      try {
+        const grips = frame.arguments;
+        const objClient = threadClient.pauseGrip(grips[0]);
+        const classes = [
+          "Object",
+          "Object",
+          "Array",
+          "Boolean",
+          "Number",
+          "String",
+        ];
+        for (const [i, grip] of grips.entries()) {
+          Assert.equal(grip.class, classes[i]);
+          await check_getter(objClient, grip.actor, i);
         }
-      })().then(resolve, reject);
+        await check_getter(objClient, null, 0);
+        await check_getter(objClient, "invalid receiver actorId", 0);
+      } finally {
+        await threadClient.resume();
+        resolve();
+      }
     });
+    debuggee.eval(script);
   });
 }
 
 async function check_getter(objClient, receiverId, expected) {
-  const {value} = await objClient.getPropertyValue("getter", receiverId);
+  const { value } = await objClient.getPropertyValue("getter", receiverId);
   Assert.equal(value.return, expected);
 }

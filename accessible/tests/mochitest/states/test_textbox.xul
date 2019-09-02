@@ -6,8 +6,7 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="nsIAccessible XUL textboxes states tests">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
 
   <script type="application/javascript"
           src="../common.js" />
@@ -113,9 +112,9 @@
     <textbox id="readonly_textbox" readonly="true"/>
     <textbox id="disabled_textbox" disabled="true"/>
 
-    <textbox id="searchbox" flex="1" type="search" results="historyTree"/>
+    <textbox id="searchbox" flex="1" is="search-textbox" results="historyTree"/>
     <textbox id="searchfield" placeholder="Search all add-ons"
-             type="search" searchbutton="true"/>
+             is="search-textbox" searchbutton="true"/>
   </vbox>
   </hbox>
 </window>

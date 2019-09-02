@@ -12,7 +12,7 @@
 #include "mozilla/ResultExtensions.h"
 
 #include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "nsXULAppAPI.h"
 
 #include "nsExternalHelperAppService.h"
@@ -43,6 +43,8 @@
 #include "nsAutoPtr.h"
 #include "nsIMutableArray.h"
 #include "nsIRedirectHistoryEntry.h"
+#include "nsOSHelperAppService.h"
+#include "nsOSHelperAppServiceChild.h"
 
 // used to access our datastore of user-configured helper applications
 #include "nsIHandlerService.h"
@@ -105,6 +107,7 @@
 #  include "FennecJNIWrappers.h"
 #endif
 
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ipc/URIUtils.h"
 
@@ -573,6 +576,32 @@ static const nsDefaultMimeTypeEntry nonDecodableExtensions[] = {
     {APPLICATION_COMPRESS, "z"},
     {APPLICATION_GZIP, "svgz"}};
 
+static StaticRefPtr<nsExternalHelperAppService> sExtHelperAppSvcSingleton;
+
+/**
+ * On Mac child processes, return an nsOSHelperAppServiceChild for remoting
+ * OS calls to the parent process. On all other platforms use
+ * nsOSHelperAppService.
+ */
+/* static */
+already_AddRefed<nsExternalHelperAppService>
+nsExternalHelperAppService::GetSingleton() {
+  if (!sExtHelperAppSvcSingleton) {
+#ifdef XP_MACOSX
+    if (XRE_IsParentProcess()) {
+      sExtHelperAppSvcSingleton = new nsOSHelperAppService();
+    } else {
+      sExtHelperAppSvcSingleton = new nsOSHelperAppServiceChild();
+    }
+#else
+    sExtHelperAppSvcSingleton = new nsOSHelperAppService();
+#endif /* XP_MACOSX */
+    ClearOnShutdown(&sExtHelperAppSvcSingleton);
+  }
+
+  return do_AddRef(sExtHelperAppSvcSingleton);
+}
+
 NS_IMPL_ISUPPORTS(nsExternalHelperAppService, nsIExternalHelperAppService,
                   nsPIExternalAppLauncher, nsIExternalProtocolService,
                   nsIMIMEService, nsIObserver, nsISupportsWeakReference)
@@ -650,7 +679,7 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
           uriParams, loadInfoArgs, nsCString(aMimeContentType), disp,
           contentDisposition, fileName, aForceSave, contentLength,
           wasFileChannel, referrerParams,
-          mozilla::dom::TabChild::GetFrom(window));
+          mozilla::dom::BrowserChild::GetFrom(window));
   ExternalHelperAppChild* childListener =
       static_cast<ExternalHelperAppChild*>(pc);
 
@@ -926,9 +955,9 @@ nsExternalHelperAppService::LoadURI(nsIURI* aURI,
     URIParams uri;
     SerializeURI(aURI, uri);
 
-    nsCOMPtr<nsITabChild> tabChild(do_GetInterface(aWindowContext));
+    nsCOMPtr<nsIBrowserChild> browserChild(do_GetInterface(aWindowContext));
     mozilla::dom::ContentChild::GetSingleton()->SendLoadURIExternal(
-        uri, static_cast<dom::TabChild*>(tabChild.get()));
+        uri, static_cast<dom::BrowserChild*>(browserChild.get()));
     return NS_OK;
   }
 
@@ -1821,9 +1850,8 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv,
             "chrome://global/locale/nsWebBrowserPersist.properties",
             getter_AddRefs(bundle)))) {
       nsAutoString msgText;
-      const char16_t* strings[] = {path.get()};
-      if (NS_SUCCEEDED(
-              bundle->FormatStringFromName(msgId, strings, 1, msgText))) {
+      AutoTArray<nsString, 1> strings = {path};
+      if (NS_SUCCEEDED(bundle->FormatStringFromName(msgId, strings, msgText))) {
         if (mDialogProgressListener) {
           // We have a listener, let it handle the error.
           mDialogProgressListener->OnStatusChange(
@@ -1839,7 +1867,7 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv,
           nsCOMPtr<nsIPrompt> prompter(
               do_GetInterface(GetDialogParent(), &qiRv));
           nsAutoString title;
-          bundle->FormatStringFromName("title", strings, 1, title);
+          bundle->FormatStringFromName("title", strings, title);
 
           MOZ_LOG(
               nsExternalHelperAppService::mLog, LogLevel::Debug,
@@ -2483,7 +2511,11 @@ NS_IMETHODIMP nsExternalHelperAppService::GetFromTypeAndExtension(
 
   // (1) Ask the OS for a mime info
   bool found;
-  *_retval = GetMIMEInfoFromOS(typeToUse, aFileExt, &found).take();
+  nsresult rv = GetMIMEInfoFromOS(typeToUse, aFileExt, &found, _retval);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
   LOG(("OS gave back 0x%p - found: %i\n", *_retval, found));
   // If we got no mimeinfo, something went wrong. Probably lack of memory.
   if (!*_retval) return NS_ERROR_OUT_OF_MEMORY;
@@ -2491,7 +2523,6 @@ NS_IMETHODIMP nsExternalHelperAppService::GetFromTypeAndExtension(
   // (2) Now, let's see if we can find something in our datastore
   // This will not overwrite the OS information that interests us
   // (i.e. default application, default app. description)
-  nsresult rv;
   nsCOMPtr<nsIHandlerService> handlerSvc =
       do_GetService(NS_HANDLERSERVICE_CONTRACTID);
   if (handlerSvc) {
@@ -2796,7 +2827,17 @@ bool nsExternalHelperAppService::GetTypeFromExtras(const nsACString& aExtension,
 bool nsExternalHelperAppService::GetMIMETypeFromOSForExtension(
     const nsACString& aExtension, nsACString& aMIMEType) {
   bool found = false;
-  nsCOMPtr<nsIMIMEInfo> mimeInfo =
-      GetMIMEInfoFromOS(EmptyCString(), aExtension, &found);
-  return found && mimeInfo && NS_SUCCEEDED(mimeInfo->GetMIMEType(aMIMEType));
+  nsCOMPtr<nsIMIMEInfo> mimeInfo;
+  nsresult rv = GetMIMEInfoFromOS(EmptyCString(), aExtension, &found,
+                                  getter_AddRefs(mimeInfo));
+  return NS_SUCCEEDED(rv) && found && mimeInfo &&
+         NS_SUCCEEDED(mimeInfo->GetMIMEType(aMIMEType));
+}
+
+nsresult nsExternalHelperAppService::GetMIMEInfoFromOS(
+    const nsACString& aMIMEType, const nsACString& aFileExt, bool* aFound,
+    nsIMIMEInfo** aMIMEInfo) {
+  *aMIMEInfo = nullptr;
+  *aFound = false;
+  return NS_ERROR_NOT_IMPLEMENTED;
 }

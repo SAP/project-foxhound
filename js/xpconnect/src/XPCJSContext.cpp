@@ -22,6 +22,7 @@
 #include "nsIMemoryInfoDumper.h"
 #include "nsIMemoryReporter.h"
 #include "nsIObserverService.h"
+#include "nsIBrowserChild.h"
 #include "nsIDebug2.h"
 #include "nsIDocShell.h"
 #include "nsIRunnable.h"
@@ -638,26 +639,6 @@ bool XPCJSContext::InterruptCallback(JSContext* cx) {
     limit = Preferences::GetInt(prefName, 10);
   }
 
-  // If there's no limit, or we're within the limit, let it go.
-  if (limit == 0 || duration.ToSeconds() < limit / 2.0) {
-    return true;
-  }
-
-  self->mSlowScriptActualWait += duration;
-
-  // In order to guard against time changes or laptops going to sleep, we
-  // don't trigger the slow script warning until (limit/2) seconds have
-  // elapsed twice.
-  if (!self->mSlowScriptSecondHalf) {
-    self->mSlowScriptCheckpoint = TimeStamp::NowLoRes();
-    self->mSlowScriptSecondHalf = true;
-    return true;
-  }
-
-  //
-  // This has gone on long enough! Time to take action. ;-)
-  //
-
   // Get the DOM window associated with the running script. If the script is
   // running in a non-DOM scope, we have to just let it keep running.
   RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
@@ -682,6 +663,26 @@ bool XPCJSContext::InterruptCallback(JSContext* cx) {
     return true;
   }
 
+  // If there's no limit, or we're within the limit, let it go.
+  if (limit == 0 || duration.ToSeconds() < limit / 2.0) {
+    return true;
+  }
+
+  self->mSlowScriptActualWait += duration;
+
+  // In order to guard against time changes or laptops going to sleep, we
+  // don't trigger the slow script warning until (limit/2) seconds have
+  // elapsed twice.
+  if (!self->mSlowScriptSecondHalf) {
+    self->mSlowScriptCheckpoint = TimeStamp::NowLoRes();
+    self->mSlowScriptSecondHalf = true;
+    return true;
+  }
+
+  //
+  // This has gone on long enough! Time to take action. ;-)
+  //
+
   if (win->IsDying()) {
     // The window is being torn down. When that happens we try to prevent
     // the dispatch of new runnables, so it also makes sense to kill any
@@ -700,7 +701,7 @@ bool XPCJSContext::InterruptCallback(JSContext* cx) {
 
   // Show the prompt to the user, and kill if requested.
   nsGlobalWindowInner::SlowScriptResponse response =
-      win->ShowSlowScriptDialog(addonId);
+      win->ShowSlowScriptDialog(cx, addonId);
   if (response == nsGlobalWindowInner::KillSlowScript) {
     if (Preferences::GetBool("dom.global_stop_script", true)) {
       xpc::Scriptability::Get(global).Block();
@@ -763,13 +764,15 @@ static mozilla::Atomic<bool> sSharedMemoryEnabled(false);
 static mozilla::Atomic<bool> sStreamsEnabled(false);
 static mozilla::Atomic<bool> sBigIntEnabled(false);
 static mozilla::Atomic<bool> sFieldsEnabled(false);
+static mozilla::Atomic<bool> sAwaitFixEnabled(false);
 
 void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(sSharedMemoryEnabled)
       .setBigIntEnabled(sBigIntEnabled)
       .setStreamsEnabled(sStreamsEnabled)
-      .setFieldsEnabled(sFieldsEnabled);
+      .setFieldsEnabled(sFieldsEnabled)
+      .setAwaitFixEnabled(sAwaitFixEnabled);
 }
 
 static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
@@ -847,14 +850,13 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
   bool spectreJitToCxxCalls =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "spectre.jit_to_C++_calls");
 
-  bool unboxedObjects =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "unboxed_objects");
-
   sSharedMemoryEnabled =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "shared_memory");
   sStreamsEnabled = Preferences::GetBool(JS_OPTIONS_DOT_STR "streams");
   sFieldsEnabled =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.fields");
+  sAwaitFixEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.await_fix");
 
 #ifdef DEBUG
   sExtraWarningsForSystemJS =
@@ -939,9 +941,6 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
                                 spectreValueMasking);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_SPECTRE_JIT_TO_CXX_CALLS,
                                 spectreJitToCxxCalls);
-
-  JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_UNBOXED_OBJECTS,
-                                unboxedObjects);
 }
 
 XPCJSContext::~XPCJSContext() {

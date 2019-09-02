@@ -4,6 +4,9 @@
 
 #include "js/JSON.h"
 #include "jsapi.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
@@ -260,7 +263,7 @@ void SessionStoreUtils::RestoreDocShellCapabilities(
 
 static void CollectCurrentScrollPosition(JSContext* aCx, Document& aDocument,
                                          Nullable<CollectedData>& aRetVal) {
-  nsIPresShell* presShell = aDocument.GetShell();
+  PresShell* presShell = aDocument.GetPresShell();
   if (!presShell) {
     return;
   }
@@ -288,31 +291,16 @@ void SessionStoreUtils::RestoreScrollPosition(const GlobalObject& aGlobal,
   token = tokenizer.nextToken();
   int pos_Y = atoi(token.get());
 
-  // Self-clamp the layout scroll position to the layout scroll range.
-  // This step will be unnecessary after bug 1516056, when window.scrollTo()
-  // will start performing this clamping itself.
-  CSSCoord layoutPosX = pos_X;
-  CSSCoord layoutPosY = pos_Y;
-  ErrorResult rv;
-  CSSCoord layoutPosMaxX = aWindow.GetScrollMaxX(rv);
-  CSSCoord layoutPosMaxY = aWindow.GetScrollMaxY(rv);
-  if (layoutPosX > layoutPosMaxX) {
-    layoutPosX = layoutPosMaxX;
-  }
-  if (layoutPosY > layoutPosMaxY) {
-    layoutPosY = layoutPosMaxY;
-  }
-
-  aWindow.ScrollTo(layoutPosX, layoutPosY);
+  aWindow.ScrollTo(pos_X, pos_Y);
 
   if (nsCOMPtr<Document> doc = aWindow.GetExtantDoc()) {
     if (nsPresContext* presContext = doc->GetPresContext()) {
       if (presContext->IsRootContentDocument()) {
         // Use eMainThread so this takes precedence over session history
         // (ScrollFrameHelper::ScrollToRestoredPosition()).
-        presContext->PresShell()->SetPendingVisualScrollUpdate(
+        presContext->PresShell()->ScrollToVisual(
             CSSPoint::ToAppUnits(CSSPoint(pos_X, pos_Y)),
-            layers::FrameMetrics::eMainThread);
+            layers::FrameMetrics::eMainThread, ScrollMode::Instant);
       }
     }
   }
@@ -627,56 +615,6 @@ static void CollectFromSelectElement(JSContext* aCx, Document& aDocument,
   }
 }
 
-/*
-  @param aDocument: DOMDocument instance to obtain form data for.
-  @return aRetVal: Form data encoded in an object.
- */
-static void CollectFromXULTextbox(Document& aDocument,
-                                  Nullable<CollectedData>& aRetVal) {
-  nsAutoCString url;
-  Unused << aDocument.GetDocumentURI()->GetSpecIgnoringRef(url);
-  if (!url.EqualsLiteral("about:config")) {
-    return;
-  }
-  RefPtr<nsContentList> aboutConfigElements = NS_GetContentList(
-      &aDocument, kNameSpaceID_XUL, NS_LITERAL_STRING("window"));
-  uint32_t length = aboutConfigElements->Length(true);
-  for (uint32_t i = 0; i < length; ++i) {
-    MOZ_ASSERT(aboutConfigElements->Item(i), "null item in node list!");
-    nsAutoString id, value;
-    aboutConfigElements->Item(i)->AsElement()->GetId(id);
-    if (!id.EqualsLiteral("config")) {
-      continue;
-    }
-    RefPtr<nsContentList> textboxs =
-        NS_GetContentList(aboutConfigElements->Item(i)->AsElement(),
-                          kNameSpaceID_XUL, NS_LITERAL_STRING("textbox"));
-    uint32_t boxsLength = textboxs->Length(true);
-    for (uint32_t idx = 0; idx < boxsLength; idx++) {
-      textboxs->Item(idx)->AsElement()->GetId(id);
-      if (!id.EqualsLiteral("textbox")) {
-        continue;
-      }
-      RefPtr<HTMLInputElement> input = HTMLInputElement::FromNode(
-          nsFocusManager::GetRedirectedFocus(textboxs->Item(idx)));
-      if (!input) {
-        continue;
-      }
-      input->GetValue(value, CallerType::System);
-      if (value.IsEmpty() ||
-          input->AttrValueIs(kNameSpaceID_None, nsGkAtoms::value, value,
-                             eCaseMatters)) {
-        continue;
-      }
-      uint16_t generatedCount = 0;
-      Record<nsString, OwningStringOrBooleanOrObject>::EntryType* entry =
-          AppendEntryToCollectedData(input, id, generatedCount, aRetVal);
-      entry->mValue.SetAsString() = value;
-      return;
-    }
-  }
-}
-
 static void CollectCurrentFormData(JSContext* aCx, Document& aDocument,
                                    Nullable<CollectedData>& aRetVal) {
   uint16_t generatedCount = 0;
@@ -686,8 +624,6 @@ static void CollectCurrentFormData(JSContext* aCx, Document& aDocument,
   CollectFromInputElement(aCx, aDocument, generatedCount, aRetVal);
   /* select element */
   CollectFromSelectElement(aCx, aDocument, generatedCount, aRetVal);
-  /* special case for about:config's search field */
-  CollectFromXULTextbox(aDocument, aRetVal);
 
   Element* bodyElement = aDocument.GetBody();
   if (aDocument.HasFlag(NODE_IS_EDITABLE) && bodyElement) {
@@ -1030,8 +966,14 @@ static void ReadAllEntriesFromStorage(
   if (!doc) {
     return;
   }
+
   nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
   if (!principal) {
+    return;
+  }
+
+  nsCOMPtr<nsIPrincipal> storagePrincipal = doc->EffectiveStoragePrincipal();
+  if (!storagePrincipal) {
     return;
   }
 
@@ -1048,8 +990,8 @@ static void ReadAllEntriesFromStorage(
     return;
   }
   RefPtr<Storage> storage;
-  storageManager->GetStorage(aWindow->GetCurrentInnerWindow(), principal, false,
-                             getter_AddRefs(storage));
+  storageManager->GetStorage(aWindow->GetCurrentInnerWindow(), principal,
+                             storagePrincipal, false, getter_AddRefs(storage));
   if (!storage) {
     return;
   }
@@ -1177,8 +1119,8 @@ void SessionStoreUtils::RestoreSessionStorage(
     // followup bug to bug 600307.
     // Null window because the current window doesn't match the principal yet
     // and loads about:blank.
-    storageManager->CreateStorage(nullptr, principal, EmptyString(), false,
-                                  getter_AddRefs(storage));
+    storageManager->CreateStorage(nullptr, principal, principal, EmptyString(),
+                                  false, getter_AddRefs(storage));
     if (!storage) {
       continue;
     }

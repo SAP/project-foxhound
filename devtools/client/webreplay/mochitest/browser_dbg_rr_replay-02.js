@@ -11,7 +11,9 @@ add_task(async function() {
   waitForExplicitFinish();
 
   const recordingFile = newRecordingFile();
-  const recordingTab = BrowserTestUtils.addTab(gBrowser, null, { recordExecution: "*" });
+  const recordingTab = BrowserTestUtils.addTab(gBrowser, null, {
+    recordExecution: "*",
+  });
   gBrowser.selectedTab = recordingTab;
   openTrustedLinkIn(EXAMPLE_URL + "doc_rr_continuous.html", "current");
 
@@ -26,17 +28,18 @@ add_task(async function() {
   await reverseStepOverToLine(client, 13);
   const lastNumberValue = await evaluateInTopFrame(target, "number");
 
-  const tabParent = recordingTab.linkedBrowser.frameLoader.tabParent;
-  ok(tabParent, "Found recording tab parent");
-  ok(tabParent.saveRecording(recordingFile), "Saved recording");
+  const remoteTab = recordingTab.linkedBrowser.frameLoader.remoteTab;
+  ok(remoteTab, "Found recording remote tab");
+  ok(remoteTab.saveRecording(recordingFile), "Saved recording");
   await once(Services.ppmm, "SaveRecordingFinished");
 
   await client.removeBreakpoint(bp);
   await toolbox.destroy();
   await gBrowser.removeTab(recordingTab);
 
-  const replayingTab = BrowserTestUtils.addTab(gBrowser, null,
-                                               { replayExecution: recordingFile });
+  const replayingTab = BrowserTestUtils.addTab(gBrowser, null, {
+    replayExecution: recordingFile,
+  });
   gBrowser.selectedTab = replayingTab;
   await once(Services.ppmm, "HitRecordingEndpoint");
 
@@ -45,9 +48,14 @@ add_task(async function() {
   target = rplyTab.target;
   client = toolbox.threadClient;
   await client.interrupt();
+
+  // The recording does not actually end at the point where we saved it, but
+  // will do at the next checkpoint. Rewind to the point we are interested in.
+  bp = await setBreakpoint(client, "doc_rr_continuous.html", 14);
+  await rewindToLine(client, 14);
+
   await checkEvaluateInTopFrame(target, "number", lastNumberValue);
   await reverseStepOverToLine(client, 13);
-  bp = await setBreakpoint(client, "doc_rr_continuous.html", 14);
   await rewindToLine(client, 14);
   await checkEvaluateInTopFrame(target, "number", lastNumberValue - 1);
   await resumeToLine(client, 14);

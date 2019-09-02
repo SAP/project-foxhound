@@ -6,8 +6,7 @@
 #include "nsNativeAppSupportBase.h"
 #include "nsNativeAppSupportWin.h"
 
-#include <windows.h>
-#include <fcntl.h>
+#include "mozilla/WindowsConsole.h"
 
 using namespace mozilla;
 
@@ -25,25 +24,6 @@ class nsNativeAppSupportWin : public nsNativeAppSupportBase {
  private:
   ~nsNativeAppSupportWin() {}
 };  // nsNativeAppSupportWin
-
-void UseParentConsole() {
-  if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-    // Redirect the standard streams to the existing console, but
-    // only if they haven't been redirected to a valid file.
-    // Visual Studio's _fileno() returns -2 for the standard
-    // streams if they aren't associated with an output stream.
-    if (_fileno(stdout) == -2) {
-      freopen("CONOUT$", "w", stdout);
-    }
-    // There is no CONERR$, so use CONOUT$ for stderr as well.
-    if (_fileno(stderr) == -2) {
-      freopen("CONOUT$", "w", stderr);
-    }
-    if (_fileno(stdin) == -2) {
-      freopen("CONIN$", "r", stdin);
-    }
-  }
-}
 
 void nsNativeAppSupportWin::CheckConsole() {
   for (int i = 1; i < gArgc; ++i) {
@@ -75,8 +55,8 @@ void nsNativeAppSupportWin::CheckConsole() {
 }
 
 // Create and return an instance of class nsNativeAppSupportWin.
-nsresult NS_CreateNativeAppSupport(nsINativeAppSupport **aResult) {
-  nsNativeAppSupportWin *pNative = new nsNativeAppSupportWin;
+nsresult NS_CreateNativeAppSupport(nsINativeAppSupport** aResult) {
+  nsNativeAppSupportWin* pNative = new nsNativeAppSupportWin;
   if (!pNative) return NS_ERROR_OUT_OF_MEMORY;
 
   // Check for dynamic console creation request.

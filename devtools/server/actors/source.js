@@ -6,17 +6,35 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const { setBreakpointAtEntryPoints } = require("devtools/server/actors/breakpoint");
-const { createValueGrip } = require("devtools/server/actors/object/utils");
+const { Ci, Cu } = require("chrome");
+const {
+  setBreakpointAtEntryPoints,
+} = require("devtools/server/actors/breakpoint");
 const { ActorClassWithSpec } = require("devtools/shared/protocol");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { assert, fetch } = DevToolsUtils;
 const { joinURI } = require("devtools/shared/path");
 const { sourceSpec } = require("devtools/shared/specs/source");
-const { findClosestScriptBySource } = require("devtools/server/actors/utils/closest-scripts");
 
-loader.lazyRequireGetter(this, "arrayBufferGrip", "devtools/server/actors/array-buffer", true);
+loader.lazyRequireGetter(
+  this,
+  "ArrayBufferActor",
+  "devtools/server/actors/array-buffer",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "LongStringActor",
+  "devtools/server/actors/string",
+  true
+);
+
+loader.lazyRequireGetter(this, "Services");
+loader.lazyGetter(
+  this,
+  "WebExtensionPolicy",
+  () => Cu.getGlobalForObject(Cu).WebExtensionPolicy
+);
 
 function isEvalSource(source) {
   const introType = source.introductionType;
@@ -30,12 +48,14 @@ function isEvalSource(source) {
 
   // These are all the sources that are essentially eval-ed (either
   // by calling eval or passing a string to one of these functions).
-  return (introType === "eval" ||
-          introType === "debugger eval" ||
-          introType === "Function" ||
-          introType === "eventHandler" ||
-          introType === "setTimeout" ||
-          introType === "setInterval");
+  return (
+    introType === "eval" ||
+    introType === "debugger eval" ||
+    introType === "Function" ||
+    introType === "eventHandler" ||
+    introType === "setTimeout" ||
+    introType === "setInterval"
+  );
 }
 
 exports.isEvalSource = isEvalSource;
@@ -124,6 +144,30 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     return this._url;
   },
 
+  get extensionName() {
+    if (this._extensionName === undefined) {
+      this._extensionName = null;
+
+      // Cu is not available for workers and so we are not able to get a
+      // WebExtensionPolicy object
+      if (!isWorker && this.url) {
+        try {
+          const extURI = Services.io.newURI(this.url);
+          if (extURI) {
+            const policy = WebExtensionPolicy.getByURI(extURI);
+            if (policy) {
+              this._extensionName = policy.name;
+            }
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+    }
+
+    return this._extensionName;
+  },
+
   get isCacheEnabled() {
     if (this.threadActor._parent._getCacheDisabled) {
       return !this.threadActor._parent._getCacheDisabled();
@@ -141,10 +185,13 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
 
     return {
       actor: this.actorID,
+      extensionName: this.extensionName,
       url: this.url ? this.url.split(" -> ").pop() : null,
       isBlackBoxed: this.threadActor.sources.isBlackBoxed(this.url),
       sourceMapURL: source ? source.sourceMapURL : null,
-      introductionUrl: introductionUrl ? introductionUrl.split(" -> ").pop() : null,
+      introductionUrl: introductionUrl
+        ? introductionUrl.split(" -> ").pop()
+        : null,
       introductionType: source ? source.introductionType : null,
     };
   },
@@ -170,7 +217,8 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     try {
       DevToolsUtils.reportException("SourceActor", error);
 
-      JSON.stringify(this.form(), null, 4).split(/\n/g)
+      JSON.stringify(this.form(), null, 4)
+        .split(/\n/g)
         .forEach(line => console.error("\t", line));
     } catch (e) {
       // ignore
@@ -208,11 +256,13 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     // the source because sources were discarded
     // (javascript.options.discardSystemSource == true). Re-fetch non-JS
     // sources to get the contentType from the headers.
-    if (this.source &&
-        this.source.text !== "[no source]" &&
-        this._contentType &&
-        (this._contentType.includes("javascript") ||
-          this._contentType === "text/wasm")) {
+    if (
+      this.source &&
+      this.source.text !== "[no source]" &&
+      this._contentType &&
+      (this._contentType.includes("javascript") ||
+        this._contentType === "text/wasm")
+    ) {
       return toResolvedContent(this.source.text);
     }
 
@@ -238,8 +288,10 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
 
       // Retrieve the cacheKey in order to load POST requests from cache
       // Note that chrome:// URLs don't support this interface.
-      if (loadFromCache &&
-        docShell.currentDocumentChannel instanceof Ci.nsICacheInfoChannel) {
+      if (
+        loadFromCache &&
+        docShell.currentDocumentChannel instanceof Ci.nsICacheInfoChannel
+      ) {
         cacheKey = docShell.currentDocumentChannel.cacheKey;
       }
     }
@@ -251,45 +303,34 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
     });
 
     // Record the contentType we just learned during fetching
-    return sourceFetched
-      .then(result => {
+    return sourceFetched.then(
+      result => {
         this._contentType = result.contentType;
         return result;
-      }, error => {
+      },
+      error => {
         this._reportLoadSourceError(error);
         throw error;
-      });
+      }
+    );
   },
 
-  /**
-   * Get all executable lines from the current source
-   * @return Array - Executable lines of the current script
-   */
-  getExecutableLines: async function() {
-    const offsetsLines = new Set();
-    for (const s of this._findDebuggeeScripts()) {
-      for (const offset of s.getPossibleBreakpoints()) {
-        offsetsLines.add(offset.lineNumber);
+  getBreakableLines() {
+    const positions = this.getBreakpointPositions();
+    const lines = new Set();
+    for (const position of positions) {
+      if (!lines.has(position.line)) {
+        lines.add(position.line);
       }
     }
 
-    const lines = [...offsetsLines];
-    lines.sort((a, b) => {
-      return a - b;
-    });
-    return lines;
+    return Array.from(lines);
   },
 
   getBreakpointPositions(query) {
     const {
-      start: {
-        line: startLine = 0,
-        column: startColumn = 0,
-      } = {},
-      end: {
-        line: endLine = Infinity,
-        column: endColumn = Infinity,
-      } = {},
+      start: { line: startLine = 0, column: startColumn = 0 } = {},
+      end: { line: endLine = Infinity, column: endColumn = Infinity } = {},
     } = query || {};
 
     const scripts = this._findDebuggeeScripts();
@@ -311,7 +352,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
           lineNumber < startLine ||
           (lineNumber === startLine && columnNumber < startColumn) ||
           lineNumber > endLine ||
-          (lineNumber === endLine && columnNumber > endColumn)
+          (lineNumber === endLine && columnNumber >= endColumn)
         ) {
           continue;
         }
@@ -323,12 +364,14 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       }
     }
 
-    return positions
-      // Sort the items by location.
-      .sort((a, b) => {
-        const lineDiff = a.line - b.line;
-        return lineDiff === 0 ? a.column - b.column : lineDiff;
-      });
+    return (
+      positions
+        // Sort the items by location.
+        .sort((a, b) => {
+          const lineDiff = a.line - b.line;
+          return lineDiff === 0 ? a.column - b.column : lineDiff;
+        })
+    );
   },
 
   getBreakpointPositionsCompressed(query) {
@@ -344,29 +387,41 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
   },
 
   /**
-   * Handler for the "source" packet.
+   * Handler for the "onSource" packet.
+   * @return Object
+   *         The return of this function contains a field `contentType`, and
+   *         a field `source`. `source` can either be an ArrayBuffer or
+   *         a LongString.
    */
   onSource: function() {
     return Promise.resolve(this._init)
       .then(this._getSourceText)
       .then(({ content, contentType }) => {
-        if (typeof content === "object" && content && content.constructor &&
-            content.constructor.name === "ArrayBuffer") {
+        if (
+          typeof content === "object" &&
+          content &&
+          content.constructor &&
+          content.constructor.name === "ArrayBuffer"
+        ) {
           return {
-            source: arrayBufferGrip(content, this.threadActor.threadLifetimePool),
+            source: new ArrayBufferActor(this.threadActor.conn, content),
             contentType,
           };
         }
+
         return {
-          source: createValueGrip(content, this.threadActor.threadLifetimePool,
-            this.threadActor.objectGrip),
-          contentType: contentType,
+          source: new LongStringActor(this.threadActor.conn, content),
+          contentType,
         };
       })
       .catch(error => {
         reportError(error, "Got an exception during SA_onSource: ");
-        throw new Error("Could not load the source for " + this.url + ".\n" +
-                        DevToolsUtils.safeErrorString(error));
+        throw new Error(
+          "Could not load the source for " +
+            this.url +
+            ".\n" +
+            DevToolsUtils.safeErrorString(error)
+        );
       });
   },
 
@@ -375,9 +430,11 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
    */
   blackbox: function(range) {
     this.threadActor.sources.blackBox(this.url, range);
-    if (this.threadActor.state == "paused"
-        && this.threadActor.youngestFrame
-        && this.threadActor.youngestFrame.script.url == this.url) {
+    if (
+      this.threadActor.state == "paused" &&
+      this.threadActor.youngestFrame &&
+      this.threadActor.youngestFrame.script.url == this.url
+    ) {
       return true;
     }
     return false;
@@ -433,14 +490,15 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
   applyBreakpoint: function(actor) {
     const { line, column } = actor.location;
 
-    // Find all scripts that match the given source actor and line
-    // number.
-    let scripts = this._findDebuggeeScripts({ line });
-    scripts = scripts.filter((script) => !actor.hasScript(script));
-
     // Find all entry points that correspond to the given location.
     const entryPoints = [];
     if (column === undefined) {
+      // Find all scripts that match the given source actor and line
+      // number.
+      const scripts = this._findDebuggeeScripts({ line }).filter(
+        script => !actor.hasScript(script)
+      );
+
       // This is a line breakpoint, so we add a breakpoint on the first
       // breakpoint on the line.
       const lineMatches = [];
@@ -458,62 +516,35 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
         // so we explicitly want to take all of the matches for the matched
         // column number.
         const firstColumn = lineMatches[0].columnNumber;
-        const firstColumnMatches = lineMatches
-          .filter(m => m.columnNumber === firstColumn);
+        const firstColumnMatches = lineMatches.filter(
+          m => m.columnNumber === firstColumn
+        );
 
         for (const { script, offset } of firstColumnMatches) {
           entryPoints.push({ script, offsets: [offset] });
         }
       }
     } else {
-      // Compute columnToOffsetMaps for each script so that we can
-      // find matching entrypoints for the column breakpoint.
-      const columnToOffsetMaps = scripts.map(script =>
-        [
-          script,
-          script.getPossibleBreakpoints({ line }),
-        ]
+      // Find all scripts that match the given source actor, line,
+      // and column number.
+      const scripts = this._findDebuggeeScripts({ line, column }).filter(
+        script => !actor.hasScript(script)
       );
 
-      // This is a column breakpoint, so we are interested in all column
-      // offsets that correspond to the given line *and* column number.
-      for (const [script, columnToOffsetMap] of columnToOffsetMaps) {
-        for (const { columnNumber, offset } of columnToOffsetMap) {
-          if (columnNumber >= column && columnNumber <= column + 1) {
-            entryPoints.push({ script, offsets: [offset] });
-          }
-        }
-      }
+      for (const script of scripts) {
+        // Check to see if the script contains a breakpoint position at
+        // this line and column.
+        const possibleBreakpoint = script
+          .getPossibleBreakpoints({
+            line,
+            minColumn: column,
+            maxColumn: column + 1,
+          })
+          .pop();
 
-      // If we don't find any matching entrypoints,
-      // then we should see if the breakpoint comes before or after the column offsets.
-      if (entryPoints.length === 0) {
-        // It's not entirely clear if the scripts that make it here can come
-        // from a variety of sources. This function allows filtering by URL
-        // so it seems like it may be possible and we are erring on the side
-        // of caution by handling it here.
-        const closestScripts = findClosestScriptBySource(
-          columnToOffsetMaps.map(pair => pair[0]),
-          line,
-          column,
-        );
-
-        const columnToOffsetLookup = new Map(columnToOffsetMaps);
-        for (const script of closestScripts) {
-          const columnToOffsetMap = columnToOffsetLookup.get(script);
-
-          if (columnToOffsetMap.length > 0) {
-            const firstColumnOffset = columnToOffsetMap[0];
-            const lastColumnOffset = columnToOffsetMap[columnToOffsetMap.length - 1];
-
-            if (column < firstColumnOffset.columnNumber) {
-              entryPoints.push({ script, offsets: [firstColumnOffset.offset] });
-            }
-
-            if (column > lastColumnOffset.columnNumber) {
-              entryPoints.push({ script, offsets: [lastColumnOffset.offset] });
-            }
-          }
+        if (possibleBreakpoint) {
+          const { offset } = possibleBreakpoint;
+          entryPoints.push({ script, offsets: [offset] });
         }
       }
     }

@@ -1,7 +1,8 @@
-import {_ASRouter, ASRouter} from "lib/ASRouter.jsm";
-import {FAKE_LOCAL_PROVIDER, FakeRemotePageManager} from "./constants";
-import {ASRouterFeed} from "lib/ASRouterFeed.jsm";
-import {actionTypes as at} from "common/Actions.jsm";
+import { _ASRouter, ASRouter } from "lib/ASRouter.jsm";
+import { FAKE_LOCAL_PROVIDER, FakeRemotePageManager } from "./constants";
+import { ASRouterFeed } from "lib/ASRouterFeed.jsm";
+import { actionTypes as at } from "common/Actions.jsm";
+import { GlobalOverrider } from "test/unit/utils";
 
 describe("ASRouterFeed", () => {
   let Router;
@@ -9,19 +10,34 @@ describe("ASRouterFeed", () => {
   let channel;
   let sandbox;
   let storage;
+  let globals;
+  let FakeBookmarkPanelHub;
+  let FakeToolbarBadgeHub;
   beforeEach(() => {
-    Router = new _ASRouter({providers: [FAKE_LOCAL_PROVIDER]});
     sandbox = sinon.createSandbox();
+    globals = new GlobalOverrider();
+    FakeBookmarkPanelHub = {
+      init: sandbox.stub(),
+      uninit: sandbox.stub(),
+    };
+    FakeToolbarBadgeHub = {
+      init: sandbox.stub(),
+    };
+    globals.set("BookmarkPanelHub", FakeBookmarkPanelHub);
+    globals.set("ToolbarBadgeHub", FakeToolbarBadgeHub);
+
+    Router = new _ASRouter({ providers: [FAKE_LOCAL_PROVIDER] });
+
     storage = {
       get: sandbox.stub().returns(Promise.resolve([])),
       set: sandbox.stub().returns(Promise.resolve()),
     };
-    feed = new ASRouterFeed({router: Router}, storage);
+    feed = new ASRouterFeed({ router: Router }, storage);
     channel = new FakeRemotePageManager();
     feed.store = {
-      _messageChannel: {channel},
+      _messageChannel: { channel },
       getState: () => ({}),
-      dbStorage: {getDbTable: sandbox.stub().returns({})},
+      dbStorage: { getDbTable: sandbox.stub().returns({}) },
     };
   });
   afterEach(() => {
@@ -38,7 +54,7 @@ describe("ASRouterFeed", () => {
     it("should initialize the ASRouter if it is not initialized", () => {
       sandbox.stub(feed, "enable");
 
-      feed.onAction({type: at.INIT});
+      feed.onAction({ type: at.INIT });
 
       assert.calledOnce(feed.enable);
     });
@@ -57,7 +73,7 @@ describe("ASRouterFeed", () => {
       sinon.stub(Router, "init");
 
       // call .onAction with INIT
-      feed.onAction({type: at.INIT});
+      feed.onAction({ type: at.INIT });
 
       assert.notCalled(Router.init);
     });
@@ -67,7 +83,7 @@ describe("ASRouterFeed", () => {
       await Router.init(new FakeRemotePageManager(), storage, () => {});
       sinon.stub(Router, "uninit");
 
-      feed.onAction({type: at.UNINIT});
+      feed.onAction({ type: at.UNINIT });
 
       assert.calledOnce(Router.uninit);
     });

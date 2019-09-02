@@ -12,7 +12,7 @@ ${helpers.predefined_type(
     "Opacity",
     "1.0",
     animation_value_type="ComputedValue",
-    flags="CREATES_STACKING_CONTEXT APPLIES_TO_PLACEHOLDER \
+    flags="APPLIES_TO_CUE CREATES_STACKING_CONTEXT APPLIES_TO_PLACEHOLDER \
            CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.csswg.org/css-color/#opacity",
     servo_restyle_damage = "reflow_out_of_flow",
@@ -23,6 +23,7 @@ ${helpers.predefined_type(
     "BoxShadow",
     None,
     vector=True,
+    simple_vector_bindings=True,
     animation_value_type="AnimatedBoxShadowList",
     vector_animation_type="with_zero",
     extra_prefixes="webkit",
@@ -37,7 +38,7 @@ ${helpers.predefined_type(
     "computed::ClipRectOrAuto::auto()",
     animation_value_type="ComputedValue",
     boxed=True,
-    allow_quirks=True,
+    allow_quirks="Yes",
     spec="https://drafts.fxtf.org/css-masking/#clip-property",
 )}
 
@@ -46,12 +47,29 @@ ${helpers.predefined_type(
     "Filter",
     None,
     vector=True,
+    simple_vector_bindings=True,
+    gecko_ffi_name="mFilters",
     separator="Space",
     animation_value_type="AnimatedFilterList",
     vector_animation_type="with_zero",
     extra_prefixes="webkit",
     flags="CREATES_STACKING_CONTEXT FIXPOS_CB",
     spec="https://drafts.fxtf.org/filters/#propdef-filter",
+)}
+
+${helpers.predefined_type(
+    "backdrop-filter",
+    "Filter",
+    None,
+    vector=True,
+    simple_vector_bindings=True,
+    gecko_ffi_name="mBackdropFilters",
+    separator="Space",
+    animation_value_type="AnimatedFilterList",
+    vector_animation_type="with_zero",
+    flags="CREATES_STACKING_CONTEXT FIXPOS_CB",
+    gecko_pref="layout.css.backdrop-filter.enabled",
+    spec="https://drafts.fxtf.org/filter-effects-2/#propdef-backdrop-filter",
 )}
 
 ${helpers.single_keyword(

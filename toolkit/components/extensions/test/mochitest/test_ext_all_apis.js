@@ -7,13 +7,14 @@
 // which may modify the following variables to add or remove expected APIs.
 /* globals expectedContentApisTargetSpecific */
 /* globals expectedBackgroundApisTargetSpecific */
-/* import-globals-from ../../../../../testing/mochitest/tests/SimpleTest/AddTask.js */
 
 // Generates a list of expectations.
 function generateExpectations(list) {
-  return list.reduce((allApis, path) => {
-    return allApis.concat(`browser.${path}`, `chrome.${path}`);
-  }, []).sort();
+  return list
+    .reduce((allApis, path) => {
+      return allApis.concat(`browser.${path}`, `chrome.${path}`);
+    }, [])
+    .sort();
 }
 
 let expectedCommonApis = [
@@ -138,11 +139,13 @@ function sendAllApis() {
 add_task(async function test_enumerate_content_script_apis() {
   let extensionData = {
     manifest: {
-      content_scripts: [{
-        matches: ["http://mochi.test/*/file_sample.html"],
-        js: ["contentscript.js"],
-        run_at: "document_start",
-      }],
+      content_scripts: [
+        {
+          matches: ["http://mochi.test/*/file_sample.html"],
+          js: ["contentscript.js"],
+          run_at: "document_start",
+        },
+      ],
     },
     files: {
       "contentscript.js": sendAllApis,

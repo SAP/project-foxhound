@@ -179,6 +179,14 @@ must be one of the following:
       asserts-if(condition,minCount-maxCount)
           Same as above, but only if condition is true.
 
+      noautofuzz
+          Disables the autofuzzing behaviour hard-coded in the reftest harness
+          for specific platform configurations. The autofuzzing is intended to
+          compensate for inherent nondeterminism that results in intermittently
+          fuzzy results (with small amounts of fuzz) across many/all tests on
+          a given platform. Specifying 'noautofuzz' on the test will disable
+          the autofuzzing for that test and require an exact match.
+
       Conditions are JavaScript expressions *without spaces* in them.
       They are evaluated in a sandbox in which a limited set of
       variables are defined.  See the BuildConditionSandbox function in
@@ -587,6 +595,18 @@ If either of the "reftest-scrollport-w" and "reftest-scrollport-h" attributes on
 the root element are non-zero, sets the scroll-position-clamping scroll-port
 size to the given size in CSS pixels. This does not affect the size of the
 snapshot that is taken.
+
+Setting Resolution: reftest-resolution="<float>"
+================================================
+
+If the root element of a test has a "reftest-resolution" attribute, the page
+is rendered with the specified resolution (as if the user pinch-zoomed in
+to that scale). Note that the difference between reftest-async-zoom and
+reftest-resolution is that reftest-async-zoom only applies the scale in
+the compositor, while reftest-resolution causes the page to be paint at that
+resolution.
+
+This attributes requires the pref apz.allow_zooming=true to have an effect.
 
 Setting Async Scroll Mode: reftest-async-scroll attribute
 =========================================================

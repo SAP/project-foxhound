@@ -14,11 +14,11 @@ using mozilla::TransactionManager;
 
 static int32_t sConstructorCount = 0;
 static int32_t sDoCount = 0;
-static int32_t *sDoOrderArr = 0;
+static int32_t* sDoOrderArr = 0;
 static int32_t sUndoCount = 0;
-static int32_t *sUndoOrderArr = 0;
+static int32_t* sUndoOrderArr = 0;
 static int32_t sRedoCount = 0;
-static int32_t *sRedoOrderArr = 0;
+static int32_t* sRedoOrderArr = 0;
 
 int32_t sSimpleTestDoOrderArr[] = {
     1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,
@@ -318,14 +318,14 @@ class SimpleTransaction : public TestTransaction {
     return (mFlags & THROWS_REDO_ERROR_FLAG) ? NS_ERROR_FAILURE : NS_OK;
   }
 
-  NS_IMETHOD GetIsTransient(bool *aIsTransient) override {
+  NS_IMETHOD GetIsTransient(bool* aIsTransient) override {
     if (aIsTransient) {
       *aIsTransient = (mFlags & TRANSIENT_FLAG) ? true : false;
     }
     return NS_OK;
   }
 
-  NS_IMETHOD Merge(nsITransaction *aTransaction, bool *aDidMerge) override {
+  NS_IMETHOD Merge(nsITransaction* aTransaction, bool* aDidMerge) override {
     if (aDidMerge) {
       *aDidMerge = (mFlags & MERGE_FLAG) ? true : false;
     }
@@ -335,7 +335,7 @@ class SimpleTransaction : public TestTransaction {
 
 class AggregateTransaction : public SimpleTransaction {
  private:
-  AggregateTransaction(nsITransactionManager *aTXMgr, int32_t aLevel,
+  AggregateTransaction(nsITransactionManager* aTXMgr, int32_t aLevel,
                        int32_t aNumber, int32_t aMaxLevel,
                        int32_t aNumChildrenPerNode, int32_t aFlags) {
     mLevel = aLevel;
@@ -348,7 +348,7 @@ class AggregateTransaction : public SimpleTransaction {
     mNumChildrenPerNode = aNumChildrenPerNode;
   }
 
-  nsITransactionManager *mTXMgr;
+  nsITransactionManager* mTXMgr;
 
   int32_t mLevel;
   int32_t mNumber;
@@ -358,7 +358,7 @@ class AggregateTransaction : public SimpleTransaction {
   int32_t mNumChildrenPerNode;
 
  public:
-  AggregateTransaction(nsITransactionManager *aTXMgr, int32_t aMaxLevel,
+  AggregateTransaction(nsITransactionManager* aTXMgr, int32_t aMaxLevel,
                        int32_t aNumChildrenPerNode,
                        int32_t aFlags = NONE_FLAG) {
     mLevel = 1;
@@ -434,15 +434,15 @@ class AggregateTransaction : public SimpleTransaction {
 
 class TestTransactionFactory {
  public:
-  virtual TestTransaction *create(nsITransactionManager *txmgr,
+  virtual TestTransaction* create(nsITransactionManager* txmgr,
                                   int32_t flags) = 0;
 };
 
 class SimpleTransactionFactory : public TestTransactionFactory {
  public:
-  TestTransaction *create(nsITransactionManager *txmgr,
+  TestTransaction* create(nsITransactionManager* txmgr,
                           int32_t flags) override {
-    return (TestTransaction *)new SimpleTransaction(flags);
+    return (TestTransaction*)new SimpleTransaction(flags);
   }
 };
 
@@ -459,9 +459,9 @@ class AggregateTransactionFactory : public TestTransactionFactory {
         mNumChildrenPerNode(aNumChildrenPerNode),
         mFixedFlags(aFixedFlags) {}
 
-  TestTransaction *create(nsITransactionManager *txmgr,
+  TestTransaction* create(nsITransactionManager* txmgr,
                           int32_t flags) override {
-    return (TestTransaction *)new AggregateTransaction(
+    return (TestTransaction*)new AggregateTransaction(
         txmgr, mMaxLevel, mNumChildrenPerNode, flags | mFixedFlags);
   }
 };
@@ -482,7 +482,7 @@ void reset_globals() {
 /**
  * Test behaviors in non-batch mode.
  **/
-void quick_test(TestTransactionFactory *factory) {
+void quick_test(TestTransactionFactory* factory) {
   /*******************************************************************
    *
    * Create a transaction manager implementation:
@@ -1179,7 +1179,8 @@ void quick_test(TestTransactionFactory *factory) {
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
 
-TEST(TestTXMgr, SimpleTest) {
+TEST(TestTXMgr, SimpleTest)
+{
   /*******************************************************************
    *
    * Initialize globals for test.
@@ -1201,7 +1202,8 @@ TEST(TestTXMgr, SimpleTest) {
   quick_test(&factory);
 }
 
-TEST(TestTXMgr, AggregationTest) {
+TEST(TestTXMgr, AggregationTest)
+{
   /*******************************************************************
    *
    * Initialize globals for test.
@@ -1227,7 +1229,7 @@ TEST(TestTXMgr, AggregationTest) {
 /**
  * Test behaviors in batch mode.
  **/
-void quick_batch_test(TestTransactionFactory *factory) {
+void quick_batch_test(TestTransactionFactory* factory) {
   /*******************************************************************
    *
    * Create a transaction manager implementation:
@@ -1806,7 +1808,8 @@ void quick_batch_test(TestTransactionFactory *factory) {
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
 
-TEST(TestTXMgr, SimpleBatchTest) {
+TEST(TestTXMgr, SimpleBatchTest)
+{
   /*******************************************************************
    *
    * Initialize globals for test.
@@ -1827,7 +1830,8 @@ TEST(TestTXMgr, SimpleBatchTest) {
   quick_batch_test(&factory);
 }
 
-TEST(TestTXMgr, AggregationBatchTest) {
+TEST(TestTXMgr, AggregationBatchTest)
+{
   /*******************************************************************
    *
    * Initialize globals for test.
@@ -1854,7 +1858,7 @@ TEST(TestTXMgr, AggregationBatchTest) {
  * Create 'iterations * (iterations + 1) / 2' transactions;
  * do/undo/redo/undo them.
  **/
-void stress_test(TestTransactionFactory *factory, int32_t iterations) {
+void stress_test(TestTransactionFactory* factory, int32_t iterations) {
   /*******************************************************************
    *
    * Create a transaction manager:
@@ -1919,7 +1923,8 @@ void stress_test(TestTransactionFactory *factory, int32_t iterations) {
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
 
-TEST(TestTXMgr, SimpleStressTest) {
+TEST(TestTXMgr, SimpleStressTest)
+{
   /*******************************************************************
    *
    * Initialize globals for test.
@@ -1949,7 +1954,8 @@ TEST(TestTXMgr, SimpleStressTest) {
   stress_test(&factory, iterations);
 }
 
-TEST(TestTXMgr, AggregationStressTest) {
+TEST(TestTXMgr, AggregationStressTest)
+{
   /*******************************************************************
    *
    * Initialize globals for test.
@@ -1979,7 +1985,8 @@ TEST(TestTXMgr, AggregationStressTest) {
   stress_test(&factory, iterations);
 }
 
-TEST(TestTXMgr, AggregationBatchStressTest) {
+TEST(TestTXMgr, AggregationBatchStressTest)
+{
   /*******************************************************************
    *
    * Initialize globals for test.

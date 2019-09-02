@@ -37,8 +37,7 @@ class GPUParent final : public PGPUParent {
   PAPZInputBridgeParent* AllocPAPZInputBridgeParent(const LayersId& aLayersId);
   bool DeallocPAPZInputBridgeParent(PAPZInputBridgeParent* aActor);
 
-  mozilla::ipc::IPCResult RecvInit(nsTArray<GfxPrefSetting>&& prefs,
-                                   nsTArray<GfxVarUpdate>&& vars,
+  mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs,
                                    nsTArray<LayerTreeIdMapping>&& mappings);
   mozilla::ipc::IPCResult RecvInitCompositorManager(
@@ -55,16 +54,16 @@ class GPUParent final : public PGPUParent {
       Endpoint<PUiCompositorControllerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitProfiler(
       Endpoint<PProfilerChild>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvUpdatePref(const GfxPrefSetting& pref);
   mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
+  mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
   mozilla::ipc::IPCResult RecvNewContentCompositorManager(
       Endpoint<PCompositorManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvNewContentImageBridge(
       Endpoint<PImageBridgeParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvNewContentVRManager(
       Endpoint<PVRManagerParent>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvNewContentVideoDecoderManager(
-      Endpoint<PVideoDecoderManagerParent>&& aEndpoint);
+  mozilla::ipc::IPCResult RecvNewContentRemoteDecoderManager(
+      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvGetDeviceStatus(GPUDeviceData* aOutStatus);
   mozilla::ipc::IPCResult RecvSimulateDeviceReset(GPUDeviceData* aOutStatus);
   mozilla::ipc::IPCResult RecvAddLayerTreeIdMapping(
@@ -77,6 +76,11 @@ class GPUParent final : public PGPUParent {
       const bool& minimizeMemoryUsage,
       const Maybe<ipc::FileDescriptor>& DMDFile);
   mozilla::ipc::IPCResult RecvShutdownVR();
+
+  mozilla::ipc::IPCResult RecvUpdatePerfStatsCollectionMask(
+      const uint64_t& aMask);
+  mozilla::ipc::IPCResult RecvCollectPerfStatsJSON(
+      CollectPerfStatsJSONResolver&& aResolver);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

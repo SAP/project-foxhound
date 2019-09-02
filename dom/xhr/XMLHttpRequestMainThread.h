@@ -66,6 +66,7 @@ namespace dom {
 
 class DOMString;
 class XMLHttpRequestUpload;
+class SerializedStackHolder;
 struct OriginAttributesDictionary;
 
 // A helper for building up an ArrayBuffer object's data
@@ -157,6 +158,7 @@ class RequestHeaders {
 };
 
 class nsXHRParseEndListener;
+class XMLHttpRequestDoneNotifier;
 
 // Make sure that any non-DOM interfaces added here are also added to
 // nsXMLHttpRequestXPCOMifier.
@@ -171,6 +173,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
                                        public MutableBlobStorageCallback {
   friend class nsXHRParseEndListener;
   friend class nsXMLHttpRequestXPCOMifier;
+  friend class XMLHttpRequestDoneNotifier;
 
  public:
   enum class ProgressEventType : uint8_t {
@@ -199,8 +202,8 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   XMLHttpRequestMainThread();
 
   void Construct(nsIPrincipal* aPrincipal, nsIGlobalObject* aGlobalObject,
-                 nsICookieSettings* aCookieSettings, nsIURI* aBaseURI = nullptr,
-                 nsILoadGroup* aLoadGroup = nullptr,
+                 nsICookieSettings* aCookieSettings, bool aForWorker,
+                 nsIURI* aBaseURI = nullptr, nsILoadGroup* aLoadGroup = nullptr,
                  PerformanceStorage* aPerformanceStorage = nullptr,
                  nsICSPEventListener* aCSPEventListener = nullptr) {
     MOZ_ASSERT(aPrincipal);
@@ -209,6 +212,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
     mBaseURI = aBaseURI;
     mLoadGroup = aLoadGroup;
     mCookieSettings = aCookieSettings;
+    mForWorker = aForWorker;
     mPerformanceStorage = aPerformanceStorage;
     mCSPEventListener = aCSPEventListener;
   }
@@ -370,6 +374,10 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   virtual void SetResponseType(XMLHttpRequestResponseType aType,
                                ErrorResult& aRv) override;
 
+  void SetResponseTypeRaw(XMLHttpRequestResponseType aType) {
+    mResponseType = aType;
+  }
+
   virtual void GetResponse(JSContext* aCx,
                            JS::MutableHandle<JS::Value> aResponse,
                            ErrorResult& aRv) override;
@@ -388,6 +396,8 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   virtual void SetMozBackgroundRequest(bool aMozBackgroundRequest,
                                        ErrorResult& aRv) override;
+
+  void SetOriginStack(UniquePtr<SerializedStackHolder> aOriginStack);
 
   virtual uint16_t ErrorCode() const override {
     return static_cast<uint16_t>(mErrorLoad);
@@ -458,7 +468,8 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   bool InUploadPhase() const;
 
   void OnBodyParseEnd();
-  void ChangeStateToDone();
+  void ChangeStateToDone(bool aWasSync);
+  void ChangeStateToDoneInternal();
 
   void StartProgressEventTimer();
   void StopProgressEventTimer();
@@ -604,6 +615,9 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   uint16_t mState;
 
+  // If true, this object is used by the worker's XMLHttpRequest.
+  bool mForWorker;
+
   bool mFlagSynchronous;
   bool mFlagAborted;
   bool mFlagParseBody;
@@ -714,6 +728,13 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   // Our parse-end listener, if we are parsing.
   RefPtr<nsXHRParseEndListener> mParseEndListener;
 
+  XMLHttpRequestDoneNotifier* mDelayedDoneNotifier;
+  void DisconnectDoneNotifier();
+
+  // Any stack information for the point the XHR was opened. This is deleted
+  // after the XHR is opened, to avoid retaining references to the worker.
+  UniquePtr<SerializedStackHolder> mOriginStack;
+
   static bool sDontWarnAboutSyncXHR;
 };
 
@@ -765,6 +786,27 @@ class nsXMLHttpRequestXPCOMifier final : public nsIStreamListener,
   NS_FORWARD_NSINAMED(mXHR->)
 
   NS_DECL_NSIINTERFACEREQUESTOR
+
+ private:
+  RefPtr<XMLHttpRequestMainThread> mXHR;
+};
+
+class XMLHttpRequestDoneNotifier : public Runnable {
+ public:
+  explicit XMLHttpRequestDoneNotifier(XMLHttpRequestMainThread* aXHR)
+      : Runnable("XMLHttpRequestDoneNotifier"), mXHR(aXHR) {}
+
+  NS_IMETHOD Run() override {
+    if (mXHR) {
+      RefPtr<XMLHttpRequestMainThread> xhr = mXHR;
+      // ChangeStateToDoneInternal ends up calling Disconnect();
+      xhr->ChangeStateToDoneInternal();
+      MOZ_ASSERT(!mXHR);
+    }
+    return NS_OK;
+  }
+
+  void Disconnect() { mXHR = nullptr; }
 
  private:
   RefPtr<XMLHttpRequestMainThread> mXHR;

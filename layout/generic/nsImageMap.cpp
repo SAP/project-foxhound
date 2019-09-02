@@ -75,8 +75,8 @@ static void logMessage(nsIContent* aContent, const nsAString& aCoordsSpec,
                        int32_t aFlags, const char* aMessageName) {
   nsContentUtils::ReportToConsole(
       aFlags, NS_LITERAL_CSTRING("Layout: ImageMap"), aContent->OwnerDoc(),
-      nsContentUtils::eLAYOUT_PROPERTIES, aMessageName, nullptr, /* params */
-      0, /* params length */
+      nsContentUtils::eLAYOUT_PROPERTIES, aMessageName,
+      nsTArray<nsString>(), /* params */
       nullptr,
       PromiseFlatString(NS_LITERAL_STRING("coords=\"") + aCoordsSpec +
                         NS_LITERAL_STRING("\""))); /* source line */
@@ -738,7 +738,7 @@ void nsImageMap::AddArea(HTMLAreaElement* aArea) {
   mAreas.AppendElement(std::move(area));
 }
 
-nsIContent* nsImageMap::GetArea(nscoord aX, nscoord aY) const {
+HTMLAreaElement* nsImageMap::GetArea(nscoord aX, nscoord aY) const {
   NS_ASSERTION(mMap, "Not initialized");
   for (const auto& area : mAreas) {
     if (area->IsInside(aX, aY)) {
@@ -749,7 +749,7 @@ nsIContent* nsImageMap::GetArea(nscoord aX, nscoord aY) const {
   return nullptr;
 }
 
-nsIContent* nsImageMap::GetAreaAt(uint32_t aIndex) const {
+HTMLAreaElement* nsImageMap::GetAreaAt(uint32_t aIndex) const {
   return mAreas.ElementAt(aIndex)->mArea;
 }
 

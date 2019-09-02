@@ -10,9 +10,11 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Types.h"
 #include "mozilla/WritingModes.h"
 #include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
@@ -22,10 +24,7 @@
 
 namespace mozilla {
 
-struct AdditiveSymbol {
-  CounterValue weight;
-  nsString symbol;
-};
+using AdditiveSymbol = StyleAdditiveSymbol;
 
 struct NegativeType {
   nsString before, after;
@@ -47,7 +46,7 @@ struct PadType {
 #define LENGTH_LIMIT 150
 
 static bool GetCyclicCounterText(CounterValue aOrdinal, nsAString& aResult,
-                                 const nsTArray<nsString>& aSymbols) {
+                                 Span<const nsString> aSymbols) {
   MOZ_ASSERT(aSymbols.Length() >= 1, "No symbol available for cyclic counter.");
   auto n = aSymbols.Length();
   CounterValue index = (aOrdinal - 1) % n;
@@ -57,7 +56,7 @@ static bool GetCyclicCounterText(CounterValue aOrdinal, nsAString& aResult,
 
 static bool GetFixedCounterText(CounterValue aOrdinal, nsAString& aResult,
                                 CounterValue aStart,
-                                const nsTArray<nsString>& aSymbols) {
+                                Span<const nsString> aSymbols) {
   CounterValue index = aOrdinal - aStart;
   if (index >= 0 && index < CounterValue(aSymbols.Length())) {
     aResult = aSymbols[index];
@@ -68,7 +67,7 @@ static bool GetFixedCounterText(CounterValue aOrdinal, nsAString& aResult,
 }
 
 static bool GetSymbolicCounterText(CounterValue aOrdinal, nsAString& aResult,
-                                   const nsTArray<nsString>& aSymbols) {
+                                   Span<const nsString> aSymbols) {
   MOZ_ASSERT(aSymbols.Length() >= 1,
              "No symbol available for symbolic counter.");
   MOZ_ASSERT(aOrdinal >= 0, "Invalid ordinal.");
@@ -94,7 +93,7 @@ static bool GetSymbolicCounterText(CounterValue aOrdinal, nsAString& aResult,
 }
 
 static bool GetAlphabeticCounterText(CounterValue aOrdinal, nsAString& aResult,
-                                     const nsTArray<nsString>& aSymbols) {
+                                     Span<const nsString> aSymbols) {
   MOZ_ASSERT(aSymbols.Length() >= 2, "Too few symbols for alphabetic counter.");
   MOZ_ASSERT(aOrdinal >= 0, "Invalid ordinal.");
   if (aOrdinal == 0) {
@@ -120,7 +119,7 @@ static bool GetAlphabeticCounterText(CounterValue aOrdinal, nsAString& aResult,
 }
 
 static bool GetNumericCounterText(CounterValue aOrdinal, nsAString& aResult,
-                                  const nsTArray<nsString>& aSymbols) {
+                                  Span<const nsString> aSymbols) {
   MOZ_ASSERT(aSymbols.Length() >= 2, "Too few symbols for numeric counter.");
   MOZ_ASSERT(aOrdinal >= 0, "Invalid ordinal.");
 
@@ -144,11 +143,11 @@ static bool GetNumericCounterText(CounterValue aOrdinal, nsAString& aResult,
 }
 
 static bool GetAdditiveCounterText(CounterValue aOrdinal, nsAString& aResult,
-                                   const nsTArray<AdditiveSymbol>& aSymbols) {
+                                   Span<const AdditiveSymbol> aSymbols) {
   MOZ_ASSERT(aOrdinal >= 0, "Invalid ordinal.");
 
   if (aOrdinal == 0) {
-    const AdditiveSymbol& last = aSymbols.LastElement();
+    const AdditiveSymbol& last = aSymbols[aSymbols.Length() - 1];
     if (last.weight == 0) {
       aResult = last.symbol;
       return true;
@@ -886,9 +885,10 @@ class DependentBuiltinCounterStyle final : public BuiltinCounterStyle {
   }
 
   void Destroy() {
-    nsIPresShell* shell = mManager->PresContext()->PresShell();
+    PresShell* presShell = mManager->PresContext()->PresShell();
     this->~DependentBuiltinCounterStyle();
-    shell->FreeByObjectID(eArenaObjectID_DependentBuiltinCounterStyle, this);
+    presShell->FreeByObjectID(eArenaObjectID_DependentBuiltinCounterStyle,
+                              this);
   }
 
  private:
@@ -981,22 +981,16 @@ class CustomCounterStyle final : public CounterStyle {
   }
 
   void Destroy() {
-    nsIPresShell* shell = mManager->PresContext()->PresShell();
+    PresShell* presShell = mManager->PresContext()->PresShell();
     this->~CustomCounterStyle();
-    shell->FreeByObjectID(eArenaObjectID_CustomCounterStyle, this);
+    presShell->FreeByObjectID(eArenaObjectID_CustomCounterStyle, this);
   }
 
  private:
   ~CustomCounterStyle() {}
 
-  nsCSSValue GetDesc(nsCSSCounterDesc aDesc) const {
-    nsCSSValue value;
-    Servo_CounterStyleRule_GetDescriptor(mRule, aDesc, &value);
-    return value;
-  }
-
-  const nsTArray<nsString>& GetSymbols();
-  const nsTArray<AdditiveSymbol>& GetAdditiveSymbols();
+  Span<const nsString> GetSymbols();
+  Span<const AdditiveSymbol> GetAdditiveSymbols();
 
   // The speak-as values of counter styles may form a loop, and the
   // loops may have complex interaction with the loop formed by
@@ -1042,8 +1036,8 @@ class CustomCounterStyle final : public CounterStyle {
   uint16_t mFlags;
 
   // Fields below will be initialized when necessary.
-  nsTArray<nsString> mSymbols;
-  nsTArray<AdditiveSymbol> mAdditiveSymbols;
+  StyleOwnedSlice<nsString> mSymbols;
+  StyleOwnedSlice<AdditiveSymbol> mAdditiveSymbols;
   NegativeType mNegative;
   nsString mPrefix, mSuffix;
   PadType mPad;
@@ -1099,13 +1093,12 @@ void CustomCounterStyle::GetPrefix(nsAString& aResult) {
   if (!(mFlags & FLAG_PREFIX_INITED)) {
     mFlags |= FLAG_PREFIX_INITED;
 
-    nsCSSValue value = GetDesc(eCSSCounterDesc_Prefix);
-    if (value.UnitHasStringValue()) {
-      value.GetStringValue(mPrefix);
-    } else if (IsExtendsSystem()) {
-      GetExtends()->GetPrefix(mPrefix);
-    } else {
-      mPrefix.Truncate();
+    if (!Servo_CounterStyleRule_GetPrefix(mRule, &mPrefix)) {
+      if (IsExtendsSystem()) {
+        GetExtends()->GetPrefix(mPrefix);
+      } else {
+        mPrefix.Truncate();
+      }
     }
   }
   aResult = mPrefix;
@@ -1116,13 +1109,12 @@ void CustomCounterStyle::GetSuffix(nsAString& aResult) {
   if (!(mFlags & FLAG_SUFFIX_INITED)) {
     mFlags |= FLAG_SUFFIX_INITED;
 
-    nsCSSValue value = GetDesc(eCSSCounterDesc_Suffix);
-    if (value.UnitHasStringValue()) {
-      value.GetStringValue(mSuffix);
-    } else if (IsExtendsSystem()) {
-      GetExtends()->GetSuffix(mSuffix);
-    } else {
-      mSuffix.AssignLiteral(u". ");
+    if (!Servo_CounterStyleRule_GetSuffix(mRule, &mSuffix)) {
+      if (IsExtendsSystem()) {
+        GetExtends()->GetSuffix(mSuffix);
+      } else {
+        mSuffix.AssignLiteral(u". ");
+      }
     }
   }
   aResult = mSuffix;
@@ -1161,56 +1153,36 @@ bool CustomCounterStyle::IsBullet() {
 void CustomCounterStyle::GetNegative(NegativeType& aResult) {
   if (!(mFlags & FLAG_NEGATIVE_INITED)) {
     mFlags |= FLAG_NEGATIVE_INITED;
-    nsCSSValue value = GetDesc(eCSSCounterDesc_Negative);
-    switch (value.GetUnit()) {
-      case eCSSUnit_Ident:
-      case eCSSUnit_String:
-        value.GetStringValue(mNegative.before);
+    if (!Servo_CounterStyleRule_GetNegative(mRule, &mNegative.before,
+                                            &mNegative.after)) {
+      if (IsExtendsSystem()) {
+        GetExtends()->GetNegative(mNegative);
+      } else {
+        mNegative.before.AssignLiteral(u"-");
         mNegative.after.Truncate();
-        break;
-      case eCSSUnit_Pair: {
-        const nsCSSValuePair& pair = value.GetPairValue();
-        pair.mXValue.GetStringValue(mNegative.before);
-        pair.mYValue.GetStringValue(mNegative.after);
-        break;
-      }
-      default: {
-        if (IsExtendsSystem()) {
-          GetExtends()->GetNegative(mNegative);
-        } else {
-          mNegative.before.AssignLiteral(u"-");
-          mNegative.after.Truncate();
-        }
       }
     }
   }
   aResult = mNegative;
 }
 
-static inline bool IsRangeValueInfinite(const nsCSSValue& aValue) {
-  return aValue.GetUnit() == eCSSUnit_Enumerated &&
-         aValue.GetIntValue() == NS_STYLE_COUNTER_RANGE_INFINITE;
-}
-
 /* virtual */
 bool CustomCounterStyle::IsOrdinalInRange(CounterValue aOrdinal) {
-  nsCSSValue value = GetDesc(eCSSCounterDesc_Range);
-  if (value.GetUnit() == eCSSUnit_PairList) {
-    for (const nsCSSValuePairList* item = value.GetPairListValue();
-         item != nullptr; item = item->mNext) {
-      const nsCSSValue& lowerBound = item->mXValue;
-      const nsCSSValue& upperBound = item->mYValue;
-      if ((IsRangeValueInfinite(lowerBound) ||
-           aOrdinal >= lowerBound.GetIntValue()) &&
-          (IsRangeValueInfinite(upperBound) ||
-           aOrdinal <= upperBound.GetIntValue())) {
-        return true;
+  auto inRange = Servo_CounterStyleRule_IsInRange(mRule, aOrdinal);
+  switch (inRange) {
+    case StyleIsOrdinalInRange::InRange:
+      return true;
+    case StyleIsOrdinalInRange::NotInRange:
+      return false;
+    case StyleIsOrdinalInRange::NoOrdinalSpecified:
+      if (IsExtendsSystem()) {
+        return GetExtends()->IsOrdinalInRange(aOrdinal);
       }
-    }
-    return false;
-  } else if (IsExtendsSystem() && value.GetUnit() == eCSSUnit_None) {
-    // Only use the range of extended style when 'range' is not specified.
-    return GetExtends()->IsOrdinalInRange(aOrdinal);
+      break;
+    case StyleIsOrdinalInRange::Auto:
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unkown result from IsInRange?");
   }
   return IsOrdinalInAutoRange(aOrdinal);
 }
@@ -1239,16 +1211,13 @@ bool CustomCounterStyle::IsOrdinalInAutoRange(CounterValue aOrdinal) {
 void CustomCounterStyle::GetPad(PadType& aResult) {
   if (!(mFlags & FLAG_PAD_INITED)) {
     mFlags |= FLAG_PAD_INITED;
-    nsCSSValue value = GetDesc(eCSSCounterDesc_Pad);
-    if (value.GetUnit() == eCSSUnit_Pair) {
-      const nsCSSValuePair& pair = value.GetPairValue();
-      mPad.width = pair.mXValue.GetIntValue();
-      pair.mYValue.GetStringValue(mPad.symbol);
-    } else if (IsExtendsSystem()) {
-      GetExtends()->GetPad(mPad);
-    } else {
-      mPad.width = 0;
-      mPad.symbol.Truncate();
+    if (!Servo_CounterStyleRule_GetPad(mRule, &mPad.width, &mPad.symbol)) {
+      if (IsExtendsSystem()) {
+        GetExtends()->GetPad(mPad);
+      } else {
+        mPad.width = 0;
+        mPad.symbol.Truncate();
+      }
     }
   }
   aResult = mPad;
@@ -1324,31 +1293,18 @@ bool CustomCounterStyle::GetInitialCounterText(CounterValue aOrdinal,
   }
 }
 
-const nsTArray<nsString>& CustomCounterStyle::GetSymbols() {
+Span<const nsString> CustomCounterStyle::GetSymbols() {
   if (mSymbols.IsEmpty()) {
-    nsCSSValue values = GetDesc(eCSSCounterDesc_Symbols);
-    for (const nsCSSValueList* item = values.GetListValue(); item;
-         item = item->mNext) {
-      nsString* symbol = mSymbols.AppendElement();
-      item->mValue.GetStringValue(*symbol);
-    }
-    mSymbols.Compact();
+    Servo_CounterStyleRule_GetSymbols(mRule, &mSymbols);
   }
-  return mSymbols;
+  return mSymbols.AsSpan();
 }
 
-const nsTArray<AdditiveSymbol>& CustomCounterStyle::GetAdditiveSymbols() {
+Span<const AdditiveSymbol> CustomCounterStyle::GetAdditiveSymbols() {
   if (mAdditiveSymbols.IsEmpty()) {
-    nsCSSValue values = GetDesc(eCSSCounterDesc_AdditiveSymbols);
-    for (const nsCSSValuePairList* item = values.GetPairListValue(); item;
-         item = item->mNext) {
-      AdditiveSymbol* symbol = mAdditiveSymbols.AppendElement();
-      symbol->weight = item->mXValue.GetIntValue();
-      item->mYValue.GetStringValue(symbol->symbol);
-    }
-    mAdditiveSymbols.Compact();
+    Servo_CounterStyleRule_GetAdditiveSymbols(mRule, &mAdditiveSymbols);
   }
-  return mAdditiveSymbols;
+  return mAdditiveSymbols.AsSpan();
 }
 
 // This method is used to provide the computed value for 'auto'.
@@ -1376,19 +1332,26 @@ void CustomCounterStyle::ComputeRawSpeakAs(uint8_t& aSpeakAs,
   NS_ASSERTION(!(mFlags & FLAG_SPEAKAS_INITED),
                "ComputeRawSpeakAs is called with speak-as inited.");
 
-  nsCSSValue value = GetDesc(eCSSCounterDesc_SpeakAs);
-  switch (value.GetUnit()) {
-    case eCSSUnit_Auto:
+  auto speakAs = StyleCounterSpeakAs::None();
+  Servo_CounterStyleRule_GetSpeakAs(mRule, &speakAs);
+  switch (speakAs.tag) {
+    case StyleCounterSpeakAs::Tag::Auto:
       aSpeakAs = GetSpeakAsAutoValue();
       break;
-    case eCSSUnit_Enumerated:
-      aSpeakAs = value.GetIntValue();
+    case StyleCounterSpeakAs::Tag::Bullets:
+      aSpeakAs = NS_STYLE_COUNTER_SPEAKAS_BULLETS;
       break;
-    case eCSSUnit_AtomIdent:
+    case StyleCounterSpeakAs::Tag::Numbers:
+      aSpeakAs = NS_STYLE_COUNTER_SPEAKAS_NUMBERS;
+      break;
+    case StyleCounterSpeakAs::Tag::Words:
+      aSpeakAs = NS_STYLE_COUNTER_SPEAKAS_WORDS;
+      break;
+    case StyleCounterSpeakAs::Tag::Ident:
       aSpeakAs = NS_STYLE_COUNTER_SPEAKAS_OTHER;
-      aSpeakAsCounter = mManager->ResolveCounterStyle(value.GetAtomValue());
+      aSpeakAsCounter = mManager->ResolveCounterStyle(speakAs.AsIdent());
       break;
-    case eCSSUnit_Null: {
+    case StyleCounterSpeakAs::Tag::None: {
       if (!IsExtendsSystem()) {
         aSpeakAs = GetSpeakAsAutoValue();
       } else {
@@ -1545,21 +1508,6 @@ AnonymousCounterStyle::AnonymousCounterStyle(const nsAString& aContent)
   mSymbols.SetCapacity(1);
   mSymbols.AppendElement(aContent);
 }
-
-static nsTArray<nsString> CollectSymbolsFromCSSValueList(
-    const nsCSSValueList* aList) {
-  nsTArray<nsString> symbols;
-  for (const nsCSSValueList* item = aList; item; item = item->mNext) {
-    item->mValue.GetStringValue(*symbols.AppendElement());
-  }
-  symbols.Compact();
-  return symbols;
-}
-
-AnonymousCounterStyle::AnonymousCounterStyle(const nsCSSValue::Array* aParams)
-    : AnonymousCounterStyle(
-          aParams->Item(0).GetIntValue(),
-          CollectSymbolsFromCSSValueList(aParams->Item(1).GetListValue())) {}
 
 AnonymousCounterStyle::AnonymousCounterStyle(uint8_t aSystem,
                                              nsTArray<nsString> aSymbols)

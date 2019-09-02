@@ -18,7 +18,7 @@
 #include "nsIURI.h"
 #include "nsIDocShell.h"
 #include "nsIDOMWindow.h"
-#include "nsITabChild.h"
+#include "nsIBrowserChild.h"
 #include "nsIContent.h"
 #include "nsIImageLoadingContent.h"
 #include "nsILoadContext.h"
@@ -35,7 +35,7 @@ NS_IMPL_ISUPPORTS(nsContentPolicy, nsIContentPolicy)
 
 static mozilla::LazyLogModule gConPolLog("nsContentPolicy");
 
-nsresult NS_NewContentPolicy(nsIContentPolicy **aResult) {
+nsresult NS_NewContentPolicy(nsIContentPolicy** aResult) {
   *aResult = new nsContentPolicy;
   NS_ADDREF(*aResult);
   return NS_OK;
@@ -64,13 +64,12 @@ nsContentPolicy::~nsContentPolicy() {}
 #endif  // defined(DEBUG)
 
 inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
-                                             nsIURI *contentLocation,
-                                             nsILoadInfo *loadInfo,
-                                             const nsACString &mimeType,
-                                             int16_t *decision) {
+                                             nsIURI* contentLocation,
+                                             nsILoadInfo* loadInfo,
+                                             const nsACString& mimeType,
+                                             int16_t* decision) {
   nsContentPolicyType contentType = loadInfo->InternalContentPolicyType();
   nsCOMPtr<nsISupports> requestingContext = loadInfo->GetLoadingContext();
-  nsCOMPtr<nsIPrincipal> requestPrincipal = loadInfo->TriggeringPrincipal();
   nsCOMPtr<nsIURI> requestingLocation;
   nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();
   if (loadingPrincipal) {
@@ -86,9 +85,10 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
   {
     nsCOMPtr<nsINode> node(do_QueryInterface(requestingContext));
     nsCOMPtr<nsIDOMWindow> window(do_QueryInterface(requestingContext));
-    nsCOMPtr<nsITabChild> tabChild(do_QueryInterface(requestingContext));
-    NS_ASSERTION(!requestingContext || node || window || tabChild,
-                 "Context should be a DOM node, DOM window or a tabChild!");
+    nsCOMPtr<nsIBrowserChild> browserChild(
+        do_QueryInterface(requestingContext));
+    NS_ASSERTION(!requestingContext || node || window || browserChild,
+                 "Context should be a DOM node, DOM window or a browserChild!");
   }
 #endif
 
@@ -97,18 +97,17 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
    * iframes with an image as src. Get the uri from the dom node.
    * See bug 254510
    */
-  if (!requestingLocation) {
-    nsCOMPtr<Document> doc;
-    nsCOMPtr<nsIContent> node = do_QueryInterface(requestingContext);
-    if (node) {
-      doc = node->OwnerDoc();
-    }
-    if (!doc) {
-      doc = do_QueryInterface(requestingContext);
-    }
-    if (doc) {
-      requestingLocation = doc->GetDocumentURI();
-    }
+  nsCOMPtr<mozilla::dom::Document> doc;
+  nsCOMPtr<nsIContent> node = do_QueryInterface(requestingContext);
+  if (node) {
+    doc = node->OwnerDoc();
+  }
+  if (!doc) {
+    doc = do_QueryInterface(requestingContext);
+  }
+
+  if (!requestingLocation && doc) {
+    requestingLocation = doc->GetDocumentURI();
   }
 
   nsContentPolicyType externalType =
@@ -119,7 +118,7 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
    * their permissions.
    */
   nsresult rv;
-  const nsCOMArray<nsIContentPolicy> &entries = mPolicies.GetCachedEntries();
+  const nsCOMArray<nsIContentPolicy>& entries = mPolicies.GetCachedEntries();
 
   nsCOMPtr<nsPIDOMWindowOuter> window;
   if (nsCOMPtr<nsINode> node = do_QueryInterface(requestingContext)) {
@@ -128,9 +127,8 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
     window = do_QueryInterface(requestingContext);
   }
 
-  if (requestPrincipal) {
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    requestPrincipal->GetCsp(getter_AddRefs(csp));
+  if (doc) {
+    nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp();
     if (csp && window) {
       csp->EnsureEventTarget(
           window->EventTargetFor(mozilla::TaskCategory::Other));
@@ -175,7 +173,7 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
   }                                                                            \
   /* skip all this nonsense if the call failed or logging is disabled */       \
   if (NS_SUCCEEDED(rv) && MOZ_LOG_TEST(gConPolLog, LogLevel::Debug)) {         \
-    const char *resultName;                                                    \
+    const char* resultName;                                                    \
     if (decision) {                                                            \
       resultName = NS_CP_ResponseName(*decision);                              \
     } else {                                                                   \
@@ -192,8 +190,8 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
   PR_END_MACRO
 
 NS_IMETHODIMP
-nsContentPolicy::ShouldLoad(nsIURI *contentLocation, nsILoadInfo *loadInfo,
-                            const nsACString &mimeType, int16_t *decision) {
+nsContentPolicy::ShouldLoad(nsIURI* contentLocation, nsILoadInfo* loadInfo,
+                            const nsACString& mimeType, int16_t* decision) {
   // ShouldProcess does not need a content location, but we do
   MOZ_ASSERT(contentLocation, "Must provide request location");
   nsresult rv = CheckPolicy(&nsIContentPolicy::ShouldLoad, contentLocation,
@@ -204,8 +202,8 @@ nsContentPolicy::ShouldLoad(nsIURI *contentLocation, nsILoadInfo *loadInfo,
 }
 
 NS_IMETHODIMP
-nsContentPolicy::ShouldProcess(nsIURI *contentLocation, nsILoadInfo *loadInfo,
-                               const nsACString &mimeType, int16_t *decision) {
+nsContentPolicy::ShouldProcess(nsIURI* contentLocation, nsILoadInfo* loadInfo,
+                               const nsACString& mimeType, int16_t* decision) {
   nsresult rv = CheckPolicy(&nsIContentPolicy::ShouldProcess, contentLocation,
                             loadInfo, mimeType, decision);
   LOG_CHECK("ShouldProcess");

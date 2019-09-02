@@ -13,8 +13,9 @@ import requests
 from requests.exceptions import HTTPError
 
 from .registry import register_callback_action
-from .util import find_decision_task, create_tasks, combine_task_graph_files
+from .util import create_tasks, combine_task_graph_files, add_args_to_command
 from taskgraph.util.taskcluster import get_artifact_from_index
+from taskgraph.util.taskgraph import find_decision_task
 from taskgraph.taskgraph import TaskGraph
 from taskgraph.util import taskcluster
 
@@ -41,7 +42,7 @@ logger = logging.getLogger(__name__)
                 'type': 'integer',
                 'default': 5,
                 'minimum': 1,
-                'maximum': 10,
+                'maximum': 25,
                 'title': 'Depth',
                 'description': ('The number of previous pushes before the current '
                                 'push to attempt to trigger this task on.')
@@ -231,32 +232,6 @@ def remove_args_from_command(cmd_parts, preamble_length=0, args_to_ignore=[]):
         # remove job specific arg, and reduce array index as size changes
         cmd_parts.remove(cmd_parts[idx])
         idx -= 1
-
-    if cmd_type == 'dict':
-        cmd_parts = [{'task-reference': ' '.join(cmd_parts)}]
-    elif cmd_type == 'subarray':
-        cmd_parts = [cmd_parts]
-    return cmd_parts
-
-
-def add_args_to_command(cmd_parts, extra_args=[]):
-    """
-        Add custom command line args to a given command.
-        args:
-          cmd_parts: the raw command as seen by taskcluster
-          extra_args: array of args we want to add
-    """
-    cmd_type = 'default'
-    if len(cmd_parts) == 1 and isinstance(cmd_parts[0], dict):
-        # windows has single cmd part as dict: 'task-reference', with long string
-        cmd_parts = cmd_parts[0]['task-reference'].split(' ')
-        cmd_type = 'dict'
-    elif len(cmd_parts) == 1 and isinstance(cmd_parts[0], list):
-        # osx has an single value array with an array inside
-        cmd_parts = cmd_parts[0]
-        cmd_type = 'subarray'
-
-    cmd_parts.extend(extra_args)
 
     if cmd_type == 'dict':
         cmd_parts = [{'task-reference': ' '.join(cmd_parts)}]

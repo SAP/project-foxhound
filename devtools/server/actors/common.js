@@ -43,8 +43,10 @@ ActorPool.prototype = {
       // Older style actors use actorPrefix, while protocol.js-based actors use typeName
       const prefix = actor.actorPrefix || actor.typeName;
       if (!prefix) {
-        throw new Error("Actor should precify either `actorPrefix` or `typeName` " +
-                        "attribute");
+        throw new Error(
+          "Actor should precify either `actorPrefix` or `typeName` " +
+            "attribute"
+        );
       }
       actor.actorID = this.conn.allocID(prefix || undefined);
     }
@@ -105,83 +107,65 @@ ActorPool.prototype = {
 exports.ActorPool = ActorPool;
 
 /**
- * A GeneratedLocation represents a location in a generated source.
+ * A SourceLocation represents a location in a source.
  *
  * @param SourceActor actor
- *        A SourceActor representing a generated source.
+ *        A SourceActor representing a source.
  * @param Number line
  *        A line within the given source.
  * @param Number column
  *        A column within the given line.
  */
-function GeneratedLocation(actor, line, column, lastColumn) {
+function SourceLocation(actor, line, column, lastColumn) {
   this._connection = actor ? actor.conn : null;
   this._actorID = actor ? actor.actorID : undefined;
   this._line = line;
   this._column = column;
-  this._lastColumn = (lastColumn !== undefined) ? lastColumn : column + 1;
+  this._lastColumn = lastColumn !== undefined ? lastColumn : column + 1;
 }
 
-GeneratedLocation.prototype = {
-  get originalSourceActor() {
-    throw new Error();
-  },
-
-  get originalUrl() {
-    throw new Error("Shouldn't access originalUrl from a GeneratedLocation");
-  },
-
-  get originalLine() {
-    throw new Error("Shouldn't access originalLine from a GeneratedLocation");
-  },
-
-  get originalColumn() {
-    throw new Error("Shouldn't access originalColumn from a GeneratedLocation");
-  },
-
-  get originalName() {
-    throw new Error("Shouldn't access originalName from a GeneratedLocation");
-  },
-
-  get generatedSourceActor() {
+SourceLocation.prototype = {
+  get sourceActor() {
     return this._connection ? this._connection.getActor(this._actorID) : null;
   },
 
-  get generatedUrl() {
-    return this.generatedSourceActor.url;
+  get url() {
+    return this.sourceActor.url;
   },
 
-  get generatedLine() {
+  get line() {
     return this._line;
   },
 
-  get generatedColumn() {
+  get column() {
     return this._column;
   },
 
-  get generatedLastColumn() {
+  get lastColumn() {
     return this._lastColumn;
   },
 
   equals: function(other) {
-    return this.generatedSourceActor.url == other.generatedSourceActor.url &&
-           this.generatedLine === other.generatedLine &&
-           (this.generatedColumn === undefined ||
-            other.generatedColumn === undefined ||
-            this.generatedColumn === other.generatedColumn);
+    return (
+      this.sourceActor.url == other.sourceActor.url &&
+      this.line === other.line &&
+      (this.column === undefined ||
+        other.column === undefined ||
+        this.column === other.column)
+    );
   },
 
   toJSON: function() {
     return {
-      source: this.generatedSourceActor.form(),
-      line: this.generatedLine,
-      column: this.generatedColumn,
-      lastColumn: this.generatedLastColumn,
+      source: this.sourceActor.form(),
+      line: this.line,
+      column: this.column,
+      lastColumn: this.lastColumn,
     };
   },
 };
 
-exports.GeneratedLocation = GeneratedLocation;
+exports.SourceLocation = SourceLocation;
 
 /**
  * A method decorator that ensures the actor is in the expected state before
@@ -204,9 +188,10 @@ exports.GeneratedLocation = GeneratedLocation;
 function expectState(expectedState, methodFunc, activity) {
   return function(...args) {
     if (this.state !== expectedState) {
-      const msg = `Wrong state while ${activity}:` +
-                  `Expected '${expectedState}', ` +
-                  `but current state is '${this.state}'.`;
+      const msg =
+        `Wrong state while ${activity}:` +
+        `Expected '${expectedState}', ` +
+        `but current state is '${this.state}'.`;
       return Promise.reject(new Error(msg));
     }
 

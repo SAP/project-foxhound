@@ -37,6 +37,34 @@ bool HTMLEditUtils::IsInlineStyle(nsINode* aNode) {
       nsGkAtoms::sup, nsGkAtoms::font);
 }
 
+bool HTMLEditUtils::IsRemovableInlineStyleElement(Element& aElement) {
+  if (!aElement.IsHTMLElement()) {
+    return false;
+  }
+  // https://w3c.github.io/editing/execCommand.html#removeformat-candidate
+  if (aElement.IsAnyOfHTMLElements(
+          nsGkAtoms::abbr,  // Chrome ignores, but does not make sense.
+          nsGkAtoms::acronym, nsGkAtoms::b,
+          nsGkAtoms::bdi,  // Chrome ignores, but does not make sense.
+          nsGkAtoms::bdo, nsGkAtoms::big, nsGkAtoms::cite, nsGkAtoms::code,
+          // nsGkAtoms::del, Chrome ignores, but does not make sense but
+          // execCommand unofficial draft excludes this.  Spec issue:
+          // https://github.com/w3c/editing/issues/192
+          nsGkAtoms::dfn, nsGkAtoms::em, nsGkAtoms::font, nsGkAtoms::i,
+          nsGkAtoms::ins, nsGkAtoms::kbd,
+          nsGkAtoms::mark,  // Chrome ignores, but does not make sense.
+          nsGkAtoms::nobr, nsGkAtoms::q, nsGkAtoms::s, nsGkAtoms::samp,
+          nsGkAtoms::small, nsGkAtoms::span, nsGkAtoms::strike,
+          nsGkAtoms::strong, nsGkAtoms::sub, nsGkAtoms::sup, nsGkAtoms::tt,
+          nsGkAtoms::u, nsGkAtoms::var)) {
+    return true;
+  }
+  // If it's a <blink> element, we can remove it.
+  nsAutoString tagName;
+  aElement.GetTagName(tagName);
+  return tagName.LowerCaseEqualsASCII("blink");
+}
+
 /**
  * IsFormatNode() returns true if aNode is a format node.
  */
@@ -218,8 +246,8 @@ bool HTMLEditUtils::IsFormWidget(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsAnyOfHTMLElements(nsGkAtoms::textarea, nsGkAtoms::select,
                                     nsGkAtoms::button, nsGkAtoms::output,
-                                    nsGkAtoms::keygen, nsGkAtoms::progress,
-                                    nsGkAtoms::meter, nsGkAtoms::input);
+                                    nsGkAtoms::progress, nsGkAtoms::meter,
+                                    nsGkAtoms::input);
 }
 
 bool HTMLEditUtils::SupportsAlignAttr(nsINode& aNode) {
@@ -423,7 +451,7 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
     ELEM(input, false, false, GROUP_FORMCONTROL, GROUP_NONE),
     ELEM(ins, true, true, GROUP_PHRASE | GROUP_BLOCK, GROUP_FLOW_ELEMENT),
     ELEM(kbd, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
-    ELEM(keygen, false, false, GROUP_FORMCONTROL, GROUP_NONE),
+    ELEM(keygen, false, false, GROUP_NONE, GROUP_NONE),
     ELEM(label, true, false, GROUP_FORMCONTROL, GROUP_INLINE_ELEMENT),
     ELEM(legend, true, true, GROUP_NONE, GROUP_INLINE_ELEMENT),
     ELEM(li, true, false, GROUP_LI, GROUP_FLOW_ELEMENT),

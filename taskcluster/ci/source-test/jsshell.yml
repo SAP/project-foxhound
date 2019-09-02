@@ -1,9 +1,13 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 job-defaults:
     platform: linux64/opt
     require-build: true
     worker-type:
         by-platform:
-            linux64.*: releng-hardware/gecko-t-linux-talos
+            linux64.*: t-linux-talos
     worker:
         by-platform:
             linux64.*:

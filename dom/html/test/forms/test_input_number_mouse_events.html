@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=935501
 -->
 <head>
   <title>Test mouse events for number</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -124,12 +124,12 @@ function test() {
 }
 
 function runNextSpinTest() {
-  var test = spinTests.shift();
-  if (!test) {
+  var nextTest = spinTests.shift();
+  if (!nextTest) {
     SimpleTest.finish();
     return;
   }
-  test();
+  nextTest();
 }
 
 const SETTIMEOUT_DELAY = 500;

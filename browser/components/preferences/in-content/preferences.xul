@@ -26,6 +26,7 @@
 
   <linkset>
     <html:link rel="localization" href="branding/brand.ftl"/>
+    <html:link rel="localization" href="browser/branding/brandings.ftl"/>
     <html:link rel="localization" href="browser/branding/sync-brand.ftl"/>
     <html:link rel="localization" href="browser/preferences/preferences.ftl"/>
     <!-- Used by fontbuilder.js -->
@@ -50,14 +51,10 @@
   <html:link rel="shortcut icon"
               href="chrome://browser/skin/settings.svg"/>
 
-  <script type="application/javascript"
-          src="chrome://browser/content/utilityOverlay.js"/>
-  <script type="application/javascript"
-          src="chrome://global/content/preferencesBindings.js"/>
-  <script type="application/javascript"
-          src="chrome://browser/content/preferences/in-content/preferences.js"/>
-  <script type="application/javascript"
-          src="chrome://browser/content/preferences/in-content/extensionControlled.js"/>
+  <script src="chrome://browser/content/utilityOverlay.js"/>
+  <script src="chrome://global/content/preferencesBindings.js"/>
+  <script src="chrome://browser/content/preferences/in-content/preferences.js"/>
+  <script src="chrome://browser/content/preferences/in-content/extensionControlled.js"/>
   <script src="chrome://browser/content/preferences/in-content/findInPage.js"/>
   <script src="chrome://browser/content/preferences/in-content/subdialogs.js"/>
 
@@ -173,11 +170,16 @@
               <image class="info-icon"></image>
             </hbox>
             <hbox align="center" flex="1">
-              <label class="policies-label" flex="1" data-l10n-id="policies-notice"></label>
+              <label class="policies-label"
+                     flex="1"
+                     href="about:policies"
+                     useoriginprincipal="true"
+                     is="text-link"
+                     data-l10n-id="managed-notice"/>
             </hbox>
           </hbox>
           <textbox
-            type="search" id="searchInput"
+            is="search-textbox" id="searchInput"
             data-l10n-id="search-input-box"
             data-l10n-attrs="style"
             hidden="true" clickSelectsAll="true"/>

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use crate::cg;
 use darling::util::IdentList;
+use derive_common::cg;
 use proc_macro2::TokenStream;
 use quote::TokenStreamExt;
 use syn::{DeriveInput, Path, WhereClause};
@@ -25,7 +25,7 @@ pub fn derive(mut input: DeriveInput) -> TokenStream {
         let s = Structure::new(&input);
         let mut append_error_clause = s.variants().len() > 1;
 
-        let mut match_body = s.variants().iter().fold(quote!(), |body, variant| {
+        let match_body = s.variants().iter().fold(quote!(), |body, variant| {
             let arm = match derive_variant_arm(variant, &mut where_clause) {
                 Ok(arm) => arm,
                 Err(()) => {

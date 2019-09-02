@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
@@ -25,10 +28,12 @@ class Toolbar extends PureComponent {
     return {
       isAddRuleEnabled: PropTypes.bool.isRequired,
       isClassPanelExpanded: PropTypes.bool.isRequired,
+      isPrintSimulationHidden: PropTypes.bool.isRequired,
       onAddClass: PropTypes.func.isRequired,
       onAddRule: PropTypes.func.isRequired,
       onSetClassState: PropTypes.func.isRequired,
       onToggleClassPanelExpanded: PropTypes.func.isRequired,
+      onTogglePrintSimulation: PropTypes.func.isRequired,
       onTogglePseudoClass: PropTypes.func.isRequired,
     };
   }
@@ -37,12 +42,15 @@ class Toolbar extends PureComponent {
     super(props);
 
     this.state = {
+      // Whether or not the print simulation button is enabled.
+      isPrintSimulationEnabled: false,
       // Whether or not the pseudo class panel is expanded.
       isPseudoClassPanelExpanded: false,
     };
 
     this.onAddRuleClick = this.onAddRuleClick.bind(this);
     this.onClassPanelToggle = this.onClassPanelToggle.bind(this);
+    this.onPrintSimulationToggle = this.onPrintSimulationToggle.bind(this);
     this.onPseudoClassPanelToggle = this.onPseudoClassPanelToggle.bind(this);
   }
 
@@ -58,11 +66,19 @@ class Toolbar extends PureComponent {
     this.props.onToggleClassPanelExpanded(isClassPanelExpanded);
     this.setState(prevState => {
       return {
-        isPseudoClassPanelExpanded: isClassPanelExpanded ?
-                                    false :
-                                    prevState.isPseudoClassPanelExpanded,
+        isPseudoClassPanelExpanded: isClassPanelExpanded
+          ? false
+          : prevState.isPseudoClassPanelExpanded,
       };
     });
+  }
+
+  onPrintSimulationToggle(event) {
+    event.stopPropagation();
+    this.props.onTogglePrintSimulation();
+    this.setState(prevState => ({
+      isPrintSimulationEnabled: !prevState.isPrintSimulationEnabled,
+    }));
   }
 
   onPseudoClassPanelToggle(event) {
@@ -78,55 +94,71 @@ class Toolbar extends PureComponent {
   }
 
   render() {
-    const { isAddRuleEnabled, isClassPanelExpanded } = this.props;
-    const { isPseudoClassPanelExpanded } = this.state;
+    const {
+      isAddRuleEnabled,
+      isClassPanelExpanded,
+      isPrintSimulationHidden,
+    } = this.props;
+    const { isPrintSimulationEnabled, isPseudoClassPanelExpanded } = this.state;
 
-    return (
+    return dom.div(
+      {
+        id: "ruleview-toolbar-container",
+      },
       dom.div(
         {
-          id: "ruleview-toolbar-container",
-          className: "devtools-toolbar",
+          id: "ruleview-toolbar",
+          className: "devtools-toolbar devtools-input-toolbar",
         },
-        dom.div({ id: "ruleview-toolbar" },
-          SearchBox({}),
-          dom.div({ id: "ruleview-command-toolbar" },
-            dom.button({
-              id: "ruleview-add-rule-button",
-              className: "devtools-button",
-              disabled: !isAddRuleEnabled,
-              onClick: this.onAddRuleClick,
-              title: getStr("rule.addRule.tooltip"),
-            }),
-            dom.button({
-              id: "pseudo-class-panel-toggle",
-              className: "devtools-button" +
-                          (isPseudoClassPanelExpanded ? " checked" : ""),
-              onClick: this.onPseudoClassPanelToggle,
-              title: getStr("rule.togglePseudo.tooltip"),
-            }),
-            dom.button({
-              id: "class-panel-toggle",
-              className: "devtools-button" +
-                          (isClassPanelExpanded ? " checked" : ""),
-              onClick: this.onClassPanelToggle,
-              title: getStr("rule.classPanel.toggleClass.tooltip"),
-            })
-          )
-        ),
-        isClassPanelExpanded ?
-          ClassListPanel({
+        SearchBox({}),
+        dom.div({ className: "devtools-separator" }),
+        dom.div(
+          { id: "ruleview-command-toolbar" },
+          dom.button({
+            id: "pseudo-class-panel-toggle",
+            className:
+              "devtools-button" +
+              (isPseudoClassPanelExpanded ? " checked" : ""),
+            onClick: this.onPseudoClassPanelToggle,
+            title: getStr("rule.togglePseudo.tooltip"),
+          }),
+          dom.button({
+            id: "class-panel-toggle",
+            className:
+              "devtools-button" + (isClassPanelExpanded ? " checked" : ""),
+            onClick: this.onClassPanelToggle,
+            title: getStr("rule.classPanel.toggleClass.tooltip"),
+          }),
+          dom.button({
+            id: "ruleview-add-rule-button",
+            className: "devtools-button",
+            disabled: !isAddRuleEnabled,
+            onClick: this.onAddRuleClick,
+            title: getStr("rule.addRule.tooltip"),
+          }),
+          !isPrintSimulationHidden
+            ? dom.button({
+                id: "print-simulation-toggle",
+                className:
+                  "devtools-button" +
+                  (isPrintSimulationEnabled ? " checked" : ""),
+                onClick: this.onPrintSimulationToggle,
+                title: getStr("rule.printSimulation.tooltip"),
+              })
+            : null
+        )
+      ),
+      isClassPanelExpanded
+        ? ClassListPanel({
             onAddClass: this.props.onAddClass,
             onSetClassState: this.props.onSetClassState,
           })
-          :
-          null,
-        isPseudoClassPanelExpanded ?
-          PseudoClassPanel({
+        : null,
+      isPseudoClassPanelExpanded
+        ? PseudoClassPanel({
             onTogglePseudoClass: this.props.onTogglePseudoClass,
           })
-          :
-          null
-      )
+        : null
     );
   }
 }
@@ -135,6 +167,7 @@ const mapStateToProps = state => {
   return {
     isAddRuleEnabled: state.rules.isAddRuleEnabled,
     isClassPanelExpanded: state.classList.isClassPanelExpanded,
+    isPrintSimulationHidden: state.rules.isPrintSimulationHidden,
   };
 };
 

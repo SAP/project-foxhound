@@ -17,18 +17,22 @@ function run_test() {
   gDebuggee = addTestGlobal("test-logpoint");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-logpoint",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_simple_breakpoint();
-                           });
+    attachTestTabAndResume(gClient, "test-logpoint", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_simple_breakpoint();
+    });
   });
   do_test_pending();
 }
 
 function test_simple_breakpoint() {
   const rootActor = gClient.transport._serverConnection.rootActor;
-  const threadActor = rootActor._parameters.tabList._targetActors[0].threadActor;
+  const threadActor =
+    rootActor._parameters.tabList._targetActors[0].threadActor;
 
   let lastMessage;
   threadActor._parent._consoleActor = {
@@ -37,20 +41,24 @@ function test_simple_breakpoint() {
     },
   };
 
-  gThreadClient.addOneTimeListener("paused", async function(event, packet) {
-    const source = await getSourceById(
-      gThreadClient,
-      packet.frame.where.actor
-    );
+  gThreadClient.once("paused", async function(packet) {
+    const source = await getSourceById(gThreadClient, packet.frame.where.actor);
 
     // Set a logpoint which should invoke console.log.
-    gThreadClient.setBreakpoint({
-      sourceUrl: source.url,
-      line: 3,
-    }, { logValue: "a" });
+    gThreadClient.setBreakpoint(
+      {
+        sourceUrl: source.url,
+        line: 3,
+      },
+      { logValue: "a" }
+    );
+    await gClient.waitForRequestsToSettle();
 
     // Execute the rest of the code.
-    gThreadClient.resume();
+    await gThreadClient.resume();
+    Assert.equal(lastMessage.level, "logPoint");
+    Assert.equal(lastMessage.arguments[0], "three");
+    finishClient(gClient);
   });
 
   /* eslint-disable */
@@ -62,7 +70,4 @@ function test_simple_breakpoint() {
                    "test.js",
                    1);
   /* eslint-enable */
-
-  Assert.equal(lastMessage.arguments[0], "three");
-  finishClient(gClient);
 }

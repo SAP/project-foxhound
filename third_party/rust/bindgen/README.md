@@ -1,6 +1,7 @@
-# `bindgen`
+[![crates.io](https://img.shields.io/crates/v/bindgen.svg)](https://crates.io/crates/bindgen)
+[![docs.rs](https://docs.rs/bindgen/badge.svg)](https://docs.rs/bindgen/)
 
-[`impl period`](https://blog.rust-lang.org/2017/09/18/impl-future-for-rust.html) has been started! Join us at [Gitter.im](https://gitter.im/rust-impl-period/WG-dev-tools-bindgen).
+# `bindgen`
 
 **`bindgen` automatically generates Rust FFI bindings to C (and some C++) libraries.**
 
@@ -34,7 +35,7 @@ extern "C" {
 
 ## Users Guide
 
-[📚 Read the `bindgen` users guide here! 📚](https://rust-lang-nursery.github.io/rust-bindgen)
+[📚 Read the `bindgen` users guide here! 📚](https://rust-lang.github.io/rust-bindgen)
 
 ## API Reference
 

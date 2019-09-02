@@ -6,10 +6,8 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="Accessible XUL tabbrowser relation tests">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
   <script type="application/javascript"
           src="../common.js" />
@@ -48,8 +46,10 @@
         ////////////////////////////////////////////////////////////////////////
         // 'labelled by'/'label for' relations for xul:tab and xul:tabpanel
 
-        var tabs = tabBrowser().tabContainer.children;
-        var panels = tabBrowser().tabbox.tabpanels.children;
+        var tabs = Array.from(tabBrowser().tabContainer.allTabs);
+        // For preloaded tabs, there might be items in this array where this relation
+        // doesn't hold, so just deal with that:
+        var panels = tabs.map(t => t.linkedBrowser.closest("tabpanels > *"));
 
         testRelation(panels[0], RELATION_LABELLED_BY, tabs[0]);
         testRelation(tabs[0], RELATION_LABEL_FOR, panels[0]);

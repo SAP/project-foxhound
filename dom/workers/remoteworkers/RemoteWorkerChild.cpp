@@ -34,51 +34,6 @@ using workerinternals::ChannelFromScriptURLMainThread;
 
 namespace {
 
-nsresult PopulateContentSecurityPolicy(
-    nsIContentSecurityPolicy* aCSP,
-    const nsTArray<ContentSecurityPolicy>& aPolicies) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aCSP);
-  MOZ_ASSERT(!aPolicies.IsEmpty());
-
-  for (const ContentSecurityPolicy& policy : aPolicies) {
-    nsresult rv = aCSP->AppendPolicy(policy.policy(), policy.reportOnlyFlag(),
-                                     policy.deliveredViaMetaTagFlag());
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
-  return NS_OK;
-}
-
-nsresult PopulatePrincipalContentSecurityPolicy(
-    nsIPrincipal* aPrincipal, const nsTArray<ContentSecurityPolicy>& aPolicies,
-    const nsTArray<ContentSecurityPolicy>& aPreloadPolicies) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aPrincipal);
-
-  if (!aPolicies.IsEmpty()) {
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    aPrincipal->EnsureCSP(nullptr, getter_AddRefs(csp));
-    nsresult rv = PopulateContentSecurityPolicy(csp, aPolicies);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
-  if (!aPreloadPolicies.IsEmpty()) {
-    nsCOMPtr<nsIContentSecurityPolicy> preloadCsp;
-    aPrincipal->EnsurePreloadCSP(nullptr, getter_AddRefs(preloadCsp));
-    nsresult rv = PopulateContentSecurityPolicy(preloadCsp, aPreloadPolicies);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
-  return NS_OK;
-}
-
 class SharedWorkerInterfaceRequestor final : public nsIInterfaceRequestor {
  public:
   NS_DECL_ISUPPORTS
@@ -243,21 +198,14 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
     return rv;
   }
 
-  rv = PopulatePrincipalContentSecurityPolicy(principal, aData.principalCsp(),
-                                              aData.principalPreloadCsp());
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
   nsCOMPtr<nsIPrincipal> loadingPrincipal =
       PrincipalInfoToPrincipal(aData.loadingPrincipalInfo(), &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  rv = PopulatePrincipalContentSecurityPolicy(
-      loadingPrincipal, aData.loadingPrincipalCsp(),
-      aData.loadingPrincipalPreloadCsp());
+  nsCOMPtr<nsIPrincipal> storagePrincipal =
+      PrincipalInfoToPrincipal(aData.storagePrincipalInfo(), &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -267,11 +215,14 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
   info.mResolvedScriptURI = DeserializeURI(aData.resolvedScriptURL());
 
   info.mPrincipalInfo = new PrincipalInfo(aData.principalInfo());
+  info.mStoragePrincipalInfo = new PrincipalInfo(aData.storagePrincipalInfo());
 
+  info.mReferrerInfo = aData.referrerInfo();
   info.mDomain = aData.domain();
   info.mPrincipal = principal;
+  info.mStoragePrincipal = storagePrincipal;
   info.mLoadingPrincipal = loadingPrincipal;
-  info.mStorageAllowed = aData.isStorageAccessAllowed();
+  info.mStorageAccess = aData.storageAccess();
   info.mOriginAttributes =
       BasePrincipal::Cast(principal)->OriginAttributesRef();
   info.mCookieSettings = net::CookieSettings::Create();
@@ -290,14 +241,27 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
       new SharedWorkerInterfaceRequestor();
   info.mInterfaceRequestor->SetOuterRequestor(requestor);
 
-  rv = info.SetPrincipalOnMainThread(info.mPrincipal, info.mLoadGroup);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
   Maybe<ClientInfo> clientInfo;
   if (aData.clientInfo().isSome()) {
     clientInfo.emplace(ClientInfo(aData.clientInfo().ref()));
+  }
+
+  if (clientInfo.isSome()) {
+    Maybe<mozilla::ipc::CSPInfo> cspInfo = clientInfo.ref().GetCspInfo();
+    if (cspInfo.isSome()) {
+      info.mCSP = CSPInfoToCSP(cspInfo.ref(), nullptr);
+      info.mCSPInfo = new CSPInfo();
+      rv = CSPToCSPInfo(info.mCSP, info.mCSPInfo);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+    }
+  }
+
+  rv = info.SetPrincipalsAndCSPOnMainThread(
+      info.mPrincipal, info.mStoragePrincipal, info.mLoadGroup, info.mCSP);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 
   // Top level workers' main script use the document charset for the script
@@ -307,7 +271,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
       info.mResolvedScriptURI, clientInfo,
       aData.isSharedWorker() ? nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER
                              : nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER,
-      info.mCookieSettings, getter_AddRefs(info.mChannel));
+      info.mCookieSettings, info.mReferrerInfo, getter_AddRefs(info.mChannel));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

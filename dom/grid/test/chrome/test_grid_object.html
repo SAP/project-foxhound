@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 <style>
 body {
@@ -24,7 +24,7 @@ body {
 </style>
 
 <script>
-'use strict';
+"use strict";
 
 SimpleTest.waitForExplicitFinish();
 
@@ -63,7 +63,7 @@ function runTests() {
 
   // Test 2: elements styled without display:grid
   let idsWithoutGrid = [
-    "boxA"
+    "boxA",
   ];
 
   for (let id of idsWithoutGrid) {

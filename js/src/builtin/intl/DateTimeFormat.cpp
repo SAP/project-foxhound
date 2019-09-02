@@ -20,6 +20,7 @@
 #include "builtin/intl/TimeZoneDataGenerated.h"
 #include "gc/FreeOp.h"
 #include "js/CharacterEncoding.h"
+#include "js/Date.h"
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
 #include "vm/DateTime.h"
@@ -78,7 +79,7 @@ static const JSFunctionSpec dateTimeFormat_methods[] = {
     JS_FN(js_toSource_str, dateTimeFormat_toSource, 0, 0), JS_FS_END};
 
 static const JSPropertySpec dateTimeFormat_properties[] = {
-    JS_SELF_HOSTED_GET("format", "Intl_DateTimeFormat_format_get", 0),
+    JS_SELF_HOSTED_GET("format", "$Intl_DateTimeFormat_format_get", 0),
     JS_STRING_SYM_PS(toStringTag, "Object", JSPROP_READONLY), JS_PS_END};
 
 /**
@@ -547,14 +548,12 @@ bool js::intl_patternForSkeleton(JSContext* cx, unsigned argc, Value* vp) {
 
   mozilla::Range<const char16_t> skelChars = skeleton.twoByteRange();
 
-  UErrorCode status = U_ZERO_ERROR;
+  SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
   UDateTimePatternGenerator* gen =
-      udatpg_open(IcuLocale(locale.get()), &status);
-  if (U_FAILURE(status)) {
-    intl::ReportInternalError(cx);
+      sharedIntlData.getDateTimePatternGenerator(cx, locale.get());
+  if (!gen) {
     return false;
   }
-  ScopedICUObject<UDateTimePatternGenerator, udatpg_close> toClose(gen);
 
   JSString* str = CallICU(
       cx, [gen, &skelChars](UChar* chars, uint32_t size, UErrorCode* status) {

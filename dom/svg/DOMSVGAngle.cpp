@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGAngle.h"
-#include "SVGOrient.h"
+#include "SVGAnimatedOrient.h"
 #include "mozilla/dom/SVGAngleBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
 
@@ -19,7 +19,7 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMSVGAngle, Release)
 
 DOMSVGAngle::DOMSVGAngle(SVGSVGElement* aSVGElement)
     : mSVGElement(aSVGElement), mType(DOMSVGAngle::CreatedValue) {
-  mVal = new SVGOrient();
+  mVal = new SVGAnimatedOrient();
   mVal->Init();
 }
 
@@ -65,7 +65,8 @@ void DOMSVGAngle::SetValueInSpecifiedUnits(float aValue, ErrorResult& rv) {
   if (mType == AnimValue) {
     rv.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return;
-  } else if (mType == BaseValue) {
+  }
+  if (mType == BaseValue) {
     mVal->SetBaseValueInSpecifiedUnits(aValue, mSVGElement);
   } else {
     mVal->mBaseVal = aValue;

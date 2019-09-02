@@ -74,6 +74,8 @@ void MacroAssembler::load32SignExtendToPtr(const Address& src, Register dest) {
   move32To64SignExtend(dest, Register64(dest));
 }
 
+void MacroAssembler::loadAbiReturnAddress(Register dest) { movePtr(lr, dest); }
+
 // ===============================================================
 // Logical instructions
 
@@ -276,7 +278,8 @@ void MacroAssembler::add64(Imm64 imm, Register64 dest) {
 CodeOffset MacroAssembler::sub32FromStackPtrWithPatch(Register dest) {
   vixl::UseScratchRegisterScope temps(this);
   const ARMRegister scratch = temps.AcquireX();
-  AutoForbidPools afp(this, /* max number of instructions in scope = */ 3);
+  AutoForbidPoolsAndNops afp(this,
+                             /* max number of instructions in scope = */ 3);
   CodeOffset offs = CodeOffset(currentOffset());
   movz(scratch, 0, 0);
   movk(scratch, 0, 16);
@@ -1586,6 +1589,17 @@ void MacroAssembler::cmp32Move32(Condition cond, Register lhs,
   cmp32(lhs, rhs);
   Csel(ARMRegister(dest, 32), ARMRegister(src, 32), ARMRegister(dest, 32),
        cond);
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs,
+                                 const Address& rhs, const Address& src,
+                                 Register dest) {
+  MOZ_CRASH("NYI");
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
+                                 const Address& src, Register dest) {
+  MOZ_CRASH("NYI");
 }
 
 void MacroAssembler::cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,

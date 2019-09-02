@@ -14,9 +14,12 @@
  */
 async function promiseStatusPanelShown(win, value) {
   let panel = win.StatusPanel.panel;
-  await BrowserTestUtils.waitForEvent(panel, "transitionend", (e) => {
-    return e.propertyName === "opacity" &&
-           win.getComputedStyle(e.target).opacity == "1";
+  info("Waiting to show panel");
+  await BrowserTestUtils.waitForEvent(panel, "transitionend", e => {
+    return (
+      e.propertyName === "opacity" &&
+      win.getComputedStyle(e.target).opacity == "1"
+    );
   });
 
   Assert.equal(win.StatusPanel._labelElement.value, value);
@@ -31,8 +34,20 @@ async function promiseStatusPanelShown(win, value) {
  */
 async function promiseStatusPanelHidden(win) {
   let panel = win.StatusPanel.panel;
-  await BrowserTestUtils.waitForEvent(panel, "transitionend", (e) => {
-    return e.propertyName === "opacity" &&
-           win.getComputedStyle(e.target).opacity == "0";
+  info("Waiting to hide panel");
+  await new Promise(resolve => {
+    let l = e => {
+      if (
+        e.propertyName === "opacity" &&
+        win.getComputedStyle(e.target).opacity == "0"
+      ) {
+        info("Panel hid after " + e.type + " event");
+        panel.removeEventListener("transitionend", l);
+        panel.removeEventListener("transitioncancel", l);
+        resolve();
+      }
+    };
+    panel.addEventListener("transitionend", l);
+    panel.addEventListener("transitioncancel", l);
   });
 }

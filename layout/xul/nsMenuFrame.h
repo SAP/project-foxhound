@@ -24,8 +24,13 @@
 #include "nsITimer.h"
 #include "mozilla/Attributes.h"
 
-nsIFrame* NS_NewMenuFrame(nsIPresShell* aPresShell, mozilla::ComputedStyle*);
-nsIFrame* NS_NewMenuItemFrame(nsIPresShell* aPresShell,
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
+nsIFrame* NS_NewMenuFrame(mozilla::PresShell* aPresShell,
+                          mozilla::ComputedStyle*);
+nsIFrame* NS_NewMenuItemFrame(mozilla::PresShell* aPresShell,
                               mozilla::ComputedStyle*);
 
 class nsIContent;
@@ -117,12 +122,6 @@ class nsMenuFrame final : public nsBoxFrame, public nsIReflowCallback {
   NS_IMETHOD SelectMenu(bool aActivateFlag);
 
   virtual nsIScrollableFrame* GetScrollTargetFrame() override;
-
-  // Retrieve the element that the menu should be anchored to. By default this
-  // is the menu itself. However, the anchor attribute may refer to the value of
-  // an anonid within the menu's binding, or, if not found, the id of an element
-  // in the document.
-  nsIContent* GetAnchor();
 
   /**
    * NOTE: OpenMenu will open the menu asynchronously.

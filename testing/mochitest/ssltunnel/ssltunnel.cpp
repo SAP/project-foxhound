@@ -142,6 +142,9 @@ typedef struct {
   PLHashTable* host_redir_table;
   PLHashTable* host_ssl3_table;
   PLHashTable* host_tls1_table;
+  PLHashTable* host_tls11_table;
+  PLHashTable* host_tls12_table;
+  PLHashTable* host_tls13_table;
   PLHashTable* host_rc4_table;
   PLHashTable* host_failhandshake_table;
 } server_info_t;
@@ -211,6 +214,7 @@ PRCondVar* shutdown_condvar = nullptr;
 bool shutdown_server = false;
 bool do_http_proxy = false;
 bool any_host_spec_config = false;
+bool listen_public = false;
 
 int ClientAuthValueComparator(const void* v1, const void* v2) {
   int a = *static_cast<const client_auth_option*>(v1) -
@@ -242,7 +246,10 @@ enum {
   USE_SSL3 = 1 << 0,
   USE_RC4 = 1 << 1,
   FAIL_HANDSHAKE = 1 << 2,
-  USE_TLS1 = 1 << 4
+  USE_TLS1 = 1 << 3,
+  USE_TLS1_1 = 1 << 4,
+  USE_TLS1_2 = 1 << 5,
+  USE_TLS1_3 = 1 << 6
 };
 
 bool ReadConnectRequest(server_info_t* server_info, relayBuffer& buffer,
@@ -306,6 +313,18 @@ bool ReadConnectRequest(server_info_t* server_info, relayBuffer& buffer,
     *flags |= USE_TLS1;
   }
 
+  if (PL_HashTableLookup(server_info->host_tls11_table, token)) {
+    *flags |= USE_TLS1_1;
+  }
+
+  if (PL_HashTableLookup(server_info->host_tls12_table, token)) {
+    *flags |= USE_TLS1_2;
+  }
+
+  if (PL_HashTableLookup(server_info->host_tls13_table, token)) {
+    *flags |= USE_TLS1_3;
+  }
+
   if (PL_HashTableLookup(server_info->host_failhandshake_table, token)) {
     *flags |= FAIL_HANDSHAKE;
   }
@@ -367,15 +386,34 @@ bool ConfigureSSLServerSocket(PRFileDesc* socket, server_info_t* si,
     SSL_OptionSet(ssl_socket, SSL_REQUIRE_CERTIFICATE, clientAuth == caRequire);
   }
 
+  SSLVersionRange range = {SSL_LIBRARY_VERSION_TLS_1_3,
+                           SSL_LIBRARY_VERSION_3_0};
   if (flags & USE_SSL3) {
-    SSLVersionRange range = {SSL_LIBRARY_VERSION_3_0, SSL_LIBRARY_VERSION_3_0};
-    SSL_VersionRangeSet(ssl_socket, &range);
+    range.min = PR_MIN(range.min, SSL_LIBRARY_VERSION_3_0);
+    range.max = PR_MAX(range.max, SSL_LIBRARY_VERSION_3_0);
   }
-
   if (flags & USE_TLS1) {
-    SSLVersionRange range = {SSL_LIBRARY_VERSION_TLS_1_0,
-                             SSL_LIBRARY_VERSION_TLS_1_0};
-    SSL_VersionRangeSet(ssl_socket, &range);
+    range.min = PR_MIN(range.min, SSL_LIBRARY_VERSION_TLS_1_0);
+    range.max = PR_MAX(range.max, SSL_LIBRARY_VERSION_TLS_1_0);
+  }
+  if (flags & USE_TLS1_1) {
+    range.min = PR_MIN(range.min, SSL_LIBRARY_VERSION_TLS_1_1);
+    range.max = PR_MAX(range.max, SSL_LIBRARY_VERSION_TLS_1_1);
+  }
+  if (flags & USE_TLS1_2) {
+    range.min = PR_MIN(range.min, SSL_LIBRARY_VERSION_TLS_1_2);
+    range.max = PR_MAX(range.max, SSL_LIBRARY_VERSION_TLS_1_2);
+  }
+  if (flags & USE_TLS1_3) {
+    range.min = PR_MIN(range.min, SSL_LIBRARY_VERSION_TLS_1_3);
+    range.max = PR_MAX(range.max, SSL_LIBRARY_VERSION_TLS_1_3);
+  }
+  // Set the valid range, if any were specified (if not, skip
+  // when the default range is invalid, i.e. max > min)
+  if (range.min <= range.max &&
+      SSL_VersionRangeSet(ssl_socket, &range) != SECSuccess) {
+    LOG_ERROR(("Error configuring SSL socket version range\n"));
+    return false;
   }
 
   if (flags & USE_RC4) {
@@ -700,6 +738,12 @@ void HandleConnection(void* data) {
                                              match_hostname, &match);
                 PL_HashTableEnumerateEntries(ci->server_info->host_tls1_table,
                                              match_hostname, &match);
+                PL_HashTableEnumerateEntries(ci->server_info->host_tls11_table,
+                                             match_hostname, &match);
+                PL_HashTableEnumerateEntries(ci->server_info->host_tls12_table,
+                                             match_hostname, &match);
+                PL_HashTableEnumerateEntries(ci->server_info->host_tls13_table,
+                                             match_hostname, &match);
                 PL_HashTableEnumerateEntries(ci->server_info->host_rc4_table,
                                              match_hostname, &match);
                 PL_HashTableEnumerateEntries(
@@ -889,10 +933,15 @@ void StartServer(void* data) {
   socket_option.value.reuse_addr = true;
   PR_SetSocketOption(listen_socket.get(), &socket_option);
 
-  // Explicitly listen on loopback to avoid users getting errors from their
-  // firewalls about ssltunnel needing permission.
   PRNetAddr server_addr;
-  PR_InitializeNetAddr(PR_IpAddrLoopback, si->listen_port, &server_addr);
+  PRNetAddrValue listen_addr;
+  if (listen_public) {
+    listen_addr = PR_IpAddrAny;
+  } else {
+    listen_addr = PR_IpAddrLoopback;
+  }
+  PR_InitializeNetAddr(listen_addr, si->listen_port, &server_addr);
+
   if (PR_Bind(listen_socket.get(), &server_addr) != PR_SUCCESS) {
     LOG_ERROR(("failed to bind socket on port %d: error %d\n", si->listen_port,
                PR_GetError()));
@@ -954,6 +1003,18 @@ PLHashTable* get_tls1_table(server_info_t* server) {
   return server->host_tls1_table;
 }
 
+PLHashTable* get_tls11_table(server_info_t* server) {
+  return server->host_tls11_table;
+}
+
+PLHashTable* get_tls12_table(server_info_t* server) {
+  return server->host_tls12_table;
+}
+
+PLHashTable* get_tls13_table(server_info_t* server) {
+  return server->host_tls13_table;
+}
+
 PLHashTable* get_rc4_table(server_info_t* server) {
   return server->host_rc4_table;
 }
@@ -1010,7 +1071,6 @@ int processConfigLine(char* configLine) {
 
   char* _caret;
   char* keyword = strtok2(configLine, ":", &_caret);
-
   // Configure usage of http/ssl tunneling proxy behavior
   if (!strcmp(keyword, "httpproxy")) {
     char* value = strtok2(_caret, ":", &_caret);
@@ -1053,11 +1113,20 @@ int processConfigLine(char* configLine) {
     return 0;
   }
 
-  // Configure all listen sockets and port+certificate bindings
+  // Configure all listen sockets and port+certificate bindings.
+  // Listen on the public address if "*" was specified as the listen
+  // address or listen on the loopback address if "127.0.0.1" was
+  // specified. Using loopback will prevent users getting errors from
+  // their firewalls about ssltunnel needing permission. A public
+  // address is required when proxying ssl traffic from a physical or
+  // emulated Android device since it has a different ip address from
+  // the host.
   if (!strcmp(keyword, "listen")) {
     char* hostname = strtok2(_caret, ":", &_caret);
     char* hostportstring = nullptr;
-    if (strcmp(hostname, "*")) {
+    if (!strcmp(hostname, "*")) {
+      listen_public = true;
+    } else if (strcmp(hostname, "127.0.0.1")) {
       any_host_spec_config = true;
       hostportstring = strtok2(_caret, ":", &_caret);
     }
@@ -1072,6 +1141,11 @@ int processConfigLine(char* configLine) {
     }
 
     if (server_info_t* existingServer = findServerInfo(port)) {
+      if (!hostportstring) {
+        LOG_ERROR(
+            ("Null hostportstring specified for hostname %s\n", hostname));
+        return 1;
+      }
       char* certnick_copy = new char[strlen(certnick) + 1];
       char* hostname_copy =
           new char[strlen(hostname) + strlen(hostportstring) + 2];
@@ -1116,7 +1190,7 @@ int processConfigLine(char* configLine) {
       server.host_ssl3_table =
           PL_NewHashTable(0, PL_HashString, PL_CompareStrings,
                           PL_CompareStrings, nullptr, nullptr);
-      ;
+
       if (!server.host_ssl3_table) {
         LOG_ERROR(("Internal, could not create hash table\n"));
         return 1;
@@ -1125,8 +1199,35 @@ int processConfigLine(char* configLine) {
       server.host_tls1_table =
           PL_NewHashTable(0, PL_HashString, PL_CompareStrings,
                           PL_CompareStrings, nullptr, nullptr);
-      ;
+
       if (!server.host_tls1_table) {
+        LOG_ERROR(("Internal, could not create hash table\n"));
+        return 1;
+      }
+
+      server.host_tls11_table =
+          PL_NewHashTable(0, PL_HashString, PL_CompareStrings,
+                          PL_CompareStrings, nullptr, nullptr);
+
+      if (!server.host_tls11_table) {
+        LOG_ERROR(("Internal, could not create hash table\n"));
+        return 1;
+      }
+
+      server.host_tls12_table =
+          PL_NewHashTable(0, PL_HashString, PL_CompareStrings,
+                          PL_CompareStrings, nullptr, nullptr);
+
+      if (!server.host_tls12_table) {
+        LOG_ERROR(("Internal, could not create hash table\n"));
+        return 1;
+      }
+
+      server.host_tls13_table =
+          PL_NewHashTable(0, PL_HashString, PL_CompareStrings,
+                          PL_CompareStrings, nullptr, nullptr);
+
+      if (!server.host_tls13_table) {
         LOG_ERROR(("Internal, could not create hash table\n"));
         return 1;
       }
@@ -1273,6 +1374,15 @@ int processConfigLine(char* configLine) {
   if (!strcmp(keyword, "tls1")) {
     return parseWeakCryptoConfig(keyword, _caret, get_tls1_table);
   }
+  if (!strcmp(keyword, "tls1_1")) {
+    return parseWeakCryptoConfig(keyword, _caret, get_tls11_table);
+  }
+  if (!strcmp(keyword, "tls1_2")) {
+    return parseWeakCryptoConfig(keyword, _caret, get_tls12_table);
+  }
+  if (!strcmp(keyword, "tls1_3")) {
+    return parseWeakCryptoConfig(keyword, _caret, get_tls13_table);
+  }
 
   if (!strcmp(keyword, "rc4")) {
     return parseWeakCryptoConfig(keyword, _caret, get_rc4_table);
@@ -1364,7 +1474,7 @@ int freeSSL3HashItems(PLHashEntry* he, int i, void* arg) {
   return HT_ENUMERATE_REMOVE;
 }
 
-int freeTLS1HashItems(PLHashEntry* he, int i, void* arg) {
+int freeTLSHashItems(PLHashEntry* he, int i, void* arg) {
   delete[](char*) he->key;
   return HT_ENUMERATE_REMOVE;
 }
@@ -1516,7 +1626,13 @@ int main(int argc, char** argv) {
                                  freeHostRedirHashItems, nullptr);
     PL_HashTableEnumerateEntries(server.host_ssl3_table, freeSSL3HashItems,
                                  nullptr);
-    PL_HashTableEnumerateEntries(server.host_tls1_table, freeTLS1HashItems,
+    PL_HashTableEnumerateEntries(server.host_tls1_table, freeTLSHashItems,
+                                 nullptr);
+    PL_HashTableEnumerateEntries(server.host_tls11_table, freeTLSHashItems,
+                                 nullptr);
+    PL_HashTableEnumerateEntries(server.host_tls12_table, freeTLSHashItems,
+                                 nullptr);
+    PL_HashTableEnumerateEntries(server.host_tls13_table, freeTLSHashItems,
                                  nullptr);
     PL_HashTableEnumerateEntries(server.host_rc4_table, freeRC4HashItems,
                                  nullptr);
@@ -1527,6 +1643,9 @@ int main(int argc, char** argv) {
     PL_HashTableDestroy(server.host_redir_table);
     PL_HashTableDestroy(server.host_ssl3_table);
     PL_HashTableDestroy(server.host_tls1_table);
+    PL_HashTableDestroy(server.host_tls11_table);
+    PL_HashTableDestroy(server.host_tls12_table);
+    PL_HashTableDestroy(server.host_tls13_table);
     PL_HashTableDestroy(server.host_rc4_table);
     PL_HashTableDestroy(server.host_failhandshake_table);
   }

@@ -426,8 +426,8 @@ class SimdConstant {
 enum class IntConversionBehavior {
   // These two try to convert the input to an int32 using ToNumber and
   // will fail if the resulting int32 isn't strictly equal to the input.
-  Normal,
-  NegativeZeroCheck,
+  Normal,             // Succeeds on -0: converts to 0.
+  NegativeZeroCheck,  // Fails on -0.
   // These two will convert the input to an int32 with loss of precision.
   Truncate,
   ClampToUint8,
@@ -459,7 +459,6 @@ enum class MIRType : uint8_t {
   MagicUninitializedLexical,  // JS_UNINITIALIZED_LEXICAL magic value.
   // Types above are specialized.
   Value,
-  SinCosDouble,  // Optimizing a sin/cos to sincos.
   ObjectOrNull,
   None,         // Invalid, used as a placeholder.
   Slots,        // A slots vector
@@ -602,8 +601,6 @@ static inline const char* StringFromMIRType(MIRType type) {
       return "MagicUninitializedLexical";
     case MIRType::Value:
       return "Value";
-    case MIRType::SinCosDouble:
-      return "SinCosDouble";
     case MIRType::ObjectOrNull:
       return "ObjectOrNull";
     case MIRType::None:
@@ -693,25 +690,9 @@ static inline MIRType ScalarTypeToMIRType(Scalar::Type type) {
       return MIRType::Float32;
     case Scalar::Float64:
       return MIRType::Double;
-    case Scalar::MaxTypedArrayViewType:
-      break;
-  }
-  MOZ_CRASH("unexpected kind");
-}
-
-static inline unsigned ScalarTypeToLength(Scalar::Type type) {
-  switch (type) {
-    case Scalar::Int8:
-    case Scalar::Uint8:
-    case Scalar::Int16:
-    case Scalar::Uint16:
-    case Scalar::Int32:
-    case Scalar::Uint32:
-    case Scalar::Int64:
-    case Scalar::Float32:
-    case Scalar::Float64:
-    case Scalar::Uint8Clamped:
-      return 1;
+    case Scalar::BigInt64:
+    case Scalar::BigUint64:
+      MOZ_CRASH("NYI");
     case Scalar::MaxTypedArrayViewType:
       break;
   }

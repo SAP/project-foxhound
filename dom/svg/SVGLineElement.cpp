@@ -61,19 +61,19 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGLineElement)
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedLength> SVGLineElement::X1() {
+already_AddRefed<DOMSVGAnimatedLength> SVGLineElement::X1() {
   return mLengthAttributes[ATTR_X1].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGLineElement::Y1() {
+already_AddRefed<DOMSVGAnimatedLength> SVGLineElement::Y1() {
   return mLengthAttributes[ATTR_Y1].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGLineElement::X2() {
+already_AddRefed<DOMSVGAnimatedLength> SVGLineElement::X2() {
   return mLengthAttributes[ATTR_X2].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGLineElement::Y2() {
+already_AddRefed<DOMSVGAnimatedLength> SVGLineElement::Y2() {
   return mLengthAttributes[ATTR_Y2].ToDOMAnimatedLength(this);
 }
 
@@ -104,7 +104,7 @@ void SVGLineElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
 
   GetAnimatedLengthValues(&x1, &y1, &x2, &y2, nullptr);
 
-  float angle = atan2(y2 - y1, x2 - x1);
+  float angle = std::atan2(y2 - y1, x2 - x1);
 
   aMarks->AppendElement(SVGMark(x1, y1, angle, SVGMark::eStart));
   aMarks->AppendElement(SVGMark(x2, y2, angle, SVGMark::eEnd));

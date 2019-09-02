@@ -72,6 +72,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
 
         private synchronized Sample onAllocate(final int size) {
             Sample sample = mSamplePool.obtainInput(size);
+            sample.session = mSession;
             mDequeuedSamples.add(sample);
             return sample;
         }
@@ -89,10 +90,12 @@ import org.mozilla.gecko.gfx.GeckoSurface;
                 return;
             }
 
-            Sample dequeued = mDequeuedSamples.remove();
-            dequeued.info = sample.info;
-            dequeued.cryptoInfo = sample.cryptoInfo;
-            queueSample(dequeued);
+            if (sample.session >= mSession) {
+                Sample dequeued = mDequeuedSamples.remove();
+                dequeued.setBufferInfo(sample.info);
+                dequeued.setCryptoInfo(sample.cryptoInfo);
+                queueSample(dequeued);
+            }
 
             sample.dispose();
         }
@@ -145,16 +148,20 @@ import org.mozilla.gecko.gfx.GeckoSurface;
         private void feedSampleToBuffer() {
             while (!mAvailableInputBuffers.isEmpty() && !mInputSamples.isEmpty()) {
                 int index = mAvailableInputBuffers.poll();
+                if (!isValidBuffer(index)) {
+                    continue;
+                }
                 int len = 0;
                 final Sample sample = mInputSamples.poll().sample;
                 long pts = sample.info.presentationTimeUs;
                 int flags = sample.info.flags;
                 MediaCodec.CryptoInfo cryptoInfo = sample.cryptoInfo;
-                if (!sample.isEOS() && sample.buffer != null) {
+                if (!sample.isEOS() && sample.bufferId != Sample.NO_BUFFER) {
                     len = sample.info.size;
                     ByteBuffer buf = mCodec.getInputBuffer(index);
                     try {
-                        sample.writeToByteBuffer(buf);
+                        mSamplePool.getInputBuffer(sample.bufferId).
+                                writeToByteBuffer(buf, sample.info.offset, len);
                     } catch (IOException e) {
                         e.printStackTrace();
                         len = 0;
@@ -252,6 +259,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
             try {
                 Sample output = obtainOutputSample(index, info);
                 mSentOutputs.add(new Output(output, index));
+                output.session = mSession;
                 mCallbacks.onOutput(output);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -293,7 +301,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
 
             if (info.size > 0) {
                 try {
-                    sample.buffer.readFromByteBuffer(output, info.offset, info.size);
+                    mSamplePool.getOutputBuffer(sample.bufferId).readFromByteBuffer(output, info.offset, info.size);
                 } catch (IOException e) {
                     Log.e(LOGTAG, "Fail to read output buffer:" + e.getMessage());
                 }
@@ -353,6 +361,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
     private AsyncCodec mCodec;
     private InputProcessor mInputProcessor;
     private OutputProcessor mOutputProcessor;
+    private long mSession;
     private SamplePool mSamplePool;
     // Values will be updated after configure called.
     private volatile boolean mIsAdaptivePlaybackSupported = false;
@@ -561,6 +570,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
             mInputProcessor.start();
             mOutputProcessor.start();
             mCodec.resumeReceivingInputs();
+            mSession++;
         } catch (Exception e) {
             reportError(Error.FATAL, e);
         }
@@ -574,6 +584,22 @@ import org.mozilla.gecko.gfx.GeckoSurface;
             // Translate allocation error to remote exception.
             throw new RemoteException(e.getMessage());
         }
+    }
+
+    @Override
+    public synchronized SampleBuffer getInputBuffer(final int id) {
+        if (mSamplePool == null) {
+            return null;
+        }
+        return mSamplePool.getInputBuffer(id);
+    }
+
+    @Override
+    public synchronized SampleBuffer getOutputBuffer(final int id) {
+        if (mSamplePool == null) {
+            return null;
+        }
+        return mSamplePool.getOutputBuffer(id);
     }
 
     @Override

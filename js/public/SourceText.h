@@ -56,10 +56,10 @@
 #include <stdint.h>     // UINT32_MAX
 #include <type_traits>  // std::conditional, std::is_same
 
+#include "Taint.h"
+
 #include "js/UniquePtr.h"  // js::UniquePtr
 #include "js/Utility.h"    // JS::FreePolicy
-
-#include "Taint.h"
 
 namespace JS {
 
@@ -221,7 +221,25 @@ class SourceText final : public TaintableString {
    * Initialize this using source units transferred out of |data|.
    */
   MOZ_MUST_USE bool init(JSContext* cx,
-                         js::UniquePtr<CharT[], JS::FreePolicy> data,
+                         js::UniquePtr<Unit[], JS::FreePolicy> data,
+                         size_t dataLength) {
+    return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
+  }
+
+  /**
+   * Exactly identical to the |init()| overload above that accepts
+   * |UniquePtr<Unit[], JS::FreePolicy>|, but instead takes character data:
+   * |UniquePtr<CharT[], JS::FreePolicy>|.
+   *
+   * (We can't just duplicate the signature above with s/Unit/CharT/, because
+   * then in the UTF-16 case this overload and the one above would be identical.
+   * So we use SFINAE to expose the |CharT| overload only if it's different.)
+   */
+  template <typename Char, typename = typename std::enable_if<
+                               std::is_same<Char, CharT>::value &&
+                               !std::is_same<Char, Unit>::value>::type>
+  MOZ_MUST_USE bool init(JSContext* cx,
+                         js::UniquePtr<Char[], JS::FreePolicy> data,
                          size_t dataLength) {
     return init(cx, data.release(), dataLength, SourceOwnership::TakeOwnership);
   }

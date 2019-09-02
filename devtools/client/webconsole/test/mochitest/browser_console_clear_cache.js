@@ -9,6 +9,7 @@
 const TEST_URI = "data:text/html;charset=utf8,Test browser console clear cache";
 
 add_task(async function() {
+  await pushPref("devtools.browserconsole.contentMessages", true);
   await addTab(TEST_URI);
   let hud = await HUDService.toggleBrowserConsole();
   const CACHED_MESSAGE = "CACHED_MESSAGE";
@@ -33,7 +34,11 @@ add_task(async function() {
 
   info("Log a smoke message in order to know that the console is ready");
   await logTextToConsole(hud, "Smoke message");
-  is(findMessage(hud, CACHED_MESSAGE), null, "The cached message is not visible anymore");
+  is(
+    findMessage(hud, CACHED_MESSAGE),
+    null,
+    "The cached message is not visible anymore"
+  );
 });
 
 function logTextToConsole(hud, text) {

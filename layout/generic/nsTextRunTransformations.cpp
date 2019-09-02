@@ -59,7 +59,9 @@ already_AddRefed<nsTransformedTextRun> nsTransformedTextRun::Create(
 void nsTransformedTextRun::SetCapitalization(uint32_t aStart, uint32_t aLength,
                                              bool* aCapitalization) {
   if (mCapitalize.IsEmpty()) {
-    if (!mCapitalize.AppendElements(GetLength())) return;
+    if (!mCapitalize.AppendElements(GetLength())) {
+      return;
+    }
     memset(mCapitalize.Elements(), 0, GetLength() * sizeof(bool));
   }
   memcpy(mCapitalize.Elements() + aStart, aCapitalization,
@@ -132,7 +134,9 @@ void MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
     const gfxTextRun::GlyphRun* run = iter.GetGlyphRun();
     nsresult rv = aDest->AddGlyphRun(run->mFont, run->mMatchType, offset, false,
                                      run->mOrientation);
-    if (NS_FAILED(rv)) return;
+    if (NS_FAILED(rv)) {
+      return;
+    }
 
     bool anyMissing = false;
     uint32_t mergeRunStart = iter.GetStringStart();
@@ -219,11 +223,12 @@ gfxTextRunFactory::Parameters GetParametersForInner(
 // exhibit the behavior in question; multiple lang tags may map to the
 // same setting here, if the behavior is shared by other languages.
 enum LanguageSpecificCasingBehavior {
-  eLSCB_None,    // default non-lang-specific behavior
-  eLSCB_Dutch,   // treat "ij" digraph as a unit for capitalization
-  eLSCB_Greek,   // strip accent when uppercasing Greek vowels
-  eLSCB_Irish,   // keep prefix letters as lowercase when uppercasing Irish
-  eLSCB_Turkish  // preserve dotted/dotless-i distinction in uppercase
+  eLSCB_None,       // default non-lang-specific behavior
+  eLSCB_Dutch,      // treat "ij" digraph as a unit for capitalization
+  eLSCB_Greek,      // strip accent when uppercasing Greek vowels
+  eLSCB_Irish,      // keep prefix letters as lowercase when uppercasing Irish
+  eLSCB_Turkish,    // preserve dotted/dotless-i distinction in uppercase
+  eLSCB_Lithuanian  // retain dot on lowercase i/j when an accent is present
 };
 
 static LanguageSpecificCasingBehavior GetCasingFor(const nsAtom* aLang) {
@@ -244,6 +249,9 @@ static LanguageSpecificCasingBehavior GetCasingFor(const nsAtom* aLang) {
   if (aLang == nsGkAtoms::ga) {
     return eLSCB_Irish;
   }
+  if (aLang == nsGkAtoms::lt_) {
+    return eLSCB_Lithuanian;
+  }
 
   // Is there a region subtag we should ignore?
   nsAtomString langStr(const_cast<nsAtom*>(aLang));
@@ -259,9 +267,10 @@ static LanguageSpecificCasingBehavior GetCasingFor(const nsAtom* aLang) {
 
 bool nsCaseTransformTextRunFactory::TransformString(
     const nsAString& aString, nsString& aConvertedString, bool aAllUppercase,
-    const nsAtom* aLanguage, nsTArray<bool>& aCharsToMergeArray,
-    nsTArray<bool>& aDeletedCharsArray, const nsTransformedTextRun* aTextRun,
-    uint32_t aOffsetInTextRun, nsTArray<uint8_t>* aCanBreakBeforeArray,
+    bool aCaseTransformsOnly, const nsAtom* aLanguage,
+    nsTArray<bool>& aCharsToMergeArray, nsTArray<bool>& aDeletedCharsArray,
+    const nsTransformedTextRun* aTextRun, uint32_t aOffsetInTextRun,
+    nsTArray<uint8_t>* aCanBreakBeforeArray,
     nsTArray<RefPtr<nsTransformedCharStyle>>* aStyleArray) {
   bool auxiliaryOutputArrays = aCanBreakBeforeArray && aStyleArray;
   MOZ_ASSERT(!auxiliaryOutputArrays || aTextRun,
@@ -276,10 +285,15 @@ bool nsCaseTransformTextRunFactory::TransformString(
   bool prevIsLetter = false;
   bool ntPrefix = false;  // true immediately after a word-initial 'n' or 't'
                           // when doing Irish lowercasing
+  bool seenSoftDotted = false;  // true immediately after an I or J that is
+                                // converted to lowercase in Lithuanian mode
   uint32_t sigmaIndex = uint32_t(-1);
   nsUGenCategory cat;
 
-  uint8_t style = aAllUppercase ? NS_STYLE_TEXT_TRANSFORM_UPPERCASE : 0;
+  StyleTextTransform style =
+      aAllUppercase ? StyleTextTransform{StyleTextTransformCase::Uppercase,
+                                         StyleTextTransformOther()}
+                    : StyleTextTransform::None();
   bool forceNonFullWidth = false;
   const nsAtom* lang = aLanguage;
 
@@ -301,8 +315,10 @@ bool nsCaseTransformTextRunFactory::TransformString(
     RefPtr<nsTransformedCharStyle> charStyle;
     if (aTextRun) {
       charStyle = aTextRun->mStyles[aOffsetInTextRun];
-      style = aAllUppercase ? NS_STYLE_TEXT_TRANSFORM_UPPERCASE
-                            : charStyle->mTextTransform;
+      style = aAllUppercase
+                  ? StyleTextTransform{StyleTextTransformCase::Uppercase,
+                                       StyleTextTransformOther()}
+                  : charStyle->mTextTransform;
       forceNonFullWidth = charStyle->mForceNonFullWidth;
 
       nsAtom* newLang =
@@ -327,8 +343,11 @@ bool nsCaseTransformTextRunFactory::TransformString(
       ch = SURROGATE_TO_UCS4(ch, str[i + 1]);
     }
 
-    switch (style) {
-      case NS_STYLE_TEXT_TRANSFORM_LOWERCASE:
+    switch (style.case_) {
+      case StyleTextTransformCase::None:
+        break;
+
+      case StyleTextTransformCase::Lowercase:
         if (languageSpecificCasing == eLSCB_Turkish) {
           if (ch == 'I') {
             ch = LATIN_SMALL_LETTER_DOTLESS_I;
@@ -339,6 +358,60 @@ bool nsCaseTransformTextRunFactory::TransformString(
           if (ch == LATIN_CAPITAL_LETTER_I_WITH_DOT_ABOVE) {
             ch = 'i';
             prevIsLetter = true;
+            sigmaIndex = uint32_t(-1);
+            break;
+          }
+        }
+
+        if (languageSpecificCasing == eLSCB_Lithuanian) {
+          // clang-format off
+          /* From SpecialCasing.txt:
+           * # Introduce an explicit dot above when lowercasing capital I's and J's
+           * # whenever there are more accents above.
+           * # (of the accents used in Lithuanian: grave, acute, tilde above, and ogonek)
+           *
+           * 0049; 0069 0307; 0049; 0049; lt More_Above; # LATIN CAPITAL LETTER I
+           * 004A; 006A 0307; 004A; 004A; lt More_Above; # LATIN CAPITAL LETTER J
+           * 012E; 012F 0307; 012E; 012E; lt More_Above; # LATIN CAPITAL LETTER I WITH OGONEK
+           * 00CC; 0069 0307 0300; 00CC; 00CC; lt; # LATIN CAPITAL LETTER I WITH GRAVE
+           * 00CD; 0069 0307 0301; 00CD; 00CD; lt; # LATIN CAPITAL LETTER I WITH ACUTE
+           * 0128; 0069 0307 0303; 0128; 0128; lt; # LATIN CAPITAL LETTER I WITH TILDE
+           */
+          // clang-format on
+          if (ch == 'I' || ch == 'J' || ch == 0x012E) {
+            ch = ToLowerCase(ch);
+            prevIsLetter = true;
+            seenSoftDotted = true;
+            sigmaIndex = uint32_t(-1);
+            break;
+          }
+          if (ch == 0x00CC) {
+            aConvertedString.Append('i');
+            aConvertedString.Append(0x0307);
+            extraChars += 2;
+            ch = 0x0300;
+            prevIsLetter = true;
+            seenSoftDotted = false;
+            sigmaIndex = uint32_t(-1);
+            break;
+          }
+          if (ch == 0x00CD) {
+            aConvertedString.Append('i');
+            aConvertedString.Append(0x0307);
+            extraChars += 2;
+            ch = 0x0301;
+            prevIsLetter = true;
+            seenSoftDotted = false;
+            sigmaIndex = uint32_t(-1);
+            break;
+          }
+          if (ch == 0x0128) {
+            aConvertedString.Append('i');
+            aConvertedString.Append(0x0307);
+            extraChars += 2;
+            ch = 0x0303;
+            prevIsLetter = true;
+            seenSoftDotted = false;
             sigmaIndex = uint32_t(-1);
             break;
           }
@@ -361,6 +434,15 @@ bool nsCaseTransformTextRunFactory::TransformString(
         } else {
           ntPrefix = false;
         }
+
+        if (seenSoftDotted && cat == nsUGenCategory::kMark) {
+          // The seenSoftDotted flag will only be set in Lithuanian mode.
+          if (ch == 0x0300 || ch == 0x0301 || ch == 0x0303) {
+            aConvertedString.Append(0x0307);
+            ++extraChars;
+          }
+        }
+        seenSoftDotted = false;
 
         // Special lowercasing behavior for Greek Sigma: note that this is
         // listed as context-sensitive in Unicode's SpecialCasing.txt, but is
@@ -429,7 +511,7 @@ bool nsCaseTransformTextRunFactory::TransformString(
         ch = ToLowerCase(ch);
         break;
 
-      case NS_STYLE_TEXT_TRANSFORM_UPPERCASE:
+      case StyleTextTransformCase::Uppercase:
         if (languageSpecificCasing == eLSCB_Turkish && ch == 'i') {
           ch = LATIN_CAPITAL_LETTER_I_WITH_DOT_ABOVE;
           break;
@@ -452,6 +534,26 @@ bool nsCaseTransformTextRunFactory::TransformString(
             greekMark = uint32_t(-1);
           }
           break;
+        }
+
+        if (languageSpecificCasing == eLSCB_Lithuanian) {
+          /*
+           * # Remove DOT ABOVE after "i" with upper or titlecase
+           *
+           * 0307; 0307; ; ; lt After_Soft_Dotted; # COMBINING DOT ABOVE
+           */
+          if (ch == 'i' || ch == 'j' || ch == 0x012F) {
+            seenSoftDotted = true;
+            ch = ToTitleCase(ch);
+            break;
+          }
+          if (seenSoftDotted) {
+            seenSoftDotted = false;
+            if (ch == 0x0307) {
+              ch = uint32_t(-1);
+              break;
+            }
+          }
         }
 
         if (languageSpecificCasing == eLSCB_Irish) {
@@ -537,7 +639,7 @@ bool nsCaseTransformTextRunFactory::TransformString(
         }
         break;
 
-      case NS_STYLE_TEXT_TRANSFORM_CAPITALIZE:
+      case StyleTextTransformCase::Capitalize:
         if (aTextRun) {
           if (capitalizeDutchIJ && ch == 'j') {
             ch = 'J';
@@ -555,6 +657,25 @@ bool nsCaseTransformTextRunFactory::TransformString(
               ch = 'I';
               capitalizeDutchIJ = true;
               break;
+            }
+            if (languageSpecificCasing == eLSCB_Lithuanian) {
+              /*
+               * # Remove DOT ABOVE after "i" with upper or titlecase
+               *
+               * 0307; 0307; ; ; lt After_Soft_Dotted; # COMBINING DOT ABOVE
+               */
+              if (ch == 'i' || ch == 'j' || ch == 0x012F) {
+                seenSoftDotted = true;
+                ch = ToTitleCase(ch);
+                break;
+              }
+              if (seenSoftDotted) {
+                seenSoftDotted = false;
+                if (ch == 0x0307) {
+                  ch = uint32_t(-1);
+                  break;
+                }
+              }
             }
 
             mcm = mozilla::unicode::SpecialTitle(ch);
@@ -574,11 +695,18 @@ bool nsCaseTransformTextRunFactory::TransformString(
         }
         break;
 
-      case NS_STYLE_TEXT_TRANSFORM_FULL_WIDTH:
-        ch = mozilla::unicode::GetFullWidth(ch);
+      default:
+        MOZ_ASSERT_UNREACHABLE("all cases should be handled");
         break;
+    }
 
-      case NS_STYLE_TEXT_TRANSFORM_FULL_SIZE_KANA: {
+    if (!aCaseTransformsOnly) {
+      if (!forceNonFullWidth &&
+          (style.other_ & StyleTextTransformOther_FULL_WIDTH)) {
+        ch = mozilla::unicode::GetFullWidth(ch);
+      }
+
+      if (style.other_ & StyleTextTransformOther_FULL_SIZE_KANA) {
         // clang-format off
         static const uint16_t kSmallKanas[] = {
             // ぁ   ぃ      ぅ      ぇ      ぉ      っ      ゃ      ゅ      ょ
@@ -617,11 +745,7 @@ bool nsCaseTransformTextRunFactory::TransformString(
         if (mozilla::BinarySearch(kSmallKanas, 0, len, ch, &index)) {
           ch = kFullSizeKanas[index];
         }
-        break;
       }
-
-      default:
-        break;
     }
 
     if (forceNonFullWidth) {
@@ -679,10 +803,10 @@ void nsCaseTransformTextRunFactory::RebuildTextRun(
   AutoTArray<uint8_t, 50> canBreakBeforeArray;
   AutoTArray<RefPtr<nsTransformedCharStyle>, 50> styleArray;
 
-  bool mergeNeeded =
-      TransformString(aTextRun->mString, convertedString, mAllUppercase,
-                      nullptr, charsToMergeArray, deletedCharsArray, aTextRun,
-                      0, &canBreakBeforeArray, &styleArray);
+  bool mergeNeeded = TransformString(
+      aTextRun->mString, convertedString, mAllUppercase,
+      /* aCaseTransformsOnly = */ false, nullptr, charsToMergeArray,
+      deletedCharsArray, aTextRun, 0, &canBreakBeforeArray, &styleArray);
 
   gfx::ShapedTextFlags flags;
   gfxTextRunFactory::Parameters innerParams =
@@ -705,7 +829,9 @@ void nsCaseTransformTextRunFactory::RebuildTextRun(
         flags, nsTextFrameUtils::Flags(), aMFR);
     child = cachedChild.get();
   }
-  if (!child) return;
+  if (!child) {
+    return;
+  }
   // Copy potential linebreaks into child so they're preserved
   // (and also child will be shaped appropriately)
   NS_ASSERTION(convertedString.Length() == canBreakBeforeArray.Length(),

@@ -12,17 +12,6 @@
  *           The cert to view, queryable to nsIX509Cert.
  */
 
-const nsIX509Cert = Ci.nsIX509Cert;
-const nsX509CertDB = "@mozilla.org/security/x509certdb;1";
-const nsIX509CertDB = Ci.nsIX509CertDB;
-const nsPK11TokenDB = "@mozilla.org/security/pk11tokendb;1";
-const nsIPK11TokenDB = Ci.nsIPK11TokenDB;
-const nsIASN1Object = Ci.nsIASN1Object;
-const nsIASN1Sequence = Ci.nsIASN1Sequence;
-const nsIASN1PrintableItem = Ci.nsIASN1PrintableItem;
-const nsIASN1Tree = Ci.nsIASN1Tree;
-const nsASN1Tree = "@mozilla.org/security/nsASN1Tree;1";
-
 /**
  * Fills out the "Certificate Hierarchy" tree of the cert viewer "Details" tab.
  *
@@ -57,18 +46,22 @@ function AddCertChain(node, chain) {
  */
 function AddUsage(l10nId) {
   let verifyInfoBox = document.getElementById("verify_info_box");
-  let text = document.createXULElement("textbox");
+  let text = document.createElementNS("http://www.w3.org/1999/xhtml", "input");
   document.l10n.setAttributes(text, l10nId);
   text.setAttribute("data-l10n-attrs", "value");
   text.setAttribute("style", "margin: 2px 5px");
-  text.setAttribute("readonly", "true");
+  text.setAttribute("readonly", "readonly");
   text.setAttribute("class", "scrollfield");
   verifyInfoBox.appendChild(text);
 }
 
 function setWindowName() {
   let cert = window.arguments[0].QueryInterface(Ci.nsIX509Cert);
-  window.document.l10n.setAttributes(window.document.documentElement, "cert-viewer-title", {certName: cert.displayName});
+  window.document.l10n.setAttributes(
+    window.document.documentElement,
+    "cert-viewer-title",
+    { certName: cert.displayName }
+  );
 
   //
   //  Set the cert attributes for viewing
@@ -94,14 +87,13 @@ const certificateUsageToStringBundleName = {
 };
 
 const SEC_ERROR_BASE = Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE;
-const SEC_ERROR_EXPIRED_CERTIFICATE                     = SEC_ERROR_BASE + 11;
-const SEC_ERROR_REVOKED_CERTIFICATE                     = SEC_ERROR_BASE + 12;
-const SEC_ERROR_UNKNOWN_ISSUER                          = SEC_ERROR_BASE + 13;
-const SEC_ERROR_UNTRUSTED_ISSUER                        = SEC_ERROR_BASE + 20;
-const SEC_ERROR_UNTRUSTED_CERT                          = SEC_ERROR_BASE + 21;
-const SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE              = SEC_ERROR_BASE + 30;
-const SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED       = SEC_ERROR_BASE + 176;
-
+const SEC_ERROR_EXPIRED_CERTIFICATE = SEC_ERROR_BASE + 11;
+const SEC_ERROR_REVOKED_CERTIFICATE = SEC_ERROR_BASE + 12;
+const SEC_ERROR_UNKNOWN_ISSUER = SEC_ERROR_BASE + 13;
+const SEC_ERROR_UNTRUSTED_ISSUER = SEC_ERROR_BASE + 20;
+const SEC_ERROR_UNTRUSTED_CERT = SEC_ERROR_BASE + 21;
+const SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE = SEC_ERROR_BASE + 30;
+const SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED = SEC_ERROR_BASE + 176;
 
 /**
  * Updates the usage display area given the results from asyncDetermineUsages.
@@ -117,8 +109,8 @@ const SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED       = SEC_ERROR_BASE + 176;
 function displayUsages(results) {
   document.getElementById("verify_pending").setAttribute("hidden", "true");
   let verified = document.getElementById("verified");
-  let someSuccess = results.some(result =>
-    result.errorCode == PRErrorCodeSuccess
+  let someSuccess = results.some(
+    result => result.errorCode == PRErrorCodeSuccess
   );
   if (someSuccess) {
     document.l10n.setAttributes(verified, "cert-verified");
@@ -132,25 +124,39 @@ function displayUsages(results) {
     AddCertChain("treesetDump", getBestChain(results));
   } else {
     const errorRankings = [
-      { error: SEC_ERROR_REVOKED_CERTIFICATE,
-        bundleString: "cert-not-verified-cert-revoked" },
-      { error: SEC_ERROR_UNTRUSTED_CERT,
-        bundleString: "cert-not-verified-cert-not-trusted" },
-      { error: SEC_ERROR_UNTRUSTED_ISSUER,
-        bundleString: "cert-not-verified-issuer-not-trusted" },
-      { error: SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED,
-        bundleString: "cert-not-verified_algorithm-disabled" },
-      { error: SEC_ERROR_EXPIRED_CERTIFICATE,
-        bundleString: "cert-not-verified-cert-expired" },
-      { error: SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE,
-        bundleString: "cert-not-verified-ca-invalid" },
-      { error: SEC_ERROR_UNKNOWN_ISSUER,
-        bundleString: "cert-not-verified-issuer-unknown" },
+      {
+        error: SEC_ERROR_REVOKED_CERTIFICATE,
+        bundleString: "cert-not-verified-cert-revoked",
+      },
+      {
+        error: SEC_ERROR_UNTRUSTED_CERT,
+        bundleString: "cert-not-verified-cert-not-trusted",
+      },
+      {
+        error: SEC_ERROR_UNTRUSTED_ISSUER,
+        bundleString: "cert-not-verified-issuer-not-trusted",
+      },
+      {
+        error: SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED,
+        bundleString: "cert-not-verified_algorithm-disabled",
+      },
+      {
+        error: SEC_ERROR_EXPIRED_CERTIFICATE,
+        bundleString: "cert-not-verified-cert-expired",
+      },
+      {
+        error: SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE,
+        bundleString: "cert-not-verified-ca-invalid",
+      },
+      {
+        error: SEC_ERROR_UNKNOWN_ISSUER,
+        bundleString: "cert-not-verified-issuer-unknown",
+      },
     ];
     let errorPresentFlag = false;
     for (let errorRanking of errorRankings) {
-      let errorPresent = results.some(result =>
-        result.errorCode == errorRanking.error
+      let errorPresent = results.some(
+        result => result.errorCode == errorRanking.error
       );
       if (errorPresent) {
         document.l10n.setAttributes(verified, errorRanking.bundleString);
@@ -170,8 +176,12 @@ function displayUsages(results) {
 
 function addChildrenToTree(parentTree, label, value, addTwistie) {
   let treeChild1 = document.createXULElement("treechildren");
-  let treeElement = addTreeItemToTreeChild(treeChild1, label, value,
-                                           addTwistie);
+  let treeElement = addTreeItemToTreeChild(
+    treeChild1,
+    label,
+    value,
+    addTwistie
+  );
   parentTree.appendChild(treeChild1);
   return treeElement;
 }
@@ -195,8 +205,9 @@ function addTreeItemToTreeChild(treeChild, label, value, addTwistie) {
 }
 
 function displaySelected() {
-  var asn1Tree = document.getElementById("prettyDumpTree")
-          .view.QueryInterface(nsIASN1Tree);
+  var asn1Tree = document
+    .getElementById("prettyDumpTree")
+    .view.QueryInterface(Ci.nsIASN1Tree);
   var items = asn1Tree.selection;
   var certDumpVal = document.getElementById("certDumpVal");
   if (items.currentIndex != -1) {
@@ -208,8 +219,9 @@ function displaySelected() {
 }
 
 function BuildPrettyPrint(cert) {
-  var certDumpTree = Cc[nsASN1Tree].
-                          createInstance(nsIASN1Tree);
+  var certDumpTree = Cc["@mozilla.org/security/nsASN1Tree;1"].createInstance(
+    Ci.nsIASN1Tree
+  );
   certDumpTree.loadASN1Structure(cert.ASN1Structure);
   document.getElementById("prettyDumpTree").view = certDumpTree;
 }
@@ -245,15 +257,18 @@ function DisplayGeneralDataFromCert(cert) {
 }
 
 function updateCertDump() {
-  var asn1Tree = document.getElementById("prettyDumpTree")
-          .view.QueryInterface(nsIASN1Tree);
+  var asn1Tree = document
+    .getElementById("prettyDumpTree")
+    .view.QueryInterface(Ci.nsIASN1Tree);
 
   var tree = document.getElementById("treesetDump");
   if (tree.currentIndex >= 0) {
     var item = tree.view.getItemAtIndex(tree.currentIndex);
     var dbKey = item.firstChild.firstChild.getAttribute("display");
     //  Get the cert from the cert database
-    var certdb = Cc[nsX509CertDB].getService(nsIX509CertDB);
+    var certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+      Ci.nsIX509CertDB
+    );
     var cert = certdb.findCertByDBKey(dbKey);
     asn1Tree.loadASN1Structure(cert.ASN1Structure);
   }
@@ -263,8 +278,10 @@ function updateCertDump() {
 function getCurrentCert() {
   var realIndex;
   var tree = document.getElementById("treesetDump");
-  if (tree.view.selection.isSelected(tree.currentIndex)
-      && document.getElementById("prettyprint_tab").selected) {
+  if (
+    tree.view.selection.isSelected(tree.currentIndex) &&
+    document.getElementById("prettyprint_tab").selected
+  ) {
     /* if the user manually selected a cert on the Details tab,
        then take that one  */
     realIndex = tree.currentIndex;
@@ -277,7 +294,9 @@ function getCurrentCert() {
   if (realIndex >= 0) {
     var item = tree.view.getItemAtIndex(realIndex);
     var dbKey = item.firstChild.firstChild.getAttribute("display");
-    var certdb = Cc[nsX509CertDB].getService(nsIX509CertDB);
+    var certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+      Ci.nsIX509CertDB
+    );
     var cert = certdb.findCertByDBKey(dbKey);
     return cert;
   }

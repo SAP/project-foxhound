@@ -7,6 +7,7 @@
 
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterHost.h"
+#include "mozilla/gfx/gfxVars.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxBroker.h"
@@ -21,6 +22,7 @@
 namespace mozilla {
 
 using namespace layers;
+using namespace gfx;
 
 RDDChild::RDDChild(RDDProcessHost* aHost) : mHost(aHost), mRDDReady(false) {
   MOZ_COUNT_CTOR(RDDChild);
@@ -28,7 +30,7 @@ RDDChild::RDDChild(RDDProcessHost* aHost) : mHost(aHost), mRDDReady(false) {
 
 RDDChild::~RDDChild() { MOZ_COUNT_DTOR(RDDChild); }
 
-bool RDDChild::Init() {
+bool RDDChild::Init(bool aStartMacSandbox) {
   Maybe<FileDescriptor> brokerFd;
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
@@ -46,11 +48,15 @@ bool RDDChild::Init() {
   }
 #endif  // XP_LINUX && MOZ_SANDBOX
 
-  SendInit(brokerFd);
+  nsTArray<GfxVarUpdate> updates = gfxVars::FetchNonDefaultVars();
+
+  SendInit(updates, brokerFd, aStartMacSandbox);
 
 #ifdef MOZ_GECKO_PROFILER
   Unused << SendInitProfiler(ProfilerParent::CreateForProcess(OtherPid()));
 #endif
+
+  gfxVars::AddReceiver(this);
 
   return true;
 }
@@ -92,6 +98,8 @@ bool RDDChild::SendRequestMemoryReport(const uint32_t& aGeneration,
   return true;
 }
 
+void RDDChild::OnVarChanged(const GfxVarUpdate& aVar) { SendUpdateVar(aVar); }
+
 mozilla::ipc::IPCResult RDDChild::RecvAddMemoryReport(
     const MemoryReport& aReport) {
   if (mMemoryReportRequest) {
@@ -114,9 +122,12 @@ void RDDChild::ActorDestroy(ActorDestroyReason aWhy) {
     if (mCrashReporter) {
       mCrashReporter->GenerateCrashReport(OtherPid());
       mCrashReporter = nullptr;
+    } else {
+      CrashReporter::FinalizeOrphanedMinidump(OtherPid(), GeckoProcessType_RDD);
     }
   }
 
+  gfxVars::RemoveReceiver(this);
   mHost->OnChannelClosed();
 }
 

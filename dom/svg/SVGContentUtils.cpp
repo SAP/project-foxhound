@@ -14,17 +14,22 @@
 #include "gfxPlatform.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGContextPaint.h"
 #include "mozilla/TextUtils.h"
 #include "nsComputedDOMStyle.h"
+#include "nsContainerFrame.h"
 #include "nsFontMetrics.h"
 #include "nsIFrame.h"
 #include "nsIScriptError.h"
 #include "nsLayoutUtils.h"
 #include "nsMathUtils.h"
+#include "nsSVGUtils.h"
+#include "nsWhitespaceTokenizer.h"
 #include "SVGAnimationElement.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
+#include "SVGGeometryProperty.h"
 #include "nsContentUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Types.h"
@@ -251,99 +256,97 @@ static DashState GetStrokeDashData(
 
 void SVGContentUtils::GetStrokeOptions(AutoStrokeOptions* aStrokeOptions,
                                        SVGElement* aElement,
-                                       ComputedStyle* aComputedStyle,
+                                       const ComputedStyle* aComputedStyle,
                                        SVGContextPaint* aContextPaint,
                                        StrokeOptionFlags aFlags) {
-  RefPtr<ComputedStyle> computedStyle;
+  auto doCompute = [&](const ComputedStyle* computedStyle) {
+    const nsStyleSVG* styleSVG = computedStyle->StyleSVG();
+
+    bool checkedDashAndStrokeIsDashed = false;
+    if (aFlags != eIgnoreStrokeDashing) {
+      DashState dashState =
+          GetStrokeDashData(aStrokeOptions, aElement, styleSVG, aContextPaint);
+
+      if (dashState == eNoStroke) {
+        // Hopefully this will shortcircuit any stroke operations:
+        aStrokeOptions->mLineWidth = 0;
+        return;
+      }
+      if (dashState == eContinuousStroke && aStrokeOptions->mDashPattern) {
+        // Prevent our caller from wasting time looking at a pattern without
+        // gaps:
+        aStrokeOptions->DiscardDashPattern();
+      }
+      checkedDashAndStrokeIsDashed = (dashState == eDashedStroke);
+    }
+
+    aStrokeOptions->mLineWidth =
+        GetStrokeWidth(aElement, computedStyle, aContextPaint);
+
+    aStrokeOptions->mMiterLimit = Float(styleSVG->mStrokeMiterlimit);
+
+    switch (styleSVG->mStrokeLinejoin) {
+      case NS_STYLE_STROKE_LINEJOIN_MITER:
+        aStrokeOptions->mLineJoin = JoinStyle::MITER_OR_BEVEL;
+        break;
+      case NS_STYLE_STROKE_LINEJOIN_ROUND:
+        aStrokeOptions->mLineJoin = JoinStyle::ROUND;
+        break;
+      case NS_STYLE_STROKE_LINEJOIN_BEVEL:
+        aStrokeOptions->mLineJoin = JoinStyle::BEVEL;
+        break;
+    }
+
+    if (ShapeTypeHasNoCorners(aElement) && !checkedDashAndStrokeIsDashed) {
+      // Note: if aFlags == eIgnoreStrokeDashing then we may be returning the
+      // wrong linecap value here, since the actual linecap used on render in
+      // this case depends on whether the stroke is dashed or not.
+      aStrokeOptions->mLineCap = CapStyle::BUTT;
+    } else {
+      switch (styleSVG->mStrokeLinecap) {
+        case NS_STYLE_STROKE_LINECAP_BUTT:
+          aStrokeOptions->mLineCap = CapStyle::BUTT;
+          break;
+        case NS_STYLE_STROKE_LINECAP_ROUND:
+          aStrokeOptions->mLineCap = CapStyle::ROUND;
+          break;
+        case NS_STYLE_STROKE_LINECAP_SQUARE:
+          aStrokeOptions->mLineCap = CapStyle::SQUARE;
+          break;
+      }
+    }
+  };
+
   if (aComputedStyle) {
-    computedStyle = aComputedStyle;
+    doCompute(aComputedStyle);
   } else {
-    computedStyle =
-        nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr);
-  }
-
-  if (!computedStyle) {
-    return;
-  }
-
-  const nsStyleSVG* styleSVG = computedStyle->StyleSVG();
-
-  bool checkedDashAndStrokeIsDashed = false;
-  if (aFlags != eIgnoreStrokeDashing) {
-    DashState dashState =
-        GetStrokeDashData(aStrokeOptions, aElement, styleSVG, aContextPaint);
-
-    if (dashState == eNoStroke) {
-      // Hopefully this will shortcircuit any stroke operations:
-      aStrokeOptions->mLineWidth = 0;
-      return;
-    }
-    if (dashState == eContinuousStroke && aStrokeOptions->mDashPattern) {
-      // Prevent our caller from wasting time looking at a pattern without gaps:
-      aStrokeOptions->DiscardDashPattern();
-    }
-    checkedDashAndStrokeIsDashed = (dashState == eDashedStroke);
-  }
-
-  aStrokeOptions->mLineWidth =
-      GetStrokeWidth(aElement, computedStyle, aContextPaint);
-
-  aStrokeOptions->mMiterLimit = Float(styleSVG->mStrokeMiterlimit);
-
-  switch (styleSVG->mStrokeLinejoin) {
-    case NS_STYLE_STROKE_LINEJOIN_MITER:
-      aStrokeOptions->mLineJoin = JoinStyle::MITER_OR_BEVEL;
-      break;
-    case NS_STYLE_STROKE_LINEJOIN_ROUND:
-      aStrokeOptions->mLineJoin = JoinStyle::ROUND;
-      break;
-    case NS_STYLE_STROKE_LINEJOIN_BEVEL:
-      aStrokeOptions->mLineJoin = JoinStyle::BEVEL;
-      break;
-  }
-
-  if (ShapeTypeHasNoCorners(aElement) && !checkedDashAndStrokeIsDashed) {
-    // Note: if aFlags == eIgnoreStrokeDashing then we may be returning the
-    // wrong linecap value here, since the actual linecap used on render in this
-    // case depends on whether the stroke is dashed or not.
-    aStrokeOptions->mLineCap = CapStyle::BUTT;
-  } else {
-    switch (styleSVG->mStrokeLinecap) {
-      case NS_STYLE_STROKE_LINECAP_BUTT:
-        aStrokeOptions->mLineCap = CapStyle::BUTT;
-        break;
-      case NS_STYLE_STROKE_LINECAP_ROUND:
-        aStrokeOptions->mLineCap = CapStyle::ROUND;
-        break;
-      case NS_STYLE_STROKE_LINECAP_SQUARE:
-        aStrokeOptions->mLineCap = CapStyle::SQUARE;
-        break;
-    }
+    SVGGeometryProperty::DoForComputedStyle(aElement, doCompute);
   }
 }
 
 Float SVGContentUtils::GetStrokeWidth(SVGElement* aElement,
-                                      ComputedStyle* aComputedStyle,
+                                      const ComputedStyle* aComputedStyle,
                                       SVGContextPaint* aContextPaint) {
-  RefPtr<ComputedStyle> computedStyle;
+  Float res = 0.0;
+
+  auto doCompute = [&](ComputedStyle const* computedStyle) {
+    const nsStyleSVG* styleSVG = computedStyle->StyleSVG();
+
+    if (aContextPaint && styleSVG->StrokeWidthFromObject()) {
+      res = aContextPaint->GetStrokeWidth();
+      return;
+    }
+
+    res = SVGContentUtils::CoordToFloat(aElement, styleSVG->mStrokeWidth);
+  };
+
   if (aComputedStyle) {
-    computedStyle = aComputedStyle;
+    doCompute(aComputedStyle);
   } else {
-    computedStyle =
-        nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr);
+    SVGGeometryProperty::DoForComputedStyle(aElement, doCompute);
   }
 
-  if (!computedStyle) {
-    return 0.0f;
-  }
-
-  const nsStyleSVG* styleSVG = computedStyle->StyleSVG();
-
-  if (aContextPaint && styleSVG->StrokeWidthFromObject()) {
-    return aContextPaint->GetStrokeWidth();
-  }
-
-  return SVGContentUtils::CoordToFloat(aElement, styleSVG->mStrokeWidth);
+  return res;
 }
 
 float SVGContentUtils::GetFontSize(Element* aElement) {
@@ -356,15 +359,18 @@ float SVGContentUtils::GetFontSize(Element* aElement) {
     return 1.0f;
   }
 
-  RefPtr<ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr);
-  if (!computedStyle) {
-    // ReportToConsole
-    NS_WARNING("Couldn't get ComputedStyle for content in GetFontStyle");
-    return 1.0f;
+  if (auto* f = aElement->GetPrimaryFrame()) {
+    return GetFontSize(f->Style(), pc);
   }
 
-  return GetFontSize(computedStyle, pc);
+  if (RefPtr<ComputedStyle> style =
+          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr)) {
+    return GetFontSize(style, pc);
+  }
+
+  // ReportToConsole
+  NS_WARNING("Couldn't get ComputedStyle for content in GetFontStyle");
+  return 1.0f;
 }
 
 float SVGContentUtils::GetFontSize(nsIFrame* aFrame) {
@@ -392,15 +398,18 @@ float SVGContentUtils::GetFontXHeight(Element* aElement) {
     return 1.0f;
   }
 
-  RefPtr<ComputedStyle> style =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr);
-  if (!style) {
-    // ReportToConsole
-    NS_WARNING("Couldn't get ComputedStyle for content in GetFontStyle");
-    return 1.0f;
+  if (auto* f = aElement->GetPrimaryFrame()) {
+    return GetFontXHeight(f->Style(), pc);
   }
 
-  return GetFontXHeight(style, pc);
+  if (RefPtr<ComputedStyle> style =
+          nsComputedDOMStyle::GetComputedStyleNoFlush(aElement, nullptr)) {
+    return GetFontXHeight(style, pc);
+  }
+
+  // ReportToConsole
+  NS_WARNING("Couldn't get ComputedStyle for content in GetFontStyle");
+  return 1.0f;
 }
 
 float SVGContentUtils::GetFontXHeight(nsIFrame* aFrame) {
@@ -427,11 +436,10 @@ float SVGContentUtils::GetFontXHeight(ComputedStyle* aComputedStyle,
          aPresContext->EffectiveTextZoom();
 }
 nsresult SVGContentUtils::ReportToConsole(Document* doc, const char* aWarning,
-                                          const char16_t** aParams,
-                                          uint32_t aParamsLength) {
+                                          const nsTArray<nsString>& aParams) {
   return nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("SVG"), doc,
-      nsContentUtils::eSVG_PROPERTIES, aWarning, aParams, aParamsLength);
+      nsContentUtils::eSVG_PROPERTIES, aWarning, aParams);
 }
 
 bool SVGContentUtils::EstablishesViewport(nsIContent* aContent) {
@@ -464,15 +472,37 @@ SVGViewportElement* SVGContentUtils::GetNearestViewportElement(
 
 static gfx::Matrix GetCTMInternal(SVGElement* aElement, bool aScreenCTM,
                                   bool aHaveRecursed) {
-  gfxMatrix matrix = aElement->PrependLocalTransformsTo(
-      gfxMatrix(), aHaveRecursed ? eAllTransforms : eUserSpaceToParent);
+  auto getLocalTransformHelper =
+      [](SVGElement const* e, bool shouldIncludeChildToUserSpace) -> gfxMatrix {
+    gfxMatrix ret;
+
+    if (auto* f = e->GetPrimaryFrame()) {
+      ret = nsSVGUtils::GetTransformMatrixInUserSpace(f);
+    } else {
+      // FIXME: Ideally we should also return the correct matrix
+      // for display:none, but currently transform related code relies
+      // heavily on the present of a frame.
+      // For now we just fall back to |PrependLocalTransformsTo| which
+      // doesn't account for CSS transform.
+      ret = e->PrependLocalTransformsTo({}, eUserSpaceToParent);
+    }
+
+    if (shouldIncludeChildToUserSpace) {
+      ret = e->PrependLocalTransformsTo({}, eChildToUserSpace) * ret;
+    }
+
+    return ret;
+  };
+
+  gfxMatrix matrix = getLocalTransformHelper(aElement, aHaveRecursed);
+
   SVGElement* element = aElement;
   nsIContent* ancestor = aElement->GetFlattenedTreeParent();
 
   while (ancestor && ancestor->IsSVGElement() &&
          !ancestor->IsSVGElement(nsGkAtoms::foreignObject)) {
     element = static_cast<SVGElement*>(ancestor);
-    matrix *= element->PrependLocalTransformsTo(gfxMatrix());  // i.e. *A*ppend
+    matrix *= getLocalTransformHelper(element, true);
     if (!aScreenCTM && SVGContentUtils::EstablishesViewport(element)) {
       if (!element->NodeInfo()->Equals(nsGkAtoms::svg, kNameSpaceID_SVG) &&
           !element->NodeInfo()->Equals(nsGkAtoms::symbol, kNameSpaceID_SVG)) {
@@ -499,8 +529,18 @@ static gfx::Matrix GetCTMInternal(SVGElement* aElement, bool aScreenCTM,
     // transforms in this case since that's what we've been doing for
     // a while, and it keeps us consistent with WebKit and Opera (if not
     // really with the ambiguous spec).
-    matrix = aElement->PrependLocalTransformsTo(gfxMatrix());
+    matrix = getLocalTransformHelper(aElement, true);
   }
+
+  if (auto* f = element->GetPrimaryFrame()) {
+    if (f->IsSVGOuterSVGFrame()) {
+      nsMargin bp = f->GetUsedBorderAndPadding();
+      matrix.PostTranslate(
+          NSAppUnitsToFloatPixels(bp.left, AppUnitsPerCSSPixel()),
+          NSAppUnitsToFloatPixels(bp.top, AppUnitsPerCSSPixel()));
+    }
+  }
+
   if (!ancestor || !ancestor->IsElement()) {
     return gfx::ToMatrix(matrix);
   }
@@ -515,7 +555,7 @@ static gfx::Matrix GetCTMInternal(SVGElement* aElement, bool aScreenCTM,
   float x = 0.0f, y = 0.0f;
   if (currentDoc &&
       element->NodeInfo()->Equals(nsGkAtoms::svg, kNameSpaceID_SVG)) {
-    nsIPresShell* presShell = currentDoc->GetShell();
+    PresShell* presShell = currentDoc->GetPresShell();
     if (presShell) {
       nsIFrame* frame = element->GetPrimaryFrame();
       nsIFrame* ancestorFrame = presShell->GetRootFrame();
@@ -574,7 +614,7 @@ double SVGContentUtils::ComputeNormalizedHypotenuse(double aWidth,
 }
 
 float SVGContentUtils::AngleBisect(float a1, float a2) {
-  float delta = fmod(a2 - a1, static_cast<float>(2 * M_PI));
+  float delta = std::fmod(a2 - a1, static_cast<float>(2 * M_PI));
   if (delta < 0) {
     delta += static_cast<float>(2 * M_PI);
   }
@@ -782,7 +822,7 @@ already_AddRefed<gfx::Path> SVGContentUtils::GetPath(
   SVGPathData pathData;
   SVGPathDataParser parser(aPathString, &pathData);
   if (!parser.Parse()) {
-    return NULL;
+    return nullptr;
   }
 
   RefPtr<DrawTarget> drawTarget =
@@ -796,6 +836,24 @@ already_AddRefed<gfx::Path> SVGContentUtils::GetPath(
 bool SVGContentUtils::ShapeTypeHasNoCorners(const nsIContent* aContent) {
   return aContent &&
          aContent->IsAnyOfSVGElements(nsGkAtoms::circle, nsGkAtoms::ellipse);
+}
+
+nsDependentSubstring SVGContentUtils::GetAndEnsureOneToken(
+    const nsAString& aString, bool& aSuccess) {
+  nsWhitespaceTokenizerTemplate<nsContentUtils::IsHTMLWhitespace> tokenizer(
+      aString);
+
+  aSuccess = false;
+  if (!tokenizer.hasMoreTokens()) {
+    return {};
+  }
+  auto token = tokenizer.nextToken();
+  if (tokenizer.hasMoreTokens()) {
+    return {};
+  }
+
+  aSuccess = true;
+  return token;
 }
 
 }  // namespace mozilla

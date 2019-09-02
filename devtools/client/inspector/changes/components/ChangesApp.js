@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
@@ -35,7 +38,7 @@ class ChangesApp extends PureComponent {
   }
 
   renderCopyAllChangesButton() {
-    return dom.button(
+    const button = dom.button(
       {
         className: "changes__copy-all-changes-button",
         onClick: e => {
@@ -46,6 +49,8 @@ class ChangesApp extends PureComponent {
       },
       getStr("changes.contextmenu.copyAllChanges")
     );
+
+    return dom.div({ className: "changes__toolbar" }, button);
   }
 
   renderCopyButton(ruleId) {
@@ -66,7 +71,7 @@ class ChangesApp extends PureComponent {
     const removals = remove
       // Sorting changed declarations in the order they appear in the Rules view.
       .sort((a, b) => a.index > b.index)
-      .map(({property, value, index}) => {
+      .map(({ property, value, index }) => {
         return CSSDeclaration({
           key: "remove-" + property + index,
           className: "level diff-remove",
@@ -79,7 +84,7 @@ class ChangesApp extends PureComponent {
     const additions = add
       // Sorting changed declarations in the order they appear in the Rules view.
       .sort((a, b) => a.index > b.index)
-      .map(({property, value, index}) => {
+      .map(({ property, value, index }) => {
         return CSSDeclaration({
           key: "add-" + property + index,
           className: "level diff-add",
@@ -112,7 +117,11 @@ class ChangesApp extends PureComponent {
       // Render any changed CSS declarations.
       this.renderDeclarations(rule.remove, rule.add),
       // Render the closing bracket with a diff marker if necessary.
-      dom.div({ className: `level ${diffClass}` }, getDiffMarker(diffClass), "}")
+      dom.div(
+        { className: `level ${diffClass}` },
+        getDiffMarker(diffClass),
+        "}"
+      )
     );
   }
 
@@ -142,16 +151,18 @@ class ChangesApp extends PureComponent {
     const elements = [];
 
     for (const [selector, diffClass] of selectorDiffClassMap) {
-      elements.push(dom.div(
-        {
-          key: selector,
-          className: `level changes__selector ${diffClass}`,
-          title: selector,
-        },
-        getDiffMarker(diffClass),
-        selector,
-        dom.span({}, " {")
-      ));
+      elements.push(
+        dom.div(
+          {
+            key: selector,
+            className: `level changes__selector ${diffClass}`,
+            title: selector,
+          },
+          getDiffMarker(diffClass),
+          selector,
+          dom.span({}, " {")
+        )
+      );
     }
 
     return elements;
@@ -196,7 +207,8 @@ class ChangesApp extends PureComponent {
   }
 
   renderEmptyState() {
-    return dom.div({ className: "devtools-sidepanel-no-result" },
+    return dom.div(
+      { className: "devtools-sidepanel-no-result" },
       dom.p({}, getStr("changes.noChanges")),
       dom.p({}, getStr("changes.noChangesDescription"))
     );

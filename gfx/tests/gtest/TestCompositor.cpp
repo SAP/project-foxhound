@@ -3,7 +3,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-#include "gfxPrefs.h"
 #include "gfxUtils.h"
 #include "gtest/gtest.h"
 #include "TestLayers.h"
@@ -161,11 +160,11 @@ static bool CompositeAndCompare(RefPtr<LayerManagerComposite> layerManager,
   return true;
 }
 
-TEST(Gfx, CompositorConstruct) {
-  auto layerManagers = GetLayerManagers(GetPlatformBackends());
-}
+TEST(Gfx, CompositorConstruct)
+{ auto layerManagers = GetLayerManagers(GetPlatformBackends()); }
 
-TEST(Gfx, CompositorSimpleTree) {
+TEST(Gfx, CompositorSimpleTree)
+{
   auto layerManagers = GetLayerManagers(GetPlatformBackends());
   for (size_t i = 0; i < layerManagers.size(); i++) {
     RefPtr<LayerManagerComposite> layerManager = layerManagers[i].mLayerManager;

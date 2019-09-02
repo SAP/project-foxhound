@@ -20,11 +20,13 @@
 #define wasm_js_h
 
 #include "gc/Policy.h"
+#include "gc/ZoneAllocator.h"
 #include "vm/NativeObject.h"
 #include "wasm/WasmTypes.h"
 
 namespace js {
 
+class ArrayBufferObjectMaybeShared;
 class GlobalObject;
 class StructTypeDescr;
 class TypedArrayObject;
@@ -74,6 +76,14 @@ MOZ_MUST_USE bool Eval(JSContext* cx, Handle<TypedArrayObject*> code,
                        HandleObject importObj,
                        MutableHandleWasmInstanceObject instanceObj);
 
+// Extracts the various imports from the given import object into the given
+// ImportValues structure while checking the imports against the given module.
+// The resulting structure can be passed to WasmModule::instantiate.
+
+struct ImportValues;
+MOZ_MUST_USE bool GetImports(JSContext* cx, const Module& module,
+                             HandleObject importObj, ImportValues* imports);
+
 // For testing cross-process (de)serialization, this pair of functions are
 // responsible for, in the child process, compiling the given wasm bytecode
 // to a wasm::Module that is serialized into the given byte array, and, in
@@ -86,22 +96,21 @@ MOZ_MUST_USE bool CompileAndSerialize(const ShareableBytes& bytecode,
 MOZ_MUST_USE bool DeserializeModule(JSContext* cx, const Bytes& serialized,
                                     MutableHandleObject module);
 
-// These accessors can be used to probe JS values for being an exported wasm
-// function.
+// A WebAssembly "Exported Function" is the spec name for the JS function
+// objects created to wrap wasm functions. This predicate returns false
+// for asm.js functions which are semantically just normal JS functions
+// (even if they are implemented via wasm under the hood). The accessor
+// functions for extracting the instance and func-index of a wasm function
+// can be used for both wasm and asm.js, however.
 
-extern bool IsExportedFunction(JSFunction* fun);
+bool IsWasmExportedFunction(JSFunction* fun);
+bool CheckFuncRefValue(JSContext* cx, HandleValue v, MutableHandleFunction fun);
 
-extern bool IsExportedWasmFunction(JSFunction* fun);
+Instance& ExportedFunctionToInstance(JSFunction* fun);
+WasmInstanceObject* ExportedFunctionToInstanceObject(JSFunction* fun);
+uint32_t ExportedFunctionToFuncIndex(JSFunction* fun);
 
-extern bool IsExportedFunction(const Value& v, MutableHandleFunction f);
-
-extern Instance& ExportedFunctionToInstance(JSFunction* fun);
-
-extern WasmInstanceObject* ExportedFunctionToInstanceObject(JSFunction* fun);
-
-extern uint32_t ExportedFunctionToFuncIndex(JSFunction* fun);
-
-extern bool IsSharedWasmMemoryObject(JSObject* obj);
+bool IsSharedWasmMemoryObject(JSObject* obj);
 
 }  // namespace wasm
 
@@ -169,8 +178,7 @@ class WasmGlobalObject : public NativeObject {
     int64_t i64;
     float f32;
     double f64;
-    JSObject* ref;  // Note, this breaks an abstraction boundary
-    wasm::AnyRef anyref;
+    wasm::AnyRef ref;
     Cell() : i64(0) {}
     ~Cell() {}
   };
@@ -218,15 +226,15 @@ class WasmInstanceObject : public NativeObject {
   // objects on demand (instead up-front for all table elements) while
   // correctly preserving observable function object identity.
   using ExportMap = GCHashMap<uint32_t, HeapPtr<JSFunction*>,
-                              DefaultHasher<uint32_t>, SystemAllocPolicy>;
+                              DefaultHasher<uint32_t>, ZoneAllocPolicy>;
   ExportMap& exports() const;
 
   // WeakScopeMap maps from function index to js::Scope. This maps is weak
   // to avoid holding scope objects alive. The scopes are normally created
   // during debugging.
   using ScopeMap =
-      JS::WeakCache<GCHashMap<uint32_t, ReadBarriered<WasmFunctionScope*>,
-                              DefaultHasher<uint32_t>, SystemAllocPolicy>>;
+      JS::WeakCache<GCHashMap<uint32_t, WeakHeapPtr<WasmFunctionScope*>,
+                              DefaultHasher<uint32_t>, ZoneAllocPolicy>>;
   ScopeMap& scopes() const;
 
  public:
@@ -245,8 +253,9 @@ class WasmInstanceObject : public NativeObject {
       Vector<RefPtr<wasm::Table>, 0, SystemAllocPolicy>&& tables,
       GCVector<HeapPtr<StructTypeDescr*>, 0, SystemAllocPolicy>&&
           structTypeDescrs,
-      Handle<FunctionVector> funcImports, const wasm::GlobalDescVector& globals,
-      wasm::HandleValVector globalImportValues,
+      const JSFunctionVector& funcImports,
+      const wasm::GlobalDescVector& globals,
+      const wasm::ValVector& globalImportValues,
       const WasmGlobalObjectVector& globalObjs, HandleObject proto,
       UniquePtr<wasm::DebugState> maybeDebug);
   void initExportsObj(JSObject& exportsObj);
@@ -267,7 +276,8 @@ class WasmInstanceObject : public NativeObject {
   static WasmFunctionScope* getFunctionScope(
       JSContext* cx, HandleWasmInstanceObject instanceObj, uint32_t funcIndex);
 
-  WasmGlobalObjectVector& indirectGlobals() const;
+  using GlobalObjectVector = GCVector<WasmGlobalObject*, 0, ZoneAllocPolicy>;
+  GlobalObjectVector& indirectGlobals() const;
 };
 
 // The class of WebAssembly.Memory. A WasmMemoryObject references an ArrayBuffer
@@ -284,9 +294,10 @@ class WasmMemoryObject : public NativeObject {
   static bool grow(JSContext* cx, unsigned argc, Value* vp);
   static uint32_t growShared(HandleWasmMemoryObject memory, uint32_t delta);
 
-  using InstanceSet = JS::WeakCache<GCHashSet<
-      ReadBarrieredWasmInstanceObject,
-      MovableCellHasher<ReadBarrieredWasmInstanceObject>, SystemAllocPolicy>>;
+  using InstanceSet =
+      JS::WeakCache<GCHashSet<WeakHeapPtrWasmInstanceObject,
+                              MovableCellHasher<WeakHeapPtrWasmInstanceObject>,
+                              ZoneAllocPolicy>>;
   bool hasObservers() const;
   InstanceSet& observers() const;
   InstanceSet* getOrCreateObservers(JSContext* cx);

@@ -7,13 +7,17 @@ const kSearchEngineID = "addEngineWithDetails_test_engine";
 const kSearchEngineURL = "http://example.com/?search={searchTerms}";
 const kSearchTerm = "foo";
 
+add_task(async function setup() {
+  await AddonTestUtils.promiseStartupManager();
+});
+
 add_task(async function test_addEngineWithDetails() {
   Assert.ok(!Services.search.isInitialized);
 
-  Services.prefs.getDefaultBranch(BROWSER_SEARCH_PREF)
-          .setBoolPref("reset.enabled", true);
-
-  await Services.search.addEngineWithDetails(kSearchEngineID, "", "", "", "get", kSearchEngineURL);
+  await Services.search.addEngineWithDetails(kSearchEngineID, {
+    method: "get",
+    template: kSearchEngineURL,
+  });
 
   // An engine added with addEngineWithDetails should have a load path, even
   // though we can't point to a specific file.
@@ -25,6 +29,10 @@ add_task(async function test_addEngineWithDetails() {
   await Services.search.setDefault(engine);
 
   let expectedURL = kSearchEngineURL.replace("{searchTerms}", kSearchTerm);
-  let submission = (await Services.search.getDefault()).getSubmission(kSearchTerm, null, "searchbar");
+  let submission = (await Services.search.getDefault()).getSubmission(
+    kSearchTerm,
+    null,
+    "searchbar"
+  );
   Assert.equal(submission.uri.spec, expectedURL);
 });

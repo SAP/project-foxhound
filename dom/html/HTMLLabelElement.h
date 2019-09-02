@@ -43,9 +43,11 @@ class HTMLLabelElement final : public nsGenericHTMLElement {
   nsGenericHTMLElement* GetControl() const { return GetLabeledElement(); }
 
   using nsGenericHTMLElement::Focus;
-  virtual void Focus(mozilla::ErrorResult& aError) override;
+  virtual void Focus(const FocusOptions& aOptions,
+                     ErrorResult& aError) override;
 
   // nsIContent
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
   virtual bool PerformAccesskey(bool aKeyCausesActivation,
                                 bool aIsTrustedEvent) override;

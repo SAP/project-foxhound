@@ -19,6 +19,8 @@ class FontPropertyValue extends PureComponent {
     return {
       // Whether to allow input values above the value defined by the `max` prop.
       allowOverflow: PropTypes.bool,
+      // Whether to allow input values below the value defined by the `min` prop.
+      allowUnderflow: PropTypes.bool,
       className: PropTypes.string,
       defaultValue: PropTypes.number,
       disabled: PropTypes.bool.isRequired,
@@ -34,20 +36,28 @@ class FontPropertyValue extends PureComponent {
       nameLabel: PropTypes.bool,
       onChange: PropTypes.func.isRequired,
       step: PropTypes.number,
+      // Whether to show the value input field.
+      showInput: PropTypes.bool,
+      // Whether to show the unit select dropdown.
+      showUnit: PropTypes.bool,
       unit: PropTypes.string,
       unitOptions: PropTypes.array,
       value: PropTypes.number,
+      valueLabel: PropTypes.string,
     };
   }
 
   static get defaultProps() {
     return {
       allowOverflow: false,
+      allowUnderflow: false,
       className: "",
       minLabel: false,
       maxLabel: false,
       nameLabel: false,
       step: 1,
+      showInput: true,
+      showUnit: true,
       unit: null,
       unitOptions: [],
     };
@@ -93,7 +103,7 @@ class FontPropertyValue extends PureComponent {
   /**
    * Check if the given value is valid according to the constraints of this component.
    * Ensure it is a number and that it does not go outside the min/max limits, unless
-   * allowed by the `allowOverflow` props flag.
+   * allowed by the `allowOverflow` and `allowUnderflow` props.
    *
    * @param  {Number} value
    *         Numeric value
@@ -101,18 +111,19 @@ class FontPropertyValue extends PureComponent {
    *         Whether the value conforms to the components contraints.
    */
   isValueValid(value) {
-    const { allowOverflow, min, max } = this.props;
+    const { allowOverflow, allowUnderflow, min, max } = this.props;
 
     if (typeof value !== "number" || isNaN(value)) {
       return false;
     }
 
-    if (min !== undefined && value < min) {
+    // Ensure it does not go below minimum value, unless underflow is allowed.
+    if (min !== undefined && value < min && !allowUnderflow) {
       return false;
     }
 
-    // Ensure it does not exceed maximum value, unless overflow is allowed.
-    if (max !== undefined && value > this.props.max && !allowOverflow) {
+    // Ensure it does not go over maximum value, unless overflow is allowed.
+    if (max !== undefined && value > max && !allowOverflow) {
       return false;
     }
 
@@ -131,7 +142,10 @@ class FontPropertyValue extends PureComponent {
     if (isValid) {
       value = this.state.value;
     } else if (this.state.value !== null) {
-      value = Math.max(this.props.min, Math.min(this.state.value, this.props.max));
+      value = Math.max(
+        this.props.min,
+        Math.min(this.state.value, this.props.max)
+      );
     } else {
       value = this.state.initialValue;
     }
@@ -155,9 +169,10 @@ class FontPropertyValue extends PureComponent {
     // Regular expresion to check for floating point or integer numbers. Accept negative
     // numbers only if the min value is negative. Otherwise, expect positive numbers.
     // Whitespace and non-digit characters are invalid (aside from a single dot).
-    const regex = (this.props.min && this.props.min < 0)
-      ? /^-?[0-9]+(.[0-9]+)?$/
-      : /^[0-9]+(.[0-9]+)?$/;
+    const regex =
+      this.props.min && this.props.min < 0
+        ? /^-?[0-9]+(.[0-9]+)?$/
+        : /^[0-9]+(.[0-9]+)?$/;
     let string = e.target.value.trim();
 
     if (e.target.validity.badInput) {
@@ -173,7 +188,7 @@ class FontPropertyValue extends PureComponent {
     // Accept empty strings to allow the input value to be completely erased while typing.
     // A null value will be handled on blur. @see this.onBlur()
     if (string === "") {
-      this.setState((prevState) => {
+      this.setState(prevState => {
         return {
           ...prevState,
           value: null,
@@ -196,7 +211,7 @@ class FontPropertyValue extends PureComponent {
       e.target.select();
     }
 
-    this.setState((prevState) => {
+    this.setState(prevState => {
       return {
         ...prevState,
         interactive: true,
@@ -206,10 +221,14 @@ class FontPropertyValue extends PureComponent {
   }
 
   onUnitChange(e) {
-    this.props.onChange(this.props.name, this.props.value, this.props.unit,
-       e.target.value);
+    this.props.onChange(
+      this.props.name,
+      this.props.value,
+      this.props.unit,
+      e.target.value
+    );
     // Reset internal state value and wait for converted value from props.
-    this.setState((prevState) => {
+    this.setState(prevState => {
       return {
         ...prevState,
         value: null,
@@ -234,7 +253,7 @@ class FontPropertyValue extends PureComponent {
    *        Whether to mark the interactive state on or off.
    */
   toggleInteractiveState(isInteractive) {
-    this.setState((prevState) => {
+    this.setState(prevState => {
       return {
         ...prevState,
         interactive: isInteractive,
@@ -259,7 +278,7 @@ class FontPropertyValue extends PureComponent {
       this.props.onChange(this.props.name, value, this.props.unit);
     }
 
-    this.setState((prevState) => {
+    this.setState(prevState => {
       return {
         ...prevState,
         value,
@@ -274,10 +293,9 @@ class FontPropertyValue extends PureComponent {
 
     // Ensure the select element has the current unit type even if we don't recognize it.
     // The unit conversion function will use a 1-to-1 scale for unrecognized units.
-    const options = this.props.unitOptions.includes(this.props.unit) ?
-      this.props.unitOptions
-      :
-      this.props.unitOptions.concat([this.props.unit]);
+    const options = this.props.unitOptions.includes(this.props.unit)
+      ? this.props.unitOptions
+      : this.props.unitOptions.concat([this.props.unit]);
 
     return dom.select(
       {
@@ -299,11 +317,7 @@ class FontPropertyValue extends PureComponent {
   }
 
   renderLabelContent() {
-    const {
-      label,
-      name,
-      nameLabel,
-    } = this.props;
+    const { label, name, nameLabel } = this.props;
 
     const labelEl = dom.span(
       {
@@ -314,18 +328,25 @@ class FontPropertyValue extends PureComponent {
     );
 
     // Show the `name` prop value as an additional label if the `nameLabel` prop is true.
-    const detailEl = nameLabel ?
-      dom.span(
-        {
-          className: "font-control-label-detail",
-          id: `detail-${name}`,
-        },
-        this.getPropLabel("name")
-      )
-      :
-      null;
+    const detailEl = nameLabel
+      ? dom.span(
+          {
+            className: "font-control-label-detail",
+            id: `detail-${name}`,
+          },
+          this.getPropLabel("name")
+        )
+      : null;
 
     return createElement(Fragment, null, labelEl, detailEl);
+  }
+
+  renderValueLabel() {
+    if (!this.props.valueLabel) {
+      return null;
+    }
+
+    return dom.div({ className: "font-value-label" }, this.props.valueLabel);
   }
 
   render() {
@@ -334,9 +355,8 @@ class FontPropertyValue extends PureComponent {
       return null;
     }
 
-    const propsValue = this.props.value !== null
-      ? this.props.value
-      : this.props.defaultValue;
+    const propsValue =
+      this.props.value !== null ? this.props.value : this.props.defaultValue;
 
     const defaults = {
       min: this.props.min,
@@ -350,30 +370,28 @@ class FontPropertyValue extends PureComponent {
       value: this.state.interactive ? this.state.value : propsValue,
     };
 
-    const range = dom.input(
-      {
-        ...defaults,
-        onMouseDown: this.onMouseDown,
-        onMouseUp: this.onMouseUp,
-        className: "font-value-slider",
-        disabled: this.props.disabled,
-        name: this.props.name,
-        title: this.props.label,
-        type: "range",
-      }
-    );
+    const range = dom.input({
+      ...defaults,
+      onMouseDown: this.onMouseDown,
+      onMouseUp: this.onMouseUp,
+      className: "font-value-slider",
+      disabled: this.props.disabled,
+      name: this.props.name,
+      title: this.props.label,
+      type: "range",
+    });
 
-    const input = dom.input(
-      {
-        ...defaults,
-        // Remove upper limit from number input if it is allowed to overflow.
-        max: this.props.allowOverflow ? null : this.props.max,
-        name: this.props.name,
-        className: "font-value-input",
-        disabled: this.props.disabled,
-        type: "number",
-      }
-    );
+    const input = dom.input({
+      ...defaults,
+      // Remove lower limit from number input if it is allowed to underflow.
+      min: this.props.allowUnderflow ? null : this.props.min,
+      // Remove upper limit from number input if it is allowed to overflow.
+      max: this.props.allowOverflow ? null : this.props.max,
+      name: this.props.name,
+      className: "font-value-input",
+      disabled: this.props.disabled,
+      type: "number",
+    });
 
     return dom.label(
       {
@@ -399,8 +417,9 @@ class FontPropertyValue extends PureComponent {
           },
           range
         ),
-        input,
-        this.renderUnitSelect()
+        this.renderValueLabel(),
+        this.props.showInput && input,
+        this.props.showUnit && this.renderUnitSelect()
       )
     );
   }

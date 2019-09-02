@@ -6,7 +6,7 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/Document.h"
-#include "nsIPresShell.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsPresContext.h"
 
 using namespace mozilla;

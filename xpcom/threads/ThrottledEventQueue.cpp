@@ -113,18 +113,24 @@ class ThrottledEventQueue::Inner final : public nsISupports {
   // Used from any thread; protected by mMutex.
   nsCOMPtr<nsIRunnable> mExecutor;
 
+  const char* mName;
+
   const uint32_t mPriority;
 
   // True if this queue is currently paused.
   // Used from any thread; protected by mMutex.
   bool mIsPaused;
 
-  explicit Inner(nsISerialEventTarget* aBaseTarget, uint32_t aPriority)
+  explicit Inner(nsISerialEventTarget* aBaseTarget, const char* aName,
+                 uint32_t aPriority)
       : mMutex("ThrottledEventQueue"),
         mIdleCondVar(mMutex, "ThrottledEventQueue:Idle"),
         mBaseTarget(aBaseTarget),
+        mName(aName),
         mPriority(aPriority),
-        mIsPaused(false) {}
+        mIsPaused(false) {
+    MOZ_ASSERT(mName, "Must pass a valid name!");
+  }
 
   ~Inner() {
 #ifdef DEBUG
@@ -173,11 +179,14 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
     {
       MutexAutoLock lock(mMutex);
-
-      // We only check the name of an executor runnable when we know there is
-      // something in the queue, so this should never fail.
       event = mEventQueue.PeekEvent(lock);
-      MOZ_ALWAYS_TRUE(event);
+      // It is possible that mEventQueue wasn't empty when the executor
+      // was added to the queue, but someone processed events from mEventQueue
+      // before the executor, this is why mEventQueue is empty here
+      if (!event) {
+        aName.AssignLiteral("no runnables left in the ThrottledEventQueue");
+        return NS_OK;
+      }
     }
 
     if (nsCOMPtr<nsINamed> named = do_QueryInterface(event)) {
@@ -185,7 +194,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
       return rv;
     }
 
-    aName.AssignLiteral("non-nsINamed ThrottledEventQueue runnable");
+    aName.AssignASCII(mName);
     return NS_OK;
   }
 
@@ -245,12 +254,12 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
  public:
   static already_AddRefed<Inner> Create(nsISerialEventTarget* aBaseTarget,
-                                        uint32_t aPriority) {
+                                        const char* aName, uint32_t aPriority) {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(ClearOnShutdown_Internal::sCurrentShutdownPhase ==
                ShutdownPhase::NotInShutdown);
 
-    RefPtr<Inner> ref = new Inner(aBaseTarget, aPriority);
+    RefPtr<Inner> ref = new Inner(aBaseTarget, aName, aPriority);
     return ref.forget();
   }
 
@@ -263,6 +272,11 @@ class ThrottledEventQueue::Inner final : public nsISupports {
     // Any thread
     MutexAutoLock lock(mMutex);
     return mEventQueue.Count(lock);
+  }
+
+  already_AddRefed<nsIRunnable> GetEvent() {
+    MutexAutoLock lock(mMutex);
+    return mEventQueue.GetEvent(nullptr, lock);
   }
 
   void AwaitIdle() const {
@@ -358,11 +372,11 @@ ThrottledEventQueue::ThrottledEventQueue(already_AddRefed<Inner> aInner)
 }
 
 already_AddRefed<ThrottledEventQueue> ThrottledEventQueue::Create(
-    nsISerialEventTarget* aBaseTarget, uint32_t aPriority) {
+    nsISerialEventTarget* aBaseTarget, const char* aName, uint32_t aPriority) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aBaseTarget);
 
-  RefPtr<Inner> inner = Inner::Create(aBaseTarget, aPriority);
+  RefPtr<Inner> inner = Inner::Create(aBaseTarget, aName, aPriority);
 
   RefPtr<ThrottledEventQueue> ref = new ThrottledEventQueue(inner.forget());
   return ref.forget();
@@ -371,6 +385,11 @@ already_AddRefed<ThrottledEventQueue> ThrottledEventQueue::Create(
 bool ThrottledEventQueue::IsEmpty() const { return mInner->IsEmpty(); }
 
 uint32_t ThrottledEventQueue::Length() const { return mInner->Length(); }
+
+// Get the next runnable from the queue
+already_AddRefed<nsIRunnable> ThrottledEventQueue::GetEvent() {
+  return mInner->GetEvent();
+}
 
 void ThrottledEventQueue::AwaitIdle() const { return mInner->AwaitIdle(); }
 

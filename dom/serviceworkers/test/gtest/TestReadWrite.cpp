@@ -81,9 +81,11 @@ bool CreateFile(const nsACString& aData) {
   return true;
 }
 
-TEST(ServiceWorkerRegistrar, TestNoFile) {
+TEST(ServiceWorkerRegistrar, TestNoFile)
+{
   nsCOMPtr<nsIFile> file = GetFile();
-  ASSERT_TRUE(file) << "GetFile must return a nsIFIle";
+  ASSERT_TRUE(file)
+  << "GetFile must return a nsIFIle";
 
   bool exists;
   nsresult rv = file->Exists(&exists);
@@ -104,8 +106,10 @@ TEST(ServiceWorkerRegistrar, TestNoFile) {
       << "No data should be found in an empty file";
 }
 
-TEST(ServiceWorkerRegistrar, TestEmptyFile) {
-  ASSERT_TRUE(CreateFile(EmptyCString())) << "CreateFile should not fail";
+TEST(ServiceWorkerRegistrar, TestEmptyFile)
+{
+  ASSERT_TRUE(CreateFile(EmptyCString()))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -117,10 +121,11 @@ TEST(ServiceWorkerRegistrar, TestEmptyFile) {
       << "No data should be found in an empty file";
 }
 
-TEST(ServiceWorkerRegistrar, TestRightVersionFile) {
+TEST(ServiceWorkerRegistrar, TestRightVersionFile)
+{
   ASSERT_TRUE(
       CreateFile(NS_LITERAL_CSTRING(SERVICEWORKERREGISTRAR_VERSION "\n")))
-      << "CreateFile should not fail";
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -133,10 +138,11 @@ TEST(ServiceWorkerRegistrar, TestRightVersionFile) {
       << "No data should be found in an empty file";
 }
 
-TEST(ServiceWorkerRegistrar, TestWrongVersionFile) {
+TEST(ServiceWorkerRegistrar, TestWrongVersionFile)
+{
   ASSERT_TRUE(
       CreateFile(NS_LITERAL_CSTRING(SERVICEWORKERREGISTRAR_VERSION "bla\n")))
-      << "CreateFile should not fail";
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -149,10 +155,11 @@ TEST(ServiceWorkerRegistrar, TestWrongVersionFile) {
       << "No data should be found in an empty file";
 }
 
-TEST(ServiceWorkerRegistrar, TestReadData) {
+TEST(ServiceWorkerRegistrar, TestReadData)
+{
   nsAutoCString buffer(SERVICEWORKERREGISTRAR_VERSION "\n");
 
-  buffer.AppendLiteral("^appId=123&inBrowser=1\n");
+  buffer.AppendLiteral("^inBrowser=1\n");
   buffer.AppendLiteral("https://scope_0.org\ncurrentWorkerURL 0\n");
   buffer.Append(SERVICEWORKERREGISTRAR_TRUE "\n");
   buffer.AppendLiteral("cacheName 0\n");
@@ -182,7 +189,8 @@ TEST(ServiceWorkerRegistrar, TestReadData) {
   buffer.AppendLiteral("\n");
   buffer.Append(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -200,7 +208,7 @@ TEST(ServiceWorkerRegistrar, TestReadData) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -233,9 +241,10 @@ TEST(ServiceWorkerRegistrar, TestReadData) {
   ASSERT_EQ((int64_t)ts, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestDeleteData) {
+TEST(ServiceWorkerRegistrar, TestDeleteData)
+{
   ASSERT_TRUE(CreateFile(NS_LITERAL_CSTRING("Foobar")))
-      << "CreateFile should not fail";
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -247,14 +256,16 @@ TEST(ServiceWorkerRegistrar, TestDeleteData) {
   nsresult rv = file->Exists(&exists);
   ASSERT_EQ(NS_OK, rv) << "nsIFile::Exists cannot fail";
 
-  ASSERT_FALSE(exists) << "The file should not exist after a DeleteData().";
+  ASSERT_FALSE(exists)
+  << "The file should not exist after a DeleteData().";
 }
 
-TEST(ServiceWorkerRegistrar, TestWriteData) {
+TEST(ServiceWorkerRegistrar, TestWriteData)
+{
   {
     RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 2; ++i) {
       ServiceWorkerRegistrationData reg;
 
       reg.scope() = nsPrintfCString("https://scope_write_%d.org", i);
@@ -272,10 +283,9 @@ TEST(ServiceWorkerRegistrar, TestWriteData) {
       nsAutoCString spec;
       spec.AppendPrintf("spec write %d", i);
 
-      nsTArray<mozilla::ipc::ContentSecurityPolicy> policies;
       reg.principal() = mozilla::ipc::ContentPrincipalInfo(
-          mozilla::OriginAttributes(i, i % 2), spec, spec, mozilla::Nothing(),
-          std::move(policies), spec);
+          mozilla::OriginAttributes(i % 2), spec, spec, mozilla::Nothing(),
+          spec);
 
       swr->TestRegisterServiceWorker(reg);
     }
@@ -290,16 +300,16 @@ TEST(ServiceWorkerRegistrar, TestWriteData) {
   ASSERT_EQ(NS_OK, rv) << "ReadData() should not fail";
 
   const nsTArray<ServiceWorkerRegistrationData>& data = swr->TestGetData();
-  ASSERT_EQ((uint32_t)10, data.Length()) << "10 entries should be found";
+  ASSERT_EQ((uint32_t)2, data.Length()) << "2 entries should be found";
 
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 2; ++i) {
     nsAutoCString test;
 
     ASSERT_EQ(data[i].principal().type(),
               mozilla::ipc::PrincipalInfo::TContentPrincipalInfo);
     const mozilla::ipc::ContentPrincipalInfo& cInfo = data[i].principal();
 
-    mozilla::OriginAttributes attrs(i, i % 2);
+    mozilla::OriginAttributes attrs(i % 2);
     nsAutoCString suffix, expectSuffix;
     attrs.CreateSuffix(expectSuffix);
     cInfo.attrs().CreateSuffix(suffix);
@@ -332,7 +342,8 @@ TEST(ServiceWorkerRegistrar, TestWriteData) {
   }
 }
 
-TEST(ServiceWorkerRegistrar, TestVersion2Migration) {
+TEST(ServiceWorkerRegistrar, TestVersion2Migration)
+{
   nsAutoCString buffer(
       "2"
       "\n");
@@ -349,7 +360,8 @@ TEST(ServiceWorkerRegistrar, TestVersion2Migration) {
       "1\nactiveCache 1\nwaitingCache 1\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -367,7 +379,7 @@ TEST(ServiceWorkerRegistrar, TestVersion2Migration) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -402,7 +414,8 @@ TEST(ServiceWorkerRegistrar, TestVersion2Migration) {
   ASSERT_EQ((int64_t)0, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestVersion3Migration) {
+TEST(ServiceWorkerRegistrar, TestVersion3Migration)
+{
   nsAutoCString buffer(
       "3"
       "\n");
@@ -417,7 +430,8 @@ TEST(ServiceWorkerRegistrar, TestVersion3Migration) {
       "spec 1\nhttps://scope_1.org\ncurrentWorkerURL 1\ncacheName 1\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -435,7 +449,7 @@ TEST(ServiceWorkerRegistrar, TestVersion3Migration) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -468,7 +482,8 @@ TEST(ServiceWorkerRegistrar, TestVersion3Migration) {
   ASSERT_EQ((int64_t)0, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestVersion4Migration) {
+TEST(ServiceWorkerRegistrar, TestVersion4Migration)
+{
   nsAutoCString buffer(
       "4"
       "\n");
@@ -483,7 +498,8 @@ TEST(ServiceWorkerRegistrar, TestVersion4Migration) {
       "https://scope_1.org\ncurrentWorkerURL 1\ncacheName 1\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -501,7 +517,7 @@ TEST(ServiceWorkerRegistrar, TestVersion4Migration) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -536,7 +552,8 @@ TEST(ServiceWorkerRegistrar, TestVersion4Migration) {
   ASSERT_EQ((int64_t)0, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestVersion5Migration) {
+TEST(ServiceWorkerRegistrar, TestVersion5Migration)
+{
   nsAutoCString buffer(
       "5"
       "\n");
@@ -553,7 +570,8 @@ TEST(ServiceWorkerRegistrar, TestVersion5Migration) {
   buffer.AppendLiteral("cacheName 1\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -571,7 +589,7 @@ TEST(ServiceWorkerRegistrar, TestVersion5Migration) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -604,7 +622,8 @@ TEST(ServiceWorkerRegistrar, TestVersion5Migration) {
   ASSERT_EQ((int64_t)0, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestVersion6Migration) {
+TEST(ServiceWorkerRegistrar, TestVersion6Migration)
+{
   nsAutoCString buffer(
       "6"
       "\n");
@@ -625,7 +644,8 @@ TEST(ServiceWorkerRegistrar, TestVersion6Migration) {
   buffer.AppendLiteral("\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -643,7 +663,7 @@ TEST(ServiceWorkerRegistrar, TestVersion6Migration) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -676,7 +696,8 @@ TEST(ServiceWorkerRegistrar, TestVersion6Migration) {
   ASSERT_EQ((int64_t)0, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestVersion7Migration) {
+TEST(ServiceWorkerRegistrar, TestVersion7Migration)
+{
   nsAutoCString buffer(
       "7"
       "\n");
@@ -710,7 +731,8 @@ TEST(ServiceWorkerRegistrar, TestVersion7Migration) {
   buffer.AppendLiteral("\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -728,7 +750,7 @@ TEST(ServiceWorkerRegistrar, TestVersion7Migration) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -761,13 +783,14 @@ TEST(ServiceWorkerRegistrar, TestVersion7Migration) {
   ASSERT_EQ((int64_t)ts, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestDedupeRead) {
+TEST(ServiceWorkerRegistrar, TestDedupeRead)
+{
   nsAutoCString buffer(
       "3"
       "\n");
 
   // unique entries
-  buffer.AppendLiteral("^appId=123&inBrowser=1\n");
+  buffer.AppendLiteral("^inBrowser=1\n");
   buffer.AppendLiteral(
       "spec 0\nhttps://scope_0.org\ncurrentWorkerURL 0\ncacheName 0\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
@@ -778,12 +801,12 @@ TEST(ServiceWorkerRegistrar, TestDedupeRead) {
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
   // dupe entries
-  buffer.AppendLiteral("^appId=123&inBrowser=1\n");
+  buffer.AppendLiteral("^inBrowser=1\n");
   buffer.AppendLiteral(
       "spec 1\nhttps://scope_0.org\ncurrentWorkerURL 0\ncacheName 0\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  buffer.AppendLiteral("^appId=123&inBrowser=1\n");
+  buffer.AppendLiteral("^inBrowser=1\n");
   buffer.AppendLiteral(
       "spec 2\nhttps://scope_0.org\ncurrentWorkerURL 0\ncacheName 0\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
@@ -793,7 +816,8 @@ TEST(ServiceWorkerRegistrar, TestDedupeRead) {
       "spec 3\nhttps://scope_1.org\ncurrentWorkerURL 1\ncacheName 1\n");
   buffer.AppendLiteral(SERVICEWORKERREGISTRAR_TERMINATOR "\n");
 
-  ASSERT_TRUE(CreateFile(buffer)) << "CreateFile should not fail";
+  ASSERT_TRUE(CreateFile(buffer))
+  << "CreateFile should not fail";
 
   RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
@@ -811,7 +835,7 @@ TEST(ServiceWorkerRegistrar, TestDedupeRead) {
   nsAutoCString suffix0;
   cInfo0.attrs().CreateSuffix(suffix0);
 
-  ASSERT_STREQ("^appId=123&inBrowser=1", suffix0.get());
+  ASSERT_STREQ("^inBrowser=1", suffix0.get());
   ASSERT_STREQ("https://scope_0.org", cInfo0.spec().get());
   ASSERT_STREQ("https://scope_0.org", data[0].scope().get());
   ASSERT_STREQ("currentWorkerURL 0", data[0].currentWorkerURL().get());
@@ -844,11 +868,12 @@ TEST(ServiceWorkerRegistrar, TestDedupeRead) {
   ASSERT_EQ((int64_t)0, data[1].lastUpdateTime());
 }
 
-TEST(ServiceWorkerRegistrar, TestDedupeWrite) {
+TEST(ServiceWorkerRegistrar, TestDedupeWrite)
+{
   {
     RefPtr<ServiceWorkerRegistrarTest> swr = new ServiceWorkerRegistrarTest;
 
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 2; ++i) {
       ServiceWorkerRegistrationData reg;
 
       reg.scope() = NS_LITERAL_CSTRING("https://scope_write.dedupe");
@@ -862,10 +887,9 @@ TEST(ServiceWorkerRegistrar, TestDedupeWrite) {
       nsAutoCString spec;
       spec.AppendPrintf("spec write dedupe/%d", i);
 
-      nsTArray<mozilla::ipc::ContentSecurityPolicy> policies;
       reg.principal() = mozilla::ipc::ContentPrincipalInfo(
-          mozilla::OriginAttributes(0, false), spec, spec, mozilla::Nothing(),
-          std::move(policies), spec);
+          mozilla::OriginAttributes(false), spec, spec, mozilla::Nothing(),
+          spec);
 
       swr->TestRegisterServiceWorker(reg);
     }
@@ -887,19 +911,19 @@ TEST(ServiceWorkerRegistrar, TestDedupeWrite) {
             mozilla::ipc::PrincipalInfo::TContentPrincipalInfo);
   const mozilla::ipc::ContentPrincipalInfo& cInfo = data[0].principal();
 
-  mozilla::OriginAttributes attrs(0, false);
+  mozilla::OriginAttributes attrs(false);
   nsAutoCString suffix, expectSuffix;
   attrs.CreateSuffix(expectSuffix);
   cInfo.attrs().CreateSuffix(suffix);
 
   // Last entry passed to RegisterServiceWorkerInternal() should overwrite
-  // previous values.  So expect "9" in values here.
+  // previous values.  So expect "1" in values here.
   ASSERT_STREQ(expectSuffix.get(), suffix.get());
   ASSERT_STREQ("https://scope_write.dedupe", cInfo.spec().get());
   ASSERT_STREQ("https://scope_write.dedupe", data[0].scope().get());
-  ASSERT_STREQ("currentWorkerURL write 9", data[0].currentWorkerURL().get());
+  ASSERT_STREQ("currentWorkerURL write 1", data[0].currentWorkerURL().get());
   ASSERT_EQ(true, data[0].currentWorkerHandlesFetch());
-  ASSERT_STREQ("cacheName write 9",
+  ASSERT_STREQ("cacheName write 1",
                NS_ConvertUTF16toUTF8(data[0].cacheName()).get());
   ASSERT_EQ(nsIServiceWorkerRegistrationInfo::UPDATE_VIA_CACHE_IMPORTS,
             data[0].updateViaCache());

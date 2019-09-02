@@ -122,10 +122,14 @@ class CallbackObject : public nsISupports {
    * This should only be called if you are certain that the return value won't
    * be passed into a JS API function and that it won't be stored without being
    * rooted (or otherwise signaling the stored value to the CC).
+   *
+   * Note that calling Reset() will also affect the value of any handle
+   * previously returned here. Don't call Reset() if a handle is still in use.
    */
   JS::Handle<JSObject*> CallbackPreserveColor() const {
     // Calling fromMarkedLocation() is safe because we trace our mCallback, and
-    // because the value of mCallback cannot change after if has been set.
+    // because the value of mCallback cannot change after if has been set
+    // (except for calling Reset() as described above).
     return JS::Handle<JSObject*>::fromMarkedLocation(mCallback.address());
   }
   JS::Handle<JSObject*> CallbackGlobalPreserveColor() const {
@@ -160,6 +164,24 @@ class CallbackObject : public nsISupports {
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this);
+  }
+
+  // Used for cycle collection optimization.  Should return true only if all our
+  // outgoing edges are to known-live objects.  In that case, there's no point
+  // traversing our edges to them, because we know they can't be collected
+  // anyway.
+  bool IsBlackForCC() const {
+    // Play it safe in case this gets called after unlink.
+    return (!mCallback || !JS::ObjectIsMarkedGray(mCallback)) &&
+           (!mCallbackGlobal || !JS::ObjectIsMarkedGray(mCallbackGlobal)) &&
+           (!mCreationStack || !JS::ObjectIsMarkedGray(mCreationStack)) &&
+           (!mIncumbentJSGlobal ||
+            !JS::ObjectIsMarkedGray(mIncumbentJSGlobal)) &&
+           // mIncumbentGlobal is known-live if we have a known-live
+           // mIncumbentJSGlobal, since mIncumbentJSGlobal will keep a ref to
+           // it. At this point if mIncumbentJSGlobal is not null, it's
+           // known-live.
+           (!mIncumbentGlobal || mIncumbentJSGlobal);
   }
 
  protected:
@@ -206,7 +228,10 @@ class CallbackObject : public nsISupports {
     mCreationStack = aCreationStack;
     if (aIncumbentGlobal) {
       mIncumbentGlobal = aIncumbentGlobal;
-      mIncumbentJSGlobal = aIncumbentGlobal->GetGlobalJSObject();
+      // We don't want to expose to JS here (change the color).  If someone ever
+      // reads mIncumbentJSGlobal, that will expose.  If not, no need to expose
+      // here.
+      mIncumbentJSGlobal = aIncumbentGlobal->GetGlobalJSObjectPreserveColor();
     }
   }
 
@@ -222,7 +247,8 @@ class CallbackObject : public nsISupports {
   // Provide a way to clear this object's pointers to GC things after the
   // callback has been run. Note that CallbackOrNull() will return null after
   // this point. This should only be called if the object is known not to be
-  // used again.
+  // used again, and no handles (e.g. those returned by CallbackPreserveColor)
+  // are in use.
   void Reset() { ClearJSReferences(); }
   friend class mozilla::PromiseJobRunnable;
 
@@ -312,7 +338,7 @@ class CallbackObject : public nsISupports {
               const char* aExecutionReason,
               ExceptionHandling aExceptionHandling, JS::Realm* aRealm = nullptr,
               bool aIsJSImplementedWebIDL = false);
-    ~CallSetup();
+    MOZ_CAN_RUN_SCRIPT ~CallSetup();
 
     JSContext* GetContext() const { return mCx; }
 
@@ -554,8 +580,13 @@ void ImplCycleCollectionUnlink(CallbackObjectHolder<T, U>& aField) {
 // subclass.  This class is used in bindings to safely handle Fast* callbacks;
 // it ensures that the callback is traced, and that if something is holding onto
 // the callback when we're done with it HoldJSObjects is called.
+//
+// Since we effectively hold a ref to a refcounted thing (like RefPtr or
+// OwningNonNull), we are also MOZ_IS_SMARTPTR_TO_REFCOUNTED for static analysis
+// purposes.
 template <typename T>
-class MOZ_RAII RootedCallback : public JS::Rooted<T> {
+class MOZ_RAII MOZ_IS_SMARTPTR_TO_REFCOUNTED RootedCallback
+    : public JS::Rooted<T> {
  public:
   explicit RootedCallback(JSContext* cx) : JS::Rooted<T>(cx), mCx(cx) {}
 

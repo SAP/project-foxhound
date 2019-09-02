@@ -11,12 +11,13 @@
 // See documentation in associated header file
 //
 
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/PresShell.h"
 #include "nsLeafBoxFrame.h"
 #include "nsBoxFrame.h"
 #include "nsCOMPtr.h"
 #include "nsGkAtoms.h"
 #include "nsPresContext.h"
-#include "mozilla/ComputedStyle.h"
 #include "nsIContent.h"
 #include "nsNameSpaceManager.h"
 #include "nsBoxLayoutState.h"
@@ -33,7 +34,7 @@ using namespace mozilla;
 //
 // Creates a new Toolbar frame and returns it
 //
-nsIFrame* NS_NewLeafBoxFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewLeafBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsLeafBoxFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -94,8 +95,7 @@ void nsLeafBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   if (!aBuilder->IsForEventDelivery() || !IsVisibleForPainting()) return;
 
-  aLists.Content()->AppendToTop(
-      MakeDisplayItem<nsDisplayEventReceiver>(aBuilder, this));
+  aLists.Content()->AppendNewToTop<nsDisplayEventReceiver>(aBuilder, this);
 }
 
 /* virtual */
@@ -108,7 +108,7 @@ nscoord nsLeafBoxFrame::GetMinISize(gfxContext* aRenderingContext) {
   LogicalSize minSize(wm, GetXULMinSize(state));
 
   // GetXULMinSize returns border-box size, and we want to return content
-  // inline-size.  Since Reflow uses the reflow state's border and padding, we
+  // inline-size.  Since Reflow uses the reflow input's border and padding, we
   // actually just want to subtract what GetXULMinSize added, which is the
   // result of GetXULBorderAndPadding.
   nsMargin bp;
@@ -129,7 +129,7 @@ nscoord nsLeafBoxFrame::GetPrefISize(gfxContext* aRenderingContext) {
   LogicalSize prefSize(wm, GetXULPrefSize(state));
 
   // GetXULPrefSize returns border-box size, and we want to return content
-  // inline-size.  Since Reflow uses the reflow state's border and padding, we
+  // inline-size.  Since Reflow uses the reflow input's border and padding, we
   // actually just want to subtract what GetXULPrefSize added, which is the
   // result of GetXULBorderAndPadding.
   nsMargin bp;
@@ -229,8 +229,8 @@ void nsLeafBoxFrame::Reflow(nsPresContext* aPresContext,
   nsSize prefSize(0, 0);
 
   // if we are told to layout intrinic then get our preferred size.
-  if (computedSize.width == NS_INTRINSICSIZE ||
-      computedSize.height == NS_INTRINSICSIZE) {
+  if (computedSize.width == NS_UNCONSTRAINEDSIZE ||
+      computedSize.height == NS_UNCONSTRAINEDSIZE) {
     prefSize = GetXULPrefSize(state);
     nsSize minSize = GetXULMinSize(state);
     nsSize maxSize = GetXULMaxSize(state);
@@ -238,19 +238,19 @@ void nsLeafBoxFrame::Reflow(nsPresContext* aPresContext,
   }
 
   // get our desiredSize
-  if (aReflowInput.ComputedWidth() == NS_INTRINSICSIZE) {
+  if (aReflowInput.ComputedWidth() == NS_UNCONSTRAINEDSIZE) {
     computedSize.width = prefSize.width;
   } else {
     computedSize.width += m.left + m.right;
   }
 
-  if (aReflowInput.ComputedHeight() == NS_INTRINSICSIZE) {
+  if (aReflowInput.ComputedHeight() == NS_UNCONSTRAINEDSIZE) {
     computedSize.height = prefSize.height;
   } else {
     computedSize.height += m.top + m.bottom;
   }
 
-  // handle reflow state min and max sizes
+  // handle reflow input min and max sizes
   // XXXbz the width handling here seems to be wrong, since
   // mComputedMin/MaxWidth is a content-box size, whole
   // computedSize.width is a border-box size...

@@ -14,7 +14,7 @@
  *       "id": 2,
  *       "hostname": "http://www.example.com",
  *       "httpRealm": null,
- *       "formSubmitURL": "http://www.example.com/submit-url",
+ *       "formSubmitURL": "http://www.example.com",
  *       "usernameField": "username_field",
  *       "passwordField": "password_field",
  *       "encryptedUsername": "...",
@@ -38,16 +38,17 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = [
-  "LoginStore",
-];
+const EXPORTED_SYMBOLS = ["LoginStore"];
 
 // Globals
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-ChromeUtils.defineModuleGetter(this, "JSONFile",
-                               "resource://gre/modules/JSONFile.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "JSONFile",
+  "resource://gre/modules/JSONFile.jsm"
+);
 
 /**
  * Current data version assigned by the code that last touched the data.

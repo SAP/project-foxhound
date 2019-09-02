@@ -13,6 +13,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::Content::normal()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-content/#propdef-content",
+    flags="APPLIES_TO_MARKER",
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
@@ -27,9 +28,19 @@ ${helpers.predefined_type(
 
 ${helpers.predefined_type(
     "counter-reset",
-    "CounterReset",
+    "CounterSetOrReset",
     initial_value="Default::default()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-lists-3/#propdef-counter-reset",
     servo_restyle_damage="rebuild_and_reflow",
+)}
+
+${helpers.predefined_type(
+    "counter-set",
+    "CounterSetOrReset",
+    initial_value="Default::default()",
+    animation_value_type="discrete",
+    spec="https://drafts.csswg.org/css-lists-3/#propdef-counter-set",
+    servo_restyle_damage="rebuild_and_reflow",
+    products="gecko",
 )}

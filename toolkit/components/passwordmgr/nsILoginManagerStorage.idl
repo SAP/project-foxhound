@@ -9,15 +9,14 @@ interface nsIFile;
 interface nsILoginInfo;
 interface nsIPropertyBag;
 
-[scriptable, uuid(5df81a93-25e6-4b45-a696-089479e15c7d)]
-
-/*
+/**
  * NOTE: This interface is intended to be implemented by modules
  *       providing storage mechanisms for the login manager.
  *       Other code should use the login manager's interfaces
  *       (nsILoginManager), and should not call storage modules
  *       directly.
  */
+[scriptable, uuid(5df81a93-25e6-4b45-a696-089479e15c7d)]
 interface nsILoginManagerStorage : nsISupports {
   /**
    * Initialize the component.
@@ -101,7 +100,6 @@ interface nsILoginManagerStorage : nsISupports {
    * The browser sanitization feature allows the user to clear any stored
    * passwords. This interface allows that to be done without getting each
    * login first (which might require knowing the master password).
-   *
    */
   void removeAllLogins();
 
@@ -110,72 +108,49 @@ interface nsILoginManagerStorage : nsISupports {
    * Fetch all logins in the login manager. An array is always returned;
    * if there are no logins the array is empty.
    *
-   * @param count
-   *        The number of elements in the array. JS callers can simply use
-   *        the array's .length property and omit this param.
-   * @param logins
-   *        An array of nsILoginInfo objects.
-   *
-   * NOTE: This can be called from JS as:
-   *       var logins = pwmgr.getAllLogins();
-   *       (|logins| is an array).
+   * @return An array of nsILoginInfo objects.
    */
-  void getAllLogins([optional] out unsigned long count,
-                    [retval, array, size_is(count)] out nsILoginInfo logins);
+  Array<nsILoginInfo> getAllLogins();
 
+  /**
+   * Fetch all logins in the login manager. An array is always returned;
+   * if there are no logins the array is empty.
+   *
+   * @return An array of nsILoginInfo objects.
+   */
+  jsval getAllLoginsAsync();
 
   /**
    * Search for logins in the login manager. An array is always returned;
    * if there are no logins the array is empty.
    *
-   * @param count
-   *        The number of elements in the array. JS callers can simply use
-   *        the array's .length property, and supply an dummy object for
-   *        this out param. For example: |searchLogins({}, matchData)|
    * @param matchData
    *        The data used to search. This does not follow the same
    *        requirements as findLogins for those fields. Wildcard matches are
    *        simply not specified.
-   * @param logins
-   *        An array of nsILoginInfo objects.
-   *
-   * NOTE: This can be called from JS as:
-   *       var logins = pwmgr.searchLogins({}, matchData);
-   *       (|logins| is an array).
+   * @return An array of nsILoginInfo objects.
    */
-  void searchLogins(out unsigned long count, in nsIPropertyBag matchData,
-                    [retval, array, size_is(count)] out nsILoginInfo logins);
+  Array<nsILoginInfo> searchLogins(in nsIPropertyBag matchData);
 
 
   /**
    * Search for logins matching the specified criteria. Called when looking
    * for logins that might be applicable to a form or authentication request.
    *
-   * @param count
-   *        The number of elements in the array. JS callers can simply use
-   *        the array's .length property, and supply an dummy object for
-   *        this out param. For example: |findLogins({}, hostname, ...)|
    * @param aHostname
-   *        The hostname to restrict searches to, in URL format. For
-   *        example: "http://www.site.com".
+   *        The origin to restrict searches to. For example: "http://www.site.com".
    * @param aActionURL
-   *        For form logins, this argument should be the URL to which the
+   *        For form logins, this argument should be the origin to which the
    *        form will be submitted. For protocol logins, specify null.
    * @param aHttpRealm
    *        For protocol logins, this argument should be the HTTP Realm
    *        for which the login applies. This is obtained from the
    *        WWW-Authenticate header. See RFC2617. For form logins,
    *        specify null.
-   * @param logins
-   *        An array of nsILoginInfo objects.
-   *
-   * NOTE: This can be called from JS as:
-   *       var logins = pwmgr.findLogins({}, hostname, ...);
-   *
+   * @return An array of nsILoginInfo objects.
    */
-  void findLogins(out unsigned long count, in AString aHostname,
-                  in AString aActionURL,   in AString aHttpRealm,
-                  [retval, array, size_is(count)] out nsILoginInfo logins);
+  Array<nsILoginInfo> findLogins(in AString aHostname, in AString aActionURL,
+				 in AString aHttpRealm);
 
 
   /**
@@ -186,11 +161,11 @@ interface nsILoginManagerStorage : nsISupports {
    * password to decrypt the logins.
    *
    * @param aHostname
-   *        The hostname to restrict searches to. Specify an empty string
-   *        to match all hosts. A null value will not match any logins, and
+   *        The origin to restrict searches to. Specify an empty string
+   *        to match all origins. A null value will not match any logins, and
    *        will thus always return a count of 0.
    * @param aActionURL
-   *        The URL to which a form login will be submitted. To match any
+   *        The origin to which a form login will be submitted. To match any
    *        form login, specify an empty string. To not match any form
    *        login, specify null.
    * @param aHttpRealm

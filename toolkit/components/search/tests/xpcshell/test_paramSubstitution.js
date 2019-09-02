@@ -3,19 +3,23 @@
 
 "use strict";
 
-function run_test() {
+add_task(async function test_paramSubstitution() {
   useHttpServer();
 
-  run_next_test();
-}
-
-add_task(async function test_paramSubstitution() {
-  await asyncInit();
+  await AddonTestUtils.promiseStartupManager();
+  await Services.search.init();
 
   let prefix = "http://test.moz/search?q=";
   let [engine] = await addTestEngines([
-    { name: "test", details: ["", "test", "Search Test", "GET",
-                              prefix + "{searchTerms}"] },
+    {
+      name: "test",
+      details: {
+        alias: "test",
+        description: "Search Test",
+        method: "GET",
+        template: prefix + "{searchTerms}",
+      },
+    },
   ]);
   let url = engine.wrappedJSObject._getURLOfType("text/html");
   equal(url.template, prefix + "{searchTerms}");

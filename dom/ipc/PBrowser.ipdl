@@ -9,7 +9,6 @@ include protocol PColorPicker;
 include protocol PContent;
 include protocol PDocAccessible;
 include protocol PFilePicker;
-include protocol PIndexedDBPermissionRequest;
 include protocol PPluginWidget;
 include protocol PRemotePrintJob;
 include protocol PChildToParentStream;
@@ -27,13 +26,13 @@ include JavaScriptTypes;
 include URIParams;
 include PPrintingTypes;
 include PTabContext;
+include PBackgroundSharedTypes;
 
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 
-using class IPC::Principal from "mozilla/dom/PermissionMessageUtils.h";
 using moveonly mozilla::gfx::PaintFragment from "mozilla/gfx/CrossProcessPaint.h";
-using mozilla::gfx::Matrix from "mozilla/gfx/Matrix.h";
+using mozilla::gfx::Matrix4x4 from "mozilla/gfx/Matrix.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::LayoutDevicePoint from "Units.h";
@@ -88,6 +87,8 @@ using mozilla::FontRange from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IAccessibleHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using refcounted class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
+using mozilla::dom::EffectsInfo from "mozilla/dom/TabMessageUtils.h";
+using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 
 namespace mozilla {
 namespace dom {
@@ -109,13 +110,8 @@ struct WebProgressData
   bool isTopLevel;
   bool isLoadingDocument;
   uint32_t loadType;
-  uint64_t DOMWindowID;
-};
-
-union OptionalWebProgressData
-{
-  void_t;
-  WebProgressData;
+  uint64_t outerDOMWindowID;
+  uint64_t innerDOMWindowID;
 };
 
 struct RequestData
@@ -125,12 +121,43 @@ struct RequestData
   nsCString matchedList;
 };
 
-union OptionalShmem
+struct WebProgressStateChangeData
 {
-  void_t;
-  Shmem;
+  bool isNavigating;
+  bool mayEnableCharacterEncodingMenu;
+  bool charsetAutodetected;
+
+  // The following fields are only set when the aStateFlags param passed with
+  // this struct is |nsIWebProgress.STATE_STOP|.
+  nsString contentType;
+  nsString charset;
+  nsIURI documentURI;
 };
 
+
+struct WebProgressLocationChangeData
+{
+  bool isNavigating;
+  bool isSyntheticDocument;
+  bool mayEnableCharacterEncodingMenu;
+  bool charsetAutodetected;
+  nsString contentType;
+  nsString title;
+  nsString charset;
+  nsIURI documentURI;
+  PrincipalInfo contentPrincipal;
+  PrincipalInfo contentStoragePrincipal;
+  CSPInfo? csp;
+  uint64_t? requestContextID;
+};
+
+/**
+ * A PBrowser manages a maximal locally connected subtree of BrowsingContexts
+ * in a content process.
+ *
+ * See `dom/docs/Fission-IPC-Diagram.svg` for an overview of the DOM IPC
+ * actors.
+ */
 nested(upto inside_cpow) sync protocol PBrowser
 {
     manager PContent;
@@ -138,7 +165,6 @@ nested(upto inside_cpow) sync protocol PBrowser
     manages PColorPicker;
     manages PDocAccessible;
     manages PFilePicker;
-    manages PIndexedDBPermissionRequest;
     manages PPluginWidget;
     manages PPaymentRequest;
     manages PWindowGlobal;
@@ -146,7 +172,7 @@ nested(upto inside_cpow) sync protocol PBrowser
 
 both:
     async AsyncMessage(nsString aMessage, CpowEntry[] aCpows,
-                       Principal aPrincipal, ClonedMessageData aData);
+                       nsIPrincipal aPrincipal, ClonedMessageData aData);
 
 parent:
     /**
@@ -179,7 +205,8 @@ parent:
      * Construct a new Remote iframe actor.
      */
     async PBrowserBridge(nsString aPresentationURL, nsString aRemoteType,
-                         BrowsingContext aBrowsingContext);
+                         BrowsingContext aBrowsingContext, uint32_t aChromeFlags,
+                         TabId tabId);
 
     /**
      * Sends an NS_NATIVE_CHILD_OF_SHAREABLE_WINDOW to be adopted by the
@@ -227,11 +254,11 @@ parent:
     async Event(RemoteDOMEvent aEvent);
 
     sync SyncMessage(nsString aMessage, ClonedMessageData aData,
-                     CpowEntry[] aCpows, Principal aPrincipal)
+                     CpowEntry[] aCpows, nsIPrincipal aPrincipal)
       returns (StructuredCloneData[] retval);
 
     nested(inside_sync) sync RpcMessage(nsString aMessage, ClonedMessageData aData,
-                                        CpowEntry[] aCpows, Principal aPrincipal)
+                                        CpowEntry[] aCpows, nsIPrincipal aPrincipal)
       returns (StructuredCloneData[] retval);
 
     /**
@@ -453,7 +480,7 @@ parent:
      *       principals that can live in the content process should
      *       provided.
      */
-    async PIndexedDBPermissionRequest(Principal principal);
+    async IndexedDBPermissionRequest(nsIPrincipal aPrincipal) returns (uint32_t permission);
 
     /**
      * window.open from inside <iframe mozbrowser> is special.  When the child
@@ -467,7 +494,8 @@ parent:
      * @param opener the PBrowser whose content called window.open.
      */
     async BrowserFrameOpenWindow(PBrowser opener,
-                                 nsString aURL, nsString aName, nsString aFeatures)
+                                 nsString aURL, nsString aName,
+                                 bool aForceNoReferrer, nsString aFeatures)
         returns (CreatedWindowInfo window);
 
     /**
@@ -550,11 +578,41 @@ parent:
     async RegisterProtocolHandler(nsString scheme, nsIURI handlerURI, nsString title,
                                   nsIURI documentURI);
 
-    async OnContentBlockingEvent(OptionalWebProgressData aWebProgressData,
+    async OnStateChange(WebProgressData? aWebProgressData,
+                        RequestData aRequestData, uint32_t aStateFlags,
+                        nsresult aStatus,
+                        WebProgressStateChangeData? aStateChangeData);
+
+    async OnProgressChange(WebProgressData? aWebProgressData,
+                           RequestData aRequestData, int32_t aCurSelfProgress,
+                           int32_t aMaxSelfProgress, int32_t aCurTotalProgress,
+                           int32_t aMaxTotalProgress);
+
+    async OnLocationChange(WebProgressData? aWebProgressData,
+                           RequestData aRequestData, nsIURI aLocation,
+                           uint32_t aFlags, bool aCanGoBack,
+                           bool aCanGoForward,
+                           WebProgressLocationChangeData? aLocationChangeData);
+
+    async OnStatusChange(WebProgressData? aWebProgressData,
+                         RequestData aRequestData, nsresult aStatus,
+                         nsString aMessage);
+
+    async OnContentBlockingEvent(WebProgressData? aWebProgressData,
                                  RequestData aRequestData, uint32_t aEvent);
+
+    async NavigationFinished();
+
+    async SessionStoreUpdate(nsCString? aDocShellCaps,
+                             bool? aPrivatedMode,
+                             nsCString[] aPositions,
+                             int32_t[] aPositionDescendants,
+                             uint32_t aFlushId,
+                             bool aIsFinal);
 
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
+    async FlushTabState(uint32_t aFlushId, bool aIsFinal);
 
 parent:
 
@@ -574,7 +632,7 @@ parent:
 
     /**
      * Child informs the parent that the content is ready to handle input
-     * events. This is sent when the TabChild is created.
+     * events. This is sent when the BrowserChild is created.
      */
     async RemoteIsReadyToHandleInputEvents();
 
@@ -582,6 +640,15 @@ parent:
      * Child informs the parent that the layer tree is already available.
      */
     async PaintWhileInterruptingJSNoOp(LayersObserverEpoch aEpoch);
+
+child:
+    /**
+     * Parent informs the child of graphical effects that are being applied
+     * to the child browser.
+     */
+    async UpdateEffects(EffectsInfo aEffects);
+
+parent:
 
     /**
      * Sent by the child to the parent to inform it that an update to the
@@ -594,15 +661,15 @@ parent:
     nested(inside_sync) sync DispatchKeyboardEvent(WidgetKeyboardEvent event);
 
     async InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action,
-                            OptionalShmem visualData,
+                            Shmem? visualData,
                             uint32_t stride, SurfaceFormat format,
                             LayoutDeviceIntRect dragRect,
-                            Principal principal);
+                            nsIPrincipal principal);
 
     // After a compositor reset, it is necessary to reconnect each layers ID to
     // the compositor of the widget that will render those layers. Note that
     // this is sync so we can ensure that messages to the window compositor
-    // arrive before the TabChild attempts to use its cross-process compositor
+    // arrive before the BrowserChild attempts to use its cross-process compositor
     // bridge.
     sync EnsureLayersConnected() returns (CompositorOptions compositorOptions);
 
@@ -610,9 +677,9 @@ parent:
      * This function is used to notify the parent that it should display a
      * canvas permission prompt.
      *
-     * @param aFirstPartyURI first party of the tab that is requesting access.
+     * @param aOrigin origin string of the document that is requesting access.
      */
-    async ShowCanvasPermissionPrompt(nsCString aFirstPartyURI,
+    async ShowCanvasPermissionPrompt(nsCString aOrigin,
                                      bool aHideDoorHanger);
 
     sync SetSystemFont(nsCString aFontName);
@@ -620,6 +687,11 @@ parent:
 
     sync SetPrefersReducedMotionOverrideForTest(bool aValue);
     sync ResetPrefersReducedMotionOverrideForTest();
+
+    /**
+     * Fire a `load` event on this PBrowser's embedding frame element.
+     */
+    async FireFrameLoadEvent(bool aIsTrusted);
 
 child:
     /**
@@ -643,14 +715,19 @@ child:
 
     async LoadURL(nsCString uri, ShowInfo info);
 
+    async ResumeLoad(uint64_t pendingSwitchID, ShowInfo info);
+
     async UpdateDimensions(DimensionInfo dimensions) compressall;
 
     async SizeModeChanged(nsSizeMode sizeMode);
 
+    async ChildToParentMatrix(Matrix4x4 aMatrix);
+
+    async SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
+
     async ParentActivated(bool aActivated);
 
-    async SetKeyboardIndicators(UIStateChangeType showAccelerators,
-                                UIStateChangeType showFocusRings);
+    async SetKeyboardIndicators(UIStateChangeType showFocusRings);
 
     /**
      * StopIMEStateManagement() is called when the process loses focus and
@@ -742,7 +819,7 @@ child:
      * don't need support RealDragEvent with input priority.
      */
     async RealDragEvent(WidgetDragEvent aEvent, uint32_t aDragAction,
-                        uint32_t aDropEffect, Principal aPrincipal);
+                        uint32_t aDropEffect, nsIPrincipal aPrincipal);
 
     async PluginEvent(WidgetPluginEvent aEvent);
 
@@ -758,7 +835,7 @@ child:
      */
     async PasteTransferable(IPCDataTransfer aDataTransfer,
                             bool aIsPrivateData,
-                            Principal aRequestingPrincipal,
+                            nsIPrincipal aRequestingPrincipal,
                             uint32_t aContentPolicyType);
 
     /**
@@ -900,24 +977,24 @@ child:
     async UpdateNativeWindowHandle(uintptr_t aNewHandle);
 
     /**
-     * Tell the TabChild that it should expect a Large-Allocation load to occur.
+     * Tell the BrowserChild that it should expect a Large-Allocation load to occur.
      * Loads which occur until this flag is cleared will not leave the process.
      */
     async AwaitLargeAlloc();
 
     /**
-     * Tell the TabChild to set the name of its toplevel docshell to the given name.
+     * Tell the BrowserChild to set the name of its toplevel docshell to the given name.
      */
     async SetWindowName(nsString aName);
 
     /**
-     * Tell the TabChild to allow scripts in the docshell to close the window.
+     * Tell the BrowserChild to allow scripts in the docshell to close the window.
      */
     async AllowScriptsToClose();
 
     /**
-     * Tell the TabChild what OriginAttributes it should inherit from. This must
-     * be called before the first non-blank document is loaded in the TabChild.
+     * Tell the BrowserChild what OriginAttributes it should inherit from. This must
+     * be called before the first non-blank document is loaded in the BrowserChild.
      */
     async SetOriginAttributes(OriginAttributes aOriginAttributes);
 
@@ -932,6 +1009,7 @@ child:
      */
     async GetContentBlockingLog() returns(nsCString log, bool success);
 
+    async SkipBrowsingContextDetach();
 parent:
     /** Records a history visit. */
     async VisitURI(URIParams aURI, URIParams? aLastVisitedURI,

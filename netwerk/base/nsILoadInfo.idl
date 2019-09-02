@@ -8,6 +8,7 @@
 #include "nsIContentPolicy.idl"
 
 interface nsIChannel;
+interface nsIContentSecurityPolicy;
 interface nsICookieSettings;
 interface nsICSPEventListener;
 interface nsINode;
@@ -49,6 +50,7 @@ native OriginAttributes(mozilla::OriginAttributes);
 [ref] native const_MaybeServiceWorkerDescriptorRef(const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>);
 [ptr] native PerformanceStoragePtr(mozilla::dom::PerformanceStorage);
       native LoadTainting(mozilla::LoadTainting);
+      native CSPRef(already_AddRefed<nsIContentSecurityPolicy>);
 
 typedef unsigned long nsSecurityFlags;
 
@@ -384,7 +386,7 @@ interface nsILoadInfo : nsISupports
    */
   [binaryname(LoadingContextXPCOM)]
   readonly attribute nsISupports loadingContext;
-  
+
   /**
    * A C++ friendly version of the loadingContext.
    */
@@ -566,21 +568,6 @@ interface nsILoadInfo : nsISupports
    * when *not* upgrading purely for telemetry.
    */
   [infallible] readonly attribute boolean browserWouldUpgradeInsecureRequests;
-  /**
-   * If true, the content of the channel is queued up and checked
-   * if it matches a content signature. Note, setting this flag
-   * to true will negatively impact performance since the preloader
-   * can not start until all of the content is fetched from the
-   * netwerk.
-   *
-   * Only use that in combination with TYPE_DOCUMENT.
-   */
-  [infallible] attribute boolean verifySignedContent;
-
-  /**
-   * If true, this load will fail if it has no SRI integrity
-   */
-  [infallible] attribute boolean enforceSRI;
 
   /**
    * If true, toplevel data: URI navigation is allowed
@@ -591,6 +578,11 @@ interface nsILoadInfo : nsISupports
    * If true, insecure redirects to a data: URI are allowed.
    */
   [infallible] attribute boolean allowInsecureRedirectToDataURI;
+
+   /**
+   * If true, CORS checks will be skipped.
+   */
+  [infallible] attribute boolean bypassCORSChecks;
 
   /**
    * If true, the content policy security check is excluded from web requests.
@@ -706,7 +698,7 @@ interface nsILoadInfo : nsISupports
   /**
    * Returns true if the load was triggered from an external application
    * (e.g. Thunderbird). Please note that this flag will only ever be true
-   * if the load is of TYPE_DOCUMENT. 
+   * if the load is of TYPE_DOCUMENT.
    */
   [infallible] attribute boolean loadTriggeredFromExternal;
 
@@ -1040,6 +1032,48 @@ interface nsILoadInfo : nsISupports
   PerformanceStoragePtr GetPerformanceStorage();
 
   /**
+   * Returns the CSP (or Preload CSP for preloads) which should be enforced
+   * when fetching the resource this loadinfo belongs to.
+   * 
+   * a) Non-navigations:
+   * For non-navigation loads, GetCSP() returns what the spec refers to as the
+   * "request's client's global object's CSP list". In practice, if this is the
+   * loadinfo of a subresource load (e.g an image load), then GetCSP() or
+   * GetPreloadCSP() returns the CSP of the document which embeds the image.
+   * The returned CSP includes any policy delivered through the HTTP header or
+   * also through the meta tag (modulo the difference for preloads, e.g. image
+   * preloads have to query GetPreloadCsp() because at the time of preloading
+   * we are not entirely sure if the Meta CSP will be applied to the document
+   * in the end or not). Please note that GetCSPToInherit() called on a
+   * loadinfo for any non-navigation always returns null.
+   *
+   * b) Navigations:
+   *   * Top-level loads:
+   *     For top-level loads (navigations) GetCSP() will return null, unless
+   *     the navigation is started by a WebExtension, in which case it will
+   *     return the CSP of the webextension, if any.
+   *     If you need to query the CSP that potentially should apply to the
+   *     new top-level load, you have to query GetCspToInherit(), which is
+   *     the CSP of the request's client's global object, just like GetCsp()
+   *     is for non-navigation requests.
+   *
+   *   * Iframe-loads:
+   *     For iframe-loads (navigations) GetCSP() will return the CSP of the
+   *     parent document, unless the navigation is started by a WebExtension,
+   *     in which case it will return the CSP of the webextension, if any.
+   *
+   * If you need to query the CSP that should potentially be inherited
+   * into the new document, you have to query GetCSPToInherit().
+   *
+   * TODO Bug 1557114:
+   * After evaluating what CSP to use for frame navigations we should
+   * update the above documentation to match the outcome of Bug 1557114.
+   */
+  [notxpcom,nostdcall] CSPRef GetCsp();
+  [notxpcom,nostdcall] CSPRef GetPreloadCsp();
+  [notxpcom,nostdcall] CSPRef GetCspToInherit();
+
+  /**
     * The service worker and fetch specifications require returning the
     * exact tainting level of the Response passed to FetchEvent.respondWith().
     * This method allows us to override the tainting level in that case.
@@ -1070,6 +1104,55 @@ interface nsILoadInfo : nsISupports
   attribute AString cspNonce;
 
   /**
+   * List of possible reasons the request associated with this load info
+   * may have been blocked, set by various content blocking checkers.
+   */
+  const uint32_t BLOCKING_REASON_NONE = 0;
+  const uint32_t BLOCKING_REASON_CORSDISABLED = 1001;
+  const uint32_t BLOCKING_REASON_CORSDIDNOTSUCCEED = 1002;
+  const uint32_t BLOCKING_REASON_CORSREQUESTNOTHTTP = 1003;
+  const uint32_t BLOCKING_REASON_CORSMULTIPLEALLOWORIGINNOTALLOWED = 1004;
+  const uint32_t BLOCKING_REASON_CORSMISSINGALLOWORIGIN = 1005;
+  const uint32_t BLOCKING_REASON_CORSNOTSUPPORTINGCREDENTIALS = 1006;
+  const uint32_t BLOCKING_REASON_CORSALLOWORIGINNOTMATCHINGORIGIN = 1007;
+  const uint32_t BLOCKING_REASON_CORSMISSINGALLOWCREDENTIALS = 1008;
+  const uint32_t BLOCKING_REASON_CORSORIGINHEADERNOTADDED = 1009;
+  const uint32_t BLOCKING_REASON_CORSEXTERNALREDIRECTNOTALLOWED = 1010;
+  const uint32_t BLOCKING_REASON_CORSPREFLIGHTDIDNOTSUCCEED = 1011;
+  const uint32_t BLOCKING_REASON_CORSINVALIDALLOWMETHOD = 1012;
+  const uint32_t BLOCKING_REASON_CORSMETHODNOTFOUND = 1013;
+  const uint32_t BLOCKING_REASON_CORSINVALIDALLOWHEADER = 1014;
+  const uint32_t BLOCKING_REASON_CORSMISSINGALLOWHEADERFROMPREFLIGHT = 1015;
+  const uint32_t BLOCKING_REASON_CLASSIFY_MALWARE_URI = 2001;
+  const uint32_t BLOCKING_REASON_CLASSIFY_PHISHING_URI = 2002;
+  const uint32_t BLOCKING_REASON_CLASSIFY_UNWANTED_URI = 2003;
+  const uint32_t BLOCKING_REASON_CLASSIFY_TRACKING_URI = 2004;
+  const uint32_t BLOCKING_REASON_CLASSIFY_BLOCKED_URI = 2005;
+  const uint32_t BLOCKING_REASON_CLASSIFY_HARMFUL_URI = 2006;
+  const uint32_t BLOCKING_REASON_MIXED_BLOCKED = 3001;
+  // The general reason comes from nsCSPContext::permitsInternal(),
+  // which is way too generic to distinguish an exact reason.
+  const uint32_t BLOCKING_REASON_CONTENT_POLICY_GENERAL = 4000;
+  const uint32_t BLOCKING_REASON_CONTENT_POLICY_NO_DATA_PROTOCOL = 4001;
+  const uint32_t BLOCKING_REASON_CONTENT_POLICY_WEBEXT = 4002;
+  const uint32_t BLOCKING_REASON_CONTENT_POLICY_CONTENT_BLOCKED = 4003;
+  const uint32_t BLOCKING_REASON_CONTENT_POLICY_DATA_DOCUMENT = 4004;
+  const uint32_t BLOCKING_REASON_CONTENT_POLICY_WEB_BROWSER = 4005;
+  const uint32_t BLOCKING_REASON_CONTENT_POLICY_PRELOAD = 4006;
+
+  /**
+   * If the request associated with this load info was blocked by some of
+   * our content or load blockers, the reason can be found here.
+   * Note that setting this attribute has NO EFFECT on blocking the request.
+   * This attribute is only informative!
+   *
+   * By default the value is '0' - NONE.
+   * Each write rewrites the last value.
+   * Can be accessed only on a single thread.
+   */
+  [infallible] attribute unsigned long requestBlockingReason;
+
+  /**
     * The object in charged to receive CSP violation events. It can be null.
     * This attribute will be merged into the CSP object eventually.
     * See bug 1500908.
@@ -1091,8 +1174,6 @@ interface nsILoadInfo : nsISupports
     OPENER_POLICY_SAME_ORIGIN_ALLOW_OUTGOING = OPENER_POLICY_SAME_ORIGIN | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG,
     OPENER_POLICY_SAME_SITE_ALLOW_OUTGOING = OPENER_POLICY_SAME_SITE | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG
   };
-
-  [infallible] attribute nsILoadInfo_CrossOriginOpenerPolicy openerPolicy;
 
   cenum CrossOriginPolicy : 8 {
     CROSS_ORIGIN_POLICY_NULL            = 0,

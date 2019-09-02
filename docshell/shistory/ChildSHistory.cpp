@@ -18,10 +18,7 @@ namespace mozilla {
 namespace dom {
 
 ChildSHistory::ChildSHistory(nsDocShell* aDocShell)
-    : mDocShell(aDocShell), mHistory(new nsSHistory()) {
-  MOZ_ASSERT(mDocShell);
-  mHistory->SetRootDocShell(mDocShell);
-}
+    : mDocShell(aDocShell), mHistory(new nsSHistory(aDocShell)) {}
 
 ChildSHistory::~ChildSHistory() {}
 
@@ -86,7 +83,7 @@ JSObject* ChildSHistory::WrapObject(JSContext* cx,
 }
 
 nsISupports* ChildSHistory::GetParentObject() const {
-  // We want to get the TabChildMessageManager, which is the
+  // We want to get the BrowserChildMessageManager, which is the
   // messageManager on mDocShell.
   RefPtr<ContentFrameMessageManager> mm;
   if (mDocShell) {

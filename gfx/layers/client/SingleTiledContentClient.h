@@ -20,11 +20,11 @@ class ClientLayerManager;
  * This buffer provides an implementation of ValidateTile using a
  * thebes callback and can support painting using a single paint buffer.
  * Whether a single paint buffer is used is controlled by
- * gfxPrefs::PerTileDrawing().
+ * StaticPrefs::PerTileDrawing().
  */
 class ClientSingleTiledLayerBuffer : public ClientTiledLayerBuffer,
                                      public TextureClientAllocator {
-  virtual ~ClientSingleTiledLayerBuffer() {}
+  virtual ~ClientSingleTiledLayerBuffer() = default;
 
  public:
   ClientSingleTiledLayerBuffer(ClientTiledPaintedLayer& aPaintedLayer,
@@ -109,14 +109,12 @@ class SingleTiledContentClient : public TiledContentClient {
   static bool ClientSupportsLayerSize(const gfx::IntSize& aSize,
                                       ClientLayerManager* aManager);
 
-  virtual void ClearCachedResources() override;
+  void ClearCachedResources() override;
 
-  virtual void UpdatedBuffer(TiledBufferType aType) override;
+  void UpdatedBuffer(TiledBufferType aType) override;
 
-  virtual ClientTiledLayerBuffer* GetTiledBuffer() override {
-    return mTiledBuffer;
-  }
-  virtual ClientTiledLayerBuffer* GetLowPrecisionTiledBuffer() override {
+  ClientTiledLayerBuffer* GetTiledBuffer() override { return mTiledBuffer; }
+  ClientTiledLayerBuffer* GetLowPrecisionTiledBuffer() override {
     return nullptr;
   }
 

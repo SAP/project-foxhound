@@ -15,6 +15,10 @@
 #include "nsMathMLFrame.h"
 #include "mozilla/Likely.h"
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
 /*
  * Base class for MathML container frames. It acts like an inferred
  * mrow. By default, this frame uses its Reflow() method to lay its
@@ -36,7 +40,7 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
   nsMathMLContainerFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
                          ClassID aID)
       : nsContainerFrame(aStyle, aPresContext, aID),
-        mIntrinsicWidth(NS_INTRINSIC_WIDTH_UNKNOWN),
+        mIntrinsicWidth(NS_INTRINSIC_ISIZE_UNKNOWN),
         mBlockStartAscent(0) {}
 
   NS_DECL_QUERYFRAME_TARGET(nsMathMLContainerFrame)
@@ -231,9 +235,9 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
    * Helper to call ReportToConsole when an error occurs.
    * @param aParams see nsContentUtils::ReportToConsole
    */
-  nsresult ReportErrorToConsole(const char* aErrorMsgId,
-                                const char16_t** aParams = nullptr,
-                                uint32_t aParamCount = 0);
+  nsresult ReportErrorToConsole(
+      const char* aErrorMsgId,
+      const nsTArray<nsString>& aParams = nsTArray<nsString>());
 
   // helper method to reflow a child frame. We are inline frames, and we don't
   // know our positions until reflow is finished. That's why we ask the
@@ -369,8 +373,8 @@ class nsMathMLmathBlockFrame final : public nsBlockFrame {
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsMathMLmathBlockFrame)
 
-  friend nsContainerFrame* NS_NewMathMLmathBlockFrame(nsIPresShell* aPresShell,
-                                                      ComputedStyle* aStyle);
+  friend nsContainerFrame* NS_NewMathMLmathBlockFrame(
+      mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
 
   // beware, mFrames is not set by nsBlockFrame
   // cannot use mFrames{.FirstChild()|.etc} since the block code doesn't set
@@ -442,8 +446,8 @@ class nsMathMLmathInlineFrame final : public nsInlineFrame,
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsMathMLmathInlineFrame)
 
-  friend nsContainerFrame* NS_NewMathMLmathInlineFrame(nsIPresShell* aPresShell,
-                                                       ComputedStyle* aStyle);
+  friend nsContainerFrame* NS_NewMathMLmathInlineFrame(
+      mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
 
   virtual void SetInitialChildList(ChildListID aListID,
                                    nsFrameList& aChildList) override {

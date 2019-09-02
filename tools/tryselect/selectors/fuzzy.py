@@ -16,7 +16,7 @@ from mozterm import Terminal
 
 from ..cli import BaseTryParser
 from ..tasks import generate_tasks, filter_tasks_by_paths
-from ..push import check_working_directory, push_to_try, vcs
+from ..push import check_working_directory, push_to_try, generate_try_task_config
 
 terminal = Terminal()
 
@@ -26,6 +26,8 @@ here = os.path.abspath(os.path.dirname(__file__))
 # or uncommon enough that they should only be selectable with --full.
 TARGET_TASK_FILTERS = (
     '.*-ccov\/.*',
+    'windows10-aarch64/opt.*',
+    'android-hw.*'
 )
 
 
@@ -86,10 +88,17 @@ class FuzzyParser(BaseTryParser):
         [['-q', '--query'],
          {'metavar': 'STR',
           'action': 'append',
+          'default': [],
           'help': "Use the given query instead of entering the selection "
                   "interface. Equivalent to typing <query><ctrl-a><enter> "
                   "from the interface. Specifying multiple times schedules "
                   "the union of computed tasks.",
+          }],
+        [['-i', '--interactive'],
+         {'action': 'store_true',
+          'default': False,
+          'help': "Force running fzf interactively even when using presets or "
+                  "queries with -q/--query."
           }],
         [['-x', '--and'],
          {'dest': 'intersection',
@@ -112,7 +121,9 @@ class FuzzyParser(BaseTryParser):
           }],
     ]
     common_groups = ['push', 'task', 'preset']
-    templates = ['artifact', 'path', 'env', 'rebuild', 'chemspill-prio', 'gecko-profile']
+    templates = [
+        'artifact', 'path', 'env', 'rebuild', 'chemspill-prio', 'gecko-profile', 'disable-pgo',
+    ]
 
 
 def run_cmd(cmd, cwd=None):
@@ -210,7 +221,7 @@ def filter_target_task(task):
     return not any(re.search(pattern, task) for pattern in TARGET_TASK_FILTERS)
 
 
-def run(update=False, query=None, intersect_query=None, templates=None, full=False,
+def run(update=False, query=None, intersect_query=None, try_config=None, full=False,
         parameters=None, save_query=False, push=True, message='{msg}',
         test_paths=None, exact=False, closed_tree=False):
     fzf = fzf_bootstrap(update)
@@ -220,7 +231,7 @@ def run(update=False, query=None, intersect_query=None, templates=None, full=Fal
         return 1
 
     check_working_directory(push)
-    tg = generate_tasks(parameters, full, root=vcs.path)
+    tg = generate_tasks(parameters, full)
     all_tasks = sorted(tg.tasks.keys())
 
     if not full:
@@ -249,12 +260,12 @@ def run(update=False, query=None, intersect_query=None, templates=None, full=Fal
     selected = set()
     queries = []
 
-    def get_tasks(query_arg=None):
+    def get_tasks(query_arg=None, candidate_tasks=all_tasks):
         cmd = base_cmd[:]
-        if query_arg:
+        if query_arg and query_arg != 'INTERACTIVE':
             cmd.extend(['-f', query_arg])
 
-        query_str, tasks = run_fzf(cmd, all_tasks)
+        query_str, tasks = run_fzf(cmd, sorted(candidate_tasks))
         queries.append(query_str)
         return set(tasks)
 
@@ -262,10 +273,11 @@ def run(update=False, query=None, intersect_query=None, templates=None, full=Fal
         selected |= get_tasks(q)
 
     for q in intersect_query or []:
-        tasks = get_tasks(q)
         if not selected:
+            tasks = get_tasks(q)
             selected |= tasks
         else:
+            tasks = get_tasks(q, selected)
             selected &= tasks
 
     if not queries:
@@ -285,5 +297,6 @@ def run(update=False, query=None, intersect_query=None, templates=None, full=Fal
         args.append("paths={}".format(':'.join(test_paths)))
     if args:
         msg = "{} {}".format(msg, '&'.join(args))
-    return push_to_try('fuzzy', message.format(msg=msg), selected, templates, push=push,
-                       closed_tree=closed_tree)
+    return push_to_try('fuzzy', message.format(msg=msg),
+                       try_task_config=generate_try_task_config('fuzzy', selected, try_config),
+                       push=push, closed_tree=closed_tree)

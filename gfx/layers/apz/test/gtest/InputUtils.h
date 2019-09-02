@@ -13,7 +13,6 @@
  */
 
 #include "APZTestCommon.h"
-#include "gfxPrefs.h"
 
 /* The InputReceiver template parameter used in the helper functions below needs
  * to be a class that implements functions with the signatures:
@@ -124,6 +123,21 @@ nsEventStatus MouseUp(const RefPtr<InputReceiver>& aTarget,
                       uint64_t* aOutInputBlockId = nullptr) {
   MouseInput input(MouseInput::MOUSE_UP, MouseInput::ButtonType::LEFT_BUTTON, 0,
                    0, aPoint, MillisecondsSinceStartup(aTime), aTime, 0);
+  return aTarget->ReceiveInputEvent(input, nullptr, aOutInputBlockId);
+}
+
+template <class InputReceiver>
+nsEventStatus PanGesture(PanGestureInput::PanGestureType aType,
+                         const RefPtr<InputReceiver>& aTarget,
+                         const ScreenIntPoint& aPoint,
+                         const ScreenPoint& aDelta, TimeStamp aTime,
+                         uint64_t* aOutInputBlockId = nullptr) {
+  PanGestureInput input(aType, MillisecondsSinceStartup(aTime), aTime, aPoint,
+                        aDelta, 0 /* Modifiers */);
+  if (aType == PanGestureInput::PANGESTURE_END) {
+    input.mFollowedByMomentum = true;
+  }
+
   return aTarget->ReceiveInputEvent(input, nullptr, aOutInputBlockId);
 }
 

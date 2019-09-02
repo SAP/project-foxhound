@@ -19,10 +19,20 @@ use style_traits::{CssWriter, ToCss};
 /// A generic 2D transformation matrix.
 #[allow(missing_docs)]
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss,
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
-#[css(comma, function)]
-pub struct Matrix<T> {
+#[css(comma, function = "matrix")]
+#[repr(C)]
+pub struct GenericMatrix<T> {
     pub a: T,
     pub b: T,
     pub c: T,
@@ -31,17 +41,32 @@ pub struct Matrix<T> {
     pub f: T,
 }
 
+pub use self::GenericMatrix as Matrix;
+
 #[allow(missing_docs)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
 #[css(comma, function = "matrix3d")]
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo,
-         ToComputedValue, ToCss)]
-pub struct Matrix3D<T> {
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+pub struct GenericMatrix3D<T> {
     pub m11: T, pub m12: T, pub m13: T, pub m14: T,
     pub m21: T, pub m22: T, pub m23: T, pub m24: T,
     pub m31: T, pub m32: T, pub m33: T, pub m34: T,
     pub m41: T, pub m42: T, pub m43: T, pub m44: T,
 }
+
+pub use self::GenericMatrix3D as Matrix3D;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 impl<T: Into<f64>> From<Matrix<T>> for Transform3D<f64> {
@@ -82,6 +107,8 @@ impl<T: Into<f64>> From<Matrix3D<T>> for Transform3D<f64> {
     ToAnimatedZero,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[repr(C)]
 pub struct GenericTransformOrigin<H, V, Depth> {
@@ -110,18 +137,30 @@ fn is_same<N: PartialEq>(x: &N, y: &N) -> bool {
     x == y
 }
 
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C, u8)]
 /// A single operation in the list of a `transform` value
-pub enum TransformOperation<Angle, Number, Length, Integer, LengthPercentage>
+/// cbindgen:derive-tagged-enum-copy-constructor=true
+pub enum GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>
 where
     Angle: Zero,
     LengthPercentage: Zero,
     Number: PartialEq,
 {
     /// Represents a 2D 2x3 matrix.
-    Matrix(Matrix<Number>),
+    Matrix(GenericMatrix<Number>),
     /// Represents a 3D 4x4 matrix.
-    Matrix3D(Matrix3D<Number>),
+    Matrix3D(GenericMatrix3D<Number>),
     /// A 2D skew.
     ///
     /// If the second angle is not provided it is assumed zero.
@@ -201,23 +240,46 @@ where
     #[allow(missing_docs)]
     #[css(comma, function = "interpolatematrix")]
     InterpolateMatrix {
-        from_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
-        to_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
+        from_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
+        to_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
         progress: computed::Percentage,
     },
     /// A intermediate type for accumulation of mismatched transform lists.
     #[allow(missing_docs)]
     #[css(comma, function = "accumulatematrix")]
     AccumulateMatrix {
-        from_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
-        to_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
+        from_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
+        to_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
         count: Integer,
     },
 }
 
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+pub use self::GenericTransformOperation as TransformOperation;
+
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
 /// A value of the `transform` property
-pub struct Transform<T>(#[css(if_empty = "none", iterable)] pub Vec<T>);
+pub struct GenericTransform<T>(#[css(if_empty = "none", iterable)] pub crate::OwnedSlice<T>);
+
+pub use self::GenericTransform as Transform;
 
 impl<Angle, Number, Length, Integer, LengthPercentage>
     TransformOperation<Angle, Number, Length, Integer, LengthPercentage>
@@ -456,7 +518,7 @@ where
 impl<T> Transform<T> {
     /// `none`
     pub fn none() -> Self {
-        Transform(vec![])
+        Transform(Default::default())
     }
 }
 
@@ -488,7 +550,7 @@ impl<T: ToMatrix> Transform<T> {
         let mut transform = Transform3D::<f64>::identity();
         let mut contain_3d = false;
 
-        for operation in &self.0 {
+        for operation in &*self.0 {
             let matrix = operation.to_3d_matrix(reference_box)?;
             contain_3d |= operation.is_3d();
             transform = transform.pre_mul(&matrix);
@@ -537,12 +599,22 @@ pub fn get_normalized_vector_and_angle<T: Zero>(
 }
 
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToAnimatedZero, ToComputedValue,
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToAnimatedZero,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
 )]
+#[repr(C, u8)]
 /// A value of the `Rotate` property
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
-pub enum Rotate<Number, Angle> {
+pub enum GenericRotate<Number, Angle> {
     /// 'none'
     None,
     /// '<angle>'
@@ -550,6 +622,8 @@ pub enum Rotate<Number, Angle> {
     /// '<number>{3} <angle>'
     Rotate3D(Number, Number, Number, Angle),
 }
+
+pub use self::GenericRotate as Rotate;
 
 /// A trait to check if the current 3D vector is parallel to the DirectionVector.
 /// This is especially for serialization on Rotate.
@@ -599,12 +673,22 @@ where
 }
 
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToAnimatedZero, ToComputedValue,
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToAnimatedZero,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
 )]
+#[repr(C, u8)]
 /// A value of the `Scale` property
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
-pub enum Scale<Number> {
+pub enum GenericScale<Number> {
     /// 'none'
     None,
     /// '<number>{1,2}'
@@ -612,6 +696,8 @@ pub enum Scale<Number> {
     /// '<number>{3}'
     Scale3D(Number, Number, Number),
 }
+
+pub use self::GenericScale as Scale;
 
 impl<Number: ToCss + PartialEq> ToCss for Scale<Number> {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
@@ -648,7 +734,10 @@ impl<Number: ToCss + PartialEq> ToCss for Scale<Number> {
     ToAnimatedZero,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
+#[repr(C, u8)]
 /// A value of the `translate` property
 ///
 /// https://drafts.csswg.org/css-transforms-2/#individual-transform-serialization:
@@ -663,7 +752,7 @@ impl<Number: ToCss + PartialEq> ToCss for Scale<Number> {
 /// related spec issue is https://github.com/w3c/csswg-drafts/issues/3305
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
-pub enum Translate<LengthPercentage, Length>
+pub enum GenericTranslate<LengthPercentage, Length>
 where
     LengthPercentage: Zero,
 {
@@ -678,9 +767,21 @@ where
     Translate3D(LengthPercentage, LengthPercentage, Length),
 }
 
+pub use self::GenericTranslate as Translate;
+
 #[allow(missing_docs)]
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss,
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 pub enum TransformStyle {
     #[cfg(feature = "servo")]

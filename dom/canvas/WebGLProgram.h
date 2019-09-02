@@ -85,8 +85,9 @@ struct FragOutputInfo final {
 };
 
 struct CachedDrawFetchLimits final {
-  uint64_t maxVerts;
-  uint64_t maxInstances;
+  uint64_t maxVerts = 0;
+  uint64_t maxInstances = 0;
+  std::vector<BufferAndIndex> usedBuffers;
 };
 
 struct LinkedProgramInfo final : public RefCounted<LinkedProgramInfo>,
@@ -107,6 +108,7 @@ struct LinkedProgramInfo final : public RefCounted<LinkedProgramInfo>,
   std::vector<UniformBlockInfo*> uniformBlocks;  // Owns its contents.
   std::vector<RefPtr<WebGLActiveInfo>> transformFeedbackVaryings;
   std::unordered_map<uint8_t, const FragOutputInfo> fragOutputs;
+  uint8_t zLayerCount = 1;
 
   // Needed for draw call validation.
   std::vector<UniformInfo*> uniformSamplers;
@@ -207,6 +209,7 @@ class WebGLProgram final : public nsWrapperCache,
     return mMostRecentLinkInfo.get();
   }
 
+  const auto& VertShader() const { return mVertShader; }
   const auto& FragShader() const { return mFragShader; }
 
   WebGLContext* GetParentObject() const { return mContext; }
@@ -229,7 +232,7 @@ class WebGLProgram final : public nsWrapperCache,
   WebGLRefPtr<WebGLShader> mFragShader;
   size_t mNumActiveTFOs;
 
-  std::map<nsCString, GLuint> mNextLink_BoundAttribLocs;
+  std::map<std::string, GLuint> mNextLink_BoundAttribLocs;
 
   std::vector<nsString> mNextLink_TransformFeedbackVaryings;
   GLenum mNextLink_TransformFeedbackBufferMode;

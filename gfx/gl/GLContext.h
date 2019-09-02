@@ -46,10 +46,6 @@
 #include "gfx2DGlue.h"
 #include "GeckoProfiler.h"
 
-namespace android {
-class GraphicBuffer;
-}  // namespace android
-
 namespace mozilla {
 namespace gfx {
 class DataSourceSurface;
@@ -87,7 +83,6 @@ enum class GLFeature {
   depth_texture,
   draw_buffers,
   draw_instanced,
-  draw_range_elements,
   element_index_uint,
   ES2_compatibility,
   ES3_compatibility,
@@ -108,6 +103,7 @@ enum class GLFeature {
   internalformat_query,
   invalidate_framebuffer,
   map_buffer_range,
+  multiview,
   occlusion_query,
   occlusion_query_boolean,
   occlusion_query2,
@@ -357,6 +353,7 @@ class GLContext : public GenericAtomicRefCounted,
     ANGLE_framebuffer_blit,
     ANGLE_framebuffer_multisample,
     ANGLE_instanced_arrays,
+    ANGLE_multiview,
     ANGLE_texture_compression_dxt3,
     ANGLE_texture_compression_dxt5,
     ANGLE_timer_query,
@@ -403,6 +400,8 @@ class GLContext : public GenericAtomicRefCounted,
     ARB_transform_feedback2,
     ARB_uniform_buffer_object,
     ARB_vertex_array_object,
+    CHROMIUM_color_buffer_float_rgb,
+    CHROMIUM_color_buffer_float_rgba,
     EXT_bgra,
     EXT_blend_minmax,
     EXT_color_buffer_float,
@@ -412,7 +411,6 @@ class GLContext : public GenericAtomicRefCounted,
     EXT_draw_buffers,
     EXT_draw_buffers2,
     EXT_draw_instanced,
-    EXT_draw_range_elements,
     EXT_float_blend,
     EXT_frag_depth,
     EXT_framebuffer_blit,
@@ -481,6 +479,7 @@ class GLContext : public GenericAtomicRefCounted,
     OES_texture_half_float_linear,
     OES_texture_npot,
     OES_vertex_array_object,
+    OVR_multiview2,
     Extensions_Max,
     Extensions_End
   };
@@ -2457,26 +2456,6 @@ class GLContext : public GenericAtomicRefCounted,
   }
 
   // -----------------------------------------------------------------------------
-  // Feature draw_range_elements
- public:
-  void fDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count,
-                          GLenum type, const GLvoid* indices) {
-    BeforeGLDrawCall();
-    raw_fDrawRangeElements(mode, start, end, count, type, indices);
-    AfterGLDrawCall();
-  }
-
- private:
-  void raw_fDrawRangeElements(GLenum mode, GLuint start, GLuint end,
-                              GLsizei count, GLenum type,
-                              const GLvoid* indices) {
-    BEFORE_GL_CALL;
-    ASSERT_SYMBOL_PRESENT(fDrawRangeElements);
-    mSymbols.fDrawRangeElements(mode, start, end, count, type, indices);
-    AFTER_GL_CALL;
-  }
-
-  // -----------------------------------------------------------------------------
   // Package XXX_framebuffer_blit
  public:
   // Draw/Read
@@ -3299,6 +3278,20 @@ class GLContext : public GenericAtomicRefCounted,
     BEFORE_GL_CALL;
     ASSERT_SYMBOL_PRESENT(fPrimitiveRestartIndex);
     mSymbols.fPrimitiveRestartIndex(index);
+    AFTER_GL_CALL;
+  }
+
+  // -----------------------------------------------------------------------------
+  // multiview
+
+  void fFramebufferTextureMultiview(GLenum target, GLenum attachment,
+                                    GLuint texture, GLint level,
+                                    GLint baseViewIndex,
+                                    GLsizei numViews) const {
+    BEFORE_GL_CALL;
+    ASSERT_SYMBOL_PRESENT(fFramebufferTextureMultiview);
+    mSymbols.fFramebufferTextureMultiview(target, attachment, texture, level,
+                                          baseViewIndex, numViews);
     AFTER_GL_CALL;
   }
 

@@ -17,8 +17,6 @@ DIRECT_CALL_OVERRIDES = {
         "BackgroundMutableFileParentBase", "mozilla/dom/filehandle/ActorsParent.h"
     ),
 
-    ("PBrowser", "parent"): ("TabParent", "mozilla/dom/TabParent.h"),
-
     ("PChromiumCDM", "parent"): ("ChromiumCDMParent", "ChromiumCDMParent.h"),
 
     ("PCompositorBridge", "parent"): (
@@ -42,21 +40,9 @@ DIRECT_CALL_OVERRIDES = {
     ("PGMPVideoEncoder", "child"): ("GMPVideoEncoderChild", "GMPVideoEncoderChild.h"),
     ("PGMPVideoDecoder", "child"): ("GMPVideoDecoderChild", "GMPVideoDecoderChild.h"),
 
-    ("PIPCBlobInputStream", "child"): (
-        "mozilla::dom::IPCBlobInputStreamChild", "mozilla/dom/ipc/IPCBlobInputStreamChild.h"
-    ),
-    ("PIPCBlobInputStream", "parent"): (
-        "mozilla::dom::IPCBlobInputStreamParent", "mozilla/dom/ipc/IPCBlobInputStreamParent.h"
-    ),
-
     ("PLoginReputation", "parent"): ("LoginReputationParent", "mozilla/LoginReputationIPC.h"),
 
     ("PMedia", "child"): ("Child", "mozilla/media/MediaChild.h"),
-
-    ("PPendingIPCBlob", "child"): ("PendingIPCBlobChild", "mozilla/dom/ipc/PendingIPCBlobChild.h"),
-    ("PPendingIPCBlob", "parent"): (
-        "mozilla::dom::PendingIPCBlobParent", "mozilla/dom/ipc/PendingIPCBlobParent.h"
-    ),
 
     ("PPresentationRequest", "child"): (
         "PresentationRequestChild", "mozilla/dom/PresentationChild.h"
@@ -64,9 +50,6 @@ DIRECT_CALL_OVERRIDES = {
     ("PPresentationRequest", "parent"): (
         "PresentationRequestParent", "mozilla/dom/PresentationParent.h"
     ),
-
-    ("PPrinting", "child"): ("nsPrintingProxy", "nsPrintingProxy.h"),
-    ("PPrinting", "parent"): ("PrintingParent", "mozilla/embedding/printingui/PrintingParent.h"),
 
     ("PPSMContentDownloader", "child"): (
         "PSMContentDownloaderChild", "mozilla/psm/PSMContentListener.h"
@@ -96,13 +79,6 @@ DIRECT_CALL_OVERRIDES = {
     ),
     ("PTCPSocket", "parent"): (
         "mozilla::dom::TCPSocketParent", "mozilla/dom/network/TCPSocketParent.h"
-    ),
-
-    ("PTemporaryIPCBlob", "child"): (
-        "mozilla::dom::TemporaryIPCBlobChild", "mozilla/dom/ipc/TemporaryIPCBlobChild.h"
-    ),
-    ("PTemporaryIPCBlob", "parent"): (
-        "mozilla::dom::TemporaryIPCBlobParent", "mozilla/dom/ipc/TemporaryIPCBlobParent.h"
     ),
 
     ("PTestShellCommand", "parent"): ("TestShellCommandParent", "mozilla/ipc/TestShellParent.h"),
@@ -445,8 +421,6 @@ VIRTUAL_CALL_CLASSES = set([
     ("PTexture", "parent"),
 
     # Defined in a .cpp
-    ("PAsmJSCacheEntry", "child"),
-    ("PAsmJSCacheEntry", "parent"),
     ("PBackgroundFileHandle", "parent"),
     ("PBackgroundFileRequest", "parent"),
     ("PBackgroundIDBCursor", "parent"),
@@ -539,6 +513,12 @@ VIRTUAL_CALL_CLASSES = set([
     ("PHandlerService", "parent"),
     ("PPluginBackgroundDestroyer", "child"),
     ("PPluginBackgroundDestroyer", "parent"),
+    ("PRemotePrintJob", "child"),
+    ("PRemotePrintJob", "parent"),
+    # PRemotePrintJob, PPrinting, PPrintProgressDialog and PPrintSettingsDialog
+    # need to be virtual for --disable-printing builds.
+    ("PPrinting", "child"),
+    ("PPrinting", "parent"),
     ("PPrintProgressDialog", "child"),
     ("PPrintProgressDialog", "parent"),
     ("PPrintSettingsDialog", "child"),
@@ -594,13 +574,6 @@ VIRTUAL_CALL_CLASSES = set([
     ("PHttpChannel", "parent"),
     ("PSessionStorageObserver", "child"),
     ("PSessionStorageObserver", "parent"),
-
-    # bug 1513911
-    ("PIndexedDBPermissionRequest", "child"),
-
-    # Recv* methods are MOZ_CAN_RUN_SCRIPT and OnMessageReceived is not, so
-    # it's not allowed to call them.
-    ("PBrowser", "child"),
 
     # can't be included safely for compilation error reasons
     ("PGMPContent", "parent"),

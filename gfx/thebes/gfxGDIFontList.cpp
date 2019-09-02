@@ -820,7 +820,8 @@ gfxFontEntry* gfxGDIFontList::MakePlatformFont(const nsACString& aFontName,
   return fe;
 }
 
-bool gfxGDIFontList::FindAndAddFamilies(const nsACString& aFamily,
+bool gfxGDIFontList::FindAndAddFamilies(StyleGenericFontFamily aGeneric,
+                                        const nsACString& aFamily,
                                         nsTArray<FamilyAndGeneric>* aOutput,
                                         FindFamiliesFlags aFlags,
                                         gfxFontStyle* aStyle,
@@ -831,7 +832,7 @@ bool gfxGDIFontList::FindAndAddFamilies(const nsACString& aFamily,
 
   gfxFontFamily* ff = mFontSubstitutes.GetWeak(keyName);
   if (ff) {
-    aOutput->AppendElement(FamilyAndGeneric(ff));
+    aOutput->AppendElement(FamilyAndGeneric(ff, aGeneric));
     return true;
   }
 
@@ -839,13 +840,13 @@ bool gfxGDIFontList::FindAndAddFamilies(const nsACString& aFamily,
     return false;
   }
 
-  return gfxPlatformFontList::FindAndAddFamilies(aFamily, aOutput, aFlags,
-                                                 aStyle, aDevToCssSize);
+  return gfxPlatformFontList::FindAndAddFamilies(aGeneric, aFamily, aOutput,
+                                                 aFlags, aStyle, aDevToCssSize);
 }
 
-gfxFontFamily* gfxGDIFontList::GetDefaultFontForPlatform(
+FontFamily gfxGDIFontList::GetDefaultFontForPlatform(
     const gfxFontStyle* aStyle) {
-  gfxFontFamily* ff = nullptr;
+  FontFamily ff;
 
   // this really shouldn't fail to find a font....
   NONCLIENTMETRICSW ncm;
@@ -854,7 +855,7 @@ gfxFontFamily* gfxGDIFontList::GetDefaultFontForPlatform(
       ::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
   if (status) {
     ff = FindFamily(NS_ConvertUTF16toUTF8(ncm.lfMessageFont.lfFaceName));
-    if (ff) {
+    if (!ff.IsNull()) {
       return ff;
     }
   }
@@ -894,7 +895,7 @@ class GDIFontInfo : public FontInfoData {
   GDIFontInfo(bool aLoadOtherNames, bool aLoadFaceNames, bool aLoadCmaps)
       : FontInfoData(aLoadOtherNames, aLoadFaceNames, aLoadCmaps) {}
 
-  virtual ~GDIFontInfo() {}
+  virtual ~GDIFontInfo() = default;
 
   virtual void Load() {
     mHdc = GetDC(nullptr);
@@ -976,7 +977,7 @@ int CALLBACK GDIFontInfo::EnumerateFontsForFamily(
 
       // other family names
       if (famData->mFontInfo.mLoadOtherNames) {
-        gfxFontFamily::ReadOtherFamilyNamesForFace(
+        gfxFontUtils::ReadOtherFamilyNamesForFace(
             famData->mFamilyName, (const char*)(nameData.Elements()), nameSize,
             famData->mOtherFamilyNames, false);
       }

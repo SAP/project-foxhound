@@ -33,19 +33,9 @@ ValueOperand CodeGeneratorMIPS64::ToTempValue(LInstruction* ins, size_t pos) {
 
 void CodeGenerator::visitBox(LBox* box) {
   const LAllocation* in = box->getOperand(0);
-  const LDefinition* result = box->getDef(0);
+  ValueOperand result = ToOutValue(box);
 
-  if (IsFloatingPointType(box->type())) {
-    FloatRegister reg = ToFloatRegister(in);
-    if (box->type() == MIRType::Float32) {
-      masm.convertFloat32ToDouble(reg, ScratchDoubleReg);
-      reg = ScratchDoubleReg;
-    }
-    masm.moveFromDouble(reg, ToRegister(result));
-  } else {
-    masm.boxValue(ValueTypeFromMIRType(box->type()), ToRegister(in),
-                  ToRegister(result));
-  }
+  masm.moveValue(TypedOrValueRegister(box->type(), ToAnyRegister(in)), result);
 }
 
 void CodeGenerator::visitUnbox(LUnbox* unbox) {
@@ -80,6 +70,7 @@ void CodeGenerator::visitUnbox(LUnbox* unbox) {
         break;
       case MIRType::BigInt:
         masm.unboxBigInt(inputReg, result);
+        break;
       default:
         MOZ_CRASH("Given MIRType cannot be unboxed.");
     }
@@ -105,6 +96,7 @@ void CodeGenerator::visitUnbox(LUnbox* unbox) {
       break;
     case MIRType::BigInt:
       masm.unboxBigInt(inputAddr, result);
+      break;
     default:
       MOZ_CRASH("Given MIRType cannot be unboxed.");
   }

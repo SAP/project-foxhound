@@ -8,17 +8,21 @@
  * Coverage may overlap with other tests in this folder.
  */
 
-ChromeUtils.defineModuleGetter(this, "LightweightThemeManager",
-                               "resource://gre/modules/LightweightThemeManager.jsm");
 const THEME_IDS = [
   "theme3@tests.mozilla.org",
-  "theme2@personas.mozilla.org",
+  "theme2@personas.mozilla.org", // Unused. Legacy. Evil.
   "default-theme@mozilla.org",
 ];
+const REAL_THEME_IDS = [THEME_IDS[0], THEME_IDS[2]];
 const DEFAULT_THEME = THEME_IDS[2];
 
 const profileDir = gProfD.clone();
 profileDir.append("extensions");
+
+Services.prefs.setIntPref(
+  "extensions.enabledScopes",
+  AddonManager.SCOPE_PROFILE | AddonManager.SCOPE_APPLICATION
+);
 
 // We remember the last/ currently active theme for tracking events.
 var gActiveTheme = null;
@@ -26,53 +30,44 @@ var gActiveTheme = null;
 add_task(async function setup_to_default_browserish_state() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
-  await promiseWriteWebManifestForExtension({
-    author: "Some author",
-    manifest_version: 2,
-    name: "Web Extension Name",
-    version: "1.0",
-    theme: { images: { headerURL: "example.png" } },
-    applications: {
-      gecko: {
-        id: THEME_IDS[0],
+  await promiseWriteWebManifestForExtension(
+    {
+      author: "Some author",
+      manifest_version: 2,
+      name: "Web Extension Name",
+      version: "1.0",
+      theme: { images: { headerURL: "example.png" } },
+      applications: {
+        gecko: {
+          id: THEME_IDS[0],
+        },
       },
     },
-  }, profileDir);
+    profileDir
+  );
 
   await promiseStartupManager();
 
-  // We can add an LWT only after the Addon Manager was started.
-  LightweightThemeManager.currentTheme = {
-    id: THEME_IDS[1].substr(0, THEME_IDS[1].indexOf("@")),
-    version: "1",
-    name: "Bling",
-    description: "SO MUCH BLING!",
-    author: "Pixel Pusher",
-    homepageURL: "http://localhost:8888/data/index.html",
-    headerURL: "http://localhost:8888/data/header.png",
-    previewURL: "http://localhost:8888/data/preview.png",
-    iconURL: "http://localhost:8888/data/icon.png",
-    textcolor: Math.random().toString(),
-    accentcolor: Math.random().toString(),
-  };
+  if (AppConstants.MOZ_DEV_EDITION) {
+    // Developer Edition selects the wrong theme by default.
+    let defaultTheme = await AddonManager.getAddonByID(DEFAULT_THEME);
+    await defaultTheme.enable();
+  }
 
-  let [ t1, t2, d ] = await promiseAddonsByIDs(THEME_IDS);
+  let [t1, t2, d] = await promiseAddonsByIDs(THEME_IDS);
   Assert.ok(t1, "Theme addon should exist");
-  Assert.ok(t2, "Theme addon should exist");
+  Assert.equal(t2, null, "Theme addon is not a thing anymore");
   Assert.ok(d, "Theme addon should exist");
 
   await t1.disable();
-  await t2.disable();
   await new Promise(executeSoon);
   Assert.ok(!t1.isActive, "Theme should be disabled");
-  Assert.ok(!t2.isActive, "Theme should be disabled");
   Assert.ok(d.isActive, "Default theme should be active");
 
   await promiseRestartManager();
 
-  [ t1, t2, d ] = await promiseAddonsByIDs(THEME_IDS);
+  [t1, t2, d] = await promiseAddonsByIDs(THEME_IDS);
   Assert.ok(!t1.isActive, "Theme should still be disabled");
-  Assert.ok(!t2.isActive, "Theme should still be disabled");
   Assert.ok(d.isActive, "Default theme should still be active");
 
   gActiveTheme = d.id;
@@ -86,8 +81,9 @@ add_task(async function setup_to_default_browserish_state() {
  * @param {Boolean} disabled Flag value to switch to
  */
 async function setDisabledStateAndCheck(which, disabled = false) {
-  if (disabled)
+  if (disabled) {
     Assert.equal(which, gActiveTheme, "Only the active theme can be disabled");
+  }
 
   let themeToDisable = disabled ? which : gActiveTheme;
   let themeToEnable = disabled ? DEFAULT_THEME : which;
@@ -96,53 +92,65 @@ async function setDisabledStateAndCheck(which, disabled = false) {
     [themeToDisable]: true,
     [themeToEnable]: false,
   };
-  let expectedEvents = {
-    [themeToDisable]: [
-      [ "onDisabling", false ],
-      [ "onDisabled", false ],
-    ],
-    [themeToEnable]: [
-      [ "onEnabling", false ],
-      [ "onEnabled", false ],
-    ],
+  let addonEvents = {
+    [themeToDisable]: [{ event: "onDisabling" }, { event: "onDisabled" }],
+    [themeToEnable]: [{ event: "onEnabling" }, { event: "onEnabled" }],
   };
 
   // Set the state of the theme to change.
   let theme = await promiseAddonByID(which);
-  prepare_test(expectedEvents);
-  if (disabled) {
-    await theme.disable();
-  } else {
-    await theme.enable();
-  }
+  await expectEvents({ addonEvents }, () => {
+    if (disabled) {
+      theme.disable();
+    } else {
+      theme.enable();
+    }
+  });
 
   let isDisabled;
-  for (theme of await promiseAddonsByIDs(THEME_IDS)) {
-    isDisabled = (theme.id in expectedStates) ? expectedStates[theme.id] : true;
-    Assert.equal(theme.userDisabled, isDisabled,
-      `Theme '${theme.id}' should be ${isDisabled ? "dis" : "en"}abled`);
-    Assert.equal(theme.pendingOperations, AddonManager.PENDING_NONE,
-      "There should be no pending operations when no restart is expected");
-    Assert.equal(theme.isActive, !isDisabled,
-      `Theme '${theme.id} should be ${isDisabled ? "in" : ""}active`);
+  for (theme of await promiseAddonsByIDs(REAL_THEME_IDS)) {
+    isDisabled = theme.id in expectedStates ? expectedStates[theme.id] : true;
+    Assert.equal(
+      theme.userDisabled,
+      isDisabled,
+      `Theme '${theme.id}' should be ${isDisabled ? "dis" : "en"}abled`
+    );
+    Assert.equal(
+      theme.pendingOperations,
+      AddonManager.PENDING_NONE,
+      "There should be no pending operations when no restart is expected"
+    );
+    Assert.equal(
+      theme.isActive,
+      !isDisabled,
+      `Theme '${theme.id} should be ${isDisabled ? "in" : ""}active`
+    );
   }
 
   await promiseRestartManager();
 
   // All should still be good after a restart of the Addon Manager.
-  for (theme of await promiseAddonsByIDs(THEME_IDS)) {
-    isDisabled = (theme.id in expectedStates) ? expectedStates[theme.id] : true;
-    Assert.equal(theme.userDisabled, isDisabled,
-      `Theme '${theme.id}' should be ${isDisabled ? "dis" : "en"}abled`);
-    Assert.equal(theme.isActive, !isDisabled,
-      `Theme '${theme.id}' should be ${isDisabled ? "in" : ""}active`);
-    Assert.equal(theme.pendingOperations, AddonManager.PENDING_NONE,
-      "There should be no pending operations left");
-    if (!isDisabled)
+  for (theme of await promiseAddonsByIDs(REAL_THEME_IDS)) {
+    isDisabled = theme.id in expectedStates ? expectedStates[theme.id] : true;
+    Assert.equal(
+      theme.userDisabled,
+      isDisabled,
+      `Theme '${theme.id}' should be ${isDisabled ? "dis" : "en"}abled`
+    );
+    Assert.equal(
+      theme.isActive,
+      !isDisabled,
+      `Theme '${theme.id}' should be ${isDisabled ? "in" : ""}active`
+    );
+    Assert.equal(
+      theme.pendingOperations,
+      AddonManager.PENDING_NONE,
+      "There should be no pending operations left"
+    );
+    if (!isDisabled) {
       gActiveTheme = theme.id;
+    }
   }
-
-  ensure_test_completed();
 }
 
 add_task(async function test_WebExtension_themes() {
@@ -154,29 +162,6 @@ add_task(async function test_WebExtension_themes() {
 
   // Enable it again.
   await setDisabledStateAndCheck(THEME_IDS[0]);
-
-  // Enabling an LWT should disable the active theme.
-  await setDisabledStateAndCheck(THEME_IDS[1]);
-
-  // Switching back should disable the LWT.
-  await setDisabledStateAndCheck(THEME_IDS[0]);
-});
-
-add_task(async function test_LWTs() {
-  // Start with enabling an LWT.
-  await setDisabledStateAndCheck(THEME_IDS[1]);
-
-  // Disabling LWT should revert to the default theme.
-  await setDisabledStateAndCheck(THEME_IDS[1], true);
-
-  // Enable it again.
-  await setDisabledStateAndCheck(THEME_IDS[1]);
-
-  // Enabling a WebExtension theme should disable the active theme.
-  await setDisabledStateAndCheck(THEME_IDS[0]);
-
-  // Switching back should disable the LWT.
-  await setDisabledStateAndCheck(THEME_IDS[1]);
 });
 
 add_task(async function test_default_theme() {
@@ -191,43 +176,84 @@ add_task(async function test_default_theme() {
 });
 
 add_task(async function uninstall_offers_undo() {
+  let defaultTheme = await AddonManager.getAddonByID(DEFAULT_THEME);
   const ID = THEME_IDS[0];
   let theme = await promiseAddonByID(ID);
 
   Assert.ok(theme, "Webextension theme is present");
-  Assert.ok(!theme.isActive, "Webextension theme is not active");
 
-  function promiseAddonEvent(event, id) {
-    return new Promise(resolve => {
-      let listener = {
-        // eslint-disable-next-line object-shorthand
-        [event]: function(addon) {
-          if (id) {
-            Assert.equal(addon.id, id, "Got event for expected addon");
-          }
-          AddonManager.removeAddonListener(listener);
-          resolve();
-        },
-      };
-      AddonManager.addAddonListener(listener);
-    });
+  async function promiseAddonEvent(event, id) {
+    let [addon] = await AddonTestUtils.promiseAddonEvent(event);
+    if (id) {
+      Assert.equal(addon.id, id, `Got event for expected addon (${event})`);
+    }
   }
 
-  let uninstallingPromise = promiseAddonEvent("onUninstalling", ID);
-  await theme.uninstall(true);
-  await uninstallingPromise;
+  async function uninstallTheme() {
+    let uninstallingPromise = promiseAddonEvent("onUninstalling", ID);
+    await theme.uninstall(true);
+    await uninstallingPromise;
 
-  Assert.ok(hasFlag(theme.pendingOperations, AddonManager.PENDING_UNINSTALL),
-            "Theme being uninstalled has PENDING_UNINSTALL flag");
+    Assert.ok(
+      hasFlag(theme.pendingOperations, AddonManager.PENDING_UNINSTALL),
+      "Theme being uninstalled has PENDING_UNINSTALL flag"
+    );
+  }
 
-  let cancelPromise = promiseAddonEvent("onOperationCancelled", ID);
-  theme.cancelUninstall();
-  await cancelPromise;
+  async function cancelUninstallTheme() {
+    let cancelPromise = promiseAddonEvent("onOperationCancelled", ID);
+    theme.cancelUninstall();
+    await cancelPromise;
 
-  Assert.equal(theme.pendingOperations, AddonManager.PENDING_NONE,
-               "PENDING_UNINSTALL flag is cleared when uninstall is canceled");
+    Assert.equal(
+      theme.pendingOperations,
+      AddonManager.PENDING_NONE,
+      "PENDING_UNINSTALL flag is cleared when uninstall is canceled"
+    );
+  }
 
-  await theme.uninstall();
+  // A theme should still be disabled if the uninstallation of a disabled theme
+  // is undone.
+  Assert.ok(!theme.isActive, "Webextension theme is not active");
+  Assert.ok(defaultTheme.isActive, "Default theme is active");
+  await uninstallTheme();
+  await cancelUninstallTheme();
+  Assert.ok(!theme.isActive, "Webextension theme is still not active");
+  Assert.ok(defaultTheme.isActive, "Default theme is still active");
+
+  // Enable theme, the previously active theme should be disabled.
+  await Promise.all([
+    promiseAddonEvent("onDisabled", DEFAULT_THEME),
+    promiseAddonEvent("onEnabled", ID),
+    theme.enable(),
+  ]);
+  Assert.ok(theme.isActive, "Webextension theme is active after enabling");
+  Assert.ok(!defaultTheme.isActive, "Default theme is not active any more");
+
+  // Uninstall active theme, default theme should become active.
+  await Promise.all([
+    // Note: no listener for onDisabled & ID because the uninstall is pending.
+    promiseAddonEvent("onEnabled", DEFAULT_THEME),
+    uninstallTheme(),
+  ]);
+  Assert.ok(!theme.isActive, "Webextension theme is not active upon uninstall");
+  Assert.ok(defaultTheme.isActive, "Default theme is active again");
+
+  // Undo uninstall, default theme should be deactivated.
+  await Promise.all([
+    // Note: no listener for onEnabled & ID because the uninstall was pending.
+    promiseAddonEvent("onDisabled", DEFAULT_THEME),
+    cancelUninstallTheme(),
+  ]);
+  Assert.ok(theme.isActive, "Webextension theme is active upon undo uninstall");
+  Assert.ok(!defaultTheme.isActive, "Default theme is not active again");
+
+  // Immediately remove the theme. Default theme should be activated.
+  await Promise.all([
+    promiseAddonEvent("onEnabled", DEFAULT_THEME),
+    theme.uninstall(),
+  ]);
+
   await promiseRestartManager();
 });
 
@@ -239,9 +265,9 @@ add_task(async function default_locale_themes() {
       name: "__MSG_name__",
       description: "__MSG_description__",
       theme: {
-        "colors": {
-          "accentcolor": "black",
-          "textcolor": "white",
+        colors: {
+          accentcolor: "black",
+          textcolor: "white",
         },
       },
     },

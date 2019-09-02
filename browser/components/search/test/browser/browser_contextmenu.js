@@ -4,65 +4,54 @@
  * Test searching for the selected text using the context menu
  */
 
+const ENGINE_NAME = "mozSearch";
+const ENGINE_ID = "mozsearch-engine@search.mozilla.org";
+
 add_task(async function() {
-  const ss = Services.search;
-  await ss.init();
-  const ENGINE_NAME = "Foo";
-  let contextMenu;
-
   // We want select events to be fired.
-  await SpecialPowers.pushPrefEnv({set: [["dom.select_events.enabled", true]]});
-
-  let envService = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
-  let originalValue = envService.get("XPCSHELL_TEST_PROFILE_DIR");
-  envService.set("XPCSHELL_TEST_PROFILE_DIR", "1");
-
-  let url = "chrome://mochitests/content/browser/browser/components/search/test/browser/";
-  let resProt = Services.io.getProtocolHandler("resource")
-                        .QueryInterface(Ci.nsIResProtocolHandler);
-  let originalSubstitution = resProt.getSubstitution("search-plugins");
-  resProt.setSubstitution("search-plugins",
-                          Services.io.newURI(url));
-
-  let searchDonePromise;
-  await new Promise(resolve => {
-    function observer(aSub, aTopic, aData) {
-      switch (aData) {
-        case "engine-added":
-          let engine = ss.getEngineByName(ENGINE_NAME);
-          ok(engine, "Engine was added.");
-          ss.defaultEngine = engine;
-          envService.set("XPCSHELL_TEST_PROFILE_DIR", originalValue);
-          resProt.setSubstitution("search-plugins", originalSubstitution);
-          break;
-        case "engine-current":
-          is(ss.defaultEngine.name, ENGINE_NAME, "defaultEngine set");
-          resolve();
-          break;
-        case "engine-removed":
-          Services.obs.removeObserver(observer, "browser-search-engine-modified");
-          if (searchDonePromise) {
-            searchDonePromise();
-          }
-          break;
-      }
-    }
-
-    Services.obs.addObserver(observer, "browser-search-engine-modified");
-    ss.addEngine("resource://search-plugins/testEngine_mozsearch.xml",
-                 "data:image/x-icon,%00", false);
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.select_events.enabled", true]],
   });
 
-  contextMenu = document.getElementById("contentAreaContextMenu");
+  await Services.search.init();
+
+  // replace the path we load search engines from with
+  // the path to our test data.
+  let searchExtensions = getChromeDir(getResolvedURI(gTestPath));
+  searchExtensions.append("mozsearch");
+  let resProt = Services.io
+    .getProtocolHandler("resource")
+    .QueryInterface(Ci.nsIResProtocolHandler);
+  let originalSubstitution = resProt.getSubstitution("search-extensions");
+  resProt.setSubstitution(
+    "search-extensions",
+    Services.io.newURI("file://" + searchExtensions.path)
+  );
+
+  await Services.search.ensureBuiltinExtension(ENGINE_ID);
+
+  let engine = await Services.search.getEngineByName(ENGINE_NAME);
+  ok(engine, "Got a search engine");
+  let defaultEngine = await Services.search.getDefault();
+  await Services.search.setDefault(engine);
+
+  let contextMenu = document.getElementById("contentAreaContextMenu");
   ok(contextMenu, "Got context menu XUL");
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "data:text/plain;charset=utf8,test%20search");
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "data:text/plain;charset=utf8,test%20search"
+  );
 
   await ContentTask.spawn(tab.linkedBrowser, "", async function() {
     return new Promise(resolve => {
-      content.document.addEventListener("selectionchange", function() {
-        resolve();
-      }, {once: true});
+      content.document.addEventListener(
+        "selectionchange",
+        function() {
+          resolve();
+        },
+        { once: true }
+      );
       content.document.getSelection().selectAllChildren(content.document.body);
     });
   });
@@ -70,32 +59,49 @@ add_task(async function() {
   let eventDetails = { type: "contextmenu", button: 2 };
 
   let popupPromise = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
-  BrowserTestUtils.synthesizeMouseAtCenter("body", eventDetails, gBrowser.selectedBrowser);
+  BrowserTestUtils.synthesizeMouseAtCenter(
+    "body",
+    eventDetails,
+    gBrowser.selectedBrowser
+  );
   await popupPromise;
 
   info("checkContextMenu");
-  let searchItem = contextMenu.getElementsByAttribute("id", "context-searchselect")[0];
+  let searchItem = contextMenu.getElementsByAttribute(
+    "id",
+    "context-searchselect"
+  )[0];
   ok(searchItem, "Got search context menu item");
-  is(searchItem.label, "Search " + ENGINE_NAME + " for \u201ctest search\u201d", "Check context menu label");
-  is(searchItem.disabled, false, "Check that search context menu item is enabled");
+  is(
+    searchItem.label,
+    "Search " + ENGINE_NAME + " for \u201ctest search\u201d",
+    "Check context menu label"
+  );
+  is(
+    searchItem.disabled,
+    false,
+    "Check that search context menu item is enabled"
+  );
 
   await BrowserTestUtils.openNewForegroundTab(gBrowser, () => {
     searchItem.click();
   });
 
-  is(gBrowser.currentURI.spec,
-     "http://mochi.test:8888/browser/browser/components/search/test/browser/?test=test+search&ie=utf-8&channel=contextsearch",
-     "Checking context menu search URL");
+  is(
+    gBrowser.currentURI.spec,
+    "https://example.com/browser/browser/components/search/test/browser/?test=test+search&ie=utf-8&channel=contextsearch",
+    "Checking context menu search URL"
+  );
 
   contextMenu.hidePopup();
 
   // Remove the tab opened by the search
   gBrowser.removeCurrentTab();
 
-  await new Promise(resolve => {
-    searchDonePromise = resolve;
-    ss.removeEngine(ss.defaultEngine);
-  });
+  await Services.search.setDefault(defaultEngine);
+  await Services.search.removeEngine(engine);
+
+  resProt.setSubstitution("search-extensions", originalSubstitution);
 
   gBrowser.removeCurrentTab();
 });

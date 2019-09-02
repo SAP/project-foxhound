@@ -67,6 +67,8 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
       private: this._private,
       isThirdPartyTrackingResource: this._isThirdPartyTrackingResource,
       referrerPolicy: this._referrerPolicy,
+      blockedReason: this._blockedReason,
+      channelId: this._channelId,
     };
   },
 
@@ -105,7 +107,8 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
     this._cause = networkEvent.cause;
     this._fromCache = networkEvent.fromCache;
     this._fromServiceWorker = networkEvent.fromServiceWorker;
-    this._isThirdPartyTrackingResource = networkEvent.isThirdPartyTrackingResource;
+    this._isThirdPartyTrackingResource =
+      networkEvent.isThirdPartyTrackingResource;
     this._referrerPolicy = networkEvent.referrerPolicy;
     this._channelId = networkEvent.channelId;
 
@@ -115,9 +118,10 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
     // when the actor is in parent process and stack is in the content process.
     this._stackTrace = networkEvent.cause.stacktrace;
     delete networkEvent.cause.stacktrace;
-    networkEvent.cause.stacktraceAvailable =
-      !!(this._stackTrace &&
-         (typeof this._stackTrace == "boolean" || this._stackTrace.length));
+    networkEvent.cause.stacktraceAvailable = !!(
+      this._stackTrace &&
+      (typeof this._stackTrace == "boolean" || this._stackTrace.length)
+    );
 
     for (const prop of ["method", "url", "httpVersion", "headersSize"]) {
       this._request[prop] = networkEvent[prop];
@@ -126,6 +130,8 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
     // Consider as not discarded if networkEvent.discard*Body is undefined
     this._discardRequestBody = !!networkEvent.discardRequestBody;
     this._discardResponseBody = !!networkEvent.discardResponseBody;
+
+    this._blockedReason = networkEvent.blockedReason;
 
     this._truncated = false;
     this._private = networkEvent.private;
@@ -259,18 +265,31 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
     // and the stack is available from the content process.
     // Fetch it lazily from here via the message manager.
     if (stacktrace && typeof stacktrace == "boolean") {
+      let id;
+      if (this._cause.type == "websocket") {
+        // Convert to a websocket URL, as in onNetworkEvent.
+        id = this._request.url.replace(/^http/, "ws");
+      } else {
+        id = this._channelId;
+      }
+
       const messageManager = this.netMonitorActor.messageManager;
       stacktrace = await new Promise(resolve => {
         const onMessage = ({ data }) => {
           const { channelId, stack } = data;
-          if (channelId == this._channelId) {
-            messageManager.removeMessageListener("debug:request-stack:response",
-              onMessage);
+          if (channelId == id) {
+            messageManager.removeMessageListener(
+              "debug:request-stack:response",
+              onMessage
+            );
             resolve(stack);
           }
         };
-        messageManager.addMessageListener("debug:request-stack:response", onMessage);
-        messageManager.sendAsyncMessage("debug:request-stack:request", this._channelId);
+        messageManager.addMessageListener(
+          "debug:request-stack:response",
+          onMessage
+        );
+        messageManager.sendAsyncMessage("debug:request-stack:request", id);
       });
       this._stackTrace = stacktrace;
     }
@@ -353,7 +372,7 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
     // bug 1462561 - Use "json" type and manually manage/marshall actors to woraround
     // protocol.js performance issue
     this.manage(postData.text);
-    const dataSize = postData.text.str.length;
+    const dataSize = postData.size;
     postData.text = postData.text.form();
 
     this.emit("network-event-update:post-data", "requestPostData", {
@@ -400,16 +419,16 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
    * @param object info
    *        The object containing security information.
    */
-  addSecurityInfo(info) {
+  addSecurityInfo(info, isRacing) {
     // Ignore calls when this actor is already destroyed
     if (!this.actorID) {
       return;
     }
 
     this._securityInfo = info;
-
     this.emit("network-event-update:security-info", "securityInfo", {
       state: info.state,
+      isRacing: isRacing,
     });
   },
 
@@ -465,7 +484,7 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
    *        - boolean truncated
    *          Tells if the some of the response content is missing.
    */
-  addResponseContent(content, {discardResponseBody, truncated}) {
+  addResponseContent(content, { discardResponseBody, truncated }) {
     // Ignore calls when this actor is already destroyed
     if (!this.actorID) {
       return;

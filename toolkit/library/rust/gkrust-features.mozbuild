@@ -7,10 +7,14 @@
 gkrust_features = ['servo', 'bindgen']
 
 if CONFIG['MOZ_DEBUG']:
-    gkrust_features += ['gecko_debug']
+    gkrust_features += [
+        'gecko_debug',
+        'gecko_refcount_logging',
+    ]
 
-if CONFIG['MOZ_BUILD_WEBRENDER']:
-    gkrust_features += ['quantum_render']
+gkrust_features += ['quantum_render']
+if CONFIG['MOZ_WEBRENDER_DEBUGGER']:
+    gkrust_features += ['webrender_debugger']
 
 if CONFIG['MOZ_PULSEAUDIO']:
     gkrust_features += ['cubeb_pulse_rust']
@@ -25,6 +29,9 @@ if (CONFIG['OS_ARCH'] == 'Linux' and CONFIG['OS_TARGET'] != 'Android') or CONFIG
 
 if CONFIG['MOZ_MEMORY']:
     gkrust_features += ['moz_memory']
+
+if CONFIG['MOZ_PLACES']:
+    gkrust_features += ['moz_places']
 
 if CONFIG['ENABLE_WASM_CRANELIFT']:
     gkrust_features += ['spidermonkey_rust']
@@ -42,3 +49,12 @@ if CONFIG['MOZ_GECKO_PROFILER']:
 
 if CONFIG['MOZ_GECKO_PROFILER_PARSE_ELF']:
     gkrust_features += ['gecko_profiler_parse_elf']
+
+if CONFIG['MOZ_BITS_DOWNLOAD']:
+    gkrust_features += ['bitsdownload']
+
+if CONFIG['MOZ_NEW_XULSTORE']:
+    gkrust_features += ['new_xulstore']
+
+if CONFIG['MOZ_NEW_CERT_STORAGE']:
+    gkrust_features += ['new_cert_storage']

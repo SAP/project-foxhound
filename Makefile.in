@@ -24,6 +24,13 @@ endif
 include $(topsrcdir)/config/config.mk
 
 GARBAGE_DIRS += _javagen _profile staticlib
+# To share compilation of dependencies, Rust libraries all set their
+# CARGO_TARGET_DIR as a subdirectory of topobjdir.  Normally, we would add
+# RUST*TARGET to GARBAGE_DIRS for those directories building Rust libraries.
+# But the directories building Rust libraries don't actually have
+# subdirectories to remove.  So we add to GARBAGE_DIRS once here, globally,
+# for it to have the desired effect.
+GARBAGE_DIRS += $(RUST_TARGET)
 DIST_GARBAGE = config.cache config.log config.status* config-defs.h \
    config/autoconf.mk \
    mozilla-config.h \
@@ -31,18 +38,11 @@ DIST_GARBAGE = config.cache config.log config.status* config-defs.h \
    .mozconfig.mk
 
 ifndef MOZ_PROFILE_USE
-# Automation builds should always have a new buildid, but for the sake of not
-# re-linking libxul on every incremental build we do not enforce this for
-# developer builds.  Tests always need a new buildid as well.
-ifneq (,$(MOZ_AUTOMATION)$(MOZ_BUILD_DATE)$(TEST_MOZBUILD))
+ifneq (mobile/android,$(MOZ_BUILD_APP))
 $(MDDEPDIR)/buildid.h.stub $(MDDEPDIR)/source-repo.h.stub: FORCE
 endif
-# Additionally, provide a dummy target during tests, because
-# faster/rules.mk will expect these targets to exist.
-ifdef TEST_MOZBUILD
 source-repo.h: $(MDDEPDIR)/source-repo.h.stub
 buildid.h: $(MDDEPDIR)/buildid.h.stub
-endif
 endif
 
 BUILD_BACKEND_FILES := $(addprefix backend.,$(addsuffix Backend,$(BUILD_BACKENDS)))
@@ -63,26 +63,6 @@ CLOBBER: $(topsrcdir)/CLOBBER
 	@echo 'STOP!  The CLOBBER file has changed.'
 	@echo 'Please run the build through "mach build".'
 	@exit 1
-endif
-
-# Regenerate the build backend if it is out of date. We only have this rule in
-# this main make file because having it in rules.mk and applied to partial tree
-# builds resulted in a world of hurt. Gory details are in bug 877308.
-#
-# The mach build driver will ensure the backend is up to date for partial tree
-# builds. This cleanly avoids most of the pain.
-
-ifndef TEST_MOZBUILD
-
-.PHONY: backend
-backend: $(BUILD_BACKEND_FILES)
-
-include $(topsrcdir)/build/rebuild-backend.mk
-
-Makefile: $(BUILD_BACKEND_FILES)
-	@$(TOUCH) $@
-
-default:: $(BUILD_BACKEND_FILES)
 endif
 
 install_manifests := \
@@ -149,7 +129,7 @@ recurse_pre-export::
 # process the install manifests as part of export.
 # For the binaries rule, not all the install manifests matter, so force only
 # the interesting ones to be done.
-ifdef MOZ_PROFILE_USE
+ifdef MOZ_1TIER_PGO
 ifndef NO_PROFILE_GUIDED_OPTIMIZE
 ifneq ($(OS_ARCH)_$(GNU_CC), WINNT_)
 recurse_pre-export:: install-manifests
@@ -157,7 +137,7 @@ binaries::
 	@$(MAKE) install-manifests install_manifests=dist/include
 endif
 endif
-else # !MOZ_PROFILE_USE (normal build)
+else # !MOZ_1TIER_PGO (normal build)
 recurse_pre-export:: install-manifests
 binaries::
 	@$(MAKE) install-manifests install_manifests=dist/include
@@ -176,6 +156,11 @@ recurse_win32-artifact:
 	$(topsrcdir)/mach --log-no-times artifact install --job $(if $(MOZ_PGO),win32-pgo,win32-opt) --no-tests --distdir $(DIST)/i686
 	mv $(DIST)/i686/bin/* $(DIST)/i686
 endif
+
+ifdef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+recurse_android-fat-aar-artifact:
+	$(call py_action,fat_aar,$(MOZ_ANDROID_FAT_AAR_ARCHITECTURES) --distdir $(abspath $(DIST)/fat-aar))
+endif # MOZ_ANDROID_FAT_AAR_ARCHITECTURES
 
 ifdef MOZ_WIDGET_TOOLKIT
 ifdef ENABLE_TESTS
@@ -204,7 +189,7 @@ profiledbuild::
 	$(MAKE) maybe_clobber_profiledbuild
 	$(call BUILDSTATUS,TIER_FINISH pgo_clobber)
 	$(call BUILDSTATUS,TIER_START pgo_profile_use)
-	$(MAKE) default MOZ_PROFILE_USE=1 $(if $(CLANG_CL),MOZ_PROFILE_ORDER_FILE=$(topobjdir)/cygprofile.txt)
+	$(MAKE) default MOZ_PROFILE_USE=1 MOZ_1TIER_PGO=1
 	$(call BUILDSTATUS,TIER_FINISH pgo_profile_use)
 
 # Change default target to PGO build if PGO is enabled.

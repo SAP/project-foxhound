@@ -5,9 +5,13 @@
 /* CSS Variables specific to this panel that aren't defined by the themes */
 :root {
   --rule-highlight-background-color: var(--theme-highlight-yellow);
-  --rule-overridden-item-border-color: var(--theme-content-color3);
   --rule-header-background-color: var(--theme-toolbar-background);
   --rule-pseudo-class-text-color: var(--yellow-70) ;
+  --rule-unused-name-text-color: var(--grey-50);
+  --rule-unused-value-text-color: var(--grey-45);
+  --rule-overridden-name-text-color: var(--grey-50);
+  --rule-overridden-value-text-color: var(--grey-45);
+
   /* This should be --yellow-50 but since we need an opacity of 0.4, we hard-code the
   resulting color here for now. */
   --rule-property-highlight-background-color: #FFF697;
@@ -15,12 +19,17 @@
 
 :root.theme-dark {
   --rule-highlight-background-color: #521C76;
-  --rule-overridden-item-border-color: var(--theme-content-color1);
   --rule-header-background-color: #222225;
   --rule-pseudo-class-text-color: var(--yellow-50);
+
   /* This should be --yellow-50 but since we need an opacity of 0.3, we hard-code the
   resulting color here for now. */
   --rule-property-highlight-background-color: #605913;
+
+  --rule-unused-name-text-color: var(--grey-45);
+  --rule-unused-value-text-color: #787878;
+  --rule-overridden-name-text-color: var(--grey-45);
+  --rule-overridden-value-text-color: #787878;
 }
 
 /* Rule View Tabpanel */
@@ -31,6 +40,7 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
+
   /* Override the min-width from .inspector-tabpanel, as the rule panel can support small
      widths */
   min-width: 100px;
@@ -39,17 +49,8 @@
 /* Rule View Toolbar */
 
 #ruleview-toolbar-container {
-  display: flex;
-  flex-direction: column;
-  height: auto;
-}
-
-#ruleview-toolbar {
-  display: flex;
-}
-
-#ruleview-toolbar > .devtools-searchbox:first-child {
-  padding-inline-start: 0px;
+  /* @TODO: Bug 1535956 - Use the right CSS variable for this */
+  line-height: calc(24px - 2px);
 }
 
 #ruleview-command-toolbar {
@@ -57,6 +58,7 @@
 }
 
 .ruleview-reveal-panel {
+  border-bottom: 1px solid var(--theme-splitter-color);
   display: flex;
   overflow: hidden;
   flex-wrap: wrap;
@@ -73,28 +75,22 @@
   align-items: center;
 }
 
+#pseudo-class-panel,
+#ruleview-class-panel .classes {
+  padding: 0 3px;
+}
+
 /* Class toggle panel */
-#ruleview-class-panel:not([hidden]) {
-  /* The class panel can contain 0 to N classes, so we can't hardcode a height here like
-     we do for the pseudo-class panel. Unfortunately, that means we don't get the height
-     transition when toggling the panel */
+
+#ruleview-class-panel {
   flex-direction: column;
 }
 
-#ruleview-class-panel .add-class {
-  margin: 0;
-  border-width: 0 0 1px 0;
-  padding: 2px 6px;
-  border-radius: 0;
-}
-
 #ruleview-class-panel .classes {
+  border-top: 1px solid var(--theme-splitter-color);
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-}
-
-#ruleview-class-panel .classes {
   max-height: 100px;
   overflow-y: auto;
 }
@@ -112,7 +108,7 @@
 
 #ruleview-class-panel .no-classes {
   flex: 1;
-  color: var(--theme-body-color-inactive);
+  color: var(--theme-text-color-inactive);
   margin: 0;
   text-align: center;
 }
@@ -186,6 +182,8 @@
 .ruleview-overridden-items[hidden],
 .ruleview-overridden-rule-filter[hidden],
 .ruleview-warning[hidden],
+.ruleview-unused-warning[hidden],
+.ruleview-used[hidden],
 .ruleview-overridden .ruleview-grid {
   display: none;
 }
@@ -254,7 +252,7 @@
 }
 
 .ruleview-rule-pseudo-element {
-  padding-left:20px;
+  padding-left: 20px;
   border-left: solid 10px;
 }
 
@@ -312,6 +310,14 @@
   border-bottom-color: transparent;
 }
 
+.ruleview-property.unused .ruleview-propertyname {
+  color: var(--rule-unused-name-text-color);
+}
+
+.ruleview-property.unused .ruleview-propertyvalue {
+  color: var(--rule-unused-value-text-color);
+}
+
 .ruleview-overridden-rule-filter {
   display: inline-block;
   width: 14px;
@@ -354,15 +360,30 @@
   background-clip: content-box;
 }
 
-.ruleview-warning {
+.ruleview-warning,
+.ruleview-unused-warning {
   display: inline-block;
   width: 12px;
   height: 12px;
-  margin-inline-start: 5px;
-  background-image: url(chrome://devtools/skin/images/alert.svg);
-  background-size: cover;
+  background-size: 12px;
+  background-repeat: no-repeat;
   -moz-context-properties: fill;
+}
+
+.ruleview-warning {
+  background-image: url(chrome://devtools/skin/images/alert-small.svg);
   fill: var(--yellow-60);
+}
+
+.ruleview-unused-warning {
+  background-image: url(chrome://devtools/skin/images/info-small.svg);
+  background-color: var(--theme-sidebar-background);
+  fill: var(--theme-icon-dimmed-color);
+}
+
+.ruleview-unused-warning:hover {
+  fill: var(--theme-icon-color);
+  stroke: var(--theme-icon-color);
 }
 
 .ruleview-rule:not(:hover) .ruleview-enableproperty {
@@ -408,29 +429,31 @@
   position: relative;
 }
 
-.ruleview-overridden-item::before {
+.ruleview-overridden-item::before,
+.ruleview-overridden-item::after {
+  content: "";
   position: absolute;
-  left: -15px;
-  top: 0px;
-  content: '';
   display: block;
-  border-left: 0.5px solid var(--rule-overridden-item-border-color);
+  border: 0 solid var(--theme-text-color-alt);
+}
+
+.ruleview-overridden-item::before {
+  top: 0;
+  left: -15px;
   height: 0.8em;
-  border-bottom: 0.5px solid var(--rule-overridden-item-border-color);
   width: 10px;
+  border-left-width: 0.5px;
+  border-bottom-width: 0.5px;
 }
 
 .ruleview-overridden-item::after {
-  position: absolute;
   left: -15px;
   bottom: -7px;
-  content: '';
-  display: block;
-  border-left: 0.5px solid var(--rule-overridden-item-border-color);
   height: 100%;
+  border-left-width: 0.5px;
 }
 
-.ruleview-overridden-item:last-child:after {
+.ruleview-overridden-item:last-child::after {
   display: none;
 }
 
@@ -448,6 +471,7 @@
   width: 1em;
   height: 1em;
   vertical-align: middle;
+
   /* align the swatch with its value */
   margin-top: -1px;
   margin-inline-end: 5px;
@@ -534,7 +558,15 @@
 }
 
 .ruleview-overridden {
-  text-decoration: line-through;
+  text-decoration: line-through solid var(--theme-text-color-alt);
+}
+
+.ruleview-property.ruleview-overridden .ruleview-propertyname {
+  color: var(--rule-overridden-name-text-color);
+}
+
+.ruleview-property.ruleview-overridden .ruleview-propertyvalue {
+  color: var(--rule-overridden-value-text-color);
 }
 
 /**
@@ -547,10 +579,6 @@
 .ruleview-overridden .ruleview-shapeswatch,
 .ruleview-overridden .ruleview-swatch {
   display: none;
-}
-
-.theme-light .ruleview-overridden {
-  text-decoration-color: var(--theme-content-color3);
 }
 
 .ruleview-font-family.used-font {
@@ -567,6 +595,7 @@
   border-left: 3px solid transparent;
   clear: both;
   padding-left: 28px;
+  overflow-wrap: break-word;
 }
 
 .ruleview-propertycontainer  > * {
@@ -643,14 +672,27 @@
 
 #ruleview-add-rule-button::before {
   background-image: url("chrome://devtools/skin/images/add.svg");
+  background-size: 14px;
 }
 
 #pseudo-class-panel-toggle::before {
-  background-image: url("chrome://devtools/skin/images/pseudo-class.svg");
+  content: ":hov";
 }
 
 #class-panel-toggle::before {
   content: ".cls";
+}
+
+#pseudo-class-panel-toggle::before,
+#class-panel-toggle::before {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+#print-simulation-toggle::before {
+  background-image: url("chrome://devtools/skin/images/rules-view-print-simulation.svg");
 }
 
 .flash-out {

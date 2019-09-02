@@ -133,10 +133,9 @@ bool CompositableParentManager::ReceiveCompositableUpdate(
           // because the recycling logic depends on it.
           MOZ_ASSERT(texture->NumCompositableRefs() > 0);
         }
-        if (texturedDesc.textureOnWhite().type() ==
-            MaybeTexture::TPTextureParent) {
+        if (texturedDesc.textureOnWhiteParent().isSome()) {
           texture = TextureHost::AsTextureHost(
-              texturedDesc.textureOnWhite().get_PTextureParent());
+              texturedDesc.textureOnWhiteParent().ref());
           if (texture) {
             texture->SetLastFwdTransactionId(mFwdTransactionId);
             // Make sure that each texture was handled by the compositable
@@ -231,7 +230,9 @@ bool CompositableParentManager::ReceiveCompositableUpdate(
       }
       break;
     }
-    default: { MOZ_ASSERT(false, "bad type"); }
+    default: {
+      MOZ_ASSERT(false, "bad type");
+    }
   }
 
   return true;
@@ -248,7 +249,9 @@ void CompositableParentManager::DestroyActor(const OpDestroy& aOp) {
       ReleaseCompositable(aOp.get_CompositableHandle());
       break;
     }
-    default: { MOZ_ASSERT(false, "unsupported type"); }
+    default: {
+      MOZ_ASSERT(false, "unsupported type");
+    }
   }
 }
 
@@ -275,12 +278,33 @@ RefPtr<CompositableHost> CompositableParentManager::AddCompositable(
 }
 
 RefPtr<CompositableHost> CompositableParentManager::FindCompositable(
-    const CompositableHandle& aHandle) {
+    const CompositableHandle& aHandle, bool aAllowDisablingWebRender) {
   auto iter = mCompositables.find(aHandle.Value());
   if (iter == mCompositables.end()) {
     return nullptr;
   }
-  return iter->second;
+
+  RefPtr<CompositableHost> host = iter->second;
+  if (!aAllowDisablingWebRender) {
+    return host;
+  }
+
+  if (!host->AsWebRenderImageHost() || !host->GetAsyncRef()) {
+    return host;
+  }
+
+  // Try to replace WebRenderImageHost of ImageBridge to ImageHost.
+  RefPtr<CompositableHost> newHost = CompositableHost::Create(
+      host->GetTextureInfo(), /* aUseWebRender */ false);
+  if (!newHost || !newHost->AsImageHost()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return host;
+  }
+
+  newHost->SetAsyncRef(host->GetAsyncRef());
+  mCompositables[aHandle.Value()] = newHost;
+
+  return newHost;
 }
 
 void CompositableParentManager::ReleaseCompositable(

@@ -26,12 +26,12 @@
 
   <script src="chrome://browser/content/preferences/siteDataSettings.js"/>
 
-  <vbox flex="1">
+  <vbox flex="1" class="contentPane">
     <description id="settingsDescription" data-l10n-id="site-data-settings-description"/>
     <separator class="thin"/>
 
     <hbox id="searchBoxContainer">
-      <textbox id="searchBox" type="search" flex="1"
+      <textbox id="searchBox" is="search-textbox" flex="1"
         data-l10n-id="site-data-search-textbox"/>
     </hbox>
     <separator class="thin"/>

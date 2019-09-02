@@ -13,11 +13,10 @@ const TEST_URI = "data:text/html;charset=utf8,<p>Test console input focus";
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  const filterInput = hud.ui.outputNode.querySelector(".text-filter");
-
   info("Focus after console is opened");
   ok(isInputFocused(hud), "input is focused after console is opened");
 
+  const filterInput = getFilterInput(hud);
   filterInput.focus();
   ok(hasFocus(filterInput), "filter input should be focused");
 
@@ -29,5 +28,8 @@ add_task(async function() {
   info("Go back to the console");
   await openConsole();
 
-  ok(isInputFocused(hud), "input is focused when coming from a different panel");
+  ok(
+    isInputFocused(hud),
+    "input is focused when coming from a different panel"
+  );
 });

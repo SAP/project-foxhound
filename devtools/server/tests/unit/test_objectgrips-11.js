@@ -18,23 +18,28 @@ registerCleanupFunction(() => {
 function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-grips");
-  gDebuggee.eval(function stopMe(arg1) {
-    debugger;
-  }.toString());
+  gDebuggee.eval(
+    function stopMe(arg1) {
+      debugger;
+    }.toString()
+  );
 
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-grips",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_object_grip();
-                           });
+    attachTestTabAndResume(gClient, "test-grips", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_object_grip();
+    });
   });
   do_test_pending();
 }
 
 function test_object_grip() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     const args = packet.frame.arguments;
 
     const objClient = gThreadClient.pauseGrip(args[0]);
@@ -47,7 +52,7 @@ function test_object_grip() {
       Assert.equal(opn[2], "lineNumber");
       Assert.equal(opn[3], "message");
 
-      gThreadClient.resume(function() {
+      gThreadClient.resume().then(function() {
         finishClient(gClient);
       });
     });
@@ -55,4 +60,3 @@ function test_object_grip() {
 
   gDebuggee.eval("stopMe(new TypeError('error message text'))");
 }
-

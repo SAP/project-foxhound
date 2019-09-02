@@ -7,6 +7,9 @@
 #include "mozilla/net/CookieSettings.h"
 #include "mozilla/Unused.h"
 #include "nsGlobalWindowInner.h"
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+#  include "nsIProtocolHandler.h"
+#endif
 #include "nsPermission.h"
 #include "nsPermissionManager.h"
 
@@ -102,6 +105,15 @@ CookieSettings::GetCookieBehavior(uint32_t* aCookieBehavior) {
 }
 
 NS_IMETHODIMP
+CookieSettings::GetRejectThirdPartyTrackers(bool* aRejectThirdPartyTrackers) {
+  *aRejectThirdPartyTrackers =
+      mCookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+      mCookieBehavior ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 CookieSettings::CookiePermission(nsIPrincipal* aPrincipal,
                                  uint32_t* aCookiePermission) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -113,19 +125,27 @@ CookieSettings::CookiePermission(nsIPrincipal* aPrincipal,
   nsresult rv;
 
   // Let's see if we know this permission.
-  for (const RefPtr<nsIPermission>& permission : mCookiePermissions) {
-    bool match = false;
-    rv = permission->Matches(aPrincipal, false, &match);
-    if (NS_WARN_IF(NS_FAILED(rv)) || !match) {
-      continue;
+  if (!mCookiePermissions.IsEmpty()) {
+    nsCOMPtr<nsIPrincipal> principal =
+        nsPermission::ClonePrincipalForPermission(aPrincipal);
+    if (NS_WARN_IF(!principal)) {
+      return NS_ERROR_FAILURE;
     }
 
-    rv = permission->GetCapability(aCookiePermission);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+    for (const RefPtr<nsIPermission>& permission : mCookiePermissions) {
+      bool match = false;
+      rv = permission->MatchesPrincipalForPermission(principal, false, &match);
+      if (NS_WARN_IF(NS_FAILED(rv)) || !match) {
+        continue;
+      }
 
-    return NS_OK;
+      rv = permission->GetCapability(aCookiePermission);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+
+      return NS_OK;
+    }
   }
 
   // Let's ask the permission manager.
@@ -134,8 +154,21 @@ CookieSettings::CookiePermission(nsIPrincipal* aPrincipal,
     return NS_ERROR_FAILURE;
   }
 
-  rv = pm->TestPermissionFromPrincipal(aPrincipal, NS_LITERAL_CSTRING("cookie"),
-                                       aCookiePermission);
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+  // Check if this protocol doesn't allow cookies.
+  bool hasFlags;
+  nsCOMPtr<nsIURI> uri;
+  aPrincipal->GetURI(getter_AddRefs(uri));
+  rv = NS_URIChainHasFlags(uri, nsIProtocolHandler::URI_FORBIDS_COOKIE_ACCESS,
+                           &hasFlags);
+  if (NS_FAILED(rv) || hasFlags) {
+    *aCookiePermission = nsPermissionManager::DENY_ACTION;
+    rv = NS_OK;  // Reset, so it's not caught as a bad status after the `else`.
+  } else         // Note the tricky `else` which controls the call below.
+#endif
+
+    rv = pm->TestPermissionFromPrincipal(
+        aPrincipal, NS_LITERAL_CSTRING("cookie"), aCookiePermission);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -167,7 +200,8 @@ void CookieSettings::Serialize(CookieSettingsArgs& aData) {
     }
 
     PrincipalInfo principalInfo;
-    rv = PrincipalToPrincipalInfo(principal, &principalInfo);
+    rv = PrincipalToPrincipalInfo(principal, &principalInfo,
+                                  true /* aSkipBaseDomain */);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
     }

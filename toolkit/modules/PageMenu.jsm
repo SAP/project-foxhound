@@ -4,8 +4,7 @@
 
 var EXPORTED_SYMBOLS = ["PageMenuParent", "PageMenuChild"];
 
-function PageMenu() {
-}
+function PageMenu() {}
 
 PageMenu.prototype = {
   PAGEMENU_ATTR: "pagemenu",
@@ -75,8 +74,7 @@ PageMenu.prototype = {
 
     let pos = insertionPoint.getAttribute(this.PAGEMENU_ATTR);
     if (pos == "start") {
-      insertionPoint.insertBefore(fragment,
-                                  insertionPoint.firstElementChild);
+      insertionPoint.insertBefore(fragment, insertionPoint.firstElementChild);
     } else if (pos.startsWith("#")) {
       insertionPoint.insertBefore(fragment, insertionPoint.querySelector(pos));
     } else {
@@ -161,10 +159,10 @@ PageMenu.prototype = {
       } else if (this._browser) {
         let win = target.ownerGlobal;
         let windowUtils = win.windowUtils;
-        this._browser.messageManager.sendAsyncMessage("ContextMenu:DoCustomCommand", {
-          generatedItemId: target.getAttribute(this.GENERATEDITEMID_ATTR),
-          handlingUserInput: windowUtils.isHandlingUserInput,
-        });
+        win.gContextMenu.doCustomCommand(
+          target.getAttribute(this.GENERATEDITEMID_ATTR),
+          windowUtils.isHandlingUserInput
+        );
       }
     } else if (type == "popuphidden" && this._popup == target) {
       this.removeGeneratedContent(this._popup);
@@ -194,8 +192,9 @@ PageMenu.prototype = {
   // given popup. They should be inserted as the next sibling of the returned
   // element.
   getInsertionPoint(aPopup) {
-    if (aPopup.hasAttribute(this.PAGEMENU_ATTR))
+    if (aPopup.hasAttribute(this.PAGEMENU_ATTR)) {
       return aPopup;
+    }
 
     let element = aPopup.firstElementChild;
     while (element) {
@@ -239,31 +238,12 @@ PageMenu.prototype = {
 };
 
 // This object is expected to be used from a parent process.
-function PageMenuParent() {
-}
+function PageMenuParent() {}
 
 PageMenuParent.prototype = {
   __proto__: PageMenu.prototype,
-
   /*
-   * Given a target node and popup, add the context menu to the popup. This is
-   * intended to be called when a single process is used. This is equivalent to
-   * calling PageMenuChild.build and PageMenuParent.addToPopup in sequence.
-   *
-   * Returns true if custom menu items were present.
-   */
-  buildAndAddToPopup(aTarget, aPopup) {
-    let menuObject = this.maybeBuild(aTarget);
-    if (!menuObject) {
-      return false;
-    }
-
-    return this.buildAndAttachMenuWithObject(menuObject, null, aPopup);
-  },
-
-  /*
-   * Given a JSON menu object and popup, add the context menu to the popup. This
-   * is intended to be called when the child page is in a different process.
+   * Given a JSON menu object and popup, add the context menu to the popup.
    * aBrowser should be the browser containing the page the context menu is
    * displayed for, which may be null.
    *
@@ -275,8 +255,7 @@ PageMenuParent.prototype = {
 };
 
 // This object is expected to be used from a child process.
-function PageMenuChild() {
-}
+function PageMenuChild() {}
 
 PageMenuChild.prototype = {
   __proto__: PageMenu.prototype,

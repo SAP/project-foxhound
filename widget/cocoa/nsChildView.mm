@@ -16,6 +16,7 @@
 
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
@@ -41,7 +42,6 @@
 #include "nsGfxCIID.h"
 #include "nsStyleConsts.h"
 #include "nsIWidgetListener.h"
-#include "nsIPresShell.h"
 #include "nsIScreen.h"
 
 #include "nsDragService.h"
@@ -83,7 +83,6 @@
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "gfxUtils.h"
-#include "gfxPrefs.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BorrowedContext.h"
 #include "mozilla/gfx/MacIOSurface.h"
@@ -93,6 +92,7 @@
 #endif
 
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 
 #include <dlfcn.h>
 
@@ -195,12 +195,6 @@ static NSMutableDictionary* sNativeKeyEventsMap = [NSMutableDictionary dictionar
 // Overlay drawing functions for traditional CGContext drawing
 - (void)drawTitleString;
 - (void)maskTopCornersInContext:(CGContextRef)aContext;
-
-#if USE_CLICK_HOLD_CONTEXTMENU
-// called on a timer two seconds after a mouse down to see if we should display
-// a context menu (click-hold)
-- (void)clickHoldCallback:(id)inEvent;
-#endif
 
 #ifdef ACCESSIBILITY
 - (id<mozAccessible>)accessible;
@@ -323,7 +317,6 @@ nsChildView::nsChildView()
       mParentWidget(nullptr),
       mViewTearDownLock("ChildViewTearDown"),
       mEffectsLock("WidgetEffects"),
-      mShowsResizeIndicator(false),
       mHasRoundedBottomCorners(false),
       mDevPixelCornerRadius{0},
       mIsCoveringTitlebar(false),
@@ -379,7 +372,7 @@ void nsChildView::ReleaseTitlebarCGContext() {
 
 nsresult nsChildView::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                              const LayoutDeviceIntRect& aRect, nsWidgetInitData* aInitData) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   // Because the hidden window is created outside of an event loop,
   // we need to provide an autorelease pool to avoid leaking cocoa objects
@@ -730,14 +723,12 @@ void nsChildView::Enable(bool aState) {}
 
 bool nsChildView::IsEnabled() const { return true; }
 
-nsresult nsChildView::SetFocus(bool aRaise) {
+void nsChildView::SetFocus(Raise) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   NSWindow* window = [mView window];
   if (window) [window makeFirstResponder:mView];
-  return NS_OK;
-
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
 // Override to set the cursor on the mac
@@ -813,8 +804,7 @@ void nsChildView::BackingScaleFactorChanged() {
   mBounds = nsCocoaUtils::CocoaRectToGeckoRectDevPix(frame, newScale);
 
   if (mWidgetListener && !mWidgetListener->GetXULWindow()) {
-    nsIPresShell* presShell = mWidgetListener->GetPresShell();
-    if (presShell) {
+    if (PresShell* presShell = mWidgetListener->GetPresShell()) {
       presShell->BackingScaleFactorChanged();
     }
   }
@@ -913,27 +903,6 @@ void nsChildView::Resize(double aX, double aY, double aWidth, double aHeight, bo
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-static const int32_t resizeIndicatorWidth = 15;
-static const int32_t resizeIndicatorHeight = 15;
-bool nsChildView::ShowsResizeIndicator(LayoutDeviceIntRect* aResizerRect) {
-  NSView *topLevelView = mView, *superView = nil;
-  while ((superView = [topLevelView superview])) topLevelView = superView;
-
-  if (![[topLevelView window] showsResizeIndicator] ||
-      !([[topLevelView window] styleMask] & NSResizableWindowMask))
-    return false;
-
-  if (aResizerRect) {
-    NSSize bounds = [topLevelView bounds].size;
-    NSPoint corner = NSMakePoint(bounds.width, [topLevelView isFlipped] ? bounds.height : 0);
-    corner = [topLevelView convertPoint:corner toView:mView];
-    aResizerRect->SetRect(NSToIntRound(corner.x) - resizeIndicatorWidth,
-                          NSToIntRound(corner.y) - resizeIndicatorHeight, resizeIndicatorWidth,
-                          resizeIndicatorHeight);
-  }
-  return true;
-}
-
 nsresult nsChildView::SynthesizeNativeKeyEvent(int32_t aNativeKeyboardLayout,
                                                int32_t aNativeKeyCode, uint32_t aModifierFlags,
                                                const nsAString& aCharacters,
@@ -1020,7 +989,24 @@ nsresult nsChildView::SynthesizeNativeMouseScrollEvent(
     return NS_ERROR_FAILURE;
   }
 
-  CGEventPost(kCGHIDEventTap, cgEvent);
+  // On macOS 10.14 and up CGEventPost won't work because of changes in macOS
+  // to improve security. This code makes an NSEvent corresponding to the
+  // wheel event and dispatches it directly to the scrollWheel handler. Some
+  // fiddling is needed with the coordinates in order to simulate what macOS
+  // would do; this code adapted from the Chromium equivalent function at
+  // https://chromium.googlesource.com/chromium/src.git/+/62.0.3178.1/ui/events/test/cocoa_test_event_utils.mm#38
+  CGPoint location = CGEventGetLocation(cgEvent);
+  location.y += NSMinY([[mView window] frame]);
+  location.x -= NSMinX([[mView window] frame]);
+  CGEventSetLocation(cgEvent, location);
+
+  uint64_t kNanosPerSec = 1000000000L;
+  CGEventSetTimestamp(cgEvent, [[NSProcessInfo processInfo] systemUptime] * kNanosPerSec);
+
+  NSEvent* event = [NSEvent eventWithCGEvent:cgEvent];
+  [event setValue:[mView window] forKey:@"_window"];
+  [mView scrollWheel:event];
+
   CFRelease(cgEvent);
   return NS_OK;
 
@@ -1242,11 +1228,6 @@ bool nsChildView::ShouldUseOffMainThreadCompositing() {
   return nsBaseWidget::ShouldUseOffMainThreadCompositing();
 }
 
-inline uint16_t COLOR8TOCOLOR16(uint8_t color8) {
-  // return (color8 == 0xFF ? 0xFFFF : (color8 << 8));
-  return (color8 << 8) | color8; /* (color8 * 257) == (color8 * 0x0101) */
-}
-
 #pragma mark -
 
 nsresult nsChildView::ConfigureChildren(const nsTArray<Configuration>& aConfigurations) {
@@ -1339,6 +1320,34 @@ bool nsChildView::PaintWindow(LayoutDeviceIntRegion aRegion) {
   return returnValue;
 }
 
+bool nsChildView::PaintWindowInDrawTarget(gfx::DrawTarget* aDT,
+                                          const LayoutDeviceIntRegion& aRegion,
+                                          const gfx::IntSize& aSurfaceSize) {
+  RefPtr<gfxContext> targetContext = gfxContext::CreateOrNull(aDT);
+  MOZ_ASSERT(targetContext);
+
+  // Set up the clip region and clear existing contents in the backing surface.
+  targetContext->NewPath();
+  for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
+    const LayoutDeviceIntRect& r = iter.Get();
+    targetContext->Rectangle(gfxRect(r.x, r.y, r.width, r.height));
+    aDT->ClearRect(gfx::Rect(r.ToUnknownRect()));
+  }
+  targetContext->Clip();
+
+  nsAutoRetainCocoaObject kungFuDeathGrip(mView);
+  if (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_BASIC) {
+    nsBaseWidget::AutoLayerManagerSetup setupLayerManager(this, targetContext,
+                                                          BufferMode::BUFFER_NONE);
+    return PaintWindow(aRegion);
+  }
+  if (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_CLIENT) {
+    // We only need this so that we actually get DidPaintWindow fired
+    return PaintWindow(aRegion);
+  }
+  return false;
+}
+
 bool nsChildView::PaintWindowInContext(CGContextRef aContext, const LayoutDeviceIntRegion& aRegion,
                                        gfx::IntSize aSurfaceSize) {
   if (!mBackingSurface || mBackingSurface->GetSize() != aSurfaceSize) {
@@ -1349,28 +1358,7 @@ bool nsChildView::PaintWindowInContext(CGContextRef aContext, const LayoutDevice
     }
   }
 
-  RefPtr<gfxContext> targetContext = gfxContext::CreateOrNull(mBackingSurface);
-  MOZ_ASSERT(targetContext);  // already checked the draw target above
-
-  // Set up the clip region and clear existing contents in the backing surface.
-  targetContext->NewPath();
-  for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
-    const LayoutDeviceIntRect& r = iter.Get();
-    targetContext->Rectangle(gfxRect(r.x, r.y, r.width, r.height));
-    mBackingSurface->ClearRect(gfx::Rect(r.ToUnknownRect()));
-  }
-  targetContext->Clip();
-
-  nsAutoRetainCocoaObject kungFuDeathGrip(mView);
-  bool painted = false;
-  if (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_BASIC) {
-    nsBaseWidget::AutoLayerManagerSetup setupLayerManager(this, targetContext,
-                                                          BufferMode::BUFFER_NONE);
-    painted = PaintWindow(aRegion);
-  } else if (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_CLIENT) {
-    // We only need this so that we actually get DidPaintWindow fired
-    painted = PaintWindow(aRegion);
-  }
+  bool painted = PaintWindowInDrawTarget(mBackingSurface, aRegion, aSurfaceSize);
 
   uint8_t* data;
   gfx::IntSize size;
@@ -1741,7 +1729,6 @@ void nsChildView::PrepareWindowEffects() {
   bool canBeOpaque;
   {
     MutexAutoLock lock(mEffectsLock);
-    mShowsResizeIndicator = ShowsResizeIndicator(&mResizeIndicatorRect);
     mHasRoundedBottomCorners = [mView hasRoundedBottomCorners];
     CGFloat cornerRadius = [mView cornerRadius];
     mDevPixelCornerRadius = cornerRadius * BackingScaleFactor();
@@ -1772,7 +1759,6 @@ void nsChildView::PrepareWindowEffects() {
 }
 
 void nsChildView::CleanupWindowEffects() {
-  mResizerImage = nullptr;
   mCornerMaskImage = nullptr;
   mTitlebarImage = nullptr;
 }
@@ -1861,7 +1847,6 @@ void nsChildView::DrawWindowOverlay(GLManager* aManager, LayoutDeviceIntRect aRe
   ScopedGLState scopedScissorTestState(gl, LOCAL_GL_SCISSOR_TEST, false);
 
   MaybeDrawTitlebar(aManager);
-  MaybeDrawResizeIndicator(aManager);
   MaybeDrawRoundedCorners(aManager, aRect);
 }
 
@@ -1869,60 +1854,6 @@ static void ClearRegion(gfx::DrawTarget* aDT, LayoutDeviceIntRegion aRegion) {
   gfxUtils::ClipToRegion(aDT, aRegion.ToUnknownRegion());
   aDT->ClearRect(gfx::Rect(0, 0, aDT->GetSize().width, aDT->GetSize().height));
   aDT->PopClip();
-}
-
-static void DrawResizer(CGContextRef aCtx) {
-  CGContextSetShouldAntialias(aCtx, false);
-  CGPoint points[6];
-  points[0] = CGPointMake(13.0f, 4.0f);
-  points[1] = CGPointMake(3.0f, 14.0f);
-  points[2] = CGPointMake(13.0f, 8.0f);
-  points[3] = CGPointMake(7.0f, 14.0f);
-  points[4] = CGPointMake(13.0f, 12.0f);
-  points[5] = CGPointMake(11.0f, 14.0f);
-  CGContextSetRGBStrokeColor(aCtx, 0.00f, 0.00f, 0.00f, 0.15f);
-  CGContextStrokeLineSegments(aCtx, points, 6);
-
-  points[0] = CGPointMake(13.0f, 5.0f);
-  points[1] = CGPointMake(4.0f, 14.0f);
-  points[2] = CGPointMake(13.0f, 9.0f);
-  points[3] = CGPointMake(8.0f, 14.0f);
-  points[4] = CGPointMake(13.0f, 13.0f);
-  points[5] = CGPointMake(12.0f, 14.0f);
-  CGContextSetRGBStrokeColor(aCtx, 0.13f, 0.13f, 0.13f, 0.54f);
-  CGContextStrokeLineSegments(aCtx, points, 6);
-
-  points[0] = CGPointMake(13.0f, 6.0f);
-  points[1] = CGPointMake(5.0f, 14.0f);
-  points[2] = CGPointMake(13.0f, 10.0f);
-  points[3] = CGPointMake(9.0f, 14.0f);
-  points[5] = CGPointMake(13.0f, 13.9f);
-  points[4] = CGPointMake(13.0f, 14.0f);
-  CGContextSetRGBStrokeColor(aCtx, 0.84f, 0.84f, 0.84f, 0.55f);
-  CGContextStrokeLineSegments(aCtx, points, 6);
-}
-
-void nsChildView::MaybeDrawResizeIndicator(GLManager* aManager) {
-  MutexAutoLock lock(mEffectsLock);
-  if (!mShowsResizeIndicator) {
-    return;
-  }
-
-  if (!mResizerImage) {
-    mResizerImage = MakeUnique<RectTextureImage>();
-  }
-
-  LayoutDeviceIntSize size = mResizeIndicatorRect.Size();
-  mResizerImage->UpdateIfNeeded(
-      size, LayoutDeviceIntRegion(),
-      ^(gfx::DrawTarget* drawTarget, const LayoutDeviceIntRegion& updateRegion) {
-        ClearRegion(drawTarget, updateRegion);
-        gfx::BorrowedCGContext borrow(drawTarget);
-        DrawResizer(borrow.cg);
-        borrow.Finish();
-      });
-
-  mResizerImage->Draw(aManager, mResizeIndicatorRect.TopLeft());
 }
 
 static CGContextRef CreateCGContext(const LayoutDeviceIntSize& aSize) {
@@ -2426,7 +2357,6 @@ void nsChildView::EndRemoteDrawing() {
 void nsChildView::CleanupRemoteDrawing() {
   mBasicCompositorImage = nullptr;
   mCornerMaskImage = nullptr;
-  mResizerImage = nullptr;
   mTitlebarImage = nullptr;
   mGLPresenter = nullptr;
 }
@@ -3154,10 +3084,8 @@ NSEvent* gLastDragMouseDownEvent = nil;
   [self systemMetricsChanged];
 
   if (mGeckoChild) {
-    nsIWidgetListener* listener = mGeckoChild->GetWidgetListener();
-    if (listener) {
-      nsIPresShell* presShell = listener->GetPresShell();
-      if (presShell) {
+    if (nsIWidgetListener* listener = mGeckoChild->GetWidgetListener()) {
+      if (PresShell* presShell = listener->GetPresShell()) {
         presShell->ReconstructFrames();
       }
     }
@@ -3361,7 +3289,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
   // Make the context opaque for fullscreen (since it performs better), and transparent
   // for windowed (since we need it for rounded corners), but allow overriding
   // it to opaque for testing purposes, even if that breaks the rounded corners.
-  GLint opaque = aOpaque || gfxPrefs::CompositorGLContextOpaque();
+  GLint opaque = aOpaque || StaticPrefs::gfx_compositor_glcontext_opaque();
   [mGLContext setValues:&opaque forParameter:NSOpenGLCPSurfaceOpacity];
   CGLUnlockContext((CGLContextObj)[mGLContext CGLContextObj]);
 }
@@ -3400,7 +3328,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
 // This is the analog of nsChildView::MaybeDrawRoundedCorners for CGContexts.
 // We only need to mask the top corners here because Cocoa does the masking
-// for the window's bottom corners automatically (starting with 10.7).
+// for the window's bottom corners automatically.
 - (void)maskTopCornersInContext:(CGContextRef)aContext {
   CGFloat radius = [self cornerRadius];
   int32_t devPixelCornerRadius = mGeckoChild->CocoaPointsToDevPixels(radius);
@@ -3509,42 +3437,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
   }
   [super viewWillDraw];
 }
-
-#if USE_CLICK_HOLD_CONTEXTMENU
-//
-// -clickHoldCallback:
-//
-// called from a timer two seconds after a mouse down to see if we should display
-// a context menu (click-hold). |anEvent| is the original mouseDown event. If we're
-// still in that mouseDown by this time, put up the context menu, otherwise just
-// fuhgeddaboutit. |anEvent| has been retained by the OS until after this callback
-// fires so we're ok there.
-//
-// This code currently messes in a bunch of edge cases (bugs 234751, 232964, 232314)
-// so removing it until we get it straightened out.
-//
-- (void)clickHoldCallback:(id)theEvent;
-{
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
-
-  if (theEvent == [NSApp currentEvent]) {
-    // we're still in the middle of the same mousedown event here, activate
-    // click-hold context menu by triggering the right mouseDown action.
-    NSEvent* clickHoldEvent = [NSEvent mouseEventWithType:NSRightMouseDown
-                                                 location:[theEvent locationInWindow]
-                                            modifierFlags:[theEvent modifierFlags]
-                                                timestamp:[theEvent timestamp]
-                                             windowNumber:[theEvent windowNumber]
-                                                  context:[theEvent context]
-                                              eventNumber:[theEvent eventNumber]
-                                               clickCount:[theEvent clickCount]
-                                                 pressure:[theEvent pressure]];
-    [self rightMouseDown:clickHoldEvent];
-  }
-
-  NS_OBJC_END_TRY_ABORT_BLOCK;
-}
-#endif
 
 // If we've just created a non-native context menu, we need to mark it as
 // such and let the OS (and other programs) know when it opens and closes
@@ -3682,7 +3574,8 @@ NSEvent* gLastDragMouseDownEvent = nil;
     return;
   }
 
-  if (gfxPrefs::APZAllowZooming()) {
+  // FIXME: bug 1525793 -- this may need to handle zooming or not on a per-document basis.
+  if (StaticPrefs::apz_allow_zooming()) {
     NSPoint locationInWindow = nsCocoaUtils::EventLocationForWindow(anEvent, [self window]);
     ScreenPoint position =
         ViewAs<ScreenPixel>([self convertWindowCoordinatesRoundDown:locationInWindow],
@@ -4042,11 +3935,6 @@ NSEvent* gLastDragMouseDownEvent = nil;
     return;
   }
 
-#if USE_CLICK_HOLD_CONTEXTMENU
-  // fire off timer to check for click-hold after two seconds. retains |theEvent|
-  [self performSelector:@selector(clickHoldCallback:) withObject:theEvent afterDelay:2.0];
-#endif
-
   // in order to send gecko events we'll need a gecko widget
   if (!mGeckoChild) return;
   if (mTextInputHandler->OnHandleEvent(theEvent)) {
@@ -4067,9 +3955,9 @@ NSEvent* gLastDragMouseDownEvent = nil;
   geckoEvent.mClickCount = clickCount;
 
   if (modifierFlags & NSControlKeyMask)
-    geckoEvent.button = WidgetMouseEvent::eRightButton;
+    geckoEvent.mButton = MouseButton::eRight;
   else
-    geckoEvent.button = WidgetMouseEvent::eLeftButton;
+    geckoEvent.mButton = MouseButton::eLeft;
 
   mGeckoChild->DispatchInputEvent(&geckoEvent);
   mBlockedLastMouseDown = NO;
@@ -4092,9 +3980,9 @@ NSEvent* gLastDragMouseDownEvent = nil;
   WidgetMouseEvent geckoEvent(true, eMouseUp, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
   if ([theEvent modifierFlags] & NSControlKeyMask)
-    geckoEvent.button = WidgetMouseEvent::eRightButton;
+    geckoEvent.mButton = MouseButton::eRight;
   else
-    geckoEvent.button = WidgetMouseEvent::eLeftButton;
+    geckoEvent.mButton = MouseButton::eLeft;
 
   // Remember the event's position before calling DispatchInputEvent, because
   // that call can mutate it and convert it into a different coordinate space.
@@ -4194,7 +4082,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
   // The right mouse went down, fire off a right mouse down event to gecko
   WidgetMouseEvent geckoEvent(true, eMouseDown, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.button = WidgetMouseEvent::eRightButton;
+  geckoEvent.mButton = MouseButton::eRight;
   geckoEvent.mClickCount = [theEvent clickCount];
 
   mGeckoChild->DispatchInputEvent(&geckoEvent);
@@ -4218,7 +4106,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   WidgetMouseEvent geckoEvent(true, eMouseUp, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.button = WidgetMouseEvent::eRightButton;
+  geckoEvent.mButton = MouseButton::eRight;
   geckoEvent.mClickCount = [theEvent clickCount];
 
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
@@ -4251,7 +4139,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   WidgetMouseEvent geckoEvent(true, eMouseMove, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.button = WidgetMouseEvent::eRightButton;
+  geckoEvent.mButton = MouseButton::eRight;
 
   // send event into Gecko by going directly to the
   // the widget.
@@ -4274,7 +4162,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   WidgetMouseEvent geckoEvent(true, eMouseDown, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.button = WidgetMouseEvent::eMiddleButton;
+  geckoEvent.mButton = MouseButton::eMiddle;
   geckoEvent.mClickCount = [theEvent clickCount];
 
   mGeckoChild->DispatchInputEvent(&geckoEvent);
@@ -4290,7 +4178,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   WidgetMouseEvent geckoEvent(true, eMouseUp, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.button = WidgetMouseEvent::eMiddleButton;
+  geckoEvent.mButton = MouseButton::eMiddle;
 
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
   mGeckoChild->DispatchInputEvent(&geckoEvent);
@@ -4304,7 +4192,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
   WidgetMouseEvent geckoEvent(true, eMouseMove, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.button = WidgetMouseEvent::eMiddleButton;
+  geckoEvent.mButton = MouseButton::eMiddle;
 
   // send event into Gecko by going directly to the
   // the widget.
@@ -4504,7 +4392,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
     geckoChildDeathGrip->DispatchAPZWheelInputEvent(wheelEvent, false);
   } else {
     ScrollWheelInput::ScrollMode scrollMode = ScrollWheelInput::SCROLLMODE_INSTANT;
-    if (gfxPrefs::SmoothScrollEnabled() && gfxPrefs::WheelSmoothScrollEnabled()) {
+    if (StaticPrefs::general_smoothScroll() && StaticPrefs::general_smoothScroll_mouseWheel()) {
       scrollMode = ScrollWheelInput::SCROLLMODE_SMOOTH;
     }
     ScrollWheelInput wheelEvent(eventIntervalTime, eventTimeStamp, modifiers, scrollMode,
@@ -4549,7 +4437,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
   WidgetMouseEvent geckoEvent(true, eContextMenu, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
-  geckoEvent.button = WidgetMouseEvent::eRightButton;
+  geckoEvent.mButton = MouseButton::eRight;
   mGeckoChild->DispatchInputEvent(&geckoEvent);
   if (!mGeckoChild) return nil;
 
@@ -4589,23 +4477,23 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
   outGeckoEvent->mRefPoint = [self convertWindowCoordinates:locationInWindow];
 
   WidgetMouseEventBase* mouseEvent = outGeckoEvent->AsMouseEventBase();
-  mouseEvent->buttons = 0;
+  mouseEvent->mButtons = 0;
   NSUInteger mouseButtons = [NSEvent pressedMouseButtons];
 
   if (mouseButtons & 0x01) {
-    mouseEvent->buttons |= WidgetMouseEvent::eLeftButtonFlag;
+    mouseEvent->mButtons |= MouseButtonsFlag::eLeftFlag;
   }
   if (mouseButtons & 0x02) {
-    mouseEvent->buttons |= WidgetMouseEvent::eRightButtonFlag;
+    mouseEvent->mButtons |= MouseButtonsFlag::eRightFlag;
   }
   if (mouseButtons & 0x04) {
-    mouseEvent->buttons |= WidgetMouseEvent::eMiddleButtonFlag;
+    mouseEvent->mButtons |= MouseButtonsFlag::eMiddleFlag;
   }
   if (mouseButtons & 0x08) {
-    mouseEvent->buttons |= WidgetMouseEvent::e4thButtonFlag;
+    mouseEvent->mButtons |= MouseButtonsFlag::e4thFlag;
   }
   if (mouseButtons & 0x10) {
-    mouseEvent->buttons |= WidgetMouseEvent::e5thButtonFlag;
+    mouseEvent->mButtons |= MouseButtonsFlag::e5thFlag;
   }
 
   switch ([aMouseEvent type]) {
@@ -4639,10 +4527,10 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
     return;
   }
   if ([aPointerEvent type] != NSMouseMoved) {
-    aOutGeckoEvent->pressure = [aPointerEvent pressure];
-    MOZ_ASSERT(aOutGeckoEvent->pressure >= 0.0 && aOutGeckoEvent->pressure <= 1.0);
+    aOutGeckoEvent->mPressure = [aPointerEvent pressure];
+    MOZ_ASSERT(aOutGeckoEvent->mPressure >= 0.0 && aOutGeckoEvent->mPressure <= 1.0);
   }
-  aOutGeckoEvent->inputSource = dom::MouseEvent_Binding::MOZ_SOURCE_PEN;
+  aOutGeckoEvent->mInputSource = dom::MouseEvent_Binding::MOZ_SOURCE_PEN;
   aOutGeckoEvent->tiltX = lround([aPointerEvent tilt].x * 90);
   aOutGeckoEvent->tiltY = lround([aPointerEvent tilt].y * 90);
   aOutGeckoEvent->tangentialPressure = [aPointerEvent tangentialPressure];
@@ -4910,252 +4798,252 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
 - (void)insertNewline:(id)sender {
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandInsertParagraph);
+    mTextInputHandler->HandleCommand(Command::InsertParagraph);
   }
 }
 
 - (void)insertLineBreak:(id)sender {
   // Ctrl + Enter in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandInsertLineBreak);
+    mTextInputHandler->HandleCommand(Command::InsertLineBreak);
   }
 }
 
 - (void)deleteBackward:(id)sender {
   // Backspace in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandDeleteCharBackward);
+    mTextInputHandler->HandleCommand(Command::DeleteCharBackward);
   }
 }
 
 - (void)deleteBackwardByDecomposingPreviousCharacter:(id)sender {
   // Ctrl + Backspace in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandDeleteCharBackward);
+    mTextInputHandler->HandleCommand(Command::DeleteCharBackward);
   }
 }
 
 - (void)deleteWordBackward:(id)sender {
   // Alt + Backspace in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandDeleteWordBackward);
+    mTextInputHandler->HandleCommand(Command::DeleteWordBackward);
   }
 }
 
 - (void)deleteToBeginningOfBackward:(id)sender {
   // Command + Backspace in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandDeleteToBeginningOfLine);
+    mTextInputHandler->HandleCommand(Command::DeleteToBeginningOfLine);
   }
 }
 
 - (void)deleteForward:(id)sender {
   // Delete in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandDeleteCharForward);
+    mTextInputHandler->HandleCommand(Command::DeleteCharForward);
   }
 }
 
 - (void)deleteWordForward:(id)sender {
   // Alt + Delete in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandDeleteWordForward);
+    mTextInputHandler->HandleCommand(Command::DeleteWordForward);
   }
 }
 
 - (void)insertTab:(id)sender {
   // Tab in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandInsertTab);
+    mTextInputHandler->HandleCommand(Command::InsertTab);
   }
 }
 
 - (void)insertBacktab:(id)sender {
   // Shift + Tab in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandInsertBacktab);
+    mTextInputHandler->HandleCommand(Command::InsertBacktab);
   }
 }
 
 - (void)moveRight:(id)sender {
   // RightArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandCharNext);
+    mTextInputHandler->HandleCommand(Command::CharNext);
   }
 }
 
 - (void)moveRightAndModifySelection:(id)sender {
   // Shift + RightArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectCharNext);
+    mTextInputHandler->HandleCommand(Command::SelectCharNext);
   }
 }
 
 - (void)moveWordRight:(id)sender {
   // Alt + RightArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandWordNext);
+    mTextInputHandler->HandleCommand(Command::WordNext);
   }
 }
 
 - (void)moveWordRightAndModifySelection:(id)sender {
   // Alt + Shift + RightArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectWordNext);
+    mTextInputHandler->HandleCommand(Command::SelectWordNext);
   }
 }
 
 - (void)moveToRightEndOfLine:(id)sender {
   // Command + RightArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandEndLine);
+    mTextInputHandler->HandleCommand(Command::EndLine);
   }
 }
 
 - (void)moveToRightEndOfLineAndModifySelection:(id)sender {
   // Command + Shift + RightArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectEndLine);
+    mTextInputHandler->HandleCommand(Command::SelectEndLine);
   }
 }
 
 - (void)moveLeft:(id)sender {
   // LeftArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandCharPrevious);
+    mTextInputHandler->HandleCommand(Command::CharPrevious);
   }
 }
 
 - (void)moveLeftAndModifySelection:(id)sender {
   // Shift + LeftArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectCharPrevious);
+    mTextInputHandler->HandleCommand(Command::SelectCharPrevious);
   }
 }
 
 - (void)moveWordLeft:(id)sender {
   // Alt + LeftArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandWordPrevious);
+    mTextInputHandler->HandleCommand(Command::WordPrevious);
   }
 }
 
 - (void)moveWordLeftAndModifySelection:(id)sender {
   // Alt + Shift + LeftArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectWordPrevious);
+    mTextInputHandler->HandleCommand(Command::SelectWordPrevious);
   }
 }
 
 - (void)moveToLeftEndOfLine:(id)sender {
   // Command + LeftArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandBeginLine);
+    mTextInputHandler->HandleCommand(Command::BeginLine);
   }
 }
 
 - (void)moveToLeftEndOfLineAndModifySelection:(id)sender {
   // Command + Shift + LeftArrow in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectBeginLine);
+    mTextInputHandler->HandleCommand(Command::SelectBeginLine);
   }
 }
 
 - (void)moveUp:(id)sender {
   // ArrowUp in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandLinePrevious);
+    mTextInputHandler->HandleCommand(Command::LinePrevious);
   }
 }
 
 - (void)moveUpAndModifySelection:(id)sender {
   // Shift + ArrowUp in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectLinePrevious);
+    mTextInputHandler->HandleCommand(Command::SelectLinePrevious);
   }
 }
 
 - (void)moveToBeginningOfDocument:(id)sender {
   // Command + ArrowUp in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandMoveTop);
+    mTextInputHandler->HandleCommand(Command::MoveTop);
   }
 }
 
 - (void)moveToBeginningOfDocumentAndModifySelection:(id)sender {
   // Command + Shift + ArrowUp or Shift + Home in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectTop);
+    mTextInputHandler->HandleCommand(Command::SelectTop);
   }
 }
 
 - (void)moveDown:(id)sender {
   // ArrowDown in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandLineNext);
+    mTextInputHandler->HandleCommand(Command::LineNext);
   }
 }
 
 - (void)moveDownAndModifySelection:(id)sender {
   // Shift + ArrowDown in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectLineNext);
+    mTextInputHandler->HandleCommand(Command::SelectLineNext);
   }
 }
 
 - (void)moveToEndOfDocument:(id)sender {
   // Command + ArrowDown in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandMoveBottom);
+    mTextInputHandler->HandleCommand(Command::MoveBottom);
   }
 }
 
 - (void)moveToEndOfDocumentAndModifySelection:(id)sender {
   // Command + Shift + ArrowDown or Shift + End in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectBottom);
+    mTextInputHandler->HandleCommand(Command::SelectBottom);
   }
 }
 
 - (void)scrollPageUp:(id)sender {
   // PageUp in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandScrollPageUp);
+    mTextInputHandler->HandleCommand(Command::ScrollPageUp);
   }
 }
 
 - (void)pageUpAndModifySelection:(id)sender {
   // Shift + PageUp in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectPageUp);
+    mTextInputHandler->HandleCommand(Command::SelectPageUp);
   }
 }
 
 - (void)scrollPageDown:(id)sender {
   // PageDown in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandScrollPageDown);
+    mTextInputHandler->HandleCommand(Command::ScrollPageDown);
   }
 }
 
 - (void)pageDownAndModifySelection:(id)sender {
   // Shift + PageDown in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandSelectPageDown);
+    mTextInputHandler->HandleCommand(Command::SelectPageDown);
   }
 }
 
 - (void)scrollToEndOfDocument:(id)sender {
   // End in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandScrollBottom);
+    mTextInputHandler->HandleCommand(Command::ScrollBottom);
   }
 }
 
 - (void)scrollToBeginningOfDocument:(id)sender {
   // Home in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandScrollTop);
+    mTextInputHandler->HandleCommand(Command::ScrollTop);
   }
 }
 
@@ -5166,7 +5054,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 - (void)complete:(id)sender {
   // Alt + Escape or Alt + Shift + Escape in the default settings.
   if (mTextInputHandler) {
-    mTextInputHandler->HandleCommand(CommandComplete);
+    mTextInputHandler->HandleCommand(Command::Complete);
   }
 }
 
@@ -5330,8 +5218,9 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
     if (aMessage == eDragOver) {
       // fire the drag event at the source. Just ignore whether it was
       // cancelled or not as there isn't actually a means to stop the drag
-      mDragService->FireDragEventAtSource(eDrag,
-                                          nsCocoaUtils::ModifiersForEvent([NSApp currentEvent]));
+      nsCOMPtr<nsIDragService> dragService = mDragService;
+      dragService->FireDragEventAtSource(eDrag,
+                                         nsCocoaUtils::ModifiersForEvent([NSApp currentEvent]));
       dragSession->SetCanDrop(false);
     } else if (aMessage == eDrop) {
       // We make the assumption that the dragOver handlers have correctly set
@@ -5343,8 +5232,8 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
         nsCOMPtr<nsINode> sourceNode;
         dragSession->GetSourceNode(getter_AddRefs(sourceNode));
         if (!sourceNode) {
-          mDragService->EndDragSession(false,
-                                       nsCocoaUtils::ModifiersForEvent([NSApp currentEvent]));
+          nsCOMPtr<nsIDragService> dragService = mDragService;
+          dragService->EndDragSession(false, nsCocoaUtils::ModifiersForEvent([NSApp currentEvent]));
         }
         return NSDragOperationNone;
       }
@@ -5404,8 +5293,8 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
           // initiated in a different app. End the drag session,
           // since we're done with it for now (until the user
           // drags back into mozilla).
-          mDragService->EndDragSession(false,
-                                       nsCocoaUtils::ModifiersForEvent([NSApp currentEvent]));
+          nsCOMPtr<nsIDragService> dragService = mDragService;
+          dragService->EndDragSession(false, nsCocoaUtils::ModifiersForEvent([NSApp currentEvent]));
         }
       }
       default:
@@ -5491,7 +5380,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 
   if (mDragService) {
     // set the dragend point from the current mouse location
-    nsDragService* dragService = static_cast<nsDragService*>(mDragService);
+    RefPtr<nsDragService> dragService = static_cast<nsDragService*>(mDragService);
     FlipCocoaScreenCoordinate(aPoint);
     dragService->SetDragEndPoint(gfx::IntPoint::Round(aPoint.x, aPoint.y));
 
@@ -5514,7 +5403,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
       }
     }
 
-    mDragService->EndDragSession(true, nsCocoaUtils::ModifiersForEvent(currentEvent));
+    dragService->EndDragSession(true, nsCocoaUtils::ModifiersForEvent(currentEvent));
     NS_RELEASE(mDragService);
   }
 

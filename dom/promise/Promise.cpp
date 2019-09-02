@@ -41,6 +41,7 @@
 #include "PromiseWorkerProxy.h"
 #include "WrapperFactory.h"
 #include "xpcpublic.h"
+#include "xpcprivate.h"
 
 namespace mozilla {
 namespace dom {
@@ -158,7 +159,7 @@ already_AddRefed<Promise> Promise::All(
     return nullptr;
   }
 
-  JS::AutoObjectVector promises(aCx);
+  JS::RootedVector<JSObject*> promises(aCx);
   if (!promises.reserve(aPromiseList.Length())) {
     aRv.NoteJSContextException(aCx);
     return nullptr;
@@ -237,13 +238,13 @@ void PromiseNativeThenHandlerBase::ResolvedCallback(
   if (promise) {
     mPromise->MaybeResolve(promise);
   } else {
-    mPromise->MaybeResolve(JS::UndefinedHandleValue);
+    mPromise->MaybeResolveWithUndefined();
   }
 }
 
 void PromiseNativeThenHandlerBase::RejectedCallback(
     JSContext* aCx, JS::Handle<JS::Value> aValue) {
-  mPromise->MaybeReject(aCx, aValue);
+  mPromise->MaybeReject(aValue);
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(PromiseNativeThenHandlerBase)
@@ -316,6 +317,7 @@ void Promise::MaybeReject(JSContext* aCx, JS::Handle<JS::Value> aValue) {
 
 enum class NativeHandlerTask : int32_t { Resolve, Reject };
 
+MOZ_CAN_RUN_SCRIPT
 static bool NativeHandlerCallback(JSContext* aCx, unsigned aArgc,
                                   JS::Value* aVp) {
   JS::CallArgs args = CallArgsFromVp(aArgc, aVp);
@@ -334,10 +336,12 @@ static bool NativeHandlerCallback(JSContext* aCx, unsigned aArgc,
   NativeHandlerTask task = static_cast<NativeHandlerTask>(v.toInt32());
 
   if (task == NativeHandlerTask::Resolve) {
-    handler->ResolvedCallback(aCx, args.get(0));
+    // handler is kept alive by "obj" on the stack.
+    MOZ_KnownLive(handler)->ResolvedCallback(aCx, args.get(0));
   } else {
     MOZ_ASSERT(task == NativeHandlerTask::Reject);
-    handler->RejectedCallback(aCx, args.get(0));
+    // handler is kept alive by "obj" on the stack.
+    MOZ_KnownLive(handler)->RejectedCallback(aCx, args.get(0));
   }
 
   return true;
@@ -355,7 +359,7 @@ static JSObject* CreateNativeHandlerFunction(JSContext* aCx,
 
   JS::Rooted<JSObject*> obj(aCx, JS_GetFunctionObject(func));
 
-  JS::ExposeObjectToActiveJS(aHolder);
+  JS::AssertObjectIsNotGray(aHolder);
   js::SetFunctionNativeReserved(obj, SLOT_NATIVEHANDLER,
                                 JS::ObjectValue(*aHolder));
   js::SetFunctionNativeReserved(obj, SLOT_NATIVEHANDLER_TASK,
@@ -377,14 +381,18 @@ class PromiseNativeHandlerShim final : public PromiseNativeHandler {
     MOZ_ASSERT(mInner);
   }
 
+  MOZ_CAN_RUN_SCRIPT
   void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
-    mInner->ResolvedCallback(aCx, aValue);
-    mInner = nullptr;
+    RefPtr<PromiseNativeHandler> inner = mInner.forget();
+    inner->ResolvedCallback(aCx, aValue);
+    MOZ_ASSERT(!mInner);
   }
 
+  MOZ_CAN_RUN_SCRIPT
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
-    mInner->RejectedCallback(aCx, aValue);
-    mInner = nullptr;
+    RefPtr<PromiseNativeHandler> inner = mInner.forget();
+    inner->RejectedCallback(aCx, aValue);
+    MOZ_ASSERT(!mInner);
   }
 
   bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
@@ -462,7 +470,7 @@ void Promise::HandleException(JSContext* aCx) {
   JS::Rooted<JS::Value> exn(aCx);
   if (JS_GetPendingException(aCx, &exn)) {
     JS_ClearPendingException(aCx);
-    // This is only called from MaybeSomething, so it's OK to MaybeReject here.
+    // Always reject even if this was called in *Resolve.
     MaybeReject(aCx, exn);
   }
 }
@@ -471,8 +479,9 @@ void Promise::HandleException(JSContext* aCx) {
 already_AddRefed<Promise> Promise::CreateFromExisting(
     nsIGlobalObject* aGlobal, JS::Handle<JSObject*> aPromiseObj,
     PropagateUserInteraction aPropagateUserInteraction) {
-  MOZ_ASSERT(js::GetObjectCompartment(aGlobal->GetGlobalJSObject()) ==
-             js::GetObjectCompartment(aPromiseObj));
+  MOZ_ASSERT(
+      js::GetObjectCompartment(aGlobal->GetGlobalJSObjectPreserveColor()) ==
+      js::GetObjectCompartment(aPromiseObj));
   RefPtr<Promise> p = new Promise(aGlobal);
   p->mPromiseObj = aPromiseObj;
   if (aPropagateUserInteraction == ePropagateUserInteraction &&
@@ -516,20 +525,17 @@ void Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise) {
       isMainThread ? xpc::WindowGlobalOrNull(aPromise) : nullptr;
 
   js::ErrorReport report(aCx);
-  if (report.init(aCx, result, js::ErrorReport::NoSideEffects)) {
+  RefPtr<Exception> exn;
+  if (result.isObject() &&
+      (NS_SUCCEEDED(UNWRAP_OBJECT(DOMException, &result, exn)) ||
+       NS_SUCCEEDED(UNWRAP_OBJECT(Exception, &result, exn)))) {
+    xpcReport->Init(aCx, exn, isChrome, win ? win->WindowID() : 0);
+  } else if (report.init(aCx, result, js::ErrorReport::NoSideEffects)) {
     xpcReport->Init(report.report(), report.toStringResult().c_str(), isChrome,
-                    win ? win->AsInner()->WindowID() : 0);
+                    win ? win->WindowID() : 0);
   } else {
     JS_ClearPendingException(aCx);
-
-    RefPtr<Exception> exn;
-    if (result.isObject() &&
-        (NS_SUCCEEDED(UNWRAP_OBJECT(DOMException, &result, exn)) ||
-         NS_SUCCEEDED(UNWRAP_OBJECT(Exception, &result, exn)))) {
-      xpcReport->Init(aCx, exn, isChrome, win ? win->AsInner()->WindowID() : 0);
-    } else {
-      return;
-    }
+    return;
   }
 
   // Now post an event to do the real reporting async
@@ -541,12 +547,36 @@ void Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise) {
   }
 }
 
-JSObject* Promise::GlobalJSObject() const {
-  return mGlobal->GetGlobalJSObject();
+void Promise::MaybeResolveWithClone(JSContext* aCx,
+                                    JS::Handle<JS::Value> aValue) {
+  JS::Rooted<JSObject*> sourceScope(aCx, JS::CurrentGlobalOrNull(aCx));
+  AutoEntryScript aes(GetParentObject(), "Promise resolution");
+  JSContext* cx = aes.cx();
+  JS::Rooted<JS::Value> value(cx, aValue);
+
+  xpc::StackScopedCloneOptions options;
+  options.wrapReflectors = true;
+  if (!StackScopedClone(cx, options, sourceScope, &value)) {
+    HandleException(cx);
+    return;
+  }
+  MaybeResolve(aCx, value);
 }
 
-JS::Compartment* Promise::Compartment() const {
-  return js::GetObjectCompartment(GlobalJSObject());
+void Promise::MaybeRejectWithClone(JSContext* aCx,
+                                   JS::Handle<JS::Value> aValue) {
+  JS::Rooted<JSObject*> sourceScope(aCx, JS::CurrentGlobalOrNull(aCx));
+  AutoEntryScript aes(GetParentObject(), "Promise rejection");
+  JSContext* cx = aes.cx();
+  JS::Rooted<JS::Value> value(cx, aValue);
+
+  xpc::StackScopedCloneOptions options;
+  options.wrapReflectors = true;
+  if (!StackScopedClone(cx, options, sourceScope, &value)) {
+    HandleException(cx);
+    return;
+  }
+  MaybeReject(aCx, value);
 }
 
 // A WorkerRunnable to resolve/reject the Promise on the worker thread.

@@ -9,8 +9,12 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/PWindowGlobalParent.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "nsRefPtrHashtable.h"
 #include "nsWrapperCache.h"
 #include "nsISupports.h"
+#include "mozilla/dom/WindowGlobalActor.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 
 class nsIPrincipal;
 class nsIURI;
@@ -19,22 +23,21 @@ class nsFrameLoader;
 namespace mozilla {
 namespace dom {
 
-class CanonicalBrowsingContext;
 class WindowGlobalChild;
 class JSWindowActorParent;
-class TabParent;
+class JSWindowActorMessageMeta;
 
 /**
  * A handle in the parent process to a specific nsGlobalWindowInner object.
  */
-class WindowGlobalParent final : public nsISupports,
-                                 public nsWrapperCache,
+class WindowGlobalParent final : public WindowGlobalActor,
                                  public PWindowGlobalParent {
   friend class PWindowGlobalParent;
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WindowGlobalParent)
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(WindowGlobalParent,
+                                                         WindowGlobalActor)
 
   static already_AddRefed<WindowGlobalParent> GetByInnerWindowId(
       uint64_t aInnerWindowId);
@@ -61,11 +64,10 @@ class WindowGlobalParent final : public nsISupports,
 
   // Get this actor's manager if it is not an in-process actor. Returns
   // |nullptr| if the actor has been torn down, or is in-process.
-  already_AddRefed<TabParent> GetTabParent();
+  already_AddRefed<BrowserParent> GetBrowserParent();
 
-  void HandleAsyncMessage(const nsString& aActorName,
-                          const nsString& aMessageName,
-                          ipc::StructuredCloneData& aData);
+  void ReceiveRawMessage(const JSWindowActorMessageMeta& aMeta,
+                         ipc::StructuredCloneData&& aData);
 
   // The principal of this WindowGlobal. This value will not change over the
   // lifetime of the WindowGlobal object, even to reflect changes in
@@ -73,22 +75,39 @@ class WindowGlobalParent final : public nsISupports,
   nsIPrincipal* DocumentPrincipal() { return mDocumentPrincipal; }
 
   // The BrowsingContext which this WindowGlobal has been loaded into.
-  CanonicalBrowsingContext* BrowsingContext() { return mBrowsingContext; }
+  CanonicalBrowsingContext* BrowsingContext() override {
+    return mBrowsingContext;
+  }
 
   // Get the root nsFrameLoader object for the tree of BrowsingContext nodes
   // which this WindowGlobal is a part of. This will be the nsFrameLoader
-  // holding the TabParent for remote tabs, and the root content frameloader for
-  // non-remote tabs.
+  // holding the BrowserParent for remote tabs, and the root content frameloader
+  // for non-remote tabs.
   nsFrameLoader* GetRootFrameLoader() { return mFrameLoader; }
 
   // The current URI which loaded in the document.
-  nsIURI* GetDocumentURI() { return mDocumentURI; }
+  nsIURI* GetDocumentURI() override { return mDocumentURI; }
 
   // Window IDs for inner/outer windows.
   uint64_t OuterWindowId() { return mOuterWindowId; }
   uint64_t InnerWindowId() { return mInnerWindowId; }
 
+  uint64_t ContentParentId();
+
+  int32_t OsPid();
+
   bool IsCurrentGlobal();
+
+  bool IsProcessRoot();
+
+  bool IsInitialDocument() { return mIsInitialDocument; }
+
+  already_AddRefed<Promise> ChangeFrameRemoteness(dom::BrowsingContext* aBc,
+                                                  const nsAString& aRemoteType,
+                                                  uint64_t aPendingSwitchId,
+                                                  ErrorResult& aRv);
+
+  already_AddRefed<Promise> GetSecurityInfo(ErrorResult& aRv);
 
   // Create a WindowGlobalParent from over IPC. This method should not be called
   // from outside of the IPC constructors.
@@ -103,13 +122,21 @@ class WindowGlobalParent final : public nsISupports,
                        JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
+  const nsAString& GetRemoteType() override;
+  JSWindowActor::Type GetSide() override { return JSWindowActor::Type::Parent; }
+
   // IPC messages
   mozilla::ipc::IPCResult RecvUpdateDocumentURI(nsIURI* aURI);
+  mozilla::ipc::IPCResult RecvSetIsInitialDocument(bool aIsInitialDocument) {
+    mIsInitialDocument = aIsInitialDocument;
+    return IPC_OK();
+  }
   mozilla::ipc::IPCResult RecvBecomeCurrentWindowGlobal();
   mozilla::ipc::IPCResult RecvDestroy();
-  mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aActorName,
-                                           const nsString& aMessageName,
-                                           const ClonedMessageData& aData);
+  mozilla::ipc::IPCResult RecvRawMessage(const JSWindowActorMessageMeta& aMeta,
+                                         const ClonedMessageData& aData);
+  mozilla::ipc::IPCResult RecvDidEmbedBrowsingContext(
+      dom::BrowsingContext* aContext);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -127,6 +154,7 @@ class WindowGlobalParent final : public nsISupports,
   uint64_t mOuterWindowId;
   bool mInProcess;
   bool mIPCClosed;
+  bool mIsInitialDocument;
 };
 
 }  // namespace dom

@@ -16,7 +16,7 @@ async function getExpectedRuntimeAll() {
   const runtimesPath = _getExpectedRuntimesPath();
   const currentPath = env.get("PWD");
   const path = `${currentPath}/${runtimesPath}`;
-  info(`Load ${ path }`);
+  info(`Load ${path}`);
   const buffer = await OS.File.read(path);
   const data = new TextDecoder().decode(buffer);
   return JSON.parse(data);
@@ -31,13 +31,15 @@ function isAvailable() {
 async function openAboutDebuggingWithADB() {
   const { document, tab, window } = await openAboutDebugging();
 
-  await pushPref("devtools.remote.adb.extensionURL",
-                 CHROME_URL_ROOT + "resources/test-adb-extension/adb-extension-#OS#.xpi");
+  await pushPref(
+    "devtools.remote.adb.extensionURL",
+    CHROME_URL_ROOT + "resources/test-adb-extension/adb-extension-#OS#.xpi"
+  );
   await checkAdbNotRunning();
 
   const { adbAddon } = require("devtools/shared/adb/adb-addon");
   adbAddon.install("internal");
-  const usbStatusElement = document.querySelector(".js-sidebar-usb-status");
+  const usbStatusElement = document.querySelector(".qa-sidebar-usb-status");
   await waitUntil(() => usbStatusElement.textContent.includes("USB enabled"));
   await waitForAdbStart();
 
@@ -46,6 +48,8 @@ async function openAboutDebuggingWithADB() {
 /* exported openAboutDebuggingWithADB */
 
 function _getExpectedRuntimesPath() {
-  const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
   return env.get("USB_RUNTIMES");
 }

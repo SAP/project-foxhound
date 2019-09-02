@@ -6,7 +6,7 @@ use api::{BuiltDisplayList, ColorF, DynamicProperties, Epoch};
 use api::{FilterOp, TempFilterData, FilterData, ComponentTransferFuncType};
 use api::{PipelineId, PropertyBinding, PropertyBindingId, ItemRange, MixBlendMode, StackingContext};
 use api::units::{LayoutSize, LayoutTransform};
-use internal_types::FastHashMap;
+use crate::internal_types::{FastHashMap, Filter};
 use std::sync::Arc;
 
 /// Stores a map of the animated property bindings for the current display list. These
@@ -154,13 +154,6 @@ impl Scene {
         self.root_pipeline_id = Some(pipeline_id);
     }
 
-    pub fn get_display_list_for_pipeline(&self, pipeline_id: PipelineId) -> &BuiltDisplayList {
-        &self.pipelines
-            .get(&pipeline_id)
-            .expect("Expected to find display list for pipeline")
-            .display_list
-    }
-
     pub fn set_display_list(
         &mut self,
         pipeline_id: PipelineId,
@@ -203,76 +196,14 @@ impl Scene {
     }
 }
 
-/// An arbitrary number which we assume opacity is invisible below.
-pub const OPACITY_EPSILON: f32 = 0.001;
-
-pub trait FilterOpHelpers {
-    fn is_visible(&self) -> bool;
-    fn is_noop(&self) -> bool;
-}
-
-impl FilterOpHelpers for FilterOp {
-    fn is_visible(&self) -> bool {
-        match *self {
-            FilterOp::Identity |
-            FilterOp::Blur(..) |
-            FilterOp::Brightness(..) |
-            FilterOp::Contrast(..) |
-            FilterOp::Grayscale(..) |
-            FilterOp::HueRotate(..) |
-            FilterOp::Invert(..) |
-            FilterOp::Saturate(..) |
-            FilterOp::Sepia(..) |
-            FilterOp::DropShadow(..) |
-            FilterOp::ColorMatrix(..) |
-            FilterOp::SrgbToLinear |
-            FilterOp::LinearToSrgb |
-            FilterOp::ComponentTransfer  => true,
-            FilterOp::Opacity(_, amount) => {
-                amount > OPACITY_EPSILON
-            }
-        }
-    }
-
-    fn is_noop(&self) -> bool {
-        match *self {
-            FilterOp::Identity => false, // this is intentional
-            FilterOp::Blur(length) => length == 0.0,
-            FilterOp::Brightness(amount) => amount == 1.0,
-            FilterOp::Contrast(amount) => amount == 1.0,
-            FilterOp::Grayscale(amount) => amount == 0.0,
-            FilterOp::HueRotate(amount) => amount == 0.0,
-            FilterOp::Invert(amount) => amount == 0.0,
-            FilterOp::Opacity(_, amount) => amount >= 1.0,
-            FilterOp::Saturate(amount) => amount == 1.0,
-            FilterOp::Sepia(amount) => amount == 0.0,
-            FilterOp::DropShadow(offset, blur, _) => {
-                offset.x == 0.0 && offset.y == 0.0 && blur == 0.0
-            },
-            FilterOp::ColorMatrix(matrix) => {
-                matrix == [1.0, 0.0, 0.0, 0.0,
-                           0.0, 1.0, 0.0, 0.0,
-                           0.0, 0.0, 1.0, 0.0,
-                           0.0, 0.0, 0.0, 1.0,
-                           0.0, 0.0, 0.0, 0.0]
-            }
-            FilterOp::SrgbToLinear |
-            FilterOp::LinearToSrgb |
-            FilterOp::ComponentTransfer => false,
-        }
-    }
-}
-
 pub trait StackingContextHelpers {
     fn mix_blend_mode_for_compositing(&self) -> Option<MixBlendMode>;
     fn filter_ops_for_compositing(
         &self,
-        display_list: &BuiltDisplayList,
         input_filters: ItemRange<FilterOp>,
-    ) -> Vec<FilterOp>;
+    ) -> Vec<Filter>;
     fn filter_datas_for_compositing(
         &self,
-        display_list: &BuiltDisplayList,
         input_filter_datas: &[TempFilterData],
     ) -> Vec<FilterData>;
 }
@@ -287,22 +218,20 @@ impl StackingContextHelpers for StackingContext {
 
     fn filter_ops_for_compositing(
         &self,
-        display_list: &BuiltDisplayList,
         input_filters: ItemRange<FilterOp>,
-    ) -> Vec<FilterOp> {
+    ) -> Vec<Filter> {
         // TODO(gw): Now that we resolve these later on,
         //           we could probably make it a bit
         //           more efficient than cloning these here.
         let mut filters = vec![];
-        for filter in display_list.get(input_filters) {
-            filters.push(filter);
+        for filter in input_filters {
+            filters.push(filter.into());
         }
         filters
     }
 
     fn filter_datas_for_compositing(
         &self,
-        display_list: &BuiltDisplayList,
         input_filter_datas: &[TempFilterData],
     ) -> Vec<FilterData> {
         // TODO(gw): Now that we resolve these later on,
@@ -310,17 +239,17 @@ impl StackingContextHelpers for StackingContext {
         //           more efficient than cloning these here.
         let mut filter_datas = vec![];
         for temp_filter_data in input_filter_datas {
-            let func_types : Vec<ComponentTransferFuncType> = display_list.get(temp_filter_data.func_types).collect();
+            let func_types : Vec<ComponentTransferFuncType> = temp_filter_data.func_types.iter().collect();
             debug_assert!(func_types.len() == 4);
             filter_datas.push( FilterData {
                 func_r_type: func_types[0],
-                r_values: display_list.get(temp_filter_data.r_values).collect(),
+                r_values: temp_filter_data.r_values.iter().collect(),
                 func_g_type: func_types[1],
-                g_values: display_list.get(temp_filter_data.g_values).collect(),
+                g_values: temp_filter_data.g_values.iter().collect(),
                 func_b_type: func_types[2],
-                b_values: display_list.get(temp_filter_data.b_values).collect(),
+                b_values: temp_filter_data.b_values.iter().collect(),
                 func_a_type: func_types[3],
-                a_values: display_list.get(temp_filter_data.a_values).collect(),
+                a_values: temp_filter_data.a_values.iter().collect(),
             });
         }
         filter_datas

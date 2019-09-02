@@ -3,7 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { FETCH_CHILDREN, RESET, SELECT, HIGHLIGHT } = require("../constants");
+const {
+  AUDIT,
+  FETCH_CHILDREN,
+  HIGHLIGHT,
+  RESET,
+  SELECT,
+} = require("../constants");
 
 /**
  * Initial state definition
@@ -22,11 +28,17 @@ function accessibles(state = getInitialState(), action) {
     case HIGHLIGHT:
     case SELECT:
       return onReceiveAncestry(state, action);
+    case AUDIT:
+      return onAudit(state, action);
     case RESET:
       return getInitialState();
     default:
       return state;
   }
+}
+
+function getActorID(accessible) {
+  return accessible.actorID || (accessible._form && accessible._form.actor);
 }
 
 /**
@@ -37,7 +49,8 @@ function accessibles(state = getInitialState(), action) {
  * @param {Object} accessible Accessible object to remove from cache.
  */
 function cleanupChild(cache, accessible) {
-  const cached = cache.get(accessible.actorID);
+  const actorID = getActorID(accessible);
+  const cached = cache.get(actorID);
   if (!cached) {
     return;
   }
@@ -46,7 +59,7 @@ function cleanupChild(cache, accessible) {
     cleanupChild(cache, child);
   }
 
-  cache.delete(accessible.actorID);
+  cache.delete(actorID);
 }
 
 /**
@@ -58,7 +71,7 @@ function cleanupChild(cache, accessible) {
  * @param {Object} accessible Accessible object to test for staleness.
  */
 function staleChildren(cache, accessible) {
-  const cached = cache.get(accessible.actorID);
+  const cached = cache.get(getActorID(accessible));
   if (!cached) {
     return false;
   }
@@ -67,7 +80,7 @@ function staleChildren(cache, accessible) {
 }
 
 function updateChildrenCache(cache, accessible, children) {
-  const { actorID } = accessible;
+  const actorID = getActorID(accessible);
 
   if (cache.has(actorID)) {
     const cached = cache.get(actorID);
@@ -88,6 +101,14 @@ function updateChildrenCache(cache, accessible, children) {
   return cache;
 }
 
+function updateAncestry(cache, ancestry) {
+  ancestry.forEach(({ accessible, children }) =>
+    updateChildrenCache(cache, accessible, children)
+  );
+
+  return cache;
+}
+
 /**
  * Handles fetching of accessible children.
  * @param {Map}     cache  Previous state maintaining a cache of previously
@@ -96,27 +117,40 @@ function updateChildrenCache(cache, accessible, children) {
  * @return {Object} updated state
  */
 function onReceiveChildren(cache, action) {
-  const { accessible, response: children, error } = action;
-
-  if (error) {
-    console.warn("Error fetching children", accessible, error);
-    return cache;
+  const { error, accessible, response: children } = action;
+  if (!error) {
+    return updateChildrenCache(new Map(cache), accessible, children);
   }
 
-  return updateChildrenCache(new Map(cache), accessible, children);
-}
-
-function onReceiveAncestry(cache, action) {
-  const { accessible: acc, response: ancestry, error } = action;
-
-  if (error) {
-    console.warn("Error fetching ancestry", acc, error);
+  if (accessible.actorID) {
+    console.warn(`Error fetching children: `, accessible, error);
     return cache;
   }
 
   const newCache = new Map(cache);
-  ancestry.forEach(({ accessible, children }) =>
-    updateChildrenCache(newCache, accessible, children));
+  cleanupChild(newCache, accessible);
+  return newCache;
+}
+
+function onReceiveAncestry(cache, action) {
+  const { error, response: ancestry } = action;
+  if (error) {
+    console.warn(`Error fetching ancestry: `, error);
+    return cache;
+  }
+
+  return updateAncestry(new Map(cache), ancestry);
+}
+
+function onAudit(cache, action) {
+  const { error, response: ancestries } = action;
+  if (error) {
+    console.warn(`Error performing an audit: `, error);
+    return cache;
+  }
+
+  const newCache = new Map(cache);
+  ancestries.forEach(ancestry => updateAncestry(newCache, ancestry));
 
   return newCache;
 }

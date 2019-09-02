@@ -56,8 +56,8 @@
   return slowPathCheckNoExecute(cx, script);
 }
 
-/* static */ js::ResumeMode js::Debugger::onEnterFrame(JSContext* cx,
-                                                       AbstractFramePtr frame) {
+/* static */ inline js::ResumeMode js::Debugger::onEnterFrame(
+    JSContext* cx, AbstractFramePtr frame) {
   MOZ_ASSERT_IF(frame.hasScript() && frame.script()->isDebuggee(),
                 frame.isDebuggee());
   if (!frame.isDebuggee()) {
@@ -66,7 +66,7 @@
   return slowPathOnEnterFrame(cx, frame);
 }
 
-/* static */ js::ResumeMode js::Debugger::onResumeFrame(
+/* static */ inline js::ResumeMode js::Debugger::onResumeFrame(
     JSContext* cx, AbstractFramePtr frame) {
   MOZ_ASSERT_IF(frame.hasScript() && frame.script()->isDebuggee(),
                 frame.isDebuggee());
@@ -76,7 +76,7 @@
   return slowPathOnResumeFrame(cx, frame);
 }
 
-/* static */ js::ResumeMode js::Debugger::onDebuggerStatement(
+/* static */ inline js::ResumeMode js::Debugger::onDebuggerStatement(
     JSContext* cx, AbstractFramePtr frame) {
   if (!cx->realm()->isDebuggee()) {
     return ResumeMode::Continue;
@@ -84,7 +84,7 @@
   return slowPathOnDebuggerStatement(cx, frame);
 }
 
-/* static */ js::ResumeMode js::Debugger::onExceptionUnwind(
+/* static */ inline js::ResumeMode js::Debugger::onExceptionUnwind(
     JSContext* cx, AbstractFramePtr frame) {
   if (!cx->realm()->isDebuggee()) {
     return ResumeMode::Continue;
@@ -92,21 +92,21 @@
   return slowPathOnExceptionUnwind(cx, frame);
 }
 
-/* static */ void js::Debugger::onNewWasmInstance(
+/* static */ inline void js::Debugger::onNewWasmInstance(
     JSContext* cx, Handle<WasmInstanceObject*> wasmInstance) {
   if (cx->realm()->isDebuggee()) {
     slowPathOnNewWasmInstance(cx, wasmInstance);
   }
 }
 
-/* static */ void js::Debugger::onNewPromise(JSContext* cx,
-                                             Handle<PromiseObject*> promise) {
+/* static */ inline void js::Debugger::onNewPromise(
+    JSContext* cx, Handle<PromiseObject*> promise) {
   if (MOZ_UNLIKELY(cx->realm()->isDebuggee())) {
     slowPathPromiseHook(cx, Debugger::OnNewPromise, promise);
   }
 }
 
-/* static */ void js::Debugger::onPromiseSettled(
+/* static */ inline void js::Debugger::onPromiseSettled(
     JSContext* cx, Handle<PromiseObject*> promise) {
   if (MOZ_UNLIKELY(promise->realm()->isDebuggee())) {
     slowPathPromiseHook(cx, Debugger::OnPromiseSettled, promise);
@@ -134,6 +134,17 @@ inline js::PromiseObject* js::DebuggerObject::promise() const {
   }
 
   return &referent->as<PromiseObject>();
+}
+
+inline bool js::DebuggerFrame::hasGenerator() const {
+  return !getReservedSlot(GENERATOR_INFO_SLOT).isUndefined();
+}
+
+inline js::DebuggerFrame::GeneratorInfo* js::DebuggerFrame::generatorInfo()
+    const {
+  MOZ_ASSERT(hasGenerator());
+  return static_cast<GeneratorInfo*>(
+      getReservedSlot(GENERATOR_INFO_SLOT).toPrivate());
 }
 
 #endif /* vm_Debugger_inl_h */

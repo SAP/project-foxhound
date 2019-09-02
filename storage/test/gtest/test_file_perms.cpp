@@ -13,7 +13,8 @@
  * we request they be
  */
 
-TEST(storage_file_perms, Test) {
+TEST(storage_file_perms, Test)
+{
   nsCOMPtr<mozIStorageConnection> db(getDatabase());
   nsCOMPtr<nsIFile> dbFile;
   do_check_success(db->GetDatabaseFile(getter_AddRefs(dbFile)));
@@ -22,7 +23,7 @@ TEST(storage_file_perms, Test) {
   do_check_success(dbFile->GetPermissions(&perms));
 
   // This reflexts the permissions defined by SQLITE_DEFAULT_FILE_PERMISSIONS in
-  // db/sqlite3/src/Makefile.in and must be kept in sync with that
+  // third_party/sqlite3/src/Makefile.in and must be kept in sync with that
 #ifdef ANDROID
   do_check_true(perms == (PR_IRUSR | PR_IWUSR));
 #elif defined(XP_WIN)

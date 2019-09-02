@@ -1,12 +1,12 @@
 import os
 import sys
 
-from metadata import MetadataUpdateRunner
-from sync import SyncFromUpstreamRunner
-from tree import GitTree, HgTree, NoVCSTree
+from .metadata import MetadataUpdateRunner
+from .sync import SyncFromUpstreamRunner
+from .tree import GitTree, HgTree, NoVCSTree
 
-from base import Step, StepRunner, exit_clean, exit_unclean
-from state import SavedState, UnsavedState
+from .base import Step, StepRunner, exit_clean, exit_unclean
+from .state import SavedState, UnsavedState
 
 
 def setup_paths(sync_path):
@@ -87,12 +87,12 @@ class UpdateMetadata(Step):
         kwargs = state.kwargs
         with state.push(["local_tree", "sync_tree", "paths", "serve_root"]):
             state.run_log = kwargs["run_log"]
-            state.ignore_existing = kwargs["ignore_existing"]
             state.stability = kwargs["stability"]
             state.patch = kwargs["patch"]
             state.suite_name = kwargs["suite_name"]
             state.product = kwargs["product"]
             state.config = kwargs["config"]
+            state.full_update = kwargs["full"]
             state.extra_properties = kwargs["extra_property"]
             runner = MetadataUpdateRunner(self.logger, state)
             runner.run()
@@ -151,7 +151,7 @@ class WPTUpdate(object):
                 # If the sync path doesn't exist we defer this until it does
                 setup_paths(kwargs["sync_path"])
 
-        if kwargs["store_state"]:
+        if kwargs.get("store_state", False):
             self.state = SavedState(logger)
         else:
             self.state = UnsavedState(logger)

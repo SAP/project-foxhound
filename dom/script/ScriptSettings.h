@@ -18,6 +18,7 @@
 
 #include "jsapi.h"
 #include "js/Debug.h"
+#include "js/Warnings.h"  // JS::WarningReporter
 
 class nsPIDOMWindowInner;
 class nsGlobalWindowInner;
@@ -117,13 +118,6 @@ nsIGlobalObject* GetCurrentGlobal();
 //   Components.utils.
 nsIPrincipal* GetWebIDLCallerPrincipal();
 
-// This may be used by callers that know that their incumbent global is non-
-// null (i.e. they know there have been no System Caller pushes since the
-// inner-most script execution).
-inline JSObject& IncumbentJSGlobal() {
-  return *GetIncumbentGlobal()->GetGlobalJSObject();
-}
-
 // Returns whether JSAPI is active right now.  If it is not, working with a
 // JSContext you grab from somewhere random is not OK and you should be doing
 // AutoJSAPI or AutoEntryScript to get yourself a properly set up JSContext.
@@ -220,6 +214,9 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
   // If aGlobalObject represents a web-visible global, errors reported by this
   // AutoJSAPI as it comes off the stack will fire the relevant error events and
   // show up in the corresponding web console.
+  //
+  // Successfully initializing the AutoJSAPI will ensure that it enters the
+  // Realm of aGlobalObject's JSObject and exposes that JSObject to active JS.
   MOZ_MUST_USE bool Init(nsIGlobalObject* aGlobalObject);
 
   // This is a helper that grabs the native global associated with aObject and
@@ -237,7 +234,7 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
   // show up in the corresponding web console.
   MOZ_MUST_USE bool Init(nsIGlobalObject* aGlobalObject, JSContext* aCx);
 
-  // Convenience functions to take an nsPIDOMWindow* or nsGlobalWindow*,
+  // Convenience functions to take an nsPIDOMWindowInner or nsGlobalWindowInner,
   // when it is more easily available than an nsIGlobalObject.
   MOZ_MUST_USE bool Init(nsPIDOMWindowInner* aWindow);
   MOZ_MUST_USE bool Init(nsPIDOMWindowInner* aWindow, JSContext* aCx);
@@ -270,6 +267,12 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
   // Note that this fails if and only if we OOM while wrapping the exception
   // into the current compartment.
   MOZ_MUST_USE bool StealException(JS::MutableHandle<JS::Value> aVal);
+
+  // As for StealException(), but put the saved frames for any stack trace
+  // associated with the point the exception was thrown into aStack.
+  // aVal will be in the current compartment, but aStack might not be.
+  MOZ_MUST_USE bool StealExceptionAndStack(JS::MutableHandle<JS::Value> aVal,
+                                           JS::MutableHandle<JSObject*> aStack);
 
   // Peek the current exception from the JS engine, without stealing it.
   // Callers must ensure that HasException() is true, and that cx() is in a
@@ -310,15 +313,21 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
  * |aReason| should be a statically-allocated C string naming the reason we're
  * invoking JavaScript code: "setTimeout", "event", and so on. The devtools use
  * these strings to label JS execution in timeline and profiling displays.
+ *
  */
 class MOZ_STACK_CLASS AutoEntryScript : public AutoJSAPI {
  public:
+  // Constructing the AutoEntryScript will ensure that it enters the
+  // Realm of aGlobalObject's JSObject and exposes that JSObject to active JS.
   AutoEntryScript(nsIGlobalObject* aGlobalObject, const char* aReason,
                   bool aIsMainThread = NS_IsMainThread());
 
   // aObject can be any object from the relevant global. It must not be a
   // cross-compartment wrapper because CCWs are not associated with a single
   // global.
+  //
+  // Constructing the AutoEntryScript will ensure that it enters the
+  // Realm of aObject JSObject and exposes aObject's global to active JS.
   AutoEntryScript(JSObject* aObject, const char* aReason,
                   bool aIsMainThread = NS_IsMainThread());
 

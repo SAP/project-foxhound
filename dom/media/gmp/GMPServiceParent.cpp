@@ -27,7 +27,7 @@
 #include "nsComponentManagerUtils.h"
 #include "runnable_utils.h"
 #include "VideoUtils.h"
-#if defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxInfo.h"
 #endif
 #include "nsAppDirectoryServiceDefs.h"
@@ -214,17 +214,6 @@ nsresult GeckoMediaPluginServiceParent::InitStorage() {
     return rv;
   }
 
-  rv = mStorageBaseDir->Create(nsIFile::DIRECTORY_TYPE, 0700);
-  if (NS_WARN_IF(NS_FAILED(rv) && rv != NS_ERROR_FILE_ALREADY_EXISTS)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsIFile> gmpDirWithoutPlatform;
-  rv = mStorageBaseDir->Clone(getter_AddRefs(gmpDirWithoutPlatform));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
   nsAutoString platform;
   rv = GMPPlatformString(platform);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -233,11 +222,6 @@ nsresult GeckoMediaPluginServiceParent::InitStorage() {
 
   rv = mStorageBaseDir->Append(platform);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = mStorageBaseDir->Create(nsIFile::DIRECTORY_TYPE, 0700);
-  if (NS_WARN_IF(NS_FAILED(rv) && rv != NS_ERROR_FILE_ALREADY_EXISTS)) {
     return rv;
   }
 
@@ -417,17 +401,18 @@ void GeckoMediaPluginServiceParent::InitializePlugins(
   RefPtr<GenericPromise> p = mInitPromise.Ensure(__func__);
   InvokeAsync(aAbstractGMPThread, this, __func__,
               &GeckoMediaPluginServiceParent::LoadFromEnvironment)
-      ->Then(aAbstractGMPThread, __func__,
-             [self]() -> void {
-               MonitorAutoLock lock(self->mInitPromiseMonitor);
-               self->mLoadPluginsFromDiskComplete = true;
-               self->mInitPromise.Resolve(true, __func__);
-             },
-             [self]() -> void {
-               MonitorAutoLock lock(self->mInitPromiseMonitor);
-               self->mLoadPluginsFromDiskComplete = true;
-               self->mInitPromise.Reject(NS_ERROR_FAILURE, __func__);
-             });
+      ->Then(
+          aAbstractGMPThread, __func__,
+          [self]() -> void {
+            MonitorAutoLock lock(self->mInitPromiseMonitor);
+            self->mLoadPluginsFromDiskComplete = true;
+            self->mInitPromise.Resolve(true, __func__);
+          },
+          [self]() -> void {
+            MonitorAutoLock lock(self->mInitPromiseMonitor);
+            self->mLoadPluginsFromDiskComplete = true;
+            self->mInitPromise.Reject(NS_ERROR_FAILURE, __func__);
+          });
 }
 
 void GeckoMediaPluginServiceParent::NotifySyncShutdownComplete() {
@@ -523,12 +508,12 @@ RefPtr<GenericPromise> GeckoMediaPluginServiceParent::LoadFromEnvironment() {
 
   mScannedPluginOnDisk = true;
   return GenericPromise::All(thread, promises)
-      ->Then(thread, __func__,
-             []() { return GenericPromise::CreateAndResolve(true, __func__); },
-             []() {
-               return GenericPromise::CreateAndReject(NS_ERROR_FAILURE,
-                                                      __func__);
-             });
+      ->Then(
+          thread, __func__,
+          []() { return GenericPromise::CreateAndResolve(true, __func__); },
+          []() {
+            return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+          });
 }
 
 class NotifyObserversTask final : public mozilla::Runnable {
@@ -628,23 +613,24 @@ RefPtr<GenericPromise> GeckoMediaPluginServiceParent::AsyncAddPluginDirectory(
   RefPtr<GeckoMediaPluginServiceParent> self = this;
   return InvokeAsync(thread, this, __func__,
                      &GeckoMediaPluginServiceParent::AddOnGMPThread, dir)
-      ->Then(mMainThread, __func__,
-             [dir, self](bool aVal) {
-               LOGD(
-                   ("GeckoMediaPluginServiceParent::AsyncAddPluginDirectory %s "
-                    "succeeded",
-                    NS_ConvertUTF16toUTF8(dir).get()));
-               MOZ_ASSERT(NS_IsMainThread());
-               self->UpdateContentProcessGMPCapabilities();
-               return GenericPromise::CreateAndResolve(aVal, __func__);
-             },
-             [dir](nsresult aResult) {
-               LOGD(
-                   ("GeckoMediaPluginServiceParent::AsyncAddPluginDirectory %s "
-                    "failed",
-                    NS_ConvertUTF16toUTF8(dir).get()));
-               return GenericPromise::CreateAndReject(aResult, __func__);
-             });
+      ->Then(
+          mMainThread, __func__,
+          [dir, self](bool aVal) {
+            LOGD(
+                ("GeckoMediaPluginServiceParent::AsyncAddPluginDirectory %s "
+                 "succeeded",
+                 NS_ConvertUTF16toUTF8(dir).get()));
+            MOZ_ASSERT(NS_IsMainThread());
+            self->UpdateContentProcessGMPCapabilities();
+            return GenericPromise::CreateAndResolve(aVal, __func__);
+          },
+          [dir](nsresult aResult) {
+            LOGD(
+                ("GeckoMediaPluginServiceParent::AsyncAddPluginDirectory %s "
+                 "failed",
+                 NS_ConvertUTF16toUTF8(dir).get()));
+            return GenericPromise::CreateAndReject(aResult, __func__);
+          });
 }
 
 NS_IMETHODIMP
@@ -785,9 +771,9 @@ already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::SelectPluginForAPI(
 }
 
 RefPtr<GMPParent> CreateGMPParent(AbstractThread* aMainThread) {
-#if defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   if (!SandboxInfo::Get().CanSandboxMedia()) {
-    if (!StaticPrefs::MediaGmpInsecureAllow()) {
+    if (!StaticPrefs::media_gmp_insecure_allow()) {
       NS_WARNING("Denying media plugin load due to lack of sandboxing.");
       return nullptr;
     }
@@ -1139,25 +1125,15 @@ nsresult GeckoMediaPluginServiceParent::GetNodeId(
     return rv;
   }
 
+  // $profileDir/gmp/$platform/$gmpName/
   rv = path->Append(aGMPName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  // $profileDir/gmp/$platform/$gmpName/
-  rv = path->Create(nsIFile::DIRECTORY_TYPE, 0700);
-  if (rv != NS_ERROR_FILE_ALREADY_EXISTS && NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
+  // $profileDir/gmp/$platform/$gmpName/id/
   rv = path->AppendNative(NS_LITERAL_CSTRING("id"));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  // $profileDir/gmp/$platform/$gmpName/id/
-  rv = path->Create(nsIFile::DIRECTORY_TYPE, 0700);
-  if (rv != NS_ERROR_FILE_ALREADY_EXISTS && NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
@@ -1325,18 +1301,6 @@ static void KillPlugins(const nsTArray<RefPtr<GMPParent>>& aPlugins,
   }
 }
 
-static nsresult DeleteDir(nsIFile* aPath) {
-  bool exists = false;
-  nsresult rv = aPath->Exists(&exists);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  if (exists) {
-    return aPath->Remove(true);
-  }
-  return NS_OK;
-}
-
 struct NodeFilter {
   explicit NodeFilter(const nsTArray<nsCString>& nodeIDs) : mNodeIDs(nodeIDs) {}
   bool operator()(GMPParent* aParent) {
@@ -1416,7 +1380,7 @@ void GeckoMediaPluginServiceParent::ClearNodeIdAndPlugin(
       continue;
     }
 
-    if (NS_FAILED(DeleteDir(dirEntry))) {
+    if (NS_FAILED(dirEntry->Remove(true))) {
       NS_WARNING("Failed to delete GMP storage directory for the node");
     }
   }
@@ -1603,7 +1567,7 @@ void GeckoMediaPluginServiceParent::ClearStorage() {
     return;
   }
 
-  if (NS_FAILED(DeleteDir(path))) {
+  if (NS_FAILED(path->Remove(true))) {
     NS_WARNING("Failed to delete GMP storage directory");
   }
 

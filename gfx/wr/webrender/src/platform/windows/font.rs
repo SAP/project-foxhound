@@ -5,9 +5,9 @@
 use api::{FontInstanceFlags, FontKey, FontRenderMode, FontVariation};
 use api::{ColorU, GlyphDimensions, NativeFontHandle};
 use dwrote;
-use gamma_lut::ColorLut;
-use glyph_rasterizer::{FontInstance, FontTransform, GlyphKey};
-use internal_types::{FastHashMap, FastHashSet, ResourceCacheError};
+use crate::gamma_lut::ColorLut;
+use crate::glyph_rasterizer::{FontInstance, FontTransform, GlyphKey};
+use crate::internal_types::{FastHashMap, FastHashSet, ResourceCacheError};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
@@ -17,11 +17,12 @@ use std::sync::{Arc, Mutex};
 cfg_if! {
     if #[cfg(feature = "pathfinder")] {
         use pathfinder_font_renderer::{PathfinderComPtr, IDWriteFontFace};
-        use glyph_rasterizer::NativeFontHandleWrapper;
+        use crate::glyph_rasterizer::NativeFontHandleWrapper;
     } else if #[cfg(not(feature = "pathfinder"))] {
         use api::FontInstancePlatformOptions;
-        use glyph_rasterizer::{GlyphFormat, GlyphRasterError, GlyphRasterResult, RasterizedGlyph};
-        use gamma_lut::GammaLut;
+        use crate::glyph_rasterizer::{GlyphFormat, GlyphRasterError, GlyphRasterResult, RasterizedGlyph};
+        use crate::gamma_lut::GammaLut;
+        use std::mem;
     }
 }
 
@@ -121,6 +122,10 @@ fn dwrite_render_mode(
         FontRenderMode::Alpha | FontRenderMode::Subpixel => {
             if bitmaps || font.flags.contains(FontInstanceFlags::FORCE_GDI) {
                 dwrote::DWRITE_RENDERING_MODE_GDI_CLASSIC
+            } else if font.flags.contains(FontInstanceFlags::FORCE_SYMMETRIC) {
+                dwrote::DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC
+            } else if font.flags.contains(FontInstanceFlags::NO_SYMMETRIC) {
+                dwrote::DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL
             } else {
                 font_face.get_recommended_rendering_mode_default_params(em_size, 1.0, measure_mode)
             }
@@ -435,7 +440,7 @@ impl FontContext {
                     top: -bounds.top,
                     width,
                     height,
-                    advance: advance,
+                    advance,
                 }
             })
     }
@@ -448,6 +453,7 @@ impl FontContext {
         texture_type: dwrote::DWRITE_TEXTURE_TYPE,
         render_mode: FontRenderMode,
         bitmaps: bool,
+        subpixel_bgr: bool,
     ) -> Vec<u8> {
         match (texture_type, render_mode, bitmaps) {
             (dwrote::DWRITE_TEXTURE_ALIASED_1x1, _, _) => {
@@ -465,9 +471,13 @@ impl FontContext {
                 let length = pixels.len() / 3;
                 let mut bgra_pixels: Vec<u8> = vec![0; length * 4];
                 for i in 0 .. length {
-                    bgra_pixels[i * 4 + 0] = pixels[i * 3 + 2];
-                    bgra_pixels[i * 4 + 1] = pixels[i * 3 + 1];
-                    bgra_pixels[i * 4 + 2] = pixels[i * 3 + 0];
+                    let (mut r, g, mut b) = (pixels[i * 3 + 0], pixels[i * 3 + 1], pixels[i * 3 + 2]);
+                    if subpixel_bgr {
+                        mem::swap(&mut r, &mut b);
+                    }
+                    bgra_pixels[i * 4 + 0] = b;
+                    bgra_pixels[i * 4 + 1] = g;
+                    bgra_pixels[i * 4 + 2] = r;
                     bgra_pixels[i * 4 + 3] = 0xff;
                 }
                 bgra_pixels
@@ -552,30 +562,17 @@ impl FontContext {
         }
 
         let pixels = analysis.create_alpha_texture(texture_type, bounds).or(Err(GlyphRasterError::LoadFailed))?;
-        let mut bgra_pixels = self.convert_to_bgra(&pixels, texture_type, font.render_mode, bitmaps);
-
-        // These are the default values we use in Gecko.
-        // We use a gamma value of 2.3 for gdi fonts
-        const GDI_GAMMA: u16 = 230;
+        let mut bgra_pixels = self.convert_to_bgra(&pixels, texture_type, font.render_mode, bitmaps,
+                                                   font.flags.contains(FontInstanceFlags::SUBPIXEL_BGR));
 
         let FontInstancePlatformOptions { gamma, contrast, .. } = font.platform_options.unwrap_or_default();
-        let gdi_gamma = match font.render_mode {
-            FontRenderMode::Mono => GDI_GAMMA,
-            FontRenderMode::Alpha | FontRenderMode::Subpixel => {
-                if bitmaps || font.flags.contains(FontInstanceFlags::FORCE_GDI) {
-                    GDI_GAMMA
-                } else {
-                    gamma
-                }
-            }
-        };
         let gamma_lut = self.gamma_luts
-            .entry((gdi_gamma, contrast))
+            .entry((gamma, contrast))
             .or_insert_with(||
                 GammaLut::new(
                     contrast as f32 / 100.0,
-                    gdi_gamma as f32 / 100.0,
-                    gdi_gamma as f32 / 100.0,
+                    gamma as f32 / 100.0,
+                    gamma as f32 / 100.0,
                 ));
         gamma_lut.preblend(&mut bgra_pixels, font.color);
 

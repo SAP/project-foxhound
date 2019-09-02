@@ -14,7 +14,8 @@ this.BACKGROUND_PROCESS = 2;
  *                       Use this in action creators if you need different logic
  *                       for ui/background processes.
  */
-const globalImportContext = typeof Window === "undefined" ? BACKGROUND_PROCESS : UI_CODE;
+const globalImportContext =
+  typeof Window === "undefined" ? BACKGROUND_PROCESS : UI_CODE;
 // Export for tests
 this.globalImportContext = globalImportContext;
 
@@ -30,6 +31,7 @@ for (const type of [
   "ARCHIVE_FROM_POCKET",
   "AS_ROUTER_INITIALIZED",
   "AS_ROUTER_PREF_CHANGED",
+  "AS_ROUTER_TARGETING_UPDATE",
   "AS_ROUTER_TELEMETRY_USER_EVENT",
   "BLOCK_URL",
   "BOOKMARK_URL",
@@ -43,12 +45,18 @@ for (const type of [
   "DISCOVERY_STREAM_CONFIG_SETUP",
   "DISCOVERY_STREAM_CONFIG_SET_VALUE",
   "DISCOVERY_STREAM_FEEDS_UPDATE",
+  "DISCOVERY_STREAM_FEED_UPDATE",
   "DISCOVERY_STREAM_IMPRESSION_STATS",
   "DISCOVERY_STREAM_LAYOUT_RESET",
   "DISCOVERY_STREAM_LAYOUT_UPDATE",
-  "DISCOVERY_STREAM_OPT_OUT",
+  "DISCOVERY_STREAM_LINK_BLOCKED",
+  "DISCOVERY_STREAM_LOADED_CONTENT",
+  "DISCOVERY_STREAM_RETRY_FEED",
+  "DISCOVERY_STREAM_SPOCS_CAPS",
   "DISCOVERY_STREAM_SPOCS_ENDPOINT",
+  "DISCOVERY_STREAM_SPOCS_FILL",
   "DISCOVERY_STREAM_SPOCS_UPDATE",
+  "DISCOVERY_STREAM_SPOC_BLOCKED",
   "DISCOVERY_STREAM_SPOC_IMPRESSION",
   "DOWNLOAD_CHANGED",
   "FAKE_FOCUS_SEARCH",
@@ -67,7 +75,6 @@ for (const type of [
   "OPEN_NEW_WINDOW",
   "OPEN_PRIVATE_WINDOW",
   "OPEN_WEBEXT_SETTINGS",
-  "PAGE_PRERENDERED",
   "PLACES_BOOKMARK_ADDED",
   "PLACES_BOOKMARK_REMOVED",
   "PLACES_HISTORY_CLEARED",
@@ -76,6 +83,7 @@ for (const type of [
   "PLACES_LINK_DELETED",
   "PLACES_SAVED_TO_POCKET",
   "POCKET_CTA",
+  "POCKET_LINK_DELETED_OR_ARCHIVED",
   "POCKET_LOGGED_IN",
   "POCKET_WAITING_FOR_SPOC",
   "PREFS_INITIAL_VALUES",
@@ -149,6 +157,7 @@ for (const type of [
   "OPEN_PREFERENCES_PAGE",
   "SHOW_FIREFOX_ACCOUNTS",
   "PIN_CURRENT_TAB",
+  "ENABLE_FIREFOX_MONITOR",
 ]) {
   ASRouterActions[type] = type;
 }
@@ -156,20 +165,24 @@ for (const type of [
 // Helper function for creating routed actions between content and main
 // Not intended to be used by consumers
 function _RouteMessage(action, options) {
-  const meta = action.meta ? {...action.meta} : {};
+  const meta = action.meta ? { ...action.meta } : {};
   if (!options || !options.from || !options.to) {
-    throw new Error("Routed Messages must have options as the second parameter, and must at least include a .from and .to property.");
+    throw new Error(
+      "Routed Messages must have options as the second parameter, and must at least include a .from and .to property."
+    );
   }
   // For each of these fields, if they are passed as an option,
   // add them to the action. If they are not defined, remove them.
-  ["from", "to", "toTarget", "fromTarget", "skipMain", "skipLocal"].forEach(o => {
-    if (typeof options[o] !== "undefined") {
-      meta[o] = options[o];
-    } else if (meta[o]) {
-      delete meta[o];
+  ["from", "to", "toTarget", "fromTarget", "skipMain", "skipLocal"].forEach(
+    o => {
+      if (typeof options[o] !== "undefined") {
+        meta[o] = options[o];
+      } else if (meta[o]) {
+        delete meta[o];
+      }
     }
-  });
-  return {...action, meta};
+  );
+  return { ...action, meta };
 }
 
 /**
@@ -226,7 +239,9 @@ function BroadcastToContent(action) {
  */
 function AlsoToOneContent(action, target, skipMain) {
   if (!target) {
-    throw new Error("You must provide a target ID as the second parameter of AlsoToOneContent. If you want to send to all content processes, use BroadcastToContent");
+    throw new Error(
+      "You must provide a target ID as the second parameter of AlsoToOneContent. If you want to send to all content processes, use BroadcastToContent"
+    );
   }
   return _RouteMessage(action, {
     from: MAIN_MESSAGE_TYPE,
@@ -290,6 +305,21 @@ function ASRouterUserEvent(data) {
 }
 
 /**
+ * DiscoveryStreamSpocsFill - A telemetry ping indicating a SPOCS Fill event.
+ *
+ * @param  {object} data Fields to include in the ping (spoc_fills, etc.)
+ * @param  {int} importContext (For testing) Override the import context for testing.
+ * @return {object} An AlsoToMain action
+ */
+function DiscoveryStreamSpocsFill(data, importContext = globalImportContext) {
+  const action = {
+    type: actionTypes.DISCOVERY_STREAM_SPOCS_FILL,
+    data,
+  };
+  return importContext === UI_CODE ? AlsoToMain(action) : action;
+}
+
+/**
  * UndesiredEvent - A telemetry ping indicating an undesired state.
  *
  * @param  {object} data Fields to include in the ping (value, etc.)
@@ -341,7 +371,10 @@ function ImpressionStats(data, importContext = globalImportContext) {
  * @param  {int} importContext (For testing) Override the import context for testing.
  * #return {object} An action. For UI code, a AlsoToMain action.
  */
-function DiscoveryStreamImpressionStats(data, importContext = globalImportContext) {
+function DiscoveryStreamImpressionStats(
+  data,
+  importContext = globalImportContext
+) {
   const action = {
     type: actionTypes.DISCOVERY_STREAM_IMPRESSION_STATS,
     data,
@@ -349,16 +382,36 @@ function DiscoveryStreamImpressionStats(data, importContext = globalImportContex
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
+/**
+ * DiscoveryStreamLoadedContent - A telemetry ping indicating a content gets loaded in Discovery Stream.
+ *
+ * @param  {object} data Fields to include in the ping
+ * @param  {int} importContext (For testing) Override the import context for testing.
+ * #return {object} An action. For UI code, a AlsoToMain action.
+ */
+function DiscoveryStreamLoadedContent(
+  data,
+  importContext = globalImportContext
+) {
+  const action = {
+    type: actionTypes.DISCOVERY_STREAM_LOADED_CONTENT,
+    data,
+  };
+  return importContext === UI_CODE ? AlsoToMain(action) : action;
+}
+
 function SetPref(name, value, importContext = globalImportContext) {
-  const action = {type: actionTypes.SET_PREF, data: {name, value}};
+  const action = { type: actionTypes.SET_PREF, data: { name, value } };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
 function WebExtEvent(type, data, importContext = globalImportContext) {
   if (!data || !data.source) {
-    throw new Error("WebExtEvent actions should include a property \"source\", the id of the webextension that should receive the event.");
+    throw new Error(
+      'WebExtEvent actions should include a property "source", the id of the webextension that should receive the event.'
+    );
   }
-  const action = {type, data};
+  const action = { type, data };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
@@ -380,6 +433,8 @@ this.actionCreators = {
   SetPref,
   WebExtEvent,
   DiscoveryStreamImpressionStats,
+  DiscoveryStreamLoadedContent,
+  DiscoveryStreamSpocsFill,
 };
 
 // These are helpers to test for certain kinds of actions
@@ -388,7 +443,10 @@ this.actionUtils = {
     if (!action.meta) {
       return false;
     }
-    return action.meta.to === MAIN_MESSAGE_TYPE && action.meta.from === CONTENT_MESSAGE_TYPE;
+    return (
+      action.meta.to === MAIN_MESSAGE_TYPE &&
+      action.meta.from === CONTENT_MESSAGE_TYPE
+    );
   },
   isBroadcastToContent(action) {
     if (!action.meta) {
@@ -412,15 +470,19 @@ this.actionUtils = {
     if (!action.meta) {
       return false;
     }
-    return action.meta.to === PRELOAD_MESSAGE_TYPE &&
-      action.meta.from === MAIN_MESSAGE_TYPE;
+    return (
+      action.meta.to === PRELOAD_MESSAGE_TYPE &&
+      action.meta.from === MAIN_MESSAGE_TYPE
+    );
   },
   isFromMain(action) {
     if (!action.meta) {
       return false;
     }
-    return action.meta.from === MAIN_MESSAGE_TYPE &&
-      action.meta.to === CONTENT_MESSAGE_TYPE;
+    return (
+      action.meta.from === MAIN_MESSAGE_TYPE &&
+      action.meta.to === CONTENT_MESSAGE_TYPE
+    );
   },
   getPortIdOfSender(action) {
     return (action.meta && action.meta.fromTarget) || null;

@@ -22,8 +22,13 @@
 #include "mozilla/StaticPtr.h"                   // for StaticAutoPtr
 #include "mozilla/TimeStamp.h"                   // for TimeStamp
 #include "nsString.h"
-#include "nsStyleCoord.h"  // for nsStyleCoord
+#include "mozilla/ServoStyleConsts.h"
 #include "PLDHashTable.h"  // for PLDHashNumber
+
+struct nsStyleDisplay;
+namespace mozilla {
+class WritingMode;
+}  // namespace mozilla
 
 namespace IPC {
 template <typename T>
@@ -714,36 +719,88 @@ struct ScrollSnapInfo {
   ScrollSnapInfo() = default;
 
   bool operator==(const ScrollSnapInfo& aOther) const {
-    return mScrollSnapTypeX == aOther.mScrollSnapTypeX &&
-           mScrollSnapTypeY == aOther.mScrollSnapTypeY &&
+    return mScrollSnapStrictnessX == aOther.mScrollSnapStrictnessX &&
+           mScrollSnapStrictnessY == aOther.mScrollSnapStrictnessY &&
            mScrollSnapIntervalX == aOther.mScrollSnapIntervalX &&
            mScrollSnapIntervalY == aOther.mScrollSnapIntervalY &&
            mScrollSnapDestination == aOther.mScrollSnapDestination &&
-           mScrollSnapCoordinates == aOther.mScrollSnapCoordinates;
+           mScrollSnapCoordinates == aOther.mScrollSnapCoordinates &&
+           mSnapPositionX == aOther.mSnapPositionX &&
+           mSnapPositionY == aOther.mSnapPositionY &&
+           mXRangeWiderThanSnapport == aOther.mXRangeWiderThanSnapport &&
+           mYRangeWiderThanSnapport == aOther.mYRangeWiderThanSnapport &&
+           mSnapportSize == aOther.mSnapportSize;
   }
 
   bool HasScrollSnapping() const {
-    return mScrollSnapTypeY != mozilla::StyleScrollSnapType::None ||
-           mScrollSnapTypeX != mozilla::StyleScrollSnapType::None;
+    return mScrollSnapStrictnessY != mozilla::StyleScrollSnapStrictness::None ||
+           mScrollSnapStrictnessX != mozilla::StyleScrollSnapStrictness::None;
   }
 
+  bool HasSnapPositions() const {
+    return (!mSnapPositionX.IsEmpty() &&
+            mScrollSnapStrictnessX !=
+                mozilla::StyleScrollSnapStrictness::None) ||
+           (!mSnapPositionY.IsEmpty() &&
+            mScrollSnapStrictnessY != mozilla::StyleScrollSnapStrictness::None);
+  }
+
+  void InitializeScrollSnapStrictness(WritingMode aWritingMode,
+                                      const nsStyleDisplay* aDisplay);
+
   // The scroll frame's scroll-snap-type.
-  mozilla::StyleScrollSnapType mScrollSnapTypeX =
-      mozilla::StyleScrollSnapType::None;
-  mozilla::StyleScrollSnapType mScrollSnapTypeY =
-      mozilla::StyleScrollSnapType::None;
+  mozilla::StyleScrollSnapStrictness mScrollSnapStrictnessX =
+      mozilla::StyleScrollSnapStrictness::None;
+  mozilla::StyleScrollSnapStrictness mScrollSnapStrictnessY =
+      mozilla::StyleScrollSnapStrictness::None;
 
   // The intervals derived from the scroll frame's scroll-snap-points.
   Maybe<nscoord> mScrollSnapIntervalX;
   Maybe<nscoord> mScrollSnapIntervalY;
 
   // The scroll frame's scroll-snap-destination, in cooked form (to avoid
-  // shipping the raw nsStyleCoord::CalcValue over IPC).
+  // shipping the raw style value over IPC).
   nsPoint mScrollSnapDestination;
 
   // The scroll-snap-coordinates of any descendant frames of the scroll frame,
   // relative to the origin of the scrolled frame.
   nsTArray<nsPoint> mScrollSnapCoordinates;
+
+  // The scroll positions corresponding to scroll-snap-align values.
+  nsTArray<nscoord> mSnapPositionX;
+  nsTArray<nscoord> mSnapPositionY;
+
+  struct ScrollSnapRange {
+    ScrollSnapRange() = default;
+
+    ScrollSnapRange(nscoord aStart, nscoord aEnd)
+        : mStart(aStart), mEnd(aEnd) {}
+
+    nscoord mStart;
+    nscoord mEnd;
+    bool operator==(const ScrollSnapRange& aOther) const {
+      return mStart == aOther.mStart && mEnd == aOther.mEnd;
+    }
+
+    // Returns true if |aPoint| is a valid snap position in this range.
+    bool IsValid(nscoord aPoint, nscoord aSnapportSize) const {
+      MOZ_ASSERT(mEnd - mStart > aSnapportSize);
+      return mStart <= aPoint && aPoint <= mEnd - aSnapportSize;
+    }
+  };
+  // An array of the range that the target element is larger than the snapport
+  // on the axis.
+  // Snap positions in this range will be valid snap positions in the case where
+  // the distance between the closest snap position and the second closest snap
+  // position is still larger than the snapport size.
+  // See https://drafts.csswg.org/css-scroll-snap-1/#snap-overflow
+  //
+  // Note: This range contains scroll-margin values.
+  nsTArray<ScrollSnapRange> mXRangeWiderThanSnapport;
+  nsTArray<ScrollSnapRange> mYRangeWiderThanSnapport;
+
+  // Note: This snapport size has been already deflated by scroll-padding.
+  nsSize mSnapportSize;
 };
 
 // clang-format off
@@ -930,7 +987,7 @@ struct ScrollMetadata {
     mIsAutoDirRootContentRTL = aValue;
   }
   bool IsAutoDirRootContentRTL() const { return mIsAutoDirRootContentRTL; }
-  // Implemented out of line because the implementation needs gfxPrefs.h
+  // Implemented out of line because the implementation needs StaticPrefs.h
   // and we don't want to include that from FrameMetrics.h.
   void SetUsesContainerScrolling(bool aValue);
   bool UsesContainerScrolling() const { return mUsesContainerScrolling; }

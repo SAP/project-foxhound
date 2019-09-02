@@ -7,11 +7,16 @@
 
 var EXPORTED_SYMBOLS = ["DelayedInit"];
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-XPCOMUtils.defineLazyServiceGetter(this, "MessageLoop",
-                                   "@mozilla.org/message-loop;1",
-                                   "nsIMessageLoop");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "MessageLoop",
+  "@mozilla.org/message-loop;1",
+  "nsIMessageLoop"
+);
 
 /**
  * Use DelayedInit to schedule initializers to run some time after startup.
@@ -52,7 +57,7 @@ var DelayedInit = {
   },
 
   scheduleList: function(fns, maxWait) {
-    for (let fn of fns) {
+    for (const fn of fns) {
       Impl.scheduleInit(fn, null, null, maxWait);
     }
   },
@@ -66,13 +71,13 @@ var Impl = {
   pendingInits: [],
 
   onIdle: function() {
-    let startTime = Cu.now();
+    const startTime = Cu.now();
     let time = startTime;
     let nextDue;
 
     // Go through all the pending inits. Even if we don't run them,
     // we still need to find out when the next timeout should be.
-    for (let init of this.pendingInits) {
+    for (const init of this.pendingInits) {
       if (init.complete) {
         continue;
       }
@@ -87,17 +92,19 @@ var Impl = {
     }
 
     // Get rid of completed ones.
-    this.pendingInits = this.pendingInits.filter((init) => !init.complete);
+    this.pendingInits = this.pendingInits.filter(init => !init.complete);
 
     if (nextDue !== undefined) {
       // Schedule the next idle, if we still have pending inits.
-      MessageLoop.postIdleTask(() => this.onIdle(),
-                               Math.max(0, nextDue - time));
+      MessageLoop.postIdleTask(
+        () => this.onIdle(),
+        Math.max(0, nextDue - time)
+      );
     }
   },
 
   addPendingInit: function(fn, wait) {
-    let init = {
+    const init = {
       fn: fn,
       due: Cu.now() + wait,
       complete: false,
@@ -121,7 +128,7 @@ var Impl = {
   },
 
   scheduleInit: function(fn, object, name, wait) {
-    let init = this.addPendingInit(fn, wait);
+    const init = this.addPendingInit(fn, wait);
 
     if (!object || !name) {
       // No lazy getter needed.
@@ -129,8 +136,11 @@ var Impl = {
     }
 
     // Get any existing information about the property.
-    let prop = Object.getOwnPropertyDescriptor(object, name) ||
-               { configurable: true, enumerable: true, writable: true };
+    let prop = Object.getOwnPropertyDescriptor(object, name) || {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    };
 
     if (!prop.configurable) {
       // Object.defineProperty won't work, so just perform init here.
@@ -146,7 +156,7 @@ var Impl = {
 
         // If the initializer actually ran, it may have replaced our proxy
         // property with a real one, so we need to reload he property.
-        let newProp = Object.getOwnPropertyDescriptor(object, name);
+        const newProp = Object.getOwnPropertyDescriptor(object, name);
         if (newProp.get !== proxy_getter) {
           // Set prop if newProp doesn't refer to our proxy property.
           prop = newProp;

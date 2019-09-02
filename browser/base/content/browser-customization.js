@@ -30,8 +30,9 @@ var CustomizationHandler = {
   _customizationStarting() {
     // Disable the toolbar context menu items
     let menubar = document.getElementById("main-menubar");
-    for (let childNode of menubar.children)
+    for (let childNode of menubar.children) {
       childNode.setAttribute("disabled", true);
+    }
 
     let cmd = document.getElementById("cmd_CustomizeToolbars");
     cmd.setAttribute("disabled", "true");
@@ -39,12 +40,13 @@ var CustomizationHandler = {
     UpdateUrlbarSearchSplitterState();
 
     PlacesToolbarHelper.customizeStart();
+
+    gURLBarHandler.customizeStart();
   },
 
   _customizationEnding(aDetails) {
     // Update global UI elements that may have been added or removed
-    if (aDetails.changed &&
-        AppConstants.platform != "macosx") {
+    if (aDetails.changed && AppConstants.platform != "macosx") {
       updateEditUIVisibility();
     }
 
@@ -58,8 +60,9 @@ var CustomizationHandler = {
 
     // Re-enable parts of the UI we disabled during the dialog
     let menubar = document.getElementById("main-menubar");
-    for (let childNode of menubar.children)
+    for (let childNode of menubar.children) {
       childNode.setAttribute("disabled", false);
+    }
     let cmd = document.getElementById("cmd_CustomizeToolbars");
     cmd.removeAttribute("disabled");
 
@@ -72,7 +75,7 @@ var CustomizationHandler = {
 var AutoHideMenubar = {
   get _node() {
     delete this._node;
-    return this._node = document.getElementById("toolbar-menubar");
+    return (this._node = document.getElementById("toolbar-menubar"));
   },
 
   _contextMenuListener: {
@@ -126,7 +129,12 @@ var AutoHideMenubar = {
     }
   },
 
-  _events: ["DOMMenuBarInactive", "DOMMenuBarActive", "popupshowing", "mousedown"],
+  _events: [
+    "DOMMenuBarInactive",
+    "DOMMenuBarActive",
+    "popupshowing",
+    "mousedown",
+  ],
   _enable() {
     this._node.setAttribute("inactive", "true");
     for (let event of this._events) {
@@ -147,7 +155,7 @@ var AutoHideMenubar = {
         this._updateState();
         break;
       case "popupshowing":
-        // fall through
+      // fall through
       case "DOMMenuBarActive":
         this._setActive();
         break;
@@ -157,8 +165,9 @@ var AutoHideMenubar = {
         }
         break;
       case "DOMMenuBarInactive":
-        if (!this._contextMenuListener.active)
+        if (!this._contextMenuListener.active) {
           this._setInactiveAsync();
+        }
         break;
     }
   },

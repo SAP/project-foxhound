@@ -9,10 +9,12 @@
 #include "nsHttp.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/CookieServiceChild.h"
 #include "mozilla/net/FTPChannelChild.h"
+#include "mozilla/net/DataChannelChild.h"
+#include "mozilla/net/FileChannelChild.h"
 #include "mozilla/net/WebSocketChannelChild.h"
 #include "mozilla/net/WebSocketEventListenerChild.h"
 #include "mozilla/net/DNSRequestChild.h"
@@ -38,6 +40,7 @@
 #include "nsQueryObject.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "nsNetUtil.h"
+#include "SimpleChannel.h"
 
 using mozilla::dom::TCPServerSocketChild;
 using mozilla::dom::TCPSocketChild;
@@ -86,7 +89,7 @@ bool NeckoChild::DeallocPHttpChannelChild(PHttpChannelChild* channel) {
   MOZ_ASSERT(IsNeckoChild(), "DeallocPHttpChannelChild called by non-child!");
 
   HttpChannelChild* child = static_cast<HttpChannelChild*>(channel);
-  child->ReleaseIPDLReference();
+  child->Release();
   return true;
 }
 
@@ -108,7 +111,7 @@ bool NeckoChild::DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor) {
 }
 
 PWebrtcProxyChannelChild* NeckoChild::AllocPWebrtcProxyChannelChild(
-    const PBrowserOrId& browser) {
+    const TabId& tabId) {
   // We don't allocate here: instead we always use IPDL constructor that takes
   // an existing object
   MOZ_ASSERT_UNREACHABLE(
@@ -220,7 +223,7 @@ PDataChannelChild* NeckoChild::AllocPDataChannelChild(
 }
 
 bool NeckoChild::DeallocPDataChannelChild(PDataChannelChild* child) {
-  // NB: See DataChannelChild::ActorDestroy.
+  static_cast<DataChannelChild*>(child)->Release();
   return true;
 }
 
@@ -231,7 +234,7 @@ PFileChannelChild* NeckoChild::AllocPFileChannelChild(
 }
 
 bool NeckoChild::DeallocPFileChannelChild(PFileChannelChild* child) {
-  // NB: See FileChannelChild::ActorDestroy.
+  static_cast<FileChannelChild*>(child)->Release();
   return true;
 }
 
@@ -242,7 +245,7 @@ PSimpleChannelChild* NeckoChild::AllocPSimpleChannelChild(
 }
 
 bool NeckoChild::DeallocPSimpleChannelChild(PSimpleChannelChild* child) {
-  // NB: See SimpleChannelChild::ActorDestroy.
+  static_cast<SimpleChannelChild*>(child)->Release();
   return true;
 }
 
@@ -272,7 +275,7 @@ bool NeckoChild::DeallocPTCPServerSocketChild(PTCPServerSocketChild* child) {
   return true;
 }
 
-PUDPSocketChild* NeckoChild::AllocPUDPSocketChild(const Principal& aPrincipal,
+PUDPSocketChild* NeckoChild::AllocPUDPSocketChild(nsIPrincipal* aPrincipal,
                                                   const nsCString& aFilter) {
   MOZ_ASSERT_UNREACHABLE("AllocPUDPSocket should not be called");
   return nullptr;
@@ -326,12 +329,13 @@ bool NeckoChild::DeallocPTransportProviderChild(
 mozilla::ipc::IPCResult NeckoChild::RecvAsyncAuthPromptForNestedFrame(
     const TabId& aNestedFrameId, const nsCString& aUri, const nsString& aRealm,
     const uint64_t& aCallbackId) {
-  RefPtr<dom::TabChild> tabChild = dom::TabChild::FindTabChild(aNestedFrameId);
-  if (!tabChild) {
+  RefPtr<dom::BrowserChild> browserChild =
+      dom::BrowserChild::FindBrowserChild(aNestedFrameId);
+  if (!browserChild) {
     MOZ_CRASH();
     return IPC_FAIL_NO_REASON(this);
   }
-  tabChild->SendAsyncAuthPrompt(aUri, aRealm, aCallbackId);
+  browserChild->SendAsyncAuthPrompt(aUri, aRealm, aCallbackId);
   return IPC_OK();
 }
 

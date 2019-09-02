@@ -217,6 +217,14 @@ interface nsISearchService : nsISupports
   Promise init();
 
   /**
+   * Exposed for testing.
+   */
+  void reInit([optional] in boolean skipRegionCheck);
+  void reset();
+  Promise ensureBuiltinExtension(in AString id,
+                                [optional] in jsval locales);
+
+  /**
    * Determine whether initialization has been completed.
    *
    * Clients of the service can use this attribute to quickly determine whether
@@ -288,66 +296,44 @@ interface nsISearchService : nsISupports
    * @param name
    *        The search engine's name. Must be unique. Must not be null.
    *
-   * @param iconURL
-   *        Optional: A URL string pointing to the icon to be used to represent
-   *        the engine.
-   *        This is a jsval so that an object can be passed to replace the
-   *        parameters below.
+   * @param  details
+   *         An object that can contain the following fields:
    *
-   * @param alias
-   *        Optional: A unique shortcut that can be used to retrieve the
-   *        search engine.
+   *         {iconURL} Optional: A URL string pointing to the icon to be used to
+   *                   represent the engine.
    *
-   * @param description
-   *        Optional: a description of the search engine.
+   *         {alias} Optional: A unique shortcut that can be used to retrieve the
+   *                 search engine.
    *
-   * @param method
-   *        Optional: The HTTP request method used when submitting a search query.
-   *        Case insensitive value of either "get" or "post".
-   *        Defaults to "get".
+   *         {description} Optional: A description of the search engine.
    *
-   * @param template
-   *        The template for the URL to which search queries should be sent. The
-   *        template will be subjected to OpenSearch parameter substitution.
-   *        See http://www.opensearch.org/Specifications/OpenSearch
-   *        Must not be null.
+   *         {method} Optional: The HTTP request method used when submitting a
+   *                  search query. Case insensitive value of either "get" or "post".
+   *                  Defaults to "get".
    *
-   * @param extensionID [optional]
-   *        Optional: The correct extensionID if called by an add-on.
+   *         {template} The template for the URL to which search queries should be
+   *                    sent. The template will be subjected to OpenSearch parameter
+   *                    substitution.
+   *                    See http://www.opensearch.org/Specifications/OpenSearch
+   *                    Must not be null.
    *
-   * Alternatively, all of these parameters except for name can be
-   * passed as an object in place of parameter two.
+   *         {extensionID} Optional: The correct extensionID if called by an add-on.
    *
-   *   Services.search.addEngineWithDetails("Example engine", {
-   *     template: "http://example.com/?search={searchTerms}",
-   *     description: "Example search engine description",
-   *     suggestURL: http://example.com/?suggest={searchTerms},
-   * });
+   *         {suggestURL} Optional: The URL to which search suggestion requests should
+   *                      be sent.
    *
-   * Using this method, you can use new parameters:
-   *
-   * @param suggestURL [optional]
-   *        Optional: The URL to which search suggestion requests
-   *        should be sent.
-   *
-   * @param postData [optional]
-   *        Optional: For POST requests, a string of URL parameters
-   *        to send, separated by '&'.  The string will be subjected
-   *        to OpenSearch parameter substitution.
+   *         {postData} Optional: For POST requests, a string of URL parameters to send,
+   *                    seperated by '&'. The string will be subjected to OpenSearch
+   *                    parameter substitution.
    *
    */
-  Promise addEngineWithDetails(in AString name,
-                               in jsval iconURL,
-                               [optional] in AString alias,
-                               [optional] in AString description,
-                               [optional] in AString method,
-                               [optional] in AString url,
-                               [optional] in AString extensionID);
+  Promise addEngineWithDetails(in AString name, in jsval details);
 
   /**
    * Adds search providers to the search service.  If the search
    * service is configured to load multiple locales for the extension,
-   * it may load more than one search engine.
+   * it may load more than one search engine. If called directly
+   * ensure the extension has been initialised.
    *
    * @param extension
    *        The extension to load from.
@@ -434,6 +420,15 @@ interface nsISearchService : nsISupports
   Promise removeEngine(in nsISearchEngine engine);
 
   /**
+   * Notify nsSearchService that an extension has been removed. Removes any
+   * engines that are associated with that extension.
+   *
+   * @param  id
+   *         The id of the extension.
+   */
+  Promise removeWebExtensionEngine(in AString id);
+
+  /**
    * The original Engine object that is the default for this region,
    * ignoring changes the user may have subsequently made.
    */
@@ -451,6 +446,15 @@ interface nsISearchService : nsISupports
 
   Promise getDefault();
   Promise setDefault(in nsISearchEngine engine);
+
+  /**
+   * The currently active search engine for private browsing mode.
+   * @see defaultEngine.
+   */
+  attribute nsISearchEngine defaultPrivateEngine;
+
+  Promise getDefaultPrivate();
+  Promise setDefaultPrivate(in nsISearchEngine engine);
 
   /**
    * Gets a representation of the default engine in an anonymized JSON
@@ -476,16 +480,6 @@ interface nsISearchService : nsISupports
    *        "https://www.google.com/search?q=terms".
    */
   nsISearchParseSubmissionResult parseSubmissionURL(in AString url);
-
-  /**
-   * Determines if a URL is related to search and if so, records the
-   * appropriate telemetry.
-   *
-   * @param url
-   *        String containing the URL to parse, for example
-   *        "https://www.google.com/search?q=terms".
-   */
-  boolean recordSearchURLTelemetry(in AString url);
 };
 
 %{ C++
@@ -519,11 +513,6 @@ interface nsISearchService : nsISupports
  * followed by an "added" notification.
  */
 #define SEARCH_ENGINE_LOADED       "engine-loaded"
-
-/**
- * Sent when the "current" engine is changed.
- */
-#define SEARCH_ENGINE_CURRENT      "engine-current";
 
 /**
  * Sent when the "default" engine is changed.

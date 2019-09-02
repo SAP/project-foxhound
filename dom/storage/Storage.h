@@ -26,7 +26,8 @@ class Storage : public nsISupports, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Storage)
 
-  Storage(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal);
+  Storage(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal,
+          nsIPrincipal* aStoragePrincipal);
 
   static bool StoragePrefIsEnabled();
 
@@ -43,6 +44,8 @@ class Storage : public nsISupports, public nsWrapperCache {
   virtual int64_t GetOriginQuotaUsage() const = 0;
 
   nsIPrincipal* Principal() const { return mPrincipal; }
+
+  nsIPrincipal* StoragePrincipal() const { return mStoragePrincipal; }
 
   // WebIDL
   JSObject* WrapObject(JSContext* aCx,
@@ -107,6 +110,11 @@ class Storage : public nsISupports, public nsWrapperCache {
   virtual void EndExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
                                    ErrorResult& aRv) {}
 
+  virtual bool GetHasActiveSnapshot(nsIPrincipal& aSubjectPrincipal,
+                                    ErrorResult& aRv) {
+    return false;
+  }
+
   //////////////////////////////////////////////////////////////////////////////
 
   // Dispatch storage notification events on all impacted pages in the current
@@ -141,6 +149,7 @@ class Storage : public nsISupports, public nsWrapperCache {
  private:
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsCOMPtr<nsIPrincipal> mStoragePrincipal;
 
   // Whether storage is set to persist data only per session, may change
   // dynamically and is set by CanUseStorage function that is called

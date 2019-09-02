@@ -6,6 +6,7 @@
 
 #include "nsHTMLButtonControlFrame.h"
 
+#include "mozilla/PresShell.h"
 #include "nsContainerFrame.h"
 #include "nsIFormControlFrame.h"
 #include "nsIFrameInlines.h"
@@ -20,7 +21,7 @@
 
 using namespace mozilla;
 
-nsContainerFrame* NS_NewHTMLButtonControlFrame(nsIPresShell* aPresShell,
+nsContainerFrame* NS_NewHTMLButtonControlFrame(PresShell* aPresShell,
                                                ComputedStyle* aStyle) {
   return new (aPresShell)
       nsHTMLButtonControlFrame(aStyle, aPresShell->GetPresContext());
@@ -204,7 +205,7 @@ void nsHTMLButtonControlFrame::ReflowButtonContents(
     const ReflowInput& aButtonReflowInput, nsIFrame* aFirstKid) {
   WritingMode wm = GetWritingMode();
   LogicalSize availSize = aButtonReflowInput.ComputedSize(wm);
-  availSize.BSize(wm) = NS_INTRINSICSIZE;
+  availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
 
   // shorthand for a value we need to use in a bunch of places
   const LogicalMargin& clbp = aButtonReflowInput.ComputedLogicalBorderPadding();
@@ -242,7 +243,7 @@ void nsHTMLButtonControlFrame::ReflowButtonContents(
 
   // Compute the button's content-box size:
   LogicalSize buttonContentBox(wm);
-  if (aButtonReflowInput.ComputedBSize() != NS_INTRINSICSIZE) {
+  if (aButtonReflowInput.ComputedBSize() != NS_UNCONSTRAINEDSIZE) {
     // Button has a fixed block-size -- that's its content-box bSize.
     buttonContentBox.BSize(wm) = aButtonReflowInput.ComputedBSize();
   } else if (aButtonReflowInput.mStyleDisplay->IsContainSize()) {
@@ -264,7 +265,7 @@ void nsHTMLButtonControlFrame::ReflowButtonContents(
         buttonContentBox.BSize(wm), aButtonReflowInput.ComputedMinBSize(),
         aButtonReflowInput.ComputedMaxBSize());
   }
-  if (aButtonReflowInput.ComputedISize() != NS_INTRINSICSIZE) {
+  if (aButtonReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE) {
     buttonContentBox.ISize(wm) = aButtonReflowInput.ComputedISize();
   } else if (aButtonReflowInput.mStyleDisplay->IsContainSize()) {
     buttonContentBox.ISize(wm) = aButtonReflowInput.ComputedMinISize();
@@ -310,19 +311,14 @@ void nsHTMLButtonControlFrame::ReflowButtonContents(
   // within our frame... unless it's orthogonal, in which case we'll use the
   // contents inline-size as an approximation for now.
   // XXX is there a better strategy? should we include border-padding?
-  if (aButtonReflowInput.mStyleDisplay->IsContainSize()) {
-    // If we're size-contained, we should pretend our contents had 0 height
-    // (as they would, if we had no children). This case is identical to the
-    // final else case, but uses only our specified button height for ascent
-    // (ie. it ignores the height returned in contentsDesiredSize).
-    nscoord containAscent = (buttonContentBox.BSize(wm) / 2) + clbp.BStart(wm);
-    aButtonDesiredSize.SetBlockStartAscent(containAscent);
-  } else if (aButtonDesiredSize.GetWritingMode().IsOrthogonalTo(wm)) {
-    aButtonDesiredSize.SetBlockStartAscent(contentsDesiredSize.ISize(wm));
-  } else {
-    aButtonDesiredSize.SetBlockStartAscent(
-        contentsDesiredSize.BlockStartAscent() + childPos.B(wm));
-  }
+  if (!aButtonReflowInput.mStyleDisplay->IsContainLayout()) {
+    if (aButtonDesiredSize.GetWritingMode().IsOrthogonalTo(wm)) {
+      aButtonDesiredSize.SetBlockStartAscent(contentsDesiredSize.ISize(wm));
+    } else {
+      aButtonDesiredSize.SetBlockStartAscent(
+          contentsDesiredSize.BlockStartAscent() + childPos.B(wm));
+    }
+  }  // else: we're layout-contained, and so we have no baseline.
 
   aButtonDesiredSize.SetOverflowAreasToDesiredBounds();
 }
@@ -336,7 +332,7 @@ bool nsHTMLButtonControlFrame::GetVerticalAlignBaseline(
   if (!inner->GetVerticalAlignBaseline(aWM, aBaseline)) {
     // <input type=color> has an empty block frame as inner frame
     *aBaseline = inner->SynthesizeBaselineBOffsetFromBorderBox(
-        aWM, BaselineSharingGroup::eFirst);
+        aWM, BaselineSharingGroup::First);
   }
   nscoord innerBStart = inner->BStart(aWM, GetSize());
   *aBaseline += innerBStart;
@@ -356,7 +352,7 @@ bool nsHTMLButtonControlFrame::GetNaturalBaselineBOffset(
         inner->SynthesizeBaselineBOffsetFromBorderBox(aWM, aBaselineGroup);
   }
   nscoord innerBStart = inner->BStart(aWM, GetSize());
-  if (aBaselineGroup == BaselineSharingGroup::eFirst) {
+  if (aBaselineGroup == BaselineSharingGroup::First) {
     *aBaseline += innerBStart;
   } else {
     *aBaseline += BSize(aWM) - (innerBStart + inner->BSize(aWM));

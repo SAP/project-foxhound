@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 
 def test(mod, path, entity=None):
     import re
@@ -11,7 +13,7 @@ def test(mod, path, entity=None):
                    "browser",
                    "browser/extensions/formautofill",
                    "browser/extensions/fxmonitor",
-                   "browser/extensions/webcompat-reporter",
+                   "browser/extensions/report-site-issue",
                    "extensions/spellcheck",
                    "other-licenses/branding/firefox",
                    "browser/branding/official",

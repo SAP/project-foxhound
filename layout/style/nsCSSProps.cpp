@@ -172,9 +172,6 @@ const nsCString& nsCSSProps::GetStringValue(nsCSSCounterDesc aCounterDesc) {
 
 /***************************************************************************/
 
-const KTableEntry nsCSSProps::kBoxShadowTypeKTable[] = {
-    {eCSSKeyword_inset, uint8_t(StyleBoxShadowType::Inset)},
-    {eCSSKeyword_UNKNOWN, -1}};
 
 const KTableEntry nsCSSProps::kCursorKTable[] = {
     // CSS 2.0
@@ -263,7 +260,6 @@ KTableEntry nsCSSProps::kDisplayKTable[] = {
     {eCSSKeyword_ruby_text_container, StyleDisplay::RubyTextContainer},
     {eCSSKeyword_grid, StyleDisplay::Grid},
     {eCSSKeyword_inline_grid, StyleDisplay::InlineGrid},
-    // The next 4 entries are controlled by the layout.css.prefixes.webkit pref.
     {eCSSKeyword__webkit_box, StyleDisplay::WebkitBox},
     {eCSSKeyword__webkit_inline_box, StyleDisplay::WebkitInlineBox},
     {eCSSKeyword__webkit_flex, StyleDisplay::Flex},
@@ -272,79 +268,9 @@ KTableEntry nsCSSProps::kDisplayKTable[] = {
     {eCSSKeyword_flow_root, StyleDisplay::FlowRoot},
     {eCSSKeyword_UNKNOWN, -1}};
 
-// <NOTE> these are only used for auto-completion, not parsing:
-const KTableEntry nsCSSProps::kAutoCompletionAlignJustifySelf[] = {
-    {eCSSKeyword_auto, NS_STYLE_ALIGN_AUTO},
-    {eCSSKeyword_normal, NS_STYLE_ALIGN_NORMAL},
-    {eCSSKeyword_stretch, NS_STYLE_ALIGN_STRETCH},
-    {eCSSKeyword_baseline, NS_STYLE_ALIGN_BASELINE},
-    {eCSSKeyword_last_baseline, NS_STYLE_ALIGN_LAST_BASELINE},
-    {eCSSKeyword_start, NS_STYLE_ALIGN_START},
-    {eCSSKeyword_end, NS_STYLE_ALIGN_END},
-    {eCSSKeyword_flex_start, NS_STYLE_ALIGN_FLEX_START},
-    {eCSSKeyword_flex_end, NS_STYLE_ALIGN_FLEX_END},
-    {eCSSKeyword_center, NS_STYLE_ALIGN_CENTER},
-    {eCSSKeyword_left, NS_STYLE_ALIGN_LEFT},
-    {eCSSKeyword_right, NS_STYLE_ALIGN_RIGHT},
-    {eCSSKeyword_self_start, NS_STYLE_ALIGN_SELF_START},
-    {eCSSKeyword_self_end, NS_STYLE_ALIGN_SELF_END},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kAutoCompletionAlignItems[] = {
-    // Intentionally no 'auto' here.
-    {eCSSKeyword_normal, NS_STYLE_ALIGN_NORMAL},
-    {eCSSKeyword_stretch, NS_STYLE_ALIGN_STRETCH},
-    {eCSSKeyword_baseline, NS_STYLE_ALIGN_BASELINE},
-    {eCSSKeyword_last_baseline, NS_STYLE_ALIGN_LAST_BASELINE},
-    {eCSSKeyword_start, NS_STYLE_ALIGN_START},
-    {eCSSKeyword_end, NS_STYLE_ALIGN_END},
-    {eCSSKeyword_flex_start, NS_STYLE_ALIGN_FLEX_START},
-    {eCSSKeyword_flex_end, NS_STYLE_ALIGN_FLEX_END},
-    {eCSSKeyword_center, NS_STYLE_ALIGN_CENTER},
-    {eCSSKeyword_left, NS_STYLE_ALIGN_LEFT},
-    {eCSSKeyword_right, NS_STYLE_ALIGN_RIGHT},
-    {eCSSKeyword_self_start, NS_STYLE_ALIGN_SELF_START},
-    {eCSSKeyword_self_end, NS_STYLE_ALIGN_SELF_END},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kAutoCompletionAlignJustifyContent[] = {
-    // Intentionally no 'auto' here.
-    {eCSSKeyword_normal, NS_STYLE_ALIGN_NORMAL},
-    {eCSSKeyword_baseline, NS_STYLE_ALIGN_BASELINE},
-    {eCSSKeyword_last_baseline, NS_STYLE_ALIGN_LAST_BASELINE},
-    {eCSSKeyword_stretch, NS_STYLE_ALIGN_STRETCH},
-    {eCSSKeyword_space_between, NS_STYLE_ALIGN_SPACE_BETWEEN},
-    {eCSSKeyword_space_around, NS_STYLE_ALIGN_SPACE_AROUND},
-    {eCSSKeyword_space_evenly, NS_STYLE_ALIGN_SPACE_EVENLY},
-    {eCSSKeyword_start, NS_STYLE_ALIGN_START},
-    {eCSSKeyword_end, NS_STYLE_ALIGN_END},
-    {eCSSKeyword_flex_start, NS_STYLE_ALIGN_FLEX_START},
-    {eCSSKeyword_flex_end, NS_STYLE_ALIGN_FLEX_END},
-    {eCSSKeyword_center, NS_STYLE_ALIGN_CENTER},
-    {eCSSKeyword_left, NS_STYLE_ALIGN_LEFT},
-    {eCSSKeyword_right, NS_STYLE_ALIGN_RIGHT},
-    {eCSSKeyword_UNKNOWN, -1}};
-// </NOTE>
-
 const KTableEntry nsCSSProps::kFontSmoothingKTable[] = {
     {eCSSKeyword_auto, NS_FONT_SMOOTHING_AUTO},
     {eCSSKeyword_grayscale, NS_FONT_SMOOTHING_GRAYSCALE},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kGridAutoFlowKTable[] = {
-    {eCSSKeyword_row, NS_STYLE_GRID_AUTO_FLOW_ROW},
-    {eCSSKeyword_column, NS_STYLE_GRID_AUTO_FLOW_COLUMN},
-    {eCSSKeyword_dense, NS_STYLE_GRID_AUTO_FLOW_DENSE},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kGridTrackBreadthKTable[] = {
-    {eCSSKeyword_min_content, StyleGridTrackBreadth::MinContent},
-    {eCSSKeyword_max_content, StyleGridTrackBreadth::MaxContent},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kLineHeightKTable[] = {
-    // -moz- prefixed, intended for internal use for single-line controls
-    {eCSSKeyword__moz_block_height, NS_STYLE_LINE_HEIGHT_BLOCK_HEIGHT},
     {eCSSKeyword_UNKNOWN, -1}};
 
 const KTableEntry nsCSSProps::kTextAlignKTable[] = {
@@ -359,14 +285,6 @@ const KTableEntry nsCSSProps::kTextAlignKTable[] = {
     {eCSSKeyword_end, NS_STYLE_TEXT_ALIGN_END},
     {eCSSKeyword_UNKNOWN, -1}};
 
-const KTableEntry nsCSSProps::kTextDecorationLineKTable[] = {
-    {eCSSKeyword_none, NS_STYLE_TEXT_DECORATION_LINE_NONE},
-    {eCSSKeyword_underline, NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE},
-    {eCSSKeyword_overline, NS_STYLE_TEXT_DECORATION_LINE_OVERLINE},
-    {eCSSKeyword_line_through, NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH},
-    {eCSSKeyword_blink, NS_STYLE_TEXT_DECORATION_LINE_BLINK},
-    {eCSSKeyword_UNKNOWN, -1}};
-
 const KTableEntry nsCSSProps::kTextDecorationStyleKTable[] = {
     {eCSSKeyword__moz_none, NS_STYLE_TEXT_DECORATION_STYLE_NONE},
     {eCSSKeyword_solid, NS_STYLE_TEXT_DECORATION_STYLE_SOLID},
@@ -374,60 +292,6 @@ const KTableEntry nsCSSProps::kTextDecorationStyleKTable[] = {
     {eCSSKeyword_dotted, NS_STYLE_TEXT_DECORATION_STYLE_DOTTED},
     {eCSSKeyword_dashed, NS_STYLE_TEXT_DECORATION_STYLE_DASHED},
     {eCSSKeyword_wavy, NS_STYLE_TEXT_DECORATION_STYLE_WAVY},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kTextEmphasisStyleShapeKTable[] = {
-    {eCSSKeyword_dot, NS_STYLE_TEXT_EMPHASIS_STYLE_DOT},
-    {eCSSKeyword_circle, NS_STYLE_TEXT_EMPHASIS_STYLE_CIRCLE},
-    {eCSSKeyword_double_circle, NS_STYLE_TEXT_EMPHASIS_STYLE_DOUBLE_CIRCLE},
-    {eCSSKeyword_triangle, NS_STYLE_TEXT_EMPHASIS_STYLE_TRIANGLE},
-    {eCSSKeyword_sesame, NS_STYLE_TEXT_EMPHASIS_STYLE_SESAME},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kTextOverflowKTable[] = {
-    {eCSSKeyword_clip, NS_STYLE_TEXT_OVERFLOW_CLIP},
-    {eCSSKeyword_ellipsis, NS_STYLE_TEXT_OVERFLOW_ELLIPSIS},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kTouchActionKTable[] = {
-    {eCSSKeyword_none, NS_STYLE_TOUCH_ACTION_NONE},
-    {eCSSKeyword_auto, NS_STYLE_TOUCH_ACTION_AUTO},
-    {eCSSKeyword_pan_x, NS_STYLE_TOUCH_ACTION_PAN_X},
-    {eCSSKeyword_pan_y, NS_STYLE_TOUCH_ACTION_PAN_Y},
-    {eCSSKeyword_manipulation, NS_STYLE_TOUCH_ACTION_MANIPULATION},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kVerticalAlignKTable[] = {
-    {eCSSKeyword_baseline, NS_STYLE_VERTICAL_ALIGN_BASELINE},
-    {eCSSKeyword_sub, NS_STYLE_VERTICAL_ALIGN_SUB},
-    {eCSSKeyword_super, NS_STYLE_VERTICAL_ALIGN_SUPER},
-    {eCSSKeyword_top, NS_STYLE_VERTICAL_ALIGN_TOP},
-    {eCSSKeyword_text_top, NS_STYLE_VERTICAL_ALIGN_TEXT_TOP},
-    {eCSSKeyword_middle, NS_STYLE_VERTICAL_ALIGN_MIDDLE},
-    {eCSSKeyword__moz_middle_with_baseline,
-     NS_STYLE_VERTICAL_ALIGN_MIDDLE_WITH_BASELINE},
-    {eCSSKeyword_bottom, NS_STYLE_VERTICAL_ALIGN_BOTTOM},
-    {eCSSKeyword_text_bottom, NS_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-// keyword tables for SVG properties
-
-const KTableEntry nsCSSProps::kShapeRadiusKTable[] = {
-    {eCSSKeyword_closest_side, StyleShapeRadius::ClosestSide},
-    {eCSSKeyword_farthest_side, StyleShapeRadius::FarthestSide},
-    {eCSSKeyword_UNKNOWN, -1}};
-
-const KTableEntry nsCSSProps::kFilterFunctionKTable[] = {
-    {eCSSKeyword_blur, NS_STYLE_FILTER_BLUR},
-    {eCSSKeyword_brightness, NS_STYLE_FILTER_BRIGHTNESS},
-    {eCSSKeyword_contrast, NS_STYLE_FILTER_CONTRAST},
-    {eCSSKeyword_grayscale, NS_STYLE_FILTER_GRAYSCALE},
-    {eCSSKeyword_invert, NS_STYLE_FILTER_INVERT},
-    {eCSSKeyword_opacity, NS_STYLE_FILTER_OPACITY},
-    {eCSSKeyword_saturate, NS_STYLE_FILTER_SATURATE},
-    {eCSSKeyword_sepia, NS_STYLE_FILTER_SEPIA},
-    {eCSSKeyword_hue_rotate, NS_STYLE_FILTER_HUE_ROTATE},
-    {eCSSKeyword_drop_shadow, NS_STYLE_FILTER_DROP_SHADOW},
     {eCSSKeyword_UNKNOWN, -1}};
 
 int32_t nsCSSProps::FindIndexOfKeyword(nsCSSKeyword aKeyword,

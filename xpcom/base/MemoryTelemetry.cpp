@@ -231,8 +231,6 @@ nsresult MemoryTelemetry::GatherReports(
   MOZ_DIAGNOSTIC_ASSERT(mgr);
   NS_ENSURE_TRUE(mgr, NS_ERROR_FAILURE);
 
-  auto startTime = TimeStamp::Now();
-
 #define RECORD(id, metric, units)                                       \
   do {                                                                  \
     int64_t amt;                                                        \
@@ -306,6 +304,7 @@ nsresult MemoryTelemetry::GatherReports(
         RECORD(MEMORY_VSIZE_MAX_CONTIGUOUS, VsizeMaxContiguous, UNITS_BYTES);
 #endif
         RECORD(MEMORY_RESIDENT_FAST, ResidentFast, UNITS_BYTES);
+        RECORD(MEMORY_RESIDENT_PEAK, ResidentPeak, UNITS_BYTES);
         RECORD(MEMORY_UNIQUE, ResidentUnique, UNITS_BYTES);
         RECORD(MEMORY_HEAP_ALLOCATED, HeapAllocated, UNITS_BYTES);
         RECORD(MEMORY_HEAP_OVERHEAD_FRACTION, HeapOverheadFraction,
@@ -331,9 +330,6 @@ nsresult MemoryTelemetry::GatherReports(
     mTotalMemoryGatherer->Begin(mThreadPool);
   }
 
-  Telemetry::AccumulateTimeDelta(
-      Telemetry::HistogramID::TELEMETRY_MEMORY_REPORTER_MS, startTime,
-      TimeStamp::Now());
   return NS_OK;
 }
 

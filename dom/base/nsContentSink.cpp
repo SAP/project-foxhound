@@ -11,6 +11,7 @@
 
 #include "nsContentSink.h"
 #include "mozilla/Components.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/SRILogHelper.h"
@@ -24,7 +25,6 @@
 #include "nsIProtocolHandler.h"
 #include "nsIHttpChannel.h"
 #include "nsIContent.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsViewManager.h"
 #include "nsAtom.h"
@@ -99,7 +99,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 nsContentSink::nsContentSink()
     : mBackoffCount(0),
       mLastNotificationTime(0),
-      mBeganUpdate(0),
       mLayoutStarted(0),
       mDynamicLowerValue(0),
       mParsing(0),
@@ -298,7 +297,8 @@ nsresult nsContentSink::ProcessHeaderData(nsAtom* aHeader,
 
   mDocument->SetHeaderData(aHeader, aValue);
 
-  if (aHeader == nsGkAtoms::setcookie) {
+  if (aHeader == nsGkAtoms::setcookie &&
+      StaticPrefs::dom_metaElement_setCookie_allowed()) {
     // Note: Necko already handles cookies set via the channel.  We can't just
     // call SetCookie on the channel because we want to do some security checks
     // here.
@@ -324,8 +324,8 @@ nsresult nsContentSink::ProcessHeaderData(nsAtom* aHeader,
       mParser->GetChannel(getter_AddRefs(channel));
     }
 
-    rv = cookieServ->SetCookieString(
-        codebaseURI, nullptr, NS_ConvertUTF16toUTF8(aValue).get(), channel);
+    rv = cookieServ->SetCookieString(codebaseURI, nullptr,
+                                     NS_ConvertUTF16toUTF8(aValue), channel);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -759,6 +759,7 @@ nsresult nsContentSink::ProcessStyleLinkFromHeader(
       aMedia,
       aAlternate ? Loader::HasAlternateRel::Yes : Loader::HasAlternateRel::No,
       Loader::IsInline::No,
+      Loader::IsExplicitlyEnabled::No,
   };
 
   auto loadResultOrErr =
@@ -796,7 +797,8 @@ nsresult nsContentSink::ProcessMETATag(nsIContent* aContent) {
 
     // Don't allow setting cookies in <meta http-equiv> in cookie averse
     // documents.
-    if (nsGkAtoms::setcookie->Equals(header) && mDocument->IsCookieAverse()) {
+    if (nsGkAtoms::setcookie->Equals(header) && mDocument->IsCookieAverse() &&
+        StaticPrefs::dom_metaElement_setCookie_allowed()) {
       return NS_OK;
     }
 
@@ -1158,7 +1160,10 @@ void nsContentSink::ProcessOfflineManifest(const nsAString& aManifestSpec) {
   }
 }
 
-void nsContentSink::ScrollToRef() { mDocument->ScrollToRef(); }
+void nsContentSink::ScrollToRef() {
+  RefPtr<Document> document = mDocument;
+  document->ScrollToRef();
+}
 
 void nsContentSink::StartLayout(bool aIgnorePendingSheets) {
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("nsContentSink::StartLayout", LAYOUT,
@@ -1191,14 +1196,14 @@ void nsContentSink::StartLayout(bool aIgnorePendingSheets) {
   mLastNotificationTime = PR_Now();
 
   mDocument->SetMayStartLayout(true);
-  nsCOMPtr<nsIPresShell> shell = mDocument->GetShell();
+  RefPtr<PresShell> presShell = mDocument->GetPresShell();
   // Make sure we don't call Initialize() for a shell that has
   // already called it. This can happen when the layout frame for
   // an iframe is constructed *between* the Embed() call for the
   // docshell in the iframe, and the content sink's call to OpenBody().
   // (Bug 153815)
-  if (shell && !shell->DidInitialize()) {
-    nsresult rv = shell->Initialize();
+  if (presShell && !presShell->DidInitialize()) {
+    nsresult rv = presShell->Initialize();
     if (NS_FAILED(rv)) {
       return;
     }
@@ -1211,17 +1216,13 @@ void nsContentSink::StartLayout(bool aIgnorePendingSheets) {
 }
 
 void nsContentSink::NotifyAppend(nsIContent* aContainer, uint32_t aStartIndex) {
-  if (aContainer->GetUncomposedDoc() != mDocument) {
-    // aContainer is not actually in our document anymore.... Just bail out of
-    // here; notifying on our document for this append would be wrong.
-    return;
-  }
-
   mInNotification++;
 
   {
     // Scope so we call EndUpdate before we decrease mInNotification
-    MOZ_AUTO_DOC_UPDATE(mDocument, !mBeganUpdate);
+    //
+    // Note that aContainer->OwnerDoc() may not be mDocument.
+    MOZ_AUTO_DOC_UPDATE(aContainer->OwnerDoc(), true);
     nsNodeUtils::ContentAppended(
         aContainer, aContainer->GetChildAt_Deprecated(aStartIndex));
     mLastNotificationTime = PR_Now();
@@ -1350,8 +1351,8 @@ nsresult nsContentSink::DidProcessATokenImpl() {
   }
 
   // Get the current user event time
-  nsIPresShell* shell = mDocument->GetShell();
-  if (!shell) {
+  PresShell* presShell = mDocument->GetPresShell();
+  if (!presShell) {
     // If there's no pres shell in the document, return early since
     // we're not laying anything out here.
     return NS_OK;
@@ -1363,7 +1364,7 @@ nsresult nsContentSink::DidProcessATokenImpl() {
   // Check if there's a pending event
   if (sPendingEventMode != 0 && !mHasPendingEvent &&
       (mDeflectedCount % sEventProbeRate) == 0) {
-    nsViewManager* vm = shell->GetViewManager();
+    nsViewManager* vm = presShell->GetViewManager();
     NS_ENSURE_TRUE(vm, NS_ERROR_FAILURE);
     nsCOMPtr<nsIWidget> widget;
     vm->GetRootWidget(getter_AddRefs(widget));
@@ -1497,15 +1498,15 @@ nsresult nsContentSink::WillParseImpl(void) {
     return NS_OK;
   }
 
-  nsIPresShell* shell = mDocument->GetShell();
-  if (!shell) {
+  PresShell* presShell = mDocument->GetPresShell();
+  if (!presShell) {
     return NS_OK;
   }
 
   uint32_t currentTime = PR_IntervalToMicroseconds(PR_IntervalNow());
 
   if (sEnablePerfMode == 0) {
-    nsViewManager* vm = shell->GetViewManager();
+    nsViewManager* vm = presShell->GetViewManager();
     NS_ENSURE_TRUE(vm, NS_ERROR_FAILURE);
     uint32_t lastEventTime;
     vm->GetLastUserEventTime(lastEventTime);

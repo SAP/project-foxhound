@@ -9,6 +9,8 @@
 
 #include "jit/mips32/MacroAssembler-mips32.h"
 
+#include "vm/BigIntType.h"  // JS::BigInt
+
 #include "jit/mips-shared/MacroAssembler-mips-shared-inl.h"
 
 namespace js {
@@ -300,6 +302,8 @@ void MacroAssembler::neg64(Register64 reg) {
   as_subu(reg.high, zero, reg.high);
   as_subu(reg.high, reg.high, ScratchRegister);
 }
+
+void MacroAssembler::negPtr(Register reg) { as_subu(reg, zero, reg); }
 
 void MacroAssembler::mulBy3(Register src, Register dest) {
   MOZ_ASSERT(src != ScratchRegister);
@@ -812,6 +816,18 @@ void MacroAssembler::branchTestStringTruthy(bool b, const ValueOperand& value,
 void MacroAssembler::branchTestSymbol(Condition cond, const ValueOperand& value,
                                       Label* label) {
   branchTestSymbol(cond, value.typeReg(), label);
+}
+
+void MacroAssembler::branchTestBigInt(Condition cond, Register tag,
+                                      Label* label) {
+  branchTestBigIntImpl(cond, tag, label);
+}
+
+void MacroAssembler::branchTestBigInt(Condition cond, const BaseIndex& address,
+                                      Label* label) {
+  SecondScratchRegisterScope scratch2(*this);
+  splitTag(value, scratch2);
+  branchTestBigInt(cond, scratch2, label);
 }
 
 void MacroAssembler::branchTestBigInt(Condition cond, const ValueOperand& value,

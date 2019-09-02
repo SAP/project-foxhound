@@ -23,9 +23,10 @@ class nsPIDOMWindowOuter;
 
 namespace mozilla {
 class AbstractThread;
+class ThrottledEventQueue;
 namespace dom {
 class Document;
-class TabChild;
+class BrowserChild;
 
 // Two browsing contexts are considered "related" if they are reachable from one
 // another through window.opener, window.parent, or window.frames. This is the
@@ -43,7 +44,7 @@ class TabChild;
 // window.opener. A DocGroup is a member of exactly one TabGroup.
 
 class DocGroup;
-class TabChild;
+class BrowserChild;
 
 class TabGroup final : public SchedulerGroup,
                        public LinkedListElement<TabGroup> {
@@ -67,11 +68,11 @@ class TabGroup final : public SchedulerGroup,
 
   static TabGroup* GetChromeTabGroup();
 
-  // Checks if the TabChild already has a TabGroup assigned to it in
+  // Checks if the BrowserChild already has a TabGroup assigned to it in
   // IPDL. Returns this TabGroup if it does. This could happen if the parent
   // process created the PBrowser and we needed to assign a TabGroup immediately
   // upon receiving the IPDL message. This method is main thread only.
-  static TabGroup* GetFromActor(TabChild* aTabChild);
+  static TabGroup* GetFromActor(BrowserChild* aBrowserChild);
 
   static TabGroup* GetFromWindow(mozIDOMWindowProxy* aWindow);
 
@@ -143,6 +144,10 @@ class TabGroup final : public SchedulerGroup,
   // can be throttled.
   static bool HasOnlyThrottableTabs();
 
+  nsresult QueuePostMessageEvent(already_AddRefed<nsIRunnable>&& aRunnable);
+
+  void FlushPostMessageEvents();
+
  private:
   virtual AbstractThread* AbstractMainThreadForImpl(
       TaskCategory aCategory) override;
@@ -166,6 +171,10 @@ class TabGroup final : public SchedulerGroup,
   uint32_t mForegroundCount;
 
   static LinkedList<TabGroup>* sTabGroups;
+
+  // A queue to store postMessage events during page load, the queue will be
+  // flushed once the page is loaded
+  RefPtr<mozilla::ThrottledEventQueue> mPostMessageEventQueue;
 };
 
 }  // namespace dom

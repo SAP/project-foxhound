@@ -4,7 +4,7 @@
 -->
 <head>
   <title>Test handling of garbage at the end of CSS declarations</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="property_database.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -129,6 +129,7 @@ function test_property(property)
 // To avoid triggering the slow script dialog, we have to test one
 // property at a time.
 SimpleTest.waitForExplicitFinish();
+SimpleTest.requestLongerTimeout(2);
 var props = [];
 for (var prop in gCSSProperties)
   props.push(prop);

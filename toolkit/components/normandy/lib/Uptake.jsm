@@ -5,9 +5,15 @@
 "use strict";
 
 ChromeUtils.defineModuleGetter(
-  this, "UptakeTelemetry", "resource://services-common/uptake-telemetry.js");
+  this,
+  "UptakeTelemetry",
+  "resource://services-common/uptake-telemetry.js"
+);
 ChromeUtils.defineModuleGetter(
-  this, "Services", "resource://gre/modules/Services.jsm");
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
 
 var EXPORTED_SYMBOLS = ["Uptake"];
 
@@ -23,7 +29,7 @@ var Uptake = {
 
   // Per-recipe uptake
   RECIPE_ACTION_DISABLED: UptakeTelemetry.STATUS.CUSTOM_1_ERROR,
-  RECIPE_DIDNT_MATCH_FILTER: UptakeTelemetry.STATUS.CUSTOM_2_ERROR,
+  RECIPE_DIDNT_MATCH_FILTER: UptakeTelemetry.STATUS.BACKOFF,
   RECIPE_EXECUTION_ERROR: UptakeTelemetry.STATUS.APPLY_ERROR,
   RECIPE_FILTER_BROKEN: UptakeTelemetry.STATUS.CONTENT_ERROR,
   RECIPE_INVALID_ACTION: UptakeTelemetry.STATUS.DOWNLOAD_ERROR,
@@ -36,16 +42,26 @@ var Uptake = {
   RUNNER_SUCCESS: UptakeTelemetry.STATUS.SUCCESS,
 
   async reportRunner(status) {
-    await UptakeTelemetry.report(COMPONENT, status, { source: `${COMPONENT}/runner` });
+    await UptakeTelemetry.report(COMPONENT, status, {
+      source: `${COMPONENT}/runner`,
+    });
   },
 
   async reportRecipe(recipe, status) {
-    await UptakeTelemetry.report(COMPONENT, status, { source: `${COMPONENT}/recipe/${recipe.id}` });
+    await UptakeTelemetry.report(COMPONENT, status, {
+      source: `${COMPONENT}/recipe/${recipe.id}`,
+    });
     const revisionId = parseInt(recipe.revision_id, 10);
-    Services.telemetry.keyedScalarSet("normandy.recipe_freshness", recipe.id, revisionId);
+    Services.telemetry.keyedScalarSet(
+      "normandy.recipe_freshness",
+      recipe.id,
+      revisionId
+    );
   },
 
   async reportAction(actionName, status) {
-    await UptakeTelemetry.report(COMPONENT, status, { source: `${COMPONENT}/action/${actionName}` });
+    await UptakeTelemetry.report(COMPONENT, status, {
+      source: `${COMPONENT}/action/${actionName}`,
+    });
   },
 };

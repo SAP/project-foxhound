@@ -9,13 +9,17 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
 });
 
-add_task(threadClientTest(async ({ threadClient, debuggee, client }) => {
-  debuggee.eval(function stopMe(arg1) {
-    debugger;
-  }.toString());
+add_task(
+  threadClientTest(async ({ threadClient, debuggee, client }) => {
+    debuggee.eval(
+      function stopMe(arg1) {
+        debugger;
+      }.toString()
+    );
 
-  await test_object_grip(debuggee, threadClient);
-}));
+    await test_object_grip(debuggee, threadClient);
+  })
+);
 
 async function test_object_grip(debuggee, threadClient) {
   await assert_object_argument(
@@ -103,7 +107,7 @@ async function test_object_grip(debuggee, threadClient) {
 
         assert_completion(value, expected);
       }
-    },
+    }
   );
 }
 
@@ -128,7 +132,7 @@ function eval_and_resume(debuggee, threadClient, code, callback) {
 
 function wait_for_pause(threadClient, callback = () => {}) {
   return new Promise((resolve, reject) => {
-    threadClient.addOneTimeListener("paused", function(event, packet) {
+    threadClient.once("paused", function(packet) {
       (async () => {
         try {
           return await callback(packet.frame);

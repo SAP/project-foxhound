@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "nsIContent.h"
@@ -47,9 +47,10 @@ mozilla::ipc::IPCResult PrintingParent::RecvShowProgress(
 
   nsresult rv = NS_ERROR_INVALID_ARG;
   if (parentWin && pps) {
-    rv = pps->ShowProgress(parentWin, nullptr, nullptr, observer, isForPrinting,
-                           getter_AddRefs(printProgressListener),
-                           getter_AddRefs(printProgressParams), &notifyOnOpen);
+    rv = pps->ShowPrintProgressDialog(
+        parentWin, nullptr, nullptr, observer, isForPrinting,
+        getter_AddRefs(printProgressListener),
+        getter_AddRefs(printProgressParams), &notifyOnOpen);
   }
 
   if (NS_SUCCEEDED(rv)) {
@@ -254,12 +255,12 @@ nsPIDOMWindowOuter* PrintingParent::DOMWindowFromBrowserParent(
     return nullptr;
   }
 
-  TabParent* tabParent = TabParent::GetFrom(parent);
-  if (!tabParent) {
+  BrowserParent* browserParent = BrowserParent::GetFrom(parent);
+  if (!browserParent) {
     return nullptr;
   }
 
-  nsCOMPtr<Element> frameElement = tabParent->GetOwnerElement();
+  nsCOMPtr<Element> frameElement = browserParent->GetOwnerElement();
   if (!frameElement) {
     return nullptr;
   }

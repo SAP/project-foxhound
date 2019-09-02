@@ -34,7 +34,7 @@ class nsICacheEntry;
 namespace mozilla {
 
 namespace dom {
-class TabParent;
+class BrowserParent;
 class PBrowserOrId;
 }  // namespace dom
 
@@ -121,7 +121,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // Callback while background channel is destroyed.
   void OnBackgroundParentDestroyed();
 
-  base::ProcessId OtherPid() const override;
+  base::ProcessId OtherPid() const;
 
   // Calling this method will cancel the HttpChannelChild because the consumer
   // needs to be relocated to another process.
@@ -139,21 +139,19 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
 
   MOZ_MUST_USE bool DoAsyncOpen(
       const URIParams& uri, const Maybe<URIParams>& originalUri,
-      const Maybe<URIParams>& docUri,
-      const Maybe<URIParams>& originalReferrerUri,
-      const uint32_t& referrerPolicy,
+      const Maybe<URIParams>& docUri, nsIReferrerInfo* aReferrerInfo,
       const Maybe<URIParams>& internalRedirectUri,
-      const Maybe<URIParams>& topWindowUri, nsIPrincipal* aTopWindowPrincipal,
-      const uint32_t& loadFlags, const RequestHeaderTuples& requestHeaders,
-      const nsCString& requestMethod, const Maybe<IPCStream>& uploadStream,
-      const bool& uploadStreamHasHeaders, const int16_t& priority,
-      const uint32_t& classOfService, const uint8_t& redirectionLimit,
-      const bool& allowSTS, const uint32_t& thirdPartyFlags,
-      const bool& doResumeAt, const uint64_t& startPos,
-      const nsCString& entityID, const bool& chooseApplicationCache,
-      const nsCString& appCacheClientID, const bool& allowSpdy,
-      const bool& allowAltSvc, const bool& beConservative,
-      const uint32_t& tlsFlags, const Maybe<LoadInfoArgs>& aLoadInfoArgs,
+      const Maybe<URIParams>& topWindowUri, const uint32_t& loadFlags,
+      const RequestHeaderTuples& requestHeaders, const nsCString& requestMethod,
+      const Maybe<IPCStream>& uploadStream, const bool& uploadStreamHasHeaders,
+      const int16_t& priority, const uint32_t& classOfService,
+      const uint8_t& redirectionLimit, const bool& allowSTS,
+      const uint32_t& thirdPartyFlags, const bool& doResumeAt,
+      const uint64_t& startPos, const nsCString& entityID,
+      const bool& chooseApplicationCache, const nsCString& appCacheClientID,
+      const bool& allowSpdy, const bool& allowAltSvc,
+      const bool& beConservative, const uint32_t& tlsFlags,
+      const Maybe<LoadInfoArgs>& aLoadInfoArgs,
       const Maybe<nsHttpResponseHead>& aSynthesizedResponseHead,
       const nsCString& aSecurityInfoSerialization, const uint32_t& aCacheKey,
       const uint64_t& aRequestContextID,
@@ -174,7 +172,8 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
       const TimeStamp& aHandleFetchEventStart,
       const TimeStamp& aHandleFetchEventEnd,
       const bool& aForceMainDocumentChannel,
-      const TimeStamp& aNavigationStartTimeStamp);
+      const TimeStamp& aNavigationStartTimeStamp,
+      const bool& hasSandboxedAuxiliaryNavigations);
 
   virtual mozilla::ipc::IPCResult RecvSetPriority(
       const int16_t& priority) override;
@@ -188,8 +187,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   virtual mozilla::ipc::IPCResult RecvRedirect2Verify(
       const nsresult& result, const RequestHeaderTuples& changedHeaders,
       const ChildLoadInfoForwarderArgs& aLoadInfoForwarder,
-      const uint32_t& loadFlags, const uint32_t& referrerPolicy,
-      const Maybe<URIParams>& aReferrerURI,
+      const uint32_t& loadFlags, nsIReferrerInfo* aReferrerInfo,
       const Maybe<URIParams>& apiRedirectUri,
       const Maybe<CorsPreflightArgs>& aCorsPreflightArgs,
       const bool& aChooseAppcache) override;
@@ -203,7 +201,8 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
       const nsresult& statusCode) override;
   virtual mozilla::ipc::IPCResult RecvDivertComplete() override;
   virtual mozilla::ipc::IPCResult RecvCrossProcessRedirectDone(
-      const nsresult& aResult) override;
+      const nsresult& aResult,
+      const mozilla::Maybe<LoadInfoArgs>& aLoadInfoArgs) override;
   virtual mozilla::ipc::IPCResult RecvRemoveCorsPreflightCacheEntry(
       const URIParams& uri,
       const mozilla::ipc::PrincipalInfo& requestingPrincipal) override;
@@ -220,7 +219,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   void FailDiversion(nsresult aErrorCode);
 
   friend class HttpChannelParentListener;
-  RefPtr<mozilla::dom::TabParent> mTabParent;
+  RefPtr<mozilla::dom::BrowserParent> mBrowserParent;
 
   MOZ_MUST_USE nsresult ReportSecurityMessage(
       const nsAString& aMessageTag, const nsAString& aMessageCategory) override;

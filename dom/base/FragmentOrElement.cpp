@@ -22,6 +22,7 @@
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TouchEvents.h"
@@ -43,7 +44,6 @@
 #include "nsNetUtil.h"
 #include "nsIFrame.h"
 #include "nsIAnonymousContentCreator.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsStyleConsts.h"
 #include "nsString.h"
@@ -75,7 +75,6 @@
 #include "nsFrameLoader.h"
 #include "nsXBLBinding.h"
 #include "nsPIDOMWindow.h"
-#include "nsPIBoxObject.h"
 #include "nsSVGUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsGkAtoms.h"
@@ -394,13 +393,9 @@ static bool NeedsScriptTraverse(nsINode* aNode) {
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsAttrChildContentList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsAttrChildContentList)
 
-// If nsAttrChildContentList is changed so that any additional fields are
-// traversed by the cycle collector, then CAN_SKIP must be updated to
-// check that the additional fields are null.
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(nsAttrChildContentList)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsAttrChildContentList, mNode)
 
-// nsAttrChildContentList only ever has a single child, its wrapper, so if
-// the wrapper is known-live, the list can't be part of a garbage cycle.
+// If the wrapper is known-live, the list can't be part of a garbage cycle.
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsAttrChildContentList)
   return tmp->HasKnownLiveWrapper();
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
@@ -409,7 +404,6 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(nsAttrChildContentList)
   return tmp->HasKnownLiveWrapperAndDoesNotNeedTracing(tmp);
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_END
 
-// CanSkipThis returns false to avoid problems with incomplete unlinking.
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsAttrChildContentList)
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
@@ -1123,6 +1117,28 @@ void nsIContent::SetXBLInsertionPoint(nsIContent* aContent) {
   }
 }
 
+#ifdef DEBUG
+void nsIContent::AssertAnonymousSubtreeRelatedInvariants() const {
+  NS_ASSERTION(!IsRootOfNativeAnonymousSubtree() ||
+                   (GetParent() && GetBindingParent() == GetParent()),
+               "root of native anonymous subtree must have parent equal "
+               "to binding parent");
+  NS_ASSERTION(!GetParent() ||
+                   ((GetBindingParent() == GetParent()) ==
+                    HasFlag(NODE_IS_ANONYMOUS_ROOT)) ||
+                   // Unfortunately default content for XBL insertion points
+                   // is anonymous content that is bound with the parent of
+                   // the insertion point as the parent but the bound element
+                   // for the binding as the binding parent.  So we have to
+                   // complicate the assert a bit here.
+                   (GetBindingParent() &&
+                    (GetBindingParent() == GetParent()->GetBindingParent()) ==
+                        HasFlag(NODE_IS_ANONYMOUS_ROOT)),
+               "For nodes with parent, flag and GetBindingParent() check "
+               "should match");
+}
+#endif
+
 void FragmentOrElement::GetTextContentInternal(nsAString& aTextContent,
                                                OOMReporter& aError) {
   if (!nsContentUtils::GetNodeTextContent(this, true, aTextContent, fallible)) {
@@ -1151,7 +1167,6 @@ void FragmentOrElement::DestroyContent() {
 
   document->BindingManager()->RemovedFromDocument(this, document,
                                                   nsBindingManager::eRunDtor);
-  document->ClearBoxObjectFor(this);
 
 #ifdef DEBUG
   uint32_t oldChildCount = GetChildCount();
@@ -1323,11 +1338,12 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
       for (uint32_t i = 0; props[i]; ++i) {
         tmp->DeleteProperty(props[i]);
       }
-      if (tmp->MayHaveAnimations()) {
-        nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
-        for (uint32_t i = 0; effectProps[i]; ++i) {
-          tmp->DeleteProperty(effectProps[i]);
-        }
+    }
+
+    if (tmp->MayHaveAnimations()) {
+      nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
+      for (uint32_t i = 0; effectProps[i]; ++i) {
+        tmp->DeleteProperty(effectProps[i]);
       }
     }
   }
@@ -1580,7 +1596,7 @@ static bool ShouldClearPurple(nsIContent* aContent) {
 // we can act as if it was optimizable. When the primary frame dies, aNode
 // will end up to the purple buffer because of the refcount change.
 bool NodeHasActiveFrame(Document* aCurrentDoc, nsINode* aNode) {
-  return aCurrentDoc->GetShell() && aNode->IsElement() &&
+  return aCurrentDoc->GetPresShell() && aNode->IsElement() &&
          aNode->AsElement()->GetPrimaryFrame();
 }
 
@@ -1838,14 +1854,14 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
             static_cast<nsISupports*>(tmp->GetProperty(props[i]));
         cb.NoteXPCOMChild(property);
       }
-      if (tmp->MayHaveAnimations()) {
-        nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
-        for (uint32_t i = 0; effectProps[i]; ++i) {
-          EffectSet* effectSet =
-              static_cast<EffectSet*>(tmp->GetProperty(effectProps[i]));
-          if (effectSet) {
-            effectSet->Traverse(cb);
-          }
+    }
+    if (tmp->MayHaveAnimations()) {
+      nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
+      for (uint32_t i = 0; effectProps[i]; ++i) {
+        EffectSet* effectSet =
+            static_cast<EffectSet*>(tmp->GetProperty(effectProps[i]));
+        if (effectSet) {
+          effectSet->Traverse(cb);
         }
       }
     }

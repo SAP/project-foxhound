@@ -37,6 +37,7 @@ import org.mozilla.gecko.util.ProxySelector;
 import org.mozilla.gecko.util.StrictModeContext;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.geckoview.BuildConfig;
+import org.mozilla.geckoview.R;
 
 import android.annotation.SuppressLint;
 import android.app.ActivityManager;
@@ -52,7 +53,6 @@ import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.hardware.Camera;
 import android.hardware.Sensor;
@@ -74,6 +74,7 @@ import android.os.PowerManager;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.support.annotation.Nullable;
+import android.support.v4.content.res.ResourcesCompat;
 import android.support.v4.util.SimpleArrayMap;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -1036,8 +1037,8 @@ public class GeckoAppShell {
         return sDensity;
     }
 
-    private static boolean isHighMemoryDevice() {
-        return HardwareUtils.getMemSize() > HIGH_MEMORY_DEVICE_THRESHOLD_MB;
+    private static boolean isHighMemoryDevice(final Context context) {
+        return SysInfo.getMemSize(context) > HIGH_MEMORY_DEVICE_THRESHOLD_MB;
     }
 
     public static synchronized void useMaxScreenDepth(final boolean enable) {
@@ -1052,11 +1053,11 @@ public class GeckoAppShell {
     public static synchronized int getScreenDepth() {
         if (sScreenDepth == 0) {
             sScreenDepth = 16;
+            final Context applicationContext = getApplicationContext();
             PixelFormat info = new PixelFormat();
-            final WindowManager wm = (WindowManager)
-                    getApplicationContext().getSystemService(Context.WINDOW_SERVICE);
+            final WindowManager wm = (WindowManager) applicationContext.getSystemService(Context.WINDOW_SERVICE);
             PixelFormat.getPixelFormatInfo(wm.getDefaultDisplay().getPixelFormat(), info);
-            if (info.bitsPerPixel >= 24 && isHighMemoryDevice()) {
+            if (info.bitsPerPixel >= 24 && isHighMemoryDevice(applicationContext)) {
                 sScreenDepth = sUseMaxScreenDepth ? info.bitsPerPixel : 24;
             }
         }
@@ -1428,13 +1429,14 @@ public class GeckoAppShell {
             PackageManager pm = getApplicationContext().getPackageManager();
             Drawable icon = getDrawableForExtension(pm, resolvedExt);
             if (icon == null) {
-                // Use a generic icon
-                icon = pm.getDefaultActivityIcon();
+                // Use a generic icon.
+                icon = ResourcesCompat.getDrawable(getApplicationContext().getResources(), R.drawable.ic_generic_file, getApplicationContext().getTheme());
             }
 
-            Bitmap bitmap = ((BitmapDrawable)icon).getBitmap();
-            if (bitmap.getWidth() != resolvedIconSize || bitmap.getHeight() != resolvedIconSize)
+            Bitmap bitmap = BitmapUtils.getBitmapFromDrawable(icon);
+            if (bitmap.getWidth() != resolvedIconSize || bitmap.getHeight() != resolvedIconSize) {
                 bitmap = Bitmap.createScaledBitmap(bitmap, resolvedIconSize, resolvedIconSize, true);
+            }
 
             ByteBuffer buf = ByteBuffer.allocate(resolvedIconSize * resolvedIconSize * 4);
             bitmap.copyPixelsToBuffer(buf);
@@ -1994,6 +1996,31 @@ public class GeckoAppShell {
             return DEFAULT;
         }
         return Integer.parseInt(prop);
+    }
+
+    static private int sPreviousAudioMode = -2;
+
+    @WrapForJNI(calledFrom = "any")
+    public static void setCommunicationAudioModeOn(final boolean on) {
+        final AudioManager am = (AudioManager)getApplicationContext()
+                                .getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) {
+            return;
+        }
+
+        try {
+            if (on)  {
+                Log.e(LOGTAG, "Setting communication mode ON");
+                am.startBluetoothSco();
+                am.setBluetoothScoOn(true);
+            } else {
+                Log.e(LOGTAG, "Setting communication mode OFF");
+                am.stopBluetoothSco();
+                am.setBluetoothScoOn(false);
+            }
+        } catch (SecurityException e) {
+            Log.e(LOGTAG, "could not set communication mode", e);
+        }
     }
 
     private static String getLanguageTag(final Locale locale) {

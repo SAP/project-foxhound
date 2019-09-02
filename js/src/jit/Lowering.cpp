@@ -904,21 +904,28 @@ static inline bool CanEmitCompareAtUses(MInstruction* ins) {
     return false;
   }
 
-  bool foundTest = false;
-  for (MUseIterator iter(ins->usesBegin()); iter != ins->usesEnd(); iter++) {
-    MNode* node = iter->consumer();
-    if (!node->isDefinition()) {
-      return false;
-    }
-    if (!node->toDefinition()->isTest()) {
-      return false;
-    }
-    if (foundTest) {
-      return false;
-    }
-    foundTest = true;
+  // If the result is never used, we can usefully defer emission to the use
+  // point, since that will never happen.
+  MUseIterator iter(ins->usesBegin());
+  if (iter == ins->usesEnd()) {
+    return true;
   }
-  return true;
+
+  // If the first use isn't of the expected form, the answer is No.
+  MNode* node = iter->consumer();
+  if (!node->isDefinition()) {
+    return false;
+  }
+
+  MDefinition* use = node->toDefinition();
+  if (!use->isTest() && !use->isWasmSelect()) {
+    return false;
+  }
+
+  // Emission can be deferred to the first use point, but only if there are no
+  // other use points.
+  iter++;
+  return iter == ins->usesEnd();
 }
 
 void LIRGenerator::visitCompare(MCompare* comp) {
@@ -1561,14 +1568,7 @@ void LIRGenerator::visitSign(MSign* ins) {
 
 void LIRGenerator::visitMathFunction(MMathFunction* ins) {
   MOZ_ASSERT(IsFloatingPointType(ins->type()));
-  MOZ_ASSERT_IF(ins->input()->type() != MIRType::SinCosDouble,
-                ins->type() == ins->input()->type());
-
-  if (ins->input()->type() == MIRType::SinCosDouble) {
-    MOZ_ASSERT(ins->type() == MIRType::Double);
-    redefine(ins, ins->input(), ins->function());
-    return;
-  }
+  MOZ_ASSERT(ins->type() == ins->input()->type());
 
   LInstruction* lir;
   if (ins->type() == MIRType::Double) {
@@ -3311,23 +3311,6 @@ void LIRGenerator::visitStoreUnboxedString(MStoreUnboxedString* ins) {
   add(lir, ins);
 }
 
-void LIRGenerator::visitConvertUnboxedObjectToNative(
-    MConvertUnboxedObjectToNative* ins) {
-  MOZ_ASSERT(ins->object()->type() == MIRType::Object);
-
-  if (JitOptions.spectreObjectMitigationsMisc) {
-    auto* lir = new (alloc()) LConvertUnboxedObjectToNative(
-        useRegisterAtStart(ins->object()), temp());
-    defineReuseInput(lir, ins, 0);
-    assignSafepoint(lir, ins);
-  } else {
-    auto* lir = new (alloc()) LConvertUnboxedObjectToNative(
-        useRegister(ins->object()), LDefinition::BogusTemp());
-    add(lir, ins);
-    assignSafepoint(lir, ins);
-  }
-}
-
 void LIRGenerator::visitEffectiveAddress(MEffectiveAddress* ins) {
   define(new (alloc()) LEffectiveAddress(useRegister(ins->base()),
                                          useRegister(ins->index())),
@@ -3417,18 +3400,6 @@ void LIRGenerator::visitArrayJoin(MArrayJoin* ins) {
                                useRegisterAtStart(ins->sep()), tempDef);
   defineReturn(lir, ins);
   assignSafepoint(lir, ins);
-}
-
-void LIRGenerator::visitSinCos(MSinCos* ins) {
-  MOZ_ASSERT(ins->type() == MIRType::SinCosDouble);
-  MOZ_ASSERT(ins->input()->type() == MIRType::Double ||
-             ins->input()->type() == MIRType::Float32 ||
-             ins->input()->type() == MIRType::Int32);
-
-  LSinCos* lir = new (alloc()) LSinCos(useRegisterAtStart(ins->input()),
-                                       tempFixed(CallTempNonArgRegs[0]),
-                                       tempFixed(CallTempNonArgRegs[1]));
-  defineSinCos(lir, ins);
 }
 
 void LIRGenerator::visitStringSplit(MStringSplit* ins) {
@@ -3732,10 +3703,8 @@ void LIRGenerator::visitGetPropertyPolymorphic(MGetPropertyPolymorphic* ins) {
     assignSnapshot(lir, Bailout_ShapeGuard);
     defineBox(lir, ins);
   } else {
-    LDefinition maybeTemp2 =
-        (ins->type() == MIRType::Double) ? temp() : LDefinition::BogusTemp();
-    LGetPropertyPolymorphicT* lir = new (alloc()) LGetPropertyPolymorphicT(
-        useRegister(ins->object()), temp(), maybeTemp2);
+    LGetPropertyPolymorphicT* lir = new (alloc())
+        LGetPropertyPolymorphicT(useRegister(ins->object()), temp());
     assignSnapshot(lir, Bailout_ShapeGuard);
     define(lir, ins);
   }
@@ -3746,14 +3715,13 @@ void LIRGenerator::visitSetPropertyPolymorphic(MSetPropertyPolymorphic* ins) {
 
   if (ins->value()->type() == MIRType::Value) {
     LSetPropertyPolymorphicV* lir = new (alloc()) LSetPropertyPolymorphicV(
-        useRegister(ins->object()), useBox(ins->value()), temp(), temp());
+        useRegister(ins->object()), useBox(ins->value()), temp());
     assignSnapshot(lir, Bailout_ShapeGuard);
     add(lir, ins);
   } else {
     LAllocation value = useRegisterOrConstant(ins->value());
-    LSetPropertyPolymorphicT* lir = new (alloc())
-        LSetPropertyPolymorphicT(useRegister(ins->object()), value,
-                                 ins->value()->type(), temp(), temp());
+    LSetPropertyPolymorphicT* lir = new (alloc()) LSetPropertyPolymorphicT(
+        useRegister(ins->object()), value, ins->value()->type(), temp());
     assignSnapshot(lir, Bailout_ShapeGuard);
     add(lir, ins);
   }
@@ -3853,31 +3821,17 @@ void LIRGenerator::visitGuardReceiverPolymorphic(
   MOZ_ASSERT(ins->type() == MIRType::Object);
 
   if (JitOptions.spectreObjectMitigationsMisc) {
-    auto* lir = new (alloc()) LGuardReceiverPolymorphic(
-        useRegisterAtStart(ins->object()), temp(), temp());
+    auto* lir = new (alloc())
+        LGuardReceiverPolymorphic(useRegisterAtStart(ins->object()), temp());
     assignSnapshot(lir, Bailout_ShapeGuard);
     defineReuseInput(lir, ins, 0);
   } else {
     auto* lir = new (alloc())
-        LGuardReceiverPolymorphic(useRegister(ins->object()), temp(), temp());
+        LGuardReceiverPolymorphic(useRegister(ins->object()), temp());
     assignSnapshot(lir, Bailout_ShapeGuard);
     add(lir, ins);
     redefine(ins, ins->object());
   }
-}
-
-void LIRGenerator::visitGuardUnboxedExpando(MGuardUnboxedExpando* ins) {
-  LGuardUnboxedExpando* guard =
-      new (alloc()) LGuardUnboxedExpando(useRegister(ins->object()));
-  assignSnapshot(guard, ins->bailoutKind());
-  add(guard, ins);
-  redefine(ins, ins->object());
-}
-
-void LIRGenerator::visitLoadUnboxedExpando(MLoadUnboxedExpando* ins) {
-  LLoadUnboxedExpando* lir =
-      new (alloc()) LLoadUnboxedExpando(useRegisterAtStart(ins->object()));
-  define(lir, ins);
 }
 
 void LIRGenerator::visitAssertRange(MAssertRange* ins) {
@@ -4377,11 +4331,6 @@ void LIRGenerator::visitWasmDerivedPointer(MWasmDerivedPointer* ins) {
   define(new (alloc()) LWasmDerivedPointer(base), ins);
 }
 
-void LIRGenerator::visitWasmLoadRef(MWasmLoadRef* ins) {
-  define(new (alloc()) LWasmLoadRef(useRegisterAtStart(ins->getOperand(0))),
-         ins);
-}
-
 void LIRGenerator::visitWasmStoreRef(MWasmStoreRef* ins) {
   LAllocation tls = useRegister(ins->tls());
   LAllocation valueAddr = useFixed(ins->valueAddr(), PreBarrierReg);
@@ -4749,11 +4698,6 @@ void LIRGenerator::visitWasmNullConstant(MWasmNullConstant* ins) {
   define(new (alloc()) LWasmNullConstant(), ins);
 }
 
-void LIRGenerator::visitIsNullPointer(MIsNullPointer* ins) {
-  define(new (alloc()) LIsNullPointer(useRegisterAtStart(ins->getOperand(0))),
-         ins);
-}
-
 void LIRGenerator::visitWasmFloatConstant(MWasmFloatConstant* ins) {
   switch (ins->type()) {
     case MIRType::Double:
@@ -5081,6 +5025,50 @@ void LIRGenerator::visitIonToWasmCall(MIonToWasmCall* ins) {
 
   defineReturn(lir, ins);
   assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitWasmSelect(MWasmSelect* ins) {
+  MDefinition* condExpr = ins->condExpr();
+
+  // Pick off specific cases that we can do with LWasmCompareAndSelect.
+  // Currently only{U,}Int32 selection driven by a comparison of {U,}Int32
+  // values.
+  if (condExpr->isCompare() && condExpr->isEmittedAtUses() &&
+      ins->type() == MIRType::Int32) {
+    MCompare* comp = condExpr->toCompare();
+    JSOp jsop = comp->jsop();
+    MCompare::CompareType compTy = comp->compareType();
+    // We don't currently generate any other JSOPs for the comparison, and if
+    // that changes, we want to know about it.  Hence this assertion.
+    MOZ_ASSERT(jsop == JSOP_EQ || jsop == JSOP_NE || jsop == JSOP_LT ||
+               jsop == JSOP_GT || jsop == JSOP_LE || jsop == JSOP_GE);
+    if (compTy == MCompare::Compare_Int32 ||
+        compTy == MCompare::Compare_UInt32) {
+      auto* lir = new (alloc()) LWasmCompareAndSelect(
+          useRegister(comp->lhs()), useAny(comp->rhs()), compTy, jsop,
+          useRegisterAtStart(ins->trueExpr()), useAny(ins->falseExpr()));
+
+      defineReuseInput(lir, ins, LWasmCompareAndSelect::IfTrueExprIndex);
+      return;
+    }
+    // Otherwise fall through to normal handling, which appears to emit the
+    // condexpr itself anyway.
+  }
+
+  if (ins->type() == MIRType::Int64) {
+    auto* lir = new (alloc()) LWasmSelectI64(
+        useInt64RegisterAtStart(ins->trueExpr()), useInt64(ins->falseExpr()),
+        useRegister(ins->condExpr()));
+
+    defineInt64ReuseInput(lir, ins, LWasmSelectI64::TrueExprIndex);
+    return;
+  }
+
+  auto* lir = new (alloc())
+      LWasmSelect(useRegisterAtStart(ins->trueExpr()), useAny(ins->falseExpr()),
+                  useRegister(ins->condExpr()));
+
+  defineReuseInput(lir, ins, LWasmSelect::TrueExprIndex);
 }
 
 static_assert(!std::is_polymorphic<LIRGenerator>::value,

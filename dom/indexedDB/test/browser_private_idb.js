@@ -5,18 +5,21 @@ async function idbCheckFunc() {
     factory = indexedDB;
   } catch (ex) {
     // in a frame-script, we need to pierce "content"
-    // eslint-disable-next-line mozilla/no-cpows-in-tests
     factory = content.indexedDB;
   }
   try {
     console.log("opening db");
     const req = factory.open("db", 1);
     const result = await new Promise((resolve, reject) => {
-      req.onerror = () => { resolve("error"); };
+      req.onerror = () => {
+        resolve("error");
+      };
       // we expect the db to not exist and for created to resolve first
-      req.onupgradeneeded = () => { resolve("created"); };
+      req.onupgradeneeded = () => {
+        resolve("created");
+      };
       // ...so this will lose the race
-      req.onsuccess = (event) => {
+      req.onsuccess = event => {
         resolve("already-exists");
       };
     });
@@ -46,7 +49,7 @@ async function workerDriverFunc() {
   if (!("postMessage" in self)) {
     addEventListener("connect", function(evt) {
       const port = evt.ports[0];
-      resultPromise.then((result) => {
+      resultPromise.then(result => {
         console.log("worker test completed, postMessage-ing result:", result);
         port.postMessage({ idbResult: result });
       });
@@ -73,7 +76,6 @@ const workerScriptBlob = new Blob([workerScript]);
  */
 async function workerCheckDeployer({ srcBlob, workerType }) {
   let worker, port;
-  // eslint-disable-next-line mozilla/no-cpows-in-tests
   const url = content.URL.createObjectURL(srcBlob);
   if (workerType === "dedicated") {
     worker = new content.Worker(url);
@@ -87,9 +89,13 @@ async function workerCheckDeployer({ srcBlob, workerType }) {
   }
 
   const result = await new Promise((resolve, reject) => {
-    port.addEventListener("message", function(evt) {
-      resolve(evt.data.idbResult);
-    }, { once: true });
+    port.addEventListener(
+      "message",
+      function(evt) {
+        resolve(evt.data.idbResult);
+      },
+      { once: true }
+    );
     worker.addEventListener("error", function(evt) {
       console.error("worker problem:", evt);
       reject(evt);
@@ -111,7 +117,8 @@ async function checkTabDedicatedWorkerIDB(tab) {
       srcBlob: workerScriptBlob,
       workerType: "dedicated",
     },
-    workerCheckDeployer);
+    workerCheckDeployer
+  );
 }
 
 async function checkTabSharedWorkerIDB(tab) {
@@ -121,7 +128,8 @@ async function checkTabSharedWorkerIDB(tab) {
       srcBlob: workerScriptBlob,
       workerType: "shared",
     },
-    workerCheckDeployer);
+    workerCheckDeployer
+  );
 }
 
 add_task(async function() {
@@ -129,28 +137,51 @@ add_task(async function() {
     "http://example.com/browser/dom/indexedDB/test/page_private_idb.html";
 
   let normalWin = await BrowserTestUtils.openNewBrowserWindow();
-  let privateWin =
-    await BrowserTestUtils.openNewBrowserWindow({private: true});
+  let privateWin = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
 
-  let normalTab =
-    await BrowserTestUtils.openNewForegroundTab(normalWin.gBrowser, pageUrl);
-  let privateTab =
-    await BrowserTestUtils.openNewForegroundTab(privateWin.gBrowser, pageUrl);
+  let normalTab = await BrowserTestUtils.openNewForegroundTab(
+    normalWin.gBrowser,
+    pageUrl
+  );
+  let privateTab = await BrowserTestUtils.openNewForegroundTab(
+    privateWin.gBrowser,
+    pageUrl
+  );
 
-  is(await checkTabWindowIDB(normalTab), "created",
-     "IndexedDB works in a non-private-browsing page.");
-  is(await checkTabWindowIDB(privateTab), "error",
-     "IndexedDB does not work in a private-browsing page.");
+  is(
+    await checkTabWindowIDB(normalTab),
+    "created",
+    "IndexedDB works in a non-private-browsing page."
+  );
+  is(
+    await checkTabWindowIDB(privateTab),
+    "error",
+    "IndexedDB does not work in a private-browsing page."
+  );
 
-  is(await checkTabDedicatedWorkerIDB(normalTab), "created",
-     "IndexedDB works in a non-private-browsing Worker.");
-  is(await checkTabDedicatedWorkerIDB(privateTab), "error",
-     "IndexedDB does not work in a private-browsing Worker.");
+  is(
+    await checkTabDedicatedWorkerIDB(normalTab),
+    "created",
+    "IndexedDB works in a non-private-browsing Worker."
+  );
+  is(
+    await checkTabDedicatedWorkerIDB(privateTab),
+    "error",
+    "IndexedDB does not work in a private-browsing Worker."
+  );
 
-  is(await checkTabSharedWorkerIDB(normalTab), "created",
-     "IndexedDB works in a non-private-browsing SharedWorker.");
-  is(await checkTabSharedWorkerIDB(privateTab), "error",
-     "IndexedDB does not work in a private-browsing SharedWorker.");
+  is(
+    await checkTabSharedWorkerIDB(normalTab),
+    "created",
+    "IndexedDB works in a non-private-browsing SharedWorker."
+  );
+  is(
+    await checkTabSharedWorkerIDB(privateTab),
+    "error",
+    "IndexedDB does not work in a private-browsing SharedWorker."
+  );
 
   await BrowserTestUtils.closeWindow(normalWin);
   await BrowserTestUtils.closeWindow(privateWin);

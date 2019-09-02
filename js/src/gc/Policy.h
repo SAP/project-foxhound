@@ -21,7 +21,7 @@ template <typename T>
 struct InternalGCPointerPolicy : public JS::GCPointerPolicy<T> {
   using Type = typename mozilla::RemovePointer<T>::Type;
 
-#define IS_BASE_OF_OR(_1, BaseType, _2) \
+#define IS_BASE_OF_OR(_1, BaseType, _2, _3) \
   mozilla::IsBaseOf<BaseType, Type>::value ||
   static_assert(
       JS_FOR_EACH_TRACEKIND(IS_BASE_OF_OR) false,
@@ -64,7 +64,7 @@ struct GCPolicy<T* const> : public js::InternalGCPointerPolicy<T* const> {};
 template <typename T>
 struct GCPolicy<js::HeapPtr<T>> {
   static void trace(JSTracer* trc, js::HeapPtr<T>* thingp, const char* name) {
-    js::TraceEdge(trc, thingp, name);
+    js::TraceNullableEdge(trc, thingp, name);
   }
   static bool needsSweep(js::HeapPtr<T>* thingp) {
     return js::gc::IsAboutToBeFinalized(thingp);
@@ -72,12 +72,12 @@ struct GCPolicy<js::HeapPtr<T>> {
 };
 
 template <typename T>
-struct GCPolicy<js::ReadBarriered<T>> {
-  static void trace(JSTracer* trc, js::ReadBarriered<T>* thingp,
+struct GCPolicy<js::WeakHeapPtr<T>> {
+  static void trace(JSTracer* trc, js::WeakHeapPtr<T>* thingp,
                     const char* name) {
     js::TraceEdge(trc, thingp, name);
   }
-  static bool needsSweep(js::ReadBarriered<T>* thingp) {
+  static bool needsSweep(js::WeakHeapPtr<T>* thingp) {
     return js::gc::IsAboutToBeFinalized(thingp);
   }
 };

@@ -2,34 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use {WindowWrapper, NotifierEvent};
+use crate::{WindowWrapper, NotifierEvent};
 use base64;
+use semver;
 use image::load as load_piston_image;
 use image::png::PNGEncoder;
 use image::{ColorType, ImageFormat};
-use parse_function::parse_function;
-use png::save_flipped;
-use std::cmp;
+use crate::parse_function::parse_function;
+use crate::png::save_flipped;
+use std::{cmp, env};
 use std::fmt::{Display, Error, Formatter};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::mpsc::Receiver;
 use webrender::RenderResults;
 use webrender::api::*;
 use webrender::api::units::*;
-use wrench::{Wrench, WrenchThing};
-use yaml_frame_reader::YamlFrameReader;
+use crate::wrench::{Wrench, WrenchThing};
+use crate::yaml_frame_reader::YamlFrameReader;
 
-
-#[cfg(target_os = "windows")]
-const PLATFORM: &str = "win";
-#[cfg(target_os = "linux")]
-const PLATFORM: &str = "linux";
-#[cfg(target_os = "macos")]
-const PLATFORM: &str = "mac";
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-const PLATFORM: &str = "other";
 
 const OPTION_DISABLE_SUBPX: &str = "disable-subpixel";
 const OPTION_DISABLE_AA: &str = "disable-aa";
@@ -123,7 +116,7 @@ impl Display for Reftest {
 
 struct ReftestImage {
     data: Vec<u8>,
-    size: FramebufferIntSize,
+    size: DeviceIntSize,
 }
 enum ReftestImageComparison {
     Equal,
@@ -196,7 +189,7 @@ struct ReftestManifest {
     reftests: Vec<Reftest>,
 }
 impl ReftestManifest {
-    fn new(manifest: &Path, options: &ReftestOptions) -> ReftestManifest {
+    fn new(manifest: &Path, environment: &ReftestEnvironment, options: &ReftestOptions) -> ReftestManifest {
         let dir = manifest.parent().unwrap();
         let f =
             File::open(manifest).expect(&format!("couldn't open manifest: {}", manifest.display()));
@@ -234,14 +227,22 @@ impl ReftestManifest {
                         let include = dir.join(tokens[1]);
 
                         reftests.append(
-                            &mut ReftestManifest::new(include.as_path(), options).reftests,
+                            &mut ReftestManifest::new(include.as_path(), environment, options).reftests,
                         );
 
                         break;
                     }
+                    platform if platform.starts_with("skip_on") => {
+                        // e.g. skip_on(android,debug) will skip only when
+                        // running on a debug android build.
+                        let (_, args, _) = parse_function(platform);
+                        if args.iter().all(|arg| environment.has(arg)) {
+                            break;
+                        }
+                    }
                     platform if platform.starts_with("platform") => {
                         let (_, args, _) = parse_function(platform);
-                        if !args.iter().any(|arg| arg == &PLATFORM) {
+                        if !args.iter().any(|arg| arg == &environment.platform) {
                             // Skip due to platform not matching
                             break;
                         }
@@ -348,18 +349,101 @@ struct YamlRenderOutput {
     results: RenderResults,
 }
 
+struct ReftestEnvironment {
+    pub platform: &'static str,
+    pub version: Option<semver::Version>,
+    pub mode: &'static str,
+}
+
+impl ReftestEnvironment {
+    fn new() -> Self {
+        Self {
+            platform: Self::platform(),
+            version: Self::version(),
+            mode: Self::mode(),
+        }
+    }
+
+    fn has(&self, condition: &str) -> bool {
+        if self.platform == condition || self.mode == condition {
+            return true;
+        }
+        match (&self.version, &semver::VersionReq::parse(condition)) {
+            (Some(v), Ok(r)) => {
+                if r.matches(v) {
+                    return true;
+                }
+            },
+            _ => (),
+        };
+        let envkey = format!("WRENCH_REFTEST_CONDITION_{}", condition.to_uppercase());
+        env::var(envkey).is_ok()
+    }
+
+    fn platform() -> &'static str {
+        if cfg!(target_os = "windows") {
+            "win"
+        } else if cfg!(target_os = "linux") {
+            "linux"
+        } else if cfg!(target_os = "macos") {
+            "mac"
+        } else if cfg!(target_os = "android") {
+            "android"
+        } else {
+            "other"
+        }
+    }
+
+    fn version() -> Option<semver::Version> {
+        if cfg!(target_os = "macos") {
+            use std::str;
+            let version_bytes = Command::new("defaults")
+                .arg("read")
+                .arg("loginwindow")
+                .arg("SystemVersionStampAsString")
+                .output()
+                .expect("Failed to get macOS version")
+                .stdout;
+            let mut version_string = str::from_utf8(&version_bytes)
+                .expect("Failed to read macOS version")
+                .trim()
+                .to_string();
+            // On some machines this produces just the major.minor and on
+            // some machines this gives major.minor.patch. But semver requires
+            // the patch so we fake one if it's not there.
+            if version_string.chars().filter(|c| *c == '.').count() == 1 {
+                version_string.push_str(".0");
+            }
+            Some(semver::Version::parse(&version_string)
+                 .expect(&format!("Failed to parse macOS version {}", version_string)))
+        } else {
+            None
+        }
+    }
+
+    fn mode() -> &'static str {
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
+    }
+}
+
 pub struct ReftestHarness<'a> {
     wrench: &'a mut Wrench,
     window: &'a mut WindowWrapper,
     rx: &'a Receiver<NotifierEvent>,
+    environment: ReftestEnvironment,
 }
 impl<'a> ReftestHarness<'a> {
     pub fn new(wrench: &'a mut Wrench, window: &'a mut WindowWrapper, rx: &'a Receiver<NotifierEvent>) -> Self {
-        ReftestHarness { wrench, window, rx }
+        let environment = ReftestEnvironment::new();
+        ReftestHarness { wrench, window, rx, environment }
     }
 
     pub fn run(mut self, base_manifest: &Path, reftests: Option<&Path>, options: &ReftestOptions) -> usize {
-        let manifest = ReftestManifest::new(base_manifest, options);
+        let manifest = ReftestManifest::new(base_manifest, &self.environment, options);
         let reftests = manifest.find(reftests.unwrap_or(&PathBuf::new()));
 
         let mut total_passing = 0;
@@ -520,14 +604,14 @@ impl<'a> ReftestHarness<'a> {
         let size = img.dimensions();
         ReftestImage {
             data: img.into_raw(),
-            size: FramebufferIntSize::new(size.0 as i32, size.1 as i32),
+            size: DeviceIntSize::new(size.0 as i32, size.1 as i32),
         }
     }
 
     fn render_yaml(
         &mut self,
         filename: &Path,
-        size: FramebufferIntSize,
+        size: DeviceIntSize,
         font_render_mode: Option<FontRenderMode>,
         allow_mipmaps: bool,
     ) -> YamlRenderOutput {
@@ -552,7 +636,7 @@ impl<'a> ReftestHarness<'a> {
         // taking the bottom left sub-rectangle
         let rect = FramebufferIntRect::new(
             FramebufferIntPoint::new(0, window_size.height - size.height),
-            size,
+            FramebufferIntSize::new(size.width, size.height),
         );
         let pixels = self.wrench.renderer.read_pixels_rgba8(rect);
         self.window.swap_buffers();

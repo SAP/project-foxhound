@@ -15,6 +15,7 @@
 #include "mozilla/gfx/UserData.h"              // for UserDataKey
 #include "mozilla/webrender/WebRenderTypes.h"  // for wr::ImageKey
 #include "nsTArray.h"                          // for AutoTArray
+#include "nsThreadUtils.h"                     // for Runnable
 #include "ImageTypes.h"                        // for ContainerProducerID
 
 namespace mozilla {
@@ -44,7 +45,7 @@ class CompositorManagerChild;
 class ImageContainer;
 class RenderRootStateManager;
 
-class SharedSurfacesChild final {
+class SharedSurfacesChild {
  public:
   /**
    * Request that the surface be mapped into the compositor thread's memory
@@ -116,7 +117,7 @@ class SharedSurfacesChild final {
    public:
     ImageKeyData(RenderRootStateManager* aManager,
                  const wr::ImageKey& aImageKey);
-    ~ImageKeyData();
+    virtual ~ImageKeyData();
 
     ImageKeyData(ImageKeyData&& aOther);
     ImageKeyData& operator=(ImageKeyData&& aOther);
@@ -138,20 +139,20 @@ class SharedSurfacesChild final {
 
   friend class SharedSurfacesAnimation;
 
-  class SharedUserData final {
+  class SharedUserData final : public Runnable {
    public:
-    SharedUserData() : mShared(false) {}
-
-    explicit SharedUserData(const wr::ExternalImageId& aId)
-        : mId(aId), mShared(false) {}
-
-    ~SharedUserData();
+    explicit SharedUserData(const wr::ExternalImageId& aId);
+    virtual ~SharedUserData();
 
     SharedUserData(const SharedUserData& aOther) = delete;
     SharedUserData& operator=(const SharedUserData& aOther) = delete;
 
     SharedUserData(SharedUserData&& aOther) = delete;
     SharedUserData& operator=(SharedUserData&& aOther) = delete;
+
+    static void Destroy(void* aClosure);
+
+    NS_IMETHOD Run() override;
 
     const wr::ExternalImageId& Id() const { return mId; }
 
@@ -194,13 +195,12 @@ class AnimationImageKeyData final : public SharedSurfacesChild::ImageKeyData {
   AnimationImageKeyData(RenderRootStateManager* aManager,
                         const wr::ImageKey& aImageKey);
 
-  ~AnimationImageKeyData();
+  virtual ~AnimationImageKeyData();
 
   AnimationImageKeyData(AnimationImageKeyData&& aOther);
   AnimationImageKeyData& operator=(AnimationImageKeyData&& aOther);
 
   AutoTArray<RefPtr<gfx::SourceSurface>, 2> mPendingRelease;
-  bool mRecycling;
 };
 
 /**
@@ -211,7 +211,7 @@ class SharedSurfacesAnimation final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SharedSurfacesAnimation)
 
-  SharedSurfacesAnimation() {}
+  SharedSurfacesAnimation() = default;
 
   void Destroy();
 

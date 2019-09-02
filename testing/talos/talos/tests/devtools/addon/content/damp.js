@@ -1,11 +1,16 @@
 var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
-const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { AddonManager } = ChromeUtils.import(
+  "resource://gre/modules/AddonManager.jsm"
+);
+const env = Cc["@mozilla.org/process/environment;1"].getService(
+  Ci.nsIEnvironment
+);
 
 XPCOMUtils.defineLazyGetter(this, "require", function() {
-  let { require } =
-    ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+  let { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
   return require;
 });
 
@@ -13,6 +18,8 @@ XPCOMUtils.defineLazyGetter(this, "require", function() {
 // "normal". Print allocation sites to stdout if DEBUG_DEVTOOLS_ALLOCATIONS is set to
 // "verbose".
 const DEBUG_ALLOCATIONS = env.get("DEBUG_DEVTOOLS_ALLOCATIONS");
+
+const DEBUG_SCREENSHOTS = env.get("DEBUG_DEVTOOLS_SCREENSHOTS");
 
 // Maximum time spent in one test, in milliseconds
 const TEST_TIMEOUT = 5 * 60000;
@@ -23,20 +30,32 @@ function getMostRecentBrowserWindow() {
 
 let gmm = window.getGroupMessageManager("browsers");
 
-const frameScript = "data:," + encodeURIComponent(`(${
-  function() {
-    addEventListener("load", function(event) {
-      let subframe = event.target != content.document;
-      sendAsyncMessage("browser-test-utils:loadEvent",
-        {subframe, url: event.target.documentURI});
-    }, true);
-  }
-})()`);
+const frameScript =
+  "data:," +
+  encodeURIComponent(
+    `(${function() {
+      addEventListener(
+        "load",
+        function(event) {
+          let subframe = event.target != content.document;
+          sendAsyncMessage("browser-test-utils:loadEvent", {
+            subframe,
+            url: event.target.documentURI,
+          });
+        },
+        true
+      );
+    }})()`
+  );
 
 gmm.loadFrameScript(frameScript, true);
 
 // This is duplicated from BrowserTestUtils.jsm
-function awaitBrowserLoaded(browser, includeSubFrames = false, wantLoad = null) {
+function awaitBrowserLoaded(
+  browser,
+  includeSubFrames = false,
+  wantLoad = null
+) {
   // If browser belongs to tabbrowser-tab, ensure it has been
   // inserted into the document.
   let tabbrowser = browser.ownerGlobal.gBrowser;
@@ -47,7 +66,7 @@ function awaitBrowserLoaded(browser, includeSubFrames = false, wantLoad = null) 
   function isWanted(url) {
     if (!wantLoad) {
       return true;
-    } else if (typeof(wantLoad) == "function") {
+    } else if (typeof wantLoad == "function") {
       return wantLoad(url);
     }
     // It's a string.
@@ -57,8 +76,11 @@ function awaitBrowserLoaded(browser, includeSubFrames = false, wantLoad = null) 
   return new Promise(resolve => {
     let mm = browser.ownerGlobal.messageManager;
     mm.addMessageListener("browser-test-utils:loadEvent", function onLoad(msg) {
-      if (msg.target == browser && (!msg.data.subframe || includeSubFrames) &&
-          isWanted(msg.data.url)) {
+      if (
+        msg.target == browser &&
+        (!msg.data.subframe || includeSubFrames) &&
+        isWanted(msg.data.url)
+      ) {
         mm.removeMessageListener("browser-test-utils:loadEvent", onLoad);
         resolve(msg.data.url);
       }
@@ -99,7 +121,9 @@ Damp.prototype = {
     // before continuing.
     async function getTalosParentProfiler() {
       try {
-        var {TalosParentProfiler} = ChromeUtils.import("resource://talos-powers/TalosParentProfiler.jsm");
+        var { TalosParentProfiler } = ChromeUtils.import(
+          "resource://talos-powers/TalosParentProfiler.jsm"
+        );
         return TalosParentProfiler;
       } catch (err) {
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -108,6 +132,26 @@ Damp.prototype = {
     }
 
     this.TalosParentProfiler = await getTalosParentProfiler();
+  },
+
+  // Take a screenshot of the whole browser window and open it in a background tab
+  async screenshot(label) {
+    const win = this._win;
+    const canvas = win.document.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "html:canvas"
+    );
+    const context = canvas.getContext("2d");
+    canvas.width = win.innerWidth;
+    canvas.height = win.innerHeight;
+    context.drawWindow(win, 0, 0, canvas.width, canvas.height, "white");
+    const imgURL = canvas.toDataURL();
+    const url = `data:text/html,<title>${label}</title>
+      <h1>${label}</h1>
+      <img width="100%" height="100%" src="${imgURL}"/>`;
+    this._win.gBrowser.addTab(url, {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
   },
 
   /**
@@ -164,6 +208,9 @@ Damp.prototype = {
         } else if (DEBUG_ALLOCATIONS == "verbose") {
           this.allocationTracker.logAllocationSites();
         }
+        if (DEBUG_SCREENSHOTS) {
+          this.screenshot(label);
+        }
       },
     };
   },
@@ -171,8 +218,10 @@ Damp.prototype = {
   async addTab(url) {
     // Disable opening animation to avoid intermittents and prevent having to wait for
     // animation's end. (See bug 1480953)
-    let tab = this._win.gBrowser.selectedTab = this._win.gBrowser.addTrustedTab(url,
-      { skipAnimation: true });
+    let tab = (this._win.gBrowser.selectedTab = this._win.gBrowser.addTrustedTab(
+      url,
+      { skipAnimation: true }
+    ));
     let browser = tab.linkedBrowser;
     await awaitBrowserLoaded(browser);
     return tab;
@@ -183,10 +232,14 @@ Damp.prototype = {
     window.performance.mark("pending paints.start");
     while (utils.isMozAfterPaintPending) {
       await new Promise(done => {
-        window.addEventListener("MozAfterPaint", function listener() {
-          window.performance.mark("pending paint");
-          done();
-        }, { once: true });
+        window.addEventListener(
+          "MozAfterPaint",
+          function listener() {
+            window.performance.mark("pending paint");
+            done();
+          },
+          { once: true }
+        );
       });
     }
     window.performance.measure("pending paints", "pending paints.start");
@@ -195,7 +248,7 @@ Damp.prototype = {
   reloadPage(onReload) {
     return new Promise(resolve => {
       let browser = gBrowser.selectedBrowser;
-      if (typeof(onReload) == "function") {
+      if (typeof onReload == "function") {
         onReload().then(resolve);
       } else {
         resolve(awaitBrowserLoaded(browser));
@@ -268,7 +321,7 @@ Damp.prototype = {
     let promise = testMethod();
 
     // If test method is an async function, ensure catching its exceptions
-    if (promise && typeof(promise.catch) == "function") {
+    if (promise && typeof promise.catch == "function") {
       promise.catch(e => {
         this.exception(e);
       });
@@ -285,8 +338,9 @@ Damp.prototype = {
   },
 
   _log(str) {
-    if (window.MozillaFileLogger && window.MozillaFileLogger.log)
+    if (window.MozillaFileLogger && window.MozillaFileLogger.log) {
       window.MozillaFileLogger.log(str);
+    }
 
     window.dump(str);
   },
@@ -302,18 +356,33 @@ Damp.prototype = {
     var out = "";
     for (var i in this._results) {
       res = this._results[i];
-      var disp = [].concat(res.value).map(function(a) { return (isNaN(a) ? -1 : a.toFixed(1)); }).join(" ");
+      var disp = []
+        .concat(res.value)
+        .map(function(a) {
+          return isNaN(a) ? -1 : a.toFixed(1);
+        })
+        .join(" ");
       out += res.name + ": " + disp + "\n";
 
-      if (!Array.isArray(res.value)) { // Waw intervals array is not reported to talos
+      if (!Array.isArray(res.value)) {
+        // Waw intervals array is not reported to talos
         testNames.push(res.name);
         testResults.push(res.value);
       }
     }
     this._log("\n" + out);
 
+    if (DEBUG_SCREENSHOTS) {
+      // When we are printing screenshots, we don't want to want to exit firefox
+      // so that we have time to view them.
+      dump(
+        "All tests are finished, please review the screenshots and close the browser manually.\n"
+      );
+      return;
+    }
+
     if (this.testDone) {
-      this.testDone({testResults, testNames});
+      this.testDone({ testResults, testNames });
     } else {
       // alert(out);
     }
@@ -341,7 +410,9 @@ Damp.prototype = {
   },
 
   startAllocationTracker() {
-    const { allocationTracker } = require("devtools/shared/test-helpers/allocation-tracker");
+    const {
+      allocationTracker,
+    } = require("devtools/shared/test-helpers/allocation-tracker");
     return allocationTracker();
   },
 
@@ -405,7 +476,9 @@ Damp.prototype = {
   },
 
   startTest(rootURI) {
-    let promise = new Promise(resolve => { this.testDone = resolve; });
+    let promise = new Promise(resolve => {
+      this.testDone = resolve;
+    });
     this.rootURI = rootURI;
     try {
       dump("Initialize the head file with a reference to this DAMP instance\n");
@@ -420,8 +493,9 @@ Damp.prototype = {
       let filter = Services.prefs.getCharPref("talos.subtests", "");
 
       let DAMP_TESTS = require(rootURI.resolve("content/damp-tests.js"));
-      let tests = DAMP_TESTS.filter(test => !test.disabled)
-                            .filter(test => test.name.includes(filter));
+      let tests = DAMP_TESTS.filter(test => !test.disabled).filter(test =>
+        test.name.includes(filter)
+      );
 
       if (tests.length === 0) {
         this.error(`Unable to find any test matching '${filter}'`);
@@ -441,12 +515,14 @@ Damp.prototype = {
         sequenceArray.push(test.path);
       }
 
-     this.waitBeforeRunningTests().then(() => {
-        this.TalosParentProfiler.resume("DAMP - start");
-        this._doSequence(sequenceArray, this._doneInternal);
-      }).catch(e => {
-        this.exception(e);
-      });
+      this.waitBeforeRunningTests()
+        .then(() => {
+          this.TalosParentProfiler.resume("DAMP - start");
+          this._doSequence(sequenceArray, this._doneInternal);
+        })
+        .catch(e => {
+          this.exception(e);
+        });
     } catch (e) {
       this.exception(e);
     }

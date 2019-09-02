@@ -87,7 +87,7 @@
 #else
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 #endif
-#ifdef XP_WIN32
+#ifdef XP_WIN
 @BINPATH@/plugin-hang-ui@BIN_SUFFIX@
 #if MOZ_PACKAGE_MSVC_DLLS
 @BINPATH@/@MSVC_C_RUNTIME_DLL@
@@ -107,11 +107,16 @@
 #endif
 
 ; We don't have a complete view of which dlls to expect when doing an artifact
-; build because we haven't run all of configure, so we trust what's in
-; dist/bin, because everything there was extracted from our original build's
-; package.
+; build because we haven't run the relevant parts of configure, so we guess
+; here and trust what came from our source build.
 #if defined(MOZ_ARTIFACT_BUILDS) && defined(XP_WIN)
-@BINPATH@/*.dll
+@BINPATH@/api-ms-win-*.dll
+@BINPATH@/ucrtbase.dll
+@BINPATH@/vcruntime*.dll
+@BINPATH@/msvcp*.dll
+@BINPATH@/libEGL.dll
+@BINPATH@/libGLESv2.dll
+@BINPATH@/d3dcompiler_47.dll
 #endif
 
 [browser]
@@ -151,7 +156,7 @@
 
 ; [Components]
 #ifdef ACCESSIBILITY
-#ifdef XP_WIN32
+#ifdef XP_WIN
 @BINPATH@/Accessible.tlb
 @BINPATH@/AccessibleHandler.dll
 @BINPATH@/AccessibleMarshal.dll
@@ -161,9 +166,9 @@
 
 ; JavaScript components
 @RESPATH@/browser/components/BrowserComponents.manifest
-@RESPATH@/browser/components/EnterprisePolicies.js
-@RESPATH@/browser/components/EnterprisePoliciesContent.js
-@RESPATH@/browser/components/EnterprisePolicies.manifest
+@RESPATH@/components/EnterprisePolicies.js
+@RESPATH@/components/EnterprisePoliciesContent.js
+@RESPATH@/components/EnterprisePolicies.manifest
 @RESPATH@/components/toolkitsearch.manifest
 @RESPATH@/components/extensions.manifest
 #ifdef MOZ_UPDATER
@@ -180,13 +185,19 @@
 @RESPATH@/components/servicesComponents.manifest
 @RESPATH@/components/servicesSettings.manifest
 @RESPATH@/components/cryptoComponents.manifest
+@RESPATH@/components/TelemetryStartup.manifest
 
 @RESPATH@/components/Push.manifest
 
+@RESPATH@/components/antitracking.manifest
+
+@RESPATH@/components/l10n-registry.manifest
+@RESPATH@/browser/components/l10n-registry.manifest
+
 ; CDP remote agent
 #ifdef ENABLE_REMOTE_AGENT
-@RESPATH@/components/RemoteAgent.js
-@RESPATH@/components/RemoteAgent.manifest
+@RESPATH@/chrome/remote@JAREXT@
+@RESPATH@/chrome/remote.manifest
 @RESPATH@/defaults/pref/remote.js
 #endif
 
@@ -282,9 +293,11 @@
 @RESPATH@/greprefs.js
 @RESPATH@/defaults/autoconfig/prefcalls.js
 @RESPATH@/browser/defaults/permissions
+; Remote Settings JSON dumps
 @RESPATH@/browser/defaults/settings/blocklists
 @RESPATH@/browser/defaults/settings/pinning
 @RESPATH@/browser/defaults/settings/main
+@RESPATH@/browser/defaults/settings/security-state
 
 ; Warning: changing the path to channel-prefs.js can cause bugs (Bug 756325)
 ; Technically this is an app pref file, but we are keeping it in the original
@@ -349,6 +362,9 @@
 #ifndef MOZ_SYSTEM_NSS
 #if defined(XP_LINUX) && !defined(ANDROID)
 @BINPATH@/@DLL_PREFIX@freeblpriv3@DLL_SUFFIX@
+#elif defined(XP_SOLARIS) && defined(SPARC64)
+bin/libfreebl_64fpu_3.so
+bin/libfreebl_64int_3.so
 #else
 @BINPATH@/@DLL_PREFIX@freebl3@DLL_SUFFIX@
 #endif
@@ -372,13 +388,6 @@
 #if defined(XP_LINUX)
 @BINPATH@/@DLL_PREFIX@mozsandbox@DLL_SUFFIX@
 #endif
-#endif
-
-; for Solaris SPARC
-#ifdef SOLARIS
-bin/libfreebl_32fpu_3.so
-bin/libfreebl_32int_3.so
-bin/libfreebl_32int64_3.so
 #endif
 
 ; [Updater]

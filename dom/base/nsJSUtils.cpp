@@ -15,6 +15,7 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/CompilationAndEvaluation.h"
+#include "js/Modules.h"  // JS::CompileModule{,DontInflate}, JS::GetModuleScript, JS::Module{Instantiate,Evaluate}
 #include "js/OffThreadScriptCompilation.h"
 #include "js/SourceText.h"
 #include "nsIScriptContext.h"
@@ -31,12 +32,12 @@
 #include "nsGlobalWindow.h"
 #include "nsXBLPrototypeBinding.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Date.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/SRILogHelper.h"
-#include "mozilla/Logging.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -48,8 +49,7 @@ bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsACString& aFilename,
     return false;
   }
 
-  aFilename.Assign(filename.get());
-  return true;
+  return aFilename.Assign(filename.get(), fallible);
 }
 
 bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsAString& aFilename,
@@ -59,8 +59,7 @@ bool nsJSUtils::GetCallingLocation(JSContext* aContext, nsAString& aFilename,
     return false;
   }
 
-  aFilename.Assign(NS_ConvertUTF8toUTF16(filename.get()));
-  return true;
+  return aFilename.Assign(NS_ConvertUTF8toUTF16(filename.get()), fallible);
 }
 
 uint64_t nsJSUtils::GetCurrentlyRunningCodeInnerWindowID(JSContext* aContext) {
@@ -71,7 +70,7 @@ uint64_t nsJSUtils::GetCurrentlyRunningCodeInnerWindowID(JSContext* aContext) {
 }
 
 nsresult nsJSUtils::CompileFunction(AutoJSAPI& jsapi,
-                                    JS::AutoObjectVector& aScopeChain,
+                                    JS::HandleVector<JSObject*> aScopeChain,
                                     JS::CompileOptions& aOptions,
                                     const nsACString& aName, uint32_t aArgCount,
                                     const char** aArgArray,
@@ -96,10 +95,11 @@ nsresult nsJSUtils::CompileFunction(AutoJSAPI& jsapi,
     return NS_ERROR_FAILURE;
   }
 
-  JS::Rooted<JSFunction*> fun(cx);
-  if (!JS::CompileFunction(cx, aScopeChain, aOptions,
-                           PromiseFlatCString(aName).get(), aArgCount,
-                           aArgArray, source, &fun)) {
+  JS::Rooted<JSFunction*> fun(
+      cx, JS::CompileFunction(cx, aScopeChain, aOptions,
+                              PromiseFlatCString(aName).get(), aArgCount,
+                              aArgArray, source));
+  if (!fun) {
     return NS_ERROR_FAILURE;
   }
 
@@ -152,7 +152,7 @@ nsJSUtils::ExecutionContext::ExecutionContext(JSContext* aCx,
 }
 
 void nsJSUtils::ExecutionContext::SetScopeChain(
-    const JS::AutoObjectVector& aScopeChain) {
+    JS::HandleVector<JSObject*> aScopeChain) {
   if (mSkip) {
     return;
   }
@@ -204,8 +204,29 @@ nsresult nsJSUtils::ExecutionContext::JoinCompile(
   return NS_OK;
 }
 
-nsresult nsJSUtils::ExecutionContext::Compile(
+static JSScript* CompileScript(
+    JSContext* aCx, JS::Handle<JS::StackGCVector<JSObject*>> aScopeChain,
     JS::CompileOptions& aCompileOptions, JS::SourceText<char16_t>& aSrcBuf) {
+  return aScopeChain.length() == 0
+             ? JS::Compile(aCx, aCompileOptions, aSrcBuf)
+             : JS::CompileForNonSyntacticScope(aCx, aCompileOptions, aSrcBuf);
+}
+
+static JSScript* CompileScript(
+    JSContext* aCx, JS::Handle<JS::StackGCVector<JSObject*>> aScopeChain,
+    JS::CompileOptions& aCompileOptions, JS::SourceText<Utf8Unit>& aSrcBuf) {
+  // Once the UTF-8 overloads don't inflate, we can get rid of these two
+  // |CompileScript| overloads and just call the JSAPI directly in the one
+  // caller.
+  return aScopeChain.length() == 0
+             ? JS::CompileDontInflate(aCx, aCompileOptions, aSrcBuf)
+             : JS::CompileForNonSyntacticScopeDontInflate(aCx, aCompileOptions,
+                                                          aSrcBuf);
+}
+
+template <typename Unit>
+nsresult nsJSUtils::ExecutionContext::InternalCompile(
+    JS::CompileOptions& aCompileOptions, JS::SourceText<Unit>& aSrcBuf) {
   if (mSkip) {
     return mRv;
   }
@@ -217,16 +238,8 @@ nsresult nsJSUtils::ExecutionContext::Compile(
 #endif
 
   MOZ_ASSERT(!mScript);
-  bool compiled = true;
-  if (mScopeChain.length() == 0) {
-    compiled = JS::Compile(mCx, aCompileOptions, aSrcBuf, &mScript);
-  } else {
-    compiled = JS::CompileForNonSyntacticScope(mCx, aCompileOptions, aSrcBuf,
-                                               &mScript);
-  }
-
-  MOZ_ASSERT_IF(compiled, mScript);
-  if (!compiled) {
+  mScript = CompileScript(mCx, mScopeChain, aCompileOptions, aSrcBuf);
+  if (!mScript) {
     mSkip = true;
     mRv = EvaluationExceptionToNSResult(mCx);
     return mRv;
@@ -239,6 +252,16 @@ nsresult nsJSUtils::ExecutionContext::Compile(
   }
 
   return NS_OK;
+}
+
+nsresult nsJSUtils::ExecutionContext::Compile(
+    JS::CompileOptions& aCompileOptions, JS::SourceText<char16_t>& aSrcBuf) {
+  return InternalCompile(aCompileOptions, aSrcBuf);
+}
+
+nsresult nsJSUtils::ExecutionContext::Compile(
+    JS::CompileOptions& aCompileOptions, JS::SourceText<Utf8Unit>& aSrcBuf) {
+  return InternalCompile(aCompileOptions, aSrcBuf);
 }
 
 nsresult nsJSUtils::ExecutionContext::Compile(
@@ -453,11 +476,26 @@ nsresult nsJSUtils::ExecutionContext::ExecScript(
   return NS_OK;
 }
 
-nsresult nsJSUtils::CompileModule(JSContext* aCx,
-                                  JS::SourceText<char16_t>& aSrcBuf,
-                                  JS::Handle<JSObject*> aEvaluationGlobal,
-                                  JS::CompileOptions& aCompileOptions,
-                                  JS::MutableHandle<JSObject*> aModule) {
+static JSObject* CompileModule(JSContext* aCx,
+                               JS::CompileOptions& aCompileOptions,
+                               JS::SourceText<char16_t>& aSrcBuf) {
+  return JS::CompileModule(aCx, aCompileOptions, aSrcBuf);
+}
+
+static JSObject* CompileModule(JSContext* aCx,
+                               JS::CompileOptions& aCompileOptions,
+                               JS::SourceText<Utf8Unit>& aSrcBuf) {
+  // Once compile-UTF-8-without-inflating is stable, it'll be renamed to remove
+  // the "DontInflate" suffix, these two overloads can be removed, and
+  // |JS::CompileModule| can be used in the sole caller below.
+  return JS::CompileModuleDontInflate(aCx, aCompileOptions, aSrcBuf);
+}
+
+template <typename Unit>
+static nsresult CompileJSModule(JSContext* aCx, JS::SourceText<Unit>& aSrcBuf,
+                                JS::Handle<JSObject*> aEvaluationGlobal,
+                                JS::CompileOptions& aCompileOptions,
+                                JS::MutableHandle<JSObject*> aModule) {
   AUTO_PROFILER_LABEL("nsJSUtils::CompileModule", JS);
   MOZ_ASSERT(aCx == nsContentUtils::GetCurrentJSContext());
   MOZ_ASSERT(aSrcBuf.get());
@@ -469,11 +507,31 @@ nsresult nsJSUtils::CompileModule(JSContext* aCx,
 
   NS_ENSURE_TRUE(xpc::Scriptability::Get(aEvaluationGlobal).Allowed(), NS_OK);
 
-  if (!JS::CompileModule(aCx, aCompileOptions, aSrcBuf, aModule)) {
+  JSObject* module = CompileModule(aCx, aCompileOptions, aSrcBuf);
+  if (!module) {
     return NS_ERROR_FAILURE;
   }
 
+  aModule.set(module);
   return NS_OK;
+}
+
+nsresult nsJSUtils::CompileModule(JSContext* aCx,
+                                  JS::SourceText<char16_t>& aSrcBuf,
+                                  JS::Handle<JSObject*> aEvaluationGlobal,
+                                  JS::CompileOptions& aCompileOptions,
+                                  JS::MutableHandle<JSObject*> aModule) {
+  return CompileJSModule(aCx, aSrcBuf, aEvaluationGlobal, aCompileOptions,
+                         aModule);
+}
+
+nsresult nsJSUtils::CompileModule(JSContext* aCx,
+                                  JS::SourceText<Utf8Unit>& aSrcBuf,
+                                  JS::Handle<JSObject*> aEvaluationGlobal,
+                                  JS::CompileOptions& aCompileOptions,
+                                  JS::MutableHandle<JSObject*> aModule) {
+  return CompileJSModule(aCx, aSrcBuf, aEvaluationGlobal, aCompileOptions,
+                         aModule);
 }
 
 nsresult nsJSUtils::InitModuleSourceElement(JSContext* aCx,
@@ -534,7 +592,7 @@ nsresult nsJSUtils::ModuleEvaluate(JSContext* aCx,
 }
 
 static bool AddScopeChainItem(JSContext* aCx, nsINode* aNode,
-                              JS::AutoObjectVector& aScopeChain) {
+                              JS::MutableHandleVector<JSObject*> aScopeChain) {
   JS::RootedValue val(aCx);
   if (!GetOrCreateDOMReflector(aCx, aNode, &val)) {
     return false;
@@ -548,8 +606,9 @@ static bool AddScopeChainItem(JSContext* aCx, nsINode* aNode,
 }
 
 /* static */
-bool nsJSUtils::GetScopeChainForElement(JSContext* aCx, Element* aElement,
-                                        JS::AutoObjectVector& aScopeChain) {
+bool nsJSUtils::GetScopeChainForElement(
+    JSContext* aCx, Element* aElement,
+    JS::MutableHandleVector<JSObject*> aScopeChain) {
   for (nsINode* cur = aElement; cur; cur = cur->GetScopeChainParent()) {
     if (!AddScopeChainItem(aCx, cur, aScopeChain)) {
       return false;
@@ -560,9 +619,10 @@ bool nsJSUtils::GetScopeChainForElement(JSContext* aCx, Element* aElement,
 }
 
 /* static */
-bool nsJSUtils::GetScopeChainForXBL(JSContext* aCx, Element* aElement,
-                                    const nsXBLPrototypeBinding& aProtoBinding,
-                                    JS::AutoObjectVector& aScopeChain) {
+bool nsJSUtils::GetScopeChainForXBL(
+    JSContext* aCx, Element* aElement,
+    const nsXBLPrototypeBinding& aProtoBinding,
+    JS::MutableHandleVector<JSObject*> aScopeChain) {
   if (!aElement) {
     return true;
   }
@@ -583,6 +643,15 @@ bool nsJSUtils::GetScopeChainForXBL(JSContext* aCx, Element* aElement,
 
 /* static */
 void nsJSUtils::ResetTimeZone() { JS::ResetTimeZone(); }
+
+/* static */
+bool nsJSUtils::DumpEnabled() {
+#if defined(DEBUG) || defined(MOZ_ENABLE_JS_DUMP)
+  return true;
+#else
+  return StaticPrefs::browser_dom_window_dump_enabled();
+#endif
+}
 
 //
 // nsDOMJSUtils.h

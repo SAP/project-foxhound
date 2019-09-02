@@ -4,11 +4,10 @@
 https://bugzilla.mozilla.org/show_bug.cgi?id=744830
 -->
 <head>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 <!--
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 -->
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/AddTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -42,9 +41,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=744830
     const contentBR = iframeEl.contentDocument.body.getBoundingClientRect();
 
     ok(chromeBR.height > contentBR.height, "Chrome content height should be bigger than content due to layout");
-
-    ok(!iframeEl.contentDocument.getElementById('svgel').hasExtension("http://www.w3.org/1998/Math/MathML"), 'SVG namespace support is disabled in content iframe');
-    ok(chromeIframeEl.contentDocument.getElementById('svgel').hasExtension("http://www.w3.org/1998/Math/MathML"), 'SVG namespace support is enabled in chrome iframe');
 
     SpecialPowers.setBoolPref("mathml.disabled", initialPrefValue);
   });

@@ -8,40 +8,11 @@ add_task(async function testCustomize() {
   let getMoreURL = "about:blank#getMoreThemes";
 
   // Reset the theme prefs to ensure they haven't been messed with.
-  Services.prefs.clearUserPref("lightweightThemes.recommendedThemes");
-  Services.prefs.clearUserPref("lightweightThemes.usedThemes");
-  await SpecialPowers.pushPrefEnv({set: [
-    ["lightweightThemes.getMoreURL", getMoreURL],
-  ]});
+  await SpecialPowers.pushPrefEnv({
+    set: [["lightweightThemes.getMoreURL", getMoreURL]],
+  });
 
   await startCustomizing();
-
-  // Open the panel to populate the recommended themes.
-  let themePanel = document.getElementById("customization-lwtheme-menu");
-  themePanel.openPopup();
-  await BrowserTestUtils.waitForPopupEvent(themePanel, "shown");
-
-  // Install a recommended theme.
-  let recommendedLabel = document.getElementById("customization-lwtheme-menu-recommended");
-  let themeButton = recommendedLabel.nextElementSibling;
-  let themeId = `${themeButton.theme.id}@personas.mozilla.org`;
-  let themeChanged = TestUtils.topicObserved("lightweight-theme-changed");
-  themeButton.click();
-
-  // Wait for the theme to change and the popup to close.
-  await themeChanged;
-  await BrowserTestUtils.waitForPopupEvent(themePanel, "hidden");
-
-  // Switch back to the default theme.
-  let installedThemes = document.querySelectorAll(".customization-lwtheme-menu-theme");
-  let defaultId = "default-theme@mozilla.org";
-  let defaultThemeIndex = Array.from(installedThemes).findIndex(btn => btn.theme.id == defaultId);
-  let defaultThemeButton = installedThemes[defaultThemeIndex];
-  themeChanged = TestUtils.topicObserved("lightweight-theme-changed");
-  defaultThemeButton.click();
-
-  // Wait for the theme to change back to default.
-  await themeChanged;
 
   // Find the footer buttons to test.
   let footerRow = document.getElementById("customization-lwtheme-menu-footer");
@@ -64,32 +35,35 @@ add_task(async function testCustomize() {
   BrowserTestUtils.removeTab(addonsTab);
 
   let snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true);
+    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+    true
+  );
 
   // Make sure we got some data.
-  ok(snapshot.parent && snapshot.parent.length > 0, "Got parent telemetry events in the snapshot");
+  ok(
+    snapshot.parent && snapshot.parent.length > 0,
+    "Got parent telemetry events in the snapshot"
+  );
 
   // Only look at the related events after stripping the timestamp and category.
   let relatedEvents = snapshot.parent
-    .filter(([timestamp, category, method, object]) =>
-      category == "addonsManager" && object == "customize")
+    .filter(
+      ([timestamp, category, method, object]) =>
+        category == "addonsManager" && object == "customize"
+    )
     .map(relatedEvent => relatedEvent.slice(2, 6));
 
   // Events are now [method, object, value, extra] as expected.
-  Assert.deepEqual(relatedEvents, [
-    ["action", "customize", "recommended", {action: "enable", addonId: themeId, type: "theme"}],
-    ["action", "customize", null, {action: "enable", addonId: defaultId, type: "theme"}],
-    ["link", "customize", "manageThemes"],
-    ["link", "customize", "getThemes"],
-  ], "The events are recorded correctly");
-
-  // Reset the theme prefs to leave them in a clean state.
-  Services.prefs.clearUserPref("lightweightThemes.recommendedThemes");
-  Services.prefs.clearUserPref("lightweightThemes.usedThemes");
+  Assert.deepEqual(
+    relatedEvents,
+    [["link", "customize", "manageThemes"], ["link", "customize", "getThemes"]],
+    "The events are recorded correctly"
+  );
 
   // Wait for customize mode to be re-entered now that the customize tab is
   // active. This is needed for endCustomizing() to work properly.
   await TestUtils.waitForCondition(
-    () => document.documentElement.getAttribute("customizing") == "true");
+    () => document.documentElement.getAttribute("customizing") == "true"
+  );
   await endCustomizing();
 });

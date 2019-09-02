@@ -16,6 +16,8 @@ import re
 import time
 from copy import deepcopy
 
+import attr
+
 from mozbuild.util import memoize
 from taskgraph.util.attributes import TRUNK_PROJECTS
 from taskgraph.util.hash import hash_path
@@ -30,6 +32,7 @@ from taskgraph.util.schema import (
     OptimizationSchema,
     taskref_or_string,
 )
+from taskgraph.util.partners import get_partners_to_be_published
 from taskgraph.util.scriptworker import (
     BALROG_ACTIONS,
     get_release_config,
@@ -39,6 +42,7 @@ from taskgraph.util.signed_artifacts import get_signed_artifacts
 from voluptuous import Any, Required, Optional, Extra, Match
 from taskgraph import GECKO, MAX_DEPENDENCIES
 from ..util import docker as dockerutil
+from ..util.workertypes import get_worker_type
 
 RUN_TASK = os.path.join(GECKO, 'taskcluster', 'scripts', 'run-task')
 
@@ -47,6 +51,14 @@ RUN_TASK = os.path.join(GECKO, 'taskcluster', 'scripts', 'run-task')
 def _run_task_suffix():
     """String to append to cache names under control of run-task."""
     return hash_path(RUN_TASK)[0:20]
+
+
+def _compute_geckoview_version(app_version, moz_build_date):
+    """Geckoview version string that matches geckoview gradle configuration"""
+    # Must be synchronized with /mobile/android/geckoview/build.gradle computeVersionCode(...)
+    version_without_milestone = re.sub(r'a[0-9]', '', app_version, 1)
+    parts = version_without_milestone.split('.')
+    return "%s.%s.%s" % (parts[0], parts[1], moz_build_date)
 
 
 # A task description is a general description of a TaskCluster task
@@ -126,7 +138,8 @@ task_description_schema = Schema({
 
         # Type of gecko v2 index to use
         'type': Any('generic', 'nightly', 'l10n', 'nightly-with-multi-l10n',
-                    'release', 'nightly-l10n'),
+                    'nightly-l10n', 'shippable', 'shippable-l10n',
+                    'android-nightly', 'android-nightly-with-multi-l10n'),
 
         # The rank that the task will receive in the TaskCluster
         # index.  A newly completed task supercedes the currently
@@ -218,7 +231,7 @@ task_description_schema = Schema({
     Optional('release-artifacts'): [basestring],
 
     # information specific to the worker implementation that will run this task
-    'worker': {
+    Optional('worker'): {
         Required('implementation'): basestring,
         Extra: object,
     }
@@ -251,11 +264,25 @@ V2_NIGHTLY_TEMPLATES = [
     "index.{trust-domain}.v2.{project}.nightly.revision.{branch_rev}.{product}.{job-name}",
 ]
 
+V2_SHIPPABLE_TEMPLATES = [
+    "index.{trust-domain}.v2.{project}.shippable.latest.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}.shippable.{build_date}.revision.{branch_rev}.{product}.{job-name}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}.shippable.{build_date}.latest.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}.shippable.revision.{branch_rev}.{product}.{job-name}",
+]
+
 V2_NIGHTLY_L10N_TEMPLATES = [
     "index.{trust-domain}.v2.{project}.nightly.latest.{product}-l10n.{job-name}.{locale}",
     "index.{trust-domain}.v2.{project}.nightly.{build_date}.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
     "index.{trust-domain}.v2.{project}.nightly.{build_date}.latest.{product}-l10n.{job-name}.{locale}",  # noqa - too long
     "index.{trust-domain}.v2.{project}.nightly.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
+]
+
+V2_SHIPPABLE_L10N_TEMPLATES = [
+    "index.{trust-domain}.v2.{project}.shippable.latest.{product}-l10n.{job-name}.{locale}",
+    "index.{trust-domain}.v2.{project}.shippable.{build_date}.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}.shippable.{build_date}.latest.{product}-l10n.{job-name}.{locale}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}.shippable.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
 ]
 
 V2_L10N_TEMPLATES = [
@@ -264,6 +291,10 @@ V2_L10N_TEMPLATES = [
     "index.{trust-domain}.v2.{project}.pushlog-id.{pushlog_id}.{product}-l10n.{job-name}.{locale}",
     "index.{trust-domain}.v2.{project}.latest.{product}-l10n.{job-name}.{locale}",
 ]
+
+# This index is specifically for builds that include geckoview releases,
+# so we can hard-code the project to "geckoview"
+V2_GECKOVIEW_RELEASE = "index.{trust-domain}.v2.{project}.geckoview-version.{geckoview-version}.{product}.{job-name}"  # noqa - too long
 
 # the roots of the treeherder routes
 TREEHERDER_ROUTE_ROOT = 'tc-treeherder'
@@ -298,12 +329,17 @@ def get_default_priority(graph_config, project):
 payload_builders = {}
 
 
+@attr.s(frozen=True)
+class PayloadBuilder(object):
+    schema = attr.ib(type=Schema)
+    builder = attr.ib()
+
+
 def payload_builder(name, schema):
     schema = Schema({Required('implementation'): name}).extend(schema)
 
     def wrap(func):
-        payload_builders[name] = func
-        func.schema = Schema(schema)
+        payload_builders[name] = PayloadBuilder(schema, func)
         return func
     return wrap
 
@@ -366,7 +402,6 @@ def verify_index(config, index):
     ),
 
     # worker features that should be enabled
-    Required('relengapi-proxy'): bool,
     Required('chain-of-trust'): bool,
     Required('taskcluster-proxy'): bool,
     Required('allow-ptrace'): bool,
@@ -475,9 +510,6 @@ def build_docker_worker_payload(config, task, task_def):
             raise Exception("unknown docker image type")
 
     features = {}
-
-    if worker.get('relengapi-proxy'):
-        features['relengAPIProxy'] = True
 
     if worker.get('taskcluster-proxy'):
         features['taskclusterProxy'] = True
@@ -650,7 +682,7 @@ def build_docker_worker_payload(config, task, task_def):
 
 
 @payload_builder('generic-worker', schema={
-    Required('os'): Any('windows', 'macosx', 'linux'),
+    Required('os'): Any('windows', 'macosx', 'linux', 'linux-bitbar'),
     # see http://schemas.taskcluster.net/generic-worker/v1/payload.json
     # and https://docs.taskcluster.net/reference/workers/generic-worker/payload
 
@@ -740,6 +772,16 @@ def build_generic_worker_payload(config, task, task_def):
         'command': worker['command'],
         'maxRunTime': worker['max-run-time'],
     }
+
+    if worker['os'] == 'windows':
+        task_def['payload']['onExitStatus'] = {
+            'retry': [
+                # These codes (on windows) indicate a process interruption,
+                # rather than a task run failure. See bug 1544403.
+                1073807364,  # process force-killed due to system shutdown
+                3221225786,  # sigint (any interrupt)
+            ]
+        }
 
     env = worker.get('env', {})
 
@@ -839,6 +881,12 @@ def build_generic_worker_payload(config, task, task_def):
         # Signing formats to use on each of the paths
         Required('formats'): [basestring],
     }],
+
+    # behavior for mac iscript
+    Optional('mac-behavior'): Any(
+        "mac_notarize", "mac_sign", "mac_sign_and_pkg", "mac_pkg",
+    ),
+    Optional('entitlements-url'): basestring,
 })
 def build_scriptworker_signing_payload(config, task, task_def):
     worker = task['worker']
@@ -847,37 +895,19 @@ def build_scriptworker_signing_payload(config, task, task_def):
         'maxRunTime': worker['max-run-time'],
         'upstreamArtifacts':  worker['upstream-artifacts']
     }
-
+    if worker.get('mac-behavior'):
+        task_def['payload']['behavior'] = worker['mac-behavior']
+        if worker.get('entitlements-url'):
+            task_def['payload']['entitlements-url'] = worker['entitlements-url']
     artifacts = set(task.get('release-artifacts', []))
     for upstream_artifact in worker['upstream-artifacts']:
         for path in upstream_artifact['paths']:
             artifacts.update(get_signed_artifacts(
                 input=path,
                 formats=upstream_artifact['formats'],
+                behavior=worker.get('mac-behavior'),
             ))
-
     task['release-artifacts'] = list(artifacts)
-
-
-@payload_builder('binary-transparency', schema={})
-def build_binary_transparency_payload(config, task, task_def):
-    release_config = get_release_config(config)
-
-    task_def['payload'] = {
-        'version': release_config['version'],
-        'chain': 'TRANSPARENCY.pem',
-        'contact': task_def['metadata']['owner'],
-        'maxRunTime': 600,
-        'stage-product': task['shipping-product'],
-        'summary': (
-            'https://archive.mozilla.org/pub/{}/candidates/'
-            '{}-candidates/build{}/SHA256SUMMARY'
-        ).format(
-            task['shipping-product'],
-            release_config['version'],
-            release_config['build_number'],
-        ),
-    }
 
 
 @payload_builder('beetmover', schema={
@@ -950,12 +980,14 @@ def build_beetmover_payload(config, task, task_def):
 def build_beetmover_push_to_release_payload(config, task, task_def):
     worker = task['worker']
     release_config = get_release_config(config)
+    partners = ['{}/{}'.format(p, s) for p, s, _ in get_partners_to_be_published(config)]
 
     task_def['payload'] = {
         'maxRunTime': worker['max-run-time'],
         'product': worker['product'],
         'version': release_config['version'],
         'build_number': release_config['build_number'],
+        'partners': partners,
     }
 
 
@@ -1134,6 +1166,7 @@ def build_push_apk_payload(config, task, task_def):
 
 
 @payload_builder('push-snap', schema={
+    Required('channel'): basestring,
     Required('upstream-artifacts'): [{
         Required('taskId'): taskref_or_string,
         Required('taskType'): basestring,
@@ -1144,6 +1177,7 @@ def build_push_snap_payload(config, task, task_def):
     worker = task['worker']
 
     task_def['payload'] = {
+        'channel': worker['channel'],
         'upstreamArtifacts':  worker['upstream-artifacts'],
     }
 
@@ -1243,7 +1277,9 @@ def build_invalid_payload(config, task, task_def):
 @payload_builder('always-optimized', schema={
     Extra: object,
 })
-def build_always_optimized_payload(config, task, task_def):
+@payload_builder('succeed', schema={
+})
+def build_dummy_payload(config, task, task_def):
     task_def['payload'] = {}
 
 
@@ -1313,7 +1349,6 @@ def set_defaults(config, tasks):
 
         worker = task['worker']
         if worker['implementation'] in ('docker-worker',):
-            worker.setdefault('relengapi-proxy', False)
             worker.setdefault('chain-of-trust', False)
             worker.setdefault('taskcluster-proxy', False)
             worker.setdefault('allow-ptrace', False)
@@ -1436,25 +1471,32 @@ def add_nightly_index_routes(config, task):
     return task
 
 
-@index_builder('release')
-def add_release_index_routes(config, task):
+@index_builder('shippable')
+def add_shippable_index_routes(config, task):
     index = task.get('index')
-    routes = []
-    release_config = get_release_config(config)
+    routes = task.setdefault('routes', [])
+
+    verify_index(config, index)
 
     subs = config.params.copy()
-    subs['build_number'] = str(release_config['build_number'])
-    subs['revision'] = subs['head_rev']
-    subs['underscore_version'] = release_config['version'].replace('.', '_')
+    subs['job-name'] = index['job-name']
+    subs['build_date_long'] = time.strftime("%Y.%m.%d.%Y%m%d%H%M%S",
+                                            time.gmtime(config.params['build_date']))
+    subs['build_date'] = time.strftime("%Y.%m.%d",
+                                       time.gmtime(config.params['build_date']))
     subs['product'] = index['product']
     subs['trust-domain'] = config.graph_config['trust-domain']
     subs['branch_rev'] = get_branch_rev(config)
-    subs['branch'] = subs['project']
 
-    for rt in task.get('routes', []):
-        routes.append(rt.format(**subs))
+    for tpl in V2_SHIPPABLE_TEMPLATES:
+        routes.append(tpl.format(**subs))
 
-    task['routes'] = routes
+    # Also add routes for en-US
+    task = add_shippable_l10n_index_routes(config, task, force_locale="en-US")
+
+    # For nightly-compat index:
+    if 'nightly' in config.params['target_tasks_method']:
+        add_nightly_index_routes(config, task)
 
     return task
 
@@ -1506,6 +1548,50 @@ def add_l10n_index_routes(config, task, force_locale=None):
     return task
 
 
+@index_builder('shippable-l10n')
+def add_shippable_l10n_index_routes(config, task, force_locale=None):
+    index = task.get('index')
+    routes = task.setdefault('routes', [])
+
+    verify_index(config, index)
+
+    subs = config.params.copy()
+    subs['job-name'] = index['job-name']
+    subs['build_date_long'] = time.strftime("%Y.%m.%d.%Y%m%d%H%M%S",
+                                            time.gmtime(config.params['build_date']))
+    subs['product'] = index['product']
+    subs['trust-domain'] = config.graph_config['trust-domain']
+    subs['branch_rev'] = get_branch_rev(config)
+
+    locales = task['attributes'].get('chunk_locales',
+                                     task['attributes'].get('all_locales'))
+    # Some tasks has only one locale set
+    if task['attributes'].get('locale'):
+        locales = [task['attributes']['locale']]
+
+    if force_locale:
+        # Used for en-US and multi-locale
+        locales = [force_locale]
+
+    if not locales:
+        raise Exception("Error: Unable to use l10n index for tasks without locales")
+
+    # If there are too many locales, we can't write a route for all of them
+    # See Bug 1323792
+    if len(locales) > 18:  # 18 * 3 = 54, max routes = 64
+        return task
+
+    for locale in locales:
+        for tpl in V2_SHIPPABLE_L10N_TEMPLATES:
+            routes.append(tpl.format(locale=locale, **subs))
+
+    # For nightly-compat index:
+    if 'nightly' in config.params['target_tasks_method']:
+        add_nightly_l10n_index_routes(config, task, force_locale)
+
+    return task
+
+
 @index_builder('nightly-l10n')
 def add_nightly_l10n_index_routes(config, task, force_locale=None):
     index = task.get('index')
@@ -1539,6 +1625,42 @@ def add_nightly_l10n_index_routes(config, task, force_locale=None):
     for locale in locales:
         for tpl in V2_NIGHTLY_L10N_TEMPLATES:
             routes.append(tpl.format(locale=locale, **subs))
+
+    return task
+
+
+def add_geckoview_index_routes(config, task):
+    index = task.get('index')
+    routes = task.setdefault('routes', [])
+    geckoview_version = _compute_geckoview_version(
+        config.params['app_version'],
+        config.params['moz_build_date']
+    )
+
+    subs = {
+        'geckoview-version': geckoview_version,
+        'job-name': index['job-name'],
+        'product': index['product'],
+        'project': config.params['project'],
+        'trust-domain': config.graph_config['trust-domain'],
+    }
+    routes.append(V2_GECKOVIEW_RELEASE.format(**subs))
+
+    return task
+
+
+@index_builder('android-nightly')
+def add_android_nightly_index_routes(config, task):
+    task = add_nightly_index_routes(config, task)
+    task = add_geckoview_index_routes(config, task)
+
+    return task
+
+
+@index_builder('android-nightly-with-multi-l10n')
+def add_android_nightly_multi_index_routes(config, task):
+    task = add_nightly_multi_index_routes(config, task)
+    task = add_geckoview_index_routes(config, task)
 
     return task
 
@@ -1577,8 +1699,13 @@ def add_index_routes(config, tasks):
 def build_task(config, tasks):
     for task in tasks:
         level = str(config.params['level'])
-        worker_type = task['worker-type'].format(level=level)
-        provisioner_id, worker_type = worker_type.split('/', 1)
+
+        provisioner_id, worker_type = get_worker_type(
+            config.graph_config,
+            task['worker-type'],
+            level,
+        )
+        task['worker-type'] = '/'.join([provisioner_id, worker_type])
         project = config.params['project']
 
         routes = task.get('routes', [])
@@ -1676,7 +1803,7 @@ def build_task(config, tasks):
                 th_push_link)
 
         # add the payload and adjust anything else as required (e.g., scopes)
-        payload_builders[task['worker']['implementation']](config, task, task_def)
+        payload_builders[task['worker']['implementation']].builder(config, task, task_def)
 
         # Resolve run-on-projects
         build_platform = attributes.get('build_platform')
@@ -1746,11 +1873,11 @@ def check_task_identifiers(config, tasks):
     """
     e = re.compile("^[a-zA-Z0-9_-]{1,38}$")
     for task in tasks:
-        for attr in ('workerType', 'provisionerId'):
-            if not e.match(task['task'][attr]):
+        for attrib in ('workerType', 'provisionerId'):
+            if not e.match(task['task'][attrib]):
                 raise Exception(
                     'task {}.{} is not a valid identifier: {}'.format(
-                        task['label'], attr, task['task'][attr]))
+                        task['label'], attrib, task['task'][attrib]))
         yield task
 
 

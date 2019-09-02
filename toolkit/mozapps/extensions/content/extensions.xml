@@ -692,6 +692,11 @@
     <implementation>
       <constructor><![CDATA[
         window.customElements.upgrade(this._stateMenulist);
+        window.customElements.upgrade(this._enableBtn);
+        window.customElements.upgrade(this._disableBtn);
+        window.customElements.upgrade(this._askToActivateMenuitem);
+        window.customElements.upgrade(this._alwaysActivateMenuitem);
+        window.customElements.upgrade(this._neverActivateMenuitem);
 
         this._installStatus = document.getAnonymousElementByAttribute(this, "anonid", "install-status");
         this._installStatus.mControl = this;
@@ -982,7 +987,7 @@
             this.setAttribute("pending", "uninstall");
             this._pending.textContent = gStrings.ext.formatStringFromName(
               "notification.restartless-uninstall",
-              [this.mAddon.name], 1);
+              [this.mAddon.name]);
           } else {
             this.removeAttribute("pending");
 
@@ -993,7 +998,7 @@
               this.setAttribute("notification", "warning");
               this._warning.textContent = gStrings.ext.formatStringFromName(
                 "notification.downloadError",
-                [this.mAddon.name], 1
+                [this.mAddon.name]
               );
               this._warningBtn.label = gStrings.ext.GetStringFromName("notification.downloadError.retry");
               this._warningBtn.tooltipText = gStrings.ext.GetStringFromName("notification.downloadError.retry.tooltip");
@@ -1004,7 +1009,7 @@
               this.setAttribute("notification", "warning");
               this._warning.textContent = gStrings.ext.formatStringFromName(
                 "notification.installError",
-                [this.mAddon.name], 1
+                [this.mAddon.name]
               );
               this._warningBtn.label = gStrings.ext.GetStringFromName("notification.installError.retry");
               this._warningBtn.tooltipText = gStrings.ext.GetStringFromName("notification.downloadError.retry.tooltip");
@@ -1015,7 +1020,7 @@
               this.setAttribute("notification", "error");
               this._error.textContent = gStrings.ext.formatStringFromName(
                 "notification.blocked",
-                [this.mAddon.name], 1
+                [this.mAddon.name]
               );
               this._errorLink.value = gStrings.ext.GetStringFromName("notification.blocked.link");
               this.mAddon.getBlocklistURL().then(url => {
@@ -1025,7 +1030,7 @@
             } else if (!isUpgrade && isDisabledUnsigned(this.mAddon)) {
               this.setAttribute("notification", "error");
               this._error.textContent = gStrings.ext.formatStringFromName(
-                "notification.unsignedAndDisabled", [this.mAddon.name, gStrings.brandShortName], 2
+                "notification.unsignedAndDisabled", [this.mAddon.name, gStrings.brandShortName]
               );
               this._errorLink.value = gStrings.ext.GetStringFromName("notification.unsigned.link");
               this._errorLink.href = SUPPORT_URL + "unsigned-addons";
@@ -1035,14 +1040,14 @@
               this.setAttribute("notification", "warning");
               this._warning.textContent = gStrings.ext.formatStringFromName(
                 "notification.incompatible",
-                [this.mAddon.name, gStrings.brandShortName, gStrings.appVersion], 3
+                [this.mAddon.name, gStrings.brandShortName, gStrings.appVersion]
               );
               this._warningLink.hidden = true;
               this._warningBtn.hidden = true;
             } else if (!isUpgrade && !isCorrectlySigned(this.mAddon)) {
               this.setAttribute("notification", "warning");
               this._warning.textContent = gStrings.ext.formatStringFromName(
-                "notification.unsigned", [this.mAddon.name, gStrings.brandShortName], 2
+                "notification.unsigned", [this.mAddon.name, gStrings.brandShortName]
               );
               this._warningLink.value = gStrings.ext.GetStringFromName("notification.unsigned.link");
               this._warningLink.href = SUPPORT_URL + "unsigned-addons";
@@ -1051,7 +1056,7 @@
               this.setAttribute("notification", "warning");
               this._warning.textContent = gStrings.ext.formatStringFromName(
                 "notification.softblocked",
-                [this.mAddon.name], 1
+                [this.mAddon.name]
               );
               this._warningLink.value = gStrings.ext.GetStringFromName("notification.softblocked.link");
               this.mAddon.getBlocklistURL().then(url => {
@@ -1063,7 +1068,7 @@
               this.setAttribute("notification", "warning");
               this._warning.textContent = gStrings.ext.formatStringFromName(
                 "notification.outdated",
-                [this.mAddon.name], 1
+                [this.mAddon.name]
               );
               this._warningLink.value = gStrings.ext.GetStringFromName("notification.outdated.link");
               this.mAddon.getBlocklistURL().then(url => {
@@ -1075,7 +1080,7 @@
               this.setAttribute("notification", "error");
               this._error.textContent = gStrings.ext.formatStringFromName(
                 "notification.vulnerableUpdatable",
-                [this.mAddon.name], 1
+                [this.mAddon.name]
               );
               this._errorLink.value = gStrings.ext.GetStringFromName("notification.vulnerableUpdatable.link");
               this.mAddon.getBlocklistURL().then(url => {
@@ -1086,7 +1091,7 @@
               this.setAttribute("notification", "error");
               this._error.textContent = gStrings.ext.formatStringFromName(
                 "notification.vulnerableNoUpdate",
-                [this.mAddon.name], 1
+                [this.mAddon.name]
               );
               this._errorLink.value = gStrings.ext.GetStringFromName("notification.vulnerableNoUpdate.link");
               this.mAddon.getBlocklistURL().then(url => {
@@ -1098,7 +1103,7 @@
               this.setAttribute("notification", "warning");
               this._warning.textContent =
                 gStrings.ext.formatStringFromName("notification.gmpPending",
-                                                  [this.mAddon.name], 1);
+                                                  [this.mAddon.name]);
             } else {
               this.removeAttribute("notification");
             }
@@ -1110,7 +1115,8 @@
             this._enableBtn.disabled = true;
             this._disableBtn.disabled = true;
             this._askToActivateMenuitem.disabled = !this.hasPermission("ask_to_activate");
-            this._alwaysActivateMenuitem.disabled = !this.hasPermission("enable");
+            let alwaysActivateProp = this.mAddon.isFlashPlugin ? "hidden" : "disabled";
+            this._alwaysActivateMenuitem[alwaysActivateProp] = !this.hasPermission("enable");
             this._neverActivateMenuitem.disabled = !this.hasPermission("disable");
             if (!this.mAddon.isActive) {
               this._stateMenulist.selectedItem = this._neverActivateMenuitem;
@@ -1123,6 +1129,9 @@
               ["ask_to_activate", "enable", "disable"].some(perm => this.hasPermission(perm));
             this._stateMenulist.disabled = !hasActivatePermission;
             this._stateMenulist.hidden = false;
+            this._askToActivateMenuitem.classList.add("no-auto-hide");
+            this._alwaysActivateMenuitem.classList.add("no-auto-hide");
+            this._neverActivateMenuitem.classList.add("no-auto-hide");
             this._stateMenulist.classList.add("no-auto-hide");
           } else {
             this._stateMenulist.hidden = true;
@@ -1177,69 +1186,24 @@
             return;
           }
 
-          var relNotesData = null, transformData = null;
-
           this._relNotesLoaded = true;
           this._relNotesLoading.hidden = false;
           this._relNotesError.hidden = true;
 
-          let showRelNotes = () => {
-            if (!relNotesData || !transformData)
-              return;
-
+          loadReleaseNotes(aURI).then(fragment => {
             this._relNotesLoading.hidden = true;
-
-            var processor = new XSLTProcessor();
-            processor.flags |= XSLTProcessor.DISABLE_ALL_LOADS;
-
-            processor.importStylesheet(transformData);
-            var fragment = processor.transformToFragment(relNotesData, document);
             this._relNotes.appendChild(fragment);
             if (this.hasAttribute("show-relnotes")) {
               var container = this._relNotesContainer;
               container.style.height = container.scrollHeight + "px";
             }
             sendToggleEvent();
-          };
-
-          let handleError = () => {
-            dataReq.abort();
-            styleReq.abort();
+          }, () => {
             this._relNotesLoading.hidden = true;
             this._relNotesError.hidden = false;
             this._relNotesLoaded = false; // allow loading to be re-tried
             sendToggleEvent();
-          };
-
-          function handleResponse(aEvent) {
-            var req = aEvent.target;
-            var ct = req.getResponseHeader("content-type");
-            if ((!ct || !ct.includes("text/html")) &&
-                req.responseXML &&
-                req.responseXML.documentElement.namespaceURI != XMLURI_PARSE_ERROR) {
-              if (req == dataReq)
-                relNotesData = req.responseXML;
-              else
-                transformData = req.responseXML;
-              showRelNotes();
-            } else {
-              handleError();
-            }
-          }
-
-          var dataReq = new XMLHttpRequest({mozAnon: true});
-          dataReq.open("GET", aURI.spec, true);
-          dataReq.responseType = "document";
-          dataReq.addEventListener("load", handleResponse);
-          dataReq.addEventListener("error", handleError);
-          dataReq.send(null);
-
-          var styleReq = new XMLHttpRequest({mozAnon: true});
-          styleReq.open("GET", UPDATES_RELEASENOTES_TRANSFORMFILE, true);
-          styleReq.responseType = "document";
-          styleReq.addEventListener("load", handleResponse);
-          styleReq.addEventListener("error", handleError);
-          styleReq.send(null);
+          });
         ]]></body>
       </method>
 
@@ -1512,6 +1476,12 @@
             // Treat the relnotes container as embedded text instead of a click target.
             !event.originalTarget.closest(".relnotes-container")) {
           this.showInDetailView();
+        } else if (event.originalTarget.localName == "a" &&
+                   event.originalTarget.closest(".relnotes-container") &&
+                   event.originalTarget.href) {
+          event.preventDefault();
+          event.stopPropagation();
+          openURL(event.originalTarget.href);
         }
       ]]></handler>
     </handlers>
@@ -1536,8 +1506,7 @@
     <implementation>
       <constructor><![CDATA[
         this._notice.textContent = gStrings.ext.formatStringFromName("uninstallNotice",
-                                                                     [this.mAddon.name],
-                                                                     1);
+                                                                     [this.mAddon.name]);
 
         gEventManager.registerAddonListener(this, this.mAddon.id);
       ]]></constructor>
@@ -1706,7 +1675,7 @@
             this.setAttribute("notification", "warning");
             this._warning.textContent = gStrings.ext.formatStringFromName(
               "notification.downloadError",
-              [this._name.value], 1
+              [this._name.value]
             );
             this._warningLink.label = gStrings.ext.GetStringFromName("notification.downloadError.retry");
             this._warningLink.tooltipText = gStrings.ext.GetStringFromName("notification.downloadError.retry.tooltip");
@@ -1714,7 +1683,7 @@
             this.setAttribute("notification", "warning");
             this._warning.textContent = gStrings.ext.formatStringFromName(
               "notification.installError",
-              [this._name.value], 1
+              [this._name.value]
             );
             this._warningLink.label = gStrings.ext.GetStringFromName("notification.installError.retry");
             this._warningLink.tooltipText = gStrings.ext.GetStringFromName("notification.downloadError.retry.tooltip");

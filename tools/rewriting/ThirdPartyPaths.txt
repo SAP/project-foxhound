@@ -1,5 +1,7 @@
 browser/components/translation/cld2/
-db/sqlite3/src/
+devtools/client/aboutdebugging-new/test/jest/node_modules/
+devtools/client/application/test/node_modules/
+devtools/client/debugger/node_modules/
 devtools/client/shared/build/babel.js
 devtools/client/shared/sourceeditor/codemirror/
 devtools/client/shared/sourceeditor/tern/
@@ -22,7 +24,15 @@ dom/media/webspeech/recognition/energy_endpointer.cc
 dom/media/webspeech/recognition/energy_endpointer.h
 dom/media/webspeech/recognition/energy_endpointer_params.cc
 dom/media/webspeech/recognition/energy_endpointer_params.h
+dom/tests/ajax/jquery/
+dom/tests/ajax/mochikit/
+dom/tests/mochitest/ajax/
+dom/tests/mochitest/dom-level1-core/
+dom/tests/mochitest/dom-level2-core/
+dom/tests/mochitest/dom-level2-html/
+dom/u2f/tests/pkijs/
 dom/webauthn/cbor-cpp/
+dom/webauthn/tests/pkijs/
 editor/libeditor/tests/browserscope/lib/richtext/
 editor/libeditor/tests/browserscope/lib/richtext2/
 extensions/spellcheck/hunspell/src/
@@ -53,11 +63,13 @@ js/src/vtune/ittnotify_types.h
 js/src/vtune/jitprofiling.c
 js/src/vtune/jitprofiling.h
 js/src/vtune/legacy/
+js/src/zydis/
 media/ffvpx/
 media/gmp-clearkey/0.1/openaes/
 media/kiss_fft/
 media/libaom/
 media/libcubeb/
+media/libdav1d/
 media/libjpeg/
 media/libmkv/
 media/libnestegg/
@@ -77,7 +89,6 @@ media/openmax_dl/
 media/openmax_il/
 media/webrtc/signaling/src/sdp/sipcc/
 media/webrtc/trunk/
-mfbt/decimal/
 mfbt/double-conversion/double-conversion/
 mfbt/lz4.*
 mobile/android/geckoview/src/thirdparty/
@@ -88,6 +99,7 @@ modules/freetype2/
 modules/woff2/
 modules/xz-embedded/
 modules/zlib/
+mozglue/misc/decimal/
 netwerk/dns/nsIDNKitInterface.h
 netwerk/sctp/src/
 netwerk/srtp/src/
@@ -103,6 +115,9 @@ testing/talos/talos/tests/dromaeo/
 testing/talos/talos/tests/kraken/
 testing/talos/talos/tests/v8_7/
 testing/web-platform/tests/resources/webidl2/
+testing/web-platform/tests/tools/third_party/
+testing/xpcshell/node-ip/
+testing/xpcshell/dns-packet/
 third_party/
 toolkit/components/jsoncpp/
 toolkit/components/protobuf/

@@ -8,40 +8,69 @@
 #define mozilla_dom_BrowserBridgeChild_h
 
 #include "mozilla/dom/PBrowserBridgeChild.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ipc/IdType.h"
 
 namespace mozilla {
+
+namespace a11y {
+class RemoteIframeDocProxyAccessibleWrap;
+}
+
 namespace dom {
 class BrowsingContext;
+class ContentChild;
 
 /**
- * Child side for a remote frame.
+ * BrowserBridgeChild implements the child actor part of the PBrowserBridge
+ * protocol. See PBrowserBridge for more information.
  */
 class BrowserBridgeChild : public PBrowserBridgeChild {
  public:
+  typedef mozilla::layers::LayersId LayersId;
+
   NS_INLINE_DECL_REFCOUNTING(BrowserBridgeChild);
 
-  TabChild* Manager() {
+  BrowserChild* Manager() {
     MOZ_ASSERT(mIPCOpen);
-    return static_cast<TabChild*>(PBrowserBridgeChild::Manager());
+    return static_cast<BrowserChild*>(PBrowserBridgeChild::Manager());
   }
 
-  mozilla::layers::LayersId GetLayersId() { return mLayersId; }
+  TabId GetTabId() { return mId; }
+
+  LayersId GetLayersId() { return mLayersId; }
+
+  nsFrameLoader* GetFrameLoader() const { return mFrameLoader; }
 
   BrowsingContext* GetBrowsingContext() { return mBrowsingContext; }
 
   // XXX(nika): We should have a load context here. (bug 1532664)
   nsILoadContext* GetLoadContext() { return nullptr; }
 
-  static already_AddRefed<BrowserBridgeChild> Create(
-      nsFrameLoader* aFrameLoader, const TabContext& aContext,
-      const nsString& aRemoteType, BrowsingContext* aBrowsingContext);
+  void NavigateByKey(bool aForward, bool aForDocumentNavigation);
 
-  void UpdateDimensions(const nsIntRect& aRect,
-                        const mozilla::ScreenIntSize& aSize);
+  void Activate();
+
+  void Deactivate(bool aWindowLowering);
+
+  void SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
+
+#if defined(ACCESSIBILITY) && defined(XP_WIN)
+  a11y::RemoteIframeDocProxyAccessibleWrap* GetEmbeddedDocAccessible() {
+    return mEmbeddedDocAccessible;
+  }
+#endif
+
+  static BrowserBridgeChild* GetFrom(nsFrameLoader* aFrameLoader);
+
+  static BrowserBridgeChild* GetFrom(nsIContent* aContent);
 
  protected:
+  friend class ContentChild;
   friend class PBrowserBridgeChild;
+
+  BrowserBridgeChild(nsFrameLoader* aFrameLoader,
+                     BrowsingContext* aBrowsingContext, TabId aId);
 
   mozilla::ipc::IPCResult RecvSetLayersId(
       const mozilla::layers::LayersId& aLayersId);
@@ -51,17 +80,24 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
   mozilla::ipc::IPCResult RecvMoveFocus(const bool& aForward,
                                         const bool& aForDocumentNavigation);
 
+  mozilla::ipc::IPCResult RecvSetEmbeddedDocAccessibleCOMProxy(
+      const IDispatchHolder& aCOMProxy);
+
+  mozilla::ipc::IPCResult RecvFireFrameLoadEvent(bool aIsTrusted);
+
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
-  explicit BrowserBridgeChild(nsFrameLoader* aFrameLoader,
-                              BrowsingContext* aBrowsingContext);
   ~BrowserBridgeChild();
 
-  mozilla::layers::LayersId mLayersId;
+  TabId mId;
+  LayersId mLayersId;
   bool mIPCOpen;
   RefPtr<nsFrameLoader> mFrameLoader;
   RefPtr<BrowsingContext> mBrowsingContext;
+#if defined(ACCESSIBILITY) && defined(XP_WIN)
+  RefPtr<a11y::RemoteIframeDocProxyAccessibleWrap> mEmbeddedDocAccessible;
+#endif
 };
 
 }  // namespace dom

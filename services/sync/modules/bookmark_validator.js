@@ -4,18 +4,31 @@
 
 "use strict";
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {CommonUtils} = ChromeUtils.import("resource://services-common/utils.js");
-const {Utils} = ChromeUtils.import("resource://services-sync/util.js");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { CommonUtils } = ChromeUtils.import(
+  "resource://services-common/utils.js"
+);
+const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 
-ChromeUtils.defineModuleGetter(this, "Async",
-                               "resource://services-common/async.js");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Async",
+  "resource://services-common/async.js"
+);
 
-ChromeUtils.defineModuleGetter(this, "PlacesUtils",
-                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm"
+);
 
-ChromeUtils.defineModuleGetter(this, "PlacesSyncUtils",
-                               "resource://gre/modules/PlacesSyncUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesSyncUtils",
+  "resource://gre/modules/PlacesSyncUtils.jsm"
+);
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URLSearchParams"]);
 
@@ -61,8 +74,12 @@ function areURLsEqual(a, b) {
     if (!bKeys.has(key)) {
       return false;
     }
-    if (!CommonUtils.arrayEqual(aParams.getAll(key).sort(),
-                                bParams.getAll(key).sort())) {
+    if (
+      !CommonUtils.arrayEqual(
+        aParams.getAll(key).sort(),
+        bParams.getAll(key).sort()
+      )
+    ) {
       return false;
     }
   }
@@ -179,14 +196,20 @@ class BookmarkProblemData {
       { name: "serverDeleted", count: this.serverDeleted.length },
       { name: "serverUnexpected", count: this.serverUnexpected.length },
 
-      { name: "structuralDifferences", count: this.structuralDifferences.length },
+      {
+        name: "structuralDifferences",
+        count: this.structuralDifferences.length,
+      },
       { name: "differences", count: this.differences.length },
 
       { name: "missingIDs", count: this.missingIDs },
       { name: "rootOnServer", count: this.rootOnServer ? 1 : 0 },
 
       { name: "duplicates", count: this.duplicates.length },
-      { name: "parentChildMismatches", count: this.parentChildMismatches.length },
+      {
+        name: "parentChildMismatches",
+        count: this.parentChildMismatches.length,
+      },
       { name: "cycles", count: this.cycles.length },
       { name: "clientCycles", count: this.clientCycles.length },
       { name: "badClientRoots", count: this.badClientRoots.length },
@@ -200,7 +223,10 @@ class BookmarkProblemData {
       { name: "parentNotFolder", count: this.parentNotFolder.length },
     ];
     if (full) {
-      let structural = this._summarizeDifferences("sdiff", this.structuralDifferences);
+      let structural = this._summarizeDifferences(
+        "sdiff",
+        this.structuralDifferences
+      );
       result.push.apply(result, structural);
     }
     return result;
@@ -240,9 +266,9 @@ async function detectCycles(records) {
   let currentPath = [];
   let cycles = [];
   let seenEver = new Set();
-  const maybeYield = Async.jankYielder();
+  const yieldState = Async.yieldState();
+
   const traverse = async node => {
-    await maybeYield();
     if (pathLookup.has(node)) {
       let cycleStart = currentPath.lastIndexOf(node);
       let cyclePath = currentPath.slice(cycleStart).map(n => n.id);
@@ -261,18 +287,21 @@ async function detectCycles(records) {
     if (children.length) {
       pathLookup.add(node);
       currentPath.push(node);
-      for (let child of children) {
-        await traverse(child);
-      }
+      await Async.yieldingForEach(children, traverse, yieldState);
       currentPath.pop();
       pathLookup.delete(node);
     }
   };
-  for (let record of records) {
-    if (!seenEver.has(record)) {
-      await traverse(record);
-    }
-  }
+
+  await Async.yieldingForEach(
+    records,
+    async record => {
+      if (!seenEver.has(record)) {
+        await traverse(record);
+      }
+    },
+    yieldState
+  );
 
   return cycles;
 }
@@ -297,7 +326,7 @@ class ServerRecordInspection {
     this._orphans = new Map();
     this._multipleParents = new Map();
 
-    this.maybeYield = Async.jankYielder();
+    this.yieldState = Async.yieldState();
   }
 
   static async create(records) {
@@ -333,10 +362,11 @@ class ServerRecordInspection {
   }
 
   noteMismatch(child, parent) {
-    let exists = this.problemData.parentChildMismatches.some(match =>
-      match.child == child && match.parent == parent);
+    let exists = this.problemData.parentChildMismatches.some(
+      match => match.child == child && match.parent == parent
+    );
     if (!exists) {
-      this.problemData.parentChildMismatches.push({child, parent});
+      this.problemData.parentChildMismatches.push({ child, parent });
     }
   }
 
@@ -351,78 +381,87 @@ class ServerRecordInspection {
     this.serverRecords = records;
     let rootChildren = [];
 
-    for (let record of this.serverRecords) {
-      await this.maybeYield();
-      if (!record.id) {
-        ++this.problemData.missingIDs;
-        continue;
-      }
-
-      if (record.deleted) {
-        this.deletedIds.add(record.id);
-      }
-      if (this.idToRecord.has(record.id)) {
-        this.problemData.duplicates.push(record.id);
-        continue;
-      }
-
-      this.idToRecord.set(record.id, record);
-
-      if (!record.deleted) {
-        this.liveRecords.push(record);
-
-        if (record.parentid == "places") {
-          rootChildren.push(record);
+    await Async.yieldingForEach(
+      this.serverRecords,
+      async record => {
+        if (!record.id) {
+          ++this.problemData.missingIDs;
+          return;
         }
-      }
 
-      if (!record.children) {
-        continue;
-      }
-
-      if (record.type != "folder") {
-        // Due to implementation details in engines/bookmarks.js, (Livemark
-        // subclassing BookmarkFolder) Livemarks will have a children array,
-        // but it should still be empty.
-        if (!record.children.length) {
-          continue;
+        if (record.deleted) {
+          this.deletedIds.add(record.id);
         }
-        // Otherwise we mark it as an error and still try to resolve the children
-        this.problemData.childrenOnNonFolder.push(record.id);
-      }
+        if (this.idToRecord.has(record.id)) {
+          this.problemData.duplicates.push(record.id);
+          return;
+        }
 
-      this.folders.push(record);
+        this.idToRecord.set(record.id, record);
 
-      if (new Set(record.children).size !== record.children.length) {
-        this.problemData.duplicateChildren.push(record.id);
-      }
+        if (!record.deleted) {
+          this.liveRecords.push(record);
 
-      // After we're through with them, folder records store 3 (ugh) arrays that
-      // represent their folder information. The final fields looks like:
-      //
-      // - childGUIDs: The original `children` array, which is an array of
-      //   record IDs.
-      //
-      // - unfilteredChildren: Contains more or less `childGUIDs.map(id =>
-      //   idToRecord.get(id))`, without the nulls for missing children. It will
-      //   still have deleted, duplicate, mismatching, etc. children.
-      //
-      // - children: This is the 'cleaned' version of the child records that are
-      //   safe to iterate over, etc.. If there are no reported problems, it should
-      //   be identical to unfilteredChildren.
-      //
-      // The last two are left alone until later `this._linkChildren`, however.
-      record.childGUIDs = record.children;
-      for (let id of record.childGUIDs) {
-        await this.maybeYield();
-        this.noteParent(id, record.id);
-      }
-      record.children = [];
-    }
+          if (record.parentid == "places") {
+            rootChildren.push(record);
+          }
+        }
+
+        if (!record.children) {
+          return;
+        }
+
+        if (record.type != "folder") {
+          // Due to implementation details in engines/bookmarks.js, (Livemark
+          // subclassing BookmarkFolder) Livemarks will have a children array,
+          // but it should still be empty.
+          if (!record.children.length) {
+            return;
+          }
+          // Otherwise we mark it as an error and still try to resolve the children
+          this.problemData.childrenOnNonFolder.push(record.id);
+        }
+
+        this.folders.push(record);
+
+        if (new Set(record.children).size !== record.children.length) {
+          this.problemData.duplicateChildren.push(record.id);
+        }
+
+        // After we're through with them, folder records store 3 (ugh) arrays that
+        // represent their folder information. The final fields looks like:
+        //
+        // - childGUIDs: The original `children` array, which is an array of
+        //   record IDs.
+        //
+        // - unfilteredChildren: Contains more or less `childGUIDs.map(id =>
+        //   idToRecord.get(id))`, without the nulls for missing children. It will
+        //   still have deleted, duplicate, mismatching, etc. children.
+        //
+        // - children: This is the 'cleaned' version of the child records that are
+        //   safe to iterate over, etc.. If there are no reported problems, it should
+        //   be identical to unfilteredChildren.
+        //
+        // The last two are left alone until later `this._linkChildren`, however.
+        record.childGUIDs = record.children;
+
+        await Async.yieldingForEach(
+          record.childGUIDs,
+          id => {
+            this.noteParent(id, record.id);
+          },
+          this.yieldState
+        );
+
+        record.children = [];
+      },
+      this.yieldState
+    );
 
     // Finish up some parts we can easily do now that we have idToRecord.
-    this.deletedRecords = Array.from(this.deletedIds,
-      id => this.idToRecord.get(id));
+    this.deletedRecords = Array.from(this.deletedIds, id =>
+      this.idToRecord.get(id)
+    );
 
     this._initRoot(rootChildren);
   }
@@ -455,87 +494,100 @@ class ServerRecordInspection {
 
   // Adds `parent` to all records it can that have `parentid`
   async _linkParentIDs() {
-    for (let [id, record] of this.idToRecord) {
-      await this.maybeYield();
-      if (record == this.root || record.deleted) {
-        continue;
-      }
-
-      // Check and update our orphan map.
-      let parentID = record.parentid;
-      let parent = this.idToRecord.get(parentID);
-      if (!parentID || !parent) {
-        this._noteOrphan(id, parentID);
-        continue;
-      }
-
-      record.parent = parent;
-
-      if (parent.deleted) {
-        this.problemData.deletedParents.push(id);
-        return;
-      } else if (parent.type != "folder") {
-        this.problemData.parentNotFolder.push(record.id);
-        return;
-      }
-
-      if (parent.id !== "place" || this.problemData.rootOnServer) {
-        if (!parent.childGUIDs.includes(record.id)) {
-          this.noteMismatch(record.id, parent.id);
+    await Async.yieldingForEach(
+      this.idToRecord,
+      ([id, record]) => {
+        if (record == this.root || record.deleted) {
+          return false;
         }
-      }
 
-      if (parent.deleted && !record.deleted) {
-        this.problemData.deletedParents.push(record.id);
-      }
+        // Check and update our orphan map.
+        let parentID = record.parentid;
+        let parent = this.idToRecord.get(parentID);
+        if (!parentID || !parent) {
+          this._noteOrphan(id, parentID);
+          return false;
+        }
 
-      // Note: We used to check if the parentName on the server matches the
-      // actual local parent name, but given this is used only for de-duping a
-      // record the first time it is seen and expensive to keep up-to-date, we
-      // decided to just stop recording it. See bug 1276969 for more.
-    }
+        record.parent = parent;
+
+        if (parent.deleted) {
+          this.problemData.deletedParents.push(id);
+          return true;
+        } else if (parent.type != "folder") {
+          this.problemData.parentNotFolder.push(record.id);
+          return true;
+        }
+
+        if (parent.id !== "place" || this.problemData.rootOnServer) {
+          if (!parent.childGUIDs.includes(record.id)) {
+            this.noteMismatch(record.id, parent.id);
+          }
+        }
+
+        if (parent.deleted && !record.deleted) {
+          this.problemData.deletedParents.push(record.id);
+        }
+
+        // Note: We used to check if the parentName on the server matches the
+        // actual local parent name, but given this is used only for de-duping a
+        // record the first time it is seen and expensive to keep up-to-date, we
+        // decided to just stop recording it. See bug 1276969 for more.
+        return false;
+      },
+      this.yieldState
+    );
   }
 
   // Build the children and unfilteredChildren arrays, (which are of record
   // objects, not ids)
   async _linkChildren() {
     // Check that we aren't missing any children.
-    for (let folder of this.folders) {
-      await this.maybeYield();
+    await Async.yieldingForEach(
+      this.folders,
+      async folder => {
+        folder.children = [];
+        folder.unfilteredChildren = [];
 
-      folder.children = [];
-      folder.unfilteredChildren = [];
+        let idsThisFolder = new Set();
 
-      let idsThisFolder = new Set();
+        await Async.yieldingForEach(
+          folder.childGUIDs,
+          childID => {
+            let child = this.idToRecord.get(childID);
 
-      for (let i = 0; i < folder.childGUIDs.length; ++i) {
-        await this.maybeYield();
-        let childID = folder.childGUIDs[i];
+            if (!child) {
+              this.problemData.missingChildren.push({
+                parent: folder.id,
+                child: childID,
+              });
+              return;
+            }
 
-        let child = this.idToRecord.get(childID);
+            if (child.deleted) {
+              this.problemData.deletedChildren.push({
+                parent: folder.id,
+                child: childID,
+              });
+              return;
+            }
 
-        if (!child) {
-          this.problemData.missingChildren.push({ parent: folder.id, child: childID });
-          continue;
-        }
+            if (child.parentid != folder.id) {
+              this.noteMismatch(childID, folder.id);
+              return;
+            }
 
-        if (child.deleted) {
-          this.problemData.deletedChildren.push({ parent: folder.id, child: childID });
-          continue;
-        }
-
-        if (child.parentid != folder.id) {
-          this.noteMismatch(childID, folder.id);
-          continue;
-        }
-
-        if (idsThisFolder.has(childID)) {
-          // Already recorded earlier, we just don't want to mess up `children`
-          continue;
-        }
-        folder.children.push(child);
-      }
-    }
+            if (idsThisFolder.has(childID)) {
+              // Already recorded earlier, we just don't want to mess up `children`
+              return;
+            }
+            folder.children.push(child);
+          },
+          this.yieldState
+        );
+      },
+      this.yieldState
+    );
   }
 
   // Finds the orphans in the tree using something similar to a `mark and sweep`
@@ -544,31 +596,46 @@ class ServerRecordInspection {
   // haven't seen are orphans.
   async _findOrphans() {
     let seen = new Set([this.root.id]);
-    for (let [node] of Utils.walkTree(this.root)) {
-      await this.maybeYield();
-      if (seen.has(node.id)) {
-        // We're in an infloop due to a cycle.
-        // Return early to avoid reporting false positives for orphans.
-        return;
-      }
-      seen.add(node.id);
+
+    const inCycle = await Async.yieldingForEach(
+      Utils.walkTree(this.root),
+      ([node]) => {
+        if (seen.has(node.id)) {
+          // We're in an infloop due to a cycle.
+          // Return early to avoid reporting false positives for orphans.
+          return true;
+        }
+        seen.add(node.id);
+
+        return false;
+      },
+      this.yieldState
+    );
+
+    if (inCycle) {
+      return;
     }
 
-    for (let i = 0; i < this.liveRecords.length; ++i) {
-      await this.maybeYield();
-      let record = this.liveRecords[i];
-      if (!seen.has(record.id)) {
-        // We intentionally don't record the parentid here, since we only record
-        // that if the record refers to a parent that doesn't exist, which we
-        // have already handled (when linking parentid's).
-        this._noteOrphan(record.id);
-      }
-    }
+    await Async.yieldingForEach(
+      this.liveRecords,
+      (record, i) => {
+        if (!seen.has(record.id)) {
+          // We intentionally don't record the parentid here, since we only record
+          // that if the record refers to a parent that doesn't exist, which we
+          // have already handled (when linking parentid's).
+          this._noteOrphan(record.id);
+        }
+      },
+      this.yieldState
+    );
 
-    for (const [id, parent] of this._orphans) {
-      await this.maybeYield();
-      this.problemData.orphans.push({id, parent});
-    }
+    await Async.yieldingForEach(
+      this._orphans,
+      ([id, parent]) => {
+        this.problemData.orphans.push({ id, parent });
+      },
+      this.yieldState
+    );
   }
 
   async _finish() {
@@ -597,36 +664,44 @@ class ServerRecordInspection {
 
 class BookmarkValidator {
   constructor() {
-    this.maybeYield = Async.jankYielder();
+    this.yieldState = Async.yieldState();
   }
 
   async canValidate() {
-    return !await PlacesSyncUtils.bookmarks.havePendingChanges();
+    return !(await PlacesSyncUtils.bookmarks.havePendingChanges());
   }
 
   async _followQueries(recordsByQueryId) {
-    for (let entry of recordsByQueryId.values()) {
-      await this.maybeYield();
-      if (entry.type !== "query" && (!entry.bmkUri || !entry.bmkUri.startsWith(QUERY_PROTOCOL))) {
-        continue;
-      }
-      let params = new URLSearchParams(entry.bmkUri.slice(QUERY_PROTOCOL.length));
-      // Queries with `excludeQueries` won't form cycles because they'll
-      // exclude all queries, including themselves, from the result set.
-      let excludeQueries = params.get("excludeQueries");
-      if (excludeQueries === "1" || excludeQueries === "true") {
-        // `nsNavHistoryQuery::ParseQueryBooleanString` allows `1` and `true`.
-        continue;
-      }
-      entry.concreteItems = [];
-      let queryIds = params.getAll("folder");
-      for (let queryId of queryIds) {
-        let concreteItem = recordsByQueryId.get(queryId);
-        if (concreteItem) {
-          entry.concreteItems.push(concreteItem);
+    await Async.yieldingForEach(
+      recordsByQueryId.values(),
+      entry => {
+        if (
+          entry.type !== "query" &&
+          (!entry.bmkUri || !entry.bmkUri.startsWith(QUERY_PROTOCOL))
+        ) {
+          return;
         }
-      }
-    }
+        let params = new URLSearchParams(
+          entry.bmkUri.slice(QUERY_PROTOCOL.length)
+        );
+        // Queries with `excludeQueries` won't form cycles because they'll
+        // exclude all queries, including themselves, from the result set.
+        let excludeQueries = params.get("excludeQueries");
+        if (excludeQueries === "1" || excludeQueries === "true") {
+          // `nsNavHistoryQuery::ParseQueryBooleanString` allows `1` and `true`.
+          return;
+        }
+        entry.concreteItems = [];
+        let queryIds = params.getAll("folder");
+        for (let queryId of queryIds) {
+          let concreteItem = recordsByQueryId.get(queryId);
+          if (concreteItem) {
+            entry.concreteItems.push(concreteItem);
+          }
+        }
+      },
+      this.yieldState
+    );
   }
 
   async createClientRecordsFromTree(clientTree) {
@@ -640,8 +715,8 @@ class BookmarkValidator {
     // refer to folders via their local IDs.
     let recordsByQueryId = new Map();
     let syncedRoots = SYNCED_ROOTS;
+
     const traverse = async (treeNode, synced) => {
-      await this.maybeYield();
       if (!synced) {
         synced = syncedRoots.includes(treeNode.guid);
       }
@@ -703,15 +778,22 @@ class BookmarkValidator {
         if (!treeNode.children) {
           treeNode.children = [];
         }
-        for (let child of treeNode.children) {
-          await traverse(child, synced);
-          child.parent = treeNode;
-          child.parentid = guid;
-          treeNode.childGUIDs.push(child.guid);
-        }
+
+        await Async.yieldingForEach(
+          treeNode.children,
+          async child => {
+            await traverse(child, synced);
+            child.parent = treeNode;
+            child.parentid = guid;
+            treeNode.childGUIDs.push(child.guid);
+          },
+          this.yieldState
+        );
       }
     };
+
     await traverse(clientTree, false);
+
     clientTree.id = "places";
     await this._followQueries(recordsByQueryId);
     return records;
@@ -756,8 +838,7 @@ class BookmarkValidator {
   async _validateClient(problemData, clientRecords) {
     problemData.clientCycles = await detectCycles(clientRecords);
     for (let rootGUID of SYNCED_ROOTS) {
-      let record = clientRecords.find(record =>
-        record.guid === rootGUID);
+      let record = clientRecords.find(record => record.guid === rootGUID);
       if (!record || record.parentid !== "places") {
         problemData.badClientRoots.push(rootGUID);
       }
@@ -766,23 +847,30 @@ class BookmarkValidator {
 
   async _computeUnifiedRecordMap(serverRecords, clientRecords) {
     let allRecords = new Map();
-    for (let sr of serverRecords) {
-      await this.maybeYield();
-      if (sr.fake) {
-        continue;
-      }
-      allRecords.set(sr.id, {client: null, server: sr});
-    }
+    await Async.yieldingForEach(
+      serverRecords,
+      sr => {
+        if (sr.fake) {
+          return;
+        }
+        allRecords.set(sr.id, { client: null, server: sr });
+      },
+      this.yieldState
+    );
 
-    for (let cr of clientRecords) {
-      await this.maybeYield();
-      let unified = allRecords.get(cr.id);
-      if (!unified) {
-        allRecords.set(cr.id, {client: cr, server: null});
-      } else {
-        unified.client = cr;
-      }
-    }
+    await Async.yieldingForEach(
+      clientRecords,
+      cr => {
+        let unified = allRecords.get(cr.id);
+        if (!unified) {
+          allRecords.set(cr.id, { client: cr, server: null });
+        } else {
+          unified.client = cr;
+        }
+      },
+      this.yieldState
+    );
+
     return allRecords;
   }
 
@@ -830,8 +918,11 @@ class BookmarkValidator {
 
     let sameType = client.type === server.type;
     if (!sameType) {
-      if (server.type === "query" && client.type === "bookmark" &&
-          client.bmkUri.startsWith(QUERY_PROTOCOL)) {
+      if (
+        server.type === "query" &&
+        client.type === "bookmark" &&
+        client.bmkUri.startsWith(QUERY_PROTOCOL)
+      ) {
         sameType = true;
       }
     }
@@ -899,27 +990,41 @@ class BookmarkValidator {
 
     await this._validateClient(problemData, clientRecords);
 
-    let allRecords = await this._computeUnifiedRecordMap(serverRecords, clientRecords);
+    let allRecords = await this._computeUnifiedRecordMap(
+      serverRecords,
+      clientRecords
+    );
 
     let serverDeleted = new Set(inspectionInfo.deletedRecords.map(r => r.id));
-    for (let [id, {client, server}] of allRecords) {
-      await this.maybeYield();
-      if (!client || !server) {
-        this._recordMissing(problemData, id, client, server, serverDeleted);
-        continue;
-      }
-      if (server && client && client.ignored) {
-        problemData.serverUnexpected.push(id);
-      }
-      let { differences, structuralDifferences } = this._compareRecords(client, server);
 
-      if (differences.length) {
-        problemData.differences.push({ id, differences });
-      }
-      if (structuralDifferences.length) {
-        problemData.structuralDifferences.push({ id, differences: structuralDifferences });
-      }
-    }
+    await Async.yieldingForEach(
+      allRecords,
+      ([id, { client, server }]) => {
+        if (!client || !server) {
+          this._recordMissing(problemData, id, client, server, serverDeleted);
+          return;
+        }
+        if (server && client && client.ignored) {
+          problemData.serverUnexpected.push(id);
+        }
+        let { differences, structuralDifferences } = this._compareRecords(
+          client,
+          server
+        );
+
+        if (differences.length) {
+          problemData.differences.push({ id, differences });
+        }
+        if (structuralDifferences.length) {
+          problemData.structuralDifferences.push({
+            id,
+            differences: structuralDifferences,
+          });
+        }
+      },
+      this.yieldState
+    );
+
     return inspectionInfo;
   }
 
@@ -927,18 +1032,23 @@ class BookmarkValidator {
     // XXXXX - todo - we need to capture last-modified of the server here and
     // ensure the repairer only applys with if-unmodified-since that date.
     let collection = engine.itemSource();
-    let collectionKey = engine.service.collectionKeys.keyForCollection(engine.name);
+    let collectionKey = engine.service.collectionKeys.keyForCollection(
+      engine.name
+    );
     collection.full = true;
     let result = await collection.getBatched();
     if (!result.response.success) {
       throw result.response;
     }
     let cleartexts = [];
-    for (let record of result.records) {
-      await this.maybeYield();
-      await record.decrypt(collectionKey);
-      cleartexts.push(record.cleartext);
-    }
+    await Async.yieldingForEach(
+      result.records,
+      async record => {
+        await record.decrypt(collectionKey);
+        cleartexts.push(record.cleartext);
+      },
+      this.yieldState
+    );
     return cleartexts;
   }
 

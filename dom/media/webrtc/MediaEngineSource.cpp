@@ -23,7 +23,6 @@ bool MediaEngineSource::IsVideo(MediaSourceEnum aSource) {
   switch (aSource) {
     case MediaSourceEnum::Camera:
     case MediaSourceEnum::Screen:
-    case MediaSourceEnum::Application:
     case MediaSourceEnum::Window:
     case MediaSourceEnum::Browser:
       return true;
@@ -37,14 +36,11 @@ bool MediaEngineSource::IsVideo(MediaSourceEnum aSource) {
   }
 }
 
-bool MediaEngineSource::RequiresSharing() const { return false; }
-
 bool MediaEngineSource::IsFake() const { return false; }
 
 bool MediaEngineSource::GetScary() const { return false; }
 
-nsresult MediaEngineSource::FocusOnSelectedSource(
-    const RefPtr<const AllocationHandle>& aHandle) {
+nsresult MediaEngineSource::FocusOnSelectedSource() {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
@@ -52,11 +48,6 @@ void MediaEngineSource::Shutdown() {}
 
 nsresult MediaEngineSource::TakePhoto(MediaEnginePhotoCallback* aCallback) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-void MediaEngineSource::GetSettings(MediaTrackSettings& aOutSettings) const {
-  MediaTrackSettings empty;
-  aOutSettings = empty;
 }
 
 MediaEngineSource::~MediaEngineSource() = default;

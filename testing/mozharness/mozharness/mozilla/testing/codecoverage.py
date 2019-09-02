@@ -3,6 +3,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import json
 import os
 import posixpath
@@ -182,21 +184,21 @@ class CodeCoverageMixin(SingleTestMixin):
         baseline_tests_by_ext = {
             '.html': {
                 'test': 'testing/mochitest/baselinecoverage/plain/test_baselinecoverage.html',
-                'suite': 'plain'
+                'suite': 'mochitest-plain'
             },
             '.js': {
                 'test': 'testing/mochitest/baselinecoverage/browser_chrome/browser_baselinecoverage.js',  # NOQA: E501
-                'suite': 'browser-chrome'
+                'suite': 'mochitest-browser-chrome'
             },
             '.xul': {
                 'test': 'testing/mochitest/baselinecoverage/chrome/test_baselinecoverage.xul',
-                'suite': 'chrome'
+                'suite': 'mochitest-chrome'
             }
         }
 
         baseline_tests_by_suite = {
-            'browser-chrome': 'testing/mochitest/baselinecoverage/browser_chrome/'
-                              'browser_baselinecoverage_browser-chrome.js'
+            'mochitest-browser-chrome': 'testing/mochitest/baselinecoverage/browser_chrome/'
+                                        'browser_baselinecoverage_browser-chrome.js'
         }
 
         wpt_baseline_test = 'tests/web-platform/mozilla/tests/baselinecoverage/wpt_baselinecoverage.html'  # NOQA: E501
@@ -283,9 +285,9 @@ class CodeCoverageMixin(SingleTestMixin):
         dirs = self.query_abs_dirs()
 
         sys.path.append(dirs['abs_test_install_dir'])
-        sys.path.append(os.path.join(dirs['abs_test_install_dir'], 'mozbuild/codecoverage'))
+        sys.path.append(os.path.join(dirs['abs_test_install_dir'], 'mozbuild'))
 
-        from lcov_rewriter import LcovFileRewriter
+        from codecoverage.lcov_rewriter import LcovFileRewriter
         jsvm_files = [os.path.join(jsvm_dir, e) for e in os.listdir(jsvm_dir)]
         rewriter = LcovFileRewriter(os.path.join(self.grcov_dir, 'chrome-map.json'))
         rewriter.rewrite_files(jsvm_files, jsvm_output_file, '')

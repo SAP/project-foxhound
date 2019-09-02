@@ -16,6 +16,7 @@
 #include "nsIServiceManager.h"
 #include "nsIServiceManager.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/Attributes.h"
 #include "nsIPermissionManager.h"
 #include "mozilla/dom/DeviceLightEvent.h"
@@ -34,12 +35,6 @@ using namespace hal;
 #undef near
 
 #define DEFAULT_SENSOR_POLL 100
-
-static bool gPrefSensorsEnabled = false;
-static bool gPrefMotionSensorEnabled = false;
-static bool gPrefOrientationSensorEnabled = false;
-static bool gPrefProximitySensorEnabled = false;
-static bool gPrefAmbientLightSensorEnabled = false;
 
 static const nsTArray<nsIDOMWindow*>::index_type NoIndex =
     nsTArray<nsIDOMWindow*>::NoIndex;
@@ -101,16 +96,6 @@ NS_IMPL_ISUPPORTS(nsDeviceSensors, nsIDeviceSensors)
 nsDeviceSensors::nsDeviceSensors() {
   mIsUserProximityNear = false;
   mLastDOMMotionEventTime = TimeStamp::Now();
-  Preferences::AddBoolVarCache(&gPrefSensorsEnabled, "device.sensors.enabled",
-                               true);
-  Preferences::AddBoolVarCache(&gPrefMotionSensorEnabled,
-                               "device.sensors.motion.enabled", true);
-  Preferences::AddBoolVarCache(&gPrefOrientationSensorEnabled,
-                               "device.sensors.orientation.enabled", true);
-  Preferences::AddBoolVarCache(&gPrefProximitySensorEnabled,
-                               "device.sensors.proximity.enabled", false);
-  Preferences::AddBoolVarCache(&gPrefAmbientLightSensorEnabled,
-                               "device.sensors.ambientLight.enabled", false);
 
   for (int i = 0; i < NUM_SENSOR_TYPE; i++) {
     nsTArray<nsIDOMWindow*>* windows = new nsTArray<nsIDOMWindow*>();
@@ -532,7 +517,7 @@ void nsDeviceSensors::FireDOMMotionEvent(Document* doc, EventTarget* target,
 bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
                                             nsIDOMWindow* aWindow) {
   // checks "device.sensors.enabled" master pref
-  if (!gPrefSensorsEnabled) {
+  if (!StaticPrefs::device_sensors_enabled()) {
     return false;
   }
 
@@ -547,7 +532,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
     case nsIDeviceSensorData::TYPE_ACCELERATION:
     case nsIDeviceSensorData::TYPE_GYROSCOPE:
       // checks "device.sensors.motion.enabled" pref
-      if (!gPrefMotionSensorEnabled) {
+      if (!StaticPrefs::device_sensors_motion_enabled()) {
         return false;
       } else if (doc) {
         doc->WarnOnceAbout(Document::eMotionEvent);
@@ -557,7 +542,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
     case nsIDeviceSensorData::TYPE_ORIENTATION:
     case nsIDeviceSensorData::TYPE_ROTATION_VECTOR:
       // checks "device.sensors.orientation.enabled" pref
-      if (!gPrefOrientationSensorEnabled) {
+      if (!StaticPrefs::device_sensors_orientation_enabled()) {
         return false;
       } else if (doc) {
         doc->WarnOnceAbout(Document::eOrientationEvent);
@@ -565,7 +550,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
       break;
     case nsIDeviceSensorData::TYPE_PROXIMITY:
       // checks "device.sensors.proximity.enabled" pref
-      if (!gPrefProximitySensorEnabled) {
+      if (!StaticPrefs::device_sensors_proximity_enabled()) {
         return false;
       } else if (doc) {
         doc->WarnOnceAbout(Document::eProximityEvent, true);
@@ -573,7 +558,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
       break;
     case nsIDeviceSensorData::TYPE_LIGHT:
       // checks "device.sensors.ambientLight.enabled" pref
-      if (!gPrefAmbientLightSensorEnabled) {
+      if (!StaticPrefs::device_sensors_ambientLight_enabled()) {
         return false;
       } else if (doc) {
         doc->WarnOnceAbout(Document::eAmbientLightEvent, true);

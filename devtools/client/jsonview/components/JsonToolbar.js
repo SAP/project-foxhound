@@ -11,6 +11,7 @@ define(function(require, exports, module) {
   const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
   const { createFactories } = require("devtools/client/shared/react-utils");
+  const { div } = require("devtools/client/shared/vendor/react-dom-factories");
 
   const { SearchBox } = createFactories(require("./SearchBox"));
   const { Toolbar, ToolbarButton } = createFactories(require("./reps/Toolbar"));
@@ -56,25 +57,30 @@ define(function(require, exports, module) {
     }
 
     render() {
-      return (
-        Toolbar({},
-          ToolbarButton({className: "btn save", onClick: this.onSave},
-            JSONView.Locale.$STR("jsonViewer.Save")
-          ),
-          ToolbarButton({className: "btn copy", onClick: this.onCopy},
-            JSONView.Locale.$STR("jsonViewer.Copy")
-          ),
-          ToolbarButton({className: "btn collapse", onClick: this.onCollapse},
-            JSONView.Locale.$STR("jsonViewer.CollapseAll")
-          ),
-          this.props.dataSize > EXPAND_THRESHOLD ? undefined :
-          ToolbarButton({className: "btn expand", onClick: this.onExpand},
-            JSONView.Locale.$STR("jsonViewer.ExpandAll")
-          ),
-          SearchBox({
-            actions: this.props.actions,
-          })
-        )
+      return Toolbar(
+        {},
+        ToolbarButton(
+          { className: "btn save", onClick: this.onSave },
+          JSONView.Locale.$STR("jsonViewer.Save")
+        ),
+        ToolbarButton(
+          { className: "btn copy", onClick: this.onCopy },
+          JSONView.Locale.$STR("jsonViewer.Copy")
+        ),
+        ToolbarButton(
+          { className: "btn collapse", onClick: this.onCollapse },
+          JSONView.Locale.$STR("jsonViewer.CollapseAll")
+        ),
+        this.props.dataSize > EXPAND_THRESHOLD
+          ? undefined
+          : ToolbarButton(
+              { className: "btn expand", onClick: this.onExpand },
+              JSONView.Locale.$STR("jsonViewer.ExpandAll")
+            ),
+        div({ className: "devtools-separator" }),
+        SearchBox({
+          actions: this.props.actions,
+        })
       );
     }
   }

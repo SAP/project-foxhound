@@ -115,7 +115,7 @@ bool WeakMapObject::delete_(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(WeakMapObject::is(args.thisv()));
 
   if (!args.get(0).isObject()) {
-    ReportNotObjectWithName(cx, "WeakMap key", args.get(0));
+    ReportNotObject(cx, JSMSG_OBJECT_REQUIRED_WEAKMAP_KEY, args.get(0));
     return false;
   }
 
@@ -181,7 +181,7 @@ static void WeakCollection_trace(JSTracer* trc, JSObject* obj) {
 static void WeakCollection_finalize(FreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->maybeOnHelperThread());
   if (ObjectValueMap* map = obj->as<WeakCollectionObject>().getMap()) {
-    fop->delete_(map);
+    fop->delete_(obj, map, MemoryUse::WeakMapObject);
   }
 }
 

@@ -9,6 +9,7 @@ import android.support.test.InstrumentationRegistry
 import android.support.test.filters.MediumTest
 import android.support.test.runner.AndroidJUnit4
 import org.hamcrest.Matchers.*
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
@@ -20,6 +21,7 @@ import kotlin.math.roundToInt
 @ReuseSession(false)
 class RuntimeSettingsTest : BaseSessionTest() {
 
+    @Ignore("disable test for frequently failing Bug 1538430")
     @Test fun automaticFontSize() {
         val settings = sessionRule.runtime.settings
         var initialFontSize = 2.15f
@@ -39,7 +41,7 @@ class RuntimeSettingsTest : BaseSessionTest() {
         assertThat("Gecko font scale should match system font scale",
                 settings.fontSizeFactor.toDouble(), closeTo(expectedFontSizeFactor.toDouble(), 0.05))
         assertThat("font inflation enabled",
-                settings.fontInflationEnabled, `is`(true))
+                settings.fontInflationEnabled, `is`(initialFontInflation))
 
         settings.automaticFontSizeAdjustment = false
         assertThat("Gecko font scale restored to previous value",
@@ -63,7 +65,7 @@ class RuntimeSettingsTest : BaseSessionTest() {
         assertThat("Gecko font scale should match system font scale",
                 settings.fontSizeFactor.toDouble(), closeTo(expectedFontSizeFactor.toDouble(), 0.05))
         assertThat("font inflation enabled",
-                settings.fontInflationEnabled, `is`(true))
+                settings.fontInflationEnabled, `is`(initialFontInflation))
 
         settings.automaticFontSizeAdjustment = false
         assertThat("Gecko font scale restored to previous value",
@@ -73,6 +75,7 @@ class RuntimeSettingsTest : BaseSessionTest() {
     }
 
     @WithDevToolsAPI
+    @Ignore // Bug 1546297 disabled test on pgo for frequent failures
     @Test fun fontSize() {
         val settings = sessionRule.runtime.settings
         settings.fontSizeFactor = 1.0f

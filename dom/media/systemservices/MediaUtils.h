@@ -132,7 +132,7 @@ class Refcountable<UniquePtr<T>> : public UniquePtr<T> {
 /* Async shutdown helpers
  */
 
-already_AddRefed<nsIAsyncShutdownClient> GetShutdownBarrier();
+RefPtr<nsIAsyncShutdownClient> GetShutdownBarrier();
 
 class ShutdownBlocker : public nsIAsyncShutdownBlocker {
  public:
@@ -162,10 +162,7 @@ class ShutdownTicket final {
       : mBlocker(aBlocker) {}
   NS_INLINE_DECL_REFCOUNTING(ShutdownTicket)
  private:
-  ~ShutdownTicket() {
-    nsCOMPtr<nsIAsyncShutdownClient> barrier = GetShutdownBarrier();
-    barrier->RemoveBlocker(mBlocker);
-  }
+  ~ShutdownTicket() { GetShutdownBarrier()->RemoveBlocker(mBlocker); }
 
   nsCOMPtr<nsIAsyncShutdownBlocker> mBlocker;
 };
@@ -224,19 +221,20 @@ Await(already_AddRefed<nsIEventTarget> aPool,
 
   typename MozPromise<ResolveValueType, RejectValueType,
                       Excl>::ResolveOrRejectValue val;
-  aPromise->Then(taskQueue, __func__,
-                 [&](ResolveValueType aResolveValue) {
-                   val.SetResolve(std::move(aResolveValue));
-                   MonitorAutoLock lock(mon);
-                   done = true;
-                   mon.Notify();
-                 },
-                 [&](RejectValueType aRejectValue) {
-                   val.SetReject(std::move(aRejectValue));
-                   MonitorAutoLock lock(mon);
-                   done = true;
-                   mon.Notify();
-                 });
+  aPromise->Then(
+      taskQueue, __func__,
+      [&](ResolveValueType aResolveValue) {
+        val.SetResolve(std::move(aResolveValue));
+        MonitorAutoLock lock(mon);
+        done = true;
+        mon.Notify();
+      },
+      [&](RejectValueType aRejectValue) {
+        val.SetReject(std::move(aRejectValue));
+        MonitorAutoLock lock(mon);
+        done = true;
+        mon.Notify();
+      });
 
   MonitorAutoLock lock(mon);
   while (!done) {

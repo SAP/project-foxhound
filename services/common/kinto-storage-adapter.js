@@ -12,7 +12,9 @@
  * limitations under the License.
  */
 const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
-const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js");
+const { Kinto } = ChromeUtils.import(
+  "resource://services-common/kinto-offline-client.js"
+);
 
 /**
  * Filter and sort list against provided filters and order.
@@ -94,86 +96,102 @@ function filterObject(filters, entry) {
  * @return {Array}
  */
 function filterObjects(filters, list) {
-  return list.filter((entry) => {
+  return list.filter(entry => {
     return filterObject(filters, entry);
   });
 }
 
 const statements = {
-  "createCollectionData": `
+  createCollectionData: `
     CREATE TABLE collection_data (
       collection_name TEXT,
       record_id TEXT,
       record TEXT
     );`,
 
-  "createCollectionMetadata": `
+  createCollectionMetadata: `
     CREATE TABLE collection_metadata (
       collection_name TEXT PRIMARY KEY,
-      last_modified INTEGER
+      last_modified INTEGER,
+      metadata TEXT
     ) WITHOUT ROWID;`,
 
-  "createCollectionDataRecordIdIndex": `
+  createCollectionDataRecordIdIndex: `
     CREATE UNIQUE INDEX unique_collection_record
       ON collection_data(collection_name, record_id);`,
 
-  "clearData": `
+  clearData: `
     DELETE FROM collection_data
       WHERE collection_name = :collection_name;`,
 
-  "createData": `
+  createData: `
     INSERT INTO collection_data (collection_name, record_id, record)
       VALUES (:collection_name, :record_id, :record);`,
 
-  "updateData": `
+  updateData: `
     INSERT OR REPLACE INTO collection_data (collection_name, record_id, record)
       VALUES (:collection_name, :record_id, :record);`,
 
-  "deleteData": `
+  deleteData: `
     DELETE FROM collection_data
       WHERE collection_name = :collection_name
       AND record_id = :record_id;`,
 
-  "saveLastModified": `
-    REPLACE INTO collection_metadata (collection_name, last_modified)
-      VALUES (:collection_name, :last_modified);`,
+  saveLastModified: `
+    INSERT INTO collection_metadata(collection_name, last_modified)
+      VALUES(:collection_name, :last_modified)
+        ON CONFLICT(collection_name) DO UPDATE SET last_modified = :last_modified`,
 
-  "getLastModified": `
+  getLastModified: `
     SELECT last_modified
       FROM collection_metadata
         WHERE collection_name = :collection_name;`,
 
-  "getRecord": `
+  saveMetadata: `
+    INSERT INTO collection_metadata(collection_name, metadata)
+      VALUES(:collection_name, :metadata)
+        ON CONFLICT(collection_name) DO UPDATE SET metadata = :metadata`,
+
+  getMetadata: `
+    SELECT metadata
+      FROM collection_metadata
+        WHERE collection_name = :collection_name;`,
+
+  getRecord: `
     SELECT record
       FROM collection_data
         WHERE collection_name = :collection_name
         AND record_id = :record_id;`,
 
-  "listRecords": `
+  listRecords: `
     SELECT record
       FROM collection_data
         WHERE collection_name = :collection_name;`,
 
   // N.B. we have to have a dynamic number of placeholders, which you
   // can't do without building your own statement. See `execute` for details
-  "listRecordsById": `
+  listRecordsById: `
     SELECT record_id, record
       FROM collection_data
         WHERE collection_name = ?
           AND record_id IN `,
 
-  "importData": `
+  importData: `
     REPLACE INTO collection_data (collection_name, record_id, record)
       VALUES (:collection_name, :record_id, :record);`,
 
-  "scanAllRecords": `SELECT * FROM collection_data;`,
+  scanAllRecords: `SELECT * FROM collection_data;`,
 
-  "clearCollectionMetadata": `DELETE FROM collection_metadata;`,
+  clearCollectionMetadata: `DELETE FROM collection_metadata;`,
 
-  "calculateStorage": `
+  calculateStorage: `
     SELECT collection_name, SUM(LENGTH(record)) as size, COUNT(record) as num_records
       FROM collection_data
         GROUP BY collection_name;`,
+
+  addMetadataColumn: `
+    ALTER TABLE collection_metadata
+      ADD COLUMN metadata TEXT;`,
 };
 
 const createStatements = [
@@ -182,7 +200,7 @@ const createStatements = [
   "createCollectionDataRecordIdIndex",
 ];
 
-const currentSchemaVersion = 1;
+const currentSchemaVersion = 2;
 
 /**
  * Firefox adapter.
@@ -216,9 +234,11 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
         for (let statementName of createStatements) {
           await connection.execute(statements[statementName]);
         }
-
         await connection.setSchemaVersion(currentSchemaVersion);
-      } else if (schema != 1) {
+      } else if (schema == 1) {
+        await connection.execute(statements.addMetadataColumn);
+        await connection.setSchemaVersion(currentSchemaVersion);
+      } else if (schema != 2) {
         throw new Error("Unknown database schema: " + schema);
       }
     });
@@ -243,8 +263,10 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
     const opts = Object.assign({}, { sharedMemoryCache: false }, options);
     const conn = await Sqlite.openConnection(opts).then(this._init);
     try {
-      Sqlite.shutdown.addBlocker("Kinto storage adapter connection closing",
-                                 () => conn.close());
+      Sqlite.shutdown.addBlocker(
+        "Kinto storage adapter connection closing",
+        () => conn.close()
+      );
     } catch (e) {
       // It's too late to block shutdown, just close the connection.
       await conn.close();
@@ -263,41 +285,41 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
     const conn = this._connection;
     const collection = this.collection;
 
-    return conn.executeTransaction(async function doExecuteTransaction() {
-      // Preload specified records from DB, within transaction.
+    return conn
+      .executeTransaction(async function doExecuteTransaction() {
+        // Preload specified records from DB, within transaction.
 
-      // if options.preload has more elements than the sqlite variable
-      // limit, split it up.
-      const limit = 100;
-      let preloaded = {};
-      let preload;
-      let more = options.preload;
+        // if options.preload has more elements than the sqlite variable
+        // limit, split it up.
+        const limit = 100;
+        let preloaded = {};
+        let preload;
+        let more = options.preload;
 
-      while (more.length > 0) {
-        preload = more.slice(0, limit);
-        more = more.slice(limit, more.length);
+        while (more.length > 0) {
+          preload = more.slice(0, limit);
+          more = more.slice(limit, more.length);
 
-        const parameters = [
-          collection,
-          ...preload,
-        ];
-        const placeholders = preload.map(_ => "?");
-        const stmt = statements.listRecordsById + "(" + placeholders.join(",") + ");";
-        const rows = await conn.execute(stmt, parameters);
+          const parameters = [collection, ...preload];
+          const placeholders = preload.map(_ => "?");
+          const stmt =
+            statements.listRecordsById + "(" + placeholders.join(",") + ");";
+          const rows = await conn.execute(stmt, parameters);
 
-        rows.reduce((acc, row) => {
-          const record = JSON.parse(row.getResultByName("record"));
-          acc[row.getResultByName("record_id")] = record;
-          return acc;
-        }, preloaded);
-      }
-      const proxy = transactionProxy(collection, preloaded);
-      result = callback(proxy);
+          rows.reduce((acc, row) => {
+            const record = JSON.parse(row.getResultByName("record"));
+            acc[row.getResultByName("record_id")] = record;
+            return acc;
+          }, preloaded);
+        }
+        const proxy = transactionProxy(collection, preloaded);
+        result = callback(proxy);
 
-      for (let { statement, params } of proxy.operations) {
-        await conn.executeCached(statement, params);
-      }
-    }, conn.TRANSACTION_EXCLUSIVE).then(_ => result);
+        for (let { statement, params } of proxy.operations) {
+          await conn.executeCached(statement, params);
+        }
+      }, conn.TRANSACTION_EXCLUSIVE)
+      .then(_ => result);
   }
 
   get(id) {
@@ -317,18 +339,20 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
     const parameters = {
       collection_name: this.collection,
     };
-    return this._executeStatement(statements.listRecords, parameters).then(result => {
-      const records = [];
-      for (let k = 0; k < result.length; k++) {
-        const row = result[k];
-        records.push(JSON.parse(row.getResultByName("record")));
-      }
-      return records;
-    }).then(results => {
-      // The resulting list of records is filtered and sorted.
-      // XXX: with some efforts, this could be implemented using SQL.
-      return reduceRecords(params.filters, params.order, results);
-    });
+    return this._executeStatement(statements.listRecords, parameters)
+      .then(result => {
+        const records = [];
+        for (let k = 0; k < result.length; k++) {
+          const row = result[k];
+          records.push(JSON.parse(row.getResultByName("record")));
+        }
+        return records;
+      })
+      .then(results => {
+        // The resulting list of records is filtered and sorted.
+        // XXX: with some efforts, this could be implemented using SQL.
+        return reduceRecords(params.filters, params.order, results);
+      });
   }
 
   async loadDump(records) {
@@ -357,12 +381,15 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
         };
         await connection.execute(statements.importData, params);
       }
-      const lastModified = Math.max(...records.map(record => record.last_modified));
+      const lastModified = Math.max(
+        ...records.map(record => record.last_modified)
+      );
       const params = {
         collection_name,
       };
-      const previousLastModified = await connection.execute(
-        statements.getLastModified, params).then(result => {
+      const previousLastModified = await connection
+        .execute(statements.getLastModified, params)
+        .then(result => {
           return result.length > 0
             ? result[0].getResultByName("last_modified")
             : -1;
@@ -384,32 +411,55 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
       collection_name: this.collection,
       last_modified: parsedLastModified,
     };
-    return this._executeStatement(statements.saveLastModified, params)
-      .then(() => parsedLastModified);
+    return this._executeStatement(statements.saveLastModified, params).then(
+      () => parsedLastModified
+    );
   }
 
   getLastModified() {
     const params = {
       collection_name: this.collection,
     };
-    return this._executeStatement(statements.getLastModified, params)
-      .then(result => {
+    return this._executeStatement(statements.getLastModified, params).then(
+      result => {
         if (result.length == 0) {
           return 0;
         }
         return result[0].getResultByName("last_modified");
-      });
+      }
+    );
+  }
+
+  async saveMetadata(metadata) {
+    const params = {
+      collection_name: this.collection,
+      metadata: JSON.stringify(metadata),
+    };
+    await this._executeStatement(statements.saveMetadata, params);
+    return metadata;
+  }
+
+  async getMetadata() {
+    const params = {
+      collection_name: this.collection,
+    };
+    const result = await this._executeStatement(statements.getMetadata, params);
+    if (result.length == 0) {
+      return null;
+    }
+    return JSON.parse(result[0].getResultByName("metadata"));
   }
 
   calculateStorage() {
-    return this._executeStatement(statements.calculateStorage, {})
-      .then(result => {
+    return this._executeStatement(statements.calculateStorage, {}).then(
+      result => {
         return Array.from(result, row => ({
           collectionName: row.getResultByName("collection_name"),
           size: row.getResultByName("size"),
           numRecords: row.getResultByName("num_records"),
         }));
-      });
+      }
+    );
   }
 
   /**
@@ -431,17 +481,21 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
         const collection_name = row.getResultByName("collection_name");
         if (record._status === "deleted") {
           // Garbage collect deleted records.
-          promises.push(conn.execute(statements.deleteData, { collection_name, record_id }));
+          promises.push(
+            conn.execute(statements.deleteData, { collection_name, record_id })
+          );
         } else {
           const newRecord = Object.assign({}, record, {
             _status: "created",
             last_modified: undefined,
           });
-          promises.push(conn.execute(statements.updateData, {
-            record: JSON.stringify(newRecord),
-            record_id,
-            collection_name,
-          }));
+          promises.push(
+            conn.execute(statements.updateData, {
+              record: JSON.stringify(newRecord),
+              record_id,
+              collection_name,
+            })
+          );
         }
       });
       await Promise.all(promises);
@@ -449,7 +503,6 @@ class FirefoxAdapter extends Kinto.adapters.BaseAdapter {
     });
   }
 }
-
 
 function transactionProxy(collection, preloaded) {
   const _operations = [];

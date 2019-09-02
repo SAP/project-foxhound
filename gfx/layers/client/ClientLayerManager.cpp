@@ -7,10 +7,10 @@
 #include "ClientLayerManager.h"
 #include "GeckoProfiler.h"       // for AUTO_PROFILER_LABEL
 #include "gfxEnv.h"              // for gfxEnv
-#include "gfxPrefs.h"            // for gfxPrefs::LayersTile...
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/Hal.h"
-#include "mozilla/dom/TabChild.h"      // for TabChild
+#include "mozilla/StaticPrefs.h"
+#include "mozilla/dom/BrowserChild.h"  // for BrowserChild
 #include "mozilla/dom/TabGroup.h"      // for TabGroup
 #include "mozilla/hal_sandbox/PHal.h"  // for ScreenConfiguration
 #include "mozilla/layers/CompositableClient.h"
@@ -22,6 +22,7 @@
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "mozilla/layers/PersistentBufferProvider.h"
 #include "mozilla/layers/SyncObject.h"
+#include "mozilla/PerfStats.h"
 #include "ClientReadbackLayer.h"  // for ClientReadbackLayer
 #include "nsAString.h"
 #include "nsDisplayList.h"
@@ -111,8 +112,8 @@ void ClientLayerManager::Destroy() {
 
 TabGroup* ClientLayerManager::GetTabGroup() {
   if (mWidget) {
-    if (TabChild* tabChild = mWidget->GetOwningTabChild()) {
-      return tabChild->TabGroup();
+    if (BrowserChild* browserChild = mWidget->GetOwningBrowserChild()) {
+      return browserChild->TabGroup();
     }
   }
   return nullptr;
@@ -201,7 +202,7 @@ bool ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget,
   // don't signal a new transaction to ShadowLayerForwarder. Carry on adding
   // to the previous transaction.
   hal::ScreenOrientation orientation;
-  if (dom::TabChild* window = mWidget->GetOwningTabChild()) {
+  if (dom::BrowserChild* window = mWidget->GetOwningBrowserChild()) {
     orientation = window->GetOrientation();
   } else {
     hal::ScreenConfiguration currentConfig;
@@ -222,7 +223,7 @@ bool ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget,
   // Desktop does not support async zoom yet, so we ignore this for those
   // platforms.
 #if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
-  if (mWidget && mWidget->GetOwningTabChild()) {
+  if (mWidget && mWidget->GetOwningBrowserChild()) {
     mCompositorMightResample = AsyncPanZoomEnabled();
   }
 #endif
@@ -244,7 +245,7 @@ bool ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget,
     // enabled in this process; it may be enabled in the parent process,
     // and the parent process expects unique sequence numbers.
     ++mPaintSequenceNumber;
-    if (gfxPrefs::APZTestLoggingEnabled()) {
+    if (StaticPrefs::apz_test_logging_enabled()) {
       mApzTestData.StartNewPaint(mPaintSequenceNumber);
     }
   }
@@ -278,9 +279,10 @@ bool ClientLayerManager::EndTransactionInternal(
 
   PaintTelemetry::AutoRecord record(PaintTelemetry::Metric::Rasterization);
   AUTO_PROFILER_TRACING("Paint", "Rasterize", GRAPHICS);
+  PerfStats::AutoMetricRecording<PerfStats::Metric::Rasterizing> autoRecording;
 
   Maybe<TimeStamp> startTime;
-  if (gfxPrefs::LayersDrawFPS()) {
+  if (StaticPrefs::layers_acceleration_draw_fps()) {
     startTime = Some(TimeStamp::Now());
   }
 
@@ -301,7 +303,7 @@ bool ClientLayerManager::EndTransactionInternal(
 
   // Apply pending tree updates before recomputing effective
   // properties.
-  GetRoot()->ApplyPendingUpdatesToSubtree();
+  auto scrollIdsUpdated = GetRoot()->ApplyPendingUpdatesToSubtree();
 
   mPaintedLayerCallback = aCallback;
   mPaintedLayerCallbackData = aCallbackData;
@@ -310,7 +312,7 @@ bool ClientLayerManager::EndTransactionInternal(
 
   // Skip the painting if the device is in device-reset status.
   if (!gfxPlatform::GetPlatform()->DidRenderingDeviceReset()) {
-    if (gfxPrefs::AlwaysPaint() && XRE_IsContentProcess()) {
+    if (StaticPrefs::gfx_content_always_paint() && XRE_IsContentProcess()) {
       TimeStamp start = TimeStamp::Now();
       root->RenderLayer();
       mLastPaintTime = TimeStamp::Now() - start;
@@ -319,6 +321,14 @@ bool ClientLayerManager::EndTransactionInternal(
     }
   } else {
     gfxCriticalNote << "LayerManager::EndTransaction skip RenderLayer().";
+  }
+
+  // Once we're sure we're not going to fall back to a full paint,
+  // notify the scroll frames which had pending updates.
+  if (!mTransactionIncomplete) {
+    for (ScrollableLayerGuid::ViewID scrollId : scrollIdsUpdated) {
+      nsLayoutUtils::NotifyPaintSkipTransaction(scrollId);
+    }
   }
 
   if (!mRepeatTransaction && !GetRoot()->GetInvalidRegion().IsEmpty()) {
@@ -371,6 +381,9 @@ void ClientLayerManager::EndTransaction(DrawPaintedLayerCallback aCallback,
     mWidget->PrepareWindowEffects();
   }
   EndTransactionInternal(aCallback, aCallbackData, aFlags);
+  if (XRE_IsContentProcess()) {
+    RegisterPayload({CompositionPayloadType::eContentPaint, TimeStamp::Now()});
+  }
   ForwardTransaction(!(aFlags & END_NO_REMOTE_COMPOSITE));
 
   if (mRepeatTransaction) {
@@ -534,7 +547,7 @@ float ClientLayerManager::RequestProperty(const nsAString& aProperty) {
 
 void ClientLayerManager::StartNewRepaintRequest(
     SequenceNumber aSequenceNumber) {
-  if (gfxPrefs::APZTestLoggingEnabled()) {
+  if (StaticPrefs::apz_test_logging_enabled()) {
     mApzTestData.StartNewRepaintRequest(aSequenceNumber);
   }
 }
@@ -604,7 +617,7 @@ void ClientLayerManager::FlushRendering() {
   if (mWidget) {
     if (CompositorBridgeChild* remoteRenderer = mWidget->GetRemoteRenderer()) {
       if (mWidget->SynchronouslyRepaintOnResize() ||
-          gfxPrefs::LayersForceSynchronousResize()) {
+          StaticPrefs::layers_force_synchronous_resize()) {
         remoteRenderer->SendFlushRendering();
       } else {
         remoteRenderer->SendFlushRenderingAsync();
@@ -654,6 +667,8 @@ void ClientLayerManager::ForwardTransaction(bool aScheduleComposite) {
   AUTO_PROFILER_TRACING("Paint", "ForwardTransaction", GRAPHICS);
   TimeStamp start = TimeStamp::Now();
 
+  GetCompositorBridgeChild()->EndCanvasTransaction();
+
   // Skip the synchronization for buffer since we also skip the painting during
   // device-reset status. With OMTP, we have to wait for async paints
   // before we synchronize and it's done on the paint thread.
@@ -685,7 +700,7 @@ void ClientLayerManager::ForwardTransaction(bool aScheduleComposite) {
     refreshStart = mTransactionStart;
   }
 
-  if (gfxPrefs::AlwaysPaint() && XRE_IsContentProcess()) {
+  if (StaticPrefs::gfx_content_always_paint() && XRE_IsContentProcess()) {
     mForwarder->SendPaintTime(mLatestTransactionId, mLastPaintTime);
   }
 
@@ -713,6 +728,7 @@ void ClientLayerManager::ForwardTransaction(bool aScheduleComposite) {
     // unless we forwarded to somewhere that doesn't actually
     // have a compositor.
     mTransactionIdAllocator->RevokeTransactionId(mLatestTransactionId);
+    mLatestTransactionId = mLatestTransactionId.Prev();
   }
 
   mPhase = PHASE_NONE;
@@ -721,7 +737,7 @@ void ClientLayerManager::ForwardTransaction(bool aScheduleComposite) {
   // PLayer::Send__delete__() and DeallocShmem()
   mKeepAlive.Clear();
 
-  TabChild* window = mWidget ? mWidget->GetOwningTabChild() : nullptr;
+  BrowserChild* window = mWidget ? mWidget->GetOwningBrowserChild() : nullptr;
   if (window) {
     TimeStamp end = TimeStamp::Now();
     window->DidRequestComposite(start, end);
@@ -850,8 +866,7 @@ ClientLayerManager::CreatePersistentBufferProvider(const gfx::IntSize& aSize,
   // because the canvas will most likely be flattened into a thebes layer
   // instead of being sent to the compositor, in which case rendering into
   // shared memory is wasteful.
-  if (IsCompositingCheap() &&
-      gfxPrefs::PersistentBufferProviderSharedEnabled()) {
+  if (IsCompositingCheap()) {
     RefPtr<PersistentBufferProvider> provider =
         PersistentBufferProviderShared::Create(aSize, aFormat,
                                                AsShadowForwarder());

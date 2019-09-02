@@ -12,12 +12,14 @@
 #include "nsIDOMEventListener.h"
 #include "nsIDOMXULCommandDispatcher.h"
 #include "nsIDOMXULSelectCntrlItemEl.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/PresShell.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/SourceText.h"
 #include "nsFocusManager.h"
@@ -25,7 +27,6 @@
 #include "nsNameSpaceManager.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
-#include "nsIPresShell.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptError.h"
@@ -40,8 +41,6 @@
 #include "nsStyleConsts.h"
 #include "nsString.h"
 #include "nsXULControllers.h"
-#include "nsIBoxObject.h"
-#include "nsPIBoxObject.h"
 #include "XULDocument.h"
 #include "nsXULPopupListener.h"
 #include "nsContentUtils.h"
@@ -80,7 +79,6 @@
 #include "XULTreeElement.h"
 
 #include "mozilla/dom/XULElementBinding.h"
-#include "mozilla/dom/BoxObject.h"
 #include "mozilla/dom/XULBroadcastManager.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/MutationEventBinding.h"
@@ -620,7 +618,7 @@ void nsXULElement::UpdateEditableState(bool aNotify) {
 
 class XULInContentErrorReporter : public Runnable {
  public:
-  explicit XULInContentErrorReporter(Document* aDocument)
+  explicit XULInContentErrorReporter(Document& aDocument)
       : mozilla::Runnable("XULInContentErrorReporter"), mDocument(aDocument) {}
 
   NS_IMETHOD Run() override {
@@ -629,7 +627,7 @@ class XULInContentErrorReporter : public Runnable {
   }
 
  private:
-  nsCOMPtr<Document> mDocument;
+  OwningNonNull<Document> mDocument;
 };
 
 static bool NeedTooltipSupport(const nsXULElement& aXULElement) {
@@ -643,20 +641,25 @@ static bool NeedTooltipSupport(const nsXULElement& aXULElement) {
          aXULElement.GetBoolAttr(nsGkAtoms::tooltiptext);
 }
 
-nsresult nsXULElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                  nsIContent* aBindingParent) {
-  if (!aBindingParent && aDocument && !aDocument->IsLoadedAsInteractiveData() &&
-      !aDocument->AllowXULXBL() &&
-      !aDocument->HasWarnedAbout(Document::eImportXULIntoContent)) {
-    nsContentUtils::AddScriptRunner(new XULInContentErrorReporter(aDocument));
-  }
-
-  nsresult rv = nsStyledElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = nsStyledElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  Document* doc = GetComposedDoc();
+  Document& doc = aContext.OwnerDoc();
+
+  // FIXME(emilio): Could use IsInComposedDoc().
+  if (!aContext.GetBindingParent() && IsInUncomposedDoc() &&
+      !doc.IsLoadedAsInteractiveData() && !doc.AllowXULXBL() &&
+      !doc.HasWarnedAbout(Document::eImportXULIntoContent)) {
+    nsContentUtils::AddScriptRunner(new XULInContentErrorReporter(doc));
+  }
+
+  if (!IsInComposedDoc()) {
+    return rv;
+  }
+
 #ifdef DEBUG
-  if (doc && !doc->AllowXULXBL() && !doc->IsUnstyledDocument()) {
+  if (!doc.AllowXULXBL() && !doc.IsUnstyledDocument()) {
     // To save CPU cycles and memory, non-XUL documents only load the user
     // agent style sheet rules for a minimal set of XUL elements such as
     // 'scrollbar' that may be created implicitly for their content (those
@@ -676,27 +679,26 @@ nsresult nsXULElement::BindToTree(Document* aDocument, nsIContent* aParent,
   }
 #endif
 
-  if (doc && NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
+  if (NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
     // Create our XUL key listener and hook it up.
     nsXBLService::AttachGlobalKeyHandler(this);
   }
 
-  if (doc && NeedTooltipSupport(*this)) {
+  if (NeedTooltipSupport(*this)) {
     AddTooltipSupport();
   }
 
-  if (doc && XULBroadcastManager::MayNeedListener(*this)) {
-    if (!doc->HasXULBroadcastManager()) {
-      doc->InitializeXULBroadcastManager();
+  if (XULBroadcastManager::MayNeedListener(*this)) {
+    if (!doc.HasXULBroadcastManager()) {
+      doc.InitializeXULBroadcastManager();
     }
-    XULBroadcastManager* broadcastManager = doc->GetXULBroadcastManager();
+    XULBroadcastManager* broadcastManager = doc.GetXULBroadcastManager();
     broadcastManager->AddListener(this);
   }
-
   return rv;
 }
 
-void nsXULElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void nsXULElement::UnbindFromTree(bool aNullParent) {
   if (NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
     nsXBLService::DetachGlobalKeyHandler(this);
   }
@@ -729,7 +731,7 @@ void nsXULElement::UnbindFromTree(bool aDeep, bool aNullParent) {
     slots->mControllers = nullptr;
   }
 
-  nsStyledElement::UnbindFromTree(aDeep, aNullParent);
+  nsStyledElement::UnbindFromTree(aNullParent);
 }
 
 void nsXULElement::DoneAddingChildren(bool aHaveNotified) {
@@ -746,9 +748,9 @@ void nsXULElement::UnregisterAccessKey(const nsAString& aOldValue) {
   //
   Document* doc = GetComposedDoc();
   if (doc && !aOldValue.IsEmpty()) {
-    nsIPresShell* shell = doc->GetShell();
+    PresShell* presShell = doc->GetPresShell();
 
-    if (shell) {
+    if (presShell) {
       Element* element = this;
 
       // find out what type of content node this is
@@ -761,7 +763,7 @@ void nsXULElement::UnregisterAccessKey(const nsAString& aOldValue) {
       }
 
       if (element) {
-        shell->GetPresContext()->EventStateManager()->UnregisterAccessKey(
+        presShell->GetPresContext()->EventStateManager()->UnregisterAccessKey(
             element, aOldValue.First());
       }
     }
@@ -865,9 +867,7 @@ nsresult nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
         } else if (aName == nsGkAtoms::localedir) {
           // if the localedir changed on the root element, reset the document
           // direction
-          if (document->IsXULDocument()) {
-            document->AsXULDocument()->ResetDocumentDirection();
-          }
+          document->ResetDocumentDirection();
         } else if (aName == nsGkAtoms::lwtheme ||
                    aName == nsGkAtoms::lwthemetextcolor) {
           // if the lwtheme changed, make sure to reset the document lwtheme
@@ -892,9 +892,7 @@ nsresult nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
         if (aName == nsGkAtoms::localedir) {
           // if the localedir changed on the root element, reset the document
           // direction
-          if (doc->IsXULDocument()) {
-            doc->AsXULDocument()->ResetDocumentDirection();
-          }
+          doc->ResetDocumentDirection();
         } else if ((aName == nsGkAtoms::lwtheme ||
                     aName == nsGkAtoms::lwthemetextcolor)) {
           // if the lwtheme changed, make sure to restyle appropriately
@@ -1032,9 +1030,9 @@ nsresult nsXULElement::DispatchXULCommand(const EventChainVisitor& aVisitor,
     }
     WidgetInputEvent* orig = aVisitor.mEvent->AsInputEvent();
     nsContentUtils::DispatchXULCommand(
-        commandElt, orig->IsTrusted(), aVisitor.mDOMEvent, nullptr,
-        orig->IsControl(), orig->IsAlt(), orig->IsShift(), orig->IsMeta(),
-        inputSource);
+        commandElt, orig->IsTrusted(), MOZ_KnownLive(aVisitor.mDOMEvent),
+        nullptr, orig->IsControl(), orig->IsAlt(), orig->IsShift(),
+        orig->IsMeta(), inputSource);
   } else {
     NS_WARNING("A XUL element is attached to a command that doesn't exist!\n");
   }
@@ -1135,11 +1133,6 @@ nsIControllers* nsXULElement::GetControllers(ErrorResult& rv) {
   return Controllers();
 }
 
-already_AddRefed<BoxObject> nsXULElement::GetBoxObject(ErrorResult& rv) {
-  // XXX sXBL/XBL2 issue! Owner or current document?
-  return OwnerDoc()->GetBoxObjectFor(this, rv);
-}
-
 void nsXULElement::Click(CallerType aCallerType) {
   ClickWithInputSource(MouseEvent_Binding::MOZ_SOURCE_UNKNOWN,
                        aCallerType == CallerType::System);
@@ -1161,7 +1154,7 @@ void nsXULElement::ClickWithInputSource(uint16_t aInputSource,
                                WidgetMouseEvent::eReal);
       WidgetMouseEvent eventClick(aIsTrustedEvent, eMouseClick, nullptr,
                                   WidgetMouseEvent::eReal);
-      eventDown.inputSource = eventUp.inputSource = eventClick.inputSource =
+      eventDown.mInputSource = eventUp.mInputSource = eventClick.mInputSource =
           aInputSource;
 
       // send mouse down
@@ -1194,7 +1187,8 @@ void nsXULElement::ClickWithInputSource(uint16_t aInputSource,
 void nsXULElement::DoCommand() {
   nsCOMPtr<Document> doc = GetComposedDoc();  // strong just in case
   if (doc) {
-    nsContentUtils::DispatchXULCommand(this, true);
+    RefPtr<nsXULElement> self = this;
+    nsContentUtils::DispatchXULCommand(self, true);
   }
 }
 
@@ -2139,9 +2133,6 @@ nsresult nsXULPrototypeScript::Compile(
   // source from the files on demand.
   options.setSourceIsLazy(mOutOfLine);
   JS::Rooted<JSObject*> scope(cx, JS::CurrentGlobalOrNull(cx));
-  if (scope) {
-    JS::ExposeObjectToActiveJS(scope);
-  }
 
   if (aOffThreadReceiver && JS::CanCompileOffThread(cx, options, aTextLength)) {
     if (!JS::CompileOffThread(cx, options, srcBuf,
@@ -2151,9 +2142,10 @@ nsresult nsXULPrototypeScript::Compile(
     }
     NotifyOffThreadScriptCompletedRunnable::NoteReceiver(aOffThreadReceiver);
   } else {
-    JS::Rooted<JSScript*> script(cx);
-    if (!JS::Compile(cx, options, srcBuf, &script))
+    JS::Rooted<JSScript*> script(cx, JS::Compile(cx, options, srcBuf));
+    if (!script) {
       return NS_ERROR_OUT_OF_MEMORY;
+    }
     Set(script);
   }
   return NS_OK;

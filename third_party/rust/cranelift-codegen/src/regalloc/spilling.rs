@@ -91,7 +91,7 @@ impl Spilling {
     /// Run the spilling algorithm over `func`.
     pub fn run(
         &mut self,
-        isa: &TargetIsa,
+        isa: &dyn TargetIsa,
         func: &mut Function,
         domtree: &DominatorTree,
         liveness: &mut Liveness,
@@ -420,6 +420,7 @@ impl<'a> Context<'a> {
         // secondary `opidx` key makes it possible to use an unstable (non-allocating) sort.
         self.reg_uses.sort_unstable_by_key(|u| (u.value, u.opidx));
 
+        self.cur.use_srcloc(inst);
         for i in 0..self.reg_uses.len() {
             let ru = self.reg_uses[i];
 

@@ -5,12 +5,12 @@
 "use strict";
 
 const Services = require("Services");
-const { applyMiddleware, createStore } = require("devtools/client/shared/vendor/redux");
-
 const {
-  MIN_COLUMN_WIDTH,
-  DEFAULT_COLUMN_WIDTH,
-} = require("./constants");
+  applyMiddleware,
+  createStore,
+} = require("devtools/client/shared/vendor/redux");
+
+const { MIN_COLUMN_WIDTH, DEFAULT_COLUMN_WIDTH } = require("./constants");
 
 // Middleware
 const batching = require("./middleware/batching");
@@ -27,6 +27,7 @@ const { Requests } = require("./reducers/requests");
 const { Sort } = require("./reducers/sort");
 const { TimingMarkers } = require("./reducers/timing-markers");
 const { UI, Columns, ColumnsData } = require("./reducers/ui");
+const { WebSockets } = require("./reducers/web-sockets");
 
 /**
  * Configure state and middleware for the Network monitor tool.
@@ -44,6 +45,7 @@ function configureStore(connector, telemetry) {
       columns: getColumnState(),
       columnsData: getColumnsData(),
     }),
+    webSockets: new WebSockets(),
   };
 
   // Prepare middleware.
@@ -53,7 +55,7 @@ function configureStore(connector, telemetry) {
     batching,
     recording(connector),
     throttling(connector),
-    eventTelemetry(connector, telemetry),
+    eventTelemetry(connector, telemetry)
   );
 
   return createStore(rootReducer, initialState, middleware);
@@ -103,7 +105,7 @@ function getColumnsData() {
 function getFilterState() {
   const activeFilters = {};
   const filters = getPref("devtools.netmonitor.filters");
-  filters.forEach((filter) => {
+  filters.forEach(filter => {
     activeFilters[filter] = true;
   });
   return new FilterTypes(activeFilters);

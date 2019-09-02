@@ -6,11 +6,9 @@ echo "running as" $(id)
 
 # Detect release version.
 . /etc/lsb-release
-if [ "${DISTRIB_RELEASE}" == "12.04" ]; then
-    echo "Ubuntu 12.04 not supported"
+if [ "${DISTRIB_RELEASE}" != "16.04" ]; then
+    echo "Ubuntu 16.04 required"
     exit 1
-elif [ "${DISTRIB_RELEASE}" == "16.04" ]; then
-    UBUNTU_1604=1
 fi
 
 ####
@@ -19,12 +17,15 @@ fi
 
 # Inputs, with defaults
 
+: GECKO_PATH                    ${GECKO_PATH}
 : MOZHARNESS_PATH               ${MOZHARNESS_PATH}
 : MOZHARNESS_URL                ${MOZHARNESS_URL}
 : MOZHARNESS_SCRIPT             ${MOZHARNESS_SCRIPT}
 : MOZHARNESS_CONFIG             ${MOZHARNESS_CONFIG}
+: MOZHARNESS_OPTIONS            ${MOZHARNESS_OPTIONS}
 : NEED_XVFB                     ${NEED_XVFB:=true}
 : NEED_WINDOW_MANAGER           ${NEED_WINDOW_MANAGER:=false}
+: NEED_COMPIZ                   ${NEED_COMPIZ}
 : NEED_PULSEAUDIO               ${NEED_PULSEAUDIO:=false}
 : START_VNC                     ${START_VNC:=false}
 : TASKCLUSTER_INTERACTIVE       ${TASKCLUSTER_INTERACTIVE:=false}
@@ -132,9 +133,6 @@ if $NEED_WINDOW_MANAGER; then
     # This is read by xsession to select the window manager
     echo DESKTOP_SESSION=ubuntu > $HOME/.xsessionrc
 
-    # note that doing anything with this display before running Xsession will cause sadness (like,
-    # crashes in compiz). Make sure that X has enough time to start
-    sleep 15
     # DISPLAY has already been set above
     # XXX: it would be ideal to add a semaphore logic to make sure that the
     # window manager is ready
@@ -152,17 +150,13 @@ if $NEED_WINDOW_MANAGER; then
     # credit card numbers.
     eval `dbus-launch --sh-syntax`
     eval `echo '' | /usr/bin/gnome-keyring-daemon -r -d --unlock --components=secrets`
-
-    if [ "${UBUNTU_1604}" ]; then
-        # start compiz for our window manager
-        compiz 2>&1 &
-        #TODO: how to determine if compiz starts correctly?
-    fi
 fi
 
-if [ "${UBUNTU_1604}" ]; then
-    maybe_start_pulse
+if $NEED_COMPIZ; then
+    compiz 2>&1 &
 fi
+
+maybe_start_pulse
 
 # For telemetry purposes, the build process wants information about the
 # source it is running
@@ -175,16 +169,27 @@ for cfg in $MOZHARNESS_CONFIG; do
   config_cmds="${config_cmds} --config-file ${MOZHARNESS_PATH}/configs/${cfg}"
 done
 
+if [ -n "$MOZHARNESS_OPTIONS" ]; then
+    options=""
+    for option in $MOZHARNESS_OPTIONS; do
+        options="$options --$option"
+    done
+fi
+
+# Use |mach python| if a source checkout exists so in-tree packages are
+# available.
+[[ -x "${GECKO_PATH}/mach" ]] && python="${GECKO_PATH}/mach python" || python="python2.7"
+
+# Save the computed mozharness command to a binary which is useful for
+# interactive mode.
 mozharness_bin="$HOME/bin/run-mozharness"
 mkdir -p $(dirname $mozharness_bin)
 
-# Save the computed mozharness command to a binary which is useful
-# for interactive mode.
 echo -e "#!/usr/bin/env bash
 # Some mozharness scripts assume base_work_dir is in
 # the current working directory, see bug 1279237
 cd "$WORKSPACE"
-cmd=\"python2.7 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} ${config_cmds} ${@} \${@}\"
+cmd=\"${python} ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} ${config_cmds} ${options} ${@} \${@}\"
 echo \"Running: \${cmd}\"
 exec \${cmd}" > ${mozharness_bin}
 chmod +x ${mozharness_bin}

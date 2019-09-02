@@ -269,6 +269,7 @@ def craft_release_properties(config, job):
     params = config.params
     build_platform = job['attributes']['build_platform']
     build_platform = build_platform.replace('-nightly', '')
+    build_platform = build_platform.replace('-shippable', '')
     if build_platform.endswith("-source"):
         build_platform = build_platform.replace('-source', '-release')
 
@@ -314,7 +315,7 @@ def make_task_worker(config, jobs):
         signing_task_ref = "<" + str(signing_task) + ">"
         build_task_ref = "<" + str(build_task) + ">"
 
-        if should_use_artifact_map(platform, config.params['project']):
+        if should_use_artifact_map(platform):
             upstream_artifacts = generate_beetmover_upstream_artifacts(
                 config, job, platform, locale
             )
@@ -328,7 +329,7 @@ def make_task_worker(config, jobs):
             'upstream-artifacts': upstream_artifacts,
         }
 
-        if should_use_artifact_map(platform, config.params['project']):
+        if should_use_artifact_map(platform):
             worker['artifact-map'] = generate_beetmover_artifact_map(
                 config, job, platform=platform, locale=locale)
 

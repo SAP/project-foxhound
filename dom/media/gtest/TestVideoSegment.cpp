@@ -13,13 +13,13 @@ class Image;
 }  // namespace layer
 }  // namespace mozilla
 
-TEST(VideoSegment, TestAppendFrameForceBlack) {
+TEST(VideoSegment, TestAppendFrameForceBlack)
+{
   RefPtr<layers::Image> testImage = nullptr;
 
   VideoSegment segment;
-  segment.AppendFrame(testImage.forget(), mozilla::StreamTime(90000),
-                      mozilla::gfx::IntSize(640, 480), PRINCIPAL_HANDLE_NONE,
-                      true);
+  segment.AppendFrame(testImage.forget(), mozilla::gfx::IntSize(640, 480),
+                      PRINCIPAL_HANDLE_NONE, true);
 
   VideoSegment::ChunkIterator iter(segment);
   while (!iter.IsEnded()) {
@@ -29,12 +29,13 @@ TEST(VideoSegment, TestAppendFrameForceBlack) {
   }
 }
 
-TEST(VideoSegment, TestAppendFrameNotForceBlack) {
+TEST(VideoSegment, TestAppendFrameNotForceBlack)
+{
   RefPtr<layers::Image> testImage = nullptr;
 
   VideoSegment segment;
-  segment.AppendFrame(testImage.forget(), mozilla::StreamTime(90000),
-                      mozilla::gfx::IntSize(640, 480), PRINCIPAL_HANDLE_NONE);
+  segment.AppendFrame(testImage.forget(), mozilla::gfx::IntSize(640, 480),
+                      PRINCIPAL_HANDLE_NONE);
 
   VideoSegment::ChunkIterator iter(segment);
   while (!iter.IsEnded()) {

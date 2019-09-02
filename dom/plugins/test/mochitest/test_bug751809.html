@@ -1,13 +1,12 @@
 <html>
 <head>
   <title>Bug 751809</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/paint_listener.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
   <script type="application/javascript">
   const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-  Services.prefs.setBoolPref("plugins.click_to_play", true);
   setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_CLICKTOPLAY);
   </script>
 </head>
@@ -74,7 +73,6 @@
       ok(false, "plugin.getMouseUpEventCount() shouldn't throw");
     }
 
-    Services.prefs.clearUserPref("plugins.click_to_play");
     SimpleTest.finish();
   }
 

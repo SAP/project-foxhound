@@ -17,7 +17,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsIURI.h"
 #include "nsIDocShell.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsISelectionController.h"
@@ -33,6 +32,7 @@
 #include "nsError.h"
 #include "nsFocusManager.h"
 #include "nsRange.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Selection.h"
@@ -324,7 +324,7 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsPIDOMWindowOuter* aWindow,
     return;
   }
 
-  nsIPresShell* presShell = doc->GetShell();
+  PresShell* presShell = doc->GetPresShell();
   if (!presShell) {
     return;
   }
@@ -358,7 +358,8 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsPIDOMWindowOuter* aWindow,
       selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
   if (selection) {
     selection->RemoveAllRanges(IgnoreErrors());
-    selection->AddRange(*aRange, IgnoreErrors());
+    selection->AddRangeAndSelectFramesAndNotifyListeners(*aRange,
+                                                         IgnoreErrors());
 
     nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
     if (fm) {
@@ -707,7 +708,7 @@ already_AddRefed<Selection> nsWebBrowserFind::GetFrameSelection(
     return nullptr;
   }
 
-  nsIPresShell* presShell = doc->GetShell();
+  PresShell* presShell = doc->GetPresShell();
   if (!presShell) {
     return nullptr;
   }
@@ -734,8 +735,7 @@ already_AddRefed<Selection> nsWebBrowserFind::GetFrameSelection(
     }
   }
 
-  selCon = do_QueryInterface(presShell);
-  sel = selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
+  sel = presShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
   return sel.forget();
 }
 
@@ -765,7 +765,7 @@ nsresult nsWebBrowserFind::OnFind(nsPIDOMWindowOuter* aFoundWindow) {
     // window should already be focused.
     RefPtr<Element> frameElement = aFoundWindow->GetFrameElementInternal();
     if (frameElement) {
-      fm->SetFocus(frameElement, 0);
+      fm->SetFocus(frameElement, nsIFocusManager::FLAG_BYELEMENTFOCUS);
     }
 
     mLastFocusedWindow = do_GetWeakReference(aFoundWindow);

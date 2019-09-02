@@ -25,24 +25,21 @@ class DebugTargetErrorPage extends PureComponent {
 
     return dom.article(
       {
-        className: "error-page js-error-page",
+        className: "error-page qa-error-page",
       },
       dom.h1(
         {
           className: "error-page__title",
         },
-        L10N.getStr("toolbox.debugTargetErrorPage.title"),
+        L10N.getStr("toolbox.debugTargetErrorPage.title")
       ),
-      dom.p(
-        {},
-        L10N.getStr("toolbox.debugTargetErrorPage.description"),
-      ),
+      dom.p({}, L10N.getStr("toolbox.debugTargetErrorPage.description")),
       dom.output(
         {
           className: "error-page__details",
         },
-        errorMessage,
-      ),
+        errorMessage
+      )
     );
   }
 }

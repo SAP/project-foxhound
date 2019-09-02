@@ -18,13 +18,14 @@
 #include "libANGLE/Program.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/formatutils.h"
+#include "libANGLE/renderer/d3d/DynamicImage2DHLSL.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
 
 namespace sh
 {
 struct Attribute;
 struct ShaderVariable;
-}
+}  // namespace sh
 
 namespace gl
 {
@@ -32,12 +33,33 @@ class InfoLog;
 struct VariableLocation;
 class VaryingPacking;
 struct VertexAttribute;
-}
+}  // namespace gl
 
 namespace rx
 {
 class ProgramD3DMetadata;
 class ShaderD3D;
+
+// This class needs to match OutputHLSL::decorate
+class DecorateVariable final : angle::NonCopyable
+{
+  public:
+    explicit DecorateVariable(const std::string &str) : mName(str) {}
+    const std::string &getName() const { return mName; }
+
+  private:
+    const std::string &mName;
+};
+
+inline std::ostream &operator<<(std::ostream &o, const DecorateVariable &dv)
+{
+    if (dv.getName().compare(0, 3, "gl_") != 0)
+    {
+        o << "_";
+    }
+    o << dv.getName();
+    return o;
+}
 
 struct PixelShaderOutputVariable
 {
@@ -45,14 +67,19 @@ struct PixelShaderOutputVariable
     PixelShaderOutputVariable(GLenum typeIn,
                               const std::string &nameIn,
                               const std::string &sourceIn,
+                              size_t outputLocationIn,
                               size_t outputIndexIn)
-        : type(typeIn), name(nameIn), source(sourceIn), outputIndex(outputIndexIn)
-    {
-    }
+        : type(typeIn),
+          name(nameIn),
+          source(sourceIn),
+          outputLocation(outputLocationIn),
+          outputIndex(outputIndexIn)
+    {}
 
     GLenum type = GL_NONE;
     std::string name;
     std::string source;
+    size_t outputLocation = 0;
     size_t outputIndex = 0;
 };
 
@@ -128,6 +155,12 @@ class DynamicHLSL : angle::NonCopyable
         const std::vector<PixelShaderOutputVariable> &outputVariables,
         bool usesFragDepth,
         const std::vector<GLenum> &outputLayout) const;
+    std::string generateComputeShaderForImage2DBindSignature(
+        const d3d::Context *context,
+        ProgramD3D &programD3D,
+        const gl::ProgramState &programData,
+        std::vector<sh::Uniform> &image2DUniforms,
+        const gl::ImageUnitTextureTypeMap &image2DBindLayout) const;
     void generateShaderLinkHLSL(const gl::Caps &caps,
                                 const gl::ProgramState &programData,
                                 const ProgramD3DMetadata &programMetadata,
@@ -149,7 +182,7 @@ class DynamicHLSL : angle::NonCopyable
                                            const bool pointSpriteEmulation,
                                            const std::string &preambleString) const;
 
-    void getPixelShaderOutputKey(const gl::ContextState &data,
+    void getPixelShaderOutputKey(const gl::State &data,
                                  const gl::ProgramState &programData,
                                  const ProgramD3DMetadata &metadata,
                                  std::vector<PixelShaderOutputVariable> *outPixelShaderKey);
@@ -162,7 +195,7 @@ class DynamicHLSL : angle::NonCopyable
                                  bool programUsesPointSize,
                                  std::ostringstream &hlslStream) const;
 
-    static void GenerateAttributeConversionHLSL(gl::VertexFormatType vertexFormatType,
+    static void GenerateAttributeConversionHLSL(angle::FormatID vertexFormatID,
                                                 const sh::ShaderVariable &shaderAttrib,
                                                 std::ostringstream &outStream);
 };

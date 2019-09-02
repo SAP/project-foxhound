@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SMILAnimationFunction.h"
@@ -37,8 +38,6 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(SVGAnimationElement, SVGAnimationElementBase,
 SVGAnimationElement::SVGAnimationElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : SVGAnimationElementBase(std::move(aNodeInfo)), mHrefTarget(this) {}
-
-SVGAnimationElement::~SVGAnimationElement() {}
 
 nsresult SVGAnimationElement::Init() {
   nsresult rv = SVGAnimationElementBase::Init();
@@ -133,19 +132,16 @@ float SVGAnimationElement::GetSimpleDuration(ErrorResult& rv) {
 //----------------------------------------------------------------------
 // nsIContent methods
 
-nsresult SVGAnimationElement::BindToTree(Document* aDocument,
-                                         nsIContent* aParent,
-                                         nsIContent* aBindingParent) {
+nsresult SVGAnimationElement::BindToTree(BindContext& aContext,
+                                         nsINode& aParent) {
   MOZ_ASSERT(!mHrefTarget.get(),
              "Shouldn't have href-target yet (or it should've been cleared)");
-  nsresult rv =
-      SVGAnimationElementBase::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = SVGAnimationElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Add myself to the animation controller's master set of animation elements.
-  if (Document* doc = GetComposedDoc()) {
-    SMILAnimationController* controller = doc->GetAnimationController();
-    if (controller) {
+  if (Document* doc = aContext.GetComposedDoc()) {
+    if (SMILAnimationController* controller = doc->GetAnimationController()) {
       controller->RegisterAnimationElement(this);
     }
     const nsAttrValue* href =
@@ -167,7 +163,7 @@ nsresult SVGAnimationElement::BindToTree(Document* aDocument,
   return NS_OK;
 }
 
-void SVGAnimationElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void SVGAnimationElement::UnbindFromTree(bool aNullParent) {
   SMILAnimationController* controller = OwnerDoc()->GetAnimationController();
   if (controller) {
     controller->UnregisterAnimationElement(this);
@@ -178,7 +174,7 @@ void SVGAnimationElement::UnbindFromTree(bool aDeep, bool aNullParent) {
 
   AnimationNeedsResample();
 
-  SVGAnimationElementBase::UnbindFromTree(aDeep, aNullParent);
+  SVGAnimationElementBase::UnbindFromTree(aNullParent);
 }
 
 bool SVGAnimationElement::ParseAttribute(int32_t aNamespaceID,

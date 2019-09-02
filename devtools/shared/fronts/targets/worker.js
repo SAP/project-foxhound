@@ -3,18 +3,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {workerTargetSpec} = require("devtools/shared/specs/targets/worker");
-const { FrontClassWithSpec, registerFront } = require("devtools/shared/protocol");
+const { workerTargetSpec } = require("devtools/shared/specs/targets/worker");
+const {
+  FrontClassWithSpec,
+  registerFront,
+} = require("devtools/shared/protocol");
 const { TargetMixin } = require("./target-mixin");
 
-class WorkerTargetFront extends
-  TargetMixin(FrontClassWithSpec(workerTargetSpec)) {
+class WorkerTargetFront extends TargetMixin(
+  FrontClassWithSpec(workerTargetSpec)
+) {
   constructor(client) {
     super(client);
 
     this.traits = {};
-
-    this._isClosed = false;
 
     // The actor sends a "close" event, which is translated to "worker-close" by
     // the specification in order to not conflict with Target's "close" event.
@@ -26,6 +28,10 @@ class WorkerTargetFront extends
 
   form(json) {
     this.actorID = json.actor;
+    // `id` was added in Firefox 68 to the worker target actor. Fallback to the actorID
+    // when debugging older clients.
+    // Fallback can be removed when Firefox 68 will be in the Release channel.
+    this.id = json.id || this.actorID;
 
     // Save the full form for Target class usage.
     // Do not use `form` name to avoid colliding with protocol.js's `form` method
@@ -34,16 +40,6 @@ class WorkerTargetFront extends
     this.type = json.type;
     this.scope = json.scope;
     this.fetch = json.fetch;
-  }
-
-  get isClosed() {
-    return this._isClosed;
-  }
-
-  destroy() {
-    this._isClosed = true;
-
-    super.destroy();
   }
 
   async attach() {
@@ -59,26 +55,14 @@ class WorkerTargetFront extends
       // that will be later used by Target.
       const connectResponse = await this.connect({});
       // Set the console actor ID on the form to expose it to Target.attachConsole
+      // Set the ThreadActor on the target form so it is accessible by getFront
       this.targetForm.consoleActor = connectResponse.consoleActor;
+      this.targetForm.contextActor = connectResponse.threadActor;
       this._threadActor = connectResponse.threadActor;
 
       return this.attachConsole();
     })();
     return this._attach;
-  }
-
-  async detach() {
-    if (this.isClosed) {
-      return {};
-    }
-    let response;
-    try {
-      response = await super.detach();
-    } catch (e) {
-      console.warn(`Error while detaching the worker target front: ${e.message}`);
-    }
-    this.destroy();
-    return response;
   }
 
   reconfigure() {

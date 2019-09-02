@@ -12,14 +12,12 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         style="width: 46em;"
         buttons="accept,cancel"
-        ondialogaccept="return onDialogAccept();"
-        ondialogcancel="return onDialogCancel();"
         onload="onLoad();">
 
 <stringbundle id="pippki_bundle" src="chrome://pippki/locale/pippki.properties"/>
 
-<script type="application/javascript" src="chrome://pippki/content/pippki.js"/>
-<script type="application/javascript" src="chrome://pippki/content/downloadcert.js"/>
+<script src="chrome://pippki/content/pippki.js"/>
+<script src="chrome://pippki/content/downloadcert.js"/>
 
 
   <!--  Let 'em know what they're doing -->

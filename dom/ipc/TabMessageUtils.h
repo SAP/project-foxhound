@@ -11,8 +11,12 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Event.h"
 #include "nsExceptionHandler.h"
+#include "nsIRemoteTab.h"
 #include "nsPIDOMWindow.h"
 #include "nsCOMPtr.h"
+#include "mozilla/dom/EffectsInfo.h"
+#include "mozilla/layers/LayersMessageUtils.h"
+#include "ipc/IPCMessageUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -64,6 +68,31 @@ struct ParamTraits<UIStateChangeType>
     : public ContiguousEnumSerializer<UIStateChangeType,
                                       UIStateChangeType_NoChange,
                                       UIStateChangeType_Invalid> {};
+
+template <>
+struct ParamTraits<nsIRemoteTab::NavigationType>
+    : public ContiguousEnumSerializerInclusive<
+          nsIRemoteTab::NavigationType,
+          nsIRemoteTab::NavigationType::NAVIGATE_BACK,
+          nsIRemoteTab::NavigationType::NAVIGATE_URL> {};
+
+template <>
+struct ParamTraits<mozilla::dom::EffectsInfo> {
+  typedef mozilla::dom::EffectsInfo paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mVisibleRect);
+    WriteParam(aMsg, aParam.mScaleX);
+    WriteParam(aMsg, aParam.mScaleY);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    return ReadParam(aMsg, aIter, &aResult->mVisibleRect) &&
+           ReadParam(aMsg, aIter, &aResult->mScaleX) &&
+           ReadParam(aMsg, aIter, &aResult->mScaleY);
+  }
+};
 
 }  // namespace IPC
 

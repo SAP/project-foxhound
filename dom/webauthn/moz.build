@@ -61,7 +61,16 @@ LOCAL_INCLUDES += [
     '/dom/base',
     '/dom/crypto',
     '/security/manager/ssl',
+    '/third_party/rust',
 ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    EXPORTS.mozilla.dom += [
+        'AndroidWebAuthnTokenManager.h',
+    ]
+    UNIFIED_SOURCES += [
+        'AndroidWebAuthnTokenManager.cpp',
+    ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     OS_LIBS += [

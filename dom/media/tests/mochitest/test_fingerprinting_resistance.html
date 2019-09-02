@@ -22,7 +22,11 @@ async function testEnumerateDevices(expectDevices) {
 
 async function testGetUserMedia(expectDevices) {
   const constraints = [
-    {audio: true}, {video: true}, {audio: true, video: true}
+    {audio: true},
+    {video: true},
+    {audio: true, video: true},
+    {video: {width: {min: 1e9}}}, // impossible
+    {audio: {channelCount: {exact: 1e3}}}, // impossible
   ];
   for (let constraint of constraints) {
     let message = "getUserMedia(" + JSON.stringify(constraint) + ")";
@@ -74,6 +78,7 @@ async function testNoDevices() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.resistFingerprinting", false],
+      ["media.navigator.permission.device", false],
       ["media.navigator.streams.fake", false],
       ["media.audio_loopback_dev", "foo"],
       ["media.video_loopback_dev", "bar"]

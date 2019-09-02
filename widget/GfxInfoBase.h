@@ -55,8 +55,8 @@ class GfxInfoBase : public nsIGfxInfo,
 
   NS_IMETHOD GetMonitors(JSContext* cx,
                          JS::MutableHandleValue _retval) override;
-  NS_IMETHOD GetFailures(uint32_t* failureCount, int32_t** indices,
-                         char*** failures) override;
+  NS_IMETHOD GetFailures(nsTArray<int32_t>& indices,
+                         nsTArray<nsCString>& failures) override;
   NS_IMETHOD_(void) LogFailure(const nsACString& failure) override;
   NS_IMETHOD GetInfo(JSContext*, JS::MutableHandle<JS::Value>) override;
   NS_IMETHOD GetFeatures(JSContext*, JS::MutableHandle<JS::Value>) override;
@@ -73,7 +73,6 @@ class GfxInfoBase : public nsIGfxInfo,
       bool* aOffMainThreadPaintEnabled) override;
   NS_IMETHOD GetOffMainThreadPaintWorkerCount(
       int32_t* aOffMainThreadPaintWorkerCount) override;
-  NS_IMETHOD GetLowEndMachine(bool* aLowEndMachine) override;
   NS_IMETHOD GetTargetFrameRate(uint32_t* aTargetFrameRate) override;
 
   // Initialization function. If you override this, you must call this class's
@@ -105,9 +104,7 @@ class GfxInfoBase : public nsIGfxInfo,
   // Convenience to get the application version
   static const nsCString& GetApplicationVersion();
 
-  virtual nsresult FindMonitors(JSContext* cx, JS::HandleObject array) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
+  virtual nsresult FindMonitors(JSContext* cx, JS::HandleObject array);
 
   static void SetFeatureStatus(
       const nsTArray<mozilla::dom::GfxInfoFeatureStatus>& aFS);
@@ -125,6 +122,13 @@ class GfxInfoBase : public nsIGfxInfo,
   virtual const nsTArray<GfxDriverInfo>& GetGfxDriverInfo() = 0;
 
   virtual void DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> obj);
+
+  bool DoesVendorMatch(const nsAString& aBlocklistVendor,
+                       const nsAString& aAdapterVendor);
+
+  virtual bool DoesDriverVendorMatch(const nsAString& aBlocklistVendor,
+                                     const nsAString& aDriverVendor);
+
   bool InitFeatureObject(JSContext* aCx, JS::Handle<JSObject*> aContainer,
                          const char* aName,
                          mozilla::gfx::FeatureStatus& aKnownStatus,

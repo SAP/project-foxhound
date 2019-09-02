@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/HTMLCanvasElement.h"
 
-#include "gfxPrefs.h"
 #include "ImageEncoder.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -492,9 +491,11 @@ nsresult HTMLCanvasElement::DispatchPrintCallback(nsITimerCallback* aCallback) {
   return OwnerDoc()->Dispatch(TaskCategory::Other, renderEvent.forget());
 }
 
+MOZ_CAN_RUN_SCRIPT
 void HTMLCanvasElement::CallPrintCallback() {
-  ErrorResult rv;
-  GetMozPrintCallback()->Call(*mPrintState, rv);
+  RefPtr<PrintCallback> callback = GetMozPrintCallback();
+  RefPtr<HTMLCanvasPrintState> state = mPrintState;
+  callback->Call(*state);
 }
 
 void HTMLCanvasElement::ResetPrintCallback() {
@@ -519,7 +520,9 @@ nsresult HTMLCanvasElement::CopyInnerTo(HTMLCanvasElement* aDest) {
   nsresult rv = nsGenericHTMLElement::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
   if (aDest->OwnerDoc()->IsStaticDocument()) {
-    aDest->mOriginalCanvas = this;
+    // The Firefox print preview code can create a static clone from an
+    // existing static clone, so we may not be the original 'canvas' element.
+    aDest->mOriginalCanvas = GetOriginalCanvas();
 
     // We make sure that the canvas is not zero sized since that would cause
     // the DrawImage call below to return an error, which would cause printing
@@ -557,7 +560,7 @@ void HTMLCanvasElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
       hitpoint.x = (ptInRoot.x - paddingRect.x) / AppUnitsPerCSSPixel();
       hitpoint.y = (ptInRoot.y - paddingRect.y) / AppUnitsPerCSSPixel();
 
-      evt->region = mCurrentContext->GetHitRegion(hitpoint);
+      evt->mRegion = mCurrentContext->GetHitRegion(hitpoint);
       aVisitor.mCanHandle = true;
     }
   }

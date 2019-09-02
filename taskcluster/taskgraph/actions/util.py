@@ -17,43 +17,21 @@ from six import text_type
 from requests.exceptions import HTTPError
 
 from taskgraph import create
-from taskgraph.decision import read_artifact, write_artifact
+from taskgraph.decision import read_artifact, write_artifact, rename_artifact
 from taskgraph.taskgraph import TaskGraph
 from taskgraph.optimize import optimize_task_graph
 from taskgraph.util.taskcluster import (
     get_session,
-    find_task_id,
     get_artifact,
     list_tasks,
     parse_time,
     CONCURRENCY,
 )
+from taskgraph.util.taskgraph import (
+    find_decision_task,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def find_decision_task(parameters, graph_config):
-    """Given the parameters for this action, find the taskId of the decision
-    task"""
-    return find_task_id('{}.v2.{}.pushlog-id.{}.decision'.format(
-        graph_config['trust-domain'],
-        parameters['project'],
-        parameters['pushlog_id']))
-
-
-def find_existing_tasks_from_previous_kinds(full_task_graph, previous_graph_ids,
-                                            rebuild_kinds):
-    """Given a list of previous decision/action taskIds and kinds to ignore
-    from the previous graphs, return a dictionary of labels-to-taskids to use
-    as ``existing_tasks`` in the optimization step."""
-    existing_tasks = {}
-    for previous_graph_id in previous_graph_ids:
-        label_to_taskid = get_artifact(previous_graph_id, "public/label-to-taskid.json")
-        kind_labels = set(t.label for t in full_task_graph.tasks.itervalues()
-                          if t.attributes['kind'] not in rebuild_kinds)
-        for label in set(label_to_taskid.keys()).intersection(kind_labels):
-            existing_tasks[label] = label_to_taskid[label]
-    return existing_tasks
 
 
 def fetch_graph_and_labels(parameters, graph_config):
@@ -133,6 +111,12 @@ def update_parent(task, graph):
     return task
 
 
+def update_dependencies(task, graph):
+    if os.environ.get('TASK_ID'):
+        task.task.setdefault('dependencies', []).append(os.environ['TASK_ID'])
+    return task
+
+
 def create_tasks(graph_config, to_run, full_task_graph, label_to_taskid,
                  params, decision_task_id=None, suffix='', modifier=lambda t: t):
     """Create new tasks.  The task definition will have {relative-datestamp':
@@ -166,6 +150,8 @@ def create_tasks(graph_config, to_run, full_task_graph, label_to_taskid,
         {l: modifier(full_task_graph[l]) for l in target_graph.nodes},
         target_graph)
     target_task_graph.for_each_task(update_parent)
+    if decision_task_id and decision_task_id != os.environ.get('TASK_ID'):
+        target_task_graph.for_each_task(update_dependencies)
     optimized_task_graph, label_to_taskid = optimize_task_graph(target_task_graph,
                                                                 params,
                                                                 to_run,
@@ -183,16 +169,44 @@ def create_tasks(graph_config, to_run, full_task_graph, label_to_taskid,
     return label_to_taskid
 
 
+def _update_reducer(accumulator, new_value):
+    "similar to set or dict `update` method, but returning the modified object"
+    accumulator.update(new_value)
+    return accumulator
+
+
 def combine_task_graph_files(suffixes):
     """Combine task-graph-{suffix}.json files into a single task-graph.json file.
 
     Since Chain of Trust verification requires a task-graph.json file that
     contains all children tasks, we can combine the various task-graph-0.json
-    type files into a master task-graph.json file at the end."""
-    all = {}
-    for suffix in suffixes:
-        all.update(read_artifact('task-graph-{}.json'.format(suffix)))
-    write_artifact('task-graph.json', all)
+    type files into a master task-graph.json file at the end.
+
+    Actions also look for various artifacts, so we combine those in a similar
+    fashion.
+
+    In the case where there is only one suffix, we simply rename it to avoid the
+    additional cost of uploading two copies of the same data.
+    """
+
+    if len(suffixes) == 1:
+        for filename in ['task-graph', 'label-to-taskid', 'to-run']:
+            rename_artifact(
+                "{}-{}.json".format(filename, suffixes[0]),
+                "{}.json".format(filename))
+        return
+
+    def combine(file_contents, base):
+        return reduce(_update_reducer, file_contents, base)
+
+    files = [read_artifact("task-graph-{}.json".format(suffix)) for suffix in suffixes]
+    write_artifact("task-graph.json", combine(files, dict()))
+
+    files = [read_artifact("label-to-taskid-{}.json".format(suffix)) for suffix in suffixes]
+    write_artifact("label-to-taskid.json", combine(files, dict()))
+
+    files = [read_artifact("to-run-{}.json".format(suffix)) for suffix in suffixes]
+    write_artifact("to-run.json", list(combine(files, set())))
 
 
 def relativize_datestamps(task_def):
@@ -220,3 +234,36 @@ def relativize_datestamps(task_def):
             return {k: recurse(v) for k, v in value.items()}
         return value
     return recurse(task_def)
+
+
+def add_args_to_command(cmd_parts, extra_args=[]):
+    """
+        Add custom command line args to a given command.
+        args:
+          cmd_parts: the raw command as seen by taskcluster
+          extra_args: array of args we want to add
+    """
+    cmd_type = 'default'
+    if len(cmd_parts) == 1 and isinstance(cmd_parts[0], dict):
+        # windows has single cmd part as dict: 'task-reference', with long string
+        cmd_parts = cmd_parts[0]['task-reference'].split(' ')
+        cmd_type = 'dict'
+    elif len(cmd_parts) == 1 and (isinstance(cmd_parts[0], unicode) or
+                                  isinstance(cmd_parts[0], str)):
+        # windows has single cmd part as a long string
+        cmd_parts = cmd_parts[0].split(' ')
+        cmd_type = 'unicode'
+    elif len(cmd_parts) == 1 and isinstance(cmd_parts[0], list):
+        # osx has an single value array with an array inside
+        cmd_parts = cmd_parts[0]
+        cmd_type = 'subarray'
+
+    cmd_parts.extend(extra_args)
+
+    if cmd_type == 'dict':
+        cmd_parts = [{'task-reference': ' '.join(cmd_parts)}]
+    elif cmd_type == 'unicode':
+        cmd_parts = [' '.join(cmd_parts)]
+    elif cmd_type == 'subarray':
+        cmd_parts = [cmd_parts]
+    return cmd_parts

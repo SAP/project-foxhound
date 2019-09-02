@@ -10,7 +10,7 @@
  * liability, trademark and document use rules apply.
  */
 
-[Constructor(DOMString type, optional UIEventInit eventInitDict)]
+[Constructor(DOMString type, optional UIEventInit eventInitDict = {})]
 interface UIEvent : Event
 {
   readonly attribute WindowProxy? view;
@@ -29,8 +29,6 @@ partial interface UIEvent {
 
   readonly attribute long          layerX;
   readonly attribute long          layerY;
-  readonly attribute long          pageX;
-  readonly attribute long          pageY;
   [NeedsCallerType]
   readonly attribute unsigned long which;
   readonly attribute Node?         rangeParent;

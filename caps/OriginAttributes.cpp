@@ -38,11 +38,11 @@ void OriginAttributes::InitPrefs() {
 }
 
 void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
-                                           nsIURI* aURI) {
+                                           nsIURI* aURI, bool aForced) {
   bool isFirstPartyEnabled = IsFirstPartyEnabled();
 
-  // If the pref is off or this is not a top level load, bail out.
-  if (!isFirstPartyEnabled || !aIsTopLevelDocument) {
+  // If the prefs are off or this is not a top level load, bail out.
+  if ((!isFirstPartyEnabled || !aIsTopLevelDocument) && !aForced) {
     return;
   }
 
@@ -67,7 +67,7 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
     rv = aURI->GetHost(ipAddr);
     NS_ENSURE_SUCCESS_VOID(rv);
 
-    if (net_IsValidIPv6Addr(ipAddr.BeginReading(), ipAddr.Length())) {
+    if (net_IsValidIPv6Addr(ipAddr)) {
       // According to RFC2732, the host of an IPv6 address should be an
       // IPv6reference. The GetHost() of nsIURI will only return the IPv6
       // address. So, we need to convert it back to IPv6reference here.
@@ -82,6 +82,8 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
     return;
   }
 
+  // Saving isInsufficientDomainLevels before rv is overwritten.
+  bool isInsufficientDomainLevels = (rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS);
   nsAutoCString scheme;
   rv = aURI->GetScheme(scheme);
   NS_ENSURE_SUCCESS_VOID(rv);
@@ -95,6 +97,15 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
           aURI, getter_AddRefs(blobPrincipal))) {
     MOZ_ASSERT(blobPrincipal);
     mFirstPartyDomain = blobPrincipal->OriginAttributesRef().mFirstPartyDomain;
+    return;
+  }
+
+  if (isInsufficientDomainLevels) {
+    nsAutoCString publicSuffix;
+    rv = tldService->GetPublicSuffix(aURI, publicSuffix);
+    if (NS_SUCCEEDED(rv)) {
+      mFirstPartyDomain = NS_ConvertUTF8toUTF16(publicSuffix);
+    }
     return;
   }
 }
@@ -121,11 +132,6 @@ void OriginAttributes::CreateSuffix(nsACString& aStr) const {
   // will break the quota manager when it uses the serialization for file
   // naming.
   //
-
-  if (mAppId != nsIScriptSecurityManager::NO_APP_ID) {
-    value.AppendInt(mAppId);
-    params.Set(NS_LITERAL_STRING("appId"), value);
-  }
 
   if (mInIsolatedMozBrowser) {
     params.Set(NS_LITERAL_STRING("inBrowser"), NS_LITERAL_STRING("1"));
@@ -196,16 +202,6 @@ class MOZ_STACK_CLASS PopulateFromSuffixIterator final
 
   bool URLParamsIterator(const nsAString& aName,
                          const nsAString& aValue) override {
-    if (aName.EqualsLiteral("appId")) {
-      nsresult rv;
-      int64_t val = aValue.ToInteger64(&rv);
-      NS_ENSURE_SUCCESS(rv, false);
-      NS_ENSURE_TRUE(val <= UINT32_MAX, false);
-      mOriginAttributes->mAppId = static_cast<uint32_t>(val);
-
-      return true;
-    }
-
     if (aName.EqualsLiteral("inBrowser")) {
       if (!aValue.EqualsLiteral("1")) {
         return false;
@@ -215,7 +211,7 @@ class MOZ_STACK_CLASS PopulateFromSuffixIterator final
       return true;
     }
 
-    if (aName.EqualsLiteral("addonId")) {
+    if (aName.EqualsLiteral("addonId") || aName.EqualsLiteral("appId")) {
       // No longer supported. Silently ignore so that legacy origin strings
       // don't cause failures.
       return true;

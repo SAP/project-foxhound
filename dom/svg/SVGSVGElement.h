@@ -7,7 +7,7 @@
 #ifndef mozilla_dom_SVGSVGElement_h
 #define mozilla_dom_SVGSVGElement_h
 
-#include "SVGEnum.h"
+#include "SVGAnimatedEnumeration.h"
 #include "SVGViewportElement.h"
 
 nsresult NS_NewSVGSVGElement(
@@ -25,7 +25,7 @@ class DOMSVGAngle;
 class DOMSVGLength;
 class DOMSVGNumber;
 class SVGMatrix;
-class SVGIRect;
+class SVGRect;
 class SVGSVGElement;
 
 // Stores svgView arguments of SVG fragment identifiers.
@@ -33,8 +33,8 @@ class SVGView {
  public:
   SVGView();
 
-  mozilla::SVGEnum mZoomAndPan;
-  SVGViewBox mViewBox;
+  SVGAnimatedEnumeration mZoomAndPan;
+  SVGAnimatedViewBox mViewBox;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
   nsAutoPtr<SVGAnimatedTransformList> mTransforms;
 };
@@ -65,7 +65,7 @@ class DOMSVGTranslatePoint final : public nsISVGPoint {
   RefPtr<SVGSVGElement> mElement;
 
  private:
-  ~DOMSVGTranslatePoint() {}
+  ~DOMSVGTranslatePoint() = default;
 };
 
 typedef SVGViewportElement SVGSVGElementBase;
@@ -88,7 +88,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
       mozilla::dom::FromParser aFromParser));
 
-  ~SVGSVGElement();
+  ~SVGSVGElement() = default;
 
  public:
   // interfaces:
@@ -102,7 +102,8 @@ class SVGSVGElement final : public SVGSVGElementBase {
    *
    * XXX SVGZoomEvent is no more, is this needed?
    */
-  void SetCurrentScaleTranslate(float s, float x, float y);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void SetCurrentScaleTranslate(float s, float x,
+                                                            float y);
 
   // nsIContent interface
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
@@ -112,10 +113,10 @@ class SVGSVGElement final : public SVGSVGElementBase {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedLength> X();
-  already_AddRefed<SVGAnimatedLength> Y();
-  already_AddRefed<SVGAnimatedLength> Width();
-  already_AddRefed<SVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
   bool UseCurrentView();
   float CurrentScale();
   void SetCurrentScale(float aCurrentScale);
@@ -136,7 +137,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
   already_AddRefed<DOMSVGAngle> CreateSVGAngle();
   already_AddRefed<nsISVGPoint> CreateSVGPoint();
   already_AddRefed<SVGMatrix> CreateSVGMatrix();
-  already_AddRefed<SVGIRect> CreateSVGRect();
+  already_AddRefed<SVGRect> CreateSVGRect();
   already_AddRefed<DOMSVGTransform> CreateSVGTransform();
   already_AddRefed<DOMSVGTransform> CreateSVGTransformFromMatrix(
       SVGMatrix& matrix);
@@ -146,9 +147,8 @@ class SVGSVGElement final : public SVGSVGElementBase {
 
   // SVGElement overrides
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent) override;
   virtual SVGAnimatedTransformList* GetAnimatedTransformList(
       uint32_t aFlags = 0) override;
 
@@ -196,8 +196,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
    * basically a simplified version of GetOwnerSVGElement that uses the parent
    * parameters passed in instead.
    */
-  bool WillBeOutermostSVG(nsIContent* aParent,
-                          nsIContent* aBindingParent) const;
+  bool WillBeOutermostSVG(nsINode& aParent, Element* aBindingParent) const;
 
   // invalidate viewbox -> viewport xform & inform frames
   void InvalidateTransformNotifyFrame();
@@ -219,14 +218,14 @@ class SVGSVGElement final : public SVGSVGElementBase {
   }
   virtual float GetCurrentScale() const override { return mCurrentScale; }
 
-  virtual const SVGViewBox& GetViewBoxInternal() const override;
+  virtual const SVGAnimatedViewBox& GetViewBoxInternal() const override;
   virtual SVGAnimatedTransformList* GetTransformInternal() const override;
 
   virtual EnumAttributesInfo GetEnumInfo() override;
 
   enum { ZOOMANDPAN };
-  mozilla::SVGEnum mEnumAttributes[1];
-  static mozilla::SVGEnumMapping sZoomAndPanMap[];
+  SVGAnimatedEnumeration mEnumAttributes[1];
+  static SVGEnumMapping sZoomAndPanMap[];
   static EnumInfo sEnumInfo[1];
 
   // The time container for animations within this SVG document fragment. Set

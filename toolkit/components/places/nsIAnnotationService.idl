@@ -86,34 +86,6 @@ interface nsIAnnotationService : nsISupports
                                  in AUTF8String aName);
 
     /**
-     * Retrieves info about an existing annotation.
-     *
-     * aType will be one of TYPE_* constansts above
-     *
-     * example JS:
-     *   var flags = {}, exp = {}, type = {};
-     *   annotator.getAnnotationInfo(myURI, "foo", flags, exp, type);
-     *   // now you can use 'exp.value' and 'flags.value'
-     */
-    void getItemAnnotationInfo(in long long aItemId,
-                               in AUTF8String aName,
-                               out nsIVariant aValue,
-                               out long aFlags,
-                               out unsigned short aExpiration,
-                               out unsigned short aType);
-
-    /**
-     * Get the names of all annotations for this URI.
-     *
-     * example JS:
-     *   var annotations = annotator.getPageAnnotations(myURI, {});
-     */
-    void getItemAnnotationNames(
-      in long long aItemId,
-      [optional] out unsigned long count,
-      [retval, array, size_is(count)] out nsIVariant result);
-
-    /**
      * Test for annotation existence.
      */
     boolean itemHasAnnotation(in long long aItemId,

@@ -41,7 +41,6 @@ include protocol PPresentation;
 include protocol PURLClassifier;
 include protocol PURLClassifierLocal;
 include protocol PVRManager;
-include protocol PVideoDecoderManager;
 include protocol PRemoteDecoderManager;
 include protocol PProfiler;
 include protocol PScriptCache;
@@ -49,6 +48,7 @@ include protocol PSessionStorageObserver;
 include DOMTypes;
 include JavaScriptTypes;
 include IPCBlob;
+include IPCStream;
 include PTabContext;
 include URIParams;
 include PluginTypes;
@@ -97,9 +97,13 @@ using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
 using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
 using refcounted class nsIInputStream from "mozilla/ipc/IPCStreamUtils.h";
 using refcounted class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
-using mozilla::dom::BrowsingContextId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
+using mozilla::dom::BrowsingContextFieldEpochs from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextInitializer from "mozilla/dom/BrowsingContext.h";
+using base::SharedMemoryHandle from "base/shared_memory.h";
+using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
+using mozilla::fontlist::Pointer from "SharedFontList.h";
+using gfxSparseBitSet from "gfxFontUtils.h";
 
 union ChromeRegistryItem
 {
@@ -201,22 +205,6 @@ union GetFilesResponseResult
   GetFilesResponseFailure;
 };
 
-struct FileCreationSuccessResult
-{
-  IPCBlob blob;
-};
-
-struct FileCreationErrorResult
-{
-  nsresult errorCode;
-};
-
-union FileCreationResult
-{
-  FileCreationSuccessResult;
-  FileCreationErrorResult;
-};
-
 struct BlobURLRegistrationData
 {
   nsCString url;
@@ -238,10 +226,12 @@ struct JSWindowActorInfo
 {
   nsString name;
   bool allFrames;
-  nsCString url;
+  nsCString? url;
 
   JSWindowActorEventDecl[] events;
   nsCString[] observers;
+  nsString[] matches;
+  nsString[] remoteTypes;
 };
 
 struct GMPAPITags
@@ -365,12 +355,11 @@ nested(upto inside_cpow) sync protocol PContent
     manages PLoginReputation;
     manages PSessionStorageObserver;
 
-both:
     // Depending on exactly how the new browser is being created, it might be
     // created from either the child or parent process!
     //
     // The child creates the PBrowser as part of
-    // TabChild::BrowserFrameProvideWindow (which happens when the child's
+    // BrowserChild::BrowserFrameProvideWindow (which happens when the child's
     // content calls window.open()), and the parent creates the PBrowser as part
     // of ContentParent::CreateBrowser.
     //
@@ -387,12 +376,25 @@ both:
     // TabGroup as |sameTabGroupAs|. This parameter should always be zero
     // for PBrowser messages sent from the child to the parent.
     //
+    // Separate messages are used for the parent and child side constructors due
+    // to the differences in data and actor setup required.
+    //
     // Keep the last 3 attributes in sync with GetProcessAttributes!
-    async PBrowser(TabId tabId, TabId sameTabGroupAs,
-                   IPCTabContext context, uint32_t chromeFlags,
-                   ContentParentId cpId, BrowsingContext browsingContext,
-                   bool isForBrowser);
+parent:
+    async ConstructPopupBrowser(ManagedEndpoint<PBrowserParent> browserEp,
+                                TabId tabId, IPCTabContext context,
+                                BrowsingContext browsingContext,
+                                uint32_t chromeFlags);
 
+child:
+    async ConstructBrowser(ManagedEndpoint<PBrowserChild> browserEp,
+                           TabId tabId, TabId sameTabGroupAs,
+                           IPCTabContext context,
+                           BrowsingContext browsingContext,
+                           uint32_t chromeFlags, ContentParentId cpId,
+                           bool isForBrowser, bool isTopLevel);
+
+both:
     async PFileDescriptorSet(FileDescriptor fd);
 
     // For parent->child, aBrowser must be non-null; aOuterWindowID can
@@ -412,7 +414,7 @@ child:
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> imageBridge,
       Endpoint<PVRManagerChild> vr,
-      Endpoint<PVideoDecoderManagerChild> video,
+      Endpoint<PRemoteDecoderManagerChild> video,
       uint32_t[] namespaces);
 
     // Re-create the rendering stack using the given endpoints. This is sent
@@ -422,10 +424,12 @@ child:
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> bridge,
       Endpoint<PVRManagerChild> vr,
-      Endpoint<PVideoDecoderManagerChild> video,
+      Endpoint<PRemoteDecoderManagerChild> video,
       uint32_t[] namespaces);
 
     async AudioDefaultDeviceChange();
+
+    async NetworkLinkTypeChange(uint32_t type);
 
     // Re-create the rendering stack for a device reset.
     async ReinitRenderingForDeviceReset();
@@ -478,6 +482,9 @@ child:
     async PreferenceUpdate(Pref pref);
     async VarUpdate(GfxVarUpdate var);
 
+    async UpdatePerfStatsCollectionMask(uint64_t aMask);
+    async CollectPerfStatsJSON() returns (nsCString aStats);
+
     async DataStoragePut(nsString aFilename, DataStorageItem aItem);
     async DataStorageRemove(nsString aFilename, nsCString aKey, DataStorageType aType);
     async DataStorageClear(nsString aFilename);
@@ -492,10 +499,21 @@ child:
 
     async UpdateFontList(SystemFontListEntry[] fontList);
 
+    /**
+     * The shared font list has been reinitialized by the parent;
+     * child processes must discard and recreate their mappings to it.
+     */
+    async RebuildFontList();
+
+    /**
+     * The shared font list has been modified, potentially adding matches
+     * for src:local() names that were previously not known, so content
+     * may need to be reflowed.
+     */
+    async FontListChanged();
+
     async UpdateAppLocales(nsCString[] appLocales);
     async UpdateRequestedLocales(nsCString[] requestedLocales);
-
-    async ClearSiteDataReloadNeeded(nsString origin);
 
     async RegisterStringBundles(StringBundleDescriptor[] stringBundles);
 
@@ -560,7 +578,9 @@ child:
                                     StructuredCloneData initialData,
                                     LookAndFeelInt[] lookAndFeelIntCache,
                                     /* used on MacOSX and Linux only: */
-                                    SystemFontListEntry[] systemFontList);
+                                    SystemFontListEntry[] systemFontList,
+                                    SharedMemoryHandle? sharedUASheetHandle,
+                                    uintptr_t sharedUASheetAddress);
 
     // Notify child that last-pb-context-exited notification was observed
     async LastPrivateDocShellDestroyed();
@@ -651,8 +671,6 @@ child:
 
     async GMPsChanged(GMPCapabilityData[] capabilities);
 
-
-    async FileCreationResponse(nsID aID, FileCreationResult aResult);
 
     /**
      * Sending an activate message moves focus to the child.
@@ -778,6 +796,17 @@ child:
                                uint64_t aIdentifier,
                                uint32_t aRedirectMode);
 
+    /**
+    * This method is used to notifty content process to start delayed autoplay
+    * media via browsing context.
+    */
+    async StartDelayedAutoplayMediaComponents(BrowsingContext aContext);
+
+    /**
+    * This method is used to notifty content process to mute or unmute media.
+    */
+    async SetMediaMuted(BrowsingContext aContext, bool aMuted);
+
     // Begin subscribing to a new BrowsingContextGroup, sending down the current
     // value for every individual BrowsingContext.
     async RegisterBrowsingContextGroup(BrowsingContextInitializer[] aInits);
@@ -846,7 +875,7 @@ parent:
 
     async PPresentation();
 
-    async CreateAudioIPCConnection() returns (FileDescriptor fd);
+    async CreateAudioIPCConnection() returns (FileDescOrError fd);
 
     sync PURLClassifier(Principal principal)
         returns (bool success);
@@ -925,11 +954,12 @@ parent:
     async ConsoleMessage(nsString message);
     async ScriptError(nsString message, nsString sourceName, nsString sourceLine,
                       uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
-                      nsCString category, bool privateWindow);
+                      nsCString category, bool privateWindow,
+                      bool fromChromeContext);
     async ScriptErrorWithStack(nsString message, nsString sourceName, nsString sourceLine,
                                uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
                                nsCString category, bool privateWindow,
-                               ClonedMessageData stack);
+                               bool fromChromeContext, ClonedMessageData stack);
 
     // Places the items within dataTransfer on the clipboard.
     async SetClipboard(IPCDataTransfer aDataTransfer,
@@ -1017,23 +1047,6 @@ parent:
 
     async RequestAnonymousTemporaryFile(uint64_t aID);
 
-    /**
-     * Keygen requires us to call it after a <keygen> element is parsed and
-     * before one is submitted. This is urgent because an extension might use
-     * a CPOW to synchronously submit a keygen element.
-     */
-    nested(inside_cpow) sync KeygenProcessValue(nsString oldValue,
-                                                nsString challenge,
-                                                nsString keytype,
-                                                nsString keyparams)
-        returns (nsString newValue);
-
-    /**
-     * Called to provide the options for <keygen> elements.
-     */
-    sync KeygenProvideContent()
-        returns (nsString aAttribute, nsString[] aContent);
-
     /** Clear RemoteFrameInfo of the given tab id. */
     async UnregisterRemoteFrame(TabId tabId,
                                 ContentParentId cpId,
@@ -1117,6 +1130,149 @@ parent:
     sync GetGraphicsDeviceInitData()
         returns (ContentDeviceData aData);
 
+    /**
+     * A shared font list (see gfx/thebes/SharedFontList.*) contains a list
+     * of shared-memory blocks that are used to store all the font list data.
+     * The font list created in the parent process is the only one that can
+     * create or store objects into the shared memory; content processes font
+     * lists have read-only access to it.
+     *
+     * To minimize the cost of record allocations, the shared font list
+     * bump-allocates new objects that it adds to the shared memory blocks
+     * (i.e. the records stored in the shared memory blocks are only ever
+     * appended, and never freed except when the entire font list is
+     * reconstructed).
+     *
+     * When initially created by the parent process, the font list may contain
+     * nothing except a header, and the list of the system's installed font
+     * family names. Additional data about the families (styled faces available
+     * and character coverage) is appended to the font list during the session
+     * as a given font is considered for use, because loading all data for all
+     * installed fonts during startup is too expensive/slow.
+     *
+     * During content process launch, a content process's first step in
+     * gaining access to the font list is to call GetFontListShmBlock,
+     * passing index zero in order to get access to the first block, which
+     * contains the font list header and the list of font-family records
+     * (which may be virtually all uninitialized at this time, containing
+     * nothing but the family names). Once a content process determines a
+     * font-family name it wants to use (e.g. from a CSS font-family list, or
+     * from preferences), if that Family record has not yet been initialized,
+     * it will call InitializeFamily (below) to have the parent process
+     * populate Face records in the shared memory with the family's styles.
+     * The content process can then pick the face with best style match from
+     * the available faces according to the CSS font matching algorithm, load
+     * its character map, then send the map to the parent process using
+     * SetCharacterMap (so that the parent process can share the map with all
+     * processes to avoid duplication of work).
+     *
+     * At some point, as the parent process adds data to the font list, a new
+     * shared-memory block will probably be needed. At that point the parent
+     * will create a new block and append it to its share memory block list.
+     * The new Block index will start to appear in Pointer records in the
+     * shared memory, and the content process's can then fetch those other
+     * blocks using this function as needed.
+     *
+     * @param aGeneration
+     *   The font list has a Generation ID stored in its Header, and any time
+     *   the parent process needs to reinitialize the list (because of a change
+     *   in the available font repertoire) a new Generation ID is assigned.
+     *   Content processes pass the Generation of the list they're using in
+     *   all messages, so that the parent can recognize if they're out of date
+     *   and safely ignore such messages. (When the parent rebuilds the list,
+     *   it will notify all content processes, but they may still send a few
+     *   messages that relate to the obsolete list before they have processed
+     *   this notification.)
+     * @param aIndex
+     *   (Zero-based) index of the shared-memory block to be mapped.
+     *   In a typical case, there will be a handful of blocks altogether, so
+     *   each content process only needs to make this request a few times.
+     * @returns aHandle
+     *   Handle that can be used to construct a SharedMemoryBasic that maps the
+     *   requested block of memory.
+     *   If aGeneration does not match the parent's font list generation ID, or
+     *   if requesting a block that does not exist (i.e. with aIndex greater
+     *   than or equal to the number of blocks actually in existence), returns
+     *   a null handle.
+     *
+     * This is a sync message because the content process needs font data in
+     * order to perform font-matching (e.g. during reflow), and cannot continue
+     * until it has mapped the font-list memory.
+     */
+    sync GetFontListShmBlock(uint32_t aGeneration, uint32_t aIndex)
+        returns (Handle aHandle);
+
+    /**
+     * Ask the parent to initialize a given font family, so that face metadata
+     * will be available. Content processes will only call this for families
+     * where the Face data has not yet been populated, so it will generally be
+     * called no more than once per family. (It may not be needed at all, if
+     * the parent process has already initialized the families that content
+     * wants to use.)
+     *
+     * @param aGeneration
+     *   Font-list generation, so requests relating to an obsolete list can be
+     *   ignored (see comments for GetFontListShmBlock).
+     * @param aFamilyIndex
+     *   The 0-based index of the Family within the font-list that a content
+     *   process needs to use.
+     *
+     * This is a sync message because the content process cannot complete its
+     * font-matching until the family is fully populated with Face records.
+     * If we make it async, content processes will reflow using fallbacks,
+     * and then have to reflow again once all the font information needed
+     * becomes available.
+     */
+    sync InitializeFamily(uint32_t aGeneration, uint32_t aFamilyIndex);
+
+    /**
+     * Record the character map of a given Face in the font list.
+     *
+     * @param aGeneration
+     *   Font-list generation, so requests relating to an obsolete list can be
+     *   ignored (see comments for GetFontListShmBlock).
+     * @param aFacePtr
+     *   Font-list shared-memory "pointer" to the Face record to be updated.
+     *   A Pointer is a record of a shared-memory block index and an offset
+     *   within that block, which each process that maps the block can convert
+     *   into a real pointer in its address space.
+     * @param aMap
+     *   The character coverage map of the face. (This will be stored as a
+     *   SharedBitSet record within the shared font list, and the Face record
+     *   will be updated to reference it.)
+     */
+    async SetCharacterMap(uint32_t aGeneration, Pointer aFacePtr, gfxSparseBitSet aMap);
+
+    /**
+     * Ask the parent to set up the merged charmap for a family, to accelerate
+     * future fallback searches.
+     * aFamilyPtr may refer to an element of either the Families() or AliasFamilies().
+     */
+    async SetupFamilyCharMap(uint32_t aGeneration, Pointer aFamilyPtr);
+
+    /**
+     * Ask the parent to try and complete the InitOtherFamilyNames task, because
+     * we're trying to look up a localized font name. This is a sync method so that
+     * the update will be available before the child continues reflow; however, it
+     * is possible the task will have timed-out in the parent and not actually
+     * completed during this call.
+     *
+     * @param aGeneration
+     *   Font-list generation, so requests relating to an obsolete list can be
+     *   ignored (see comments for GetFontListShmBlock).
+     * @param aDefer
+     *   Parameter aDeferOtherFamilyNamesLoading to be passed to
+     *   gfxPlatformFontList::InitOtherFamilyNames, to determine whether name
+     *   loading should be deferred to a background task or run immediately.
+     * @param aLoaded
+     *   Returns whether the font name loading process has completed.
+     *
+     * TODO: This is currently a sync message but can probably be made async,
+     * at the cost of an increased chance of some testcases failing because
+     * they depend on lazily-loaded font names.
+     */
+    sync InitOtherFamilyNames(uint32_t aGeneration, bool aDefer) returns (bool aLoaded);
+
     async CreateWindow(nullable PBrowser aThisTab,
                        PBrowser aNewTab,
                        uint32_t aChromeFlags,
@@ -1141,7 +1297,7 @@ parent:
       nsCString aFeatures,
       float aFullZoom,
       nsString aName,
-      Principal aTriggeringPrincipal,
+      nsIPrincipal aTriggeringPrincipal,
       nsIContentSecurityPolicy aCsp,
       nsIReferrerInfo aReferrerInfo);
 
@@ -1182,11 +1338,6 @@ parent:
      async GetFilesRequest(nsID aID, nsString aDirectory, bool aRecursiveFlag);
      async DeleteGetFilesRequest(nsID aID);
 
-     async FileCreationRequest(nsID aID, nsString aFullPath, nsString aType,
-                               nsString aName, bool lastModifiedPassed,
-                               int64_t lastModified, bool aExistenceCheck,
-                               bool aIsFromNsIFile);
-
      async StoreAndBroadcastBlobURLRegistration(nsCString url, IPCBlob blob,
                                                 Principal principal);
 
@@ -1201,6 +1352,9 @@ parent:
     async UpdateChildKeyedScalars(KeyedScalarAction[] updates);
     async RecordChildEvents(ChildEventData[] events);
     async RecordDiscardedData(DiscardedData data);
+    async RecordOrigin(uint32_t metricId, nsCString origin);
+
+    async ReportContentBlockingLog(IPCStream aJSONStream);
 
     sync GetA11yContentId() returns (uint32_t aContentId);
     async A11yHandlerControl(uint32_t aPid,
@@ -1230,7 +1384,8 @@ parent:
 
 both:
     async CommitBrowsingContextTransaction(BrowsingContext aContext,
-                                           BrowsingContextTransaction aTransaction);
+                                           BrowsingContextTransaction aTransaction,
+                                           BrowsingContextFieldEpochs aEpochs);
 
     async AsyncMessage(nsString aMessage, CpowEntry[] aCpows,
                        Principal aPrincipal, ClonedMessageData aData);
@@ -1270,8 +1425,19 @@ both:
      * should move it to the bfcache allowing it to be re-attached if navigated
      * to.
      */
-    async DetachBrowsingContext(BrowsingContext aContext,
-                                bool aMoveToBFCache);
+    async DetachBrowsingContext(BrowsingContext aContext);
+
+    /**
+     * Removes all of 'aContext'\'s children, and caches them in the
+     * BrowsingContextGroup.
+     */
+    async CacheBrowsingContextChildren(BrowsingContext aContext);
+
+    /**
+     * Re-attach all BrowsingContexts in a 'aContext'.
+     */
+    async RestoreBrowsingContextChildren(BrowsingContext aContext,
+                                         BrowsingContext[] aChildren);
 
     async WindowClose(BrowsingContext aContext, bool aTrustedCaller);
     async WindowFocus(BrowsingContext aContext);

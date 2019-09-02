@@ -1,13 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-"use strict";
+"use strict"; // defined in head.js
+
+/* global CHROME_URL_ROOT */
 
 // This head file contains helpers to create mock versions of the ClientWrapper class
 // defined at devtools/client/aboutdebugging-new/src/modules/client-wrapper.js .
 
-const { RUNTIME_PREFERENCE } =
-  require("devtools/client/aboutdebugging-new/src/constants");
+const {
+  RUNTIME_PREFERENCE,
+} = require("devtools/client/aboutdebugging-new/src/constants");
 
 // Sensible default values for runtime preferences that should be usable in most
 // situations
@@ -30,23 +33,23 @@ function createClientMock() {
     _preferences: {},
     contentProcessFronts: [],
     serviceWorkerRegistrationFronts: [],
-    addOneTimeListener: (evt, listener) => {
+    once: (evt, listener) => {
       eventEmitter.once(evt, listener);
     },
-    addListener: (evt, listener) => {
+    on: (evt, listener) => {
       eventEmitter.on(evt, listener);
     },
-    removeListener: (evt, listener) => {
+    off: (evt, listener) => {
       eventEmitter.off(evt, listener);
     },
     client: {
-      addOneTimeListener: (evt, listener) => {
+      once: (evt, listener) => {
         eventEmitter.once(evt, listener);
       },
-      addListener: (evt, listener) => {
+      on: (evt, listener) => {
         eventEmitter.on(evt, listener);
       },
-      removeListener: (evt, listener) => {
+      off: (evt, listener) => {
         eventEmitter.off(evt, listener);
       },
     },
@@ -70,6 +73,8 @@ function createClientMock() {
     },
     // Empty array of addons
     listAddons: () => [],
+    // Empty array of processes
+    listProcesses: () => [],
     // Empty array of tabs
     listTabs: () => [],
     // Empty arrays of workers
@@ -79,6 +84,8 @@ function createClientMock() {
       sharedWorkers: [],
     }),
     // no-op
+    getMainProcess: () => {},
+    // no-op
     getFront: () => {},
     // no-op
     onFront: () => {},
@@ -86,12 +93,13 @@ function createClientMock() {
     setPreference: function(prefName, value) {
       this._preferences[prefName] = value;
     },
-    getPerformancePanelUrl: () => "data:text/html;charset=UTF-8,fake_profiler_page",
+    getPerformancePanelUrl: () => CHROME_URL_ROOT + "empty.html",
     loadPerformanceProfiler: () => {},
     // Valid compatibility report
     checkVersionCompatibility: () => {
-      const { COMPATIBILITY_STATUS } =
-        require("devtools/client/shared/remote-debugging/version-checker");
+      const {
+        COMPATIBILITY_STATUS,
+      } = require("devtools/client/shared/remote-debugging/version-checker");
       return { status: COMPATIBILITY_STATUS.COMPATIBLE };
     },
   };
@@ -113,10 +121,9 @@ function createThisFirefoxClientMock() {
   };
 
   const mockThisFirefoxClient = createClientMock();
-  mockThisFirefoxClient.listTabs = () => ([mockAboutDebuggingTab]);
+  mockThisFirefoxClient.listTabs = () => [mockAboutDebuggingTab];
   mockThisFirefoxClient.getDeviceDescription = () => mockThisFirefoxDescription;
 
   return mockThisFirefoxClient;
 }
 /* exported createThisFirefoxClientMock */
-

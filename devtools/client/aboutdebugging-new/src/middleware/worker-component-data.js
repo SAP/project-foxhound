@@ -49,25 +49,15 @@ function toComponentData(workers, isServiceWorker) {
     const type = DEBUG_TARGETS.WORKER;
     const icon = "chrome://devtools/skin/images/debugging-workers.svg";
     let { fetch } = worker;
-    const {
-      name,
-      registrationFront,
-      scope,
-      subscription,
-      workerTargetFront,
-    } = worker;
-
-    // For registering service workers, workerTargetFront will not be available.
-    // The only valid identifier we can use at that point is the actorID for the
-    // service worker registration.
-    const id = workerTargetFront ? workerTargetFront.actorID : registrationFront.actorID;
+    const { id, name, registrationFront, scope, subscription } = worker;
 
     let pushServiceEndpoint = null;
     let status = null;
 
     if (isServiceWorker) {
-      fetch = fetch ? SERVICE_WORKER_FETCH_STATES.LISTENING
-                    : SERVICE_WORKER_FETCH_STATES.NOT_LISTENING;
+      fetch = fetch
+        ? SERVICE_WORKER_FETCH_STATES.LISTENING
+        : SERVICE_WORKER_FETCH_STATES.NOT_LISTENING;
       status = getServiceWorkerStatus(worker);
       pushServiceEndpoint = subscription ? subscription.endpoint : null;
     }

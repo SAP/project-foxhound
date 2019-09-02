@@ -176,6 +176,9 @@ class TableUpdateV4 : public TableUpdate {
   nsresult NewFullHashResponse(const Prefix& aPrefix,
                                const CachedFullHashResponse& aResponse);
 
+  // Clear Prefixes & Removal indice.
+  void Clear();
+
  private:
   virtual int Tag() const override { return TAG; }
 
@@ -198,20 +201,26 @@ class HashStore {
 
   const nsCString& TableName() const { return mTableName; }
 
-  nsresult Open();
-  // Add Prefixes are stored partly in the PrefixSet (contains the
+  // Version is set to 0 by default, it is only used when we want to open
+  // a specific version of HashStore. Note that the intention of aVersion
+  // is only to pass SanityCheck, reading data from older version should
+  // be handled additionally.
+  nsresult Open(uint32_t aVersion = 0);
+
+  // Add Prefixes/Completes are stored partly in the PrefixSet (contains the
   // Prefix data organized for fast lookup/low RAM usage) and partly in the
   // HashStore (Add Chunk numbers - only used for updates, slow retrieval).
   // AugmentAdds function joins the separate datasets into one complete
   // prefixes+chunknumbers dataset.
-  nsresult AugmentAdds(const nsTArray<uint32_t>& aPrefixes);
+  nsresult AugmentAdds(const nsTArray<uint32_t>& aPrefixes,
+                       const nsTArray<nsCString>& aCompletes);
 
   ChunkSet& AddChunks();
   ChunkSet& SubChunks();
   AddPrefixArray& AddPrefixes() { return mAddPrefixes; }
   SubPrefixArray& SubPrefixes() { return mSubPrefixes; }
-  AddCompleteArray& AddCompletes();
-  SubCompleteArray& SubCompletes();
+  AddCompleteArray& AddCompletes() { return mAddCompletes; }
+  SubCompleteArray& SubCompletes() { return mSubCompletes; }
 
   // =======
   // Updates
@@ -233,14 +242,13 @@ class HashStore {
   // have a mess on your hands.
   nsresult WriteFile();
 
-  // Wipe out all Completes.
-  void ClearCompletes();
+  nsresult ReadCompletionsLegacyV3(AddCompleteArray& aCompletes);
 
- private:
   nsresult Reset();
 
+ private:
   nsresult ReadHeader();
-  nsresult SanityCheck() const;
+  nsresult SanityCheck(uint32_t aVersion = 0) const;
   nsresult CalculateChecksum(nsAutoCString& aChecksum, uint32_t aFileSize,
                              bool aChecksumPresent);
   nsresult CheckChecksum(uint32_t aFileSize);
@@ -252,16 +260,15 @@ class HashStore {
 
   nsresult ReadAddPrefixes();
   nsresult ReadSubPrefixes();
+  nsresult ReadAddCompletes();
 
-  nsresult WriteAddPrefixes(nsIOutputStream* aOut);
+  nsresult WriteAddPrefixChunks(nsIOutputStream* aOut);
   nsresult WriteSubPrefixes(nsIOutputStream* aOut);
+  nsresult WriteAddCompleteChunks(nsIOutputStream* aOut);
 
   nsresult ProcessSubs();
 
   nsresult PrepareForUpdate();
-
-  bool AlreadyReadChunkNumbers() const;
-  bool AlreadyReadCompletions() const;
 
   // This is used for checking that the database is correct and for figuring out
   // the number of chunks, etc. to read from disk on restart.

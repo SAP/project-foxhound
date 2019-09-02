@@ -28,12 +28,15 @@ class gfxContext;
 class nsDisplaySVGGeometry;
 class nsAtom;
 class nsIFrame;
-class nsIPresShell;
 class nsSVGMarkerFrame;
 
 struct nsRect;
 
-nsIFrame* NS_NewSVGGeometryFrame(nsIPresShell* aPresShell,
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
+nsIFrame* NS_NewSVGGeometryFrame(mozilla::PresShell* aPresShell,
                                  mozilla::ComputedStyle* aStyle);
 
 namespace mozilla {
@@ -41,7 +44,7 @@ namespace mozilla {
 class SVGGeometryFrame : public nsFrame, public nsSVGDisplayableFrame {
   typedef mozilla::gfx::DrawTarget DrawTarget;
 
-  friend nsIFrame* ::NS_NewSVGGeometryFrame(nsIPresShell* aPresShell,
+  friend nsIFrame* ::NS_NewSVGGeometryFrame(mozilla::PresShell* aPresShell,
                                             ComputedStyle* aStyle);
 
   friend class ::nsDisplaySVGGeometry;
@@ -120,7 +123,7 @@ class SVGGeometryFrame : public nsFrame, public nsSVGDisplayableFrame {
    * @param aMatrix The transform that must be multiplied onto aContext to
    *   establish this frame's SVG user space.
    */
-  void PaintMarkers(gfxContext& aContext, const gfxMatrix& aMatrix,
+  void PaintMarkers(gfxContext& aContext, const gfxMatrix& aTransform,
                     imgDrawingParams& aImgParams);
 };
 }  // namespace mozilla

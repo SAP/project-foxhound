@@ -14,9 +14,9 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
 
-#include <ctype.h>
 #include <stdarg.h>
 #include <string.h>
 #ifdef ANDROID
@@ -291,7 +291,7 @@ JS_FRIEND_API void js::ReportOutOfMemory(JSContext* cx) {
 #endif
   mozilla::recordreplay::InvalidateRecording("OutOfMemory exception thrown");
 
-  if (cx->helperThread()) {
+  if (cx->isHelperThreadContext()) {
     return cx->addPendingOutOfMemory();
   }
 
@@ -304,7 +304,7 @@ JS_FRIEND_API void js::ReportOutOfMemory(JSContext* cx) {
   }
 
   RootedValue oomMessage(cx, StringValue(cx->names().outOfMemory));
-  cx->setPendingException(oomMessage);
+  cx->setPendingException(oomMessage, nullptr);
 }
 
 mozilla::GenericErrorResult<OOM&> js::ReportOutOfMemoryResult(JSContext* cx) {
@@ -326,7 +326,7 @@ void js::ReportOverRecursed(JSContext* maybecx, unsigned errorNumber) {
 #endif
   mozilla::recordreplay::InvalidateRecording("OverRecursed exception thrown");
   if (maybecx) {
-    if (!maybecx->helperThread()) {
+    if (!maybecx->isHelperThreadContext()) {
       JS_ReportErrorNumberASCII(maybecx, GetErrorMessage, nullptr, errorNumber);
       maybecx->overRecursed_ = true;
     } else {
@@ -344,7 +344,7 @@ void js::ReportAllocationOverflow(JSContext* cx) {
     return;
   }
 
-  if (cx->helperThread()) {
+  if (cx->isHelperThreadContext()) {
     return;
   }
 
@@ -737,8 +737,8 @@ bool ExpandErrorArgumentsHelper(JSContext* cx, JSErrorCallback callback,
         fmt = efs->format;
         while (*fmt) {
           if (*fmt == '{') {
-            if (isdigit(fmt[1])) {
-              int d = JS7_UNDEC(fmt[1]);
+            if (mozilla::IsAsciiDigit(fmt[1])) {
+              int d = AsciiDigitToNumber(fmt[1]);
               MOZ_RELEASE_ASSERT(d < args.count());
               strncpy(out, args.args(d), args.lengths(d));
               out += args.lengths(d);
@@ -1002,9 +1002,9 @@ JS_FRIEND_API const JSErrorFormatString* js::GetErrorMessage(
 }
 
 void JSContext::recoverFromOutOfMemory() {
-  if (helperThread()) {
+  if (isHelperThreadContext()) {
     // Keep in sync with addPendingOutOfMemory.
-    if (ParseTask* task = helperThread()->parseTask()) {
+    if (ParseTask* task = parseTask()) {
       task->outOfMemory = false;
     }
   } else {
@@ -1197,9 +1197,9 @@ JS::OOM JSContext::reportedOOM;
 
 mozilla::GenericErrorResult<OOM&> JSContext::alreadyReportedOOM() {
 #ifdef DEBUG
-  if (helperThread()) {
+  if (isHelperThreadContext()) {
     // Keep in sync with addPendingOutOfMemory.
-    if (ParseTask* task = helperThread()->parseTask()) {
+    if (ParseTask* task = parseTask()) {
       MOZ_ASSERT(task->outOfMemory);
     }
   } else {
@@ -1211,7 +1211,7 @@ mozilla::GenericErrorResult<OOM&> JSContext::alreadyReportedOOM() {
 
 mozilla::GenericErrorResult<JS::Error&> JSContext::alreadyReportedError() {
 #ifdef DEBUG
-  if (!helperThread()) {
+  if (!isHelperThreadContext()) {
     MOZ_ASSERT(isExceptionPending());
   }
 #endif
@@ -1221,75 +1221,83 @@ mozilla::GenericErrorResult<JS::Error&> JSContext::alreadyReportedError() {
 JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
     : runtime_(runtime),
       kind_(ContextKind::HelperThread),
-      helperThread_(nullptr),
-      options_(options),
-      freeLists_(nullptr),
-      jitActivation(nullptr),
-      activation_(nullptr),
+      nurserySuppressions_(this),
+      options_(this, options),
+      freeLists_(this, nullptr),
+      atomsZoneFreeLists_(this),
+      defaultFreeOp_(this, runtime, true),
+      jitActivation(this, nullptr),
+      regexpStack(this),
+      activation_(this, nullptr),
       profilingActivation_(nullptr),
       nativeStackBase(GetNativeStackBase()),
-      entryMonitor(nullptr),
-      noExecuteDebuggerTop(nullptr),
+      entryMonitor(this, nullptr),
+      noExecuteDebuggerTop(this, nullptr),
 #ifdef DEBUG
-      inUnsafeCallWithABI(false),
-      hasAutoUnsafeCallWithABI(false),
+      inUnsafeCallWithABI(this, false),
+      hasAutoUnsafeCallWithABI(this, false),
 #endif
 #ifdef JS_SIMULATOR
-      simulator_(nullptr),
+      simulator_(this, nullptr),
 #endif
 #ifdef JS_TRACE_LOGGING
       traceLogger(nullptr),
 #endif
-      autoFlushICache_(nullptr),
-      dtoaState(nullptr),
-      suppressGC(0),
+      autoFlushICache_(this, nullptr),
+      dtoaState(this, nullptr),
+      suppressGC(this, 0),
 #ifdef DEBUG
-      ionCompiling(false),
-      ionCompilingSafeForMinorGC(false),
-      performingGC(false),
-      gcSweeping(false),
-      gcHelperStateThread(false),
-      isTouchingGrayThings(false),
-      noNurseryAllocationCheck(0),
-      disableStrictProxyCheckingCount(0),
+      ionCompiling(this, false),
+      ionCompilingSafeForMinorGC(this, false),
+      performingGC(this, false),
+      gcSweeping(this, false),
+      isTouchingGrayThings(this, false),
+      noNurseryAllocationCheck(this, 0),
+      disableStrictProxyCheckingCount(this, 0),
 #endif
 #if defined(DEBUG) || defined(JS_OOM_BREAKPOINT)
-      runningOOMTest(false),
+      runningOOMTest(this, false),
 #endif
-      enableAccessValidation(false),
-      inUnsafeRegion(0),
-      generationalDisabled(0),
-      compactingDisabledCount(0),
+      enableAccessValidation(this, false),
+      inUnsafeRegion(this, 0),
+      generationalDisabled(this, 0),
+      compactingDisabledCount(this, 0),
+      frontendCollectionPool_(this),
       suppressProfilerSampling(false),
       wasmTriedToInstallSignalHandlers(false),
       wasmHaveSignalHandlers(false),
-      tempLifoAlloc_((size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
-      debuggerMutations(0),
-      ionPcScriptCache(nullptr),
-      throwing(false),
-      overRecursed_(false),
-      propagatingForcedReturn_(false),
-      liveVolatileJitFrameIter_(nullptr),
-      reportGranularity(JS_DEFAULT_JITREPORT_GRANULARITY),
-      resolvingList(nullptr),
+      tempLifoAlloc_(this, (size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+      debuggerMutations(this, 0),
+      ionPcScriptCache(this, nullptr),
+      throwing(this, false),
+      unwrappedException_(this),
+      unwrappedExceptionStack_(this),
+      overRecursed_(this, false),
+      propagatingForcedReturn_(this, false),
+      liveVolatileJitFrameIter_(this, nullptr),
+      reportGranularity(this, JS_DEFAULT_JITREPORT_GRANULARITY),
+      resolvingList(this, nullptr),
 #ifdef DEBUG
-      enteredPolicy(nullptr),
+      enteredPolicy(this, nullptr),
 #endif
-      generatingError(false),
-      cycleDetectorVector_(this),
+      generatingError(this, false),
+      cycleDetectorVector_(this, this),
       data(nullptr),
-      asyncCauseForNewActivations(nullptr),
-      asyncCallIsExplicit(false),
-      interruptCallbackDisabled(false),
+      asyncStackForNewActivations_(this),
+      asyncCauseForNewActivations(this, nullptr),
+      asyncCallIsExplicit(this, false),
+      interruptCallbacks_(this),
+      interruptCallbackDisabled(this, false),
       interruptBits_(0),
-      osrTempData_(nullptr),
-      ionReturnOverride_(MagicValue(JS_ARG_POISON)),
+      osrTempData_(this, nullptr),
+      ionReturnOverride_(this, MagicValue(JS_ARG_POISON)),
       jitStackLimit(UINTPTR_MAX),
-      jitStackLimitNoInterrupt(UINTPTR_MAX),
-      jobQueue(nullptr),
-      canSkipEnqueuingJobs(false),
-      promiseRejectionTrackerCallback(nullptr),
-      promiseRejectionTrackerCallbackData(nullptr)
+      jitStackLimitNoInterrupt(this, UINTPTR_MAX),
+      jobQueue(this, nullptr),
+      internalJobQueue(this),
+      canSkipEnqueuingJobs(this, false),
+      promiseRejectionTrackerCallback(this, nullptr),
+      promiseRejectionTrackerCallbackData(this, nullptr)
 #ifdef JS_STRUCTURED_SPEW
       ,
       structuredSpewer_()
@@ -1300,10 +1308,6 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
 
   MOZ_ASSERT(!TlsContext.get());
   TlsContext.set(this);
-
-  for (size_t i = 0; i < mozilla::ArrayLength(nativeStackQuota); i++) {
-    nativeStackQuota[i] = 0;
-  }
 }
 
 JSContext::~JSContext() {
@@ -1342,9 +1346,27 @@ void JSContext::setRuntime(JSRuntime* rt) {
   MOZ_ASSERT(!compartment());
   MOZ_ASSERT(!activation());
   MOZ_ASSERT(!unwrappedException_.ref().initialized());
+  MOZ_ASSERT(!unwrappedExceptionStack_.ref().initialized());
   MOZ_ASSERT(!asyncStackForNewActivations_.ref().initialized());
 
   runtime_ = rt;
+}
+
+static const size_t MAX_REPORTED_STACK_DEPTH = 1u << 7;
+
+void JSContext::setPendingExceptionAndCaptureStack(HandleValue value) {
+  RootedObject stack(this);
+  if (!CaptureCurrentStack(
+          this, &stack,
+          JS::StackCapture(JS::MaxFrames(MAX_REPORTED_STACK_DEPTH)))) {
+    clearPendingException();
+  }
+
+  RootedSavedFrame nstack(this);
+  if (stack) {
+    nstack = &stack->as<SavedFrame>();
+  }
+  setPendingException(value, nstack);
 }
 
 bool JSContext::getPendingException(MutableHandleValue rval) {
@@ -1353,15 +1375,20 @@ bool JSContext::getPendingException(MutableHandleValue rval) {
   if (zone()->isAtomsZone()) {
     return true;
   }
+  RootedSavedFrame stack(this, unwrappedExceptionStack());
   bool wasOverRecursed = overRecursed_;
   clearPendingException();
   if (!compartment()->wrap(this, rval)) {
     return false;
   }
   this->check(rval);
-  setPendingException(rval);
+  setPendingException(rval, stack);
   overRecursed_ = wasOverRecursed;
   return true;
+}
+
+SavedFrame* JSContext::getPendingExceptionStack() {
+  return unwrappedExceptionStack();
 }
 
 bool JSContext::isThrowingOutOfMemory() {
@@ -1396,10 +1423,6 @@ bool JSContext::inAtomsZone() const { return zone_->isAtomsZone(); }
 void JSContext::trace(JSTracer* trc) {
   cycleDetectorVector().trace(trc);
   geckoProfiler().trace(trc);
-
-  if (trc->isMarkingTracer() && realm_) {
-    realm_->mark();
-  }
 }
 
 void* JSContext::stackLimitAddressForJitCode(JS::StackKind kind) {

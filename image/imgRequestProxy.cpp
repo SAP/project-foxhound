@@ -543,10 +543,29 @@ bool imgRequestProxy::StartDecodingWithResult(uint32_t aFlags) {
   return false;
 }
 
+bool imgRequestProxy::RequestDecodeWithResult(uint32_t aFlags) {
+  if (IsValidating()) {
+    mDecodeRequested = true;
+    return false;
+  }
+
+  RefPtr<Image> image = GetImage();
+  if (image) {
+    return image->RequestDecodeWithResult(aFlags);
+  }
+
+  if (GetOwner()) {
+    GetOwner()->StartDecoding();
+  }
+
+  return false;
+}
+
 NS_IMETHODIMP
 imgRequestProxy::LockImage() {
   mLockCount++;
-  RefPtr<Image> image = GetImage();
+  RefPtr<Image> image =
+      GetOwner() && GetOwner()->ImageAvailable() ? GetImage() : nullptr;
   if (image) {
     return image->LockImage();
   }
@@ -558,7 +577,8 @@ imgRequestProxy::UnlockImage() {
   MOZ_ASSERT(mLockCount > 0, "calling unlock but no locks!");
 
   mLockCount--;
-  RefPtr<Image> image = GetImage();
+  RefPtr<Image> image =
+      GetOwner() && GetOwner()->ImageAvailable() ? GetImage() : nullptr;
   if (image) {
     return image->UnlockImage();
   }
@@ -577,7 +597,8 @@ imgRequestProxy::RequestDiscard() {
 NS_IMETHODIMP
 imgRequestProxy::IncrementAnimationConsumers() {
   mAnimationConsumers++;
-  RefPtr<Image> image = GetImage();
+  RefPtr<Image> image =
+      GetOwner() && GetOwner()->ImageAvailable() ? GetImage() : nullptr;
   if (image) {
     image->IncrementAnimationConsumers();
   }
@@ -594,7 +615,8 @@ imgRequestProxy::DecrementAnimationConsumers() {
   // early, but not the observer.)
   if (mAnimationConsumers > 0) {
     mAnimationConsumers--;
-    RefPtr<Image> image = GetImage();
+    RefPtr<Image> image =
+        GetOwner() && GetOwner()->ImageAvailable() ? GetImage() : nullptr;
     if (image) {
       image->DecrementAnimationConsumers();
     }
@@ -867,6 +889,22 @@ imgRequestProxy::GetImagePrincipal(nsIPrincipal** aPrincipal) {
 }
 
 NS_IMETHODIMP
+imgRequestProxy::GetHadCrossOriginRedirects(bool* aHadCrossOriginRedirects) {
+  *aHadCrossOriginRedirects = false;
+
+  nsCOMPtr<nsITimedChannel> timedChannel = TimedChannel();
+  if (timedChannel) {
+    bool allRedirectsSameOrigin = false;
+    *aHadCrossOriginRedirects =
+        NS_SUCCEEDED(
+            timedChannel->GetAllRedirectsSameOrigin(&allRedirectsSameOrigin)) &&
+        !allRedirectsSameOrigin;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 imgRequestProxy::GetMultipart(bool* aMultipart) {
   if (!GetOwner()) {
     return NS_ERROR_FAILURE;
@@ -1080,8 +1118,10 @@ nsresult imgRequestProxy::GetStaticRequest(Document* aLoadingDocument,
   // Create a static imgRequestProxy with our new extracted frame.
   nsCOMPtr<nsIPrincipal> currentPrincipal;
   GetImagePrincipal(getter_AddRefs(currentPrincipal));
-  RefPtr<imgRequestProxy> req =
-      new imgRequestProxyStatic(frozenImage, currentPrincipal);
+  bool hadCrossOriginRedirects = true;
+  GetHadCrossOriginRedirects(&hadCrossOriginRedirects);
+  RefPtr<imgRequestProxy> req = new imgRequestProxyStatic(
+      frozenImage, currentPrincipal, hadCrossOriginRedirects);
   req->Init(nullptr, nullptr, aLoadingDocument, mURI, nullptr);
 
   NS_ADDREF(*aReturn = req);
@@ -1197,8 +1237,10 @@ class StaticBehaviour : public ProxyBehaviour {
 };
 
 imgRequestProxyStatic::imgRequestProxyStatic(mozilla::image::Image* aImage,
-                                             nsIPrincipal* aPrincipal)
-    : mPrincipal(aPrincipal) {
+                                             nsIPrincipal* aPrincipal,
+                                             bool aHadCrossOriginRedirects)
+    : mPrincipal(aPrincipal),
+      mHadCrossOriginRedirects(aHadCrossOriginRedirects) {
   mBehaviour = mozilla::MakeUnique<StaticBehaviour>(aImage);
 }
 
@@ -1213,9 +1255,19 @@ imgRequestProxyStatic::GetImagePrincipal(nsIPrincipal** aPrincipal) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+imgRequestProxyStatic::GetHadCrossOriginRedirects(
+    bool* aHadCrossOriginRedirects) {
+  *aHadCrossOriginRedirects = mHadCrossOriginRedirects;
+  return NS_OK;
+}
+
 imgRequestProxy* imgRequestProxyStatic::NewClonedProxy() {
   nsCOMPtr<nsIPrincipal> currentPrincipal;
   GetImagePrincipal(getter_AddRefs(currentPrincipal));
+  bool hadCrossOriginRedirects = true;
+  GetHadCrossOriginRedirects(&hadCrossOriginRedirects);
   RefPtr<mozilla::image::Image> image = GetImage();
-  return new imgRequestProxyStatic(image, currentPrincipal);
+  return new imgRequestProxyStatic(image, currentPrincipal,
+                                   hadCrossOriginRedirects);
 }

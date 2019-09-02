@@ -19,8 +19,7 @@ class RenderCompositorEGL : public RenderCompositor {
   static UniquePtr<RenderCompositor> Create(
       RefPtr<widget::CompositorWidget> aWidget);
 
-  RenderCompositorEGL(RefPtr<gl::GLContext> aGL,
-                      RefPtr<widget::CompositorWidget> aWidget);
+  explicit RenderCompositorEGL(RefPtr<widget::CompositorWidget> aWidget);
   virtual ~RenderCompositorEGL();
 
   bool BeginFrame() override;
@@ -29,7 +28,7 @@ class RenderCompositorEGL : public RenderCompositor {
   void Pause() override;
   bool Resume() override;
 
-  gl::GLContext* gl() const override { return mGL; }
+  gl::GLContext* gl() const override;
 
   bool MakeCurrent() override;
 
@@ -38,12 +37,10 @@ class RenderCompositorEGL : public RenderCompositor {
   LayoutDeviceIntSize GetBufferSize() override;
 
  protected:
-  static already_AddRefed<gl::GLContext> CreateGLContext();
   EGLSurface CreateEGLSurface();
 
   void DestroyEGLSurface();
 
-  const RefPtr<gl::GLContext> mGL;
   EGLSurface mEGLSurface;
 };
 

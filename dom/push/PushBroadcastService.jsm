@@ -5,28 +5,38 @@
 
 "use strict";
 
-const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "JSONFile", "resource://gre/modules/JSONFile.jsm");
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "JSONFile",
+  "resource://gre/modules/JSONFile.jsm"
+);
 
-var EXPORTED_SYMBOLS = ["pushBroadcastService"];
+const EXPORTED_SYMBOLS = ["pushBroadcastService"];
 
 // We are supposed to ignore any updates with this version.
 const DUMMY_VERSION_STRING = "____NOP____";
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
   return new ConsoleAPI({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "BroadcastService",
   });
 });
-ChromeUtils.defineModuleGetter(this, "PushService", "resource://gre/modules/PushService.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PushService",
+  "resource://gre/modules/PushService.jsm"
+);
 
 class InvalidSourceInfo extends Error {
   constructor(message) {
     super(message);
-    this.name = 'InvalidSourceInfo';
+    this.name = "InvalidSourceInfo";
   }
 }
 
@@ -34,6 +44,12 @@ const BROADCAST_SERVICE_VERSION = 1;
 
 var BroadcastService = class {
   constructor(pushService, path) {
+    this.PHASES = {
+      HELLO: "hello",
+      REGISTER: "register",
+      BROADCAST: "broadcast",
+    };
+
     this.pushService = pushService;
     this.jsonFile = new JSONFile({
       path,
@@ -48,10 +64,13 @@ var BroadcastService = class {
    */
   async getListeners() {
     await this.initializePromise;
-    return Object.entries(this.jsonFile.data.listeners).reduce((acc, [k, v]) => {
-      acc[k] = v.version;
-      return acc;
-    }, {});
+    return Object.entries(this.jsonFile.data.listeners).reduce(
+      (acc, [k, v]) => {
+        acc[k] = v.version;
+        return acc;
+      },
+      {}
+    );
   }
 
   _initializeJSONFile(data) {
@@ -80,12 +99,16 @@ var BroadcastService = class {
    * Ensure that a sourceInfo is correct (has the expected fields).
    */
   _validateSourceInfo(sourceInfo) {
-    const {moduleURI, symbolName} = sourceInfo;
+    const { moduleURI, symbolName } = sourceInfo;
     if (typeof moduleURI !== "string") {
-      throw new InvalidSourceInfo(`moduleURI must be a string (got ${typeof moduleURI})`);
+      throw new InvalidSourceInfo(
+        `moduleURI must be a string (got ${typeof moduleURI})`
+      );
     }
     if (typeof symbolName !== "string") {
-      throw new InvalidSourceInfo(`symbolName must be a string (got ${typeof symbolName})`);
+      throw new InvalidSourceInfo(
+        `symbolName must be a string (got ${typeof symbolName})`
+      );
     }
   }
 
@@ -106,7 +129,12 @@ var BroadcastService = class {
    *   updates on this broadcastID
    */
   async addListener(broadcastId, version, sourceInfo) {
-    console.info("addListener: adding listener", broadcastId, version, sourceInfo);
+    console.info(
+      "addListener: adding listener",
+      broadcastId,
+      version,
+      sourceInfo
+    );
     await this.initializePromise;
     this._validateSourceInfo(sourceInfo);
     if (typeof version !== "string") {
@@ -117,10 +145,18 @@ var BroadcastService = class {
     }
 
     const isNew = !this.jsonFile.data.listeners.hasOwnProperty(broadcastId);
-    const oldVersion = !isNew && this.jsonFile.data.listeners[broadcastId].version;
+    const oldVersion =
+      !isNew && this.jsonFile.data.listeners[broadcastId].version;
     if (!isNew && oldVersion != version) {
-      console.warn("Versions differ while adding listener for", broadcastId,
-                   ". Got", version, "but JSON file says", oldVersion, ".");
+      console.warn(
+        "Versions differ while adding listener for",
+        broadcastId,
+        ". Got",
+        version,
+        "but JSON file says",
+        oldVersion,
+        "."
+      );
     }
 
     // Update listeners before telling the pushService to subscribe,
@@ -132,7 +168,10 @@ var BroadcastService = class {
     // broadcaster, and the old version is whatever we've either
     // gotten from Megaphone or what we've told to Megaphone and
     // haven't been corrected.
-    this.jsonFile.data.listeners[broadcastId] = {version: oldVersion || version, sourceInfo};
+    this.jsonFile.data.listeners[broadcastId] = {
+      version: oldVersion || version,
+      sourceInfo,
+    };
     this.jsonFile.saveSoon();
 
     if (isNew) {
@@ -140,8 +179,16 @@ var BroadcastService = class {
     }
   }
 
-  async receivedBroadcastMessage(broadcasts) {
-    console.info("receivedBroadcastMessage:", broadcasts);
+  /**
+   * Call the listeners of the specified broadcasts.
+   *
+   * @param {Array<Object>} broadcasts Map between broadcast ids and versions.
+   * @param {Object} context Additional information about the context in which the
+   *  broadcast notification was originally received. This is transmitted to listeners.
+   * @param {String} context.phase One of `BroadcastService.PHASES`
+   */
+  async receivedBroadcastMessage(broadcasts, context) {
+    console.info("receivedBroadcastMessage:", broadcasts, context);
     await this.initializePromise;
     for (const broadcastId in broadcasts) {
       const version = broadcasts[broadcastId];
@@ -151,50 +198,76 @@ var BroadcastService = class {
       }
       // We don't know this broadcastID. This is probably a bug?
       if (!this.jsonFile.data.listeners.hasOwnProperty(broadcastId)) {
-        console.warn("receivedBroadcastMessage: unknown broadcastId", broadcastId);
+        console.warn(
+          "receivedBroadcastMessage: unknown broadcastId",
+          broadcastId
+        );
         continue;
       }
 
-      const {sourceInfo} = this.jsonFile.data.listeners[broadcastId];
+      const { sourceInfo } = this.jsonFile.data.listeners[broadcastId];
       try {
         this._validateSourceInfo(sourceInfo);
       } catch (e) {
-        console.error("receivedBroadcastMessage: malformed sourceInfo", sourceInfo, e);
+        console.error(
+          "receivedBroadcastMessage: malformed sourceInfo",
+          sourceInfo,
+          e
+        );
         continue;
       }
 
-      const {moduleURI, symbolName} = sourceInfo;
+      const { moduleURI, symbolName } = sourceInfo;
 
       const module = {};
       try {
         ChromeUtils.import(moduleURI, module);
       } catch (e) {
-        console.error("receivedBroadcastMessage: couldn't invoke", broadcastId,
-                      "because import of module", moduleURI,
-                      "failed", e);
+        console.error(
+          "receivedBroadcastMessage: couldn't invoke",
+          broadcastId,
+          "because import of module",
+          moduleURI,
+          "failed",
+          e
+        );
         continue;
       }
 
       if (!module[symbolName]) {
-        console.error("receivedBroadcastMessage: couldn't invoke", broadcastId,
-                      "because module", moduleName, "missing attribute", symbolName);
+        console.error(
+          "receivedBroadcastMessage: couldn't invoke",
+          broadcastId,
+          "because module",
+          moduleURI,
+          "missing attribute",
+          symbolName
+        );
         continue;
       }
 
       const handler = module[symbolName];
 
       if (!handler.receivedBroadcastMessage) {
-        console.error("receivedBroadcastMessage: couldn't invoke", broadcastId,
-                      "because handler returned by", `${moduleURI}.${symbolName}`,
-                      "has no receivedBroadcastMessage method");
+        console.error(
+          "receivedBroadcastMessage: couldn't invoke",
+          broadcastId,
+          "because handler returned by",
+          `${moduleURI}.${symbolName}`,
+          "has no receivedBroadcastMessage method"
+        );
         continue;
       }
 
       try {
-        await handler.receivedBroadcastMessage(version, broadcastId);
+        await handler.receivedBroadcastMessage(version, broadcastId, context);
       } catch (e) {
-        console.error("receivedBroadcastMessage: handler for", broadcastId,
-                      "threw error:", e);
+        console.error(
+          "receivedBroadcastMessage: handler for",
+          broadcastId,
+          "threw error:",
+          e
+        );
         continue;
       }
 
@@ -214,7 +287,7 @@ var BroadcastService = class {
   _saveImmediately() {
     return this.jsonFile._save();
   }
-}
+};
 
 function initializeBroadcastService() {
   // Fallback path for xpcshell tests.
@@ -224,6 +297,6 @@ function initializeBroadcastService() {
     path = OS.Path.join(OS.Constants.Path.profileDir, path);
   }
   return new BroadcastService(PushService, path);
-};
+}
 
 var pushBroadcastService = initializeBroadcastService();

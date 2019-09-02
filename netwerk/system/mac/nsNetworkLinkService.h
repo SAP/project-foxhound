@@ -7,6 +7,7 @@
 
 #include "nsINetworkLinkService.h"
 #include "nsIObserver.h"
+#include "mozilla/Mutex.h"
 
 #include <SystemConfiguration/SCNetworkReachability.h>
 #include <SystemConfiguration/SystemConfiguration.h>
@@ -40,10 +41,12 @@ class nsNetworkLinkService : public nsINetworkLinkService, public nsIObserver {
   void UpdateReachability();
   void SendEvent(bool aNetworkChanged);
   static void ReachabilityChanged(SCNetworkReachabilityRef target,
-                                  SCNetworkConnectionFlags flags, void *info);
+                                  SCNetworkConnectionFlags flags, void* info);
   static void IPConfigChanged(SCDynamicStoreRef store, CFArrayRef changedKeys,
-                              void *info);
+                              void* info);
   void calculateNetworkId(void);
+
+  mozilla::Mutex mMutex;
   nsCString mNetworkId;
 };
 

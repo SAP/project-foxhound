@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::PremultipliedColorF;
+use api::{DocumentLayer, PremultipliedColorF};
 use api::units::*;
-use clip_scroll_tree::{ClipScrollTree, ROOT_SPATIAL_NODE_INDEX, SpatialNodeIndex};
-use gpu_cache::{GpuCacheAddress, GpuDataRequest};
-use internal_types::FastHashMap;
-use prim_store::EdgeAaSegmentMask;
-use render_task::RenderTaskAddress;
+use crate::clip_scroll_tree::{ClipScrollTree, ROOT_SPATIAL_NODE_INDEX, SpatialNodeIndex};
+use crate::gpu_cache::{GpuCacheAddress, GpuDataRequest};
+use crate::internal_types::FastHashMap;
+use crate::prim_store::EdgeAaSegmentMask;
+use crate::render_task::RenderTaskAddress;
 use std::i32;
-use util::{TransformedRectKind, MatrixHelpers};
+use crate::util::{TransformedRectKind, MatrixHelpers};
 
 // Contains type that must exactly match the same structures declared in GLSL.
 
@@ -22,6 +22,15 @@ pub const VECS_PER_TRANSFORM: usize = 8;
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ZBufferId(i32);
 
+// We get 24 bits of Z value - use up 22 bits of it to give us
+// 4 bits to account for GPU issues. This seems to manifest on
+// some GPUs under certain perspectives due to z interpolation
+// precision problems.
+const MAX_DOCUMENT_LAYERS : i8 = 1 << 3;
+const MAX_ITEMS_PER_DOCUMENT_LAYER : i32 = 1 << 19;
+const MAX_DOCUMENT_LAYER_VALUE : i8 = MAX_DOCUMENT_LAYERS / 2 - 1;
+const MIN_DOCUMENT_LAYER_VALUE : i8 = -MAX_DOCUMENT_LAYERS / 2;
+
 impl ZBufferId {
     pub fn invalid() -> Self {
         ZBufferId(i32::MAX)
@@ -32,18 +41,23 @@ impl ZBufferId {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ZBufferIdGenerator {
+    base: i32,
     next: i32,
 }
 
 impl ZBufferIdGenerator {
-    pub fn new() -> Self {
+    pub fn new(layer: DocumentLayer) -> Self {
+        debug_assert!(layer >= MIN_DOCUMENT_LAYER_VALUE);
+        debug_assert!(layer <= MAX_DOCUMENT_LAYER_VALUE);
         ZBufferIdGenerator {
+            base: layer as i32 * MAX_ITEMS_PER_DOCUMENT_LAYER,
             next: 0
         }
     }
 
     pub fn next(&mut self) -> ZBufferId {
-        let id = ZBufferId(self.next);
+        debug_assert!(self.next < MAX_ITEMS_PER_DOCUMENT_LAYER);
+        let id = ZBufferId(self.next + self.base);
         self.next += 1;
         id
     }
@@ -164,6 +178,26 @@ pub struct PrimitiveInstanceData {
     data: [i32; 4],
 }
 
+/// Vertex format for resolve style operations with pixel local storage.
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct ResolveInstanceData {
+    rect: [f32; 4],
+}
+
+impl ResolveInstanceData {
+    pub fn new(rect: DeviceIntRect) -> Self {
+        ResolveInstanceData {
+            rect: [
+                rect.origin.x as f32,
+                rect.origin.y as f32,
+                rect.size.width as f32,
+                rect.size.height as f32,
+            ],
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -193,7 +227,7 @@ impl PrimitiveHeaders {
         &mut self,
         prim_header: &PrimitiveHeader,
         z: ZBufferId,
-        user_data: [i32; 3],
+        user_data: [i32; 4],
     ) -> PrimitiveHeaderIndex {
         debug_assert_eq!(self.headers_int.len(), self.headers_float.len());
         let id = self.headers_float.len();
@@ -201,13 +235,13 @@ impl PrimitiveHeaders {
         self.headers_float.push(PrimitiveHeaderF {
             local_rect: prim_header.local_rect,
             local_clip_rect: prim_header.local_clip_rect,
+            snap_offsets: prim_header.snap_offsets,
         });
 
         self.headers_int.push(PrimitiveHeaderI {
             z,
-            task_address: prim_header.task_address,
+            unused: 0,
             specific_prim_address: prim_header.specific_prim_address.as_int(),
-            clip_task_address: prim_header.clip_task_address,
             transform_id: prim_header.transform_id,
             user_data,
         });
@@ -222,9 +256,8 @@ impl PrimitiveHeaders {
 pub struct PrimitiveHeader {
     pub local_rect: LayoutRect,
     pub local_clip_rect: LayoutRect,
-    pub task_address: RenderTaskAddress,
+    pub snap_offsets: SnapOffsets,
     pub specific_prim_address: GpuCacheAddress,
-    pub clip_task_address: RenderTaskAddress,
     pub transform_id: TransformPaletteId,
 }
 
@@ -236,6 +269,7 @@ pub struct PrimitiveHeader {
 pub struct PrimitiveHeaderF {
     pub local_rect: LayoutRect,
     pub local_clip_rect: LayoutRect,
+    pub snap_offsets: SnapOffsets,
 }
 
 // i32 parts of a primitive header
@@ -246,11 +280,10 @@ pub struct PrimitiveHeaderF {
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct PrimitiveHeaderI {
     pub z: ZBufferId,
-    pub task_address: RenderTaskAddress,
     pub specific_prim_address: i32,
-    pub clip_task_address: RenderTaskAddress,
     pub transform_id: TransformPaletteId,
-    pub user_data: [i32; 3],
+    pub unused: i32,                    // To ensure required 16 byte alignment of vertex textures
+    pub user_data: [i32; 4],
 }
 
 pub struct GlyphInstance {
@@ -285,20 +318,7 @@ pub struct SplitCompositeInstance {
     pub prim_header_index: PrimitiveHeaderIndex,
     pub polygons_address: GpuCacheAddress,
     pub z: ZBufferId,
-}
-
-impl SplitCompositeInstance {
-    pub fn new(
-        prim_header_index: PrimitiveHeaderIndex,
-        polygons_address: GpuCacheAddress,
-        z: ZBufferId,
-    ) -> Self {
-        SplitCompositeInstance {
-            prim_header_index,
-            polygons_address,
-            z,
-        }
-    }
+    pub render_task_address: RenderTaskAddress,
 }
 
 impl From<SplitCompositeInstance> for PrimitiveInstanceData {
@@ -308,7 +328,7 @@ impl From<SplitCompositeInstance> for PrimitiveInstanceData {
                 instance.prim_header_index.0,
                 instance.polygons_address.as_int(),
                 instance.z.0,
-                0,
+                instance.render_task_address.0 as i32,
             ],
         }
     }
@@ -332,8 +352,6 @@ bitflags! {
         const SEGMENT_REPEAT_Y = 0x8;
         /// The extra segment data is a texel rect.
         const SEGMENT_TEXEL_RECT = 0x10;
-        /// Snap to the primitive rect instead of the visible rect.
-        const SNAP_TO_PRIMITIVE = 0x20;
     }
 }
 
@@ -343,6 +361,7 @@ bitflags! {
 #[repr(C)]
 pub struct BrushInstance {
     pub prim_header_index: PrimitiveHeaderIndex,
+    pub render_task_address: RenderTaskAddress,
     pub clip_task_address: RenderTaskAddress,
     pub segment_index: i32,
     pub edge_flags: EdgeAaSegmentMask,
@@ -355,6 +374,7 @@ impl From<BrushInstance> for PrimitiveInstanceData {
         PrimitiveInstanceData {
             data: [
                 instance.prim_header_index.0,
+                ((instance.render_task_address.0 as i32) << 16) |
                 instance.clip_task_address.0 as i32,
                 instance.segment_index |
                 ((instance.edge_flags.bits() as i32) << 16) |
@@ -438,24 +458,23 @@ struct RelativeTransformKey {
 //           specifying a coordinate system that the transform
 //           should be relative to.
 pub struct TransformPalette {
-    pub transforms: Vec<TransformData>,
+    transforms: Vec<TransformData>,
     metadata: Vec<TransformMetadata>,
     map: FastHashMap<RelativeTransformKey, usize>,
 }
 
 impl TransformPalette {
-    pub fn new() -> Self {
+    pub fn new(count: usize) -> Self {
         let _ = VECS_PER_TRANSFORM;
         TransformPalette {
-            transforms: Vec::new(),
-            metadata: Vec::new(),
+            transforms: vec![TransformData::invalid(); count],
+            metadata: vec![TransformMetadata::invalid(); count],
             map: FastHashMap::default(),
         }
     }
 
-    pub fn allocate(&mut self, count: usize) {
-        self.transforms = vec![TransformData::invalid(); count];
-        self.metadata = vec![TransformMetadata::invalid(); count];
+    pub fn finish(self) -> Vec<TransformData> {
+        self.transforms
     }
 
     pub fn set_world_transform(
@@ -499,7 +518,7 @@ impl TransformPalette {
                         child_index,
                         parent_index,
                     )
-                    .flattened
+                    .into_transform()
                     .with_destination::<PicturePixel>();
 
                     register_transform(
@@ -511,24 +530,6 @@ impl TransformPalette {
                     )
                 })
         }
-    }
-
-    pub fn get_world_transform(
-        &self,
-        index: SpatialNodeIndex,
-    ) -> LayoutToWorldTransform {
-        self.transforms[index.0 as usize]
-            .transform
-            .with_destination::<WorldPixel>()
-    }
-
-    pub fn get_world_inv_transform(
-        &self,
-        index: SpatialNodeIndex,
-    ) -> WorldToLayoutTransform {
-        self.transforms[index.0 as usize]
-            .inv_transform
-            .with_source::<WorldPixel>()
     }
 
     // Get a transform palette id for the given spatial node.
@@ -597,6 +598,11 @@ impl SnapOffsets {
             bottom_right: DeviceVector2D::zero(),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        let zero = DeviceVector2D::zero();
+        self.top_left == zero && self.bottom_right == zero
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -648,16 +654,11 @@ fn register_transform(
     to_index: SpatialNodeIndex,
     transform: LayoutToPictureTransform,
 ) -> usize {
-    // TODO(gw): This shouldn't ever happen - should be eliminated before
-    //           we get an uninvertible transform here. But maybe do
-    //           some investigation on if this ever happens?
-    let inv_transform = match transform.inverse() {
-        Some(inv_transform) => inv_transform,
-        None => {
-            error!("Unable to get inverse transform");
-            PictureToLayoutTransform::identity()
-        }
-    };
+    // TODO: refactor the calling code to not even try
+    // registering a non-invertible transform.
+    let inv_transform = transform
+        .inverse()
+        .unwrap_or_else(PictureToLayoutTransform::identity);
 
     let metadata = TransformMetadata {
         transform_kind: transform.transform_kind()

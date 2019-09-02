@@ -6,8 +6,8 @@
         onload="setTimeout(init, 0)"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
 <!--
   This test checks the position of a menulist's popup.
@@ -42,7 +42,7 @@ function popupShown()
   let index = menulist.selectedIndex;
   if (menulist.selectedItem && navigator.platform.includes("Mac")) {
     let menulistlabel = menulist.querySelector(".menulist-label");
-    let mitemlabel = document.getAnonymousElementByAttribute(menulist.selectedItem, "class", "menu-iconic-text");
+    let mitemlabel = menulist.selectedItem.querySelector(".menu-iconic-text");
 
     ok(isWithinHalfPixel(menulistlabel.getBoundingClientRect().left,
                          mitemlabel.getBoundingClientRect().left),

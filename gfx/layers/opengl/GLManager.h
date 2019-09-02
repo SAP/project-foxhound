@@ -7,7 +7,9 @@
 #ifndef MOZILLA_GFX_GLMANAGER_H
 #define MOZILLA_GFX_GLMANAGER_H
 
+#include "GLDefs.h"
 #include "mozilla/gfx/Types.h"  // for SurfaceFormat
+#include "mozilla/gfx/2D.h"
 
 namespace mozilla {
 namespace gl {
@@ -28,7 +30,7 @@ class GLManager {
  public:
   static GLManager* CreateGLManager(LayerManagerComposite* aManager);
 
-  virtual ~GLManager() {}
+  virtual ~GLManager() = default;
 
   virtual gl::GLContext* gl() const = 0;
   virtual ShaderProgramOGL* GetProgram(GLenum aTarget,

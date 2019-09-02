@@ -1,4 +1,7 @@
-AntiTracking.runTest("BroadcastChannel",
+/* import-globals-from antitracking_head.js */
+
+AntiTracking.runTest(
+  "BroadcastChannel",
   async _ => {
     try {
       new BroadcastChannel("hello");
@@ -14,11 +17,15 @@ AntiTracking.runTest("BroadcastChannel",
   },
   async _ => {
     await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
     });
-  });
+  }
+);
 
-AntiTracking.runTest("BroadcastChannel in workers",
+AntiTracking.runTest(
+  "BroadcastChannel in workers",
   async _ => {
     function blockingCode() {
       try {
@@ -83,11 +90,15 @@ AntiTracking.runTest("BroadcastChannel in workers",
   },
   async _ => {
     await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
     });
-  });
+  }
+);
 
-AntiTracking.runTest("BroadcastChannel and Storage Access API",
+AntiTracking.runTest(
+  "BroadcastChannel and Storage Access API",
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */
     await noStorageAccessInitially();
@@ -103,7 +114,11 @@ AntiTracking.runTest("BroadcastChannel and Storage Access API",
     /* import-globals-from storageAccessAPIHelpers.js */
     await callRequestStorageAccess();
 
-    if (SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior") == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT) {
+    if (
+      SpecialPowers.Services.prefs.getIntPref(
+        "network.cookie.cookieBehavior"
+      ) == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT
+    ) {
       try {
         new BroadcastChannel("hello");
         ok(false, "BroadcastChannel cannot be used!");
@@ -135,12 +150,18 @@ AntiTracking.runTest("BroadcastChannel and Storage Access API",
   },
   async _ => {
     await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
     });
   },
-  null, false, false);
+  null,
+  false,
+  false
+);
 
-AntiTracking.runTest("BroadcastChannel in workers and Storage Access API",
+AntiTracking.runTest(
+  "BroadcastChannel in workers and Storage Access API",
   async _ => {
     function blockingCode() {
       try {
@@ -184,7 +205,11 @@ AntiTracking.runTest("BroadcastChannel in workers and Storage Access API",
     /* import-globals-from storageAccessAPIHelpers.js */
     await callRequestStorageAccess();
 
-    if (SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior") == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT) {
+    if (
+      SpecialPowers.Services.prefs.getIntPref(
+        "network.cookie.cookieBehavior"
+      ) == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT
+    ) {
       blob = new Blob([blockingCode.toString() + "; blockingCode();"]);
     } else {
       blob = new Blob([nonBlockingCode.toString() + "; nonBlockingCode();"]);
@@ -272,7 +297,12 @@ AntiTracking.runTest("BroadcastChannel in workers and Storage Access API",
   },
   async _ => {
     await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value => resolve());
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
     });
   },
-  null, false, false);
+  null,
+  false,
+  false
+);

@@ -21,12 +21,15 @@
 <!ENTITY firstrun_data_message "Less data, more savings">
 <!ENTITY firstrun_data_subtext2 "Turn off images to spend less data on every site you visit.">
 <!ENTITY firstrun_sync_title "Sync">
+<!ENTITY updatednewfirstrun_sync_title "Account">
 <!ENTITY firstrun_sync_message2 "Pick up where you left off.">
 <!ENTITY firstrun_sync_subtext2 "Use Sync to find the bookmarks, passwords, and other things you save to &brandShortName; on all your devices.">
 <!ENTITY newfirstrun_sync_subtext "Sync the things you save on mobile to Firefox for desktop, privately and securely.">
+<!ENTITY updatednewfirstrun_sync_subtext "Sign in to your account to get the most out of &brandShortName;">
 <!ENTITY firstrun_signin_message "Get connected, get started">
 <!ENTITY firstrun_signin_button "Sign in to Sync">
 <!ENTITY newfirstrun_signin_button "Turn on Sync">
+<!ENTITY updatednewfirstrun_signin_button "Sign in to &brandShortName;">
 <!ENTITY  onboard_start_button_browser "Start Browsing">
 <!ENTITY firstrun_button_notnow "Not right now">
 <!ENTITY firstrun_button_next "Next">
@@ -66,6 +69,11 @@
 <!ENTITY  sending_crash_report "Sending crash report\u2026">
 <!ENTITY  crash_close_label "Close">
 <!ENTITY  crash_restart_label "Restart &brandShortName;">
+<!-- Localization note (crash_notification_title, crash_notification_message, crash_notification_negative_button_text)
+     Text displayed in a system notification to allow starting the Crash Reporter (Android Q and later).-->
+<!ENTITY  crash_notification_title "&brandShortName; crashed">
+<!ENTITY  crash_notification_message "Tap to report to &vendorShortName;">
+<!ENTITY  crash_notification_negative_button_text "Ignore">
 
 <!ENTITY url_bar_default_text2 "Search or enter address">
 
@@ -108,6 +116,9 @@
 <!ENTITY bookmark_folder_updated "Folder updated">
 <!ENTITY bookmark_parent_folder "Parent Folder">
 <!ENTITY bookmark_add_folder "Add new folder">
+<!-- Localization note (bookmark_default_folder_title): Default title is used if user doesn't specify
+     one when he is creating a bookmark folder -->
+<!ENTITY bookmark_default_folder_title "(no title)">
 
 <!ENTITY reader_saved_offline "Saved offline">
 <!-- Localization note (reader_switch_to_bookmarks) : This
@@ -267,6 +278,7 @@
 <!ENTITY pref_cookies_menu "Cookies">
 <!ENTITY pref_cookies_accept_all "Enabled">
 <!ENTITY pref_cookies_not_accept_foreign "Enabled, excluding 3rd party">
+<!ENTITY pref_cookies_not_accept_trackers "Enabled, excluding tracking cookies">
 <!ENTITY pref_cookies_disabled "Disabled">
 
 <!-- Localization note (pref_category_data_saver): “data saver” in this
@@ -327,11 +339,6 @@
 
 <!ENTITY pref_pwa "Progressive Web Apps">
 <!ENTITY pref_pwa_summary "Allow web apps to be added to home screen">
-
-<!ENTITY tracking_protection_prompt_title "Now with Tracking Protection">
-<!ENTITY tracking_protection_prompt_text "Actively block tracking elements so you don\'t have to worry.">
-<!ENTITY tracking_protection_prompt_tip_text "Visit Privacy settings to learn more">
-<!ENTITY tracking_protection_prompt_action_button "Got it!">
 
 <!ENTITY tab_queue_toast_message3 "Tab saved in &brandShortName;">
 <!ENTITY tab_queue_toast_action "Open now">
@@ -418,7 +425,6 @@ shown from Android O while a tab is being queued.-->
     Message of an Android Toast that appears after our app opens "Android System Settings -> Apps -> Default apps"
     and instruct users to tap on the "Browser app" option on that settings screen to choose a default browser app. -->
 <!ENTITY default_browser_system_settings_toast "Tap Browser app &amp; select &brandShortName;">
-<!ENTITY pref_default_browser_mozilla_support_tablet "Visit Mozilla Support">
 <!ENTITY pref_about_firefox "About &brandShortName;">
 <!ENTITY pref_vendor_faqs "FAQs">
 <!ENTITY pref_vendor_feedback "Give feedback">
@@ -513,6 +519,10 @@ shown from Android O while a tab is being queued.-->
 <!ENTITY find_next "Next">
 <!ENTITY find_close "Close">
 
+<!-- Localization note (find_error) : Error message shown when there is no result for the
+     searched for text in this webpage -->
+<!ENTITY find_error "Phrase not found">
+
 <!-- Localization note (media_sending_to, media_play, media_pause, media_stop) : These strings are used
      as alternate text for accessibility. They are not visible in the UI. -->
 <!ENTITY media_sending_to "Sending to Device">
@@ -585,6 +595,7 @@ shown from Android O while a tab is being queued.-->
 <!ENTITY bookmark_edit_location "Location">
 <!ENTITY bookmark_edit_keyword "Keyword">
 <!ENTITY bookmark_select_folder "Select folder">
+<!ENTITY bookmark_edit_undo "Undo">
 
 <!-- Localization note (site_settings_*) : These strings are used in the "Site Settings"
      dialog that appears after selecting the "Edit Site Settings" context menu item. -->
@@ -673,6 +684,7 @@ shown from Android O while a tab is being queued.-->
 <!ENTITY filepicker_audio_title "Choose or record a sound">
 <!ENTITY filepicker_image_title "Choose or take a picture">
 <!ENTITY filepicker_video_title "Choose or record a video">
+<!ENTITY filepicker_permission_denied "Required permissions not granted, reverting to the system file picker.">
 
 <!-- Site identity popup -->
 <!ENTITY identity_connected_to "You are connected to">
@@ -915,6 +927,7 @@ Picture-in-picture mini window -->
 <!ENTITY pip_pause_button_title "Pause">
 <!ENTITY pip_pause_button_description "Pause playing">
 
+<!ENTITY pref_notification_settings_link "Manage notification settings">
 <!-- Notification channels names -->
 <!ENTITY default_notification_channel2 "Browser">
 <!ENTITY mls_notification_channel "&vendorShortName; Location Service">
@@ -927,3 +940,4 @@ Picture-in-picture mini window -->
 <!-- LOCALIZATION NOTE (site_notifications_channel): This is for system notifications displayed by
 web sites through the HTML Notifications API. -->
 <!ENTITY site_notifications_channel "Site notifications">
+<!ENTITY crash_handler_notifications_channel "&brandShortName; Crash Reporter">

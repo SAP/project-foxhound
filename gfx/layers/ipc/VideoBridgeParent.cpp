@@ -24,6 +24,14 @@ VideoBridgeParent::VideoBridgeParent() : mClosed(false) {
 
 VideoBridgeParent::~VideoBridgeParent() { sVideoBridgeSingleton = nullptr; }
 
+void VideoBridgeParent::Open(Endpoint<PVideoBridgeParent>&& aEndpoint) {
+  RefPtr<VideoBridgeParent> parent = new VideoBridgeParent();
+  if (!aEndpoint.Bind(parent)) {
+    // We can't recover from this.
+    MOZ_CRASH("Failed to bind RemoteDecoderManagerParent to endpoint");
+  }
+}
+
 /* static */
 VideoBridgeParent* VideoBridgeParent::GetSingleton() {
   return sVideoBridgeSingleton;
@@ -38,7 +46,7 @@ void VideoBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
   mClosed = true;
 }
 
-void VideoBridgeParent::DeallocPVideoBridgeParent() {
+void VideoBridgeParent::ActorDealloc() {
   mCompositorThreadRef = nullptr;
   mSelfRef = nullptr;
 }

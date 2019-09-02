@@ -4,26 +4,23 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
-const ConnectionPromptSetting = createFactory(require("./ConnectionPromptSetting"));
-const ExtensionDebugSetting = createFactory(require("./ExtensionDebugSetting"));
-const TemporaryExtensionInstaller =
-  createFactory(require("./debugtarget/TemporaryExtensionInstaller"));
+const ConnectionPromptSetting = createFactory(
+  require("./ConnectionPromptSetting")
+);
 
 const Actions = require("../actions/index");
-const { DEBUG_TARGET_PANE, RUNTIMES } = require("../constants");
+const { RUNTIMES } = require("../constants");
 const Types = require("../types/index");
-
-const {
-  isExtensionDebugSettingNeeded,
-  isSupportedDebugTargetPane,
-} = require("../modules/debug-target-support");
 
 class RuntimeActions extends PureComponent {
   static get propTypes() {
@@ -43,63 +40,39 @@ class RuntimeActions extends PureComponent {
     const { connectionPromptEnabled } = runtimeDetails;
     // do not show the connection prompt setting in 'This Firefox'
     return runtimeId !== RUNTIMES.THIS_FIREFOX
-             ? ConnectionPromptSetting({
-                 connectionPromptEnabled,
-                 dispatch,
-             })
-             : null;
-  }
-
-  renderExtensionDebugSetting() {
-    const { dispatch, runtimeDetails } = this.props;
-    const { extensionDebugEnabled, info } = runtimeDetails;
-    return isExtensionDebugSettingNeeded(info.type)
-             ? ExtensionDebugSetting({
-                 dispatch,
-                 extensionDebugEnabled,
-             })
-             : null;
+      ? ConnectionPromptSetting({
+          connectionPromptEnabled,
+          dispatch,
+        })
+      : null;
   }
 
   renderProfileButton() {
     const { runtimeId } = this.props;
 
     return runtimeId !== RUNTIMES.THIS_FIREFOX
-         ? Localized(
-           {
-             id: "about-debugging-runtime-profile-button",
-           },
-           dom.button(
-             {
-               className: "default-button js-profile-runtime-button",
-               onClick: () => this.onProfilerButtonClick(),
-             },
-             "Profile Runtime"
-           ),
-         )
-         : null;
-  }
-
-  renderTemporaryExtensionInstaller() {
-    const { dispatch, runtimeDetails } = this.props;
-    const { type } = runtimeDetails.info;
-    return isSupportedDebugTargetPane(type, DEBUG_TARGET_PANE.TEMPORARY_EXTENSION)
-             ? TemporaryExtensionInstaller({ dispatch })
-             : null;
+      ? Localized(
+          {
+            id: "about-debugging-runtime-profile-button2",
+          },
+          dom.button(
+            {
+              className: "default-button qa-profile-runtime-button",
+              onClick: () => this.onProfilerButtonClick(),
+            },
+            "about-debugging-runtime-profile-button2"
+          )
+        )
+      : null;
   }
 
   render() {
     return dom.div(
-      {},
-      dom.div(
-        {
-          className: "runtime-actions__toolbar",
-        },
-        this.renderTemporaryExtensionInstaller(),
-        this.renderProfileButton(),
-        this.renderConnectionPromptSetting(),
-      ),
-      this.renderExtensionDebugSetting(),
+      {
+        className: "runtime-actions__toolbar",
+      },
+      this.renderProfileButton(),
+      this.renderConnectionPromptSetting()
     );
   }
 }

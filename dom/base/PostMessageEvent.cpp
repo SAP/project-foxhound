@@ -8,6 +8,7 @@
 
 #include "MessageEvent.h"
 #include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileList.h"
 #include "mozilla/dom/FileListBinding.h"
@@ -18,11 +19,9 @@
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/UnionConversions.h"
 #include "mozilla/EventDispatcher.h"
-#include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsGlobalWindow.h"
 #include "nsIConsoleService.h"
-#include "nsIPresShell.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
 #include "nsNetUtil.h"
@@ -73,6 +72,22 @@ PostMessageEvent::Run() {
       targetWindow->IsDying())
     return NS_OK;
 
+  // If the window's document has suppressed event handling, hand off this event
+  // for running later. We check the top window's document so that when multiple
+  // same-origin windows exist in the same top window, postMessage events will
+  // be delivered in the same order they were posted, regardless of which window
+  // they were posted to.
+  if (nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+          targetWindow->GetOuterWindow()->GetTop()) {
+    if (nsCOMPtr<nsPIDOMWindowInner> topInner =
+            topWindow->GetCurrentInnerWindow()) {
+      if (topInner->GetExtantDoc() &&
+          topInner->GetExtantDoc()->SuspendPostMessageEvent(this)) {
+        return NS_OK;
+      }
+    }
+  }
+
   JSAutoRealm ar(cx, targetWindow->GetWrapper());
 
   // Ensure that any origin which might have been provided is the origin of this
@@ -100,9 +115,6 @@ PostMessageEvent::Run() {
       OriginAttributes targetAttrs = targetPrin->OriginAttributesRef();
 
       MOZ_DIAGNOSTIC_ASSERT(
-          sourceAttrs.mAppId == targetAttrs.mAppId,
-          "Target and source should have the same mAppId attribute.");
-      MOZ_DIAGNOSTIC_ASSERT(
           sourceAttrs.mUserContextId == targetAttrs.mUserContextId,
           "Target and source should have the same userContextId attribute.");
       MOZ_DIAGNOSTIC_ASSERT(sourceAttrs.mInIsolatedMozBrowser ==
@@ -116,12 +128,10 @@ PostMessageEvent::Run() {
       rv = nsContentUtils::GetUTFOrigin(mProvidedPrincipal, providedOrigin);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      const char16_t* params[] = {providedOrigin.get(), targetOrigin.get()};
-
       nsAutoString errorText;
-      nsContentUtils::FormatLocalizedString(nsContentUtils::eDOM_PROPERTIES,
-                                            "TargetPrincipalDoesNotMatch",
-                                            params, errorText);
+      nsContentUtils::FormatLocalizedString(
+          errorText, nsContentUtils::eDOM_PROPERTIES,
+          "TargetPrincipalDoesNotMatch", providedOrigin, targetOrigin);
 
       nsCOMPtr<nsIScriptError> errorObject =
           do_CreateInstance(NS_SCRIPTERROR_CONTRACTID, &rv);
@@ -136,9 +146,10 @@ PostMessageEvent::Run() {
         rv = NS_GetSanitizedURIStringFromURI(callerDocumentURI, uriSpec);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        rv = errorObject->Init(errorText, uriSpec, EmptyString(), 0, 0,
-                               nsIScriptError::errorFlag, "DOM Window",
-                               mIsFromPrivateWindow);
+        rv = errorObject->Init(
+            errorText, uriSpec, EmptyString(), 0, 0, nsIScriptError::errorFlag,
+            "DOM Window", mIsFromPrivateWindow,
+            nsContentUtils::IsSystemPrincipal(mProvidedPrincipal));
       }
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -157,7 +168,7 @@ PostMessageEvent::Run() {
 
   StructuredCloneHolder* holder;
   if (mHolder.constructed<StructuredCloneHolder>()) {
-    mHolder.ref<StructuredCloneHolder>().Read(targetWindow->AsInner(), cx,
+    mHolder.ref<StructuredCloneHolder>().Read(ToSupports(targetWindow), cx,
                                               &messageData, rv);
     holder = &mHolder.ref<StructuredCloneHolder>();
   } else {
@@ -223,7 +234,7 @@ void PostMessageEvent::Dispatch(nsGlobalWindowInner* aTargetWindow,
   WidgetEvent* internalEvent = aEvent->WidgetEventPtr();
 
   nsEventStatus status = nsEventStatus_eIgnore;
-  EventDispatcher::Dispatch(aTargetWindow->AsInner(), presContext,
+  EventDispatcher::Dispatch(ToSupports(aTargetWindow), presContext,
                             internalEvent, aEvent, &status);
 }
 

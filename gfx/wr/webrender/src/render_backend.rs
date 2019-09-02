@@ -10,7 +10,7 @@
 
 use api::{ApiMsg, BuiltDisplayList, ClearCache, DebugCommand, DebugFlags};
 #[cfg(feature = "debugger")]
-use api::{BuiltDisplayListIter, SpecificDisplayItem};
+use api::{BuiltDisplayListIter, DisplayItem};
 use api::{DocumentId, DocumentLayer, ExternalScrollId, FrameMsg, HitTestFlags, HitTestResult};
 use api::{IdNamespace, MemoryReport, PipelineId, RenderNotifier, SceneMsg, ScrollClamping};
 use api::{ScrollLocation, ScrollNodeState, TransactionMsg, ResourceUpdate, BlobImageKey};
@@ -22,31 +22,31 @@ use api::channel::{MsgReceiver, MsgSender, Payload};
 use api::CaptureBits;
 #[cfg(feature = "replay")]
 use api::CapturedDocument;
-use clip_scroll_tree::{SpatialNodeIndex, ClipScrollTree};
+use crate::clip_scroll_tree::{SpatialNodeIndex, ClipScrollTree};
 #[cfg(feature = "debugger")]
-use debug_server;
-use frame_builder::{FrameBuilder, FrameBuilderConfig};
-use glyph_rasterizer::{FontInstance};
-use gpu_cache::GpuCache;
-use hit_test::{HitTest, HitTester};
-use intern::DataStore;
-use internal_types::{DebugOutput, FastHashMap, FastHashSet, RenderedDocument, ResultMsg};
+use crate::debug_server;
+use crate::frame_builder::{FrameBuilder, FrameBuilderConfig};
+use crate::glyph_rasterizer::{FontInstance};
+use crate::gpu_cache::GpuCache;
+use crate::hit_test::{HitTest, HitTester};
+use crate::intern::DataStore;
+use crate::internal_types::{DebugOutput, FastHashMap, FastHashSet, RenderedDocument, ResultMsg};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use picture::RetainedTiles;
-use prim_store::{PrimitiveScratchBuffer, PrimitiveInstance};
-use prim_store::{PrimitiveInstanceKind, PrimTemplateCommonData};
-use prim_store::interned::*;
-use profiler::{BackendProfileCounters, IpcProfileCounters, ResourceProfileCounters};
-use record::ApiRecordingReceiver;
-use render_task::RenderTaskTreeCounters;
-use renderer::{AsyncPropertySampler, PipelineInfo};
-use resource_cache::ResourceCache;
+use crate::picture::RetainedTiles;
+use crate::prim_store::{PrimitiveScratchBuffer, PrimitiveInstance};
+use crate::prim_store::{PrimitiveInstanceKind, PrimTemplateCommonData};
+use crate::prim_store::interned::*;
+use crate::profiler::{BackendProfileCounters, IpcProfileCounters, ResourceProfileCounters};
+use crate::record::ApiRecordingReceiver;
+use crate::render_task::RenderTaskGraphCounters;
+use crate::renderer::{AsyncPropertySampler, PipelineInfo};
+use crate::resource_cache::ResourceCache;
 #[cfg(feature = "replay")]
-use resource_cache::PlainCacheOwn;
+use crate::resource_cache::PlainCacheOwn;
 #[cfg(any(feature = "capture", feature = "replay"))]
-use resource_cache::PlainResources;
-use scene::{Scene, SceneProperties};
-use scene_builder::*;
+use crate::resource_cache::PlainResources;
+use crate::scene::{Scene, SceneProperties};
+use crate::scene_builder::*;
 #[cfg(feature = "serialize")]
 use serde::{Serialize, Deserialize};
 #[cfg(feature = "debugger")]
@@ -59,16 +59,16 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::time::{UNIX_EPOCH, SystemTime};
 use std::u32;
 #[cfg(feature = "replay")]
-use tiling::Frame;
+use crate::tiling::Frame;
 use time::precise_time_ns;
-use util::{Recycler, VecHelper, drain_filter};
+use crate::util::{Recycler, VecHelper, drain_filter};
 
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(Clone)]
 pub struct DocumentView {
-    pub framebuffer_rect: FramebufferIntRect,
+    pub device_rect: DeviceIntRect,
     pub layer: DocumentLayer,
     pub pan: DeviceIntPoint,
     pub device_pixel_ratio: f32,
@@ -116,6 +116,12 @@ impl FrameId {
     /// An invalid sentinel FrameId, which will always compare less than
     /// any valid FrameId.
     pub const INVALID: FrameId = FrameId(0);
+}
+
+impl Default for FrameId {
+    fn default() -> Self {
+        FrameId::INVALID
+    }
 }
 
 impl ::std::ops::Add<usize> for FrameId {
@@ -193,7 +199,7 @@ impl FrameStamp {
         FrameStamp {
             id: FrameId::first(),
             time: SystemTime::now(),
-            document_id: document_id,
+            document_id,
         }
     }
 
@@ -297,18 +303,24 @@ impl DataStores {
                 let prim_data = &self.yuv_image[data_handle];
                 &prim_data.common
             }
+            PrimitiveInstanceKind::PushClipChain |
+            PrimitiveInstanceKind::PopClipChain => {
+                unreachable!();
+            }
         }
     }
 }
 
 struct Document {
+    // The id of this document
+    id: DocumentId,
     // The latest built scene, usable to build frames.
     // received from the scene builder thread.
     scene: Scene,
 
     // Temporary list of removed pipelines received from the scene builder
     // thread and forwarded to the renderer.
-    removed_pipelines: Vec<PipelineId>,
+    removed_pipelines: Vec<(PipelineId, DocumentId)>,
 
     view: DocumentView,
 
@@ -349,23 +361,24 @@ struct Document {
     /// where we want to recycle the memory each new display list, to avoid constantly
     /// re-allocating and moving memory around.
     scratch: PrimitiveScratchBuffer,
-    /// Keep track of the size of render task tree to pre-allocate memory up-front
+    /// Keep track of the size of render task graph to pre-allocate memory up-front
     /// the next frame.
-    render_task_counters: RenderTaskTreeCounters,
+    render_task_counters: RenderTaskGraphCounters,
 }
 
 impl Document {
     pub fn new(
         id: DocumentId,
-        size: FramebufferIntSize,
+        size: DeviceIntSize,
         layer: DocumentLayer,
         default_device_pixel_ratio: f32,
     ) -> Self {
         Document {
+            id,
             scene: Scene::new(),
             removed_pipelines: Vec::new(),
             view: DocumentView {
-                framebuffer_rect: FramebufferIntRect::new(FramebufferIntPoint::zero(), size),
+                device_rect: size.into(),
                 layer,
                 pan: DeviceIntPoint::zero(),
                 page_zoom_factor: 1.0,
@@ -384,7 +397,7 @@ impl Document {
             has_built_scene: false,
             data_stores: DataStores::default(),
             scratch: PrimitiveScratchBuffer::new(),
-            render_task_counters: RenderTaskTreeCounters::new(),
+            render_task_counters: RenderTaskGraphCounters::new(),
         }
     }
 
@@ -393,7 +406,7 @@ impl Document {
     }
 
     fn has_pixels(&self) -> bool {
-        !self.view.framebuffer_rect.size.is_empty_or_negative()
+        !self.view.device_rect.size.is_empty_or_negative()
     }
 
     fn process_frame_msg(
@@ -483,6 +496,16 @@ impl Document {
                     self.frame_is_valid = false;
                 }
             }
+            FrameMsg::SetIsTransformPinchZooming(is_zooming, animation_id) => {
+                let node = self.clip_scroll_tree.spatial_nodes.iter_mut()
+                    .find(|node| node.is_transform_bound_to_property(animation_id));
+                if let Some(node) = node {
+                    if node.is_pinch_zooming != is_zooming {
+                        node.is_pinch_zooming = is_zooming;
+                        self.frame_is_valid = false;
+                    }
+                }
+            }
         }
 
         DocumentOps::nop()
@@ -514,7 +537,7 @@ impl Document {
                 &self.scene.pipelines,
                 accumulated_scale_factor,
                 self.view.layer,
-                self.view.framebuffer_rect.origin,
+                self.view.device_rect.origin,
                 pan,
                 &mut resource_profile.texture_cache,
                 &mut resource_profile.gpu_cache,
@@ -551,7 +574,6 @@ impl Document {
             self.clip_scroll_tree.update_tree(
                 pan,
                 &self.dynamic_properties,
-                None,
             );
 
             self.hit_tester = Some(frame_builder.create_hit_tester(
@@ -565,7 +587,8 @@ impl Document {
     pub fn updated_pipeline_info(&mut self) -> PipelineInfo {
         let removed_pipelines = self.removed_pipelines.take_and_preallocate();
         PipelineInfo {
-            epochs: self.scene.pipeline_epochs.clone(),
+            epochs: self.scene.pipeline_epochs.iter()
+                .map(|(&pipeline_id, &epoch)| ((pipeline_id, self.id), epoch)).collect(),
             removed_pipelines,
         }
     }
@@ -614,7 +637,6 @@ impl Document {
         if let Some(frame_builder) = self.frame_builder.take() {
             let globals = frame_builder.destroy(
                 &mut retained_tiles,
-                &self.clip_scroll_tree,
             );
 
             // Provide any cached tiles from the previous frame builder to
@@ -683,9 +705,9 @@ pub struct RenderBackend {
     frame_config: FrameBuilderConfig,
     documents: FastHashMap<DocumentId, Document>,
 
-    notifier: Box<RenderNotifier>,
-    recorder: Option<Box<ApiRecordingReceiver>>,
-    sampler: Option<Box<AsyncPropertySampler + Send>>,
+    notifier: Box<dyn RenderNotifier>,
+    recorder: Option<Box<dyn ApiRecordingReceiver>>,
+    sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
     size_of_ops: Option<MallocSizeOfOps>,
     debug_flags: DebugFlags,
     namespace_alloc_by_client: bool,
@@ -703,10 +725,10 @@ impl RenderBackend {
         scene_rx: Receiver<SceneBuilderResult>,
         default_device_pixel_ratio: f32,
         resource_cache: ResourceCache,
-        notifier: Box<RenderNotifier>,
+        notifier: Box<dyn RenderNotifier>,
         frame_config: FrameBuilderConfig,
-        recorder: Option<Box<ApiRecordingReceiver>>,
-        sampler: Option<Box<AsyncPropertySampler + Send>>,
+        recorder: Option<Box<dyn ApiRecordingReceiver>>,
+        sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
         size_of_ops: Option<MallocSizeOfOps>,
         debug_flags: DebugFlags,
         namespace_alloc_by_client: bool,
@@ -752,10 +774,10 @@ impl RenderBackend {
                 doc.view.page_zoom_factor = factor.get();
             }
             SceneMsg::SetDocumentView {
-                framebuffer_rect,
+                device_rect,
                 device_pixel_ratio,
             } => {
-                doc.view.framebuffer_rect = framebuffer_rect;
+                doc.view.device_rect = device_rect;
                 doc.view.device_pixel_ratio = device_pixel_ratio;
             }
             SceneMsg::SetDisplayList {
@@ -829,7 +851,7 @@ impl RenderBackend {
             }
             SceneMsg::RemovePipeline(pipeline_id) => {
                 profile_scope!("RemovePipeline");
-                txn.removed_pipelines.push(pipeline_id);
+                txn.removed_pipelines.push((pipeline_id, document_id));
             }
             SceneMsg::EnableFrameOutput(pipeline_id, enable) => {
                 if enable {
@@ -858,57 +880,66 @@ impl RenderBackend {
 
             while let Ok(msg) = self.scene_rx.try_recv() {
                 match msg {
-                    SceneBuilderResult::Transaction(mut txn, result_tx) => {
-                        let has_built_scene = txn.built_scene.is_some();
-                        if let Some(doc) = self.documents.get_mut(&txn.document_id) {
-
-                            doc.removed_pipelines.append(&mut txn.removed_pipelines);
-
-                            if let Some(mut built_scene) = txn.built_scene.take() {
-                                doc.new_async_scene_ready(
-                                    built_scene,
-                                    &mut self.recycler,
-                                );
-                            }
-
-                            if let Some(tx) = result_tx {
-                                let (resume_tx, resume_rx) = channel();
-                                tx.send(SceneSwapResult::Complete(resume_tx)).unwrap();
-                                // Block until the post-swap hook has completed on
-                                // the scene builder thread. We need to do this before
-                                // we can sample from the sampler hook which might happen
-                                // in the update_document call below.
-                                resume_rx.recv().ok();
-                            }
-                        } else {
-                            // The document was removed while we were building it, skip it.
-                            // TODO: we might want to just ensure that removed documents are
-                            // always forwarded to the scene builder thread to avoid this case.
-                            if let Some(tx) = result_tx {
-                                tx.send(SceneSwapResult::Aborted).unwrap();
-                            }
-                            continue;
-                        }
-
-                        self.resource_cache.add_rasterized_blob_images(
-                            txn.rasterized_blobs.take()
-                        );
-                        if let Some((rasterizer, info)) = txn.blob_rasterizer.take() {
-                            self.resource_cache.set_blob_rasterizer(rasterizer, info);
-                        }
-
-                        self.update_document(
-                            txn.document_id,
-                            txn.resource_updates.take(),
-                            txn.interner_updates.take(),
-                            txn.frame_ops.take(),
-                            txn.notifications.take(),
-                            txn.render_frame,
-                            txn.invalidate_rendered_frame,
+                    SceneBuilderResult::Transactions(mut txns, result_tx) => {
+                        self.prepare_for_frames();
+                        self.maybe_force_nop_documents(
                             &mut frame_counter,
                             &mut profile_counters,
-                            has_built_scene,
-                        );
+                            |document_id| txns.iter().any(|txn| txn.document_id == document_id));
+
+                        for mut txn in txns.drain(..) {
+                            let has_built_scene = txn.built_scene.is_some();
+                            if let Some(doc) = self.documents.get_mut(&txn.document_id) {
+
+                                doc.removed_pipelines.append(&mut txn.removed_pipelines);
+
+                                if let Some(built_scene) = txn.built_scene.take() {
+                                    doc.new_async_scene_ready(
+                                        built_scene,
+                                        &mut self.recycler,
+                                    );
+                                }
+
+                                if let Some(ref tx) = result_tx {
+                                    let (resume_tx, resume_rx) = channel();
+                                    tx.send(SceneSwapResult::Complete(resume_tx)).unwrap();
+                                    // Block until the post-swap hook has completed on
+                                    // the scene builder thread. We need to do this before
+                                    // we can sample from the sampler hook which might happen
+                                    // in the update_document call below.
+                                    resume_rx.recv().ok();
+                                }
+                            } else {
+                                // The document was removed while we were building it, skip it.
+                                // TODO: we might want to just ensure that removed documents are
+                                // always forwarded to the scene builder thread to avoid this case.
+                                if let Some(ref tx) = result_tx {
+                                    tx.send(SceneSwapResult::Aborted).unwrap();
+                                }
+                                continue;
+                            }
+
+                            self.resource_cache.add_rasterized_blob_images(
+                                txn.rasterized_blobs.take()
+                            );
+                            if let Some((rasterizer, info)) = txn.blob_rasterizer.take() {
+                                self.resource_cache.set_blob_rasterizer(rasterizer, info);
+                            }
+
+                            self.update_document(
+                                txn.document_id,
+                                txn.resource_updates.take(),
+                                txn.interner_updates.take(),
+                                txn.frame_ops.take(),
+                                txn.notifications.take(),
+                                txn.render_frame,
+                                txn.invalidate_rendered_frame,
+                                &mut frame_counter,
+                                &mut profile_counters,
+                                has_built_scene,
+                            );
+                        }
+                        self.bookkeep_after_frames();
                     },
                     SceneBuilderResult::FlushComplete(tx) => {
                         tx.send(()).ok();
@@ -918,7 +949,7 @@ impl RenderBackend {
                     }
                     SceneBuilderResult::ClearNamespace(id) => {
                         self.resource_cache.clear_namespace(id);
-                        self.documents.retain(|doc_id, _doc| doc_id.0 != id);
+                        self.documents.retain(|doc_id, _doc| doc_id.namespace_id != id);
                     }
                     SceneBuilderResult::Stopped => {
                         panic!("We haven't sent a Stop yet, how did we get a Stopped back?");
@@ -1011,7 +1042,7 @@ impl RenderBackend {
             }
             ApiMsg::CloneApiByClient(namespace_id) => {
                 assert!(self.namespace_alloc_by_client);
-                debug_assert!(!self.documents.iter().any(|(did, _doc)| did.0 == namespace_id));
+                debug_assert!(!self.documents.iter().any(|(did, _doc)| did.namespace_id == namespace_id));
             }
             ApiMsg::AddDocument(document_id, initial_size, layer) => {
                 let document = Document::new(
@@ -1020,7 +1051,8 @@ impl RenderBackend {
                     layer,
                     self.default_device_pixel_ratio,
                 );
-                self.documents.insert(document_id, document);
+                let old = self.documents.insert(document_id, document);
+                debug_assert!(old.is_none());
             }
             ApiMsg::DeleteDocument(document_id) => {
                 self.documents.remove(&document_id);
@@ -1115,7 +1147,7 @@ impl RenderBackend {
                                     preserve_frame_state: false,
                                 };
                                 let txn = TransactionMsg::scene_message(scene_msg);
-                                r.write_msg(*frame_counter, &ApiMsg::UpdateDocument(*id, txn));
+                                r.write_msg(*frame_counter, &ApiMsg::UpdateDocuments(vec![*id], vec![txn]));
                                 r.write_payload(*frame_counter, &Payload::construct_data(
                                     epoch,
                                     pipeline_id,
@@ -1172,10 +1204,10 @@ impl RenderBackend {
                 info!("Recycling stats: {:?}", self.recycler);
                 return false;
             }
-            ApiMsg::UpdateDocument(document_id, transaction_msg) => {
-                self.prepare_transaction(
-                    document_id,
-                    transaction_msg,
+            ApiMsg::UpdateDocuments(document_ids, transaction_msgs) => {
+                self.prepare_transactions(
+                    document_ids,
+                    transaction_msgs,
                     frame_counter,
                     profile_counters,
                 );
@@ -1185,99 +1217,159 @@ impl RenderBackend {
         true
     }
 
-    fn prepare_transaction(
+    fn prepare_for_frames(&mut self) {
+        self.resource_cache.prepare_for_frames(SystemTime::now());
+        self.gpu_cache.prepare_for_frames();
+    }
+
+    fn bookkeep_after_frames(&mut self) {
+        self.resource_cache.bookkeep_after_frames();
+        self.gpu_cache.bookkeep_after_frames();
+    }
+
+    fn requires_frame_build(&mut self) -> bool {
+        self.resource_cache.requires_frame_build() || self.gpu_cache.requires_frame_build()
+    }
+
+    fn prepare_transactions(
         &mut self,
-        document_id: DocumentId,
-        mut transaction_msg: TransactionMsg,
+        document_ids: Vec<DocumentId>,
+        mut transaction_msgs: Vec<TransactionMsg>,
         frame_counter: &mut u32,
         profile_counters: &mut BackendProfileCounters,
     ) {
-        let mut txn = Box::new(Transaction {
-            document_id,
-            display_list_updates: Vec::new(),
-            removed_pipelines: Vec::new(),
-            epoch_updates: Vec::new(),
-            request_scene_build: None,
-            blob_rasterizer: None,
-            blob_requests: Vec::new(),
-            resource_updates: transaction_msg.resource_updates,
-            frame_ops: transaction_msg.frame_ops,
-            rasterized_blobs: Vec::new(),
-            notifications: transaction_msg.notifications,
-            set_root_pipeline: None,
-            render_frame: transaction_msg.generate_frame,
-            invalidate_rendered_frame: transaction_msg.invalidate_rendered_frame,
+        let mut use_scene_builder = transaction_msgs.iter()
+            .any(|transaction_msg| transaction_msg.use_scene_builder_thread);
+        let use_high_priority = transaction_msgs.iter()
+            .any(|transaction_msg| !transaction_msg.low_priority);
+
+        let mut txns : Vec<Box<Transaction>> = document_ids.iter().zip(transaction_msgs.drain(..))
+            .map(|(&document_id, mut transaction_msg)| {
+                let mut txn = Box::new(Transaction {
+                    document_id,
+                    display_list_updates: Vec::new(),
+                    removed_pipelines: Vec::new(),
+                    epoch_updates: Vec::new(),
+                    request_scene_build: None,
+                    blob_rasterizer: None,
+                    blob_requests: Vec::new(),
+                    resource_updates: transaction_msg.resource_updates,
+                    frame_ops: transaction_msg.frame_ops,
+                    rasterized_blobs: Vec::new(),
+                    notifications: transaction_msg.notifications,
+                    set_root_pipeline: None,
+                    render_frame: transaction_msg.generate_frame,
+                    invalidate_rendered_frame: transaction_msg.invalidate_rendered_frame,
+                });
+
+                self.resource_cache.pre_scene_building_update(
+                    &mut txn.resource_updates,
+                    &mut profile_counters.resources,
+                );
+
+                for scene_msg in transaction_msg.scene_ops.drain(..) {
+                    let _timer = profile_counters.total_time.timer();
+                    self.process_scene_msg(
+                        document_id,
+                        scene_msg,
+                        *frame_counter,
+                        &mut txn,
+                        &mut profile_counters.ipc,
+                    )
+                }
+
+                let blobs_to_rasterize = get_blob_image_updates(&txn.resource_updates);
+                if !blobs_to_rasterize.is_empty() {
+                    let (blob_rasterizer, blob_requests) = self.resource_cache
+                        .create_blob_scene_builder_requests(&blobs_to_rasterize);
+
+                    txn.blob_requests = blob_requests;
+                    txn.blob_rasterizer = blob_rasterizer;
+                }
+                txn
+            }).collect();
+
+        use_scene_builder = use_scene_builder || txns.iter().any(|txn| {
+            !txn.can_skip_scene_builder() || txn.blob_rasterizer.is_some()
         });
 
-        self.resource_cache.pre_scene_building_update(
-            &mut txn.resource_updates,
-            &mut profile_counters.resources,
-        );
+        if use_scene_builder {
+            for txn in txns.iter_mut() {
+                let doc = self.documents.get_mut(&txn.document_id).unwrap();
 
-        // If we've been above the threshold for reclaiming GPU cache memory for
-        // long enough, drop it and rebuild it. This needs to be done before any
-        // updates for this frame are made.
-        if self.gpu_cache.should_reclaim_memory() {
-            self.gpu_cache.clear();
-        }
-
-        for scene_msg in transaction_msg.scene_ops.drain(..) {
-            let _timer = profile_counters.total_time.timer();
-            self.process_scene_msg(
-                document_id,
-                scene_msg,
-                *frame_counter,
-                &mut txn,
-                &mut profile_counters.ipc,
-            )
-        }
-
-        let blobs_to_rasterize = get_blob_image_updates(&txn.resource_updates);
-        if !blobs_to_rasterize.is_empty() {
-            let (blob_rasterizer, blob_requests) = self.resource_cache
-                .create_blob_scene_builder_requests(&blobs_to_rasterize);
-
-            txn.blob_requests = blob_requests;
-            txn.blob_rasterizer = blob_rasterizer;
-        }
-
-        if !transaction_msg.use_scene_builder_thread &&
-            txn.can_skip_scene_builder() &&
-            txn.blob_rasterizer.is_none() {
-
-            self.update_document(
-                txn.document_id,
-                txn.resource_updates.take(),
-                None,
-                txn.frame_ops.take(),
-                txn.notifications.take(),
-                txn.render_frame,
-                txn.invalidate_rendered_frame,
+                if txn.should_build_scene() {
+                    txn.request_scene_build = Some(SceneRequest {
+                        view: doc.view.clone(),
+                        font_instances: self.resource_cache.get_font_instances(),
+                        output_pipelines: doc.output_pipelines.clone(),
+                    });
+                }
+            }
+        } else {
+            self.prepare_for_frames();
+            self.maybe_force_nop_documents(
                 frame_counter,
                 profile_counters,
-                false
-            );
+                |document_id| txns.iter().any(|txn| txn.document_id == document_id));
 
+            for mut txn in txns {
+                self.update_document(
+                    txn.document_id,
+                    txn.resource_updates.take(),
+                    None,
+                    txn.frame_ops.take(),
+                    txn.notifications.take(),
+                    txn.render_frame,
+                    txn.invalidate_rendered_frame,
+                    frame_counter,
+                    profile_counters,
+                    false
+                );
+            }
+
+            self.bookkeep_after_frames();
             return;
         }
 
-        let doc = self.documents.get_mut(&document_id).unwrap();
-
-        if txn.should_build_scene() {
-            txn.request_scene_build = Some(SceneRequest {
-                view: doc.view.clone(),
-                font_instances: self.resource_cache.get_font_instances(),
-                output_pipelines: doc.output_pipelines.clone(),
-            });
-        }
-
-        let tx = if transaction_msg.low_priority {
-            &self.low_priority_scene_tx
-        } else {
+        let tx = if use_high_priority {
             &self.scene_tx
+        } else {
+            &self.low_priority_scene_tx
         };
 
-        tx.send(SceneBuilderRequest::Transaction(txn)).unwrap();
+        tx.send(SceneBuilderRequest::Transactions(txns)).unwrap();
+    }
+
+    /// In certain cases, resources shared by multiple documents have to run
+    /// maintenance operations, like cleaning up unused cache items. In those
+    /// cases, we are forced to build frames for all documents, however we
+    /// may not have a transaction ready for every document - this method
+    /// calls update_document with the details of a fake, nop transaction just
+    /// to force a frame build.
+    fn maybe_force_nop_documents<F>(&mut self,
+                                    frame_counter: &mut u32,
+                                    profile_counters: &mut BackendProfileCounters,
+                                    document_already_present: F) where
+        F: Fn(DocumentId) -> bool {
+        if self.requires_frame_build() {
+            let nop_documents : Vec<DocumentId> = self.documents.keys()
+                .cloned()
+                .filter(|key| !document_already_present(*key))
+                .collect();
+            for &document_id in &nop_documents {
+                self.update_document(
+                    document_id,
+                    Vec::default(),
+                    None,
+                    Vec::default(),
+                    Vec::default(),
+                    false,
+                    false,
+                    frame_counter,
+                    profile_counters,
+                    false);
+            }
+        }
     }
 
     fn update_document(
@@ -1302,10 +1394,11 @@ impl RenderBackend {
         // async transforms.
         if requested_frame || has_built_scene {
             if let Some(ref sampler) = self.sampler {
-                frame_ops.append(&mut sampler.sample());
+                frame_ops.append(&mut sampler.sample(document_id));
             }
         }
 
+        let requires_frame_build = self.requires_frame_build();
         let doc = self.documents.get_mut(&document_id).unwrap();
         doc.has_built_scene |= has_built_scene;
 
@@ -1348,7 +1441,12 @@ impl RenderBackend {
         }
 
         // Avoid re-building the frame if the current built frame is still valid.
-        let build_frame = render_frame && !doc.frame_is_valid;
+        // However, if the resource_cache requires a frame build, _always_ do that, unless
+        // doc.can_render() is false, as in that case a frame build can't happen anyway.
+        // We want to ensure we do this because even if the doc doesn't have pixels it
+        // can still try to access stale texture cache items.
+        let build_frame = (render_frame && !doc.frame_is_valid && doc.has_pixels()) ||
+            (requires_frame_build && doc.can_render());
 
         // Request composite is true when we want to composite frame even when
         // there is no frame update. This happens when video frame is updated under
@@ -1358,7 +1456,7 @@ impl RenderBackend {
         }
 
         let mut frame_build_time = None;
-        if build_frame && doc.has_pixels() {
+        if build_frame {
             profile_scope!("generate frame");
 
             *frame_counter += 1;
@@ -1456,19 +1554,19 @@ impl RenderBackend {
                 };
 
                 match *item.item() {
-                    display_item @ SpecificDisplayItem::PushStackingContext(..) => {
+                    display_item @ DisplayItem::PushStackingContext(..) => {
                         let mut subtraversal = item.sub_iter();
                         let mut child_node =
-                            debug_server::TreeNode::new(&display_item.debug_string());
+                            debug_server::TreeNode::new(&display_item.debug_name().to_string());
                         self.traverse_items(&mut subtraversal, &mut child_node);
                         node.add_child(child_node);
                         Some(subtraversal)
                     }
-                    SpecificDisplayItem::PopStackingContext => {
+                    DisplayItem::PopStackingContext => {
                         return;
                     }
                     display_item => {
-                        node.add_item(&display_item.debug_string());
+                        node.add_item(&display_item.debug_name().to_string());
                         None
                     }
                 }
@@ -1508,7 +1606,7 @@ impl RenderBackend {
 
     #[cfg(feature = "debugger")]
     fn get_clip_scroll_tree_for_debugger(&self) -> String {
-        use print_tree::PrintableTree;
+        use crate::print_tree::PrintableTree;
 
         let mut debug_root = debug_server::ClipScrollTreeList::new();
 
@@ -1564,46 +1662,6 @@ fn get_blob_image_updates(updates: &[ResourceUpdate]) -> Vec<BlobImageKey> {
     requests
 }
 
-
-#[cfg(feature = "debugger")]
-trait ToDebugString {
-    fn debug_string(&self) -> String;
-}
-
-#[cfg(feature = "debugger")]
-impl ToDebugString for SpecificDisplayItem {
-    fn debug_string(&self) -> String {
-        match *self {
-            SpecificDisplayItem::Border(..) => String::from("border"),
-            SpecificDisplayItem::BoxShadow(..) => String::from("box_shadow"),
-            SpecificDisplayItem::ClearRectangle => String::from("clear_rectangle"),
-            SpecificDisplayItem::Clip(..) => String::from("clip"),
-            SpecificDisplayItem::ClipChain(..) => String::from("clip_chain"),
-            SpecificDisplayItem::Gradient(..) => String::from("gradient"),
-            SpecificDisplayItem::Iframe(..) => String::from("iframe"),
-            SpecificDisplayItem::Image(..) => String::from("image"),
-            SpecificDisplayItem::Line(..) => String::from("line"),
-            SpecificDisplayItem::PopAllShadows => String::from("pop_all_shadows"),
-            SpecificDisplayItem::PopReferenceFrame => String::from("pop_reference_frame"),
-            SpecificDisplayItem::PopStackingContext => String::from("pop_stacking_context"),
-            SpecificDisplayItem::PushShadow(..) => String::from("push_shadow"),
-            SpecificDisplayItem::PushReferenceFrame(..) => String::from("push_reference_frame"),
-            SpecificDisplayItem::PushStackingContext(..) => String::from("push_stacking_context"),
-            SpecificDisplayItem::SetFilterOps => String::from("set_filter_ops"),
-            SpecificDisplayItem::SetFilterData => String::from("set_filter_data"),
-            SpecificDisplayItem::RadialGradient(..) => String::from("radial_gradient"),
-            SpecificDisplayItem::Rectangle(..) => String::from("rectangle"),
-            SpecificDisplayItem::ScrollFrame(..) => String::from("scroll_frame"),
-            SpecificDisplayItem::SetGradientStops => String::from("set_gradient_stops"),
-            SpecificDisplayItem::StickyFrame(..) => String::from("sticky_frame"),
-            SpecificDisplayItem::Text(..) => String::from("text"),
-            SpecificDisplayItem::YuvImage(..) => String::from("yuv_image"),
-            SpecificDisplayItem::PushCacheMarker(..) => String::from("push_cache_marker"),
-            SpecificDisplayItem::PopCacheMarker => String::from("pop_cache_marker"),
-        }
-    }
-}
-
 impl RenderBackend {
     #[cfg(feature = "capture")]
     // Note: the mutable `self` is only needed here for resolving blob images
@@ -1614,7 +1672,8 @@ impl RenderBackend {
         profile_counters: &mut BackendProfileCounters,
     ) -> DebugOutput {
         use std::fs;
-        use capture::CaptureConfig;
+        use crate::capture::CaptureConfig;
+        use crate::render_task::dump_render_tasks_as_svg;
 
         debug!("capture: saving {:?}", root);
         if !root.is_dir() {
@@ -1624,10 +1683,14 @@ impl RenderBackend {
         }
         let config = CaptureConfig::new(root, bits);
 
+        if config.bits.contains(CaptureBits::FRAME) {
+            self.prepare_for_frames();
+        }
+
         for (&id, doc) in &mut self.documents {
             debug!("\tdocument {:?}", id);
             if config.bits.contains(CaptureBits::SCENE) {
-                let file_name = format!("scene-{}-{}", (id.0).0, id.1);
+                let file_name = format!("scene-{}-{}", id.namespace_id.0, id.id);
                 config.serialize(&doc.scene, file_name);
             }
             if config.bits.contains(CaptureBits::FRAME) {
@@ -1637,19 +1700,40 @@ impl RenderBackend {
                     &mut profile_counters.resources,
                     self.debug_flags,
                 );
+                // After we rendered the frames, there are pending updates to both
+                // GPU cache and resources. Instead of serializing them, we are going to make sure
+                // they are applied on the `Renderer` side.
+                let msg_update_gpu_cache = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
+                self.result_tx.send(msg_update_gpu_cache).unwrap();
                 //TODO: write down doc's pipeline info?
                 // it has `pipeline_epoch_map`,
                 // which may capture necessary details for some cases.
-                let file_name = format!("frame-{}-{}", (id.0).0, id.1);
+                let file_name = format!("frame-{}-{}", id.namespace_id.0, id.id);
                 config.serialize(&rendered_document.frame, file_name);
-                let file_name = format!("clip-scroll-{}-{}", (id.0).0, id.1);
+                let file_name = format!("clip-scroll-{}-{}", id.namespace_id.0, id.id);
                 config.serialize_tree(&doc.clip_scroll_tree, file_name);
-                let file_name = format!("builder-{}-{}", (id.0).0, id.1);
+                let file_name = format!("builder-{}-{}", id.namespace_id.0, id.id);
                 config.serialize(doc.frame_builder.as_ref().unwrap(), file_name);
+                let file_name = format!("render-tasks-{}-{}.svg", id.namespace_id.0, id.id);
+                let mut svg_file = fs::File::create(&config.file_path(file_name, "svg"))
+                    .expect("Failed to open the SVG file.");
+                dump_render_tasks_as_svg(
+                    &rendered_document.frame.render_tasks,
+                    &rendered_document.frame.passes,
+                    &mut svg_file
+                ).unwrap();
             }
 
-            let data_stores_name = format!("data-stores-{}-{}", (id.0).0, id.1);
+            let data_stores_name = format!("data-stores-{}-{}", id.namespace_id.0, id.id);
             config.serialize(&doc.data_stores, data_stores_name);
+        }
+
+        if config.bits.contains(CaptureBits::FRAME) {
+            // TODO: there is no guarantee that we won't hit this case, but we want to
+            // report it here if we do. If we don't, it will simply crash in
+            // Renderer::render_impl and give us less information about the source.
+            assert!(!self.requires_frame_build(), "Caches were cleared during a capture.");
+            self.bookkeep_after_frames();
         }
 
         debug!("\tscene builder");
@@ -1672,11 +1756,6 @@ impl RenderBackend {
         config.serialize(&backend, "backend");
 
         if config.bits.contains(CaptureBits::FRAME) {
-            // After we rendered the frames, there are pending updates to both
-            // GPU cache and resources. Instead of serializing them, we are going to make sure
-            // they are applied on the `Renderer` side.
-            let msg_update_gpu_cache = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
-            self.result_tx.send(msg_update_gpu_cache).unwrap();
             let msg_update_resources = ResultMsg::UpdateResources {
                 updates: self.resource_cache.pending_updates(),
                 memory_pressure: false,
@@ -1699,7 +1778,7 @@ impl RenderBackend {
         root: &PathBuf,
         profile_counters: &mut BackendProfileCounters,
     ) {
-        use capture::CaptureConfig;
+        use crate::capture::CaptureConfig;
 
         debug!("capture: loading {:?}", root);
         let backend = CaptureConfig::deserialize::<PlainRenderBackend, _>(root, "backend")
@@ -1710,7 +1789,11 @@ impl RenderBackend {
         // rather explicitly on what's used before and after scene building
         // so that, for example, we never miss anything in the code below:
 
-        let plain_externals = self.resource_cache.load_capture(backend.resources, caches_maybe, root);
+        let plain_externals = self.resource_cache.load_capture(
+            backend.resources,
+            caches_maybe,
+            root,
+        );
         let msg_load = ResultMsg::DebugOutput(
             DebugOutput::LoadCapture(root.clone(), plain_externals)
         );
@@ -1729,19 +1812,20 @@ impl RenderBackend {
 
         for (id, view) in backend.documents {
             debug!("\tdocument {:?}", id);
-            let scene_name = format!("scene-{}-{}", (id.0).0, id.1);
+            let scene_name = format!("scene-{}-{}", id.namespace_id.0, id.id);
             let scene = CaptureConfig::deserialize::<Scene, _>(root, &scene_name)
                 .expect(&format!("Unable to open {}.ron", scene_name));
 
-            let interners_name = format!("interners-{}-{}", (id.0).0, id.1);
+            let interners_name = format!("interners-{}-{}", id.namespace_id.0, id.id);
             let interners = CaptureConfig::deserialize::<Interners, _>(root, &interners_name)
                 .expect(&format!("Unable to open {}.ron", interners_name));
 
-            let data_stores_name = format!("data-stores-{}-{}", (id.0).0, id.1);
+            let data_stores_name = format!("data-stores-{}-{}", id.namespace_id.0, id.id);
             let data_stores = CaptureConfig::deserialize::<DataStores, _>(root, &data_stores_name)
                 .expect(&format!("Unable to open {}.ron", data_stores_name));
 
-            let mut doc = Document {
+            let doc = Document {
+                id,
                 scene: scene.clone(),
                 removed_pipelines: Vec::new(),
                 view: view.clone(),
@@ -1757,10 +1841,10 @@ impl RenderBackend {
                 has_built_scene: false,
                 data_stores,
                 scratch: PrimitiveScratchBuffer::new(),
-                render_task_counters: RenderTaskTreeCounters::new(),
+                render_task_counters: RenderTaskGraphCounters::new(),
             };
 
-            let frame_name = format!("frame-{}-{}", (id.0).0, id.1);
+            let frame_name = format!("frame-{}-{}", id.namespace_id.0, id.id);
             let frame = CaptureConfig::deserialize::<Frame, _>(root, frame_name);
             let build_frame = match frame {
                 Some(frame) => {

@@ -166,7 +166,7 @@ already_AddRefed<TextTrack> TextTrackManager::AddTextTrack(
     RefPtr<nsIRunnable> task = NewRunnableMethod(
         "dom::TextTrackManager::HonorUserPreferencesForTrackSelection", this,
         &TextTrackManager::HonorUserPreferencesForTrackSelection);
-    nsContentUtils::RunInStableState(task.forget());
+    NS_DispatchToMainThread(task.forget());
   }
 
   return track.forget();
@@ -185,7 +185,7 @@ void TextTrackManager::AddTextTrack(TextTrack* aTextTrack) {
     RefPtr<nsIRunnable> task = NewRunnableMethod(
         "dom::TextTrackManager::HonorUserPreferencesForTrackSelection", this,
         &TextTrackManager::HonorUserPreferencesForTrackSelection);
-    nsContentUtils::RunInStableState(task.forget());
+    NS_DispatchToMainThread(task.forget());
   }
 }
 
@@ -202,7 +202,7 @@ void TextTrackManager::AddCues(TextTrack* aTextTrack) {
     for (uint32_t i = 0; i < cueList->Length(); ++i) {
       mNewCues->AddCue(*cueList->IndexedGetter(i, dummy));
     }
-    TimeMarchesOn();
+    MaybeRunTimeMarchesOn();
   }
 }
 
@@ -226,18 +226,12 @@ void TextTrackManager::RemoveTextTrack(TextTrack* aTextTrack,
     for (uint32_t i = 0; i < removeCueList->Length(); ++i) {
       mNewCues->RemoveCue(*((*removeCueList)[i]));
     }
-    TimeMarchesOn();
+    MaybeRunTimeMarchesOn();
   }
 }
 
 void TextTrackManager::DidSeek() {
   WEBVTT_LOG("DidSeek");
-  if (mMediaElement) {
-    mLastTimeMarchesOnCalled =
-        media::TimeUnit::FromSeconds(mMediaElement->CurrentTime());
-    WEBVTT_LOGV("DidSeek set mLastTimeMarchesOnCalled %lf",
-                mLastTimeMarchesOnCalled.ToSeconds());
-  }
   mHasSeeked = true;
 }
 
@@ -246,40 +240,39 @@ void TextTrackManager::UpdateCueDisplay() {
   mUpdateCueDisplayDispatched = false;
 
   if (!mMediaElement || !mTextTracks || IsShutdown()) {
+    WEBVTT_LOG("Abort UpdateCueDisplay.");
     return;
   }
 
   nsIFrame* frame = mMediaElement->GetPrimaryFrame();
   nsVideoFrame* videoFrame = do_QueryFrame(frame);
   if (!videoFrame) {
+    WEBVTT_LOG("Abort UpdateCueDisplay, because of no video frame.");
     return;
   }
 
   nsCOMPtr<nsIContent> overlay = videoFrame->GetCaptionOverlay();
-  nsCOMPtr<nsIContent> controls = videoFrame->GetVideoControls();
   if (!overlay) {
+    WEBVTT_LOG("Abort UpdateCueDisplay, because of no overlay.");
     return;
+  }
+
+  nsPIDOMWindowInner* window = mMediaElement->OwnerDoc()->GetInnerWindow();
+  if (!window) {
+    WEBVTT_LOG("Abort UpdateCueDisplay, because of no window.");
   }
 
   nsTArray<RefPtr<TextTrackCue>> showingCues;
   mTextTracks->GetShowingCues(showingCues);
 
-  if (showingCues.Length() > 0) {
-    WEBVTT_LOG("UpdateCueDisplay, processCues, showingCuesNum=%zu",
-               showingCues.Length());
-    RefPtr<nsVariantCC> jsCues = new nsVariantCC();
-
-    jsCues->SetAsArray(nsIDataType::VTYPE_INTERFACE, &NS_GET_IID(EventTarget),
-                       showingCues.Length(),
-                       static_cast<void*>(showingCues.Elements()));
-    nsPIDOMWindowInner* window = mMediaElement->OwnerDoc()->GetInnerWindow();
-    if (window) {
-      sParserWrapper->ProcessCues(window, jsCues, overlay, controls);
-    }
-  } else if (overlay->Length() > 0) {
-    WEBVTT_LOG("UpdateCueDisplay EmptyString");
-    nsContentUtils::SetNodeTextContent(overlay, EmptyString(), true);
-  }
+  WEBVTT_LOG("UpdateCueDisplay, processCues, showingCuesNum=%zu",
+             showingCues.Length());
+  RefPtr<nsVariantCC> jsCues = new nsVariantCC();
+  jsCues->SetAsArray(nsIDataType::VTYPE_INTERFACE, &NS_GET_IID(EventTarget),
+                     showingCues.Length(),
+                     static_cast<void*>(showingCues.Elements()));
+  nsCOMPtr<nsIContent> controls = videoFrame->GetVideoControls();
+  sParserWrapper->ProcessCues(window, jsCues, overlay, controls);
 }
 
 void TextTrackManager::NotifyCueAdded(TextTrackCue& aCue) {
@@ -287,7 +280,7 @@ void TextTrackManager::NotifyCueAdded(TextTrackCue& aCue) {
   if (mNewCues) {
     mNewCues->AddCue(aCue);
   }
-  TimeMarchesOn();
+  MaybeRunTimeMarchesOn();
   ReportTelemetryForCue();
 }
 
@@ -296,7 +289,7 @@ void TextTrackManager::NotifyCueRemoved(TextTrackCue& aCue) {
   if (mNewCues) {
     mNewCues->RemoveCue(aCue);
   }
-  TimeMarchesOn();
+  MaybeRunTimeMarchesOn();
   DispatchUpdateCueDisplay();
 }
 
@@ -318,6 +311,8 @@ void TextTrackManager::PopulatePendingList() {
 
 void TextTrackManager::AddListeners() {
   if (mMediaElement) {
+    mMediaElement->AddEventListener(NS_LITERAL_STRING("resizecaption"), this,
+                                    false, false);
     mMediaElement->AddEventListener(NS_LITERAL_STRING("resizevideocontrols"),
                                     this, false, false);
     mMediaElement->AddEventListener(NS_LITERAL_STRING("seeked"), this, false,
@@ -423,14 +418,20 @@ TextTrackManager::HandleEvent(Event* aEvent) {
 
   nsAutoString type;
   aEvent->GetType(type);
-  if (type.EqualsLiteral("resizevideocontrols") ||
-      type.EqualsLiteral("seeked")) {
+  WEBVTT_LOG("Handle event %s", NS_ConvertUTF16toUTF8(type).get());
+
+  const bool setDirty = type.EqualsLiteral("seeked") ||
+                        type.EqualsLiteral("resizecaption") ||
+                        type.EqualsLiteral("resizevideocontrols");
+  const bool updateDisplay = type.EqualsLiteral("controlbarchange") ||
+                             type.EqualsLiteral("resizecaption");
+
+  if (setDirty) {
     for (uint32_t i = 0; i < mTextTracks->Length(); i++) {
       ((*mTextTracks)[i])->SetCuesDirty();
     }
   }
-
-  if (type.EqualsLiteral("controlbarchange")) {
+  if (updateDisplay) {
     UpdateCueDisplay();
   }
 
@@ -574,8 +575,7 @@ class TextTrackListInternal {
 };
 
 void TextTrackManager::DispatchUpdateCueDisplay() {
-  if (!mUpdateCueDisplayDispatched && !IsShutdown() &&
-      mMediaElement->IsCurrentlyPlaying()) {
+  if (!mUpdateCueDisplayDispatched && !IsShutdown()) {
     WEBVTT_LOG("DispatchUpdateCueDisplay");
     nsPIDOMWindowInner* win = mMediaElement->OwnerDoc()->GetInnerWindow();
     if (win) {
@@ -593,8 +593,7 @@ void TextTrackManager::DispatchTimeMarchesOn() {
   // enqueue the current playback position and whether only that changed
   // through its usual monotonic increase during normal playback; current
   // executing call upon completion will check queue for further 'work'.
-  if (!mTimeMarchesOnDispatched && !IsShutdown() &&
-      mMediaElement->IsCurrentlyPlaying()) {
+  if (!mTimeMarchesOnDispatched && !IsShutdown()) {
     WEBVTT_LOG("DispatchTimeMarchesOn");
     nsPIDOMWindowInner* win = mMediaElement->OwnerDoc()->GetInnerWindow();
     if (win) {
@@ -626,21 +625,30 @@ void TextTrackManager::TimeMarchesOn() {
   WEBVTT_LOG("TimeMarchesOn");
 
   // Early return if we don't have any TextTracks or shutting down.
-  if (!mTextTracks || mTextTracks->Length() == 0 || IsShutdown()) {
+  if (!mTextTracks || mTextTracks->Length() == 0 || IsShutdown() ||
+      !mMediaElement) {
     return;
   }
 
+  if (mMediaElement->ReadyState() == HTMLMediaElement_Binding::HAVE_NOTHING) {
+    WEBVTT_LOG(
+        "TimeMarchesOn return because media doesn't contain any data yet");
+    return;
+  }
+
+  if (mMediaElement->Seeking()) {
+    WEBVTT_LOG("TimeMarchesOn return during seeking");
+    return;
+  }
+
+  // Step 1, 2.
   nsISupports* parentObject = mMediaElement->OwnerDoc()->GetParentObject();
   if (NS_WARN_IF(!parentObject)) {
     return;
   }
   nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(parentObject);
-
-  if (mMediaElement &&
-      (!(mMediaElement->GetPlayedOrSeeked()) || mMediaElement->Seeking())) {
-    WEBVTT_LOG("TimeMarchesOn seeking or post return");
-    return;
-  }
+  RefPtr<TextTrackCueList> currentCues = new TextTrackCueList(window);
+  RefPtr<TextTrackCueList> otherCues = new TextTrackCueList(window);
 
   // Step 3.
   auto currentPlaybackTime =
@@ -652,10 +660,6 @@ void TextTrackManager::TimeMarchesOn() {
       "hasNormalPlayback %d",
       mLastTimeMarchesOnCalled.ToSeconds(), currentPlaybackTime.ToSeconds(),
       hasNormalPlayback);
-
-  // Step 1, 2.
-  RefPtr<TextTrackCueList> currentCues = new TextTrackCueList(window);
-  RefPtr<TextTrackCueList> otherCues = new TextTrackCueList(window);
 
   // The reason we collect other cues is (1) to change active cues to inactive,
   // (2) find missing cues, so we actually no need to process all cues. We just
@@ -822,7 +826,7 @@ void TextTrackManager::TimeMarchesOn() {
 void TextTrackManager::NotifyCueUpdated(TextTrackCue* aCue) {
   // TODO: Add/Reorder the cue to mNewCues if we have some optimization?
   WEBVTT_LOG("NotifyCueUpdated, cue=%p", aCue);
-  TimeMarchesOn();
+  MaybeRunTimeMarchesOn();
   // For the case "Texttrack.mode = hidden/showing", if the mode
   // changing between showing and hidden, TimeMarchesOn
   // doesn't render the cue. Call DispatchUpdateCueDisplay() explicitly.
@@ -830,8 +834,14 @@ void TextTrackManager::NotifyCueUpdated(TextTrackCue* aCue) {
 }
 
 void TextTrackManager::NotifyReset() {
+  // https://html.spec.whatwg.org/multipage/media.html#text-track-cue-active-flag
+  // This will unset all cues' active flag and update the cue display.
   WEBVTT_LOG("NotifyReset");
   mLastTimeMarchesOnCalled = media::TimeUnit::Zero();
+  for (uint32_t idx = 0; idx < mTextTracks->Length(); ++idx) {
+    (*mTextTracks)[idx]->SetCuesInactive();
+  }
+  UpdateCueDisplay();
 }
 
 void TextTrackManager::ReportTelemetryForTrack(TextTrack* aTextTrack) const {
@@ -859,6 +869,19 @@ bool TextTrackManager::IsLoaded() {
 
 bool TextTrackManager::IsShutdown() const {
   return (mShutdown || !sParserWrapper);
+}
+
+void TextTrackManager::MaybeRunTimeMarchesOn() {
+  MOZ_ASSERT(mMediaElement);
+  // According to spec, we should check media element's show poster flag before
+  // running `TimeMarchesOn` in following situations, (1) add cue (2) remove cue
+  // (3) cue's start time changes (4) cues's end time changes
+  // https://html.spec.whatwg.org/multipage/media.html#playing-the-media-resource:time-marches-on
+  // https://html.spec.whatwg.org/multipage/media.html#text-track-api:time-marches-on
+  if (mMediaElement->GetShowPosterFlag()) {
+    return;
+  }
+  TimeMarchesOn();
 }
 
 }  // namespace dom

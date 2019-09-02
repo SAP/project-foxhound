@@ -102,6 +102,7 @@ JitContext::JitContext(CompileRuntime* rt, CompileRealm* realm,
       realm_(realm),
 #ifdef DEBUG
       isCompilingWasm_(!realm),
+      oom_(false),
 #endif
       assemblerCount_(0) {
   SetJitContext(this);
@@ -115,6 +116,7 @@ JitContext::JitContext(JSContext* cx, TempAllocator* temp)
       realm_(CompileRealm::get(cx->realm())),
 #ifdef DEBUG
       isCompilingWasm_(false),
+      oom_(false),
 #endif
       assemblerCount_(0) {
   SetJitContext(this);
@@ -162,8 +164,9 @@ JitRuntime::JitRuntime()
       lazyLinkStubOffset_(0),
       interpreterStubOffset_(0),
       doubleToInt32ValueStubOffset_(0),
-      debugTrapHandler_(nullptr),
+      debugTrapHandlers_(),
       baselineDebugModeOSRHandler_(nullptr),
+      baselineInterpreter_(),
       trampolineCode_(nullptr),
       jitcodeGlobalTable_(nullptr),
 #ifdef DEBUG
@@ -198,6 +201,27 @@ bool JitRuntime::initialize(JSContext* cx) {
 
   JitContext jctx(cx, nullptr);
 
+  if (!generateTrampolines(cx)) {
+    return false;
+  }
+
+  if (!generateBaselineICFallbackCode(cx)) {
+    return false;
+  }
+
+  jitcodeGlobalTable_ = cx->new_<JitcodeGlobalTable>();
+  if (!jitcodeGlobalTable_) {
+    return false;
+  }
+
+  if (!GenerateBaselineInterpreter(cx, baselineInterpreter_)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool JitRuntime::generateTrampolines(JSContext* cx) {
   StackMacroAssembler masm;
 
   Label bailoutTail;
@@ -262,9 +286,6 @@ bool JitRuntime::initialize(JSContext* cx) {
   objectGroupPreBarrierOffset_ =
       generatePreBarrier(cx, masm, MIRType::ObjectGroup);
 
-  JitSpew(JitSpew_Codegen, "# Emitting malloc stub");
-  generateMallocStub(masm);
-
   JitSpew(JitSpew_Codegen, "# Emitting free stub");
   generateFreeStub(masm);
 
@@ -303,22 +324,21 @@ bool JitRuntime::initialize(JSContext* cx) {
   vtune::MarkStub(trampolineCode_, "Trampolines");
 #endif
 
-  jitcodeGlobalTable_ = cx->new_<JitcodeGlobalTable>();
-  if (!jitcodeGlobalTable_) {
-    return false;
-  }
-
   return true;
 }
 
-JitCode* JitRuntime::debugTrapHandler(JSContext* cx) {
-  if (!debugTrapHandler_) {
+JitCode* JitRuntime::debugTrapHandler(JSContext* cx,
+                                      DebugTrapHandlerKind kind) {
+  if (!debugTrapHandlers_[kind]) {
     // JitRuntime code stubs are shared across compartments and have to
     // be allocated in the atoms zone.
-    AutoAllocInAtomsZone az(cx);
-    debugTrapHandler_ = generateDebugTrapHandler(cx);
+    mozilla::Maybe<AutoAllocInAtomsZone> az;
+    if (!cx->zone()->isAtomsZone()) {
+      az.emplace(cx);
+    }
+    debugTrapHandlers_[kind] = generateDebugTrapHandler(cx, kind);
   }
-  return debugTrapHandler_;
+  return debugTrapHandlers_[kind];
 }
 
 JitRuntime::IonBuilderList& JitRuntime::ionLazyLinkList(JSRuntime* rt) {
@@ -385,7 +405,7 @@ static T PopNextBitmaskValue(uint32_t* bitmask) {
 void JitRealm::performStubReadBarriers(uint32_t stubsToBarrier) const {
   while (stubsToBarrier) {
     auto stub = PopNextBitmaskValue<StubIndex>(&stubsToBarrier);
-    const ReadBarrieredJitCode& jitCode = stubs_[stub];
+    const WeakHeapPtrJitCode& jitCode = stubs_[stub];
     MOZ_ASSERT(jitCode);
     jitCode.get();
   }
@@ -559,15 +579,7 @@ void JitRealm::sweep(JS::Realm* realm) {
 
   stubCodes_->sweep();
 
-  // If the sweep removed a bailout Fallback stub, nullptr the corresponding
-  // return addr.
-  for (auto& it : bailoutReturnStubInfo_) {
-    if (!stubCodes_->lookup(it.key)) {
-      it = BailoutReturnStubInfo();
-    }
-  }
-
-  for (ReadBarrieredJitCode& stub : stubs_) {
+  for (WeakHeapPtrJitCode& stub : stubs_) {
     if (stub && IsAboutToBeFinalized(&stub)) {
       stub.set(nullptr);
     }
@@ -798,10 +810,11 @@ IonScript* IonScript::New(JSContext* cx, IonCompilationId compilationId,
   size_t paddedRuntimeSize = AlignBytes(runtimeSize, DataAlignment);
   size_t paddedSafepointSize = AlignBytes(safepointsSize, DataAlignment);
 
-  size_t bytes = paddedSnapshotsSize + paddedRecoversSize + paddedBailoutSize +
-                 paddedConstantsSize + paddedSafepointIndicesSize +
-                 paddedOsiIndicesSize + paddedICEntriesSize +
-                 paddedRuntimeSize + paddedSafepointSize;
+  size_t bytes = paddedRuntimeSize + paddedICEntriesSize +
+                 paddedSafepointIndicesSize + paddedSafepointSize +
+                 paddedBailoutSize + paddedOsiIndicesSize +
+                 paddedSnapshotsSize + paddedRecoversSize + paddedConstantsSize;
+
   IonScript* script = cx->pod_malloc_with_extra<IonScript, uint8_t>(bytes);
   if (!script) {
     return nullptr;
@@ -846,6 +859,9 @@ IonScript* IonScript::New(JSContext* cx, IonCompilationId compilationId,
   script->constantTable_ = offsetCursor;
   script->constantEntries_ = constants;
   offsetCursor += paddedConstantsSize;
+
+  script->allocBytes_ = sizeof(IonScript) + bytes;
+  MOZ_ASSERT(offsetCursor == script->allocBytes_);
 
   script->frameSlots_ = frameSlots;
   script->argumentSlots_ = argumentSlots;
@@ -1029,122 +1045,6 @@ void IonScript::purgeICs(Zone* zone) {
 
 namespace js {
 namespace jit {
-
-static void OptimizeSinCos(MIRGraph& graph) {
-  // Now, we are looking for:
-  // var y = sin(x);
-  // var z = cos(x);
-  // Graph before:
-  // - 1 op
-  // - 6 mathfunction op1 Sin
-  // - 7 mathfunction op1 Cos
-  // Graph will look like:
-  // - 1 op
-  // - 5 sincos op1
-  // - 6 mathfunction sincos5 Sin
-  // - 7 mathfunction sincos5 Cos
-  for (MBasicBlockIterator block(graph.begin()); block != graph.end();
-       block++) {
-    for (MInstructionIterator iter(block->begin()), end(block->end());
-         iter != end;) {
-      MInstruction* ins = *iter++;
-      if (!ins->isMathFunction() || ins->isRecoveredOnBailout()) {
-        continue;
-      }
-
-      MMathFunction* insFunc = ins->toMathFunction();
-      if (insFunc->function() != MMathFunction::Sin &&
-          insFunc->function() != MMathFunction::Cos) {
-        continue;
-      }
-
-      // Check if sin/cos is already optimized.
-      if (insFunc->getOperand(0)->type() == MIRType::SinCosDouble) {
-        continue;
-      }
-
-      // insFunc is either a |sin(x)| or |cos(x)| instruction. The
-      // following loop iterates over the uses of |x| to check if both
-      // |sin(x)| and |cos(x)| instructions exist.
-      bool hasSin = false;
-      bool hasCos = false;
-      for (MUseDefIterator uses(insFunc->input()); uses; uses++) {
-        if (!uses.def()->isInstruction()) {
-          continue;
-        }
-
-        // We should replacing the argument of the sin/cos just when it
-        // is dominated by the |block|.
-        if (!block->dominates(uses.def()->block())) {
-          continue;
-        }
-
-        MInstruction* insUse = uses.def()->toInstruction();
-        if (!insUse->isMathFunction() || insUse->isRecoveredOnBailout()) {
-          continue;
-        }
-
-        MMathFunction* mathIns = insUse->toMathFunction();
-        if (!hasSin && mathIns->function() == MMathFunction::Sin) {
-          hasSin = true;
-          JitSpew(JitSpew_Sincos, "Found sin in block %d.",
-                  mathIns->block()->id());
-        } else if (!hasCos && mathIns->function() == MMathFunction::Cos) {
-          hasCos = true;
-          JitSpew(JitSpew_Sincos, "Found cos in block %d.",
-                  mathIns->block()->id());
-        }
-
-        if (hasCos && hasSin) {
-          break;
-        }
-      }
-
-      if (!hasCos || !hasSin) {
-        JitSpew(JitSpew_Sincos, "No sin/cos pair found.");
-        continue;
-      }
-
-      JitSpew(JitSpew_Sincos,
-              "Found, at least, a pair sin/cos. Adding sincos in block %d",
-              block->id());
-      // Adding the MSinCos and replacing the parameters of the
-      // sin(x)/cos(x) to sin(sincos(x))/cos(sincos(x)).
-      MSinCos* insSinCos = MSinCos::New(graph.alloc(), insFunc->input());
-      insSinCos->setImplicitlyUsedUnchecked();
-      block->insertBefore(insFunc, insSinCos);
-      for (MUseDefIterator uses(insFunc->input()); uses;) {
-        MDefinition* def = uses.def();
-        uses++;
-        if (!def->isInstruction()) {
-          continue;
-        }
-
-        // We should replacing the argument of the sin/cos just when it
-        // is dominated by the |block|.
-        if (!block->dominates(def->block())) {
-          continue;
-        }
-
-        MInstruction* insUse = def->toInstruction();
-        if (!insUse->isMathFunction() || insUse->isRecoveredOnBailout()) {
-          continue;
-        }
-
-        MMathFunction* mathIns = insUse->toMathFunction();
-        if (mathIns->function() != MMathFunction::Sin &&
-            mathIns->function() != MMathFunction::Cos) {
-          continue;
-        }
-
-        mathIns->replaceOperand(0, insSinCos);
-        JitSpew(JitSpew_Sincos, "Replacing %s by sincos in block %d",
-                mathIns->function() == MMathFunction::Sin ? "sin" : "cos",
-                mathIns->block()->id());
-      }
-    }
-  }
-}
 
 bool OptimizeMIR(MIRGenerator* mir) {
   MIRGraph& graph = mir->graph();
@@ -1502,17 +1402,6 @@ bool OptimizeMIR(MIRGenerator* mir) {
     AssertExtendedGraphCoherency(graph);
 
     if (mir->shouldCancel("Effective Address Analysis")) {
-      return false;
-    }
-  }
-
-  if (mir->optimizationInfo().sincosEnabled()) {
-    AutoTraceLog log(logger, TraceLogger_Sincos);
-    OptimizeSinCos(graph);
-    gs.spewPass("Sincos optimization");
-    AssertExtendedGraphCoherency(graph);
-
-    if (mir->shouldCancel("Sincos optimization")) {
       return false;
     }
   }
@@ -2152,16 +2041,21 @@ static bool ScriptIsTooLarge(JSContext* cx, JSScript* script) {
     return false;
   }
 
-  uint32_t numLocalsAndArgs = NumLocalsAndArgs(script);
+  size_t numLocalsAndArgs = NumLocalsAndArgs(script);
 
-  if (script->length() > MAX_MAIN_THREAD_SCRIPT_SIZE ||
-      numLocalsAndArgs > MAX_MAIN_THREAD_LOCALS_AND_ARGS) {
-    if (!OffThreadCompilationAvailable(cx)) {
-      JitSpew(JitSpew_IonAbort, "Script too large (%zu bytes) (%u locals/args)",
-              script->length(), numLocalsAndArgs);
-      TrackIonAbort(cx, script, script->code(), "too large");
-      return true;
-    }
+  bool canCompileOffThread = OffThreadCompilationAvailable(cx);
+  size_t maxScriptSize = canCompileOffThread
+                             ? JitOptions.ionMaxScriptSize
+                             : JitOptions.ionMaxScriptSizeMainThread;
+  size_t maxLocalsAndArgs = canCompileOffThread
+                                ? JitOptions.ionMaxLocalsAndArgs
+                                : JitOptions.ionMaxLocalsAndArgsMainThread;
+
+  if (script->length() > maxScriptSize || numLocalsAndArgs > maxLocalsAndArgs) {
+    JitSpew(JitSpew_IonAbort, "Script too large (%zu bytes) (%zu locals/args)",
+            script->length(), numLocalsAndArgs);
+    TrackIonAbort(cx, script, script->code(), "too large");
+    return true;
   }
 
   return false;
@@ -2210,7 +2104,9 @@ static MethodStatus Compile(JSContext* cx, HandleScript script,
   MOZ_ASSERT(jit::IsIonEnabled(cx));
   MOZ_ASSERT(jit::IsBaselineEnabled(cx));
   MOZ_ASSERT_IF(osrPc != nullptr, LoopEntryCanIonOsr(osrPc));
-  AutoGeckoProfilerEntry pseudoFrame(cx, "Ion script compilation");
+  AutoGeckoProfilerEntry pseudoFrame(
+      cx, "Ion script compilation",
+      JS::ProfilingCategoryPair::JS_IonCompilation);
 
   if (!script->hasBaselineScript()) {
     return Method_Skipped;
@@ -2234,7 +2130,7 @@ static MethodStatus Compile(JSContext* cx, HandleScript script,
   }
 
   if (!CanLikelyAllocateMoreExecutableMemory()) {
-    script->resetWarmUpCounter();
+    script->resetWarmUpCounterToDelayIonCompilation();
     return Method_Skipped;
   }
 
@@ -2347,7 +2243,8 @@ MethodStatus jit::CanEnterIon(JSContext* cx, RunState& state) {
   // If --ion-eager is used, compile with Baseline first, so that we
   // can directly enter IonMonkey.
   if (JitOptions.eagerIonCompilation() && !script->hasBaselineScript()) {
-    MethodStatus status = CanEnterBaselineMethod(cx, state);
+    MethodStatus status =
+        CanEnterBaselineMethod<BaselineTier::Compiler>(cx, state);
     if (status != Method_Compiled) {
       return status;
     }
@@ -2494,7 +2391,7 @@ bool jit::IonCompileScriptForBaseline(JSContext* cx, BaselineFrame* frame,
     // TODO: ASSERT that ion-compilation-disabled checker stub doesn't exist.
     // TODO: Clear all optimized stubs.
     // TODO: Add a ion-compilation-disabled checker IC stub
-    script->resetWarmUpCounter();
+    script->resetWarmUpCounterToDelayIonCompilation();
     return true;
   }
 
@@ -2557,7 +2454,7 @@ bool jit::IonCompileScriptForBaseline(JSContext* cx, BaselineFrame* frame,
               "  Reset WarmUpCounter cantCompile=%s bailoutExpected=%s!",
               stat == Method_CantCompile ? "yes" : "no",
               bailoutExpected ? "yes" : "no");
-      script->resetWarmUpCounter();
+      script->resetWarmUpCounterToDelayIonCompilation();
     }
     return true;
   }
@@ -2780,7 +2677,7 @@ static void ClearIonScriptAfterInvalidation(JSContext* cx, JSScript* script,
   // compile, unless we are recompiling *because* a script got hot
   // (resetUses is false).
   if (resetUses) {
-    script->resetWarmUpCounter();
+    script->resetWarmUpCounterToDelayIonCompilation();
   }
 }
 
@@ -3109,11 +3006,19 @@ size_t jit::SizeOfIonData(JSScript* script,
 
 void jit::DestroyJitScripts(FreeOp* fop, JSScript* script) {
   if (script->hasIonScript()) {
-    jit::IonScript::Destroy(fop, script->ionScript());
+    IonScript* ion = script->ionScript();
+    script->clearIonScript();
+    jit::IonScript::Destroy(fop, ion);
   }
 
   if (script->hasBaselineScript()) {
-    jit::BaselineScript::Destroy(fop, script->baselineScript());
+    BaselineScript* baseline = script->baselineScript();
+    script->clearBaselineScript();
+    jit::BaselineScript::Destroy(fop, baseline);
+  }
+
+  if (script->hasJitScript()) {
+    script->releaseJitScript();
   }
 }
 
@@ -3126,8 +3031,8 @@ void jit::TraceJitScripts(JSTracer* trc, JSScript* script) {
     jit::BaselineScript::Trace(trc, script->baselineScript());
   }
 
-  if (script->hasICScript()) {
-    script->icScript()->trace(trc);
+  if (script->hasJitScript()) {
+    script->jitScript()->trace(trc);
   }
 }
 

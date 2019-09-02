@@ -98,6 +98,14 @@ macro_rules! rust_target_base {
             => Stable_1_25 => 1.25;
             /// Rust stable 1.26
             => Stable_1_26 => 1.26;
+            /// Rust stable 1.27
+            => Stable_1_27 => 1.27;
+            /// Rust stable 1.28
+            => Stable_1_28 => 1.28;
+            /// Rust stable 1.30
+            => Stable_1_30 => 1.30;
+            /// Rust stable 1.33
+            => Stable_1_33 => 1.33;
             /// Nightly rust
             => Nightly => nightly;
         );
@@ -108,7 +116,7 @@ rust_target_base!(rust_target_def);
 rust_target_base!(rust_target_values_def);
 
 /// Latest stable release of Rust
-pub const LATEST_STABLE_RUST: RustTarget = RustTarget::Stable_1_21;
+pub const LATEST_STABLE_RUST: RustTarget = RustTarget::Stable_1_33;
 
 /// Create RustFeatures struct definition, new(), and a getter for each field
 macro_rules! rust_feature_def {
@@ -178,9 +186,28 @@ rust_feature_def!(
         /// [i128 / u128 support](https://doc.rust-lang.org/std/primitive.i128.html)
         => i128_and_u128;
     }
+    Stable_1_27 {
+        /// `must_use` attribute on functions ([PR](https://github.com/rust-lang/rust/pull/48925))
+        => must_use_function;
+    }
+    Stable_1_28 {
+        /// repr(transparent) ([PR](https://github.com/rust-lang/rust/pull/51562))
+        => repr_transparent;
+    }
+    Stable_1_30 {
+        /// `const fn` support for limited cases
+        /// ([PR](https://github.com/rust-lang/rust/pull/54835/)
+        => min_const_fn;
+    }
+    Stable_1_33 {
+        /// repr(packed(N)) ([PR](https://github.com/rust-lang/rust/pull/57049))
+        => repr_packed_n;
+    }
     Nightly {
         /// `thiscall` calling convention ([Tracking issue](https://github.com/rust-lang/rust/issues/42202))
         => thiscall_abi;
+        /// `non_exhaustive` enums/structs ([Tracking issue](https://github.com/rust-lang/rust/issues/44109))
+        => non_exhaustive;
     }
 );
 

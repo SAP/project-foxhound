@@ -6,8 +6,9 @@
 
 const { DebuggerServer } = require("devtools/server/main");
 const { DebuggerClient } = require("devtools/shared/client/debugger-client");
-const { remoteClientManager } =
-  require("devtools/client/shared/remote-debugging/remote-client-manager");
+const {
+  remoteClientManager,
+} = require("devtools/client/shared/remote-debugging/remote-client-manager");
 
 /**
  * Construct a Target for a given URL object having various query parameters:
@@ -43,31 +44,67 @@ exports.targetFromURL = async function targetFromURL(url) {
   const params = url.searchParams;
 
   // Clients retrieved from the remote-client-manager are already connected.
-  if (!params.get("remoteId")) {
+  const isCachedClient = params.get("remoteId");
+  if (!isCachedClient) {
     // Connect any other client.
     await client.connect();
   }
 
+  const id = params.get("id");
   const type = params.get("type");
+  const chrome = params.has("chrome");
+
+  try {
+    return await _targetFromURL(client, id, type, chrome);
+  } catch (e) {
+    if (!isCachedClient) {
+      // If the client was not cached, then the client was created here. If the target
+      // creation failed, we should close the client.
+      await client.close();
+    }
+    throw e;
+  }
+};
+
+async function _targetFromURL(client, id, type, chrome) {
   if (!type) {
     throw new Error("targetFromURL, missing type parameter");
   }
-  let id = params.get("id");
 
   let front;
   if (type === "tab") {
     // Fetch target for a remote tab
     id = parseInt(id, 10);
     if (isNaN(id)) {
-      throw new Error(`targetFromURL, wrong tab id '${id}', should be a number`);
+      throw new Error(
+        `targetFromURL, wrong tab id '${id}', should be a number`
+      );
     }
     try {
       front = await client.mainRoot.getTab({ outerWindowID: id });
     } catch (ex) {
       if (ex.startsWith("Protocol error (noTab)")) {
-        throw new Error(`targetFromURL, tab with outerWindowID '${id}' doesn't exist`);
+        throw new Error(
+          `targetFromURL, tab with outerWindowID '${id}' doesn't exist`
+        );
       }
       throw ex;
+    }
+  } else if (type === "extension") {
+    const addonFront = await client.mainRoot.getAddon({ id });
+
+    if (!addonFront) {
+      throw new Error(`targetFromURL, extension with id '${id}' doesn't exist`);
+    }
+
+    front = await addonFront.connect();
+  } else if (type === "worker") {
+    front = await client.mainRoot.getWorker(id);
+
+    if (!front) {
+      throw new Error(
+        `targetFromURL, worker with actor id '${id}' doesn't exist`
+      );
     }
   } else if (type == "process") {
     // Fetch target for a remote chrome actor
@@ -107,13 +144,12 @@ exports.targetFromURL = async function targetFromURL(url) {
 
   // Allows to spawn a chrome enabled target for any context
   // (handy to debug chrome stuff in a content process)
-  const chrome = params.has("chrome");
   if (chrome) {
     front.forceChrome();
   }
 
   return front;
-};
+}
 
 /**
  * Create a DebuggerClient for a given URL object having various query parameters:

@@ -118,7 +118,7 @@ class TextureReadbackSink {
   virtual void ProcessReadback(gfx::DataSourceSurface* aSourceSurface) = 0;
 
  protected:
-  virtual ~TextureReadbackSink() {}
+  virtual ~TextureReadbackSink() = default;
 };
 
 enum class BackendSelector { Content, Canvas };
@@ -182,7 +182,7 @@ class NonBlockingTextureReadLock;
 // once.
 class TextureReadLock {
  protected:
-  virtual ~TextureReadLock() {}
+  virtual ~TextureReadLock() = default;
 
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TextureReadLock)
@@ -217,9 +217,7 @@ class NonBlockingTextureReadLock : public TextureReadLock {
 
   static already_AddRefed<TextureReadLock> Create(LayersIPCChannel* aAllocator);
 
-  virtual NonBlockingTextureReadLock* AsNonBlockingLock() override {
-    return this;
-  }
+  NonBlockingTextureReadLock* AsNonBlockingLock() override { return this; }
 };
 
 #ifdef XP_WIN
@@ -247,7 +245,14 @@ class TextureData {
           canConcurrentlyReadLock(true) {}
   };
 
-  TextureData() { MOZ_COUNT_CTOR(TextureData); }
+  static TextureData* Create(TextureForwarder* aAllocator,
+                             gfx::SurfaceFormat aFormat, gfx::IntSize aSize,
+                             LayersBackend aLayersBackend,
+                             int32_t aMaxTextureSize, BackendSelector aSelector,
+                             TextureFlags aTextureFlags,
+                             TextureAllocationFlags aAllocFlags);
+
+  static bool IsRemote(LayersBackend aLayersBackend, BackendSelector aSelector);
 
   virtual ~TextureData() { MOZ_COUNT_DTOR(TextureData); }
 
@@ -258,6 +263,10 @@ class TextureData {
   virtual void Unlock() = 0;
 
   virtual already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() {
+    return nullptr;
+  }
+
+  virtual already_AddRefed<gfx::SourceSurface> BorrowSnapshot() {
     return nullptr;
   }
 
@@ -302,6 +311,9 @@ class TextureData {
   virtual BufferTextureData* AsBufferTextureData() { return nullptr; }
 
   virtual GPUVideoTextureData* AsGPUVideoTextureData() { return nullptr; }
+
+ protected:
+  TextureData() { MOZ_COUNT_CTOR(TextureData); }
 };
 
 /**
@@ -329,8 +341,8 @@ class TextureData {
  */
 class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
  public:
-  explicit TextureClient(TextureData* aData, TextureFlags aFlags,
-                         LayersIPCChannel* aAllocator);
+  TextureClient(TextureData* aData, TextureFlags aFlags,
+                LayersIPCChannel* aAllocator);
 
   virtual ~TextureClient();
 
@@ -352,7 +364,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
   static already_AddRefed<TextureClient> CreateForYCbCr(
       KnowsCompositor* aAllocator, gfx::IntSize aYSize, uint32_t aYStride,
       gfx::IntSize aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
-      gfx::ColorDepth aColorDepth, YUVColorSpace aYUVColorSpace,
+      gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
       TextureFlags aTextureFlags);
 
   // Creates and allocates a TextureClient (can be accessed through raw
@@ -431,6 +443,8 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
    *
    */
   gfx::DrawTarget* BorrowDrawTarget();
+
+  already_AddRefed<gfx::SourceSurface> BorrowSnapshot();
 
   /**
    * Similar to BorrowDrawTarget but provides direct access to the texture's
@@ -542,7 +556,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
    * Should be called only once per TextureClient.
    * The TextureClient must not be locked when calling this method.
    */
-  bool InitIPDLActor(KnowsCompositor* aForwarder);
+  bool InitIPDLActor(KnowsCompositor* aKnowsCompositor);
 
   /**
    * Return a pointer to the IPDLActor.
@@ -598,7 +612,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
   uint64_t GetSerial() const { return mSerial; }
   void GPUVideoDesc(SurfaceDescriptorGPUVideo* aOutDesc);
 
-  void CancelWaitForRecycle();
+  void CancelWaitForNotifyNotUsed();
 
   /**
    * Set last transaction id of CompositableForwarder.
@@ -876,7 +890,7 @@ class MOZ_RAII DualTextureClientAutoLock {
 
 class KeepAlive {
  public:
-  virtual ~KeepAlive() {}
+  virtual ~KeepAlive() = default;
 };
 
 template <typename T>

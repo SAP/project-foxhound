@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -21,7 +19,7 @@ const gReferenceTimeMs = new Date("2000-01-01T00:00:00").getTime();
 // Returns a milliseconds value to use with nsILoginMetaInfo properties, falling
 // approximately in the middle of the specified number of days before the
 // reference time, where zero days indicates a time within the past 24 hours.
-var daysBeforeMs = days => gReferenceTimeMs - (days + 0.5) * MS_PER_DAY;
+const daysBeforeMs = days => gReferenceTimeMs - (days + 0.5) * MS_PER_DAY;
 
 /**
  * Contains metadata that will be attached to test logins in order to verify
@@ -40,7 +38,7 @@ const StatisticsTestData = [
   },
   {
     timeLastUsed: daysBeforeMs(7),
-    formSubmitURL: null,
+    formActionOrigin: null,
     httpRealm: "The HTTP Realm",
   },
   {
@@ -96,8 +94,10 @@ function testHistogram(histogramId, expectedNonZeroRanges) {
 
   // These are stringified to visualize the differences between the values.
   info("Testing histogram: " + histogramId);
-  Assert.equal(JSON.stringify(actualNonZeroRanges),
-               JSON.stringify(expectedNonZeroRanges));
+  Assert.equal(
+    JSON.stringify(actualNonZeroRanges),
+    JSON.stringify(expectedNonZeroRanges)
+  );
 }
 
 // Tests
@@ -115,7 +115,7 @@ add_task(function test_initialize() {
 
   let uniqueNumber = 1;
   for (let loginModifications of StatisticsTestData) {
-    loginModifications.hostname = `http://${uniqueNumber++}.example.com`;
+    loginModifications.origin = `http://${uniqueNumber++}.example.com`;
     Services.logins.addLogin(TestData.formLogin(loginModifications));
   }
 });
@@ -130,22 +130,25 @@ add_task(function test_logins_statistics() {
     triggerStatisticsCollection();
 
     // Should record 1 in the bucket corresponding to the number of passwords.
-    testHistogram("PWMGR_NUM_SAVED_PASSWORDS",
-                  { 10: 1 });
+    testHistogram("PWMGR_NUM_SAVED_PASSWORDS", { 10: 1 });
 
     // Should record 1 in the bucket corresponding to the number of passwords.
-    testHistogram("PWMGR_NUM_HTTPAUTH_PASSWORDS",
-                  { 1: 1 });
+    testHistogram("PWMGR_NUM_HTTPAUTH_PASSWORDS", { 1: 1 });
 
     // For each saved login, should record 1 in the bucket corresponding to the
     // age in days since the login was last used.
-    testHistogram("PWMGR_LOGIN_LAST_USED_DAYS",
-                  { 0: 1, 1: 1, 7: 2, 29: 2, 356: 2, 750: 1 });
+    testHistogram("PWMGR_LOGIN_LAST_USED_DAYS", {
+      0: 1,
+      1: 1,
+      7: 2,
+      29: 2,
+      356: 2,
+      750: 1,
+    });
 
     // Should record the number of logins without a username in bucket 0, and
     // the number of logins with a username in bucket 1.
-    testHistogram("PWMGR_USERNAME_PRESENT",
-                  { 0: 4, 1: 6 });
+    testHistogram("PWMGR_USERNAME_PRESENT", { 0: 4, 1: 6 });
   }
 });
 

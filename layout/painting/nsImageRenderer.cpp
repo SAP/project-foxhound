@@ -38,15 +38,11 @@ nsSize CSSSizeOrRatio::ComputeConcreteSize() const {
     return nsSize(mWidth, mHeight);
   }
   if (mHasWidth) {
-    nscoord height = NSCoordSaturatingNonnegativeMultiply(
-        mWidth, double(mRatio.height) / mRatio.width);
-    return nsSize(mWidth, height);
+    return nsSize(mWidth, mRatio.Inverted().ApplyTo(mWidth));
   }
 
   MOZ_ASSERT(mHasHeight);
-  nscoord width = NSCoordSaturatingNonnegativeMultiply(
-      mHeight, double(mRatio.width) / mRatio.height);
-  return nsSize(width, mHeight);
+  return nsSize(mRatio.ApplyTo(mHeight), mHeight);
 }
 
 nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame,
@@ -101,7 +97,10 @@ static bool ShouldTreatAsCompleteDueToSyncDecode(const nsStyleImage* aImage,
 }
 
 bool nsImageRenderer::PrepareImage() {
-  if (mImage->IsEmpty()) {
+  if (mImage->IsEmpty() ||
+      (mType == eStyleImageType_Image && !mImage->GetImageData())) {
+    // mImage->GetImageData() could be null here if the nsStyleImage refused
+    // to load a same-document URL.
     mPrepareResult = ImgDrawResult::BAD_IMAGE;
     return false;
   }
@@ -109,6 +108,14 @@ bool nsImageRenderer::PrepareImage() {
   if (!mImage->IsComplete()) {
     // Make sure the image is actually decoding.
     bool frameComplete = mImage->StartDecoding();
+
+    // Boost the loading priority since we know we want to draw the image.
+    if ((mFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) &&
+        mType == eStyleImageType_Image) {
+      MOZ_ASSERT(mImage->GetImageData(),
+                 "must have image data, since we checked above");
+      mImage->GetImageData()->BoostPriority(imgIRequest::CATEGORY_DISPLAY);
+    }
 
     // Check again to see if we finished.
     // We cannot prepare the image for rendering if it is not fully loaded.
@@ -124,7 +131,7 @@ bool nsImageRenderer::PrepareImage() {
   switch (mType) {
     case eStyleImageType_Image: {
       MOZ_ASSERT(mImage->GetImageData(),
-                 "must have image data, since we checked IsEmpty above");
+                 "must have image data, since we checked above");
       nsCOMPtr<imgIContainer> srcImage;
       DebugOnly<nsresult> rv =
           mImage->GetImageData()->GetImage(getter_AddRefs(srcImage));
@@ -157,7 +164,7 @@ bool nsImageRenderer::PrepareImage() {
       break;
     }
     case eStyleImageType_Gradient:
-      mGradientData = mImage->GetGradientData();
+      mGradientData = &mImage->GetGradient();
       mPrepareResult = ImgDrawResult::SUCCESS;
       break;
     case eStyleImageType_Element: {
@@ -217,15 +224,12 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
 
       // If we know the aspect ratio and one of the dimensions,
       // we can compute the other missing width or height.
-      if (!haveHeight && haveWidth && result.mRatio.width != 0) {
-        nscoord intrinsicHeight = NSCoordSaturatingNonnegativeMultiply(
-            imageIntSize.width,
-            float(result.mRatio.height) / float(result.mRatio.width));
+      if (!haveHeight && haveWidth && result.mRatio) {
+        nscoord intrinsicHeight =
+            result.mRatio.Inverted().ApplyTo(imageIntSize.width);
         result.SetHeight(nsPresContext::CSSPixelsToAppUnits(intrinsicHeight));
-      } else if (haveHeight && !haveWidth && result.mRatio.height != 0) {
-        nscoord intrinsicWidth = NSCoordSaturatingNonnegativeMultiply(
-            imageIntSize.height,
-            float(result.mRatio.width) / float(result.mRatio.height));
+      } else if (haveHeight && !haveWidth && result.mRatio) {
+        nscoord intrinsicWidth = result.mRatio.ApplyTo(imageIntSize.height);
         result.SetWidth(nsPresContext::CSSPixelsToAppUnits(intrinsicWidth));
       }
 
@@ -306,9 +310,7 @@ nsSize nsImageRenderer::ComputeConcreteSize(
   if (aSpecifiedSize.mHasWidth) {
     nscoord height;
     if (aIntrinsicSize.HasRatio()) {
-      height = NSCoordSaturatingNonnegativeMultiply(
-          aSpecifiedSize.mWidth,
-          double(aIntrinsicSize.mRatio.height) / aIntrinsicSize.mRatio.width);
+      height = aIntrinsicSize.mRatio.Inverted().ApplyTo(aSpecifiedSize.mWidth);
     } else if (aIntrinsicSize.mHasHeight) {
       height = aIntrinsicSize.mHeight;
     } else {
@@ -320,9 +322,7 @@ nsSize nsImageRenderer::ComputeConcreteSize(
   MOZ_ASSERT(aSpecifiedSize.mHasHeight);
   nscoord width;
   if (aIntrinsicSize.HasRatio()) {
-    width = NSCoordSaturatingNonnegativeMultiply(
-        aSpecifiedSize.mHeight,
-        double(aIntrinsicSize.mRatio.width) / aIntrinsicSize.mRatio.height);
+    width = aIntrinsicSize.mRatio.ApplyTo(aSpecifiedSize.mHeight);
   } else if (aIntrinsicSize.mHasWidth) {
     width = aIntrinsicSize.mWidth;
   } else {
@@ -332,20 +332,53 @@ nsSize nsImageRenderer::ComputeConcreteSize(
 }
 
 /* static */
-nsSize nsImageRenderer::ComputeConstrainedSize(const nsSize& aConstrainingSize,
-                                               const nsSize& aIntrinsicRatio,
-                                               FitType aFitType) {
-  if (aIntrinsicRatio.width <= 0 && aIntrinsicRatio.height <= 0) {
+nsSize nsImageRenderer::ComputeConstrainedSize(
+    const nsSize& aConstrainingSize, const AspectRatio& aIntrinsicRatio,
+    FitType aFitType) {
+  if (!aIntrinsicRatio) {
     return aConstrainingSize;
   }
 
-  float scaleX = double(aConstrainingSize.width) / aIntrinsicRatio.width;
-  float scaleY = double(aConstrainingSize.height) / aIntrinsicRatio.height;
+  // Suppose we're doing a "contain" fit. If the image's aspect ratio has a
+  // "fatter" shape than the constraint area, then we need to use the
+  // constraint area's full width, and we need to use the aspect ratio to
+  // produce a height. On the other hand, if the aspect ratio is "skinnier", we
+  // use the constraint area's full height, and we use the aspect ratio to
+  // produce a width. (If instead we're doing a "cover" fit, then it can easily
+  // be seen that we should do precisely the opposite.)
+  //
+  // We check if the image's aspect ratio is "fatter" than the constraint area
+  // by simply applying the aspect ratio to the constraint area's height, to
+  // produce a "hypothetical width", and we check whether that
+  // aspect-ratio-provided "hypothetical width" is wider than the constraint
+  // area's actual width. If it is, then the aspect ratio is fatter than the
+  // constraint area.
+  //
+  // This is equivalent to the more descriptive alternative:
+  //
+  //   AspectRatio::FromSize(aConstrainingSize) < aIntrinsicRatio
+  //
+  // But gracefully handling the case where one of the two dimensions from
+  // aConstrainingSize is zero. This is easy to prove since:
+  //
+  //   aConstrainingSize.width / aConstrainingSize.height < aIntrinsicRatio
+  //
+  // Is trivially equivalent to:
+  //
+  //   aIntrinsicRatio.width < aIntrinsicRatio * aConstrainingSize.height
+  //
+  // For the cases where height is not zero.
+  //
+  // We use float math here to avoid losing precision for very large backgrounds
+  // since we use saturating nscoord math otherwise.
+  const float constraintWidth = float(aConstrainingSize.width);
+  const float hypotheticalWidth =
+      aIntrinsicRatio.ApplyToFloat(aConstrainingSize.height);
+
   nsSize size;
-  if ((aFitType == CONTAIN) == (scaleX < scaleY)) {
+  if ((aFitType == CONTAIN) == (constraintWidth < hypotheticalWidth)) {
     size.width = aConstrainingSize.width;
-    size.height =
-        NSCoordSaturatingNonnegativeMultiply(aIntrinsicRatio.height, scaleX);
+    size.height = aIntrinsicRatio.Inverted().ApplyTo(aConstrainingSize.width);
     // If we're reducing the size by less than one css pixel, then just use the
     // constraining size.
     if (aFitType == CONTAIN &&
@@ -353,13 +386,12 @@ nsSize nsImageRenderer::ComputeConstrainedSize(const nsSize& aConstrainingSize,
       size.height = aConstrainingSize.height;
     }
   } else {
-    size.width =
-        NSCoordSaturatingNonnegativeMultiply(aIntrinsicRatio.width, scaleY);
+    size.height = aConstrainingSize.height;
+    size.width = aIntrinsicRatio.ApplyTo(aConstrainingSize.height);
     if (aFitType == CONTAIN &&
         aConstrainingSize.width - size.width < AppUnitsPerCSSPixel()) {
       size.width = aConstrainingSize.width;
     }
-    size.height = aConstrainingSize.height;
   }
   return size;
 }
@@ -456,17 +488,15 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
 
   switch (mType) {
     case eStyleImageType_Image: {
-      CSSIntSize imageSize(nsPresContext::AppUnitsToIntCSSPixels(mSize.width),
-                           nsPresContext::AppUnitsToIntCSSPixels(mSize.height));
       result = nsLayoutUtils::DrawBackgroundImage(
-          *ctx, mForFrame, aPresContext, mImageContainer, imageSize,
-          samplingFilter, aDest, aFill, aRepeatSize, aAnchor, aDirtyRect,
+          *ctx, mForFrame, aPresContext, mImageContainer, samplingFilter, aDest,
+          aFill, aRepeatSize, aAnchor, aDirtyRect,
           ConvertImageRendererToDrawFlags(mFlags), mExtendMode, aOpacity);
       break;
     }
     case eStyleImageType_Gradient: {
       nsCSSGradientRenderer renderer = nsCSSGradientRenderer::Create(
-          aPresContext, mForFrame->Style(), mGradientData, mSize);
+          aPresContext, mForFrame->Style(), *mGradientData, mSize);
 
       renderer.Paint(*ctx, aDest, aFill, aRepeatSize, aSrc, aDirtyRect,
                      aOpacity);
@@ -545,7 +575,7 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
   switch (mType) {
     case eStyleImageType_Gradient: {
       nsCSSGradientRenderer renderer = nsCSSGradientRenderer::Create(
-          aPresContext, mForFrame->Style(), mGradientData, mSize);
+          aPresContext, mForFrame->Style(), *mGradientData, mSize);
 
       renderer.BuildWebRenderDisplayItems(aBuilder, aSc, aDest, aFill,
                                           aRepeatSize, aSrc,
@@ -561,9 +591,12 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
         containerFlags |= imgIContainer::FLAG_SYNC_DECODE;
       }
 
-      CSSIntSize imageSize(nsPresContext::AppUnitsToIntCSSPixels(mSize.width),
-                           nsPresContext::AppUnitsToIntCSSPixels(mSize.height));
-      Maybe<SVGImageContext> svgContext(Some(SVGImageContext(Some(imageSize))));
+      CSSIntSize destCSSSize{
+          nsPresContext::AppUnitsToIntCSSPixels(aDest.width),
+          nsPresContext::AppUnitsToIntCSSPixels(aDest.height)};
+
+      Maybe<SVGImageContext> svgContext(
+          Some(SVGImageContext(Some(destCSSSize))));
 
       const int32_t appUnitsPerDevPixel =
           mForFrame->PresContext()->AppUnitsPerDevPixel();
@@ -912,12 +945,11 @@ ImgDrawResult nsImageRenderer::DrawBorderImageComponent(
     nsSize repeatSize;
     nsRect fillRect(aFill);
     nsRect tile = ComputeTile(fillRect, aHFill, aVFill, aUnitSize, repeatSize);
-    CSSIntSize imageSize(srcRect.width, srcRect.height);
 
     ImgDrawResult result = nsLayoutUtils::DrawBackgroundImage(
-        aRenderingContext, mForFrame, aPresContext, subImage, imageSize,
-        samplingFilter, tile, fillRect, repeatSize, tile.TopLeft(), aDirtyRect,
-        drawFlags, ExtendMode::CLAMP, 1.0);
+        aRenderingContext, mForFrame, aPresContext, subImage, samplingFilter,
+        tile, fillRect, repeatSize, tile.TopLeft(), aDirtyRect, drawFlags,
+        ExtendMode::CLAMP, 1.0);
 
     if (!mImage->IsComplete()) {
       result &= ImgDrawResult::SUCCESS_NOT_COMPLETE;
@@ -980,7 +1012,7 @@ ImgDrawResult nsImageRenderer::DrawShapeImage(nsPresContext* aPresContext,
 
     case eStyleImageType_Gradient: {
       nsCSSGradientRenderer renderer = nsCSSGradientRenderer::Create(
-          aPresContext, mForFrame->Style(), mGradientData, mSize);
+          aPresContext, mForFrame->Style(), *mGradientData, mSize);
       nsRect dest(nsPoint(0, 0), mSize);
 
       renderer.Paint(aRenderingContext, dest, dest, mSize,
@@ -1036,9 +1068,4 @@ void nsImageRenderer::PurgeCacheForViewportChange(
       mImageContainer->GetType() == imgIContainer::TYPE_VECTOR) {
     mImage->PurgeCacheForViewportChange(aSVGViewportSize, aHasIntrinsicRatio);
   }
-}
-
-already_AddRefed<nsStyleGradient> nsImageRenderer::GetGradientData() {
-  RefPtr<nsStyleGradient> res = mGradientData;
-  return res.forget();
 }

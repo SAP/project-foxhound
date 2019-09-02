@@ -662,9 +662,6 @@ static void CreateHeaderBar() {
 }
 
 static GtkWidget* CreateWidget(WidgetNodeType aAppearance) {
-  MOZ_ASSERT(aAppearance != MOZ_GTK_DROPDOWN_ENTRY,
-             "Callers should be passing MOZ_GTK_ENTRY");
-
   switch (aAppearance) {
     case MOZ_GTK_WINDOW:
       return CreateWindowWidget();
@@ -707,6 +704,7 @@ static GtkWidget* CreateWidget(WidgetNodeType aAppearance) {
     case MOZ_GTK_BUTTON_ARROW:
       return CreateButtonArrowWidget();
     case MOZ_GTK_ENTRY:
+    case MOZ_GTK_DROPDOWN_ENTRY:
       return CreateEntryWidget();
     case MOZ_GTK_SCROLLED_WINDOW:
       return CreateScrolledWindowWidget();
@@ -1346,18 +1344,15 @@ void ResetWidgetCache(void) {
   mozilla::PodArrayZero(sWidgetStorage);
 }
 
-GtkStyleContext* GetStyleContext(WidgetNodeType aNodeType,
+GtkStyleContext* GetStyleContext(WidgetNodeType aNodeType, int aScale,
                                  GtkTextDirection aDirection,
-                                 GtkStateFlags aStateFlags, StyleFlags aFlags) {
-  if (aNodeType == MOZ_GTK_DROPDOWN_ENTRY) {
-    aNodeType = MOZ_GTK_ENTRY;
-  }
-
+                                 GtkStateFlags aStateFlags) {
   GtkStyleContext* style;
   if (gtk_check_version(3, 20, 0) != nullptr) {
     style = GetWidgetStyleInternal(aNodeType);
   } else {
     style = GetCssNodeStyleInternal(aNodeType);
+    StyleContextSetScale(style, aScale);
   }
   bool stateChanged = false;
   bool stateHasDirection = gtk_get_minor_version() >= 8;
@@ -1408,9 +1403,11 @@ GtkStyleContext* GetStyleContext(WidgetNodeType aNodeType,
 }
 
 GtkStyleContext* CreateStyleContextWithStates(WidgetNodeType aNodeType,
+                                              int aScale,
                                               GtkTextDirection aDirection,
                                               GtkStateFlags aStateFlags) {
-  GtkStyleContext* style = GetStyleContext(aNodeType, aDirection, aStateFlags);
+  GtkStyleContext* style =
+      GetStyleContext(aNodeType, aScale, aDirection, aStateFlags);
   GtkWidgetPath* path = gtk_widget_path_copy(gtk_style_context_get_path(style));
 
   if (gtk_check_version(3, 14, 0) == nullptr) {
@@ -1433,4 +1430,12 @@ GtkStyleContext* CreateStyleContextWithStates(WidgetNodeType aNodeType,
   gtk_widget_path_unref(path);
 
   return style;
+}
+
+void StyleContextSetScale(GtkStyleContext* style, gint aScaleFactor) {
+  // Support HiDPI styles on Gtk 3.20+
+  static auto sGtkStyleContextSetScalePtr =
+      (void (*)(GtkStyleContext*, gint))dlsym(RTLD_DEFAULT,
+                                              "gtk_style_context_set_scale");
+  sGtkStyleContextSetScalePtr(style, aScaleFactor);
 }

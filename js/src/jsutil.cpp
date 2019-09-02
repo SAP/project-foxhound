@@ -79,14 +79,33 @@ void FailureSimulator::reset() {
 }  // namespace js
 #endif  // defined(DEBUG) || defined(JS_OOM_BREAKPOINT)
 
+#if defined(FUZZING)
+namespace js {
+namespace oom {
+JS_PUBLIC_DATA size_t largeAllocLimit = 0;
+void InitLargeAllocLimit() {
+  char* limitStr = getenv("MOZ_FUZZ_LARGE_ALLOC_LIMIT");
+  if (limitStr) {
+    largeAllocLimit = atoll(limitStr);
+  }
+}
+}  // namespace oom
+}  // namespace js
+#endif
+
 bool js::gDisablePoisoning = false;
 
 JS_PUBLIC_DATA arena_id_t js::MallocArena;
 JS_PUBLIC_DATA arena_id_t js::ArrayBufferContentsArena;
+JS_PUBLIC_DATA arena_id_t js::StringBufferArena;
 
 void js::InitMallocAllocator() {
   MallocArena = moz_create_arena();
-  ArrayBufferContentsArena = moz_create_arena();
+
+  arena_params_t params;
+  params.mFlags |= ARENA_FLAG_RANDOMIZE_SMALL;
+  ArrayBufferContentsArena = moz_create_arena_with_params(&params);
+  StringBufferArena = moz_create_arena_with_params(&params);
 }
 
 void js::ShutDownMallocAllocator() {
@@ -94,6 +113,22 @@ void js::ShutDownMallocAllocator() {
   // moz_dispose_arena(MallocArena);
   // moz_dispose_arena(ArrayBufferContentsArena);
 }
+
+#ifdef MOZ_DEBUG
+extern void js::AssertJSStringBufferInCorrectArena(const void* ptr) {
+//  `jemalloc_ptr_info()` only exists if MOZ_MEMORY is defined, and it only
+//  returns an arenaId if MOZ_DEBUG is defined. Otherwise, this function is
+//  a no-op.
+#  if defined(MOZ_MEMORY) && defined(MOZ_DEBUG)
+  if (ptr) {
+    jemalloc_ptr_info_t ptrInfo{};
+    jemalloc_ptr_info(ptr, &ptrInfo);
+    MOZ_ASSERT(ptrInfo.tag != TagUnknown);
+    MOZ_ASSERT(ptrInfo.arenaId == js::StringBufferArena);
+  }
+#  endif
+}
+#endif
 
 JS_PUBLIC_API void JS_Assert(const char* s, const char* file, int ln) {
   MOZ_ReportAssertionFailure(s, file, ln);

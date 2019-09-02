@@ -16,20 +16,19 @@ namespace dom {
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(AudioWorkletNode, AudioNode)
 
 AudioWorkletNode::AudioWorkletNode(AudioContext* aAudioContext,
-                                   const nsAString& aName)
+                                   const nsAString& aName,
+                                   const AudioWorkletNodeOptions& aOptions)
     : AudioNode(aAudioContext, 2, ChannelCountMode::Max,
                 ChannelInterpretation::Speakers),
-      mNodeName(aName) {}
+      mNodeName(aName),
+      mInputCount(aOptions.mNumberOfInputs),
+      mOutputCount(aOptions.mNumberOfOutputs) {}
 
 /* static */
 already_AddRefed<AudioWorkletNode> AudioWorkletNode::Constructor(
     const GlobalObject& aGlobal, AudioContext& aAudioContext,
     const nsAString& aName, const AudioWorkletNodeOptions& aOptions,
     ErrorResult& aRv) {
-  if (aAudioContext.CheckClosed(aRv)) {
-    return nullptr;
-  }
-
   if (aOptions.mNumberOfInputs == 0 && aOptions.mNumberOfOutputs == 0) {
     aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return nullptr;
@@ -61,8 +60,20 @@ already_AddRefed<AudioWorkletNode> AudioWorkletNode::Constructor(
     return nullptr;
   }
 
+  // MSG does not support more than UINT16_MAX inputs or outputs.
+  if (aOptions.mNumberOfInputs > UINT16_MAX) {
+    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>(
+        NS_LITERAL_STRING("numberOfInputs"));
+    return nullptr;
+  }
+  if (aOptions.mNumberOfOutputs > UINT16_MAX) {
+    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>(
+        NS_LITERAL_STRING("numberOfOutputs"));
+    return nullptr;
+  }
+
   RefPtr<AudioWorkletNode> audioWorkletNode =
-      new AudioWorkletNode(&aAudioContext, aName);
+      new AudioWorkletNode(&aAudioContext, aName, aOptions);
 
   audioWorkletNode->Initialize(aOptions, aRv);
   if (NS_WARN_IF(aRv.Failed())) {

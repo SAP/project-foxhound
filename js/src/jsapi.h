@@ -18,16 +18,13 @@
 #include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
 
-#include "Taint.h"
-// Taintfox: lots of things missing in merge
-// SourceBufferHolder class, where are you? => SourceText
-
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include "jspubtd.h"
+#include "Taint.h"
 
 #include "js/AllocPolicy.h"
 #include "js/CallArgs.h"
@@ -38,10 +35,13 @@
 #include "js/GCVector.h"
 #include "js/HashTable.h"
 #include "js/Id.h"
+#include "js/MemoryFunctions.h"
 #include "js/OffThreadScriptCompilation.h"
 #include "js/Principals.h"
 #include "js/PropertyDescriptor.h"
+#include "js/PropertySpec.h"
 #include "js/Realm.h"
+#include "js/RealmOptions.h"
 #include "js/RefCounted.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
@@ -73,8 +73,6 @@ class MOZ_RAII AutoValueArray : public AutoGCRooter {
  public:
   explicit AutoValueArray(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : AutoGCRooter(cx, AutoGCRooter::Tag::ValueArray), length_(N) {
-    /* Always initialize in case we GC before assignment. */
-    mozilla::PodArrayZero(elements_);
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
@@ -134,7 +132,7 @@ class HandleValueArray {
   explicit HandleValueArray(HandleValue value)
       : length_(1), elements_(value.address()) {}
 
-  MOZ_IMPLICIT HandleValueArray(const AutoValueVector& values)
+  MOZ_IMPLICIT HandleValueArray(const RootedValueVector& values)
       : length_(values.length()), elements_(values.begin()) {}
 
   template <size_t N>
@@ -254,12 +252,6 @@ JS_PUBLIC_API bool JS_StringHasBeenPinned(JSContext* cx, JSString* str);
 extern JS_PUBLIC_API int64_t JS_Now(void);
 
 /** Don't want to export data, so provide accessors for non-inline Values. */
-extern JS_PUBLIC_API JS::Value JS_GetNaNValue(JSContext* cx);
-
-extern JS_PUBLIC_API JS::Value JS_GetNegativeInfinityValue(JSContext* cx);
-
-extern JS_PUBLIC_API JS::Value JS_GetPositiveInfinityValue(JSContext* cx);
-
 extern JS_PUBLIC_API JS::Value JS_GetEmptyStringValue(JSContext* cx);
 
 extern JS_PUBLIC_API JSString* JS_GetEmptyString(JSContext* cx);
@@ -403,6 +395,12 @@ JS_PUBLIC_API bool InitSelfHostedCode(JSContext* cx);
 JS_PUBLIC_API void AssertObjectBelongsToCurrentThread(JSObject* obj);
 
 } /* namespace JS */
+
+/**
+ * Set callback to send tasks to XPCOM thread pools
+ */
+JS_PUBLIC_API void SetHelperThreadTaskCallback(
+    void (*callback)(js::RunnableTask*));
 
 extern JS_PUBLIC_API const char* JS_GetImplementationVersion(void);
 
@@ -655,7 +653,7 @@ extern JS_PUBLIC_API bool JS_EnumerateStandardClasses(JSContext* cx,
  * already-defined properties anyway.
  */
 extern JS_PUBLIC_API bool JS_NewEnumerateStandardClasses(
-    JSContext* cx, JS::HandleObject obj, JS::AutoIdVector& properties,
+    JSContext* cx, JS::HandleObject obj, JS::MutableHandleIdVector properties,
     bool enumerableOnly);
 
 /**
@@ -664,7 +662,7 @@ extern JS_PUBLIC_API bool JS_NewEnumerateStandardClasses(
  * without touching the global itself.
  */
 extern JS_PUBLIC_API bool JS_NewEnumerateStandardClassesIncludingResolved(
-    JSContext* cx, JS::HandleObject obj, JS::AutoIdVector& properties,
+    JSContext* cx, JS::HandleObject obj, JS::MutableHandleIdVector properties,
     bool enumerableOnly);
 
 extern JS_PUBLIC_API bool JS_GetClassObject(JSContext* cx, JSProtoKey key,
@@ -921,6 +919,9 @@ extern JS_PUBLIC_API void* JS_GetPrivate(JSObject* obj);
 
 extern JS_PUBLIC_API void JS_SetPrivate(JSObject* obj, void* data);
 
+extern JS_PUBLIC_API void JS_InitPrivate(JSObject* obj, void* data,
+                                         size_t nbytes, JS::MemoryUse use);
+
 extern JS_PUBLIC_API void* JS_GetInstancePrivate(JSContext* cx,
                                                  JS::Handle<JSObject*> obj,
                                                  const JSClass* clasp,
@@ -930,275 +931,6 @@ extern JS_PUBLIC_API JSObject* JS_GetConstructor(JSContext* cx,
                                                  JS::Handle<JSObject*> proto);
 
 namespace JS {
-
-// Specification for which compartment/zone a newly created realm should use.
-enum class CompartmentSpecifier {
-  // Create a new realm and compartment in the single runtime wide system
-  // zone. The meaning of this zone is left to the embedder.
-  NewCompartmentInSystemZone,
-
-  // Create a new realm and compartment in a particular existing zone.
-  NewCompartmentInExistingZone,
-
-  // Create a new zone/compartment.
-  NewCompartmentAndZone,
-
-  // Create a new realm in an existing compartment.
-  ExistingCompartment,
-};
-
-/**
- * RealmCreationOptions specifies options relevant to creating a new realm, that
- * are either immutable characteristics of that realm or that are discarded
- * after the realm has been created.
- *
- * Access to these options on an existing realm is read-only: if you need
- * particular selections, make them before you create the realm.
- */
-class JS_PUBLIC_API RealmCreationOptions {
- public:
-  RealmCreationOptions()
-      : traceGlobal_(nullptr),
-        compSpec_(CompartmentSpecifier::NewCompartmentAndZone),
-        comp_(nullptr),
-        invisibleToDebugger_(false),
-        mergeable_(false),
-        preserveJitCode_(false),
-        cloneSingletons_(false),
-        sharedMemoryAndAtomics_(false),
-        streams_(false),
-        bigint_(false),
-        fields_(false),
-        secureContext_(false),
-        clampAndJitterTime_(true) {}
-
-  JSTraceOp getTrace() const { return traceGlobal_; }
-  RealmCreationOptions& setTrace(JSTraceOp op) {
-    traceGlobal_ = op;
-    return *this;
-  }
-
-  JS::Zone* zone() const {
-    MOZ_ASSERT(compSpec_ == CompartmentSpecifier::NewCompartmentInExistingZone);
-    return zone_;
-  }
-  JS::Compartment* compartment() const {
-    MOZ_ASSERT(compSpec_ == CompartmentSpecifier::ExistingCompartment);
-    return comp_;
-  }
-  CompartmentSpecifier compartmentSpecifier() const { return compSpec_; }
-
-  // Set the compartment/zone to use for the realm. See CompartmentSpecifier
-  // above.
-  RealmCreationOptions& setNewCompartmentInSystemZone();
-  RealmCreationOptions& setNewCompartmentInExistingZone(JSObject* obj);
-  RealmCreationOptions& setNewCompartmentAndZone();
-  RealmCreationOptions& setExistingCompartment(JSObject* obj);
-  RealmCreationOptions& setExistingCompartment(JS::Compartment* compartment);
-
-  // Certain compartments are implementation details of the embedding, and
-  // references to them should never leak out to script. This flag causes this
-  // realm to skip firing onNewGlobalObject and makes addDebuggee a no-op for
-  // this global.
-  //
-  // Debugger visibility is per-compartment, not per-realm (it's only practical
-  // to enforce visibility on compartment boundaries), so if a realm is being
-  // created in an extant compartment, its requested visibility must match that
-  // of the compartment.
-  bool invisibleToDebugger() const { return invisibleToDebugger_; }
-  RealmCreationOptions& setInvisibleToDebugger(bool flag) {
-    invisibleToDebugger_ = flag;
-    return *this;
-  }
-
-  // Realms used for off-thread compilation have their contents merged into a
-  // target realm when the compilation is finished. This is only allowed if
-  // this flag is set. The invisibleToDebugger flag must also be set for such
-  // realms.
-  bool mergeable() const { return mergeable_; }
-  RealmCreationOptions& setMergeable(bool flag) {
-    mergeable_ = flag;
-    return *this;
-  }
-
-  // Determines whether this realm should preserve JIT code on non-shrinking
-  // GCs.
-  bool preserveJitCode() const { return preserveJitCode_; }
-  RealmCreationOptions& setPreserveJitCode(bool flag) {
-    preserveJitCode_ = flag;
-    return *this;
-  }
-
-  bool cloneSingletons() const { return cloneSingletons_; }
-  RealmCreationOptions& setCloneSingletons(bool flag) {
-    cloneSingletons_ = flag;
-    return *this;
-  }
-
-  bool getSharedMemoryAndAtomicsEnabled() const;
-  RealmCreationOptions& setSharedMemoryAndAtomicsEnabled(bool flag);
-
-  bool getStreamsEnabled() const { return streams_; }
-  RealmCreationOptions& setStreamsEnabled(bool flag) {
-    streams_ = flag;
-    return *this;
-  }
-
-  bool getBigIntEnabled() const { return bigint_; }
-  RealmCreationOptions& setBigIntEnabled(bool flag) {
-    bigint_ = flag;
-    return *this;
-  }
-
-  bool getFieldsEnabled() const { return fields_; }
-  RealmCreationOptions& setFieldsEnabled(bool flag) {
-    fields_ = flag;
-    return *this;
-  }
-
-  // This flag doesn't affect JS engine behavior.  It is used by Gecko to
-  // mark whether content windows and workers are "Secure Context"s. See
-  // https://w3c.github.io/webappsec-secure-contexts/
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1162772#c34
-  bool secureContext() const { return secureContext_; }
-  RealmCreationOptions& setSecureContext(bool flag) {
-    secureContext_ = flag;
-    return *this;
-  }
-
-  bool clampAndJitterTime() const { return clampAndJitterTime_; }
-  RealmCreationOptions& setClampAndJitterTime(bool flag) {
-    clampAndJitterTime_ = flag;
-    return *this;
-  }
-
- private:
-  JSTraceOp traceGlobal_;
-  CompartmentSpecifier compSpec_;
-  union {
-    JS::Compartment* comp_;
-    JS::Zone* zone_;
-  };
-  bool invisibleToDebugger_;
-  bool mergeable_;
-  bool preserveJitCode_;
-  bool cloneSingletons_;
-  bool sharedMemoryAndAtomics_;
-  bool streams_;
-  bool bigint_;
-  bool fields_;
-  bool secureContext_;
-  bool clampAndJitterTime_;
-};
-
-/**
- * RealmBehaviors specifies behaviors of a realm that can be changed after the
- * realm's been created.
- */
-class JS_PUBLIC_API RealmBehaviors {
- public:
-  class Override {
-   public:
-    Override() : mode_(Default) {}
-
-    bool get(bool defaultValue) const {
-      if (mode_ == Default) {
-        return defaultValue;
-      }
-      return mode_ == ForceTrue;
-    }
-
-    void set(bool overrideValue) {
-      mode_ = overrideValue ? ForceTrue : ForceFalse;
-    }
-
-    void reset() { mode_ = Default; }
-
-   private:
-    enum Mode { Default, ForceTrue, ForceFalse };
-
-    Mode mode_;
-  };
-
-  RealmBehaviors()
-      : discardSource_(false),
-        disableLazyParsing_(false),
-        singletonsAsTemplates_(true) {}
-
-  // For certain globals, we know enough about the code that will run in them
-  // that we can discard script source entirely.
-  bool discardSource() const { return discardSource_; }
-  RealmBehaviors& setDiscardSource(bool flag) {
-    discardSource_ = flag;
-    return *this;
-  }
-
-  bool disableLazyParsing() const { return disableLazyParsing_; }
-  RealmBehaviors& setDisableLazyParsing(bool flag) {
-    disableLazyParsing_ = flag;
-    return *this;
-  }
-
-  bool extraWarnings(JSContext* cx) const;
-  Override& extraWarningsOverride() { return extraWarningsOverride_; }
-
-  bool getSingletonsAsTemplates() const { return singletonsAsTemplates_; }
-  RealmBehaviors& setSingletonsAsValues() {
-    singletonsAsTemplates_ = false;
-    return *this;
-  }
-
- private:
-  bool discardSource_;
-  bool disableLazyParsing_;
-  Override extraWarningsOverride_;
-
-  // To XDR singletons, we need to ensure that all singletons are all used as
-  // templates, by making JSOP_OBJECT return a clone of the JSScript
-  // singleton, instead of returning the value which is baked in the JSScript.
-  bool singletonsAsTemplates_;
-};
-
-/**
- * RealmOptions specifies realm characteristics: both those that can't be
- * changed on a realm once it's been created (RealmCreationOptions), and those
- * that can be changed on an existing realm (RealmBehaviors).
- */
-class JS_PUBLIC_API RealmOptions {
- public:
-  explicit RealmOptions() : creationOptions_(), behaviors_() {}
-
-  RealmOptions(const RealmCreationOptions& realmCreation,
-               const RealmBehaviors& realmBehaviors)
-      : creationOptions_(realmCreation), behaviors_(realmBehaviors) {}
-
-  // RealmCreationOptions specify fundamental realm characteristics that must
-  // be specified when the realm is created, that can't be changed after the
-  // realm is created.
-  RealmCreationOptions& creationOptions() { return creationOptions_; }
-  const RealmCreationOptions& creationOptions() const {
-    return creationOptions_;
-  }
-
-  // RealmBehaviors specify realm characteristics that can be changed after
-  // the realm is created.
-  RealmBehaviors& behaviors() { return behaviors_; }
-  const RealmBehaviors& behaviors() const { return behaviors_; }
-
- private:
-  RealmCreationOptions creationOptions_;
-  RealmBehaviors behaviors_;
-};
-
-JS_PUBLIC_API const RealmCreationOptions& RealmCreationOptionsRef(
-    JS::Realm* realm);
-
-JS_PUBLIC_API const RealmCreationOptions& RealmCreationOptionsRef(
-    JSContext* cx);
-
-JS_PUBLIC_API RealmBehaviors& RealmBehaviorsRef(JS::Realm* realm);
-
-JS_PUBLIC_API RealmBehaviors& RealmBehaviorsRef(JSContext* cx);
 
 /**
  * During global creation, we fire notifications to callbacks registered
@@ -2029,14 +1761,26 @@ extern JS_PUBLIC_API bool IsSetObject(JSContext* cx, JS::HandleObject obj,
  * Assign 'undefined' to all of the object's non-reserved slots. Note: this is
  * done for all slots, regardless of the associated property descriptor.
  */
-JS_PUBLIC_API void JS_SetAllNonReservedSlotsToUndefined(JSContext* cx,
-                                                        JSObject* objArg);
+JS_PUBLIC_API void JS_SetAllNonReservedSlotsToUndefined(JS::HandleObject obj);
 
 extern JS_PUBLIC_API JS::Value JS_GetReservedSlot(JSObject* obj,
                                                   uint32_t index);
 
 extern JS_PUBLIC_API void JS_SetReservedSlot(JSObject* obj, uint32_t index,
                                              const JS::Value& v);
+
+extern JS_PUBLIC_API void JS_InitReservedSlot(JSObject* obj, uint32_t index,
+                                              void* ptr, size_t nbytes,
+                                              JS::MemoryUse use);
+
+template <typename T>
+void JS_InitReservedSlot(JSObject* obj, uint32_t index, T* ptr,
+                         JS::MemoryUse use) {
+  JS_InitReservedSlot(obj, index, ptr, sizeof(T), use);
+}
+
+extern JS_PUBLIC_API void JS_InitPrivate(JSObject* obj, void* data,
+                                         size_t nbytes, JS::MemoryUse use);
 
 /************************************************************************/
 
@@ -2065,7 +1809,8 @@ extern JS_PUBLIC_API JSFunction* GetSelfHostedFunction(
 /**
  * Create a new function based on the given JSFunctionSpec, *fs.
  * id is the result of a successful call to
- * `PropertySpecNameToPermanentId(cx, fs->name, &id)`.
+ * `PropertySpecNameToId(cx, fs->name, &id)` or
+   `PropertySpecNameToPermanentId(cx, fs->name, &id)`.
  *
  * Unlike JS_DefineFunctions, this does not treat fs as an array.
  * *fs must not be JS_FS_END.
@@ -2073,6 +1818,13 @@ extern JS_PUBLIC_API JSFunction* GetSelfHostedFunction(
 extern JS_PUBLIC_API JSFunction* NewFunctionFromSpec(JSContext* cx,
                                                      const JSFunctionSpec* fs,
                                                      HandleId id);
+
+/**
+ * Same as above, but without an id arg, for callers who don't have
+ * the id already.
+ */
+extern JS_PUBLIC_API JSFunction* NewFunctionFromSpec(JSContext* cx,
+                                                     const JSFunctionSpec* fs);
 
 } /* namespace JS */
 
@@ -2155,7 +1907,7 @@ extern JS_PUBLIC_API JSObject* CloneFunctionObject(JSContext* cx,
  * objects that should end up on the clone's scope chain.
  */
 extern JS_PUBLIC_API JSObject* CloneFunctionObject(
-    JSContext* cx, HandleObject funobj, AutoObjectVector& scopeChain);
+    JSContext* cx, HandleObject funobj, HandleObjectVector scopeChain);
 
 }  // namespace JS
 
@@ -2176,78 +1928,6 @@ extern JS_PUBLIC_API JSString* JS_DecompileFunction(
     JSContext* cx, JS::Handle<JSFunction*> fun);
 
 namespace JS {
-
-using ModuleResolveHook = JSObject* (*)(JSContext*, HandleValue, HandleString);
-
-/**
- * Get the HostResolveImportedModule hook for the runtime.
- */
-extern JS_PUBLIC_API ModuleResolveHook GetModuleResolveHook(JSRuntime* rt);
-
-/**
- * Set the HostResolveImportedModule hook for the runtime to the given function.
- */
-extern JS_PUBLIC_API void SetModuleResolveHook(JSRuntime* rt,
-                                               ModuleResolveHook func);
-
-using ModuleMetadataHook = bool (*)(JSContext*, HandleValue, HandleObject);
-
-/**
- * Get the hook for populating the import.meta metadata object.
- */
-extern JS_PUBLIC_API ModuleMetadataHook GetModuleMetadataHook(JSRuntime* rt);
-
-/**
- * Set the hook for populating the import.meta metadata object to the given
- * function.
- */
-extern JS_PUBLIC_API void SetModuleMetadataHook(JSRuntime* rt,
-                                                ModuleMetadataHook func);
-
-using ModuleDynamicImportHook = bool (*)(JSContext* cx,
-                                         HandleValue referencingPrivate,
-                                         HandleString specifier,
-                                         HandleObject promise);
-
-/**
- * Get the HostImportModuleDynamically hook for the runtime.
- */
-extern JS_PUBLIC_API ModuleDynamicImportHook
-GetModuleDynamicImportHook(JSRuntime* rt);
-
-/**
- * Set the HostImportModuleDynamically hook for the runtime to the given
- * function.
- *
- * If this hook is not set (or set to nullptr) then the JS engine will throw an
- * exception if dynamic module import is attempted.
- */
-extern JS_PUBLIC_API void SetModuleDynamicImportHook(
-    JSRuntime* rt, ModuleDynamicImportHook func);
-
-extern JS_PUBLIC_API bool FinishDynamicModuleImport(
-    JSContext* cx, HandleValue referencingPrivate, HandleString specifier,
-    HandleObject promise);
-
-/**
- * Parse the given source buffer as a module in the scope of the current global
- * of cx and return a source text module record.
- */
-extern JS_PUBLIC_API bool CompileModule(JSContext* cx,
-                                        const ReadOnlyCompileOptions& options,
-                                        SourceText<char16_t>& srcBuf,
-                                        JS::MutableHandleObject moduleRecord);
-
-/**
- * Set a private value associated with a source text module record.
- */
-extern JS_PUBLIC_API void SetModulePrivate(JSObject* module,
-                                           const JS::Value& value);
-
-/**
- * Get the private value associated with a source text module record.
- */
-extern JS_PUBLIC_API JS::Value GetModulePrivate(JSObject* module);
 
 /**
  * Set a private value associated with a script. Note that this value is shared
@@ -2281,60 +1961,6 @@ using ScriptPrivateReferenceHook = void (*)(const JS::Value&);
 extern JS_PUBLIC_API void SetScriptPrivateReferenceHooks(
     JSRuntime* rt, ScriptPrivateReferenceHook addRefHook,
     ScriptPrivateReferenceHook releaseHook);
-
-/*
- * Perform the ModuleInstantiate operation on the given source text module
- * record.
- *
- * This transitively resolves all module dependencies (calling the
- * HostResolveImportedModule hook) and initializes the environment record for
- * the module.
- */
-extern JS_PUBLIC_API bool ModuleInstantiate(JSContext* cx,
-                                            JS::HandleObject moduleRecord);
-
-/*
- * Perform the ModuleEvaluate operation on the given source text module record.
- *
- * This does nothing if this module has already been evaluated. Otherwise, it
- * transitively evaluates all dependences of this module and then evaluates this
- * module.
- *
- * ModuleInstantiate must have completed prior to calling this.
- */
-extern JS_PUBLIC_API bool ModuleEvaluate(JSContext* cx,
-                                         JS::HandleObject moduleRecord);
-
-/*
- * Get a list of the module specifiers used by a source text module
- * record to request importation of modules.
- *
- * The result is a JavaScript array of object values.  To extract the individual
- * values use only JS_GetArrayLength and JS_GetElement with indices 0 to length
- * - 1.
- *
- * The element values are objects with the following properties:
- *  - moduleSpecifier: the module specifier string
- *  - lineNumber: the line number of the import in the source text
- *  - columnNumber: the column number of the import in the source text
- *
- * These property values can be extracted with GetRequestedModuleSpecifier() and
- * GetRequestedModuleSourcePos()
- */
-extern JS_PUBLIC_API JSObject* GetRequestedModules(
-    JSContext* cx, JS::HandleObject moduleRecord);
-
-extern JS_PUBLIC_API JSString* GetRequestedModuleSpecifier(
-    JSContext* cx, JS::HandleValue requestedModuleObject);
-
-extern JS_PUBLIC_API void GetRequestedModuleSourcePos(
-    JSContext* cx, JS::HandleValue requestedModuleObject, uint32_t* lineNumber,
-    uint32_t* columnNumber);
-
-/*
- * Get the top-level script for a module which has not yet been executed.
- */
-extern JS_PUBLIC_API JSScript* GetModuleScript(JS::HandleObject moduleRecord);
 
 } /* namespace JS */
 
@@ -2419,6 +2045,9 @@ namespace JS {
  * as when it is later consumed.
  */
 
+using OptimizedEncodingBytes = js::Vector<uint8_t, 0, js::SystemAllocPolicy>;
+using UniqueOptimizedEncodingBytes = js::UniquePtr<OptimizedEncodingBytes>;
+
 class OptimizedEncodingListener {
  protected:
   virtual ~OptimizedEncodingListener() {}
@@ -2431,7 +2060,7 @@ class OptimizedEncodingListener {
 
   // SpiderMonkey may optionally call storeOptimizedEncoding() after it has
   // finished processing a streamed resource.
-  virtual void storeOptimizedEncoding(const uint8_t* bytes, size_t length) = 0;
+  virtual void storeOptimizedEncoding(UniqueOptimizedEncodingBytes bytes) = 0;
 };
 
 class JS_PUBLIC_API StreamConsumer {
@@ -2817,7 +2446,8 @@ MOZ_MUST_USE JS_PUBLIC_API bool JS_EncodeStringToBuffer(JSContext* cx,
 
 namespace JS {
 
-JS_PUBLIC_API bool PropertySpecNameEqualsId(const char* name, HandleId id);
+JS_PUBLIC_API bool PropertySpecNameEqualsId(JSPropertySpec::Name name,
+                                            HandleId id);
 
 /**
  * Create a jsid that does not need to be marked for GC.
@@ -2828,7 +2458,8 @@ JS_PUBLIC_API bool PropertySpecNameEqualsId(const char* name, HandleId id);
  * during GC marking.
  */
 JS_PUBLIC_API bool PropertySpecNameToPermanentId(JSContext* cx,
-                                                 const char* name, jsid* idp);
+                                                 JSPropertySpec::Name name,
+                                                 jsid* idp);
 
 } /* namespace JS */
 
@@ -2922,24 +2553,6 @@ extern JS_PUBLIC_API void JS_ReportErrorNumberUCArray(
     JSContext* cx, JSErrorCallback errorCallback, void* userRef,
     const unsigned errorNumber, const char16_t** args);
 
-/**
- * As above, but report a warning instead (JSREPORT_IS_WARNING(report.flags)).
- * Return true if there was no error trying to issue the warning, and if the
- * warning was not converted into an error due to the JSOPTION_WERROR option
- * being set, false otherwise.
- */
-extern JS_PUBLIC_API bool JS_ReportWarningASCII(JSContext* cx,
-                                                const char* format, ...)
-    MOZ_FORMAT_PRINTF(2, 3);
-
-extern JS_PUBLIC_API bool JS_ReportWarningLatin1(JSContext* cx,
-                                                 const char* format, ...)
-    MOZ_FORMAT_PRINTF(2, 3);
-
-extern JS_PUBLIC_API bool JS_ReportWarningUTF8(JSContext* cx,
-                                               const char* format, ...)
-    MOZ_FORMAT_PRINTF(2, 3);
-
 extern JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberASCII(
     JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
     const unsigned errorNumber, ...);
@@ -2967,33 +2580,6 @@ extern MOZ_COLD JS_PUBLIC_API void JS_ReportOutOfMemory(JSContext* cx);
 extern JS_PUBLIC_API void JS_ReportAllocationOverflow(JSContext* cx);
 
 namespace JS {
-
-using WarningReporter = void (*)(JSContext* cx, JSErrorReport* report);
-
-extern JS_PUBLIC_API WarningReporter
-SetWarningReporter(JSContext* cx, WarningReporter reporter);
-
-extern JS_PUBLIC_API WarningReporter GetWarningReporter(JSContext* cx);
-
-// Suppress the Warning Reporter callback temporarily.
-class MOZ_RAII JS_PUBLIC_API AutoSuppressWarningReporter {
-  JSContext* context_;
-  WarningReporter prevReporter_;
-
- public:
-  explicit AutoSuppressWarningReporter(JSContext* cx) : context_(cx) {
-    prevReporter_ = SetWarningReporter(context_, nullptr);
-  }
-
-  ~AutoSuppressWarningReporter() {
-#ifdef DEBUG
-    WarningReporter reporter =
-#endif
-        SetWarningReporter(context_, prevReporter_);
-    MOZ_ASSERT(reporter == nullptr, "Unexpected WarningReporter active");
-    SetWarningReporter(context_, prevReporter_);
-  }
-};
 
 extern JS_PUBLIC_API bool CreateError(
     JSContext* cx, JSExnType type, HandleObject stack, HandleString fileName,
@@ -3089,69 +2675,27 @@ extern JS_PUBLIC_API bool SetForEach(JSContext* cx, HandleObject obj,
 
 /************************************************************************/
 
-/*
- * Regular Expressions.
- */
-#define JSREG_FOLD 0x01u      /* fold uppercase to lowercase */
-#define JSREG_GLOB 0x02u      /* global exec, creates array of matches */
-#define JSREG_MULTILINE 0x04u /* treat ^ and $ as begin and end of line */
-#define JSREG_STICKY 0x08u    /* only match starting at lastIndex */
-#define JSREG_UNICODE 0x10u   /* unicode */
-
-extern JS_PUBLIC_API JSObject* JS_NewRegExpObject(JSContext* cx,
-                                                  const char* bytes,
-                                                  size_t length,
-                                                  unsigned flags);
-
-extern JS_PUBLIC_API JSObject* JS_NewUCRegExpObject(JSContext* cx,
-                                                    const char16_t* chars,
-                                                    size_t length,
-                                                    unsigned flags);
-
-extern JS_PUBLIC_API bool JS_SetRegExpInput(JSContext* cx, JS::HandleObject obj,
-                                            JS::HandleString input);
-
-extern JS_PUBLIC_API bool JS_ClearRegExpStatics(JSContext* cx,
-                                                JS::HandleObject obj);
-
-extern JS_PUBLIC_API bool JS_ExecuteRegExp(JSContext* cx, JS::HandleObject obj,
-                                           JS::HandleObject reobj,
-                                           char16_t* chars, size_t length,
-                                           size_t* indexp, bool test,
-                                           JS::MutableHandleValue rval);
-
-/* RegExp interface for clients without a global object. */
-
-extern JS_PUBLIC_API bool JS_ExecuteRegExpNoStatics(
-    JSContext* cx, JS::HandleObject reobj, char16_t* chars, size_t length,
-    size_t* indexp, bool test, JS::MutableHandleValue rval);
-
-/**
- * On success, returns true, setting |*isRegExp| to true if |obj| is a RegExp
- * object or a wrapper around one, or to false if not.  Returns false on
- * failure.
- *
- * This method returns true with |*isRegExp == false| when passed an ES6 proxy
- * whose target is a RegExp, or when passed a revoked proxy.
- */
-extern JS_PUBLIC_API bool JS_ObjectIsRegExp(JSContext* cx, JS::HandleObject obj,
-                                            bool* isRegExp);
-
-extern JS_PUBLIC_API unsigned JS_GetRegExpFlags(JSContext* cx,
-                                                JS::HandleObject obj);
-
-extern JS_PUBLIC_API JSString* JS_GetRegExpSource(JSContext* cx,
-                                                  JS::HandleObject obj);
-
-/************************************************************************/
-
 extern JS_PUBLIC_API bool JS_IsExceptionPending(JSContext* cx);
 
 extern JS_PUBLIC_API bool JS_GetPendingException(JSContext* cx,
                                                  JS::MutableHandleValue vp);
 
-extern JS_PUBLIC_API void JS_SetPendingException(JSContext* cx,
-                                                 JS::HandleValue v);
+namespace JS {
+
+enum class ExceptionStackBehavior : bool {
+  // Do not capture any stack.
+  DoNotCapture,
+
+  // Capture the current JS stack when setting the exception. It may be
+  // retrieved by JS::GetPendingExceptionStack.
+  Capture
+};
+
+}  // namespace JS
+
+extern JS_PUBLIC_API void JS_SetPendingException(
+    JSContext* cx, JS::HandleValue v,
+    JS::ExceptionStackBehavior behavior = JS::ExceptionStackBehavior::Capture);
 
 extern JS_PUBLIC_API void JS_ClearPendingException(JSContext* cx);
 
@@ -3176,6 +2720,7 @@ class JS_PUBLIC_API AutoSaveExceptionState {
   bool wasOverRecursed;
   bool wasThrowing;
   RootedValue exceptionValue;
+  RootedObject exceptionStack;
 
  public:
   /*
@@ -3194,12 +2739,7 @@ class JS_PUBLIC_API AutoSaveExceptionState {
    * Discard any stored exception state.
    * If this is called, the destructor is a no-op.
    */
-  void drop() {
-    wasPropagatingForcedReturn = false;
-    wasOverRecursed = false;
-    wasThrowing = false;
-    exceptionValue.setUndefined();
-  }
+  void drop();
 
   /*
    * Replace cx's exception state with the stored exception state. Then
@@ -3208,6 +2748,22 @@ class JS_PUBLIC_API AutoSaveExceptionState {
    */
   void restore();
 };
+
+// Set both the exception and its associated stack on the context. The stack
+// must be a SavedFrame.
+JS_PUBLIC_API void SetPendingExceptionAndStack(JSContext* cx, HandleValue value,
+                                               HandleObject stack);
+
+/**
+ * Get the SavedFrame stack object captured when the pending exception was set
+ * on the JSContext. This fuzzily correlates with a `throw` statement in JS,
+ * although arbitrary JSAPI consumers or VM code may also set pending exceptions
+ * via `JS_SetPendingException`.
+ *
+ * This is not the same stack as `e.stack` when `e` is an `Error` object. (That
+ * would be JS::ExceptionStackOrNull).
+ */
+MOZ_MUST_USE JS_PUBLIC_API JSObject* GetPendingExceptionStack(JSContext* cx);
 
 } /* namespace JS */
 
@@ -3516,94 +3072,7 @@ extern JS_PUBLIC_API RefPtr<WasmModule> GetWasmModule(HandleObject obj);
  */
 
 extern JS_PUBLIC_API RefPtr<WasmModule> DeserializeWasmModule(
-    PRFileDesc* bytecode, JS::UniqueChars filename, unsigned line);
-
-/**
- * Convenience class for imitating a JS level for-of loop. Typical usage:
- *
- *     ForOfIterator it(cx);
- *     if (!it.init(iterable)) {
- *       return false;
- *     }
- *     RootedValue val(cx);
- *     while (true) {
- *       bool done;
- *       if (!it.next(&val, &done)) {
- *         return false;
- *       }
- *       if (done) {
- *         break;
- *       }
- *       if (!DoStuff(cx, val)) {
- *         return false;
- *       }
- *     }
- */
-class MOZ_STACK_CLASS JS_PUBLIC_API ForOfIterator {
- protected:
-  JSContext* cx_;
-  /*
-   * Use the ForOfPIC on the global object (see vm/GlobalObject.h) to try
-   * to optimize iteration across arrays.
-   *
-   *  Case 1: Regular Iteration
-   *      iterator - pointer to the iterator object.
-   *      nextMethod - value of |iterator|.next.
-   *      index - fixed to NOT_ARRAY (== UINT32_MAX)
-   *
-   *  Case 2: Optimized Array Iteration
-   *      iterator - pointer to the array object.
-   *      nextMethod - the undefined value.
-   *      index - current position in array.
-   *
-   * The cases are distinguished by whether or not |index| is equal to
-   * NOT_ARRAY.
-   */
-  JS::RootedObject iterator;
-  JS::RootedValue nextMethod;
-  uint32_t index;
-
-  static const uint32_t NOT_ARRAY = UINT32_MAX;
-
-  ForOfIterator(const ForOfIterator&) = delete;
-  ForOfIterator& operator=(const ForOfIterator&) = delete;
-
- public:
-  explicit ForOfIterator(JSContext* cx)
-      : cx_(cx), iterator(cx_), nextMethod(cx), index(NOT_ARRAY) {}
-
-  enum NonIterableBehavior { ThrowOnNonIterable, AllowNonIterable };
-
-  /**
-   * Initialize the iterator.  If AllowNonIterable is passed then if getting
-   * the @@iterator property from iterable returns undefined init() will just
-   * return true instead of throwing.  Callers must then check
-   * valueIsIterable() before continuing with the iteration.
-   */
-  bool init(JS::HandleValue iterable,
-            NonIterableBehavior nonIterableBehavior = ThrowOnNonIterable);
-
-  /**
-   * Get the next value from the iterator.  If false *done is true
-   * after this call, do not examine val.
-   */
-  bool next(JS::MutableHandleValue val, bool* done);
-
-  /**
-   * Close the iterator.
-   * For the case that completion type is throw.
-   */
-  void closeThrow();
-
-  /**
-   * If initialized with throwOnNonCallable = false, check whether
-   * the value is iterable.
-   */
-  bool valueIsIterable() const { return iterator; }
-
- private:
-  inline bool nextFromOptimizedArray(MutableHandleValue val, bool* done);
-};
+    const uint8_t* bytecode, size_t bytecodeLength);
 
 /**
  * If a large allocation fails when calling pod_{calloc,realloc}CanGC, the JS

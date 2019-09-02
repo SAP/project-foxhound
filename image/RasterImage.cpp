@@ -39,6 +39,7 @@
 #include "mozilla/Move.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SizeOfState.h"
+#include "mozilla/StaticPrefs.h"
 #include <stdint.h>
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
@@ -48,7 +49,6 @@
 
 #include "GeckoProfiler.h"
 #include "gfx2DGlue.h"
-#include "gfxPrefs.h"
 #include "nsProperties.h"
 #include <algorithm>
 
@@ -254,14 +254,12 @@ RasterImage::GetIntrinsicSize(nsSize* aSize) {
 }
 
 //******************************************************************************
-NS_IMETHODIMP
-RasterImage::GetIntrinsicRatio(nsSize* aRatio) {
+Maybe<AspectRatio> RasterImage::GetIntrinsicRatio() {
   if (mError) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
-  *aRatio = nsSize(mSize.width, mSize.height);
-  return NS_OK;
+  return Some(AspectRatio::FromSize(mSize.width, mSize.height));
 }
 
 NS_IMETHODIMP_(Orientation)
@@ -339,29 +337,31 @@ LookupResult RasterImage::LookupFrame(const IntSize& aSize, uint32_t aFlags,
     return LookupResult(MatchType::NOT_FOUND);
   }
 
+  const bool syncDecode = aFlags & FLAG_SYNC_DECODE;
+  const bool avoidRedecode = aFlags & FLAG_AVOID_REDECODE_FOR_SIZE;
   if (result.Type() == MatchType::NOT_FOUND ||
-      result.Type() == MatchType::SUBSTITUTE_BECAUSE_NOT_FOUND ||
-      ((aFlags & FLAG_SYNC_DECODE) && !result)) {
+      (result.Type() == MatchType::SUBSTITUTE_BECAUSE_NOT_FOUND &&
+       !avoidRedecode) ||
+      (syncDecode && !avoidRedecode && !result)) {
     // We don't have a copy of this frame, and there's no decoder working on
     // one. (Or we're sync decoding and the existing decoder hasn't even started
     // yet.) Trigger decoding so it'll be available next time.
     MOZ_ASSERT(aPlaybackType != PlaybackType::eAnimated ||
-                   gfxPrefs::ImageMemAnimatedDiscardable() ||
+                   StaticPrefs::image_mem_animated_discardable() ||
                    !mAnimationState || mAnimationState->KnownFrameCount() < 1,
                "Animated frames should be locked");
 
     // The surface cache may suggest the preferred size we are supposed to
     // decode at. This should only happen if we accept substitutions.
     if (!result.SuggestedSize().IsEmpty()) {
-      MOZ_ASSERT(!(aFlags & FLAG_SYNC_DECODE) &&
-                 (aFlags & FLAG_HIGH_QUALITY_SCALING));
+      MOZ_ASSERT(!syncDecode && (aFlags & FLAG_HIGH_QUALITY_SCALING));
       requestedSize = result.SuggestedSize();
     }
 
     bool ranSync = Decode(requestedSize, aFlags, aPlaybackType);
 
     // If we can or did sync decode, we should already have the frame.
-    if (ranSync || (aFlags & FLAG_SYNC_DECODE)) {
+    if (ranSync || syncDecode) {
       result =
           LookupFrameInternal(requestedSize, aFlags, aPlaybackType, aMarkUsed);
     }
@@ -372,18 +372,10 @@ LookupResult RasterImage::LookupFrame(const IntSize& aSize, uint32_t aFlags,
     return result;
   }
 
-  if (result.Surface()->GetCompositingFailed()) {
-    DrawableSurface tmp = std::move(result.Surface());
-    return result;
-  }
-
-  MOZ_ASSERT(!result.Surface()->GetIsPaletted(),
-             "Should not have a paletted frame");
-
   // Sync decoding guarantees that we got the frame, but if it's owned by an
   // async decoder that's currently running, the contents of the frame may not
   // be available yet. Make sure we get everything.
-  if (mAllSourceData && (aFlags & FLAG_SYNC_DECODE)) {
+  if (mAllSourceData && syncDecode) {
     result.Surface()->WaitUntilFinished();
   }
 
@@ -423,7 +415,7 @@ RasterImage::WillDrawOpaqueNow() {
   }
 
   if (mAnimationState) {
-    if (!gfxPrefs::ImageMemAnimatedDiscardable()) {
+    if (!StaticPrefs::image_mem_animated_discardable()) {
       // We never discard frames of animated images.
       return true;
     } else {
@@ -479,7 +471,7 @@ void RasterImage::OnSurfaceDiscardedInternal(bool aAnimatedFramesDiscarded) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aAnimatedFramesDiscarded && mAnimationState) {
-    MOZ_ASSERT(gfxPrefs::ImageMemAnimatedDiscardable());
+    MOZ_ASSERT(StaticPrefs::image_mem_animated_discardable());
     ReleaseImageContainer();
     gfx::IntRect rect =
         mAnimationState->UpdateState(mAnimationFinished, this, mSize);
@@ -682,9 +674,6 @@ void RasterImage::CollectSizeOfSurfaces(
     nsTArray<SurfaceMemoryCounter>& aCounters,
     MallocSizeOf aMallocSizeOf) const {
   SurfaceCache::CollectSizeOfSurfaces(ImageKey(this), aCounters, aMallocSizeOf);
-  if (mFrameAnimator) {
-    mFrameAnimator->CollectSizeOfCompositingSurfaces(aCounters, aMallocSizeOf);
-  }
 }
 
 bool RasterImage::SetMetadata(const ImageMetadata& aMetadata,
@@ -727,7 +716,7 @@ bool RasterImage::SetMetadata(const ImageMetadata& aMetadata,
     mAnimationState.emplace(mAnimationMode);
     mFrameAnimator = MakeUnique<FrameAnimator>(this, mSize);
 
-    if (!gfxPrefs::ImageMemAnimatedDiscardable()) {
+    if (!StaticPrefs::image_mem_animated_discardable()) {
       // We don't support discarding animated images (See bug 414259).
       // Lock the image and throw away the key.
       LockImage();
@@ -1020,19 +1009,18 @@ RasterImage::Undefine(const char* prop) {
 }
 
 NS_IMETHODIMP
-RasterImage::GetKeys(uint32_t* count, char*** keys) {
+RasterImage::GetKeys(nsTArray<nsCString>& keys) {
   if (!mProperties) {
-    *count = 0;
-    *keys = nullptr;
+    keys.Clear();
     return NS_OK;
   }
-  return mProperties->GetKeys(count, keys);
+  return mProperties->GetKeys(keys);
 }
 
 void RasterImage::Discard() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(CanDiscard(), "Asked to discard but can't");
-  MOZ_ASSERT(!mAnimationState || gfxPrefs::ImageMemAnimatedDiscardable(),
+  MOZ_ASSERT(!mAnimationState || StaticPrefs::image_mem_animated_discardable(),
              "Asked to discard for animated image");
 
   // Delete all the decoded frames.
@@ -1054,11 +1042,11 @@ void RasterImage::Discard() {
 bool RasterImage::CanDiscard() {
   return mAllSourceData &&
          // Can discard animated images if the pref is set
-         (!mAnimationState || gfxPrefs::ImageMemAnimatedDiscardable());
+         (!mAnimationState || StaticPrefs::image_mem_animated_discardable());
 }
 
 NS_IMETHODIMP
-RasterImage::StartDecoding(uint32_t aFlags) {
+RasterImage::StartDecoding(uint32_t aFlags, uint32_t aWhichFrame) {
   if (mError) {
     return NS_ERROR_FAILURE;
   }
@@ -1070,10 +1058,11 @@ RasterImage::StartDecoding(uint32_t aFlags) {
 
   uint32_t flags = (aFlags & FLAG_ASYNC_NOTIFY) | FLAG_SYNC_DECODE_IF_FAST |
                    FLAG_HIGH_QUALITY_SCALING;
-  return RequestDecodeForSize(mSize, flags);
+  return RequestDecodeForSize(mSize, flags, aWhichFrame);
 }
 
-bool RasterImage::StartDecodingWithResult(uint32_t aFlags) {
+bool RasterImage::StartDecodingWithResult(uint32_t aFlags,
+                                          uint32_t aWhichFrame) {
   if (mError) {
     return false;
   }
@@ -1085,26 +1074,46 @@ bool RasterImage::StartDecodingWithResult(uint32_t aFlags) {
 
   uint32_t flags = (aFlags & FLAG_ASYNC_NOTIFY) | FLAG_SYNC_DECODE_IF_FAST |
                    FLAG_HIGH_QUALITY_SCALING;
-  DrawableSurface surface = RequestDecodeForSizeInternal(mSize, flags);
+  DrawableSurface surface =
+      RequestDecodeForSizeInternal(mSize, flags, aWhichFrame);
+  return surface && surface->IsFinished();
+}
+
+bool RasterImage::RequestDecodeWithResult(uint32_t aFlags,
+                                          uint32_t aWhichFrame) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (mError) {
+    return false;
+  }
+
+  uint32_t flags = aFlags | FLAG_ASYNC_NOTIFY;
+  DrawableSurface surface =
+      RequestDecodeForSizeInternal(mSize, flags, aWhichFrame);
   return surface && surface->IsFinished();
 }
 
 NS_IMETHODIMP
-RasterImage::RequestDecodeForSize(const IntSize& aSize, uint32_t aFlags) {
+RasterImage::RequestDecodeForSize(const IntSize& aSize, uint32_t aFlags,
+                                  uint32_t aWhichFrame) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mError) {
     return NS_ERROR_FAILURE;
   }
 
-  RequestDecodeForSizeInternal(aSize, aFlags);
+  RequestDecodeForSizeInternal(aSize, aFlags, aWhichFrame);
 
   return NS_OK;
 }
 
-DrawableSurface RasterImage::RequestDecodeForSizeInternal(const IntSize& aSize,
-                                                          uint32_t aFlags) {
+DrawableSurface RasterImage::RequestDecodeForSizeInternal(
+    const IntSize& aSize, uint32_t aFlags, uint32_t aWhichFrame) {
   MOZ_ASSERT(NS_IsMainThread());
+
+  if (aWhichFrame > FRAME_MAX_VALUE) {
+    return DrawableSurface();
+  }
 
   if (mError) {
     return DrawableSurface();
@@ -1125,10 +1134,8 @@ DrawableSurface RasterImage::RequestDecodeForSizeInternal(const IntSize& aSize,
       shouldSyncDecodeIfFast ? aFlags : aFlags & ~FLAG_SYNC_DECODE_IF_FAST;
 
   // Perform a frame lookup, which will implicitly start decoding if needed.
-  PlaybackType playbackType =
-      mAnimationState ? PlaybackType::eAnimated : PlaybackType::eStatic;
-  LookupResult result =
-      LookupFrame(aSize, flags, playbackType, /* aMarkUsed = */ false);
+  LookupResult result = LookupFrame(aSize, flags, ToPlaybackType(aWhichFrame),
+                                    /* aMarkUsed = */ false);
   return std::move(result.Surface());
 }
 
@@ -1207,10 +1214,6 @@ bool RasterImage::Decode(const IntSize& aSize, uint32_t aFlags,
   nsresult rv;
   bool animated = mAnimationState && aPlaybackType == PlaybackType::eAnimated;
   if (animated) {
-    if (gfxPrefs::ImageAnimatedGenerateFullFrames()) {
-      decoderFlags |= DecoderFlags::BLEND_ANIMATION;
-    }
-
     size_t currentFrame = mAnimationState->GetCurrentAnimationFrameIndex();
     rv = DecoderFactory::CreateAnimationDecoder(
         mDecoderType, WrapNotNull(this), mSourceBuffer, mSize, decoderFlags,
@@ -1317,7 +1320,7 @@ bool RasterImage::CanDownscaleDuringDecode(const IntSize& aSize,
   // available, this image isn't transient, we have all the source data and know
   // our size, and the flags allow us to do it.
   if (!mHasSize || mTransient || !HaveSkia() ||
-      !gfxPrefs::ImageDownscaleDuringDecodeEnabled() ||
+      !StaticPrefs::image_downscale_during_decode_enabled() ||
       !(aFlags & imgIContainer::FLAG_HIGH_QUALITY_SCALING)) {
     return false;
   }
@@ -1361,7 +1364,7 @@ ImgDrawResult RasterImage::DrawInternal(DrawableSurface&& aSurface,
 
   // By now we may have a frame with the requested size. If not, we need to
   // adjust the drawing parameters accordingly.
-  IntSize finalSize = aSurface->GetImageSize();
+  IntSize finalSize = aSurface->GetSize();
   bool couldRedecodeForBetterFrame = false;
   if (finalSize != aSize) {
     gfx::Size scale(double(aSize.width) / finalSize.width,
@@ -1701,7 +1704,8 @@ void RasterImage::NotifyDecodeComplete(
     if (mWantFullDecode) {
       mWantFullDecode = false;
       RequestDecodeForSize(mSize,
-                           DECODE_FLAGS_DEFAULT | FLAG_HIGH_QUALITY_SCALING);
+                           DECODE_FLAGS_DEFAULT | FLAG_HIGH_QUALITY_SCALING,
+                           FRAME_CURRENT);
     }
   }
 }

@@ -1,4 +1,4 @@
-import {actionCreators as ac, actionTypes as at} from "common/Actions.jsm";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 import React from "react";
 
 const VISIBLE = "visible";
@@ -30,7 +30,10 @@ export class ImpressionStats extends React.PureComponent {
   // This checks if the given cards are the same as those in the last impression ping.
   // If so, it should not send the same impression ping again.
   _needsImpressionStats(cards) {
-    if (!this.impressionCardGuids || (this.impressionCardGuids.length !== cards.length)) {
+    if (
+      !this.impressionCardGuids ||
+      this.impressionCardGuids.length !== cards.length
+    ) {
       return true;
     }
 
@@ -44,45 +47,103 @@ export class ImpressionStats extends React.PureComponent {
   }
 
   _dispatchImpressionStats() {
-    const {props} = this;
+    const { props } = this;
     const cards = props.rows;
 
     if (this.props.campaignId) {
-      this.props.dispatch(ac.OnlyToMain({type: at.DISCOVERY_STREAM_SPOC_IMPRESSION, data: {campaignId: this.props.campaignId}}));
+      this.props.dispatch(
+        ac.OnlyToMain({
+          type: at.DISCOVERY_STREAM_SPOC_IMPRESSION,
+          data: { campaignId: this.props.campaignId },
+        })
+      );
     }
 
     if (this._needsImpressionStats(cards)) {
-      props.dispatch(ac.DiscoveryStreamImpressionStats({
-        source: props.source.toUpperCase(),
-        tiles: cards.map(link => ({id: link.id, pos: link.pos})),
-      }));
+      props.dispatch(
+        ac.DiscoveryStreamImpressionStats({
+          source: props.source.toUpperCase(),
+          tiles: cards.map(link => ({
+            id: link.id,
+            pos: link.pos,
+            ...(link.shim ? { shim: link.shim } : {}),
+          })),
+        })
+      );
       this.impressionCardGuids = cards.map(link => link.id);
     }
   }
 
+  // This checks if the given cards are the same as those in the last loaded content ping.
+  // If so, it should not send the same loaded content ping again.
+  _needsLoadedContent(cards) {
+    if (
+      !this.loadedContentGuids ||
+      this.loadedContentGuids.length !== cards.length
+    ) {
+      return true;
+    }
+
+    for (let i = 0; i < cards.length; i++) {
+      if (cards[i].id !== this.loadedContentGuids[i]) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  _dispatchLoadedContent() {
+    const { props } = this;
+    const cards = props.rows;
+
+    if (this._needsLoadedContent(cards)) {
+      props.dispatch(
+        ac.DiscoveryStreamLoadedContent({
+          source: props.source.toUpperCase(),
+          tiles: cards.map(link => ({ id: link.id, pos: link.pos })),
+        })
+      );
+      this.loadedContentGuids = cards.map(link => link.id);
+    }
+  }
+
   setImpressionObserverOrAddListener() {
-    const {props} = this;
+    const { props } = this;
 
     if (!props.dispatch) {
       return;
     }
 
     if (props.document.visibilityState === VISIBLE) {
+      // Send the loaded content ping once the page is visible.
+      this._dispatchLoadedContent();
       this.setImpressionObserver();
     } else {
       // We should only ever send the latest impression stats ping, so remove any
       // older listeners.
       if (this._onVisibilityChange) {
-        props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+        props.document.removeEventListener(
+          VISIBILITY_CHANGE_EVENT,
+          this._onVisibilityChange
+        );
       }
 
       this._onVisibilityChange = () => {
         if (props.document.visibilityState === VISIBLE) {
+          // Send the loaded content ping once the page is visible.
+          this._dispatchLoadedContent();
           this.setImpressionObserver();
-          props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+          props.document.removeEventListener(
+            VISIBILITY_CHANGE_EVENT,
+            this._onVisibilityChange
+          );
         }
       };
-      props.document.addEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+      props.document.addEventListener(
+        VISIBILITY_CHANGE_EVENT,
+        this._onVisibilityChange
+      );
     }
   }
 
@@ -95,21 +156,30 @@ export class ImpressionStats extends React.PureComponent {
    * https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API
    */
   setImpressionObserver() {
-    const {props} = this;
+    const { props } = this;
 
     if (!props.rows.length) {
       return;
     }
 
     this._handleIntersect = entries => {
-      if (entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= INTERSECTION_RATIO)) {
+      if (
+        entries.some(
+          entry =>
+            entry.isIntersecting &&
+            entry.intersectionRatio >= INTERSECTION_RATIO
+        )
+      ) {
         this._dispatchImpressionStats();
         this.impressionObserver.unobserve(this.refs.impression);
       }
     };
 
-    const options = {threshold: INTERSECTION_RATIO};
-    this.impressionObserver = new props.IntersectionObserver(this._handleIntersect, options);
+    const options = { threshold: INTERSECTION_RATIO };
+    this.impressionObserver = new props.IntersectionObserver(
+      this._handleIntersect,
+      options
+    );
     this.impressionObserver.observe(this.refs.impression);
   }
 
@@ -130,14 +200,19 @@ export class ImpressionStats extends React.PureComponent {
       this.impressionObserver.unobserve(this.refs.impression);
     }
     if (this._onVisibilityChange) {
-      this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+      this.props.document.removeEventListener(
+        VISIBILITY_CHANGE_EVENT,
+        this._onVisibilityChange
+      );
     }
   }
 
   render() {
-    return (<div ref={"impression"} className="impression-observer">
-      {this.props.children}
-    </div>);
+    return (
+      <div ref={"impression"} className="impression-observer">
+        {this.props.children}
+      </div>
+    );
   }
 }
 

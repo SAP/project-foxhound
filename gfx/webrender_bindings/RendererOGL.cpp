@@ -19,9 +19,9 @@
 namespace mozilla {
 namespace wr {
 
-wr::WrExternalImage LockExternalImage(void* aObj, wr::WrExternalImageId aId,
-                                      uint8_t aChannelIndex,
-                                      wr::ImageRendering aRendering) {
+wr::WrExternalImage wr_renderer_lock_external_image(
+    void* aObj, wr::WrExternalImageId aId, uint8_t aChannelIndex,
+    wr::ImageRendering aRendering) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
   MOZ_ASSERT(texture);
@@ -33,8 +33,8 @@ wr::WrExternalImage LockExternalImage(void* aObj, wr::WrExternalImageId aId,
   return texture->Lock(aChannelIndex, renderer->gl(), aRendering);
 }
 
-void UnlockExternalImage(void* aObj, wr::WrExternalImageId aId,
-                         uint8_t aChannelIndex) {
+void wr_renderer_unlock_external_image(void* aObj, wr::WrExternalImageId aId,
+                                       uint8_t aChannelIndex) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
   MOZ_ASSERT(texture);
@@ -74,8 +74,6 @@ RendererOGL::~RendererOGL() {
 wr::WrExternalImageHandler RendererOGL::GetExternalImageHandler() {
   return wr::WrExternalImageHandler{
       this,
-      LockExternalImage,
-      UnlockExternalImage,
   };
 }
 
@@ -91,6 +89,7 @@ static void DoNotifyWebRenderContextPurge(
 }
 
 bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
+                                  const Maybe<wr::ImageFormat>& aReadbackFormat,
                                   const Maybe<Range<uint8_t>>& aReadbackBuffer,
                                   bool aHadSlowFrame,
                                   RendererStats* aOutStats) {
@@ -120,15 +119,20 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
 
   if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
                           aOutStats)) {
-    NotifyWebRenderError(WebRenderError::RENDER);
+    RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
+    return false;
   }
 
   if (aReadbackBuffer.isSome()) {
     MOZ_ASSERT(aReadbackSize.isSome());
+    MOZ_ASSERT(aReadbackFormat.isSome());
     wr_renderer_readback(mRenderer, aReadbackSize.ref().width,
-                         aReadbackSize.ref().height, &aReadbackBuffer.ref()[0],
+                         aReadbackSize.ref().height, aReadbackFormat.ref(),
+                         &aReadbackBuffer.ref()[0],
                          aReadbackBuffer.ref().length());
   }
+
+  mScreenshotGrabber.MaybeGrabScreenshot(mRenderer, size.ToUnknownSize());
 
   mCompositor->EndFrame();
 
@@ -143,6 +147,8 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   // Clear frame start time
   mFrameStartTime = TimeStamp();
 #endif
+
+  mScreenshotGrabber.MaybeProcessQueue(mRenderer);
 
   // TODO: Flush pending actions such as texture deletions/unlocks and
   //       textureHosts recycling.
@@ -208,17 +214,6 @@ void RendererOGL::AccumulateMemoryReport(MemoryReport* aReport) {
                             BytesPerPixel(SurfaceFormat::B8G8R8A8) *
                             (mCompositor->UseTripleBuffering() ? 3 : 2);
   aReport->swap_chain += swapChainSize;
-}
-
-static void DoNotifyWebRenderError(layers::CompositorBridgeParent* aBridge,
-                                   WebRenderError aError) {
-  aBridge->NotifyWebRenderError(aError);
-}
-
-void RendererOGL::NotifyWebRenderError(WebRenderError aError) {
-  layers::CompositorThreadHolder::Loop()->PostTask(
-      NewRunnableFunction("DoNotifyWebRenderErrorRunnable",
-                          &DoNotifyWebRenderError, mBridge, aError));
 }
 
 }  // namespace wr

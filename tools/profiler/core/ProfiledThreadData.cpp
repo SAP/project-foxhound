@@ -16,13 +16,6 @@
 #  include <pthread.h>
 #endif
 
-#ifdef XP_WIN
-#  include <process.h>
-#  define getpid _getpid
-#else
-#  include <unistd.h>  // for getpid()
-#endif
-
 ProfiledThreadData::ProfiledThreadData(ThreadInfo* aThreadInfo,
                                        nsIEventTarget* aEventTarget,
                                        bool aIncludeResponsiveness)
@@ -94,6 +87,7 @@ void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
         schema.WriteField("line");
         schema.WriteField("column");
         schema.WriteField("category");
+        schema.WriteField("subcategory");
       }
 
       aWriter.StartArrayProperty("data");
@@ -120,6 +114,8 @@ void ProfiledThreadData::StreamTraceLoggerJSON(
   aWriter.StartObjectProperty("jsTracerEvents");
   {
     JS::AutoTraceLoggerLockGuard lockGuard;
+    JS::SpewTraceLoggerThread(aCx);
+
     uint32_t length = 0;
 
     // Collect Event Ids
@@ -223,7 +219,8 @@ void StreamSamplesAndMarkers(const char* aName, int aThreadId,
   }
 
   aWriter.IntProperty("tid", static_cast<int64_t>(aThreadId));
-  aWriter.IntProperty("pid", static_cast<int64_t>(getpid()));
+  aWriter.IntProperty("pid",
+                      static_cast<int64_t>(profiler_current_process_id()));
 
   if (aRegisterTime) {
     aWriter.DoubleProperty(

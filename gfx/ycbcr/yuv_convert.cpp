@@ -18,7 +18,7 @@
 
 #include "yuv_convert.h"
 
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs.h"
 #include "libyuv.h"
 #include "scale_yuv_argb.h"
 // Header for low level row functions.
@@ -64,30 +64,20 @@ libyuv::FourCC FourCCFromYUVType(YUVType aYUVType)
 }
 
 // Convert a frame of YUV to 32 bit ARGB.
-void ConvertYCbCrToRGB32(const uint8* y_buf,
-                         const uint8* u_buf,
-                         const uint8* v_buf,
-                         uint8* rgb_buf,
-                         int pic_x,
-                         int pic_y,
-                         int pic_width,
-                         int pic_height,
-                         int y_pitch,
-                         int uv_pitch,
-                         int rgb_pitch,
-                         YUVType yuv_type,
+void ConvertYCbCrToRGB32(const uint8* y_buf, const uint8* u_buf,
+                         const uint8* v_buf, uint8* rgb_buf, int pic_x,
+                         int pic_y, int pic_width, int pic_height, int y_pitch,
+                         int uv_pitch, int rgb_pitch, YUVType yuv_type,
                          YUVColorSpace yuv_color_space) {
-
-
   // Deprecated function's conversion is accurate.
   // libyuv converion is a bit inaccurate to get performance. It dynamically
-  // calculates RGB from YUV to use simd. In it, signed byte is used for conversion's
-  // coefficient, but it requests 129. libyuv cut 129 to 127. And only 6 bits are
-  // used for a decimal part during the dynamic calculation.
+  // calculates RGB from YUV to use simd. In it, signed byte is used for
+  // conversion's coefficient, but it requests 129. libyuv cut 129 to 127. And
+  // only 6 bits are used for a decimal part during the dynamic calculation.
   //
   // The function is still fast on some old intel chips.
   // See Bug 1256475.
-  bool use_deprecated = gfxPrefs::YCbCrAccurateConversion() ||
+  bool use_deprecated = StaticPrefs::gfx_ycbcr_accurate_conversion() ||
                         (supports_mmx() && supports_sse() && !supports_sse3() &&
                          yuv_color_space == YUVColorSpace::BT601);
   // The deprecated function only support BT601.
@@ -96,69 +86,77 @@ void ConvertYCbCrToRGB32(const uint8* y_buf,
     use_deprecated = false;
   }
   if (use_deprecated) {
-    ConvertYCbCrToRGB32_deprecated(y_buf, u_buf, v_buf, rgb_buf,
-                                   pic_x, pic_y, pic_width, pic_height,
-                                   y_pitch, uv_pitch, rgb_pitch, yuv_type);
+    ConvertYCbCrToRGB32_deprecated(y_buf, u_buf, v_buf, rgb_buf, pic_x, pic_y,
+                                   pic_width, pic_height, y_pitch, uv_pitch,
+                                   rgb_pitch, yuv_type);
     return;
   }
 
-  if (yuv_type == YV24) {
-    const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
-    const uint8* src_u = u_buf + uv_pitch * pic_y + pic_x;
-    const uint8* src_v = v_buf + uv_pitch * pic_y + pic_x;
-    if (yuv_color_space == mozilla::YUVColorSpace::BT709) {
-      DebugOnly<int> err = libyuv::H444ToARGB(src_y, y_pitch,
-                                              src_u, uv_pitch,
-                                              src_v, uv_pitch,
-                                              rgb_buf, rgb_pitch,
-                                              pic_width, pic_height);
+  decltype(libyuv::U444ToARGB)* fConvertYUVToARGB = nullptr;
+  switch (yuv_type) {
+    case YV24: {
+      const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
+      const uint8* src_u = u_buf + uv_pitch * pic_y + pic_x;
+      const uint8* src_v = v_buf + uv_pitch * pic_y + pic_x;
+      switch (yuv_color_space) {
+        case YUVColorSpace::BT2020:
+          fConvertYUVToARGB = libyuv::U444ToARGB;
+          break;
+        case YUVColorSpace::BT709:
+          fConvertYUVToARGB = libyuv::H444ToARGB;
+          break;
+        default:
+          fConvertYUVToARGB = libyuv::I444ToARGB;
+          break;
+      }
+      DebugOnly<int> err =
+          fConvertYUVToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
+                            rgb_buf, rgb_pitch, pic_width, pic_height);
       MOZ_ASSERT(!err);
-    } else {
-      DebugOnly<int> err = libyuv::I444ToARGB(src_y, y_pitch,
-                                              src_u, uv_pitch,
-                                              src_v, uv_pitch,
-                                              rgb_buf, rgb_pitch,
-                                              pic_width, pic_height);
-      MOZ_ASSERT(!err);
+      break;
     }
-  } else if (yuv_type == YV16) {
-    const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
-    const uint8* src_u = u_buf + uv_pitch * pic_y + pic_x / 2;
-    const uint8* src_v = v_buf + uv_pitch * pic_y + pic_x / 2;
-    if (yuv_color_space == mozilla::YUVColorSpace::BT709) {
-      DebugOnly<int> err = libyuv::H422ToARGB(src_y, y_pitch,
-                                              src_u, uv_pitch,
-                                              src_v, uv_pitch,
-                                              rgb_buf, rgb_pitch,
-                                              pic_width, pic_height);
+    case YV16: {
+      const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
+      const uint8* src_u = u_buf + uv_pitch * pic_y + pic_x / 2;
+      const uint8* src_v = v_buf + uv_pitch * pic_y + pic_x / 2;
+      switch (yuv_color_space) {
+        case YUVColorSpace::BT2020:
+          fConvertYUVToARGB = libyuv::U422ToARGB;
+          break;
+        case YUVColorSpace::BT709:
+          fConvertYUVToARGB = libyuv::H422ToARGB;
+          break;
+        default:
+          fConvertYUVToARGB = libyuv::I422ToARGB;
+          break;
+      }
+      DebugOnly<int> err =
+          fConvertYUVToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
+                            rgb_buf, rgb_pitch, pic_width, pic_height);
       MOZ_ASSERT(!err);
-    } else {
-      DebugOnly<int> err = libyuv::I422ToARGB(src_y, y_pitch,
-                                              src_u, uv_pitch,
-                                              src_v, uv_pitch,
-                                              rgb_buf, rgb_pitch,
-                                              pic_width, pic_height);
-      MOZ_ASSERT(!err);
+      break;
     }
-  } else {
-    MOZ_ASSERT(yuv_type == YV12);
-    const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
-    const uint8* src_u = u_buf + (uv_pitch * pic_y + pic_x) / 2;
-    const uint8* src_v = v_buf + (uv_pitch * pic_y + pic_x) / 2;
-    if (yuv_color_space == mozilla::YUVColorSpace::BT709) {
-      DebugOnly<int> err = libyuv::H420ToARGB(src_y, y_pitch,
-                                              src_u, uv_pitch,
-                                              src_v, uv_pitch,
-                                              rgb_buf, rgb_pitch,
-                                              pic_width, pic_height);
+    default: {
+      MOZ_ASSERT(yuv_type == YV12);
+      const uint8* src_y = y_buf + y_pitch * pic_y + pic_x;
+      const uint8* src_u = u_buf + (uv_pitch * pic_y + pic_x) / 2;
+      const uint8* src_v = v_buf + (uv_pitch * pic_y + pic_x) / 2;
+      switch (yuv_color_space) {
+        case YUVColorSpace::BT2020:
+          fConvertYUVToARGB = libyuv::U420ToARGB;
+          break;
+        case YUVColorSpace::BT709:
+          fConvertYUVToARGB = libyuv::H420ToARGB;
+          break;
+        default:
+          fConvertYUVToARGB = libyuv::I420ToARGB;
+          break;
+      }
+      DebugOnly<int> err =
+          fConvertYUVToARGB(src_y, y_pitch, src_u, uv_pitch, src_v, uv_pitch,
+                            rgb_buf, rgb_pitch, pic_width, pic_height);
       MOZ_ASSERT(!err);
-    } else {
-      DebugOnly<int> err = libyuv::I420ToARGB(src_y, y_pitch,
-                                              src_u, uv_pitch,
-                                              src_v, uv_pitch,
-                                              rgb_buf, rgb_pitch,
-                                              pic_width, pic_height);
-      MOZ_ASSERT(!err);
+      break;
     }
   }
 }
@@ -293,13 +291,13 @@ void ScaleYCbCrToRGB32(const uint8* y_buf,
                        YUVType yuv_type,
                        YUVColorSpace yuv_color_space,
                        ScaleFilter filter) {
-
-  bool use_deprecated = gfxPrefs::YCbCrAccurateConversion() ||
+  bool use_deprecated =
+      StaticPrefs::gfx_ycbcr_accurate_conversion() ||
 #if defined(XP_WIN) && defined(_M_X64)
-                        // libyuv does not support SIMD scaling on win 64bit. See Bug 1295927.
-                        supports_sse3() ||
+      // libyuv does not support SIMD scaling on win 64bit. See Bug 1295927.
+      supports_sse3() ||
 #endif
-                        (supports_mmx() && supports_sse() && !supports_sse3());
+      (supports_mmx() && supports_sse() && !supports_sse3());
   // The deprecated function only support BT601.
   // See Bug 1210357.
   if (yuv_color_space != YUVColorSpace::BT601) {

@@ -4,7 +4,11 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createFactory,
+  createRef,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
@@ -22,6 +26,8 @@ class DebugTargetPane extends PureComponent {
   static get propTypes() {
     return {
       actionComponent: PropTypes.any.isRequired,
+      additionalActionsComponent: PropTypes.any,
+      children: PropTypes.node,
       collapsibilityKey: PropTypes.string.isRequired,
       detailComponent: PropTypes.any.isRequired,
       dispatch: PropTypes.func.isRequired,
@@ -34,14 +40,49 @@ class DebugTargetPane extends PureComponent {
     };
   }
 
+  constructor(props) {
+    super(props);
+    this.collapsableRef = createRef();
+  }
+
+  componentDidUpdate(prevProps, prevState, snapshot) {
+    if (snapshot === null) {
+      return;
+    }
+
+    const el = this.collapsableRef.current;
+
+    // Cancel existing animation which is collapsing/expanding.
+    for (const animation of el.getAnimations()) {
+      animation.cancel();
+    }
+
+    el.animate(
+      { maxHeight: [`${snapshot}px`, `${el.clientHeight}px`] },
+      { duration: 150, easing: "cubic-bezier(.07, .95, 0, 1)" }
+    );
+  }
+
+  getSnapshotBeforeUpdate(prevProps) {
+    if (this.props.isCollapsed !== prevProps.isCollapsed) {
+      return this.collapsableRef.current.clientHeight;
+    }
+
+    return null;
+  }
+
   toggleCollapsibility() {
     const { collapsibilityKey, dispatch, isCollapsed } = this.props;
-    dispatch(Actions.updateDebugTargetCollapsibility(collapsibilityKey, !isCollapsed));
+    dispatch(
+      Actions.updateDebugTargetCollapsibility(collapsibilityKey, !isCollapsed)
+    );
   }
 
   render() {
     const {
       actionComponent,
+      additionalActionsComponent,
+      children,
       detailComponent,
       dispatch,
       getString,
@@ -55,40 +96,48 @@ class DebugTargetPane extends PureComponent {
 
     return dom.section(
       {
-        className: "js-debug-target-pane",
+        className: "qa-debug-target-pane",
       },
       dom.a(
         {
-          className: "undecorated-link debug-target-pane__title " +
-                     "js-debug-target-pane-title",
+          className:
+            "undecorated-link debug-target-pane__title " +
+            "qa-debug-target-pane-title",
           title,
           onClick: e => this.toggleCollapsibility(),
         },
         dom.h2(
           { className: "main-subheading debug-target-pane__heading" },
-          dom.img(
-            {
-              className: "main-subheading__icon",
-              src: icon,
-            }
-          ),
-          `${ name } (${ targets.length })`,
-          dom.img(
-            {
-              className: "main-subheading__icon debug-target-pane__icon" +
-                            (isCollapsed ? " debug-target-pane__icon--collapsed" : ""),
-              src: "chrome://devtools/skin/images/arrow-e.svg",
-            }
-          ),
+          dom.img({
+            className: "main-subheading__icon",
+            src: icon,
+          }),
+          `${name} (${targets.length})`,
+          dom.img({
+            className:
+              "main-subheading__icon debug-target-pane__icon" +
+              (isCollapsed ? " debug-target-pane__icon--collapsed" : ""),
+            src: "chrome://devtools/skin/images/arrow-e.svg",
+          })
         )
       ),
-      DebugTargetList({
-        actionComponent,
-        detailComponent,
-        dispatch,
-        isCollapsed,
-        targets,
-      }),
+      dom.div(
+        {
+          className:
+            "debug-target-pane__collapsable qa-debug-target-pane__collapsable" +
+            (isCollapsed ? " debug-target-pane__collapsable--collapsed" : ""),
+          ref: this.collapsableRef,
+        },
+        children,
+        DebugTargetList({
+          actionComponent,
+          additionalActionsComponent,
+          detailComponent,
+          dispatch,
+          isCollapsed,
+          targets,
+        })
+      )
     );
   }
 }

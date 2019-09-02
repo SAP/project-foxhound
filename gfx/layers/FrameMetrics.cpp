@@ -5,8 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FrameMetrics.h"
-#include "gfxPrefs.h"
+
 #include "nsStyleConsts.h"
+#include "nsStyleStruct.h"
+#include "mozilla/WritingModes.h"
 
 namespace mozilla {
 namespace layers {
@@ -86,6 +88,43 @@ void FrameMetrics::KeepLayoutViewportEnclosingVisualViewport(
 
 void ScrollMetadata::SetUsesContainerScrolling(bool aValue) {
   mUsesContainerScrolling = aValue;
+}
+
+void ScrollSnapInfo::InitializeScrollSnapStrictness(
+    WritingMode aWritingMode, const nsStyleDisplay* aDisplay) {
+  if (aDisplay->mScrollSnapType.strictness == StyleScrollSnapStrictness::None) {
+    return;
+  }
+
+  mScrollSnapStrictnessX = StyleScrollSnapStrictness::None;
+  mScrollSnapStrictnessY = StyleScrollSnapStrictness::None;
+
+  switch (aDisplay->mScrollSnapType.axis) {
+    case StyleScrollSnapAxis::X:
+      mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      break;
+    case StyleScrollSnapAxis::Y:
+      mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      break;
+    case StyleScrollSnapAxis::Block:
+      if (aWritingMode.IsVertical()) {
+        mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      } else {
+        mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      }
+      break;
+    case StyleScrollSnapAxis::Inline:
+      if (aWritingMode.IsVertical()) {
+        mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      } else {
+        mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      }
+      break;
+    case StyleScrollSnapAxis::Both:
+      mScrollSnapStrictnessX = aDisplay->mScrollSnapType.strictness;
+      mScrollSnapStrictnessY = aDisplay->mScrollSnapType.strictness;
+      break;
+  }
 }
 
 static OverscrollBehavior ToOverscrollBehavior(

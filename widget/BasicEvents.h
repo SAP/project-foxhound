@@ -324,7 +324,7 @@ struct BaseEventFlags {
    * ParamTraits<mozilla::WidgetEvent>.  Therefore, it *might* be possible
    * that posting the event failed even if this returns true.  But that must
    * really rare.  If that'd be problem for you, you should unmark this in
-   * TabParent or somewhere.
+   * BrowserParent or somewhere.
    */
   inline bool HasBeenPostedToRemoteProcess() const {
     return mPostedToRemoteProcess;
@@ -835,9 +835,9 @@ class WidgetEvent : public WidgetEventTime {
   void SetDefaultComposed() {
     switch (mClass) {
       case eCompositionEventClass:
-        mFlags.mComposed = mMessage == eCompositionStart ||
-                           mMessage == eCompositionUpdate ||
-                           mMessage == eCompositionEnd;
+        mFlags.mComposed =
+            mMessage == eCompositionStart || mMessage == eCompositionUpdate ||
+            mMessage == eCompositionChange || mMessage == eCompositionEnd;
         break;
       case eDragEventClass:
         // All drag & drop events are composed
@@ -858,12 +858,14 @@ class WidgetEvent : public WidgetEventTime {
             mMessage == eKeyDown || mMessage == eKeyUp || mMessage == eKeyPress;
         break;
       case eMouseEventClass:
-        mFlags.mComposed = mMessage == eMouseClick ||
-                           mMessage == eMouseDoubleClick ||
-                           mMessage == eMouseAuxClick ||
-                           mMessage == eMouseDown || mMessage == eMouseUp ||
-                           mMessage == eMouseOver || mMessage == eMouseOut ||
-                           mMessage == eMouseMove || mMessage == eContextMenu;
+        mFlags.mComposed =
+            mMessage == eMouseClick || mMessage == eMouseDoubleClick ||
+            mMessage == eMouseAuxClick || mMessage == eMouseDown ||
+            mMessage == eMouseUp || mMessage == eMouseOver ||
+            mMessage == eMouseOut || mMessage == eMouseMove ||
+            mMessage == eContextMenu || mMessage == eXULPopupShowing ||
+            mMessage == eXULPopupHiding || mMessage == eXULPopupShown ||
+            mMessage == eXULPopupHidden || mMessage == eXULPopupPositioned;
         break;
       case ePointerEventClass:
         // All pointer events are composed
@@ -898,6 +900,7 @@ class WidgetEvent : public WidgetEventTime {
         aEventTypeArg.EqualsLiteral("compositionstart") ||
         aEventTypeArg.EqualsLiteral("compositionupdate") ||
         aEventTypeArg.EqualsLiteral("compositionend") ||
+        aEventTypeArg.EqualsLiteral("text") ||
         // drag and drop events
         aEventTypeArg.EqualsLiteral("dragstart") ||
         aEventTypeArg.EqualsLiteral("drag") ||

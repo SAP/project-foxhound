@@ -26,6 +26,7 @@
 #include "js/CharacterEncoding.h"
 #include "js/PropertySpec.h"
 #include "js/UniquePtr.h"
+#include "js/Warnings.h"  // JS::{,Set}WarningReporter
 #include "js/Wrapper.h"
 #include "util/StringBuffer.h"
 #include "vm/ErrorObject.h"
@@ -504,7 +505,7 @@ static bool exn_toSource(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (!sb.append("(new ") || !sb.append(name) || !sb.append("(")) {
     return false;
   }
@@ -678,7 +679,11 @@ void js::ErrorToException(JSContext* cx, JSErrorReport* reportp,
 
   // Throw it.
   RootedValue errValue(cx, ObjectValue(*errObject));
-  cx->setPendingException(errValue);
+  RootedSavedFrame nstack(cx);
+  if (stack) {
+    nstack = &stack->as<SavedFrame>();
+  }
+  cx->setPendingException(errValue, nstack);
 
   // Flag the error report passed in to indicate an exception was raised.
   reportp->flags |= JSREPORT_EXCEPTION;
@@ -773,12 +778,6 @@ bool ErrorReport::init(JSContext* cx, HandleValue exn,
     // unrooted, we must root our exception object, if any.
     exnObject = &exn.toObject();
     reportp = ErrorFromException(cx, exnObject);
-
-    if (!reportp && sniffingBehavior == NoSideEffects) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_ERR_DURING_THROW);
-      return false;
-    }
   }
 
   // Be careful not to invoke ToString if we've already successfully extracted
@@ -793,6 +792,8 @@ bool ErrorReport::init(JSContext* cx, HandleValue exn,
     } else {
       str = nullptr;
     }
+  } else if (exnObject && sniffingBehavior == NoSideEffects) {
+    str = cx->names().Object;
   } else {
     str = ToString<CanGC>(cx, exn);
   }
@@ -810,7 +811,7 @@ bool ErrorReport::init(JSContext* cx, HandleValue exn,
   // on their proto chain, and hence also have a "fileName" property, but its
   // value is "".
   const char* filename_str = "filename";
-  if (!reportp && exnObject &&
+  if (!reportp && exnObject && sniffingBehavior == WithSideEffects &&
       IsDuckTypedErrorObject(cx, exnObject, &filename_str)) {
     // Temporary value for pulling properties off of duck-typed objects.
     RootedValue val(cx);
@@ -1052,7 +1053,7 @@ const char* js::ValueToSourceForError(JSContext* cx, HandleValue val,
     return "<<error converting value to string>>";
   }
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (val.isObject()) {
     RootedObject valObj(cx, val.toObjectOrNull());
     ESClass cls;

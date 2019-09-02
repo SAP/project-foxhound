@@ -169,8 +169,8 @@ struct DynamicScalarInfo : BaseScalarInfo {
                     const nsTArray<nsCString>& aStores)
       : BaseScalarInfo(
             aKind,
-            aRecordOnRelease ? nsITelemetry::DATASET_RELEASE_CHANNEL_OPTOUT
-                             : nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN,
+            aRecordOnRelease ? nsITelemetry::DATASET_ALL_CHANNELS
+                             : nsITelemetry::DATASET_PRERELEASE_CHANNELS,
             RecordedProcessType::All, aKeyed, GetCurrentProduct(), aBuiltin),
         mDynamicName(aName),
         mDynamicExpiration(aExpired) {
@@ -826,8 +826,10 @@ class KeyedScalar {
  public:
   typedef mozilla::Pair<nsCString, nsCOMPtr<nsIVariant>> KeyValuePair;
 
+  // We store the name instead of a reference to the BaseScalarInfo because
+  // the BaseScalarInfo can move if it's from a dynamic scalar.
   explicit KeyedScalar(const BaseScalarInfo& info)
-      : mScalarInfo(info), mMaximumNumberOfKeys(kMaximumNumberOfKeys){};
+      : mScalarName(info.name()), mMaximumNumberOfKeys(kMaximumNumberOfKeys){};
   ~KeyedScalar() = default;
 
   // Set, Add and SetMaximum functions as described in the Telemetry IDL.
@@ -865,8 +867,8 @@ class KeyedScalar {
  private:
   typedef nsClassHashtable<nsCStringHashKey, ScalarBase> ScalarKeysMapType;
 
+  const nsCString mScalarName;
   ScalarKeysMapType mScalarKeys;
-  const BaseScalarInfo& mScalarInfo;
   uint32_t mMaximumNumberOfKeys;
 
   ScalarResult GetScalarForKey(const StaticMutexAutoLock& locker,
@@ -1012,6 +1014,10 @@ nsresult internal_GetKeyedScalarByEnum(const StaticMutexAutoLock& lock,
                                        ProcessID aProcessStorage,
                                        KeyedScalar** aRet);
 
+// Forward declaration
+nsresult internal_GetEnumByScalarName(const StaticMutexAutoLock& lock,
+                                      const nsACString& aName, ScalarKey* aId);
+
 /**
  * Get the scalar for the referenced key.
  * If there's no such key, instantiate a new Scalar object with the
@@ -1036,6 +1042,14 @@ ScalarResult KeyedScalar::GetScalarForKey(const StaticMutexAutoLock& locker,
     return ScalarResult::Ok;
   }
 
+  ScalarKey uniqueId;
+  nsresult rv = internal_GetEnumByScalarName(locker, mScalarName, &uniqueId);
+  if (NS_FAILED(rv)) {
+    return (rv == NS_ERROR_FAILURE) ? ScalarResult::NotInitialized
+                                    : ScalarResult::UnknownScalar;
+  }
+
+  const BaseScalarInfo& info = internal_GetScalarInfo(locker, uniqueId);
   if (mScalarKeys.Count() >= mMaximumNumberOfKeys) {
     if (aKey.EqualsLiteral("telemetry.keyed_scalars_exceed_limit")) {
       return ScalarResult::TooManyKeys;
@@ -1056,13 +1070,12 @@ ScalarResult KeyedScalar::GetScalarForKey(const StaticMutexAutoLock& locker,
       return ScalarResult::TooManyKeys;
     }
 
-    scalarExceed->AddValue(locker, NS_ConvertUTF8toUTF16(mScalarInfo.name()),
-                           1);
+    scalarExceed->AddValue(locker, NS_ConvertUTF8toUTF16(info.name()), 1);
 
     return ScalarResult::TooManyKeys;
   }
 
-  scalar = internal_ScalarAllocate(mScalarInfo);
+  scalar = internal_ScalarAllocate(info);
   if (!scalar) {
     return ScalarResult::InvalidType;
   }
@@ -2277,7 +2290,7 @@ void internal_ApplyKeyedScalarActions(
     if (NS_FAILED(rv)) {
       // Bug 1513496 - We no longer log a warning if the scalar is expired.
       if (rv != NS_ERROR_NOT_AVAILABLE) {
-        NS_WARNING("NS_FAILED internal_GetScalarByEnum for CHILD");
+        NS_WARNING("NS_FAILED internal_GetKeyedScalarByEnum for CHILD");
       }
       continue;
     }
@@ -3672,8 +3685,7 @@ void TelemetryScalar::AddDynamicScalarDefinitions(
 
   // Populate the definitions array before acquiring the lock.
   for (auto def : aDefs) {
-    bool recordOnRelease =
-        def.dataset == nsITelemetry::DATASET_RELEASE_CHANNEL_OPTOUT;
+    bool recordOnRelease = def.dataset == nsITelemetry::DATASET_ALL_CHANNELS;
     dynamicStubs.AppendElement(DynamicScalarInfo{def.type,
                                                  recordOnRelease,
                                                  def.expired,
@@ -3733,7 +3745,7 @@ nsresult TelemetryScalar::SerializeScalars(mozilla::JSONWriter& aWriter) {
     // For persistence, we care about all the datasets. Worst case, they
     // will be empty.
     nsresult rv = internal_GetScalarSnapshot(
-        locker, scalarsToReflect, nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN,
+        locker, scalarsToReflect, nsITelemetry::DATASET_PRERELEASE_CHANNELS,
         false, /*aClearScalars*/
         NS_LITERAL_CSTRING("main"));
     if (NS_FAILED(rv)) {
@@ -3784,7 +3796,7 @@ nsresult TelemetryScalar::SerializeKeyedScalars(mozilla::JSONWriter& aWriter) {
     // will be empty.
     nsresult rv = internal_GetKeyedScalarSnapshot(
         locker, keyedScalarsToReflect,
-        nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN, false, /*aClearScalars*/
+        nsITelemetry::DATASET_PRERELEASE_CHANNELS, false, /*aClearScalars*/
         NS_LITERAL_CSTRING("main"));
     if (NS_FAILED(rv)) {
       return rv;

@@ -239,14 +239,14 @@ class JS_PUBLIC_API CallbackTracer : public JSTracer {
 
 #ifdef DEBUG
   enum class TracerKind {
-    DoNotCare,
+    Unspecified,
     Moving,
     GrayBuffering,
     VerifyTraceProtoAndIface,
     ClearEdges,
     UnmarkGray
   };
-  virtual TracerKind getTracerKind() const { return TracerKind::DoNotCare; }
+  virtual TracerKind getTracerKind() const { return TracerKind::Unspecified; }
 #endif
 
   // In C++, overriding a method hides all methods in the base class with
@@ -399,7 +399,7 @@ inline void TraceEdge(JSTracer* trc, JS::TenuredHeap<T>* thingp,
   MOZ_ASSERT(thingp);
   if (T ptr = thingp->unbarrieredGetPtr()) {
     js::gc::TraceExternalEdge(trc, &ptr, name);
-    thingp->setPtr(ptr);
+    thingp->unbarrieredSetPtr(ptr);
   }
 }
 

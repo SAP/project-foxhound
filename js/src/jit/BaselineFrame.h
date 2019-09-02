@@ -226,6 +226,15 @@ class BaselineFrame {
     return UndefinedValue();
   }
 
+  void prepareForBaselineInterpreterToJitOSR() {
+    // Clearing the RUNNING_IN_INTERPRETER flag is sufficient, but we also null
+    // out the interpreter fields to ensure we don't use stale values.
+    flags_ &= ~RUNNING_IN_INTERPRETER;
+    interpreterScript_ = nullptr;
+    interpreterPC_ = nullptr;
+    interpreterICEntry_ = nullptr;
+  }
+
   bool runningInInterpreter() const { return flags_ & RUNNING_IN_INTERPRETER; }
 
   JSScript* interpreterScript() const {
@@ -237,6 +246,7 @@ class BaselineFrame {
     MOZ_ASSERT(runningInInterpreter());
     return interpreterPC_;
   }
+  void setInterpreterPC(jsbytecode* pc);
 
   bool hasReturnValue() const { return flags_ & HAS_RVAL; }
   MutableHandleValue returnValue() {

@@ -1304,7 +1304,8 @@ static void test_parse_string_helper2(const char* str, char separator,
   test_parse_string_helper(str, separator, 2, s1, s2);
 }
 
-TEST(String, parse_string) {
+TEST(String, parse_string)
+{
   test_parse_string_helper1("foo, bar", '_', "foo, bar");
   test_parse_string_helper2("foo, bar", ',', "foo", " bar");
   test_parse_string_helper2("foo, bar ", ' ', "foo,", "bar");
@@ -1322,7 +1323,8 @@ static void test_strip_chars_helper(const char16_t* str, const char16_t* strip,
   EXPECT_TRUE(data.Equals(result));
 }
 
-TEST(String, strip_chars) {
+TEST(String, strip_chars)
+{
   test_strip_chars_helper(u"foo \r \nbar", u" \n\r",
                           NS_LITERAL_STRING("foobar"));
   test_strip_chars_helper(u"\r\nfoo\r\n", u" \n\r", NS_LITERAL_STRING("foo"));
@@ -1549,6 +1551,33 @@ TEST_F(Strings, tofloat) {
   test_tofloat_helper(NS_LITERAL_STRING(""), 0.f, false);
   test_tofloat_helper(NS_LITERAL_STRING("42foo"), 42.f, false);
   test_tofloat_helper(NS_LITERAL_STRING("foo"), 0.f, false);
+  test_tofloat_helper(NS_LITERAL_STRING("1.5e-"), 1.5f, false);
+}
+
+static void test_tofloat_allow_trailing_chars_helper(const nsString& aStr,
+                                                     float aExpected,
+                                                     bool aSuccess) {
+  nsresult result;
+  EXPECT_EQ(aStr.ToFloatAllowTrailingChars(&result), aExpected);
+  if (aSuccess) {
+    EXPECT_EQ(result, NS_OK);
+  } else {
+    EXPECT_NE(result, NS_OK);
+  }
+}
+
+TEST_F(Strings, ToFloatAllowTrailingChars) {
+  test_tofloat_allow_trailing_chars_helper(NS_LITERAL_STRING(""), 0.f, false);
+  test_tofloat_allow_trailing_chars_helper(NS_LITERAL_STRING("foo"), 0.f,
+                                           false);
+  test_tofloat_allow_trailing_chars_helper(NS_LITERAL_STRING("42foo"), 42.f,
+                                           true);
+  test_tofloat_allow_trailing_chars_helper(NS_LITERAL_STRING("42-5"), 42.f,
+                                           true);
+  test_tofloat_allow_trailing_chars_helper(NS_LITERAL_STRING("13.37.8"), 13.37f,
+                                           true);
+  test_tofloat_allow_trailing_chars_helper(NS_LITERAL_STRING("1.5e-"), 1.5f,
+                                           true);
 }
 
 static void test_todouble_helper(const nsString& aStr, double aExpected,
@@ -1578,6 +1607,32 @@ TEST_F(Strings, todouble) {
   test_todouble_helper(NS_LITERAL_STRING(""), 0, false);
   test_todouble_helper(NS_LITERAL_STRING("42foo"), 42, false);
   test_todouble_helper(NS_LITERAL_STRING("foo"), 0, false);
+  test_todouble_helper(NS_LITERAL_STRING("1.5e-"), 1.5, false);
+}
+
+static void test_todouble_allow_trailing_chars_helper(const nsString& aStr,
+                                                      double aExpected,
+                                                      bool aSuccess) {
+  nsresult result;
+  EXPECT_EQ(aStr.ToDoubleAllowTrailingChars(&result), aExpected);
+  if (aSuccess) {
+    EXPECT_EQ(result, NS_OK);
+  } else {
+    EXPECT_NE(result, NS_OK);
+  }
+}
+
+TEST_F(Strings, ToDoubleAllowTrailingChars) {
+  test_todouble_allow_trailing_chars_helper(NS_LITERAL_STRING(""), 0, false);
+  test_todouble_allow_trailing_chars_helper(NS_LITERAL_STRING("foo"), 0, false);
+  test_todouble_allow_trailing_chars_helper(NS_LITERAL_STRING("42foo"), 42,
+                                            true);
+  test_todouble_allow_trailing_chars_helper(NS_LITERAL_STRING("42-5"), 42,
+                                            true);
+  test_todouble_allow_trailing_chars_helper(NS_LITERAL_STRING("13.37.8"), 13.37,
+                                            true);
+  test_todouble_allow_trailing_chars_helper(NS_LITERAL_STRING("1.5e-"), 1.5,
+                                            true);
 }
 
 TEST_F(Strings, Split) {
@@ -1840,6 +1895,52 @@ TEST_F(Strings, StripCRLFW) {
   result.AssignLiteral(u"\u263A    is   ;-)");
   str.StripCRLF();
   EXPECT_TRUE(str == result);
+}
+
+TEST_F(Strings, utf8_to_latin1_sharing) {
+  nsCString s;
+  s.Append('a');
+  s.Append('b');
+  s.Append('c');
+  nsCString t;
+  LossyAppendUTF8toLatin1(s, t);
+  EXPECT_TRUE(t.EqualsLiteral("abc"));
+  EXPECT_EQ(s.BeginReading(), t.BeginReading());
+  LossyCopyUTF8toLatin1(s, t);
+  EXPECT_TRUE(t.EqualsLiteral("abc"));
+  EXPECT_EQ(s.BeginReading(), t.BeginReading());
+}
+
+TEST_F(Strings, latin1_to_utf8_sharing) {
+  nsCString s;
+  s.Append('a');
+  s.Append('b');
+  s.Append('c');
+  nsCString t;
+  AppendLatin1toUTF8(s, t);
+  EXPECT_TRUE(t.EqualsLiteral("abc"));
+  EXPECT_EQ(s.BeginReading(), t.BeginReading());
+  CopyLatin1toUTF8(s, t);
+  EXPECT_TRUE(t.EqualsLiteral("abc"));
+  EXPECT_EQ(s.BeginReading(), t.BeginReading());
+}
+
+TEST_F(Strings, utf8_to_latin1) {
+  nsCString s;
+  s.AssignLiteral("\xC3\xA4");
+  nsCString t;
+  LossyCopyUTF8toLatin1(s, t);
+  // EqualsLiteral requires ASCII
+  EXPECT_TRUE(t.Equals("\xE4"));
+}
+
+TEST_F(Strings, latin1_to_utf8) {
+  nsCString s;
+  s.AssignLiteral("\xE4");
+  nsCString t;
+  CopyLatin1toUTF8(s, t);
+  // EqualsLiteral requires ASCII
+  EXPECT_TRUE(t.Equals("\xC3\xA4"));
 }
 
 // Note the five calls in the loop, so divide by 100k

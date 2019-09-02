@@ -116,10 +116,16 @@
   font-size: 1rem;
   align-items: center;
   text-align: start;
-  color: #737373;
+  opacity: .5;
   padding-inline-start: 1em;
 }
 
 :root:not([subdialog]) #country-warning-message {
   display: none;
+}
+
+/* Reset margins for inputs and textareas, overriding in-content styles */
+#form textarea,
+#form input {
+  margin: 0;
 }

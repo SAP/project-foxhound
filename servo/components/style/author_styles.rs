@@ -3,7 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! A set of author stylesheets and their computed representation, such as the
-//! ones used for ShadowRoot and XBL.
+//! ones used for ShadowRoot.
 
 use crate::context::QuirksMode;
 use crate::dom::TElement;
@@ -17,7 +17,8 @@ use crate::stylesheets::StylesheetInDocument;
 use crate::stylist::CascadeData;
 
 /// A set of author stylesheets and their computed representation, such as the
-/// ones used for ShadowRoot and XBL.
+/// ones used for ShadowRoot.
+#[derive(MallocSizeOf)]
 pub struct AuthorStyles<S>
 where
     S: StylesheetInDocument + PartialEq + 'static,
@@ -27,9 +28,6 @@ where
     pub stylesheets: AuthorStylesheetSet<S>,
     /// The actual cascade data computed from the stylesheets.
     pub data: CascadeData,
-    /// The quirks mode of the last stylesheet flush, used because XBL sucks and
-    /// we should really fix it, see bug 1406875.
-    pub quirks_mode: QuirksMode,
 }
 
 impl<S> AuthorStyles<S>
@@ -42,7 +40,6 @@ where
         Self {
             stylesheets: AuthorStylesheetSet::new(),
             data: CascadeData::new(),
-            quirks_mode: QuirksMode::NoQuirks,
         }
     }
 
@@ -64,10 +61,6 @@ where
             .stylesheets
             .flush::<E>(/* host = */ None, /* snapshot_map = */ None);
 
-        if flusher.sheets.dirty() {
-            self.quirks_mode = quirks_mode;
-        }
-
         // Ignore OOM.
         let _ = self
             .data
@@ -77,7 +70,7 @@ where
 
 #[cfg(feature = "gecko")]
 unsafe impl HasFFI for AuthorStyles<crate::gecko::data::GeckoStyleSheet> {
-    type FFIType = crate::gecko_bindings::bindings::RawServoAuthorStyles;
+    type FFIType = crate::gecko_bindings::structs::RawServoAuthorStyles;
 }
 #[cfg(feature = "gecko")]
 unsafe impl HasSimpleFFI for AuthorStyles<crate::gecko::data::GeckoStyleSheet> {}

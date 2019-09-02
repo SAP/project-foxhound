@@ -428,6 +428,9 @@ of the attribute codes:
 	<listitem>
 <para><command>J</command> (as an object signer)</para>
 	</listitem>
+	<listitem>
+<para><command>I</command> (as an IPSEC user)</para>
+	</listitem>
 	</itemizedlist></listitem>
       </varlistentry>
 
@@ -660,6 +663,41 @@ of the attribute codes:
 	<listitem>
 	<para>
 		critical
+	</para>
+	</listitem>
+	<listitem>
+	<para>
+		x509Any
+	</para>
+	</listitem>
+	<listitem>
+	<para>
+		ipsecIKE
+	</para>
+	</listitem>
+	<listitem>
+	<para>
+		ipsecIKEEnd
+	</para>
+	</listitem>
+	<listitem>
+	<para>
+		ipsecIKEIntermediate
+	</para>
+	</listitem>
+	<listitem>
+	<para>
+		ipsecEnd
+	</para>
+	</listitem>
+	<listitem>
+	<para>
+		ipsecTunnel
+	</para>
+	</listitem>
+	<listitem>
+	<para>
+		ipsecUser
 	</para>
 	</listitem>
 	</itemizedlist>

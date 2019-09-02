@@ -14,6 +14,7 @@ webidl Document;
 #include "gfxMatrix.h"
 #include "gfxRect.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/AspectRatio.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "nsRect.h"
@@ -45,6 +46,7 @@ struct Orientation;
 
 %}
 
+native MaybeAspectRatio(mozilla::Maybe<mozilla::AspectRatio>);
 native ImgDrawResult(mozilla::image::ImgDrawResult);
 [ptr] native gfxContext(gfxContext);
 [ref] native gfxMatrix(gfxMatrix);
@@ -99,9 +101,9 @@ interface imgIContainer : nsISupports
 
   /**
    * The (dimensionless) intrinsic ratio of this image. In the case of any
-   * error, an exception will be thrown.
+   * error, Nothing() will be returned.
    */
-  [noscript] readonly attribute nsSize intrinsicRatio;
+  [notxpcom, nostdcall] readonly attribute MaybeAspectRatio intrinsicRatio;
 
   /**
    * Given a size at which this image will be displayed, and the drawing
@@ -209,6 +211,10 @@ interface imgIContainer : nsISupports
    * (a "window into SVG space") based on the border image area, and we need to
    * be sure we don't subsequently scale that viewport in a way that distorts
    * its contents by stretching them more in one dimension than the other.
+   *
+   * FLAG_AVOID_REDECODE_FOR_SIZE: If there is already a raster surface
+   * available for this image, but it is not the same size as requested, skip
+   * starting a new decode for said size.
    */
   const unsigned long FLAG_NONE                            = 0x0;
   const unsigned long FLAG_SYNC_DECODE                     = 0x1;
@@ -222,6 +228,7 @@ interface imgIContainer : nsISupports
   const unsigned long FLAG_BYPASS_SURFACE_CACHE            = 0x100;
   const unsigned long FLAG_FORCE_PRESERVEASPECTRATIO_NONE  = 0x200;
   const unsigned long FLAG_FORCE_UNIFORM_SCALING           = 0x400;
+  const unsigned long FLAG_AVOID_REDECODE_FOR_SIZE         = 0x800;
 
   /**
    * A constant specifying the default set of decode flags (i.e., the default
@@ -460,8 +467,15 @@ interface imgIContainer : nsISupports
    *
    * @param aFlags Flags of the FLAG_* variety. Only FLAG_ASYNC_NOTIFY
    *               is accepted; all others are ignored.
+   * @param aWhichFrame Frame specifier of the FRAME_* variety.
    */
-  [noscript] void startDecoding(in uint32_t aFlags);
+  [noscript] void startDecoding(in uint32_t aFlags, in uint32_t aWhichFrame);
+
+%{C++
+  nsresult StartDecoding(uint32_t aFlags) {
+    return StartDecoding(aFlags, FRAME_CURRENT);
+  }
+%}
 
   /*
    * Exactly like startDecoding above except returns whether the current frame
@@ -469,8 +483,33 @@ interface imgIContainer : nsISupports
    *
    * @param aFlags Flags of the FLAG_* variety. Only FLAG_ASYNC_NOTIFY
    *               is accepted; all others are ignored.
+   * @param aWhichFrame Frame specifier of the FRAME_* variety.
    */
-  [noscript, notxpcom] boolean startDecodingWithResult(in uint32_t aFlags);
+  [noscript, notxpcom] boolean startDecodingWithResult(in uint32_t aFlags, in uint32_t aWhichFrame);
+
+%{C++
+  bool StartDecodingWithResult(uint32_t aFlags) {
+    return StartDecodingWithResult(aFlags, FRAME_CURRENT);
+  }
+%}
+
+  /*
+   * This method triggers decoding for an image, but unlike startDecoding() it
+   * enables the caller to provide more detailed information about the decode
+   * request.
+   *
+   * @param aFlags Flags of the FLAG_* variety.
+   * @param aWhichFrame Frame specifier of the FRAME_* variety.
+   * @return True there is a surface that satisfies the request and it is
+   *         fully decoded, else false.
+   */
+  [noscript, notxpcom] boolean requestDecodeWithResult(in uint32_t aFlags, in uint32_t aWhichFrame);
+
+%{C++
+  bool RequestDecodeWithResult(uint32_t aFlags) {
+    return RequestDecodeWithResult(aFlags, FRAME_CURRENT);
+  }
+%}
 
   /*
    * This method triggers decoding for an image, but unlike startDecoding() it
@@ -481,9 +520,17 @@ interface imgIContainer : nsISupports
    *              if possible. If the image cannot be scaled to this size while
    *              being decoded, it will be decoded at its intrinsic size.
    * @param aFlags Flags of the FLAG_* variety.
+   * @param aWhichFrame Frame specifier of the FRAME_* variety.
    */
   [noscript] void requestDecodeForSize([const] in nsIntSize aSize,
-                                       in uint32_t aFlags);
+                                       in uint32_t aFlags,
+                                       in uint32_t aWhichFrame);
+
+%{C++
+  nsresult RequestDecodeForSize(const nsIntSize& aSize, uint32_t aFlags) {
+    return RequestDecodeForSize(aSize, aFlags, FRAME_CURRENT);
+  }
+%}
 
   /**
     * Increments the lock count on the image. An image will not be discarded

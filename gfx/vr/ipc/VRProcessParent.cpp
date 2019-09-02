@@ -11,12 +11,13 @@
 #include "mozilla/gfx/GPUChild.h"
 #include "mozilla/ipc/ProtocolTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"  // for IToplevelProtocol
-#include "mozilla/TimeStamp.h"          // for TimeStamp
+#include "mozilla/StaticPrefs.h"
+#include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/Unused.h"
+#include "ProcessUtils.h"
 #include "VRChild.h"
 #include "VRManager.h"
 #include "VRThread.h"
-#include "gfxVRPuppet.h"
 
 #include "nsAppRunner.h"  // for IToplevelProtocol
 #include "mozilla/ipc/ProtocolUtils.h"
@@ -33,6 +34,7 @@ VRProcessParent::VRProcessParent(Listener* aListener)
     : GeckoChildProcessHost(GeckoProcessType_VR),
       mTaskFactory(this),
       mListener(aListener),
+      mLaunchPhase(LaunchPhase::Unlaunched),
       mChannelClosed(false),
       mShutdownRequested(false) {
   MOZ_COUNT_CTOR(VRProcessParent);
@@ -49,17 +51,52 @@ VRProcessParent::~VRProcessParent() {
 }
 
 bool VRProcessParent::Launch() {
+  MOZ_ASSERT(mLaunchPhase == LaunchPhase::Unlaunched);
+  MOZ_ASSERT(!mVRChild);
   mLaunchThread = NS_GetCurrentThread();
+
+  mLaunchPhase = LaunchPhase::Waiting;
 
   std::vector<std::string> extraArgs;
   nsCString parentBuildID(mozilla::PlatformBuildID());
   extraArgs.push_back("-parentBuildID");
   extraArgs.push_back(parentBuildID.get());
 
+  mPrefSerializer = MakeUnique<ipc::SharedPreferenceSerializer>();
+  if (!mPrefSerializer->SerializeToSharedMemory()) {
+    return false;
+  }
+  mPrefSerializer->AddSharedPrefCmdLineArgs(*this, extraArgs);
+
   if (!GeckoChildProcessHost::AsyncLaunch(extraArgs)) {
+    mLaunchPhase = LaunchPhase::Complete;
+    mPrefSerializer = nullptr;
     return false;
   }
   return true;
+}
+
+bool VRProcessParent::WaitForLaunch() {
+  if (mLaunchPhase == LaunchPhase::Complete) {
+    return !!mVRChild;
+  }
+
+  int32_t timeoutMs = StaticPrefs::dom_vr_process_startup_timeout_ms();
+
+  // If one of the following environment variables are set we can effectively
+  // ignore the timeout - as we can guarantee the compositor process will be
+  // terminated
+  if (PR_GetEnv("MOZ_DEBUG_CHILD_PROCESS") ||
+      PR_GetEnv("MOZ_DEBUG_CHILD_PAUSE")) {
+    timeoutMs = 0;
+  }
+
+  // Our caller expects the connection to be finished after we return, so we
+  // immediately set up the IPDL actor and fire callbacks. The IO thread will
+  // still dispatch a notification to the main thread - we'll just ignore it.
+  bool result = GeckoChildProcessHost::WaitUntilConnected(timeoutMs);
+  InitAfterConnect(result);
+  return result;
 }
 
 void VRProcessParent::Shutdown() {
@@ -101,6 +138,12 @@ void VRProcessParent::DestroyProcess() {
 }
 
 void VRProcessParent::InitAfterConnect(bool aSucceeded) {
+  MOZ_ASSERT(mLaunchPhase == LaunchPhase::Waiting);
+  MOZ_ASSERT(!mVRChild);
+
+  mLaunchPhase = LaunchPhase::Complete;
+  mPrefSerializer = nullptr;
+
   if (aSucceeded) {
     mVRChild = MakeUnique<VRChild>(this);
 
@@ -157,10 +200,16 @@ void VRProcessParent::OnChannelConnected(int32_t peer_pid) {
   NS_DispatchToMainThread(runnable);
 }
 
-void VRProcessParent::OnChannelConnectedTask() { InitAfterConnect(true); }
+void VRProcessParent::OnChannelConnectedTask() {
+  if (mLaunchPhase == LaunchPhase::Waiting) {
+    InitAfterConnect(true);
+  }
+}
 
 void VRProcessParent::OnChannelErrorTask() {
-  MOZ_ASSERT(false, "VR process channel error.");
+  if (mLaunchPhase == LaunchPhase::Waiting) {
+    InitAfterConnect(false);
+  }
 }
 
 void VRProcessParent::OnChannelClosed() {

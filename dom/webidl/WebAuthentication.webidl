@@ -54,11 +54,11 @@ dictionary PublicKeyCredentialCreationOptions {
 
     unsigned long                                timeout;
     sequence<PublicKeyCredentialDescriptor>      excludeCredentials = [];
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticatorSelectionCriteria               authenticatorSelection = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticatorSelectionCriteria               authenticatorSelection = {};
     AttestationConveyancePreference              attestation = "none";
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticationExtensionsClientInputs         extensions = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticationExtensionsClientInputs         extensions = {};
 };
 
 dictionary PublicKeyCredentialEntity {
@@ -104,8 +104,8 @@ dictionary PublicKeyCredentialRequestOptions {
     USVString                            rpId;
     sequence<PublicKeyCredentialDescriptor> allowCredentials = [];
     UserVerificationRequirement          userVerification = "preferred";
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticationExtensionsClientInputs extensions = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticationExtensionsClientInputs extensions = {};
 };
 
 // TODO - Use partial dictionaries when bug 1436329 is fixed.
@@ -113,6 +113,10 @@ dictionary AuthenticationExtensionsClientInputs {
     // FIDO AppID Extension (appid)
     // <https://w3c.github.io/webauthn/#sctn-appid-extension>
     USVString appid;
+
+    // hmac-secret
+    // <https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#sctn-hmac-secret-extension>
+    boolean hmacCreateSecret;
 };
 
 // TODO - Use partial dictionaries when bug 1436329 is fixed.
@@ -120,6 +124,9 @@ dictionary AuthenticationExtensionsClientOutputs {
     // FIDO AppID Extension (appid)
     // <https://w3c.github.io/webauthn/#sctn-appid-extension>
     boolean appid;
+
+    // <https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#sctn-hmac-secret-extension>
+    boolean hmacCreateSecret;
 };
 
 typedef record<DOMString, DOMString> AuthenticationExtensionsAuthenticatorInputs;
@@ -130,8 +137,8 @@ dictionary CollectedClientData {
     required DOMString           origin;
     required DOMString           hashAlgorithm;
     DOMString                    tokenBindingId;
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticationExtensionsClientInputs clientExtensions = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticationExtensionsClientInputs clientExtensions = {};
     AuthenticationExtensionsAuthenticatorInputs authenticatorExtensions;
 };
 

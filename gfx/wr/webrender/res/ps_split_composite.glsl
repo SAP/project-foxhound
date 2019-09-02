@@ -42,6 +42,7 @@ struct SplitCompositeInstance {
     int prim_header_index;
     int polygons_address;
     float z;
+    int render_task_index;
 };
 
 SplitCompositeInstance fetch_composite_instance() {
@@ -50,6 +51,7 @@ SplitCompositeInstance fetch_composite_instance() {
     ci.prim_header_index = aData.x;
     ci.polygons_address = aData.y;
     ci.z = float(aData.z);
+    ci.render_task_index = aData.w;
 
     return ci;
 }
@@ -58,10 +60,10 @@ void main(void) {
     SplitCompositeInstance ci = fetch_composite_instance();
     SplitGeometry geometry = fetch_split_geometry(ci.polygons_address);
     PrimitiveHeader ph = fetch_prim_header(ci.prim_header_index);
-    PictureTask dest_task = fetch_picture_task(ph.render_task_index);
+    PictureTask dest_task = fetch_picture_task(ci.render_task_index);
     Transform transform = fetch_transform(ph.transform_id);
     ImageResource res = fetch_image_resource(ph.user_data.x);
-    ClipArea clip_area = fetch_clip_area(ph.clip_task_index);
+    ClipArea clip_area = fetch_clip_area(ph.user_data.w);
 
     vec2 dest_origin = dest_task.common_data.task_rect.p0 -
                        dest_task.content_origin;
@@ -112,6 +114,6 @@ void main(void) {
     float alpha = do_clip();
     float perspective_divisor = mix(gl_FragCoord.w, 1.0, vLayerAndPerspective.y);
     vec2 uv = clamp(vUv * perspective_divisor, vUvSampleBounds.xy, vUvSampleBounds.zw);
-    oFragColor = alpha * textureLod(sPrevPassColor, vec3(uv, vLayerAndPerspective.x), 0.0);
+    write_output(alpha * textureLod(sPrevPassColor, vec3(uv, vLayerAndPerspective.x), 0.0));
 }
 #endif

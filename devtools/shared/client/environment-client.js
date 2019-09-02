@@ -4,8 +4,10 @@
 
 "use strict";
 
-const {arg, DebuggerClient} = require("devtools/shared/client/debugger-client");
-const eventSource = require("devtools/shared/client/event-source");
+const {
+  arg,
+  DebuggerClient,
+} = require("devtools/shared/client/debugger-client");
 
 /**
  * Environment clients are used to manipulate the lexical environment actors.
@@ -23,7 +25,6 @@ function EnvironmentClient(client, form) {
 exports.EnvironmentClient = EnvironmentClient;
 
 EnvironmentClient.prototype = {
-
   get actor() {
     return this._form.actor;
   },
@@ -48,7 +49,5 @@ EnvironmentClient.prototype = {
     value: arg(1),
   }),
 };
-
-eventSource(EnvironmentClient.prototype);
 
 module.exports = EnvironmentClient;

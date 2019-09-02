@@ -19,14 +19,18 @@ namespace gfx {
 
 using namespace std;
 
-RecordedEvent *RecordedEvent::LoadEventFromStream(std::istream &aStream,
-                                                  EventType aType) {
-  return LoadEvent(aStream, aType);
+/* static */
+bool RecordedEvent::DoWithEventFromStream(
+    EventStream& aStream, EventType aType,
+    const std::function<bool(RecordedEvent*)>& aAction) {
+  return DoWithEvent(aStream, aType, aAction);
 }
 
-RecordedEvent *RecordedEvent::LoadEventFromStream(EventStream &aStream,
-                                                  EventType aType) {
-  return LoadEvent(aStream, aType);
+/* static */
+bool RecordedEvent::DoWithEventFromStream(
+    EventRingBuffer& aStream, EventType aType,
+    const std::function<bool(RecordedEvent*)>& aAction) {
+  return DoWithEvent(aStream, aType, aAction);
 }
 
 string RecordedEvent::GetEventName(EventType aType) {
@@ -119,8 +123,8 @@ string RecordedEvent::GetEventName(EventType aType) {
 }
 
 template <class S>
-void RecordedEvent::RecordUnscaledFontImpl(UnscaledFont *aUnscaledFont,
-                                           S &aOutput) {
+void RecordedEvent::RecordUnscaledFontImpl(UnscaledFont* aUnscaledFont,
+                                           S& aOutput) {
   RecordedFontData fontData(aUnscaledFont);
   RecordedFontDetails fontDetails;
   if (fontData.GetFontDetails(fontDetails)) {
@@ -146,18 +150,18 @@ void RecordedEvent::RecordUnscaledFontImpl(UnscaledFont *aUnscaledFont,
   }
 }
 
-void RecordedEvent::RecordUnscaledFont(UnscaledFont *aUnscaledFont,
-                                       std::ostream *aOutput) {
+void RecordedEvent::RecordUnscaledFont(UnscaledFont* aUnscaledFont,
+                                       std::ostream* aOutput) {
   RecordUnscaledFontImpl(aUnscaledFont, *aOutput);
 }
 
-void RecordedEvent::RecordUnscaledFont(UnscaledFont *aUnscaledFont,
-                                       MemStream &aOutput) {
+void RecordedEvent::RecordUnscaledFont(UnscaledFont* aUnscaledFont,
+                                       MemStream& aOutput) {
   RecordUnscaledFontImpl(aUnscaledFont, aOutput);
 }
 
 already_AddRefed<DrawTarget> Translator::CreateDrawTarget(
-    ReferencePtr aRefPtr, const IntSize &aSize, SurfaceFormat aFormat) {
+    ReferencePtr aRefPtr, const IntSize& aSize, SurfaceFormat aFormat) {
   RefPtr<DrawTarget> newDT =
       GetReferenceDrawTarget()->CreateSimilarDrawTarget(aSize, aFormat);
   AddDrawTarget(aRefPtr, newDT);

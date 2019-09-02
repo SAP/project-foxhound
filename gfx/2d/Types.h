@@ -63,6 +63,7 @@ enum class SurfaceFormat : int8_t {
   A16,
 
   R8G8,
+  R16G16,
 
   // These ones are their own special cases.
   YUV,
@@ -137,6 +138,15 @@ inline bool IsOpaque(SurfaceFormat aFormat) {
       return false;
   }
 }
+
+enum class YUVColorSpace : uint8_t {
+  BT601,
+  BT709,
+  BT2020,
+  // This represents the unknown format and is a valid value.
+  UNKNOWN,
+  _NUM_COLORSPACE
+};
 
 enum class ColorDepth : uint8_t {
   COLOR_8,
@@ -550,7 +560,7 @@ static inline HalfCorner operator++(HalfCorner& aHalfCorner) {
 }
 
 // The result of these conversion functions are exhaustively checked in
-// nsStyleCoord.cpp, which also serves as usage examples.
+// nsFrame.cpp, which also serves as usage examples.
 
 constexpr bool HalfCornerIsX(HalfCorner aHalfCorner) {
   return !(aHalfCorner % 2);

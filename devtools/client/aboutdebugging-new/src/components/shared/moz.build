@@ -3,6 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
+    'DetailsLog.js',
+    'IconLabel.css',
+    'IconLabel.js',
     'Message.css',
     'Message.js',
 )

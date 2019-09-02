@@ -185,6 +185,8 @@ static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 
 static constexpr Register PreBarrierReg = r1;
 
+static constexpr Register InterpreterPCReg = r9;
+
 static constexpr Register InvalidReg{Registers::invalid_reg};
 static constexpr FloatRegister InvalidFloatReg;
 
@@ -1251,6 +1253,8 @@ class Assembler : public AssemblerShared {
   // MacroAssembler, before allocating any space.
   void initWithAllocator() { m_buffer.initWithAllocator(); }
 
+  void setUnlimitedBuffer() { m_buffer.setUnlimited(); }
+
   static Condition InvertCondition(Condition cond);
   static Condition UnsignedCondition(Condition cond);
   static Condition ConditionWithoutEqual(Condition cond);
@@ -1262,6 +1266,8 @@ class Assembler : public AssemblerShared {
   }
 
   void writeDataRelocation(BufferOffset offset, ImmGCPtr ptr) {
+    // Raw GC pointer relocations and Value relocations both end up in
+    // Assembler::TraceDataRelocations.
     if (ptr.value) {
       if (gc::IsInsideNursery(ptr.value)) {
         embedsNurseryPointers_ = true;
@@ -1878,8 +1884,6 @@ class Assembler : public AssemblerShared {
 
   void processCodeLabels(uint8_t* rawCode);
 
-  bool bailed() { return m_buffer.bail(); }
-
   void verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
                                    const Disassembler::HeapAccess& heapAccess) {
     // Implement this if we implement a disassembler.
@@ -2300,9 +2304,19 @@ class DoubleEncoder {
   }
 };
 
-class AutoForbidPools {
+// Forbids nop filling for testing purposes. Not nestable.
+class AutoForbidNops {
+ protected:
   Assembler* masm_;
 
+ public:
+  explicit AutoForbidNops(Assembler* masm) : masm_(masm) {
+    masm_->enterNoNops();
+  }
+  ~AutoForbidNops() { masm_->leaveNoNops(); }
+};
+
+class AutoForbidPoolsAndNops : public AutoForbidNops {
  public:
   // The maxInst argument is the maximum number of word sized instructions
   // that will be allocated within this context. It is used to determine if
@@ -2311,22 +2325,12 @@ class AutoForbidPools {
   //
   // Allocation of pool entries is not supported within this content so the
   // code can not use large integers or float constants etc.
-  AutoForbidPools(Assembler* masm, size_t maxInst) : masm_(masm) {
+  AutoForbidPoolsAndNops(Assembler* masm, size_t maxInst)
+      : AutoForbidNops(masm) {
     masm_->enterNoPool(maxInst);
   }
 
-  ~AutoForbidPools() { masm_->leaveNoPool(); }
-};
-
-// Forbids nop filling for testing purposes. Not nestable.
-class AutoForbidNops {
-  Assembler* masm_;
-
- public:
-  explicit AutoForbidNops(Assembler* masm) : masm_(masm) {
-    masm_->enterNoNops();
-  }
-  ~AutoForbidNops() { masm_->leaveNoNops(); }
+  ~AutoForbidPoolsAndNops() { masm_->leaveNoPool(); }
 };
 
 }  // namespace jit

@@ -66,19 +66,22 @@ def add_command_arguments(config, tasks):
                 all_locales.update(sub_partner.get('locales', []))
     for task in tasks:
         # add the MOZHARNESS_OPTIONS, eg version=61.0, build-number=1, platform=win64
-        if not task['attributes']['build_platform'].endswith('-nightly'):
+        if not task['attributes']['build_platform'].endswith('-shippable') and \
+                not task['attributes']['build_platform'].endswith('-nightly'):
             raise Exception(
                 "Unexpected partner repack platform: {}".format(
                     task['attributes']['build_platform'],
                 ),
             )
+        platform = task['attributes']['build_platform'].partition('-shippable')[0]
+        platform = platform.partition('-nightly')[0]
         task['run']['options'] = [
             'version={}'.format(release_config['version']),
             'build-number={}'.format(release_config['build_number']),
-            'platform={}'.format(task['attributes']['build_platform'].partition('-nightly')[0]),
+            'platform={}'.format(platform),
         ]
         if task['extra']['limit-locales']:
-            for locale in sorted(all_locales):
+            for locale in all_locales:
                 task['run']['options'].append('limit-locale={}'.format(locale))
         if 'partner' in config.kind and config.params['release_partners']:
             for partner in config.params['release_partners']:
@@ -90,6 +93,9 @@ def add_command_arguments(config, tasks):
         task['worker']['env']['UPSTREAM_TASKIDS'] = {
             'task-reference': ' '.join(['<{}>'.format(dep) for dep in task['dependencies']])
         }
+
+        # Forward the release type for bouncer product construction
+        task['worker']['env']['RELEASE_TYPE'] = config.params['release_type']
 
         yield task
 

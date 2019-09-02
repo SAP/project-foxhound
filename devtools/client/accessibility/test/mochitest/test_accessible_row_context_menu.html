@@ -9,7 +9,7 @@ Test that openLink function is called if accessible object property is rendered 
 <head>
   <meta charset="utf-8">
   <title>AccessibilityRow context menu test</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
   <link rel="stylesheet" href="chrome://devtools/skin/light-theme.css" type="text/css">
 </head>
@@ -33,6 +33,7 @@ window.onload = async function() {
       browserRequire("devtools/client/shared/vendor/react-dom-test-utils");
     const AccessibilityRow = createFactory(
       browserRequire("devtools/client/accessibility/components/AccessibilityRow"));
+    const { FILTERS } = browserRequire("devtools/client/accessibility/constants");
 
     async function withMockEnv(func) {
       const { gToolbox: originalToolbox, gTelemetry: originalTelemetry } = window;
@@ -75,6 +76,8 @@ window.onload = async function() {
           selected: false,
           hasChildren: false,
           snapshot: async () => SNAPSHOT,
+          on: () => {},
+          off: () => {},
         },
       },
       columns: [
@@ -92,18 +95,28 @@ window.onload = async function() {
       hasContextMenu: null,
     };
 
-    const defaultState = { ui: { supports: { snapshot: true }}};
-    const mockState = { ui: { supports: {}}};
+    const auditState = { audit: { filters: { [FILTERS.CONTRAST]: false }}};
+
+    const defaultState = {
+      ui: { supports: { snapshot: true }},
+      ...auditState,
+    };
+    const mockState = {
+      ui: { supports: {}},
+      ...auditState,
+    };
 
     info("Check contextmenu default behaviour.");
     renderAccessibilityRow(defaultProps, defaultState);
     let row = document.getElementById(ROW_ID);
 
+    info("Get topmost document where the context meny will be rendered");
+    const menuDoc = document.defaultView.windowRoot.ownerGlobal.document;
     await withMockEnv(async function() {
       Simulate.contextMenu(row);
 
-      const menu = document.getElementById("accessibility-row-contextmenu");
-      const printtojsonMenuItem = document.getElementById("menu-printtojson");
+      const menu = menuDoc.getElementById("accessibility-row-contextmenu");
+      const printtojsonMenuItem = menuDoc.getElementById("menu-printtojson");
 
       ok(menu, "Accessibility row context menu is open");
       ok(printtojsonMenuItem, "Print to JSON menu item is visible");
@@ -138,7 +151,7 @@ window.onload = async function() {
 
     info("Check contextmenu listener is not called when context menu is not supported.");
     Simulate.contextMenu(row);
-    let menu = document.getElementById("accessibility-row-contextmenu");
+    let menu = menuDoc.getElementById("accessibility-row-contextmenu");
     ok(!menu, "contextmenu event handler was never called.");
 
     info("Check accessibility row when no context menu is available.");
@@ -146,7 +159,7 @@ window.onload = async function() {
     row = document.getElementById(ROW_ID);
 
     Simulate.contextMenu(row);
-    menu = document.getElementById("accessibility-row-contextmenu");
+    menu = menuDoc.getElementById("accessibility-row-contextmenu");
     ok(!menu, "contextmenu event handler was never called.");
   } catch (e) {
     ok(false, "Got an error: " + DevToolsUtils.safeErrorString(e));

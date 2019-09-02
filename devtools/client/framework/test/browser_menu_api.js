@@ -17,6 +17,14 @@ add_task(async function() {
   const target = await TargetFactory.forTab(tab);
   const toolbox = await gDevTools.showToolbox(target, "webconsole");
 
+  // This test will involve localized strings, make sure the necessary FTL file is
+  // available in the toolbox top window.
+  toolbox.topWindow.MozXULElement.insertFTLIfNeeded(
+    "toolkit/main-window/editmenu.ftl"
+  );
+
+  loadFTL(toolbox, "toolkit/main-window/editmenu.ftl");
+
   await testMenuItems();
   await testMenuPopup(toolbox);
   await testSubmenu(toolbox);
@@ -75,20 +83,23 @@ async function testMenuPopup(toolbox) {
   }
 
   // Append an invisible MenuItem, which shouldn't show up in the DOM
-  menu.append(new MenuItem({
-    label: "Invisible",
-    visible: false,
-  }));
+  menu.append(
+    new MenuItem({
+      label: "Invisible",
+      visible: false,
+    })
+  );
 
-  menu.popup(0, 0, toolbox);
+  menu.popup(0, 0, toolbox.doc);
 
-  ok(toolbox.doc.querySelector("#menu-popup"), "A popup is in the DOM");
+  ok(toolbox.topDoc.querySelector("#menu-popup"), "A popup is in the DOM");
 
-  const menuSeparators =
-    toolbox.doc.querySelectorAll("#menu-popup > menuseparator");
+  const menuSeparators = toolbox.topDoc.querySelectorAll(
+    "#menu-popup > menuseparator"
+  );
   is(menuSeparators.length, 1, "A separator is in the menu");
 
-  const menuItems = toolbox.doc.querySelectorAll("#menu-popup > menuitem");
+  const menuItems = toolbox.topDoc.querySelectorAll("#menu-popup > menuitem");
   is(menuItems.length, MENU_ITEMS.length, "Correct number of menuitems");
 
   is(menuItems[0].id, MENU_ITEMS[0].id, "Correct id for menuitem");
@@ -105,15 +116,22 @@ async function testMenuPopup(toolbox) {
   is(menuItems[3].getAttribute("label"), MENU_ITEMS[3].label, "Correct label");
   is(menuItems[3].getAttribute("disabled"), "true", "disabled attr menuitem");
 
-  is(menuItems[4].getAttribute("data-l10n-id"), MENU_ITEMS[4].l10nID, "Correct localization attribute");
+  is(
+    menuItems[4].getAttribute("data-l10n-id"),
+    MENU_ITEMS[4].l10nID,
+    "Correct localization attribute"
+  );
 
   await once(menu, "open");
   const closed = once(menu, "close");
-  EventUtils.synthesizeMouseAtCenter(menuItems[0], {}, toolbox.win);
+  EventUtils.synthesizeMouseAtCenter(menuItems[0], {}, toolbox.topWindow);
   await closed;
   ok(clickFired, "Click has fired");
 
-  ok(!toolbox.doc.querySelector("#menu-popup"), "Popup removed from the DOM");
+  ok(
+    !toolbox.topDoc.querySelector("#menu-popup"),
+    "Popup removed from the DOM"
+  );
 }
 
 async function testSubmenu(toolbox) {
@@ -124,35 +142,51 @@ async function testSubmenu(toolbox) {
   const submenu = new Menu({
     id: "submenu-popup",
   });
-  submenu.append(new MenuItem({
-    label: "Submenu item",
-    click: () => {
-      info("Click callback has fired for submenu item");
-      clickFired = true;
-    },
-  }));
-  menu.append(new MenuItem({
-    l10nID: "editmenu-copy",
-    submenu: submenu,
-  }));
-  menu.append(new MenuItem({
-    label: "Submenu parent with attributes",
-    id: "submenu-parent-with-attrs",
-    submenu: submenu,
-    accesskey: "A",
-    disabled: true,
-  }));
+  submenu.append(
+    new MenuItem({
+      label: "Submenu item",
+      click: () => {
+        info("Click callback has fired for submenu item");
+        clickFired = true;
+      },
+    })
+  );
+  menu.append(
+    new MenuItem({
+      l10nID: "editmenu-copy",
+      submenu: submenu,
+    })
+  );
+  menu.append(
+    new MenuItem({
+      label: "Submenu parent with attributes",
+      id: "submenu-parent-with-attrs",
+      submenu: submenu,
+      accesskey: "A",
+      disabled: true,
+    })
+  );
 
-  menu.popup(0, 0, toolbox);
-  ok(toolbox.doc.querySelector("#menu-popup"), "A popup is in the DOM");
-  is(toolbox.doc.querySelectorAll("#menu-popup > menuitem").length, 0,
-    "No menuitem children");
+  menu.popup(0, 0, toolbox.doc);
+  ok(toolbox.topDoc.querySelector("#menu-popup"), "A popup is in the DOM");
+  is(
+    toolbox.topDoc.querySelectorAll("#menu-popup > menuitem").length,
+    0,
+    "No menuitem children"
+  );
 
-  const menus = toolbox.doc.querySelectorAll("#menu-popup > menu");
+  const menus = toolbox.topDoc.querySelectorAll("#menu-popup > menu");
   is(menus.length, 2, "Correct number of menus");
-  ok(!menus[0].hasAttribute("label"), "No label: should be set by localization");
+  ok(
+    !menus[0].hasAttribute("label"),
+    "No label: should be set by localization"
+  );
   ok(!menus[0].hasAttribute("disabled"), "Correct disabled state");
-  is(menus[0].getAttribute("data-l10n-id"), "editmenu-copy", "Correct localization attribute");
+  is(
+    menus[0].getAttribute("data-l10n-id"),
+    "editmenu-copy",
+    "Correct localization attribute"
+  );
 
   is(menus[1].getAttribute("accesskey"), "A", "Correct accesskey");
   ok(menus[1].hasAttribute("disabled"), "Correct disabled state");
@@ -180,7 +214,7 @@ async function testSubmenu(toolbox) {
   await shown;
 
   info("Clicking the submenu item");
-  EventUtils.synthesizeMouseAtCenter(subMenuItems[0], {}, toolbox.win);
+  EventUtils.synthesizeMouseAtCenter(subMenuItems[0], {}, toolbox.topWindow);
 
   await closed;
   ok(clickFired, "Click has fired");

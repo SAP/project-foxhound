@@ -15,7 +15,8 @@ using namespace mozilla::storage;
  * This file test our sqlite3_mutex wrapper in SQLiteMutex.h.
  */
 
-TEST(storage_mutex, AutoLock) {
+TEST(storage_mutex, AutoLock)
+{
   int lockTypes[] = {
       SQLITE_MUTEX_FAST,
       SQLITE_MUTEX_RECURSIVE,
@@ -24,7 +25,7 @@ TEST(storage_mutex, AutoLock) {
     // Get our test mutex (we have to allocate a SQLite mutex of the right type
     // too!).
     SQLiteMutex mutex("TestMutex");
-    sqlite3_mutex *inner = sqlite3_mutex_alloc(lockType);
+    sqlite3_mutex* inner = sqlite3_mutex_alloc(lockType);
     do_check_true(inner);
     mutex.initWithMutex(inner);
 
@@ -41,7 +42,8 @@ TEST(storage_mutex, AutoLock) {
   }
 }
 
-TEST(storage_mutex, AutoUnlock) {
+TEST(storage_mutex, AutoUnlock)
+{
   int lockTypes[] = {
       SQLITE_MUTEX_FAST,
       SQLITE_MUTEX_RECURSIVE,
@@ -50,7 +52,7 @@ TEST(storage_mutex, AutoUnlock) {
     // Get our test mutex (we have to allocate a SQLite mutex of the right type
     // too!).
     SQLiteMutex mutex("TestMutex");
-    sqlite3_mutex *inner = sqlite3_mutex_alloc(lockType);
+    sqlite3_mutex* inner = sqlite3_mutex_alloc(lockType);
     do_check_true(inner);
     mutex.initWithMutex(inner);
 

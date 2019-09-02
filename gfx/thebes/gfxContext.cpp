@@ -17,7 +17,7 @@
 #include "gfxASurface.h"
 #include "gfxPattern.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
+
 #include "GeckoProfiler.h"
 #include "gfx2DGlue.h"
 #include "mozilla/gfx/PathHelpers.h"
@@ -292,8 +292,13 @@ void gfxContext::SnappedClip(const gfxRect& rect) {
 
 // transform stuff
 void gfxContext::Multiply(const gfxMatrix& matrix) {
+  Multiply(ToMatrix(matrix));
+}
+
+// transform stuff
+void gfxContext::Multiply(const Matrix& matrix) {
   CURRENTSTATE_CHANGED()
-  ChangeTransform(ToMatrix(matrix) * mTransform);
+  ChangeTransform(matrix * mTransform);
 }
 
 void gfxContext::SetMatrix(const gfx::Matrix& matrix) {
@@ -853,7 +858,8 @@ void gfxContext::ChangeTransform(const Matrix& aNewMatrix,
 }
 
 Rect gfxContext::GetAzureDeviceSpaceClipBounds() const {
-  Rect rect(CurrentState().deviceOffset.x, CurrentState().deviceOffset.y,
+  Rect rect(CurrentState().deviceOffset.x + Float(mDT->GetRect().x),
+            CurrentState().deviceOffset.y + Float(mDT->GetRect().y),
             Float(mDT->GetSize().width), Float(mDT->GetSize().height));
   for (unsigned int i = 0; i < mStateStack.Length(); i++) {
     for (unsigned int c = 0; c < mStateStack[i].pushedClips.Length(); c++) {

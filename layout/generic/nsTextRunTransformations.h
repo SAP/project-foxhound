@@ -34,7 +34,7 @@ struct nsTransformedCharStyle final {
   RefPtr<nsAtom> mLanguage;
   RefPtr<nsPresContext> mPresContext;
   float mScriptSizeMultiplier;
-  uint8_t mTextTransform;
+  mozilla::StyleTextTransform mTextTransform;
   uint8_t mMathVariant;
   bool mExplicitLanguage;
   bool mForceNonFullWidth = false;
@@ -103,10 +103,12 @@ class nsCaseTransformTextRunFactory : public nsTransformingTextRunFactory {
   // will be copied to the output arrays, which must also be provided by
   // the caller. For the global upper-casing usage (no input textrun),
   // these are ignored.
+  // If aCaseTransformsOnly is true, then only the upper/lower/capitalize
+  // transformations are performed; full-width and full-size-kana are ignored.
   static bool TransformString(
       const nsAString& aString, nsString& aConvertedString, bool aAllUppercase,
-      const nsAtom* aLanguage, nsTArray<bool>& aCharsToMergeArray,
-      nsTArray<bool>& aDeletedCharsArray,
+      bool aCaseTransformsOnly, const nsAtom* aLanguage,
+      nsTArray<bool>& aCharsToMergeArray, nsTArray<bool>& aDeletedCharsArray,
       const nsTransformedTextRun* aTextRun = nullptr,
       uint32_t aOffsetInTextRun = 0,
       nsTArray<uint8_t>* aCanBreakBeforeArray = nullptr,

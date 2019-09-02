@@ -17,11 +17,14 @@ function run_test() {
   gDebuggee = addTestGlobal("test-conditional-breakpoint");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-conditional-breakpoint",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_simple_breakpoint();
-                           });
+    attachTestTabAndResume(gClient, "test-conditional-breakpoint", function(
+      response,
+      targetFront,
+      threadClient
+    ) {
+      gThreadClient = threadClient;
+      test_simple_breakpoint();
+    });
   });
   do_test_pending();
 }
@@ -29,14 +32,11 @@ function run_test() {
 function test_simple_breakpoint() {
   let hitBreakpoint = false;
 
-  gThreadClient.addOneTimeListener("paused", async function(event, packet) {
-    const source = await getSourceById(
-      gThreadClient,
-      packet.frame.where.actor
-    );
+  gThreadClient.once("paused", async function(packet) {
+    const source = await getSourceById(gThreadClient, packet.frame.where.actor);
     const location = { sourceUrl: source.url, line: 3 };
     gThreadClient.setBreakpoint(location, { condition: "a === 1" });
-    gThreadClient.addOneTimeListener("paused", function(event, packet) {
+    gThreadClient.once("paused", function(packet) {
       Assert.equal(hitBreakpoint, false);
       hitBreakpoint = true;
 
@@ -47,7 +47,7 @@ function test_simple_breakpoint() {
       // Remove the breakpoint.
       gThreadClient.removeBreakpoint(location);
 
-      gThreadClient.resume(function() {
+      gThreadClient.resume().then(function() {
         finishClient(gClient);
       });
     });

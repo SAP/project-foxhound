@@ -5,7 +5,7 @@
 /* eslint-env browser */
 /* global addMessageListener, sendAsyncMessage, content */
 "use strict";
-const {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 const Services = require("Services");
 
 addMessageListener("devtools:test:history", function({ data }) {
@@ -56,9 +56,13 @@ function promiseXHR(data) {
       url += "?devtools-cachebust=" + Math.random();
     }
 
-    xhr.addEventListener("loadend", function(event) {
-      resolve({ status: xhr.status, response: xhr.response });
-    }, {once: true});
+    xhr.addEventListener(
+      "loadend",
+      function(event) {
+        resolve({ status: xhr.status, response: xhr.response });
+      },
+      { once: true }
+    );
 
     xhr.open(method, url);
 
@@ -70,6 +74,50 @@ function promiseXHR(data) {
     }
 
     xhr.send(body);
+  });
+}
+
+/**
+ * Performs a single websocket request and returns a promise that resolves once
+ * the request has loaded.
+ *
+ * @param Object data
+ *        { url: the url to request (default: content.location.href),
+ *          nocache: append an unique token to the query string (default: true),
+ *        }
+ *
+ * @return Promise A promise that's resolved with object
+ *         { status: websocket status(101),
+ *           response: empty string }
+ *
+ */
+function promiseWS(data) {
+  return new Promise((resolve, reject) => {
+    let url = data.url;
+
+    if (data.nocache) {
+      url += "?devtools-cachebust=" + Math.random();
+    }
+
+    /* Create websocket instance */
+    const socket = new content.WebSocket(url);
+
+    /* Since we only use HTTP server to mock websocket, so just ignore the error */
+    socket.onclose = e => {
+      socket.close();
+      resolve({
+        status: 101,
+        response: "",
+      });
+    };
+
+    socket.onerror = e => {
+      socket.close();
+      resolve({
+        status: 101,
+        response: "",
+      });
+    };
   });
 }
 
@@ -105,7 +153,12 @@ addMessageListener("devtools:test:xhr", async function({ data }) {
   const responses = [];
 
   for (const request of requests) {
-    const response = await promiseXHR(request);
+    let response = null;
+    if (request.ws) {
+      response = await promiseWS(request);
+    } else {
+      response = await promiseXHR(request);
+    }
     responses.push(response);
   }
 
@@ -129,9 +182,13 @@ addMessageListener("devtools:test:eval", function({ data }) {
   });
 });
 
-addEventListener("load", function() {
-  sendAsyncMessage("devtools:test:load");
-}, true);
+addEventListener(
+  "load",
+  function() {
+    sendAsyncMessage("devtools:test:load");
+  },
+  true
+);
 
 /**
  * Set a given style property value on a node.
@@ -142,7 +199,7 @@ addEventListener("load", function() {
  * - {String} propertyValue The value for the property.
  */
 addMessageListener("devtools:test:setStyle", function(msg) {
-  const {selector, propertyName, propertyValue} = msg.data;
+  const { selector, propertyName, propertyValue } = msg.data;
   const node = superQuerySelector(selector);
   if (!node) {
     return;
@@ -166,7 +223,7 @@ addMessageListener("devtools:test:setStyle", function(msg) {
  *            }
  */
 addMessageListener("devtools:test:setMultipleStyles", function(msg) {
-  const {selector, properties} = msg.data;
+  const { selector, properties } = msg.data;
   const node = superQuerySelector(selector);
   if (!node) {
     return;
@@ -189,7 +246,7 @@ addMessageListener("devtools:test:setMultipleStyles", function(msg) {
  * - {String} attributeValue The value for the attribute.
  */
 addMessageListener("devtools:test:setAttribute", function(msg) {
-  const {selector, attributeName, attributeValue} = msg.data;
+  const { selector, attributeName, attributeValue } = msg.data;
   const node = superQuerySelector(selector);
   if (!node) {
     return;

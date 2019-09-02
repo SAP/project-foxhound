@@ -21,7 +21,7 @@
  */
 
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
-const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 
 var EXPORTED_SYMBOLS = ["GCTelemetry"];
 
@@ -34,8 +34,8 @@ const BASE_TIME = Date.now() - Services.telemetry.msSinceProcessStart();
 // Records selected GCs. There is one instance per process type.
 class GCData {
   constructor(kind) {
-    let numRandom = {main: 0, content: 2};
-    let numWorst = {main: 2, content: 2};
+    let numRandom = { main: 0, content: 2 };
+    let numWorst = { main: 2, content: 2 };
 
     this.totalGCTime = 0;
     this.randomlySelected = Array(numRandom[kind]).fill(null);
@@ -105,14 +105,17 @@ class GCData {
   }
 }
 
-// If you adjust any of the constants here (slice limit, number of keys, etc.)
-// make sure to update the JSON schema at:
-// https://github.com/mozilla-services/mozilla-pipeline-schemas/blob/master/telemetry/main.schema.json
+// NOTE: If you adjust any of the constants here (slice limit, number of
+// keys, etc.) make sure to update the JSON schema at:
+// https://github.com/mozilla-services/mozilla-pipeline-schemas/blob/dev/templates/include/telemetry/gcItem.1.schema.json
 // You should also adjust browser_TelemetryGC.js.
 const MAX_GC_KEYS = 24;
 const MAX_SLICES = 4;
 const MAX_SLICE_KEYS = 12;
-const MAX_PHASES = 65;
+// Phases are 0-based, so we need one more than the maximum reported in
+// StatsPhasesGenerated.inc. Phase 0 is probably never used by telemetry,
+// but lets allow it anyway.
+const MAX_PHASES = 73;
 const LOGGER_NAME = "Toolkit.Telemetry";
 
 function limitProperties(name, obj, count, log) {
@@ -123,27 +126,31 @@ function limitProperties(name, obj, count, log) {
     for (let key of Object.keys(obj)) {
       // If this is the main GC object then save some of the critical
       // properties.
-      if (name === "data" && (
-          key === "max_pause" ||
+      if (
+        name === "data" &&
+        (key === "max_pause" ||
           key === "slices" ||
           key === "slices_list" ||
           key === "status" ||
           key === "timestamp" ||
           key === "total_time" ||
-          key === "totals")) {
+          key === "totals")
+      ) {
         continue;
       }
 
       delete obj[key];
     }
     let log_fn;
-    if ((name === "slice.times") || (name === "data.totals")) {
-        // This is a bit more likely, but is mostly-okay.
-        log_fn = s => log.info(s);
+    if (name === "slice.times" || name === "data.totals") {
+      // This is a bit more likely, but is mostly-okay.
+      log_fn = s => log.info(s);
     } else {
-        log_fn = s => log.warn(s);
+      log_fn = s => log.warn(s);
     }
-    log_fn(`Number of properties exceeded in the GC telemetry ${name} ping, expected ${count} got ${num_properties}`);
+    log_fn(
+      `Number of properties exceeded in the GC telemetry ${name} ping, expected ${count} got ${num_properties}`
+    );
   }
 }
 
@@ -192,7 +199,9 @@ var GCTelemetry = {
 
     this.initialized = true;
     this._log = Log.repository.getLoggerWithMessagePrefix(
-      LOGGER_NAME, "GCTelemetry::");
+      LOGGER_NAME,
+      "GCTelemetry::"
+    );
 
     Services.obs.addObserver(this, "garbage-collection-statistics");
 

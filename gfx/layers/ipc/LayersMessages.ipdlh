@@ -140,6 +140,13 @@ struct Translation {
   float z;
 };
 
+union Rotate {
+  // null_t represents |rotate: none|.
+  null_t;
+  Rotation;
+  Rotation3D;
+};
+
 union TransformFunction {
   Perspective;
   RotationX;
@@ -155,15 +162,13 @@ union TransformFunction {
   TransformMatrix;
 };
 
-union MaybeTimeDuration {
-  null_t;
-  TimeDuration;
-};
-
 union Animatable {
   null_t;
   float;
   nscolor;
+  Rotate;
+  Scale;
+  Translation;
   TransformFunction[];
 };
 
@@ -193,18 +198,13 @@ struct TransformData {
   bool hasPerspectiveParent;
 };
 
-union AnimationData {
-  null_t;
-  TransformData;
-};
-
 struct Animation {
   // The zero time of this Animation's timeline. May be null if isNotPlaying is
   // true.
   TimeStamp originTime;
   // The start time is relative to the originTime. This allows us to represent
   // start times in the distant past that cannot be expressed using a TimeStamp.
-  MaybeTimeDuration startTime;
+  TimeDuration? startTime;
   TimeDuration delay;
   TimeDuration endDelay;
   // The value of the animation's current time at the moment it was sent to the
@@ -232,7 +232,7 @@ struct Animation {
   // This uses dom::FillMode.
   uint8_t fillMode;
   nsCSSPropertyID property;
-  AnimationData data;
+  TransformData? data;
   float playbackRate;
   // When performing an asynchronous update to the playbackRate, |playbackRate|
   // above is the updated playbackRate while |previousPlaybackRate| is the
@@ -249,6 +249,11 @@ struct Animation {
   // True if the animation has a fixed current time (e.g. paused and
   // forward-filling animations).
   bool isNotPlaying;
+  // True if this is not an animating property. For some transform-like
+  // properties, we just send their baseStyles for merging with other animating
+  // properties. In this case, we don't have animation information on this
+  // property, and so don't need to do interpolation.
+  bool isNotAnimating;
   // The base style that animations should composite with. This is only set for
   // animations with a composite mode of additive or accumulate, and only for
   // the first animation in the set (i.e. the animation that is lowest in the
@@ -364,14 +369,9 @@ union ReadLockDescriptor {
   null_t;
 };
 
-union MaybeTexture {
-  PTexture;
-  null_t;
-};
-
 struct TexturedTileDescriptor {
   PTexture texture;
-  MaybeTexture textureOnWhite;
+  PTexture? textureOnWhite;
   IntRect updateRect;
   bool readLocked;
   bool readLockedOnWhite;
@@ -445,11 +445,6 @@ struct OpUseComponentAlphaTextures {
   PTexture textureOnWhite;
   bool readLockedBlack;
   bool readLockedWhite;
-};
-
-union MaybeRegion {
-  nsIntRegion;
-  null_t;
 };
 
 struct OpNotifyNotUsed {
@@ -566,11 +561,6 @@ struct TransactionInfo
    * presented during this transaction.
    */
   CompositionPayload[] payload;
-};
-
-union MaybeTransform {
-  Matrix4x4;
-  void_t;
 };
 
 union OMTAValue {

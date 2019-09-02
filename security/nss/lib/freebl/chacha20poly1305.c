@@ -157,6 +157,7 @@ ChaCha20Poly1305_DestroyContext(ChaCha20Poly1305Context *ctx, PRBool freeit)
 #endif
 }
 
+#ifndef NSS_DISABLE_CHACHAPOLY
 void
 ChaCha20Xor(uint8_t *output, uint8_t *block, uint32_t len, uint8_t *k,
             uint8_t *nonce, uint32_t ctr)
@@ -166,6 +167,25 @@ ChaCha20Xor(uint8_t *output, uint8_t *block, uint32_t len, uint8_t *k,
     } else {
         Hacl_Chacha20_chacha20(output, block, len, k, nonce, ctr);
     }
+}
+#endif /* NSS_DISABLE_CHACHAPOLY */
+
+SECStatus
+ChaCha20_Xor(unsigned char *output, const unsigned char *block, unsigned int len,
+             const unsigned char *k, const unsigned char *nonce, PRUint32 ctr)
+{
+#ifdef NSS_DISABLE_CHACHAPOLY
+    return SECFailure;
+#else
+    // ChaCha has a 64 octet block, with a 32-bit block counter.
+    if (sizeof(len) > 4 && len >= (1ULL << (6 + 32))) {
+        PORT_SetError(SEC_ERROR_INPUT_LEN);
+        return SECFailure;
+    }
+    ChaCha20Xor(output, (uint8_t *)block, len, (uint8_t *)k,
+                (uint8_t *)nonce, ctr);
+    return SECSuccess;
+#endif
 }
 
 SECStatus
@@ -185,8 +205,12 @@ ChaCha20Poly1305_Seal(const ChaCha20Poly1305Context *ctx, unsigned char *output,
         PORT_SetError(SEC_ERROR_INPUT_LEN);
         return SECFailure;
     }
-    *outputLen = inputLen + ctx->tagLen;
-    if (maxOutputLen < *outputLen) {
+    // ChaCha has a 64 octet block, with a 32-bit block counter.
+    if (sizeof(inputLen) > 4 && inputLen >= (1ULL << (6 + 32))) {
+        PORT_SetError(SEC_ERROR_INPUT_LEN);
+        return SECFailure;
+    }
+    if (maxOutputLen < inputLen + ctx->tagLen) {
         PORT_SetError(SEC_ERROR_OUTPUT_LEN);
         return SECFailure;
     }
@@ -202,6 +226,7 @@ ChaCha20Poly1305_Seal(const ChaCha20Poly1305Context *ctx, unsigned char *output,
     Poly1305Do(tag, ad, adLen, output, inputLen, block);
     PORT_Memcpy(output + inputLen, tag, ctx->tagLen);
 
+    *outputLen = inputLen + ctx->tagLen;
     return SECSuccess;
 #endif
 }
@@ -229,8 +254,7 @@ ChaCha20Poly1305_Open(const ChaCha20Poly1305Context *ctx, unsigned char *output,
         return SECFailure;
     }
     ciphertextLen = inputLen - ctx->tagLen;
-    *outputLen = ciphertextLen;
-    if (maxOutputLen < *outputLen) {
+    if (maxOutputLen < ciphertextLen) {
         PORT_SetError(SEC_ERROR_OUTPUT_LEN);
         return SECFailure;
     }
@@ -249,6 +273,7 @@ ChaCha20Poly1305_Open(const ChaCha20Poly1305Context *ctx, unsigned char *output,
     ChaCha20Xor(output, (uint8_t *)input, ciphertextLen, (uint8_t *)ctx->key,
                 (uint8_t *)nonce, 1);
 
+    *outputLen = ciphertextLen;
     return SECSuccess;
 #endif
 }

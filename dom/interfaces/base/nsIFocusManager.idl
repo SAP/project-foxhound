@@ -10,7 +10,6 @@ interface mozIDOMWindowProxy;
 webidl Document;
 webidl Element;
 
-[scriptable, uuid(86e1f1e1-365d-493b-b52a-a649f3f311dc)]
 /**
  * The focus manager deals with all focus related behaviour. Only one element
  * in the entire application may have the focus at a time; this element
@@ -39,6 +38,7 @@ webidl Element;
  *
  * Blur and focus events do not bubble as per the W3C DOM Events spec.
  */
+[scriptable, uuid(86e1f1e1-365d-493b-b52a-a649f3f311dc)]
 interface nsIFocusManager : nsISupports
 {
   /**
@@ -80,7 +80,9 @@ interface nsIFocusManager : nsISupports
 
   /**
    * Changes the focused element reference within the window containing
-   * aElement to aElement.
+   * aElement to aElement or potentially redirects it to an anonymous
+   * descendant of it (e.g., for `<input type="number">` the focus is redirected
+   * to its descendant `<input type="text">`).
    */
   void setFocus(in Element aElement, in unsigned long aFlags);
 
@@ -99,8 +101,8 @@ interface nsIFocusManager : nsISupports
    * MOVEFOCUS_CARET, then the focus is cleared. If aType is any other value,
    * the focus is not changed.
    *
-   * Returns the element that was focused. The return value may be null if focus
-   * was moved into a child process.
+   * Returns the element that was focused (see setFocus). The return value
+   * may be null if focus was moved into a child process.
    */
   Element moveFocus(in mozIDOMWindowProxy aWindow,
                     in Element aStartElement,
@@ -141,7 +143,8 @@ interface nsIFocusManager : nsISupports
   void moveCaretToFocus(in mozIDOMWindowProxy aWindow);
 
   /***
-   * Check if given element is focusable.
+   * Check if given element (or potentially a descendant, see setFocus) is
+   * focusable.
    */
   boolean elementIsFocusable(in Element aElement, in unsigned long aFlags);
 
@@ -151,7 +154,8 @@ interface nsIFocusManager : nsISupports
   const unsigned long FLAG_RAISE = 1;
 
   /**
-   * Do not scroll the element to focus into view
+   * Do not scroll the element to focus into view. If FLAG_BYELEMENTFOCUS is
+   * set too, the latter is ignored.
    */
   const unsigned long FLAG_NOSCROLL = 2;
 
@@ -204,6 +208,21 @@ interface nsIFocusManager : nsISupports
    * Normally used in conjunction with FLAG_BYMOUSE.
    */
   const unsigned long FLAG_BYTOUCH = 0x200000;
+
+  /**
+   * Focus is changing due to a Element.focus() call.
+   * This is used to distinguish the Element.focus() call from other focus
+   * functionalities since we need to factor scroll-margin and scroll-padding
+   * values into the position where we scroll to the element by the
+   * Element.focus() call.
+   * NOTE: This flag is ignored if FLAG_NOSCROLL is set too.
+   */
+  const unsigned long FLAG_BYELEMENTFOCUS = 0x400000;
+
+  /*
+   * Focus is changing due to a long press operation by touch or mouse.
+   */
+  const unsigned long FLAG_BYLONGPRESS = 0x800000;
 
   // these constants are used with the aType argument to MoveFocus
 

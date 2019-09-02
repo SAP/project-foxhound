@@ -28,13 +28,25 @@ features-title = { -brand-short-name } Features
 features-name = Name
 features-version = Version
 features-id = ID
+processes-title = Remote Processes
+processes-type = Type
+processes-count = Count
 app-basics-title = Application Basics
 app-basics-name = Name
 app-basics-version = Version
 app-basics-build-id = Build ID
 app-basics-update-channel = Update Channel
+# This message refers to the folder used to store updates on the device,
+# as in "Folder for updates". "Update" is a noun, not a verb.
+app-basics-update-dir =
+    { PLATFORM() ->
+        [linux] Update Directory
+       *[other] Update Folder
+    }
 app-basics-update-history = Update History
 app-basics-show-update-history = Show Update History
+# Represents the path to the binary used to start the application.
+app-basics-binary = Application Binary
 app-basics-profile-dir =
     { PLATFORM() ->
         [linux] Profile Directory
@@ -50,7 +62,7 @@ app-basics-service-workers = Registered Service Workers
 app-basics-profiles = Profiles
 app-basics-launcher-process-status = Launcher Process
 app-basics-multi-process-support = Multiprocess Windows
-app-basics-process-count = Web Content Processes
+app-basics-remote-processes-count = Remote Processes
 app-basics-enterprise-policies = Enterprise Policies
 app-basics-location-service-key-google = Google Location Service Key
 app-basics-safebrowsing-key-google = Google Safebrowsing Key
@@ -79,6 +91,8 @@ graphics-gpu2-title = GPU #2
 graphics-decision-log-title = Decision Log
 graphics-crash-guards-title = Crash Guard Disabled Features
 graphics-workarounds-title = Workarounds
+# Windowing system in use on Linux (e.g. X11, Wayland).
+graphics-window-protocol = Window Protocol
 place-database-title = Places Database
 place-database-integrity = Integrity
 place-database-verify-integrity = Verify Integrity
@@ -203,6 +217,7 @@ gpu-device-id = Device ID
 gpu-subsys-id = Subsys ID
 gpu-drivers = Drivers
 gpu-ram = RAM
+gpu-driver-vendor = Driver Vendor
 gpu-driver-version = Driver Version
 gpu-driver-date = Driver Date
 gpu-active = Active
@@ -239,7 +254,6 @@ uses-tiling = Uses Tiling
 content-uses-tiling = Uses Tiling (Content)
 off-main-thread-paint-enabled = Off Main Thread Painting Enabled
 off-main-thread-paint-worker-count = Off Main Thread Painting Worker Count
-low-end-machine = Detected less performant machine
 target-frame-rate = Target Frame Rate
 
 audio-backend = Audio Backend

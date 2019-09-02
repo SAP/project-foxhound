@@ -29,7 +29,7 @@ public class ContentBlocking {
         public static class Builder
                 extends RuntimeSettings.Builder<Settings> {
             @Override
-            protected @NonNull Settings newSettings(final Settings settings) {
+            protected @NonNull Settings newSettings(final @Nullable Settings settings) {
                 return new Settings(settings);
             }
 
@@ -73,14 +73,24 @@ public class ContentBlocking {
 
         /* package */ final Pref<String> mAt = new Pref<String>(
             "urlclassifier.trackingTable",
-            ContentBlocking.catToAtPref(
-                AT_TEST | AT_ANALYTIC | AT_SOCIAL | AT_AD));
+            ContentBlocking.catToAtPref(AT_DEFAULT));
+        /* package */ final Pref<Boolean> mCm = new Pref<Boolean>(
+            "privacy.trackingprotection.cryptomining.enabled", false);
+        /* package */ final Pref<String> mCmList = new Pref<String>(
+            "urlclassifier.features.cryptomining.blacklistTables",
+            ContentBlocking.catToCmListPref(NONE));
+        /* package */ final Pref<Boolean> mFp = new Pref<Boolean>(
+            "privacy.trackingprotection.fingerprinting.enabled", false);
+        /* package */ final Pref<String> mFpList = new Pref<String>(
+            "urlclassifier.features.fingerprinting.blacklistTables",
+            ContentBlocking.catToFpListPref(NONE));
+
         /* package */ final Pref<Boolean> mSbMalware = new Pref<Boolean>(
             "browser.safebrowsing.malware.enabled", true);
         /* package */ final Pref<Boolean> mSbPhishing = new Pref<Boolean>(
             "browser.safebrowsing.phishing.enabled", true);
         /* package */ final Pref<Integer> mCookieBehavior = new Pref<Integer>(
-            "network.cookie.cookieBehavior", COOKIE_ACCEPT_ALL);
+            "network.cookie.cookieBehavior", COOKIE_ACCEPT_NON_TRACKERS);
         /* package */ final Pref<Integer> mCookieLifetime = new Pref<Integer>(
             "network.cookie.lifetimePolicy", COOKIE_LIFETIME_NORMAL);
 
@@ -130,6 +140,13 @@ public class ContentBlocking {
          */
         public @NonNull Settings setCategories(final @Category int cat) {
             mAt.commit(ContentBlocking.catToAtPref(cat));
+
+            mCm.commit(ContentBlocking.catToCmPref(cat));
+            mCmList.commit(ContentBlocking.catToCmListPref(cat));
+
+            mFp.commit(ContentBlocking.catToFpPref(cat));
+            mFpList.commit(ContentBlocking.catToFpListPref(cat));
+
             mSbMalware.commit(ContentBlocking.catToSbMalware(cat));
             mSbPhishing.commit(ContentBlocking.catToSbPhishing(cat));
             return this;
@@ -141,9 +158,11 @@ public class ContentBlocking {
          * @return The categories of resources to be blocked.
          */
         public @Category int getCategories() {
-            return ContentBlocking.listToCat(mAt.get())
-                   | ContentBlocking.sbMalwareToCat(mSbMalware.get())
-                   | ContentBlocking.sbPhishingToCat(mSbPhishing.get());
+            return ContentBlocking.atListToCat(mAt.get()) |
+                   ContentBlocking.cmListToCat(mCmList.get()) |
+                   ContentBlocking.fpListToCat(mFpList.get()) |
+                   ContentBlocking.sbMalwareToCat(mSbMalware.get()) |
+                   ContentBlocking.sbPhishingToCat(mSbPhishing.get());
         }
 
         /**
@@ -195,9 +214,11 @@ public class ContentBlocking {
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(flag = true,
             value = { NONE, AT_AD, AT_ANALYTIC, AT_SOCIAL, AT_CONTENT,
-                      AT_ALL, AT_TEST,
+                      AT_TEST, AT_CRYPTOMINING, AT_FINGERPRINTING,
+                      AT_DEFAULT, AT_STRICT,
                       SB_MALWARE, SB_UNWANTED,
-                      SB_HARMFUL, SB_PHISHING })
+                      SB_HARMFUL, SB_PHISHING,
+                      CB_DEFAULT, CB_STRICT })
     /* package */ @interface Category {}
 
     public static final int NONE = 0;
@@ -220,6 +241,7 @@ public class ContentBlocking {
 
     /**
      * Block content trackers.
+     * May cause issues with some web sites.
      */
     public static final int AT_CONTENT = 1 << 4;
 
@@ -229,10 +251,27 @@ public class ContentBlocking {
     public static final int AT_TEST = 1 << 5;
 
     /**
-     * Block all known trackers.
+     * Block cryptocurrency miners.
      */
-    public static final int AT_ALL =
-        AT_AD | AT_ANALYTIC | AT_SOCIAL | AT_CONTENT | AT_TEST;
+    public static final int AT_CRYPTOMINING = 1 << 6;
+
+    /**
+     * Block fingerprinting trackers.
+     */
+    public static final int AT_FINGERPRINTING = 1 << 7;
+
+    /**
+     * Block ad, analytic, social and test trackers.
+     */
+    public static final int AT_DEFAULT =
+        AT_AD | AT_ANALYTIC | AT_SOCIAL | AT_TEST;
+
+    /**
+     * Block all known trackers.
+     * May cause issues with some web sites.
+     */
+    public static final int AT_STRICT =
+        AT_DEFAULT | AT_CONTENT | AT_CRYPTOMINING | AT_FINGERPRINTING;
 
     // Safe browsing
     /**
@@ -261,6 +300,19 @@ public class ContentBlocking {
      */
     public static final int SB_ALL =
         SB_MALWARE | SB_UNWANTED | SB_HARMFUL | SB_PHISHING;
+
+    /**
+     * Recommended content blocking categories.
+     * A combination of {@link #AT_DEFAULT} and {@link #SB_ALL}.
+     */
+    public static final int CB_DEFAULT = SB_ALL | AT_DEFAULT;
+
+    /**
+     * Strict content blocking categories.
+     * A combination of {@link #AT_STRICT} and {@link #SB_ALL}.
+     * May cause issues with some web sites.
+     */
+    public static final int CB_STRICT = SB_ALL | AT_STRICT;
 
     // Sync values with nsICookieService.idl.
     @Retention(RetentionPolicy.SOURCE)
@@ -350,7 +402,9 @@ public class ContentBlocking {
             @Category int cats = NONE;
 
             if (matchedList != null) {
-                cats = ContentBlocking.listToCat(matchedList);
+                cats = ContentBlocking.atListToCat(matchedList) |
+                       ContentBlocking.cmListToCat(matchedList) |
+                       ContentBlocking.fpListToCat(matchedList);
             } else if (error != 0L) {
                 cats = ContentBlocking.errorToCat(error);
             }
@@ -378,11 +432,15 @@ public class ContentBlocking {
     }
 
 
-    private static final String TEST = "test-track-simple";
+    private static final String TEST = "moztest-track-simple";
     private static final String AD = "ads-track-digest256";
     private static final String ANALYTIC = "analytics-track-digest256";
     private static final String SOCIAL = "social-track-digest256";
     private static final String CONTENT = "content-track-digest256";
+    private static final String CRYPTOMINING =
+        "base-cryptomining-track-digest256";
+    private static final String FINGERPRINTING =
+        "base-fingerprinting-track-digest256";
 
     /* package */ static @Category int sbMalwareToCat(final boolean enabled) {
         return enabled ? (SB_MALWARE | SB_UNWANTED | SB_HARMFUL)
@@ -427,7 +485,41 @@ public class ContentBlocking {
         return builder.substring(0, builder.length() - 1);
     }
 
-    /* package */ static @Category int listToCat(final String list) {
+    /* package */ static boolean catToCmPref(@Category final int cat) {
+        return (cat & AT_CRYPTOMINING) != 0;
+    }
+
+    /* package */ static String catToCmListPref(@Category final int cat) {
+        StringBuilder builder = new StringBuilder();
+
+        if ((cat & AT_CRYPTOMINING) != 0) {
+            builder.append(CRYPTOMINING);
+        }
+        return builder.toString();
+    }
+
+    /* package */ static boolean catToFpPref(@Category final int cat) {
+        return (cat & AT_FINGERPRINTING) != 0;
+    }
+
+    /* package */ static String catToFpListPref(@Category final int cat) {
+        StringBuilder builder = new StringBuilder();
+
+        if ((cat & AT_FINGERPRINTING) != 0) {
+            builder.append(FINGERPRINTING);
+        }
+        return builder.toString();
+    }
+
+    /* package */ static @Category int fpListToCat(final String list) {
+        int cat = 0;
+        if (list.indexOf(FINGERPRINTING) != -1) {
+            cat |= AT_FINGERPRINTING;
+        }
+        return cat;
+    }
+
+    /* package */ static @Category int atListToCat(final String list) {
         int cat = 0;
         if (list.indexOf(TEST) != -1) {
             cat |= AT_TEST;
@@ -443,6 +535,14 @@ public class ContentBlocking {
         }
         if (list.indexOf(CONTENT) != -1) {
             cat |= AT_CONTENT;
+        }
+        return cat;
+    }
+
+    /* package */ static @Category int cmListToCat(final String list) {
+        int cat = 0;
+        if (list.indexOf(CRYPTOMINING) != -1) {
+            cat |= AT_CRYPTOMINING;
         }
         return cat;
     }

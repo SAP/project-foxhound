@@ -32,8 +32,6 @@
 #include "vm/JSAtom-inl.h"
 #include "vm/NativeObject-inl.h"
 
-#include <iterator>
-
 using namespace js;
 
 using mozilla::CheckedInt;
@@ -178,36 +176,19 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
   return dstPtr;
 }
 
-template <typename SrcCharT, typename CharVectorT>
-static bool Quote(JSContext* cx, CharVectorT& sb, StringTaint& taint, JSLinearString* str) {
-  // We resize the backing buffer to the maximum size we could possibly need,
-  // write the escaped string into it, and shrink it back to the size we ended
-  // up needing.
-
-  size_t len = str->length();
-  CheckedInt<size_t> reservedLen = CheckedInt<size_t>(len) * 6 + 2;
-  if (MOZ_UNLIKELY(!reservedLen.isValid())) {
-    ReportAllocationOverflow(cx);
-    return false;
-  }
-
-  size_t sbInitialLen = sb.length();
-  if (!sb.growByUninitialized(reservedLen.value())) {
-    return false;
-  }
-
-  typedef typename CharVectorT::ElementType DstCharT;
+template <typename SrcCharT, typename DstCharT>
+static size_t QuoteHelper(const JSLinearString& linear, StringBuffer& sb,
+                          size_t sbOffset) {
+  size_t len = linear.length();
 
   JS::AutoCheckCannotGC nogc;
-  RangedPtr<const SrcCharT> srcBegin{str->chars<SrcCharT>(nogc), len};
-  RangedPtr<DstCharT> dstBegin{sb.begin(), sb.begin(), sb.end()};
+  RangedPtr<const SrcCharT> srcBegin{linear.chars<SrcCharT>(nogc), len};
+  RangedPtr<DstCharT> dstBegin{sb.begin<DstCharT>(), sb.begin<DstCharT>(),
+                               sb.end<DstCharT>()};
   RangedPtr<DstCharT> dstEnd =
-      InfallibleQuote(srcBegin, srcBegin + len, dstBegin + sbInitialLen,
-                      str->taint(), taint);
-  size_t newSize = dstEnd - dstBegin;
-  sb.shrinkTo(newSize);
+      InfallibleQuote(srcBegin, srcBegin + len, dstBegin + sbOffset, linear.taint(), sb.taint());
 
-  return true;
+  return dstEnd - dstBegin;
 }
 
 static bool Quote(JSContext* cx, StringBuffer& sb, JSString* str) {
@@ -216,20 +197,40 @@ static bool Quote(JSContext* cx, StringBuffer& sb, JSString* str) {
     return false;
   }
 
-  // Check if either has non-latin1 before calling ensure, so that the buffer's
-  // hasEnsured flag is set if the converstion to twoByte was automatic.
-  if (!sb.isUnderlyingBufferLatin1() || linear->hasTwoByteChars()) {
-    if (!sb.ensureTwoByteChars()) {
-      return false;
-    }
-  }
-  if (linear->hasTwoByteChars()) {
-    return Quote<char16_t>(cx, sb.rawTwoByteBuffer(), sb.taint(), linear);
+  if (linear->hasTwoByteChars() && !sb.ensureTwoByteChars()) {
+    return false;
   }
 
-  return sb.isUnderlyingBufferLatin1()
-    ? Quote<Latin1Char>(cx, sb.latin1Chars(), sb.taint(), linear)
-    : Quote<Latin1Char>(cx, sb.rawTwoByteBuffer(), sb.taint(), linear);
+  // We resize the backing buffer to the maximum size we could possibly need,
+  // write the escaped string into it, and shrink it back to the size we ended
+  // up needing.
+
+  size_t len = linear->length();
+  size_t sbInitialLen = sb.length();
+
+  CheckedInt<size_t> reservedLen = CheckedInt<size_t>(len) * 6 + 2;
+  if (MOZ_UNLIKELY(!reservedLen.isValid())) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
+
+  if (!sb.growByUninitialized(reservedLen.value())) {
+    return false;
+  }
+
+  size_t newSize;
+
+  if (linear->hasTwoByteChars()) {
+    newSize = QuoteHelper<char16_t, char16_t>(*linear, sb, sbInitialLen);
+  } else if (sb.isUnderlyingBufferLatin1()) {
+    newSize = QuoteHelper<Latin1Char, Latin1Char>(*linear, sb, sbInitialLen);
+  } else {
+    newSize = QuoteHelper<Latin1Char, char16_t>(*linear, sb, sbInitialLen);
+  }
+
+  sb.shrinkTo(newSize);
+
+  return true;
 }
 
 namespace {
@@ -239,7 +240,7 @@ using ObjectVector = GCVector<JSObject*, 8>;
 class StringifyContext {
  public:
   StringifyContext(JSContext* cx, StringBuffer& sb, const StringBuffer& gap,
-                   HandleObject replacer, const AutoIdVector& propertyList,
+                   HandleObject replacer, const RootedIdVector& propertyList,
                    bool maybeSafely)
       : sb(sb),
         gap(gap),
@@ -256,7 +257,7 @@ class StringifyContext {
   const StringBuffer& gap;
   RootedObject replacer;
   Rooted<ObjectVector> stack;
-  const AutoIdVector& propertyList;
+  const RootedIdVector& propertyList;
   uint32_t depth;
   bool maybeSafely;
 };
@@ -477,8 +478,8 @@ static bool JO(JSContext* cx, HandleObject obj, StringifyContext* scx) {
   }
 
   /* Steps 5-7. */
-  Maybe<AutoIdVector> ids;
-  const AutoIdVector* props;
+  Maybe<RootedIdVector> ids;
+  const RootedIdVector* props;
   if (scx->replacer && !scx->replacer->isCallable()) {
     // NOTE: We can't assert |IsArray(scx->replacer)| because the replacer
     //       might have been a revocable proxy to an array.  Such a proxy
@@ -496,7 +497,7 @@ static bool JO(JSContext* cx, HandleObject obj, StringifyContext* scx) {
   }
 
   /* My kingdom for not-quite-initialized-from-the-start references. */
-  const AutoIdVector& propertyList = *props;
+  const RootedIdVector& propertyList = *props;
 
   /* Steps 8-10, 13. */
   bool wroteMember = false;
@@ -767,7 +768,7 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
              "input to JS::ToJSONMaybeSafely must be a plain object or array");
 
   /* Step 4. */
-  AutoIdVector propertyList(cx);
+  RootedIdVector propertyList(cx);
   if (replacer) {
     bool isArray;
     if (replacer->isCallable()) {
@@ -980,7 +981,7 @@ static bool Walk(JSContext* cx, HandleObject holder, HandleId name,
       }
     } else {
       /* Step 2b(i). */
-      AutoIdVector keys(cx);
+      RootedIdVector keys(cx);
       if (!GetPropertyKeys(cx, obj, JSITER_OWNONLY, &keys)) {
         return false;
       }
@@ -1103,8 +1104,10 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
   /* Steps 2-5. */
   // TaintFox - pass the taint to the parser
   return linearChars.isLatin1()
-           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), taint)
-           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), taint);
+             ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver,
+                                    args.rval(), taint)
+             : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver,
+                                    args.rval(), taint);
 }
 
 /* ES6 24.3.2. */
@@ -1116,7 +1119,7 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
   RootedValue value(cx, args.get(0));
   RootedValue space(cx, args.get(2));
 
-  StringBuffer sb(cx);
+  JSStringBuilder sb(cx);
   if (!Stringify(cx, &value, replacer, space, sb, StringifyBehavior::Normal)) {
     return false;
   }

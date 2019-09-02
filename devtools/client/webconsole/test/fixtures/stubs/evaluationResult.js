@@ -15,12 +15,14 @@ const stubPreparedMessages = new Map();
 const stubPackets = new Map();
 stubPreparedMessages.set(`new Date(0)`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1479159921364,
   "type": "result",
   "helperType": null,
   "level": "log",
+  "category": null,
   "parameters": [
     {
       "type": "object",
@@ -35,32 +37,43 @@ stubPreparedMessages.set(`new Date(0)`, new ConsoleMessage({
       }
     }
   ],
-  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"log\",\"parameters\":[{\"type\":\"object\",\"actor\":\"server1.conn0.child1/obj30\",\"class\":\"Date\",\"extensible\":true,\"frozen\":false,\"sealed\":false,\"ownPropertyLength\":0,\"preview\":{\"timestamp\":0}}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
+  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"log\",\"parameters\":[{\"type\":\"object\",\"actor\":\"server1.conn0.child1/obj30\",\"class\":\"Date\",\"extensible\":true,\"frozen\":false,\"sealed\":false,\"ownPropertyLength\":0,\"preview\":{\"timestamp\":0}}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null}",
   "frame": null,
   "groupId": null,
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`asdf()`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1479159921377,
   "type": "result",
   "helperType": null,
   "level": "error",
+  "category": null,
   "messageText": "ReferenceError: asdf is not defined",
   "parameters": [
     {
       "type": "undefined"
     }
   ],
-  "repeatId": "{\"frame\":{\"source\":\"debugger eval code\",\"line\":1,\"column\":1},\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"ReferenceError: asdf is not defined\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
+  "repeatId": "{\"frame\":{\"source\":\"debugger eval code\",\"line\":1,\"column\":1},\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"ReferenceError: asdf is not defined\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":[{\"filename\":\"debugger eval code\",\"sourceId\":\"server1.conn0.child1/source23\",\"lineNumber\":1,\"columnNumber\":1,\"functionName\":null}]}",
+  "stacktrace": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source23",
+      "lineNumber": 1,
+      "columnNumber": 1,
+      "functionName": null
+    }
+  ],
   "frame": {
     "source": "debugger eval code",
     "line": 1,
@@ -69,20 +82,24 @@ stubPreparedMessages.set(`asdf()`, new ConsoleMessage({
   "groupId": null,
   "errorMessageName": "JSMSG_NOT_DEFINED",
   "exceptionDocURL": "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/Not_defined?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default",
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`1 + @`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1479159921399,
   "type": "result",
   "helperType": null,
   "level": "error",
+  "category": null,
   "messageText": "SyntaxError: illegal character",
   "parameters": [
     {
@@ -99,20 +116,24 @@ stubPreparedMessages.set(`1 + @`, new ConsoleMessage({
   "groupId": null,
   "errorMessageName": "JSMSG_ILLEGAL_CHARACTER",
   "exceptionDocURL": "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/Illegal_character?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default",
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`inspect({a: 1})`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1499776070751,
   "type": "result",
   "helperType": "inspectObject",
   "level": "log",
+  "category": null,
   "parameters": [
     {
       "type": "object",
@@ -139,71 +160,80 @@ stubPreparedMessages.set(`inspect({a: 1})`, new ConsoleMessage({
       }
     }
   ],
-  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"log\",\"parameters\":[{\"type\":\"object\",\"actor\":\"server1.conn0.child1/obj35\",\"class\":\"Object\",\"extensible\":true,\"frozen\":false,\"sealed\":false,\"ownPropertyLength\":1,\"preview\":{\"kind\":\"Object\",\"ownProperties\":{\"a\":{\"configurable\":true,\"enumerable\":true,\"writable\":true,\"value\":1}},\"ownSymbols\":[],\"ownPropertiesLength\":1,\"ownSymbolsLength\":0,\"safeGetterValues\":{}}}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
+  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"log\",\"parameters\":[{\"type\":\"object\",\"actor\":\"server1.conn0.child1/obj35\",\"class\":\"Object\",\"extensible\":true,\"frozen\":false,\"sealed\":false,\"ownPropertyLength\":1,\"preview\":{\"kind\":\"Object\",\"ownProperties\":{\"a\":{\"configurable\":true,\"enumerable\":true,\"writable\":true,\"value\":1}},\"ownSymbols\":[],\"ownPropertiesLength\":1,\"ownSymbolsLength\":0,\"safeGetterValues\":{}}}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null}",
   "frame": null,
   "groupId": null,
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`cd(document)`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1510650094657,
   "type": "result",
   "helperType": "error",
   "level": "error",
+  "category": null,
   "messageText": "Cannot cd() to the given window. Invalid argument.",
   "parameters": [
     {
       "type": "undefined"
     }
   ],
-  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"Cannot cd() to the given window. Invalid argument.\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
+  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"Cannot cd() to the given window. Invalid argument.\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null}",
   "frame": null,
   "groupId": null,
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`undefined`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1518606917356,
   "type": "result",
   "helperType": null,
   "level": "log",
+  "category": null,
   "parameters": [
     {
       "type": "undefined"
     }
   ],
-  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"log\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
+  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"log\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null}",
   "frame": null,
   "groupId": null,
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`longString message Error`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1493108241073,
   "type": "result",
   "helperType": null,
   "level": "error",
+  "category": null,
   "messageText": {
     "type": "longString",
     "initial": "Error: Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Lon",
@@ -215,62 +245,111 @@ stubPreparedMessages.set(`longString message Error`, new ConsoleMessage({
       "type": "undefined"
     }
   ],
-  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":{\"type\":\"longString\",\"initial\":\"Error: Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Lon\",\"length\":110007,\"actor\":\"server1.conn0.child1/longString37\"},\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
-  "frame": null,
+  "repeatId": "{\"frame\":{\"source\":\"debugger eval code\",\"sourceId\":\"server1.conn0.child1/source30\",\"line\":1,\"column\":7},\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":{\"type\":\"longString\",\"initial\":\"Error: Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Long error Lon\",\"length\":110007,\"actor\":\"server1.conn0.child1/longString37\"},\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":[{\"filename\":\"debugger eval code\",\"sourceId\":\"server1.conn0.child1/source30\",\"lineNumber\":1,\"columnNumber\":7,\"functionName\":null}]}",
+  "stacktrace": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source30",
+      "lineNumber": 1,
+      "columnNumber": 7,
+      "functionName": null
+    }
+  ],
+  "frame": {
+    "source": "debugger eval code",
+    "sourceId": "server1.conn0.child1/source30",
+    "line": 1,
+    "column": 7
+  },
   "groupId": null,
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`eval throw ""`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1517990289517,
   "type": "result",
   "helperType": null,
   "level": "error",
+  "category": null,
   "messageText": "Error",
   "parameters": [
     {
       "type": "undefined"
     }
   ],
-  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"Error\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
-  "frame": null,
+  "repeatId": "{\"frame\":{\"source\":\"debugger eval code\",\"sourceId\":\"server1.conn0.child1/source23\",\"line\":1,\"column\":1},\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"Error\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":[{\"filename\":\"debugger eval code\",\"sourceId\":\"server1.conn0.child1/source23\",\"lineNumber\":1,\"columnNumber\":1,\"functionName\":null}]}",
+  "stacktrace": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source23",
+      "lineNumber": 1,
+      "columnNumber": 1,
+      "functionName": null
+    }
+  ],
+  "frame": {
+    "source": "debugger eval code",
+    "sourceId": "server1.conn0.child1/source23",
+    "line": 1,
+    "column": 1
+  },
   "groupId": null,
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPreparedMessages.set(`eval throw "tomato"`, new ConsoleMessage({
   "id": "1",
+  "innerWindowID": null,
   "allowRepeating": true,
   "source": "javascript",
   "timeStamp": 1517990289520,
   "type": "result",
   "helperType": null,
   "level": "error",
+  "category": null,
   "messageText": "Error: tomato",
   "parameters": [
     {
       "type": "undefined"
     }
   ],
-  "repeatId": "{\"frame\":null,\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"Error: tomato\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":null}",
-  "stacktrace": null,
-  "frame": null,
+  "repeatId": "{\"frame\":{\"source\":\"debugger eval code\",\"sourceId\":\"server1.conn0.child1/source23\",\"line\":1,\"column\":1},\"groupId\":null,\"indent\":0,\"level\":\"error\",\"messageText\":\"Error: tomato\",\"parameters\":[{\"type\":\"undefined\"}],\"source\":\"javascript\",\"type\":\"result\",\"userProvidedStyles\":null,\"stacktrace\":[{\"filename\":\"debugger eval code\",\"sourceId\":\"server1.conn0.child1/source23\",\"lineNumber\":1,\"columnNumber\":1,\"functionName\":null}]}",
+  "stacktrace": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source23",
+      "lineNumber": 1,
+      "columnNumber": 1,
+      "functionName": null
+    }
+  ],
+  "frame": {
+    "source": "debugger eval code",
+    "sourceId": "server1.conn0.child1/source23",
+    "line": 1,
+    "column": 1
+  },
   "groupId": null,
+  "cssSelectors": "",
   "userProvidedStyles": null,
   "notes": null,
   "indent": 0,
-  "prefix": ""
+  "prefix": "",
+  "chromeContext": false
 }));
 
 stubPackets.set(`new Date(0)`, {
@@ -322,6 +401,15 @@ stubPackets.set(`asdf()`, {
   },
   "exceptionMessage": "ReferenceError: asdf is not defined",
   "exceptionDocURL": "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/Not_defined?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default",
+  "exceptionStack": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source23",
+      "lineNumber": 1,
+      "columnNumber": 1,
+      "functionName": null
+    }
+  ],
   "errorMessageName": "JSMSG_NOT_DEFINED",
   "frame": {
     "source": "debugger eval code",
@@ -359,6 +447,7 @@ stubPackets.set(`1 + @`, {
   },
   "exceptionMessage": "SyntaxError: illegal character",
   "exceptionDocURL": "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/Illegal_character?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default",
+  "exceptionStack": null,
   "errorMessageName": "JSMSG_ILLEGAL_CHARACTER",
   "frame": {
     "source": "debugger eval code",
@@ -474,7 +563,21 @@ stubPackets.set(`longString message Error`, {
     "length": 110007,
     "actor": "server1.conn0.child1/longString37"
   },
-  "frame": null,
+  "exceptionStack": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source30",
+      "lineNumber": 1,
+      "columnNumber": 7,
+      "functionName": null
+    }
+  ],
+  "frame": {
+    "source": "debugger eval code",
+    "sourceId": "server1.conn0.child1/source30",
+    "line": 1,
+    "column": 7
+  },
   "helperResult": null,
   "notes": null
 });
@@ -488,7 +591,21 @@ stubPackets.set(`eval throw ""`, {
   "timestamp": 1517990289517,
   "exception": "",
   "exceptionMessage": "",
-  "frame": null,
+  "exceptionStack": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source23",
+      "lineNumber": 1,
+      "columnNumber": 1,
+      "functionName": null
+    }
+  ],
+  "frame": {
+    "source": "debugger eval code",
+    "sourceId": "server1.conn0.child1/source23",
+    "line": 1,
+    "column": 1
+  },
   "helperResult": null,
   "notes": null
 });
@@ -502,7 +619,21 @@ stubPackets.set(`eval throw "tomato"`, {
   "timestamp": 1517990289520,
   "exception": "tomato",
   "exceptionMessage": "tomato",
-  "frame": null,
+  "exceptionStack": [
+    {
+      "filename": "debugger eval code",
+      "sourceId": "server1.conn0.child1/source23",
+      "lineNumber": 1,
+      "columnNumber": 1,
+      "functionName": null
+    }
+  ],
+  "frame": {
+    "source": "debugger eval code",
+    "sourceId": "server1.conn0.child1/source23",
+    "line": 1,
+    "column": 1
+  },
   "helperResult": null,
   "notes": null
 });

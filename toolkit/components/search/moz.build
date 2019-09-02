@@ -4,17 +4,21 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
+SPHINX_TREES['/toolkit/search'] = 'docs'
 
-if CONFIG['MOZ_TOOLKIT_SEARCH']:
-    XPIDL_SOURCES += [
-        'nsISearchService.idl',
-    ]
+XPCSHELL_TESTS_MANIFESTS += [
+    'tests/xpcshell/searchconfigs/xpcshell-1.ini',
+    'tests/xpcshell/searchconfigs/xpcshell-2.ini',
+    'tests/xpcshell/searchconfigs/xpcshell-3.ini',
+    'tests/xpcshell/searchconfigs/xpcshell-4.ini',
+    'tests/xpcshell/xpcshell.ini',
+]
+
+XPIDL_SOURCES += [
+    'nsISearchService.idl',
+]
 
 XPIDL_MODULE = 'toolkit_search'
-
-EXTRA_COMPONENTS += [
-]
 
 if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
     EXTRA_JS_MODULES += [
@@ -22,10 +26,12 @@ if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
     ]
 
 EXTRA_JS_MODULES += [
+    'SearchEngine.jsm',
     'SearchService.jsm',
     'SearchStaticData.jsm',
     'SearchSuggestionController.jsm',
     'SearchSuggestions.jsm',
+    'SearchUtils.jsm',
 ]
 
 EXTRA_COMPONENTS += [

@@ -7,28 +7,51 @@
 
 this.EXPORTED_SYMBOLS = ["StyleEditorUI"];
 
-const {loader, require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { loader, require } = ChromeUtils.import(
+  "resource://devtools/shared/Loader.jsm"
+);
 const Services = require("Services");
-const {NetUtil} = require("resource://gre/modules/NetUtil.jsm");
-const {OS} = require("resource://gre/modules/osfile.jsm");
+const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
+const { OS } = require("resource://gre/modules/osfile.jsm");
 const EventEmitter = require("devtools/shared/event-emitter");
-const {gDevTools} = require("devtools/client/framework/devtools");
 const {
   getString,
   text,
   wire,
   showFilePicker,
+  optionsPopupMenu,
 } = require("resource://devtools/client/styleeditor/StyleEditorUtil.jsm");
-const {SplitView} = require("resource://devtools/client/shared/SplitView.jsm");
-const {StyleSheetEditor} = require("resource://devtools/client/styleeditor/StyleSheetEditor.jsm");
-const {PluralForm} = require("devtools/shared/plural-form");
-const {PrefObserver} = require("devtools/client/shared/prefs");
-const {KeyCodes} = require("devtools/client/shared/keycodes");
-const {OriginalSource} = require("devtools/client/styleeditor/original-source");
+const {
+  SplitView,
+} = require("resource://devtools/client/shared/SplitView.jsm");
+const {
+  StyleSheetEditor,
+} = require("resource://devtools/client/styleeditor/StyleSheetEditor.jsm");
+const { PluralForm } = require("devtools/shared/plural-form");
+const { PrefObserver } = require("devtools/client/shared/prefs");
+const { KeyCodes } = require("devtools/client/shared/keycodes");
+const {
+  OriginalSource,
+} = require("devtools/client/styleeditor/original-source");
 
-loader.lazyRequireGetter(this, "ResponsiveUIManager", "devtools/client/responsive.html/manager", true);
-loader.lazyRequireGetter(this, "openContentLink", "devtools/client/shared/link", true);
-loader.lazyRequireGetter(this, "copyString", "devtools/shared/platform/clipboard", true);
+loader.lazyRequireGetter(
+  this,
+  "ResponsiveUIManager",
+  "devtools/client/responsive.html/manager",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "openContentLink",
+  "devtools/client/shared/link",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "copyString",
+  "devtools/shared/platform/clipboard",
+  true
+);
 
 const LOAD_ERROR = "error-load";
 const STYLE_EDITOR_TEMPLATE = "stylesheet";
@@ -37,6 +60,8 @@ const PREF_MEDIA_SIDEBAR = "devtools.styleeditor.showMediaSidebar";
 const PREF_SIDEBAR_WIDTH = "devtools.styleeditor.mediaSidebarWidth";
 const PREF_NAV_WIDTH = "devtools.styleeditor.navSidebarWidth";
 const PREF_ORIG_SOURCES = "devtools.source-map.client-service.enabled";
+
+const HTML_NS = "http://www.w3.org/1999/xhtml";
 
 /**
  * StyleEditorUI is controls and builds the UI of the Style Editor, including
@@ -47,6 +72,7 @@ const PREF_ORIG_SOURCES = "devtools.source-map.client-service.enabled";
  *   'editor-selected': An editor was selected
  *   'error': An error occured
  *
+ * @param {Toolbox} toolbox
  * @param {StyleEditorFront} debuggee
  *        Client-side front for interacting with the page's stylesheets
  * @param {Target} target
@@ -55,9 +81,10 @@ const PREF_ORIG_SOURCES = "devtools.source-map.client-service.enabled";
  *        Document of the toolbox panel to populate UI in.
  * @param {CssProperties} A css properties database.
  */
-function StyleEditorUI(debuggee, target, panelDoc, cssProperties) {
+function StyleEditorUI(toolbox, debuggee, target, panelDoc, cssProperties) {
   EventEmitter.decorate(this);
 
+  this._toolbox = toolbox;
   this._debuggee = debuggee;
   this._target = target;
   this._panelDoc = panelDoc;
@@ -78,8 +105,7 @@ function StyleEditorUI(debuggee, target, panelDoc, cssProperties) {
   // going to fetch the list of sheets anyway.
   this._suppressAdd = true;
 
-  this._onOptionsPopupShowing = this._onOptionsPopupShowing.bind(this);
-  this._onOptionsPopupHiding = this._onOptionsPopupHiding.bind(this);
+  this._onOptionsButtonClick = this._onOptionsButtonClick.bind(this);
   this._onNewDocument = this._onNewDocument.bind(this);
   this._onMediaPrefChanged = this._onMediaPrefChanged.bind(this);
   this._updateMediaList = this._updateMediaList.bind(this);
@@ -92,7 +118,9 @@ function StyleEditorUI(debuggee, target, panelDoc, cssProperties) {
 
   this._prefObserver = new PrefObserver("devtools.styleeditor.");
   this._prefObserver.on(PREF_MEDIA_SIDEBAR, this._onMediaPrefChanged);
-  this._sourceMapPrefObserver = new PrefObserver("devtools.source-map.client-service.");
+  this._sourceMapPrefObserver = new PrefObserver(
+    "devtools.source-map.client-service."
+  );
   this._sourceMapPrefObserver.on(PREF_ORIG_SOURCES, this._onNewDocument);
 
   this._debuggee.on("stylesheet-added", this._addStyleSheet);
@@ -104,8 +132,9 @@ StyleEditorUI.prototype = {
    * Index of selected stylesheet in document.styleSheets
    */
   get selectedStyleSheetIndex() {
-    return this.selectedEditor ?
-           this.selectedEditor.styleSheet.styleSheetIndex : -1;
+    return this.selectedEditor
+      ? this.selectedEditor.styleSheet.styleSheetIndex
+      : -1;
   },
 
   /**
@@ -125,19 +154,21 @@ StyleEditorUI.prototype = {
   },
 
   async initializeHighlighter() {
-    const toolbox = gDevTools.getToolbox(this._target);
-    await toolbox.initInspector();
-    this._walker = toolbox.walker;
+    await this._toolbox.initInspector();
+    this._walker = this._toolbox.walker;
 
     try {
-      this._highlighter =
-        await toolbox.inspector.getHighlighterByType(SELECTOR_HIGHLIGHTER_TYPE);
+      this._highlighter = await this._toolbox.inspector.getHighlighterByType(
+        SELECTOR_HIGHLIGHTER_TYPE
+      );
     } catch (e) {
       // The selectorHighlighter can't always be instantiated, for example
       // it doesn't work with XUL windows (until bug 1094959 gets fixed);
       // or the selectorHighlighter doesn't exist on the backend.
-      console.warn("The selectorHighlighter couldn't be instantiated, " +
-        "elements matching hovered selectors will not be highlighted");
+      console.warn(
+        "The selectorHighlighter couldn't be instantiated, " +
+          "elements matching hovered selectors will not be highlighted"
+      );
     }
   },
 
@@ -149,42 +180,38 @@ StyleEditorUI.prototype = {
 
     this._view = new SplitView(viewRoot);
 
-    wire(this._view.rootElement, ".style-editor-newButton", () =>{
+    wire(this._view.rootElement, ".style-editor-newButton", () => {
       this._debuggee.addStyleSheet(null);
     });
 
-    wire(this._view.rootElement, ".style-editor-importButton", ()=> {
+    wire(this._view.rootElement, ".style-editor-importButton", () => {
       this._importFromFile(this._mockImportFile || null, this._window);
     });
 
+    wire(this._view.rootElement, "#style-editor-options", event => {
+      this._onOptionsButtonClick(event);
+    });
+
+    this._panelDoc.addEventListener(
+      "contextmenu",
+      () => {
+        this._contextMenuStyleSheet = null;
+      },
+      true
+    );
+
     this._optionsButton = this._panelDoc.getElementById("style-editor-options");
-    this._panelDoc.addEventListener("contextmenu", () => {
-      this._contextMenuStyleSheet = null;
-    }, true);
 
     this._contextMenu = this._panelDoc.getElementById("sidebar-context");
-    this._contextMenu.addEventListener("popupshowing",
-                                       this._updateContextMenuItems);
+    this._contextMenu.addEventListener(
+      "popupshowing",
+      this._updateContextMenuItems
+    );
 
-    this._optionsMenu =
-      this._panelDoc.getElementById("style-editor-options-popup");
-    this._optionsMenu.addEventListener("popupshowing",
-                                       this._onOptionsPopupShowing);
-    this._optionsMenu.addEventListener("popuphiding",
-                                       this._onOptionsPopupHiding);
-
-    this._sourcesItem = this._panelDoc.getElementById("options-origsources");
-    this._sourcesItem.addEventListener("command",
-                                       this._toggleOrigSources);
-
-    this._mediaItem = this._panelDoc.getElementById("options-show-media");
-    this._mediaItem.addEventListener("command",
-                                     this._toggleMediaSidebar);
-
-    this._openLinkNewTabItem =
-      this._panelDoc.getElementById("context-openlinknewtab");
-    this._openLinkNewTabItem.addEventListener("command",
-                                              this._openLinkNewTab);
+    this._openLinkNewTabItem = this._panelDoc.getElementById(
+      "context-openlinknewtab"
+    );
+    this._openLinkNewTabItem.addEventListener("command", this._openLinkNewTab);
 
     this._copyUrlItem = this._panelDoc.getElementById("context-copyurl");
     this._copyUrlItem.addEventListener("command", this._copyUrl);
@@ -194,22 +221,26 @@ StyleEditorUI.prototype = {
   },
 
   /**
-   * Listener handling the 'gear menu' popup showing event.
-   * Update options menu items to reflect current preference settings.
+   * Opens the Options Popup Menu
+   *
+   * @params {number} screenX
+   * @params {number} screenY
+   *   Both obtained from the event object, used to position the popup
    */
-  _onOptionsPopupShowing: function() {
-    this._optionsButton.setAttribute("open", "true");
-    this._sourcesItem.setAttribute("checked",
-      Services.prefs.getBoolPref(PREF_ORIG_SOURCES));
-    this._mediaItem.setAttribute("checked",
-      Services.prefs.getBoolPref(PREF_MEDIA_SIDEBAR));
-  },
+  _onOptionsButtonClick({ screenX, screenY }) {
+    this._optionsMenu = optionsPopupMenu(
+      this._toggleOrigSources,
+      this._toggleMediaSidebar
+    );
 
-  /**
-   * Listener handling the 'gear menu' popup hiding event.
-   */
-  _onOptionsPopupHiding: function() {
-    this._optionsButton.removeAttribute("open");
+    this._optionsMenu.once("open", () => {
+      this._optionsButton.setAttribute("open", true);
+    });
+    this._optionsMenu.once("close", () => {
+      this._optionsButton.removeAttribute("open");
+    });
+
+    this._optionsMenu.popup(screenX, screenY, this._toolbox.doc);
   },
 
   /**
@@ -222,9 +253,12 @@ StyleEditorUI.prototype = {
    */
   _onNewDocument: function() {
     this._suppressAdd = true;
-    this._debuggee.getStyleSheets().then((styleSheets) => {
-      return this._resetStyleSheetList(styleSheets);
-    }).catch(console.error);
+    this._debuggee
+      .getStyleSheets()
+      .then(styleSheets => {
+        return this._resetStyleSheetList(styleSheets);
+      })
+      .catch(console.error);
   },
 
   /**
@@ -258,7 +292,7 @@ StyleEditorUI.prototype = {
     // remember selected sheet and line number for next load
     if (this.selectedEditor && this.selectedEditor.sourceEditor) {
       const href = this.selectedEditor.styleSheet.href;
-      const {line, ch} = this.selectedEditor.sourceEditor.getCursor();
+      const { line, ch } = this.selectedEditor.sourceEditor.getCursor();
 
       this._styleSheetToSelect = {
         stylesheet: href,
@@ -310,14 +344,16 @@ StyleEditorUI.prototype = {
       const promise = (async () => {
         let editor = await this._addStyleSheetEditor(styleSheet, isNew);
 
-        const toolbox = gDevTools.getToolbox(this._target);
-        const sourceMapService = toolbox.sourceMapService;
+        const sourceMapService = this._toolbox.sourceMapService;
 
-        if (!sourceMapService || !Services.prefs.getBoolPref(PREF_ORIG_SOURCES)) {
+        if (
+          !sourceMapService ||
+          !Services.prefs.getBoolPref(PREF_ORIG_SOURCES)
+        ) {
           return editor;
         }
 
-        const {href, nodeHref, actorID: id, sourceMapURL} = styleSheet;
+        const { href, nodeHref, actorID: id, sourceMapURL } = styleSheet;
         const url = href || nodeHref;
         const sources = await sourceMapService.getOriginalURLs({
           id,
@@ -332,8 +368,15 @@ StyleEditorUI.prototype = {
           editor = null;
 
           for (const source of sources) {
-            const generatedId = sourceMapService.generatedToOriginalId(id, source);
-            const original = new OriginalSource(source, generatedId, sourceMapService);
+            const generatedId = sourceMapService.generatedToOriginalId(
+              id,
+              source
+            );
+            const original = new OriginalSource(
+              source,
+              generatedId,
+              sourceMapService
+            );
 
             // set so the first sheet will be selected, even if it's a source
             original.styleSheetIndex = styleSheet.styleSheetIndex;
@@ -369,8 +412,14 @@ StyleEditorUI.prototype = {
       file = savedFile;
     }
 
-    const editor = new StyleSheetEditor(styleSheet, this._window, file, isNew,
-                                      this._walker, this._highlighter);
+    const editor = new StyleSheetEditor(
+      styleSheet,
+      this._window,
+      file,
+      isNew,
+      this._walker,
+      this._highlighter
+    );
 
     editor.on("property-change", this._summaryChange.bind(this, editor));
     editor.on("media-rules-changed", this._updateMediaList.bind(this, editor));
@@ -397,37 +446,42 @@ StyleEditorUI.prototype = {
    *        Optional parent window for the file picker.
    */
   _importFromFile: function(file, parentWindow) {
-    const onFileSelected = (selectedFile) => {
+    const onFileSelected = selectedFile => {
       if (!selectedFile) {
         // nothing selected
         return;
       }
-      NetUtil.asyncFetch({
-        uri: NetUtil.newURI(selectedFile),
-        loadingNode: this._window.document,
-        securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
-        contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
-      }, (stream, status) => {
-        if (!Components.isSuccessCode(status)) {
-          this.emit("error", { key: LOAD_ERROR, level: "warning" });
-          return;
-        }
-        const source =
-            NetUtil.readInputStreamToString(stream, stream.available());
-        stream.close();
+      NetUtil.asyncFetch(
+        {
+          uri: NetUtil.newURI(selectedFile),
+          loadingNode: this._window.document,
+          securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
+          contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
+        },
+        (stream, status) => {
+          if (!Components.isSuccessCode(status)) {
+            this.emit("error", { key: LOAD_ERROR, level: "warning" });
+            return;
+          }
+          const source = NetUtil.readInputStreamToString(
+            stream,
+            stream.available()
+          );
+          stream.close();
 
-        this._suppressAdd = true;
-        this._debuggee.addStyleSheet(source).then((styleSheet) => {
-          this._suppressAdd = false;
-          this._addStyleSheet(styleSheet, true).then(editor => {
-            if (editor) {
-              editor.savedFile = selectedFile;
-            }
-            // Just for testing purposes.
-            this.emit("test:editor-updated", editor);
+          this._suppressAdd = true;
+          this._debuggee.addStyleSheet(source).then(styleSheet => {
+            this._suppressAdd = false;
+            this._addStyleSheet(styleSheet, true).then(editor => {
+              if (editor) {
+                editor.savedFile = selectedFile;
+              }
+              // Just for testing purposes.
+              this.emit("test:editor-updated", editor);
+            });
           });
-        });
-      });
+        }
+      );
     };
 
     showFilePicker(file, false, parentWindow, onFileSelected);
@@ -478,14 +532,21 @@ StyleEditorUI.prototype = {
    * below the list): hide the context menu
    */
   _updateContextMenuItems: function() {
-    this._openLinkNewTabItem.setAttribute("hidden",
-                                          !this._contextMenuStyleSheet);
+    this._openLinkNewTabItem.setAttribute(
+      "hidden",
+      !this._contextMenuStyleSheet
+    );
     this._copyUrlItem.setAttribute("hidden", !this._contextMenuStyleSheet);
 
     if (this._contextMenuStyleSheet) {
-      this._openLinkNewTabItem.setAttribute("disabled",
-                                            !this._contextMenuStyleSheet.href);
-      this._copyUrlItem.setAttribute("disabled", !this._contextMenuStyleSheet.href);
+      this._openLinkNewTabItem.setAttribute(
+        "disabled",
+        !this._contextMenuStyleSheet.href
+      );
+      this._copyUrlItem.setAttribute(
+        "disabled",
+        !this._contextMenuStyleSheet.href
+      );
     }
   },
 
@@ -571,7 +632,7 @@ StyleEditorUI.prototype = {
 
         wire(summary, ".stylesheet-name", {
           events: {
-            "keypress": (event) => {
+            keypress: event => {
               if (event.keyCode == KeyCodes.DOM_VK_RETURN) {
                 this._view.activeSummary = summary;
               }
@@ -600,8 +661,10 @@ StyleEditorUI.prototype = {
         });
 
         const sidebar = details.querySelector(".stylesheet-sidebar");
-        sidebar.setAttribute("width",
-            Services.prefs.getIntPref(PREF_SIDEBAR_WIDTH));
+        sidebar.setAttribute(
+          "width",
+          Services.prefs.getIntPref(PREF_SIDEBAR_WIDTH)
+        );
 
         const splitter = details.querySelector(".devtools-side-splitter");
         splitter.addEventListener("mousemove", () => {
@@ -609,8 +672,9 @@ StyleEditorUI.prototype = {
           Services.prefs.setIntPref(PREF_SIDEBAR_WIDTH, sidebarWidth);
 
           // update all @media sidebars for consistency
-          const sidebars =
-              [...this._panelDoc.querySelectorAll(".stylesheet-sidebar")];
+          const sidebars = [
+            ...this._panelDoc.querySelectorAll(".stylesheet-sidebar"),
+          ];
           for (const mediaSidebar of sidebars) {
             mediaSidebar.setAttribute("width", sidebarWidth);
           }
@@ -627,8 +691,11 @@ StyleEditorUI.prototype = {
 
         // If this is the first stylesheet and there is no pending request to
         // select a particular style sheet, select this sheet.
-        if (!this.selectedEditor && !this._styleSheetBoundToSelect
-            && createdEditor.styleSheet.styleSheetIndex == 0) {
+        if (
+          !this.selectedEditor &&
+          !this._styleSheetBoundToSelect &&
+          createdEditor.styleSheet.styleSheetIndex == 0
+        ) {
           this._selectEditor(createdEditor);
         }
         this.emit("editor-added", createdEditor);
@@ -641,39 +708,18 @@ StyleEditorUI.prototype = {
         (async function() {
           if (!showEditor.sourceEditor) {
             // only initialize source editor when we switch to this view
-            const inputElement =
-                details.querySelector(".stylesheet-editor-input");
+            const inputElement = details.querySelector(
+              ".stylesheet-editor-input"
+            );
             await showEditor.load(inputElement, this._cssProperties);
           }
 
           showEditor.onShow();
 
           this.emit("editor-selected", showEditor);
-
-          // Is there any CSS coverage markup to include?
-          const usage = await this._target.getFront("cssUsage");
-          if (usage == null) {
-            return;
-          }
-
-          const sheet = showEditor.styleSheet;
-          const {reports} = await usage.createEditorReportForSheet(sheet);
-
-          showEditor.removeAllUnusedRegions();
-
-          if (reports.length > 0) {
-            // Only apply if this file isn't compressed. We detect a
-            // compressed file if there are more rules than lines.
-            const editorText = showEditor.sourceEditor.getText();
-            const lineCount = editorText.split("\n").length;
-            const ruleCount = showEditor.styleSheet.ruleCount;
-            if (lineCount >= ruleCount) {
-              showEditor.addUnusedRegions(reports);
-            } else {
-              this.emit("error", { key: "error-compressed", level: "info" });
-            }
-          }
-        }.bind(this))().catch(console.error);
+        }
+          .bind(this)()
+          .catch(console.error));
       },
     });
   },
@@ -714,11 +760,13 @@ StyleEditorUI.prototype = {
     if (!toSelect) {
       return false;
     }
-    const isHref = toSelect.stylesheet === null ||
-                 typeof toSelect.stylesheet == "string";
+    const isHref =
+      toSelect.stylesheet === null || typeof toSelect.stylesheet == "string";
 
-    return (isHref && editor.styleSheet.href == toSelect.stylesheet) ||
-           (toSelect.stylesheet == editor.styleSheet);
+    return (
+      (isHref && editor.styleSheet.href == toSelect.stylesheet) ||
+      toSelect.stylesheet == editor.styleSheet
+    );
   },
 
   /**
@@ -739,11 +787,11 @@ StyleEditorUI.prototype = {
     col = col || 0;
 
     const editorPromise = editor.getSourceEditor().then(() => {
-      editor.sourceEditor.setCursor({line: line, ch: col});
+      editor.setCursor(line, col);
       this._styleSheetBoundToSelect = null;
     });
 
-    const summaryPromise = this.getEditorSummary(editor).then((summary) => {
+    const summaryPromise = this.getEditorSummary(editor).then(summary => {
       this._view.activeSummary = summary;
     });
 
@@ -793,8 +841,9 @@ StyleEditorUI.prototype = {
   getStyleSheetIdentifier: function(styleSheet) {
     // Identify inline style sheets by their host page URI and index
     // at the page.
-    return styleSheet.href ? styleSheet.href :
-      "inline-" + styleSheet.styleSheetIndex + "-at-" + styleSheet.nodeHref;
+    return styleSheet.href
+      ? styleSheet.href
+      : "inline-" + styleSheet.styleSheetIndex + "-at-" + styleSheet.nodeHref;
   },
 
   /**
@@ -881,9 +930,14 @@ StyleEditorUI.prototype = {
     }
     text(summary, ".stylesheet-linked-file", linkedCSSSource);
     text(summary, ".stylesheet-title", editor.styleSheet.title || "");
-    text(summary, ".stylesheet-rule-count",
-      PluralForm.get(ruleCount,
-                     getString("ruleCount.label")).replace("#1", ruleCount));
+    text(
+      summary,
+      ".stylesheet-rule-count",
+      PluralForm.get(ruleCount, getString("ruleCount.label")).replace(
+        "#1",
+        ruleCount
+      )
+    );
   },
 
   /**
@@ -910,7 +964,7 @@ StyleEditorUI.prototype = {
       let inSource = false;
 
       for (const rule of rules) {
-        const {line, column, parentStyleSheet} = rule;
+        const { line, column, parentStyleSheet } = rule;
 
         let location = {
           line: line,
@@ -920,8 +974,11 @@ StyleEditorUI.prototype = {
         };
         if (editor.styleSheet.isOriginalSource) {
           const styleSheet = editor.cssSheet;
-          location = await editor.styleSheet.getOriginalLocation(styleSheet, line,
-                                                                 column);
+          location = await editor.styleSheet.getOriginalLocation(
+            styleSheet,
+            line,
+            column
+          );
         }
 
         // this @media rule is from a different original source
@@ -930,12 +987,14 @@ StyleEditorUI.prototype = {
         }
         inSource = true;
 
-        const div = this._panelDoc.createElement("div");
+        const div = this._panelDoc.createElementNS(HTML_NS, "div");
         div.className = "media-rule-label";
-        div.addEventListener("click",
-                             this._jumpToLocation.bind(this, location));
+        div.addEventListener(
+          "click",
+          this._jumpToLocation.bind(this, location)
+        );
 
-        const cond = this._panelDoc.createElement("div");
+        const cond = this._panelDoc.createElementNS(HTML_NS, "div");
         cond.className = "media-rule-condition";
         if (!rule.matches) {
           cond.classList.add("media-condition-unmatched");
@@ -947,7 +1006,7 @@ StyleEditorUI.prototype = {
         }
         div.appendChild(cond);
 
-        const link = this._panelDoc.createElement("div");
+        const link = this._panelDoc.createElementNS(HTML_NS, "div");
         link.className = "media-rule-line theme-link";
         if (location.line != -1) {
           link.textContent = ":" + location.line;
@@ -960,7 +1019,9 @@ StyleEditorUI.prototype = {
       sidebar.hidden = !showSidebar || !inSource;
 
       this.emit("media-list-changed", editor);
-    }.bind(this))().catch(console.error);
+    }
+      .bind(this)()
+      .catch(console.error));
   },
 
   /**
@@ -972,7 +1033,7 @@ StyleEditorUI.prototype = {
    *        The raw condition text to parse
    */
   _setConditionContents(element, rawText) {
-    const minMaxPattern = /(min\-|max\-)(width|height):\s\d+(px)/ig;
+    const minMaxPattern = /(min\-|max\-)(width|height):\s\d+(px)/gi;
 
     let match = minMaxPattern.exec(rawText);
     let lastParsed = 0;
@@ -983,7 +1044,7 @@ StyleEditorUI.prototype = {
       );
       element.appendChild(node);
 
-      const link = this._panelDoc.createElement("a");
+      const link = this._panelDoc.createElementNS(HTML_NS, "a");
       link.href = "#";
       link.className = "media-responsive-mode-toggle";
       link.textContent = rawText.substring(match.index, matchEnd);
@@ -1012,7 +1073,7 @@ StyleEditorUI.prototype = {
     const isWidthCond = conditionText.toLowerCase().indexOf("width") > -1;
     const mediaVal = parseInt(/\d+/.exec(conditionText), 10);
 
-    const options = isWidthCond ? {width: mediaVal} : {height: mediaVal};
+    const options = isWidthCond ? { width: mediaVal } : { height: mediaVal };
     this._launchResponsiveMode(options);
     e.preventDefault();
     e.stopPropagation();
@@ -1028,7 +1089,9 @@ StyleEditorUI.prototype = {
     const tab = this._target.tab;
     const win = this._target.tab.ownerDocument.defaultView;
 
-    await ResponsiveUIManager.openIfNeeded(win, tab, { trigger: "style_editor" });
+    await ResponsiveUIManager.openIfNeeded(win, tab, {
+      trigger: "style_editor",
+    });
     ResponsiveUIManager.getResponsiveUIForTab(tab).setViewportSize(options);
   },
 
@@ -1052,11 +1115,6 @@ StyleEditorUI.prototype = {
     const sidebar = this._panelDoc.querySelector(".splitview-controller");
     const sidebarWidth = sidebar.getAttribute("width");
     Services.prefs.setIntPref(PREF_NAV_WIDTH, sidebarWidth);
-
-    this._optionsMenu.removeEventListener("popupshowing",
-                                          this._onOptionsPopupShowing);
-    this._optionsMenu.removeEventListener("popuphiding",
-                                          this._onOptionsPopupHiding);
 
     this._sourceMapPrefObserver.off(PREF_ORIG_SOURCES, this._onNewDocument);
     this._sourceMapPrefObserver.destroy();

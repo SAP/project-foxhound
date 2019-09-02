@@ -9,7 +9,8 @@
 
 "use strict";
 
-const baseErrorURL = "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/";
+const baseErrorURL =
+  "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/";
 const params =
   "?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default";
 
@@ -52,7 +53,7 @@ const ErrorDocs = {
   JSMSG_DEPRECATED_FOR_EACH: "For-each-in_loops_are_deprecated",
   JSMSG_STRICT_NON_SIMPLE_PARAMS: "Strict_Non_Simple_Params",
   JSMSG_DEAD_OBJECT: "Dead_object",
-  JSMSG_NOT_NONNULL_OBJECT: "No_non-null_object",
+  JSMSG_OBJECT_REQUIRED: "No_non-null_object",
   JSMSG_IDSTART_AFTER_NUMBER: "Identifier_after_number",
   JSMSG_DEPRECATED_EXPR_CLOSURE: "Deprecated_expression_closures",
   JSMSG_ILLEGAL_CHARACTER: "Illegal_character",
@@ -90,16 +91,27 @@ const ErrorDocs = {
   JSMSG_PROPERTY_FAIL: "cant_access_property",
   JSMSG_PROPERTY_FAIL_EXPR: "cant_access_property",
   JSMSG_REDECLARED_VAR: "Redeclared_parameter",
+  JSMSG_SET_NON_OBJECT_RECEIVER: "Cant_assign_to_property",
 };
 
-const MIXED_CONTENT_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/Mixed_content";
-const TRACKING_PROTECTION_LEARN_MORE = "https://developer.mozilla.org/Firefox/Privacy/Tracking_Protection";
-const INSECURE_PASSWORDS_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/Insecure_passwords";
-const PUBLIC_KEY_PINS_LEARN_MORE = "https://developer.mozilla.org/docs/Web/HTTP/Public_Key_Pinning";
-const STRICT_TRANSPORT_SECURITY_LEARN_MORE = "https://developer.mozilla.org/docs/Web/HTTP/Headers/Strict-Transport-Security";
-const WEAK_SIGNATURE_ALGORITHM_LEARN_MORE = "https://developer.mozilla.org/docs/Web/Security/Weak_Signature_Algorithm";
-const MIME_TYPE_MISMATCH_LEARN_MORE = "https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Content-Type-Options";
-const SOURCE_MAP_LEARN_MORE = "https://developer.mozilla.org/en-US/docs/Tools/Debugger/Source_map_errors";
+const MIXED_CONTENT_LEARN_MORE =
+  "https://developer.mozilla.org/docs/Web/Security/Mixed_content";
+const TRACKING_PROTECTION_LEARN_MORE =
+  "https://developer.mozilla.org/Firefox/Privacy/Tracking_Protection";
+const INSECURE_PASSWORDS_LEARN_MORE =
+  "https://developer.mozilla.org/docs/Web/Security/Insecure_passwords";
+const PUBLIC_KEY_PINS_LEARN_MORE =
+  "https://developer.mozilla.org/docs/Web/HTTP/Public_Key_Pinning";
+const STRICT_TRANSPORT_SECURITY_LEARN_MORE =
+  "https://developer.mozilla.org/docs/Web/HTTP/Headers/Strict-Transport-Security";
+const WEAK_SIGNATURE_ALGORITHM_LEARN_MORE =
+  "https://developer.mozilla.org/docs/Web/Security/Weak_Signature_Algorithm";
+const MIME_TYPE_MISMATCH_LEARN_MORE =
+  "https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Content-Type-Options";
+const SOURCE_MAP_LEARN_MORE =
+  "https://developer.mozilla.org/en-US/docs/Tools/Debugger/Source_map_errors";
+const TLS_LEARN_MORE =
+  "https://blog.mozilla.org/security/2018/10/15/removing-old-versions-of-tls/";
 const ErrorCategories = {
   "Insecure Password Field": INSECURE_PASSWORDS_LEARN_MORE,
   "Mixed Content Message": MIXED_CONTENT_LEARN_MORE,
@@ -108,11 +120,13 @@ const ErrorCategories = {
   "Invalid HSTS Headers": STRICT_TRANSPORT_SECURITY_LEARN_MORE,
   "SHA-1 Signature": WEAK_SIGNATURE_ALGORITHM_LEARN_MORE,
   "Tracking Protection": TRACKING_PROTECTION_LEARN_MORE,
-  "MIMEMISMATCH": MIME_TYPE_MISMATCH_LEARN_MORE,
+  MIMEMISMATCH: MIME_TYPE_MISMATCH_LEARN_MORE,
   "source map": SOURCE_MAP_LEARN_MORE,
+  TLS: TLS_LEARN_MORE,
 };
 
-const baseCorsErrorUrl = "https://developer.mozilla.org/docs/Web/HTTP/CORS/Errors/";
+const baseCorsErrorUrl =
+  "https://developer.mozilla.org/docs/Web/HTTP/CORS/Errors/";
 const corsParams =
   "?utm_source=devtools&utm_medium=firefox-cors-errors&utm_campaign=default";
 const CorsErrorDocs = {
@@ -133,7 +147,8 @@ const CorsErrorDocs = {
   CORSMissingAllowHeaderFromPreflight: "CORSMissingAllowHeaderFromPreflight",
 };
 
-const baseStorageAccessPolicyErrorUrl = "https://developer.mozilla.org/docs/Mozilla/Firefox/Privacy/Storage_access_policy/Errors/";
+const baseStorageAccessPolicyErrorUrl =
+  "https://developer.mozilla.org/docs/Mozilla/Firefox/Privacy/Storage_access_policy/Errors/";
 const storageAccessPolicyParams =
   "?utm_source=devtools&utm_medium=firefox-cookie-errors&utm_campaign=default";
 const StorageAccessPolicyErrorDocs = {
@@ -143,7 +158,7 @@ const StorageAccessPolicyErrorDocs = {
   cookieBlockedForeign: "CookieBlockedForeign",
 };
 
-exports.GetURL = (error) => {
+exports.GetURL = error => {
   if (!error) {
     return undefined;
   }

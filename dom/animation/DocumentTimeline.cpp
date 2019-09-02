@@ -11,7 +11,6 @@
 #include "nsContentUtils.h"
 #include "nsDOMMutationObserver.h"
 #include "nsDOMNavigationTiming.h"
-#include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsRefreshDriver.h"
 
@@ -189,13 +188,6 @@ void DocumentTimeline::MostRecentRefreshTimeUpdated() {
 }
 
 void DocumentTimeline::WillRefresh(mozilla::TimeStamp aTime) {
-  // https://drafts.csswg.org/web-animations-1/#update-animations-and-send-events,
-  // step2.
-  // Note that this should be done before nsAutoAnimationMutationBatch which is
-  // inside MostRecentRefreshTimeUpdated().  If PerformMicroTaskCheckpoint was
-  // called before nsAutoAnimationMutationBatch is destroyed, some mutation
-  // records might not be delivered in this checkpoint.
-  nsAutoMicroTask mt;
   MostRecentRefreshTimeUpdated();
 }
 

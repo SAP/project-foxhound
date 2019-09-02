@@ -14,6 +14,7 @@
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/nsGUIEventIPC.h"
 #include "mozilla/GfxMessageUtils.h"
+#include "mozilla/layers/APZTypes.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/CompositorTypes.h"
@@ -25,8 +26,11 @@
 #include "mozilla/layers/MatrixMessage.h"
 #include "mozilla/layers/RefCountedShmem.h"
 #include "mozilla/layers/RepaintRequest.h"
+#include "mozilla/layers/WebRenderMessageUtils.h"
 #include "VsyncSource.h"
 #include "mozilla/Move.h"
+#include "nsSize.h"
+#include "VsyncSource.h"
 
 #include <stdint.h>
 
@@ -79,16 +83,23 @@ struct ParamTraits<mozilla::layers::LayersBackend>
           mozilla::layers::LayersBackend::LAYERS_LAST> {};
 
 template <>
+struct ParamTraits<mozilla::layers::TextureType>
+    : public ContiguousEnumSerializer<mozilla::layers::TextureType,
+                                      mozilla::layers::TextureType::Unknown,
+                                      mozilla::layers::TextureType::Last> {};
+
+template <>
 struct ParamTraits<mozilla::layers::ScaleMode>
     : public ContiguousEnumSerializerInclusive<
           mozilla::layers::ScaleMode, mozilla::layers::ScaleMode::SCALE_NONE,
           mozilla::layers::kHighestScaleMode> {};
 
 template <>
-struct ParamTraits<mozilla::StyleScrollSnapType>
+struct ParamTraits<mozilla::StyleScrollSnapStrictness>
     : public ContiguousEnumSerializerInclusive<
-          mozilla::StyleScrollSnapType, mozilla::StyleScrollSnapType::None,
-          mozilla::StyleScrollSnapType::Proximity> {};
+          mozilla::StyleScrollSnapStrictness,
+          mozilla::StyleScrollSnapStrictness::None,
+          mozilla::StyleScrollSnapStrictness::Proximity> {};
 
 template <>
 struct ParamTraits<mozilla::layers::TextureFlags>
@@ -152,25 +163,6 @@ struct ParamTraits<mozilla::layers::CompositableHandle> {
   static bool Read(const Message* msg, PickleIterator* iter,
                    paramType* result) {
     return ReadParam(msg, iter, &result->mHandle);
-  }
-};
-
-// Helper class for reading bitfields.
-// If T has bitfields members, derive ParamTraits<T> from BitfieldHelper<T>.
-template <typename ParamType>
-struct BitfieldHelper {
-  // We need this helper because we can't get the address of a bitfield to
-  // pass directly to ReadParam. So instead we read it into a temporary bool
-  // and set the bitfield using a setter function
-  static bool ReadBoolForBitfield(const Message* aMsg, PickleIterator* aIter,
-                                  ParamType* aResult,
-                                  void (ParamType::*aSetter)(bool)) {
-    bool value;
-    if (ReadParam(aMsg, aIter, &value)) {
-      (aResult->*aSetter)(value);
-      return true;
-    }
-    return false;
   }
 };
 
@@ -291,26 +283,68 @@ struct ParamTraits<mozilla::layers::RepaintRequest>
 };
 
 template <>
-struct ParamTraits<mozilla::layers::ScrollSnapInfo> {
-  typedef mozilla::layers::ScrollSnapInfo paramType;
+struct ParamTraits<nsSize> {
+  typedef nsSize paramType;
 
   static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.mScrollSnapTypeX);
-    WriteParam(aMsg, aParam.mScrollSnapTypeY);
-    WriteParam(aMsg, aParam.mScrollSnapIntervalX);
-    WriteParam(aMsg, aParam.mScrollSnapIntervalY);
-    WriteParam(aMsg, aParam.mScrollSnapDestination);
-    WriteParam(aMsg, aParam.mScrollSnapCoordinates);
+    WriteParam(aMsg, aParam.width);
+    WriteParam(aMsg, aParam.height);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
-    return (ReadParam(aMsg, aIter, &aResult->mScrollSnapTypeX) &&
-            ReadParam(aMsg, aIter, &aResult->mScrollSnapTypeY) &&
+    return ReadParam(aMsg, aIter, &aResult->width) &&
+           ReadParam(aMsg, aIter, &aResult->height);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::layers::ScrollSnapInfo::ScrollSnapRange> {
+  typedef mozilla::layers::ScrollSnapInfo::ScrollSnapRange paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mStart);
+    WriteParam(aMsg, aParam.mEnd);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    return ReadParam(aMsg, aIter, &aResult->mStart) &&
+           ReadParam(aMsg, aIter, &aResult->mEnd);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::layers::ScrollSnapInfo> {
+  typedef mozilla::layers::ScrollSnapInfo paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mScrollSnapStrictnessX);
+    WriteParam(aMsg, aParam.mScrollSnapStrictnessY);
+    WriteParam(aMsg, aParam.mScrollSnapIntervalX);
+    WriteParam(aMsg, aParam.mScrollSnapIntervalY);
+    WriteParam(aMsg, aParam.mScrollSnapDestination);
+    WriteParam(aMsg, aParam.mScrollSnapCoordinates);
+    WriteParam(aMsg, aParam.mSnapPositionX);
+    WriteParam(aMsg, aParam.mSnapPositionY);
+    WriteParam(aMsg, aParam.mXRangeWiderThanSnapport);
+    WriteParam(aMsg, aParam.mYRangeWiderThanSnapport);
+    WriteParam(aMsg, aParam.mSnapportSize);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    return (ReadParam(aMsg, aIter, &aResult->mScrollSnapStrictnessX) &&
+            ReadParam(aMsg, aIter, &aResult->mScrollSnapStrictnessY) &&
             ReadParam(aMsg, aIter, &aResult->mScrollSnapIntervalX) &&
             ReadParam(aMsg, aIter, &aResult->mScrollSnapIntervalY) &&
             ReadParam(aMsg, aIter, &aResult->mScrollSnapDestination) &&
-            ReadParam(aMsg, aIter, &aResult->mScrollSnapCoordinates));
+            ReadParam(aMsg, aIter, &aResult->mScrollSnapCoordinates) &&
+            ReadParam(aMsg, aIter, &aResult->mSnapPositionX) &&
+            ReadParam(aMsg, aIter, &aResult->mSnapPositionY) &&
+            ReadParam(aMsg, aIter, &aResult->mXRangeWiderThanSnapport) &&
+            ReadParam(aMsg, aIter, &aResult->mYRangeWiderThanSnapport) &&
+            ReadParam(aMsg, aIter, &aResult->mSnapportSize));
   }
 };
 
@@ -488,6 +522,22 @@ struct ParamTraits<mozilla::layers::ScrollableLayerGuid> {
 };
 
 template <>
+struct ParamTraits<mozilla::layers::SLGuidAndRenderRoot> {
+  typedef mozilla::layers::SLGuidAndRenderRoot paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mScrollableLayerGuid);
+    WriteParam(aMsg, aParam.mRenderRoot);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    return (ReadParam(aMsg, aIter, &aResult->mScrollableLayerGuid) &&
+            ReadParam(aMsg, aIter, &aResult->mRenderRoot));
+  }
+};
+
+template <>
 struct ParamTraits<mozilla::layers::ZoomConstraints> {
   typedef mozilla::layers::ZoomConstraints paramType;
 
@@ -537,13 +587,17 @@ struct ParamTraits<mozilla::layers::FocusTarget::ScrollTargets> {
 
   static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mHorizontal);
+    WriteParam(aMsg, aParam.mHorizontalRenderRoot);
     WriteParam(aMsg, aParam.mVertical);
+    WriteParam(aMsg, aParam.mVerticalRenderRoot);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
     return ReadParam(aMsg, aIter, &aResult->mHorizontal) &&
-           ReadParam(aMsg, aIter, &aResult->mVertical);
+           ReadParam(aMsg, aIter, &aResult->mHorizontalRenderRoot) &&
+           ReadParam(aMsg, aIter, &aResult->mVertical) &&
+           ReadParam(aMsg, aIter, &aResult->mVerticalRenderRoot);
   }
 };
 

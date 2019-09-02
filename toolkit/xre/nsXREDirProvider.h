@@ -50,6 +50,8 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
   nsresult GetUserProfilesRootDir(nsIFile** aResult);
   nsresult GetUserProfilesLocalDir(nsIFile** aResult);
 
+  nsresult GetLegacyInstallHash(nsAString& aPathHash);
+
   // We only set the profile dir, we don't ensure that it exists;
   // that is the responsibility of the toolkit profile service.
   // We also don't fire profile-changed notifications... that is
@@ -128,11 +130,9 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
   // delimiters.
   static inline nsresult AppendProfileString(nsIFile* aFile, const char* aPath);
 
-#if defined(MOZ_CONTENT_SANDBOX)
+#if defined(MOZ_SANDBOX)
   // Load the temp directory for sandboxed content processes
   nsresult LoadContentProcessTempDir();
-#endif
-#if defined(MOZ_SANDBOX)
   nsresult LoadPluginProcessTempDir();
 #endif
 
@@ -149,15 +149,17 @@ class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
   nsCOMPtr<nsIFile> mProfileLocalDir;
   bool mProfileNotified;
   bool mPrefsInitialized = false;
-#if defined(MOZ_CONTENT_SANDBOX)
+#if defined(MOZ_SANDBOX)
   nsCOMPtr<nsIFile> mContentTempDir;
   nsCOMPtr<nsIFile> mContentProcessSandboxTempDir;
-#endif
-#if defined(MOZ_SANDBOX)
   nsCOMPtr<nsIFile> mPluginTempDir;
   nsCOMPtr<nsIFile> mPluginProcessSandboxTempDir;
 #endif
   nsCOMArray<nsIFile> mAppBundleDirectories;
+
+ private:
+  static nsresult SetUserDataProfileDirectory(nsCOMPtr<nsIFile>& aFile,
+                                              bool aLocal);
 };
 
 #endif

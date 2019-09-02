@@ -8,8 +8,9 @@
 
 do_get_profile();
 
-const gCertDB = Cc["@mozilla.org/security/x509certdb;1"]
-                  .getService(Ci.nsIX509CertDB);
+const gCertDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+  Ci.nsIX509CertDB
+);
 
 const PKCS12_FILE = "test_certDB_import/cert_from_windows.pfx";
 const CERT_COMMON_NAME = "test_cert_from_windows";
@@ -40,7 +41,7 @@ function run_test() {
   let output = do_get_tempdir();
   output.append("output.p12");
   ok(!output.exists(), "output shouldn't exist before exporting PKCS12 file");
-  errorCode = gCertDB.exportPKCS12File(output, 1, [cert], TEST_CERT_PASSWORD);
+  errorCode = gCertDB.exportPKCS12File(output, [cert], TEST_CERT_PASSWORD);
   equal(errorCode, Ci.nsIX509CertDB.Success, "cert should be exported");
   ok(output.exists(), "output should exist after exporting PKCS12 file");
 

@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ResponsiveImageSelector.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/TextUtils.h"
 #include "nsIURI.h"
@@ -31,7 +33,6 @@ static bool ParseInteger(const nsAString& aString, int32_t& aInt) {
   return !(parseResult &
            (nsContentUtils::eParseHTMLInteger_Error |
             nsContentUtils::eParseHTMLInteger_DidNotConsumeAllInput |
-            nsContentUtils::eParseHTMLInteger_IsPercent |
             nsContentUtils::eParseHTMLInteger_NonStandard));
 }
 
@@ -223,7 +224,7 @@ bool ResponsiveImageSelector::SetSizesFromDescriptor(const nsAString& aSizes) {
   ClearSelectedCandidate();
 
   NS_ConvertUTF16toUTF8 sizes(aSizes);
-  mServoSourceSizeList.reset(Servo_SourceSizeList_Parse(&sizes));
+  mServoSourceSizeList = Servo_SourceSizeList_Parse(&sizes).Consume();
   return !!mServoSourceSizeList;
 }
 
@@ -401,7 +402,7 @@ int ResponsiveImageSelector::GetSelectedCandidateIndex() {
 bool ResponsiveImageSelector::ComputeFinalWidthForCurrentViewport(
     double* aWidth) {
   dom::Document* doc = Document();
-  nsIPresShell* presShell = doc->GetShell();
+  PresShell* presShell = doc->GetPresShell();
   nsPresContext* pctx = presShell ? presShell->GetPresContext() : nullptr;
 
   if (!pctx) {

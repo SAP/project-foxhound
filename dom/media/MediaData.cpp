@@ -56,14 +56,12 @@ Span<AudioDataValue> AudioData::Data() const {
   return MakeSpan(GetAdjustedData(), mFrames * mChannels);
 }
 
-bool AudioData::AdjustForStartTime(int64_t aStartTime) {
-  const TimeUnit startTimeOffset =
-      media::TimeUnit::FromMicroseconds(aStartTime);
-  mOriginalTime -= startTimeOffset;
+bool AudioData::AdjustForStartTime(const media::TimeUnit& aStartTime) {
+  mOriginalTime -= aStartTime;
   if (mTrimWindow) {
-    *mTrimWindow -= startTimeOffset;
+    *mTrimWindow -= aStartTime;
   }
-  return MediaData::AdjustForStartTime(aStartTime);
+  return MediaData::AdjustForStartTime(aStartTime) && mOriginalTime.IsValid();
 }
 
 bool AudioData::SetTrimWindow(const media::TimeInterval& aTrim) {
@@ -186,8 +184,7 @@ static bool ValidateBufferAndPicture(const VideoData::YCbCrBuffer& aBuffer,
 
   // The following situations could be triggered by invalid input
   if (aPicture.width <= 0 || aPicture.height <= 0) {
-    // In debug mode, makes the error more noticeable
-    MOZ_ASSERT(false, "Empty picture rect");
+    NS_WARNING("Empty picture rect");
     return false;
   }
   if (!ValidatePlane(aBuffer.mPlanes[0]) ||
@@ -419,7 +416,7 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
   }
 
   RefPtr<layers::TextureClient> texture =
-      videoImage->GetTextureClient(/* aForwarder */ nullptr);
+      videoImage->GetTextureClient(/* aKnowsCompositor */ nullptr);
   if (!texture) {
     NS_WARNING("Failed to allocate TextureClient");
     return nullptr;

@@ -6,7 +6,7 @@
 
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/HTMLIFrameElementBinding.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Move.h"
 #include "mozilla/Preferences.h"
@@ -365,12 +365,7 @@ nsPIDOMWindowInner* PresentationSessionInfo::GetWindow() {
     return nullptr;
   }
 
-  auto window = nsGlobalWindowInner::GetInnerWindowWithId(windowId);
-  if (!window) {
-    return nullptr;
-  }
-
-  return window->AsInner();
+  return nsGlobalWindowInner::GetInnerWindowWithId(windowId);
 }
 
 /* virtual */
@@ -994,24 +989,20 @@ nsresult PresentationControllingInfo::ContinueReconnect() {
 // nsIListNetworkAddressesListener
 NS_IMETHODIMP
 PresentationControllingInfo::OnListedNetworkAddresses(
-    const char** aAddressArray, uint32_t aAddressArraySize) {
-  if (!aAddressArraySize) {
+    const nsTArray<nsCString>& aAddressArray) {
+  if (aAddressArray.IsEmpty()) {
     return OnListNetworkAddressesFailed();
   }
 
   // TODO bug 1228504 Take all IP addresses in PresentationChannelDescription
-  // into account. And at the first stage Presentation API is only exposed on
-  // Firefox OS where the first IP appears enough for most scenarios.
-
-  nsAutoCString ip;
-  ip.Assign(aAddressArray[0]);
+  // into account.
 
   // On Firefox desktop, the IP address is retrieved from a callback function.
   // To make consistent code sequence, following function call is dispatched
   // into main thread instead of calling it directly.
   NS_DispatchToMainThread(NewRunnableMethod<nsCString>(
       "dom::PresentationControllingInfo::OnGetAddress", this,
-      &PresentationControllingInfo::OnGetAddress, ip));
+      &PresentationControllingInfo::OnGetAddress, aAddressArray[0]));
 
   return NS_OK;
 }
@@ -1506,15 +1497,15 @@ void PresentationPresentingInfo::ResolvedCallback(
     return;
   }
 
-  RefPtr<TabParent> tabParent = TabParent::GetFrom(frameLoader);
-  if (tabParent) {
+  RefPtr<BrowserParent> browserParent = BrowserParent::GetFrom(frameLoader);
+  if (browserParent) {
     // OOP frame
     // Notify the content process that a receiver page has launched, so it can
     // start monitoring the loading progress.
-    mContentParent = tabParent->Manager();
-    Unused << NS_WARN_IF(
-        !static_cast<ContentParent*>(mContentParent.get())
-             ->SendNotifyPresentationReceiverLaunched(tabParent, mSessionId));
+    mContentParent = browserParent->Manager();
+    Unused << NS_WARN_IF(!static_cast<ContentParent*>(mContentParent.get())
+                              ->SendNotifyPresentationReceiverLaunched(
+                                  browserParent, mSessionId));
   } else {
     // In-process frame
     IgnoredErrorResult error;

@@ -7,6 +7,7 @@
 package org.mozilla.gecko;
 
 import android.os.Build;
+import android.support.v4.os.BuildCompat;
 
 /**
  * A collection of constants that pertain to the build and runtime state of the
@@ -56,6 +57,7 @@ public class AppConstants {
         public static final boolean feature23Plus = MIN_SDK_VERSION >= 23 || (MAX_SDK_VERSION >= 23 && Build.VERSION.SDK_INT >= 23);
         public static final boolean feature24Plus = MIN_SDK_VERSION >= 24 || (MAX_SDK_VERSION >= 24 && Build.VERSION.SDK_INT >= 24);
         public static final boolean feature26Plus = MIN_SDK_VERSION >= 26 || (MAX_SDK_VERSION >= 26 && Build.VERSION.SDK_INT >= 26);
+        public static final boolean feature29Plus = MIN_SDK_VERSION >= 29 || (MAX_SDK_VERSION >= 29 && Build.VERSION.SDK_INT >= 29);
 
         /*
          * If our MIN_SDK_VERSION is 14 or higher, we must be an ICS device.
@@ -71,6 +73,7 @@ public class AppConstants {
         public static final boolean preN = MAX_SDK_VERSION < 24 || (MIN_SDK_VERSION < 24 && Build.VERSION.SDK_INT < 24);
         public static final boolean N = Build.VERSION.SDK_INT == 24 || Build.VERSION.SDK_INT == 25;
         public static final boolean preO = MAX_SDK_VERSION < 26 || (MIN_SDK_VERSION < 26 && Build.VERSION.SDK_INT < 26);
+        public static final boolean preQ = MAX_SDK_VERSION < 29 || (MIN_SDK_VERSION < 29 && Build.VERSION.SDK_INT < 29);
     }
 
     /**
@@ -243,6 +246,13 @@ public class AppConstants {
 
     public static final boolean NIGHTLY_BUILD =
 //#ifdef NIGHTLY_BUILD
+    true;
+//#else
+    false;
+//#endif
+
+    public static final boolean FENNEC_NIGHTLY =
+//#ifdef FENNEC_NIGHTLY
     true;
 //#else
     false;

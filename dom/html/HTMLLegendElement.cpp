@@ -37,8 +37,6 @@ bool HTMLLegendElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
       {"left", NS_STYLE_TEXT_ALIGN_LEFT},
       {"right", NS_STYLE_TEXT_ALIGN_RIGHT},
       {"center", NS_STYLE_TEXT_ALIGN_CENTER},
-      {"bottom", NS_STYLE_VERTICAL_ALIGN_BOTTOM},
-      {"top", NS_STYLE_VERTICAL_ALIGN_TOP},
       {nullptr, 0}};
 
   if (aAttribute == nsGkAtoms::align && aNamespaceID == kNameSpaceID_None) {
@@ -59,16 +57,17 @@ nsChangeHint HTMLLegendElement::GetAttributeChangeHint(const nsAtom* aAttribute,
   return retval;
 }
 
-nsresult HTMLLegendElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                       nsIContent* aBindingParent) {
-  return nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult HTMLLegendElement::BindToTree(BindContext& aContext,
+                                       nsINode& aParent) {
+  return nsGenericHTMLElement::BindToTree(aContext, aParent);
 }
 
-void HTMLLegendElement::UnbindFromTree(bool aDeep, bool aNullParent) {
-  nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
+void HTMLLegendElement::UnbindFromTree(bool aNullParent) {
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
 
-void HTMLLegendElement::Focus(ErrorResult& aError) {
+void HTMLLegendElement::Focus(const FocusOptions& aOptions,
+                              ErrorResult& aError) {
   nsIFrame* frame = GetPrimaryFrame();
   if (!frame) {
     return;
@@ -76,7 +75,7 @@ void HTMLLegendElement::Focus(ErrorResult& aError) {
 
   int32_t tabIndex;
   if (frame->IsFocusable(&tabIndex, false)) {
-    nsGenericHTMLElement::Focus(aError);
+    nsGenericHTMLElement::Focus(aOptions, aError);
     return;
   }
 
@@ -88,16 +87,20 @@ void HTMLLegendElement::Focus(ErrorResult& aError) {
   }
 
   RefPtr<Element> result;
-  aError = fm->MoveFocus(nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
-                         nsIFocusManager::FLAG_NOPARENTFRAME,
-                         getter_AddRefs(result));
+  aError = fm->MoveFocus(
+      nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
+      nsIFocusManager::FLAG_NOPARENTFRAME |
+          nsIFocusManager::FLAG_BYELEMENTFOCUS |
+          nsFocusManager::FocusOptionsToFocusManagerFlags(aOptions),
+      getter_AddRefs(result));
 }
 
 bool HTMLLegendElement::PerformAccesskey(bool aKeyCausesActivation,
                                          bool aIsTrustedEvent) {
-  // just use the same behaviour as the focus method
+  FocusOptions options;
   ErrorResult rv;
-  Focus(rv);
+
+  Focus(options, rv);
   return NS_SUCCEEDED(rv.StealNSResult());
 }
 

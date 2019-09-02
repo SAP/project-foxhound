@@ -10,12 +10,22 @@ use crate::values::generics::CounterStyleOrNone;
 #[cfg(feature = "gecko")]
 use crate::values::CustomIdent;
 use cssparser::{Parser, Token};
-use servo_arc::Arc;
 use style_traits::{ParseError, StyleParseErrorKind};
 
 /// Specified and computed `list-style-type` property.
 #[cfg(feature = "gecko")]
-#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 pub enum ListStyleType {
     /// <counter-style> | none
     CounterStyle(CounterStyleOrNone),
@@ -74,21 +84,44 @@ impl Parse for ListStyleType {
 }
 
 /// A quote pair.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
 pub struct QuotePair {
     /// The opening quote.
-    pub opening: Box<str>,
+    pub opening: crate::OwnedStr,
 
     /// The closing quote.
-    pub closing: Box<str>,
+    pub closing: crate::OwnedStr,
 }
 
 /// Specified and computed `quotes` property.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
 pub struct Quotes(
     #[css(iterable, if_empty = "none")]
     #[ignore_malloc_size_of = "Arc"]
-    pub Arc<Box<[QuotePair]>>,
+    pub crate::ArcSlice<QuotePair>,
 );
 
 impl Parse for Quotes {
@@ -100,26 +133,50 @@ impl Parse for Quotes {
             .try(|input| input.expect_ident_matching("none"))
             .is_ok()
         {
-            return Ok(Quotes(Arc::new(Box::new([]))));
+            return Ok(Self::default());
         }
 
         let mut quotes = Vec::new();
         loop {
             let location = input.current_source_location();
             let opening = match input.next() {
-                Ok(&Token::QuotedString(ref value)) => value.as_ref().to_owned().into_boxed_str(),
+                Ok(&Token::QuotedString(ref value)) => value.as_ref().to_owned().into(),
                 Ok(t) => return Err(location.new_unexpected_token_error(t.clone())),
                 Err(_) => break,
             };
 
-            let closing = input.expect_string()?.as_ref().to_owned().into_boxed_str();
+            let closing = input.expect_string()?.as_ref().to_owned().into();
             quotes.push(QuotePair { opening, closing });
         }
 
         if !quotes.is_empty() {
-            Ok(Quotes(Arc::new(quotes.into_boxed_slice())))
+            Ok(Quotes(crate::ArcSlice::from_iter(quotes.into_iter())))
         } else {
             Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
         }
     }
+}
+
+/// Specified and computed `-moz-list-reversed` property (for UA sheets only).
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(u8)]
+pub enum MozListReversed {
+    /// the initial value
+    False,
+    /// exclusively used for <ol reversed> in our html.css UA sheet
+    True,
 }

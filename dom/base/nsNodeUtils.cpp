@@ -11,6 +11,7 @@
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "nsIMutationObserver.h"
 #include "mozilla/EventListenerManager.h"
@@ -30,6 +31,7 @@
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/PresShell.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsObjectLoadingContent.h"
 #include "nsDOMMutationObserver.h"
@@ -66,8 +68,8 @@ enum class IsRemoveNotification {
   COMPOSED_DOC_DECL                                                           \
   NS_ASSERTION(node->OwnerDoc() == doc, "Bogus document");                    \
   if (remove_ == IsRemoveNotification::Yes && node->GetComposedDoc()) {       \
-    if (nsIPresShell* shell = doc->GetObservingShell()) {                     \
-      shell->func_ params_;                                                   \
+    if (PresShell* presShell = doc->GetObservingPresShell()) {                \
+      presShell->func_ params_;                                               \
     }                                                                         \
   }                                                                           \
   doc->BindingManager()->func_ params_;                                       \
@@ -92,8 +94,8 @@ enum class IsRemoveNotification {
              (remove_ == IsRemoveNotification::Yes &&                         \
               !strcmp(#func_, "NativeAnonymousChildListChange")));            \
   if (remove_ == IsRemoveNotification::No && last == doc) {                   \
-    if (nsIPresShell* shell = doc->GetObservingShell()) {                     \
-      shell->func_ params_;                                                   \
+    if (PresShell* presShell = doc->GetObservingPresShell()) {                \
+      presShell->func_ params_;                                               \
     }                                                                         \
   }                                                                           \
   if (needsEnterLeave) {                                                      \
@@ -209,7 +211,7 @@ void nsNodeUtils::ContentRemoved(nsINode* aContainer, nsIContent* aChild,
 }
 
 Maybe<NonOwningAnimationTarget> nsNodeUtils::GetTargetForAnimation(
-    const Animation* aAnimation) {
+    const dom::Animation* aAnimation) {
   AnimationEffect* effect = aAnimation->GetEffect();
   if (!effect || !effect->AsKeyframeEffect()) {
     return Nothing();
@@ -217,7 +219,7 @@ Maybe<NonOwningAnimationTarget> nsNodeUtils::GetTargetForAnimation(
   return effect->AsKeyframeEffect()->GetTarget();
 }
 
-void nsNodeUtils::AnimationMutated(Animation* aAnimation,
+void nsNodeUtils::AnimationMutated(dom::Animation* aAnimation,
                                    AnimationMutationType aMutatedType) {
   Maybe<NonOwningAnimationTarget> target = GetTargetForAnimation(aAnimation);
   if (!target) {
@@ -245,15 +247,15 @@ void nsNodeUtils::AnimationMutated(Animation* aAnimation,
   }
 }
 
-void nsNodeUtils::AnimationAdded(Animation* aAnimation) {
+void nsNodeUtils::AnimationAdded(dom::Animation* aAnimation) {
   AnimationMutated(aAnimation, AnimationMutationType::Added);
 }
 
-void nsNodeUtils::AnimationChanged(Animation* aAnimation) {
+void nsNodeUtils::AnimationChanged(dom::Animation* aAnimation) {
   AnimationMutated(aAnimation, AnimationMutationType::Changed);
 }
 
-void nsNodeUtils::AnimationRemoved(Animation* aAnimation) {
+void nsNodeUtils::AnimationRemoved(dom::Animation* aAnimation) {
   AnimationMutated(aAnimation, AnimationMutationType::Removed);
 }
 
@@ -318,10 +320,9 @@ void nsNodeUtils::LastRelease(nsINode* aNode) {
     aNode->UnsetFlags(NODE_HAS_LISTENERMANAGER);
   }
 
-  if (Element* element = Element::FromNode(aNode)) {
-    element->OwnerDoc()->ClearBoxObjectFor(element);
-    NS_ASSERTION(!element->GetXBLBinding(), "Node has binding on destruction");
-  }
+  NS_ASSERTION(
+      !Element::FromNode(aNode) || !Element::FromNode(aNode)->GetXBLBinding(),
+      "Node has binding on destruction");
 
   aNode->ReleaseWrapper(aNode);
 
@@ -435,7 +436,6 @@ already_AddRefed<nsINode> nsNodeUtils::CloneAndAdopt(
     Document* oldDoc = aNode->OwnerDoc();
     bool wasRegistered = false;
     if (elem) {
-      oldDoc->ClearBoxObjectFor(elem);
       wasRegistered = oldDoc->UnregisterActivityObserver(elem);
     }
 
@@ -497,6 +497,16 @@ already_AddRefed<nsINode> nsNodeUtils::CloneAndAdopt(
         nsObjectLoadingContent* olc =
             static_cast<nsObjectLoadingContent*>(objectLoadingContent.get());
         olc->NotifyOwnerDocumentActivityChanged();
+      } else {
+        // HTMLImageElement::FromNode is insufficient since we need this for
+        // <svg:image> as well.
+        nsCOMPtr<nsIImageLoadingContent> imageLoadingContent(
+            do_QueryInterface(aNode));
+        if (imageLoadingContent) {
+          auto ilc =
+              static_cast<nsImageLoadingContent*>(imageLoadingContent.get());
+          ilc->NotifyOwnerDocumentActivityChanged();
+        }
       }
     }
 

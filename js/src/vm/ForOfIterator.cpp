@@ -4,8 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jsapi.h"
-
+#include "js/ForOfIterator.h"
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
@@ -162,9 +161,12 @@ void ForOfIterator::closeThrow() {
   MOZ_ASSERT(iterator);
 
   RootedValue completionException(cx_);
+  RootedSavedFrame completionExceptionStack(cx_);
   if (cx_->isExceptionPending()) {
-    if (!GetAndClearException(cx_, &completionException)) {
+    if (!GetAndClearExceptionAndStack(cx_, &completionException,
+                                      &completionExceptionStack)) {
       completionException.setUndefined();
+      completionExceptionStack = nullptr;
     }
   }
 
@@ -178,7 +180,7 @@ void ForOfIterator::closeThrow() {
 
   // Step 4.
   if (returnVal.isUndefined()) {
-    cx_->setPendingException(completionException);
+    cx_->setPendingException(completionException, completionExceptionStack);
     return;
   }
 
@@ -204,5 +206,5 @@ void ForOfIterator::closeThrow() {
   }
 
   // Step 6.
-  cx_->setPendingException(completionException);
+  cx_->setPendingException(completionException, completionExceptionStack);
 }

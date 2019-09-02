@@ -21,6 +21,19 @@ types.addDictType("accessibleWithChildren", {
 });
 
 /**
+ * Data passed via "audit-event" to the client. It may include type, a list of
+ * ancestries for accessible actors that have failing accessibility checks or
+ * a progress information.
+ */
+types.addDictType("auditEventData", {
+  type: "string",
+  // List of ancestries (array:accessibleWithChildren)
+  ancestries: "nullable:array:array:accessibleWithChildren",
+  // Audit progress information
+  progress: "nullable:json",
+});
+
+/**
  * Accessible relation object described by its type that also includes relation targets.
  */
 types.addDictType("accessibleRelation", {
@@ -64,7 +77,7 @@ const accessibleSpec = generateActorSpec({
       type: "shortcutChange",
       shortcut: Arg(0, "string"),
     },
-    "reorder": {
+    reorder: {
       type: "reorder",
       childCount: Arg(0, "number"),
       walker: Arg(1, "nullable:accessiblewalker"),
@@ -77,11 +90,15 @@ const accessibleSpec = generateActorSpec({
       type: "indexInParentChange",
       indexInParent: Arg(0, "number"),
     },
+    audited: {
+      type: "audited",
+      audit: Arg(0, "nullable:json"),
+    },
   },
 
   methods: {
     audit: {
-      request: {},
+      request: { options: Arg(0, "nullable:json") },
       response: {
         audit: RetVal("nullable:json"),
       },
@@ -96,6 +113,12 @@ const accessibleSpec = generateActorSpec({
       request: {},
       response: {
         relations: RetVal("array:accessibleRelation"),
+      },
+    },
+    hydrate: {
+      request: {},
+      response: {
+        properties: RetVal("json"),
       },
     },
     snapshot: {
@@ -137,6 +160,10 @@ const accessibleWalkerSpec = generateActorSpec({
       type: "highlighter-event",
       data: Arg(0, "json"),
     },
+    "audit-event": {
+      type: "audit-event",
+      audit: Arg(0, "auditEventData"),
+    },
   },
 
   methods: {
@@ -157,6 +184,9 @@ const accessibleWalkerSpec = generateActorSpec({
       response: {
         ancestry: RetVal("array:accessibleWithChildren"),
       },
+    },
+    startAudit: {
+      request: { options: Arg(0, "nullable:json") },
     },
     highlightAccessible: {
       request: {
@@ -180,10 +210,10 @@ const accessibilitySpec = generateActorSpec({
   typeName: "accessibility",
 
   events: {
-    "init": {
+    init: {
       type: "init",
     },
-    "shutdown": {
+    shutdown: {
       type: "shutdown",
     },
     "can-be-disabled-change": {

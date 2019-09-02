@@ -161,7 +161,7 @@ class DynamicsCompressorNodeEngine final : public AudioNodeEngine {
 };
 
 DynamicsCompressorNode::DynamicsCompressorNode(AudioContext* aContext)
-    : AudioNode(aContext, 2, ChannelCountMode::Explicit,
+    : AudioNode(aContext, 2, ChannelCountMode::Clamped_max,
                 ChannelInterpretation::Speakers),
       mReduction(0) {
   CreateAudioParam(mThreshold, DynamicsCompressorNodeEngine::THRESHOLD,
@@ -184,10 +184,6 @@ DynamicsCompressorNode::DynamicsCompressorNode(AudioContext* aContext)
 already_AddRefed<DynamicsCompressorNode> DynamicsCompressorNode::Create(
     AudioContext& aAudioContext, const DynamicsCompressorOptions& aOptions,
     ErrorResult& aRv) {
-  if (aAudioContext.CheckClosed(aRv)) {
-    return nullptr;
-  }
-
   RefPtr<DynamicsCompressorNode> audioNode =
       new DynamicsCompressorNode(&aAudioContext);
 

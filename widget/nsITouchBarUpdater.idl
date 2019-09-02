@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsIArray.idl"
 #include "nsIBaseWindow.idl"
 #include "nsISupports.idl"
 #include "nsITouchBarInput.idl"
@@ -13,8 +14,24 @@
 interface nsITouchBarUpdater : nsISupports
 {
   /**
-   * Updates a Touch Bar input in the specified window with the properties in
-   * aInput.
+   * Updates an array of nsITouchBarInputs in the specified window.
    */
-  void updateTouchBarInput(in nsIBaseWindow aWindow, in nsITouchBarInput aInput);
+  void updateTouchBarInputs(in nsIBaseWindow aWindow, in Array<nsITouchBarInput> aInputs);
+
+  /**
+   * Enter the native Touch Bar customization window.
+   */
+  void enterCustomizeMode();
+
+  /**
+   * Checks if the user is using a Touch Bar-compatible Mac.
+   */
+  boolean isTouchBarInitialized();
+
+  /**
+   * Sets whether the Touch Bar is initialized.
+   * NOTE: This method is for internal unit tests only! Normally, the system
+   * sets this value after a Touch Bar is initialized on compatible Macs.
+   */
+  void setTouchBarInitialized(in boolean aIsInitialized);
 };

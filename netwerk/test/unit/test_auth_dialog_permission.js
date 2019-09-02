@@ -6,11 +6,11 @@
 //       but don't allow it for cross-origin sub-resources
 //   2 - allow the cross-origin authentication as well.
 
-const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
-var prefs = Cc["@mozilla.org/preferences-service;1"].
-              getService(Ci.nsIPrefBranch);
+var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
+  Ci.nsIPrefBranch
+);
 
 // Since this test creates a TYPE_DOCUMENT channel via javascript, it will
 // end up using the wrong LoadInfo constructor. Setting this pref will disable
@@ -22,9 +22,10 @@ function authHandler(metadata, response) {
   var expectedHeader = "Basic Z3Vlc3Q6Z3Vlc3Q=";
 
   var body;
-  if (metadata.hasHeader("Authorization") &&
-      metadata.getHeader("Authorization") == expectedHeader) {
-
+  if (
+    metadata.hasHeader("Authorization") &&
+    metadata.getHeader("Authorization") == expectedHeader
+  ) {
     response.setStatusLine(metadata.httpVersion, 200, "OK, authorized");
     response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
 
@@ -60,30 +61,23 @@ AuthPrompt.prototype = {
   user: "guest",
   pass: "guest",
 
-  QueryInterface: function authprompt_qi(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIAuthPrompt))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIAuthPrompt"]),
 
-  prompt: function(title, text, realm, save, defaultText, result) {
+  prompt(title, text, realm, save, defaultText, result) {
     do_throw("unexpected prompt call");
   },
 
-  promptUsernameAndPassword: function(title, text, realm, savePW, user, pw) {
-    Assert.ok(this.promptExpected,
-              "Not expected the authentication prompt.");
+  promptUsernameAndPassword(title, text, realm, savePW, user, pw) {
+    Assert.ok(this.promptExpected, "Not expected the authentication prompt.");
 
     user.value = this.user;
     pw.value = this.pass;
     return true;
   },
 
-  promptPassword: function(title, text, realm, save, pwd) {
+  promptPassword(title, text, realm, save, pwd) {
     do_throw("unexpected promptPassword call");
-  }
-
+  },
 };
 
 function Requestor(promptExpected) {
@@ -91,14 +85,9 @@ function Requestor(promptExpected) {
 }
 
 Requestor.prototype = {
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsISupports) ||
-        iid.equals(Ci.nsIInterfaceRequestor))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIInterfaceRequestor"]),
 
-  getInterface: function(iid) {
+  getInterface(iid) {
     if (iid.equals(Ci.nsIAuthPrompt)) {
       this.prompter = new AuthPrompt(this.promptExpected);
       return this.prompter;
@@ -107,18 +96,18 @@ Requestor.prototype = {
     throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  prompter: null
+  prompter: null,
 };
 
 function make_uri(url) {
-  var ios = Cc["@mozilla.org/network/io-service;1"].
-              getService(Ci.nsIIOService);
+  var ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
   return ios.newURI(url);
 }
 
 function makeChan(loadingUrl, url, contentPolicy) {
-  var ssm = Cc["@mozilla.org/scriptsecuritymanager;1"]
-              .getService(Ci.nsIScriptSecurityManager);
+  var ssm = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(
+    Ci.nsIScriptSecurityManager
+  );
   var uri = make_uri(loadingUrl);
   var principal = ssm.createCodebasePrincipal(uri, {});
 
@@ -126,12 +115,17 @@ function makeChan(loadingUrl, url, contentPolicy) {
     uri: url,
     loadingPrincipal: principal,
     securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS,
-    contentPolicyType: contentPolicy
+    contentPolicyType: contentPolicy,
   }).QueryInterface(Ci.nsIHttpChannel);
 }
 
-function Test(subresource_http_auth_allow_pref, loadingUri, uri, contentPolicy,
-              expectedCode) {
+function Test(
+  subresource_http_auth_allow_pref,
+  loadingUri,
+  uri,
+  contentPolicy,
+  expectedCode
+) {
   this._subresource_http_auth_allow_pref = subresource_http_auth_allow_pref;
   this._loadingUri = loadingUri;
   this._uri = uri;
@@ -146,7 +140,7 @@ Test.prototype = {
   _contentPolicy: Ci.nsIContentPolicy.TYPE_OTHER,
   _expectedCode: 200,
 
-  onStartRequest: function(request) {
+  onStartRequest(request) {
     try {
       if (!Components.isSuccessCode(request.status)) {
         do_throw("Channel should have a success code!");
@@ -159,7 +153,6 @@ Test.prototype = {
       Assert.equal(request.responseStatus, this._expectedCode);
       // The request should be succeeded iff we expect 200
       Assert.equal(request.requestSucceeded, this._expectedCode == 200);
-
     } catch (e) {
       do_throw("Unexpected exception: " + e);
     }
@@ -167,11 +160,11 @@ Test.prototype = {
     throw Cr.NS_ERROR_ABORT;
   },
 
-  onDataAvailable: function(request, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     do_throw("Should not get any data!");
   },
 
-  onStopRequest: function(request, status) {
+  onStopRequest(request, status) {
     Assert.equal(status, Cr.NS_ERROR_ABORT);
 
     // Clear the auth cache.
@@ -182,19 +175,25 @@ Test.prototype = {
     do_timeout(0, run_next_test);
   },
 
-  run: function() {
-    dump("Run test: " + this._subresource_http_auth_allow_pref
-                      + this._loadingUri
-                      + this._uri
-                      + this._contentPolicy
-                      + this._expectedCode + " \n");
+  run() {
+    dump(
+      "Run test: " +
+        this._subresource_http_auth_allow_pref +
+        this._loadingUri +
+        this._uri +
+        this._contentPolicy +
+        this._expectedCode +
+        " \n"
+    );
 
-    prefs.setIntPref("network.auth.subresource-http-auth-allow",
-                     this._subresource_http_auth_allow_pref);
+    prefs.setIntPref(
+      "network.auth.subresource-http-auth-allow",
+      this._subresource_http_auth_allow_pref
+    );
     let chan = makeChan(this._loadingUri, this._uri, this._contentPolicy);
     chan.notificationCallbacks = new Requestor(this._expectedCode == 200);
     chan.asyncOpen(this);
-  }
+  },
 };
 
 var tests = [
@@ -202,41 +201,68 @@ var tests = [
   // authentication as well.
 
   // A cross-origin request.
-  new Test(2, "http://example.com", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_OTHER, 200),
+  new Test(
+    2,
+    "http://example.com",
+    URL + "/auth",
+    Ci.nsIContentPolicy.TYPE_OTHER,
+    200
+  ),
   // A non cross-origin sub-resource request.
-  new Test(2, URL + "/", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_OTHER, 200),
+  new Test(2, URL + "/", URL + "/auth", Ci.nsIContentPolicy.TYPE_OTHER, 200),
   // A top level document.
-  new Test(2, URL + "/auth", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_DOCUMENT, 200),
+  new Test(
+    2,
+    URL + "/auth",
+    URL + "/auth",
+    Ci.nsIContentPolicy.TYPE_DOCUMENT,
+    200
+  ),
 
   // For the next 3 tests the preference is set to 1 - allow sub-resources to
   // open HTTP authentication credentials dialogs, but don't allow it for
   // cross-origin sub-resources
 
   // A cross-origin request.
-  new Test(1, "http://example.com", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_OTHER, 401),
+  new Test(
+    1,
+    "http://example.com",
+    URL + "/auth",
+    Ci.nsIContentPolicy.TYPE_OTHER,
+    401
+  ),
   // A non cross-origin sub-resource request.
-  new Test(1, URL + "/", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_OTHER, 200),
+  new Test(1, URL + "/", URL + "/auth", Ci.nsIContentPolicy.TYPE_OTHER, 200),
   // A top level document.
-  new Test(1, URL + "/auth", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_DOCUMENT, 200),
+  new Test(
+    1,
+    URL + "/auth",
+    URL + "/auth",
+    Ci.nsIContentPolicy.TYPE_DOCUMENT,
+    200
+  ),
 
   // For the next 3 tests the preference is set to 0 - don't allow sub-resources
   // to open HTTP authentication credentials dialogs.
 
   // A cross-origin request.
-  new Test(0, "http://example.com", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_OTHER, 401),
+  new Test(
+    0,
+    "http://example.com",
+    URL + "/auth",
+    Ci.nsIContentPolicy.TYPE_OTHER,
+    401
+  ),
   // A sub-resource request.
-  new Test(0, URL + "/", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_OTHER, 401),
+  new Test(0, URL + "/", URL + "/auth", Ci.nsIContentPolicy.TYPE_OTHER, 401),
   // A top level request.
-  new Test(0, URL + "/auth", URL + "/auth",
-           Ci.nsIContentPolicy.TYPE_DOCUMENT, 200),
+  new Test(
+    0,
+    URL + "/auth",
+    URL + "/auth",
+    Ci.nsIContentPolicy.TYPE_DOCUMENT,
+    200
+  ),
 ];
 
 function run_next_test() {

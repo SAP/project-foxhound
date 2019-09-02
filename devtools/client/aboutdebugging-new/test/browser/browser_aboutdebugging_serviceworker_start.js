@@ -4,7 +4,10 @@
 "use strict";
 
 /* import-globals-from helper-serviceworker.js */
-Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-serviceworker.js", this);
+Services.scriptloader.loadSubScript(
+  CHROME_URL_ROOT + "helper-serviceworker.js",
+  this
+);
 
 const SW_TAB_URL = URL_ROOT + "resources/service-workers/empty-sw.html";
 const SW_URL = URL_ROOT + "resources/service-workers/empty-sw.js";
@@ -25,8 +28,9 @@ add_task(async function() {
   await pushPref("dom.serviceWorkers.idle_timeout", 1000);
   await pushPref("dom.serviceWorkers.idle_extended_timeout", 1000);
 
-  const { document, tab, window } =
-    await openAboutDebugging({ enableWorkerUpdates: true });
+  const { document, tab, window } = await openAboutDebugging({
+    enableWorkerUpdates: true,
+  });
   await selectThisFirefoxPage(document, window.AboutDebugging.store);
 
   // Open a tab that registers a basic service worker.
@@ -40,17 +44,21 @@ add_task(async function() {
   const targetElement = await waitForServiceWorkerStopped(SW_URL, document);
 
   // Retrieve the Start button for the worker.
-  const startButton = targetElement.querySelector(".js-start-button");
+  const startButton = targetElement.querySelector(".qa-start-button");
   ok(startButton, "Found its start button");
 
-  info("Click on the start button and wait for the service worker to be running");
+  info(
+    "Click on the start button and wait for the service worker to be running"
+  );
   const onServiceWorkerRunning = waitForServiceWorkerRunning(SW_URL, document);
   startButton.click();
   const updatedTarget = await onServiceWorkerRunning;
 
   // Check that the buttons are displayed as expected.
-  const hasInspectButton = updatedTarget.querySelector(".js-debug-target-inspect-button");
-  const hasStartButton = updatedTarget.querySelector(".js-start-button");
+  const hasInspectButton = updatedTarget.querySelector(
+    ".qa-debug-target-inspect-button"
+  );
+  const hasStartButton = updatedTarget.querySelector(".qa-start-button");
   ok(hasInspectButton, "Service worker has an inspect button");
   ok(!hasStartButton, "Service worker does not have a start button");
 

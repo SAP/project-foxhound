@@ -72,9 +72,11 @@ import org.mozilla.gecko.activitystream.ActivityStreamTelemetry;
 import org.mozilla.gecko.adjust.AdjustBrowserAppDelegate;
 import org.mozilla.gecko.animation.PropertyAnimator;
 import org.mozilla.gecko.annotation.RobocopTarget;
+import org.mozilla.gecko.bookmarks.EditBookmarkCallback;
 import org.mozilla.gecko.bookmarks.BookmarkEditFragment;
 import org.mozilla.gecko.bookmarks.BookmarkUtils;
 import org.mozilla.gecko.bookmarks.EditBookmarkTask;
+import org.mozilla.gecko.bookmarks.UndoEditBookmarkTask;
 import org.mozilla.gecko.cleanup.FileCleanupController;
 import org.mozilla.gecko.db.BrowserContract;
 import org.mozilla.gecko.db.BrowserDB;
@@ -94,12 +96,14 @@ import org.mozilla.gecko.home.HomeBanner;
 import org.mozilla.gecko.home.HomeConfig;
 import org.mozilla.gecko.home.HomeConfig.PanelType;
 import org.mozilla.gecko.home.HomeConfigPrefsBackend;
+import org.mozilla.gecko.home.HomeContextMenuInfo;
 import org.mozilla.gecko.home.HomeFragment;
 import org.mozilla.gecko.home.HomePager.OnUrlOpenInBackgroundListener;
 import org.mozilla.gecko.home.HomePager.OnUrlOpenListener;
 import org.mozilla.gecko.home.HomePanelsManager;
 import org.mozilla.gecko.home.HomeScreen;
 import org.mozilla.gecko.home.SearchEngine;
+import org.mozilla.gecko.home.UndoRemoveBookmarkTask;
 import org.mozilla.gecko.icons.Icons;
 import org.mozilla.gecko.icons.IconsHelper;
 import org.mozilla.gecko.icons.decoders.FaviconDecoder;
@@ -138,11 +142,12 @@ import org.mozilla.gecko.tabs.TabsPanel;
 import org.mozilla.gecko.telemetry.TelemetryCorePingDelegate;
 import org.mozilla.gecko.telemetry.TelemetryUploadService;
 import org.mozilla.gecko.telemetry.measurements.SearchCountMeasurements;
+import org.mozilla.gecko.telemetry.TelemetryActivationPingDelegate;
 import org.mozilla.gecko.toolbar.AutocompleteHandler;
 import org.mozilla.gecko.toolbar.BrowserToolbar;
+import org.mozilla.gecko.toolbar.BrowserToolbar.CommitEventSource;
 import org.mozilla.gecko.toolbar.BrowserToolbar.TabEditingState;
 import org.mozilla.gecko.toolbar.PwaConfirm;
-import org.mozilla.gecko.trackingprotection.TrackingProtectionPrompt;
 import org.mozilla.gecko.updater.PostUpdateHandler;
 import org.mozilla.gecko.updater.UpdateServiceHelper;
 import org.mozilla.gecko.util.ActivityUtils;
@@ -202,7 +207,8 @@ public class BrowserApp extends GeckoApp
                                    PropertyAnimator.PropertyAnimationListener,
                                    TabsPanel.TabsLayoutChangeListener,
                                    View.OnKeyListener,
-                                   OnboardingHelper.OnboardingListener {
+                                   OnboardingHelper.OnboardingListener,
+                                   EditBookmarkCallback {
     private static final String LOGTAG = "GeckoBrowserApp";
 
     private static final int TABS_ANIMATION_DURATION = 450;
@@ -317,13 +323,14 @@ public class BrowserApp extends GeckoApp
     private final DynamicToolbar mDynamicToolbar = new DynamicToolbar();
 
     private final TelemetryCorePingDelegate mTelemetryCorePingDelegate = new TelemetryCorePingDelegate();
+    private final TelemetryActivationPingDelegate mTelemetryActivationPingDelegate = new TelemetryActivationPingDelegate();
 
     private final List<BrowserAppDelegate> delegates = Collections.unmodifiableList(Arrays.asList(
             new ScreenshotDelegate(),
             new BookmarkStateChangeDelegate(),
             new ReaderViewBookmarkPromotion(),
-            new PostUpdateHandler(),
             mTelemetryCorePingDelegate,
+            mTelemetryActivationPingDelegate,
             new OfflineTabStatusDelegate(),
             new AdjustBrowserAppDelegate(mTelemetryCorePingDelegate)
     ));
@@ -479,6 +486,11 @@ public class BrowserApp extends GeckoApp
         // Global onKey handler. This is called if the focused UI doesn't
         // handle the key event, and before Gecko swallows the events.
         if (event.getAction() != KeyEvent.ACTION_DOWN) {
+            // workaround for suppresed back button after the first redirect (see bug #1551458)
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                return false;
+            }
+
             if (mSuppressNextKeyUp && event.getAction() == KeyEvent.ACTION_UP) {
                 mSuppressNextKeyUp = false;
                 return true;
@@ -637,10 +649,15 @@ public class BrowserApp extends GeckoApp
         final GeckoApplication app = (GeckoApplication) getApplication();
         app.prepareLightweightTheme();
 
+        // Copying features out the APK races Gecko startup: the first time the profile is read by
+        // Gecko, it needs to find the copied features.  `super.onCreate(...)` initiates Gecko
+        // startup, so this must come first -- and be synchronous!
+        new PostUpdateHandler().onCreate(this, savedInstanceState);
+
         super.onCreate(savedInstanceState);
 
-        if (mIsAbortingAppLaunch) {
-          return;
+        if (isShutDownOrAbort()) {
+            return;
         }
 
         mOnboardingHelper = new OnboardingHelper(this, safeStartingIntent);
@@ -808,9 +825,17 @@ public class BrowserApp extends GeckoApp
         mSearchEngineManager = new SearchEngineManager(this, distribution);
 
         // Init suggested sites engine in BrowserDB.
-        final SuggestedSites suggestedSites = new SuggestedSites(appContext, distribution);
         final BrowserDB db = BrowserDB.from(profile);
+        final SuggestedSites suggestedSites = new SuggestedSites(appContext, distribution);
         db.setSuggestedSites(suggestedSites);
+
+        // Remove bookmarks that were marked as soft delete
+        ThreadUtils.postToBackgroundThread(new Runnable() {
+            @Override
+            public void run() {
+                db.removeSoftDeleteBookmarks(getContentResolver());
+            }
+        });
 
         mSharedPreferencesHelper = new SharedPreferencesHelper(appContext);
         mReadingListHelper = new ReadingListHelper(appContext, profile);
@@ -1083,7 +1108,7 @@ public class BrowserApp extends GeckoApp
     public void onResume() {
         super.onResume();
 
-        if (mIsAbortingAppLaunch) {
+        if (isShutDownOrAbort()) {
             return;
         }
 
@@ -1104,7 +1129,7 @@ public class BrowserApp extends GeckoApp
         dismissTabHistoryFragment();
 
         super.onPause();
-        if (mIsAbortingAppLaunch) {
+        if (isShutDownOrAbort()) {
             return;
         }
 
@@ -1140,7 +1165,7 @@ public class BrowserApp extends GeckoApp
             // User clicked a new link to be opened in Firefox.
             // We returned from Picture-in-picture mode and now must try to open that link.
             if (startingIntentAfterPip != null) {
-                getApplication().startActivity(startingIntentAfterPip);
+                startActivity(startingIntentAfterPip);
                 startingIntentAfterPip = null;
             } else {
                 // Get if the user pressed in the PIP window to return to full app or closed it entirely
@@ -1168,7 +1193,7 @@ public class BrowserApp extends GeckoApp
     @Override
     public void onRestart() {
         super.onRestart();
-        if (mIsAbortingAppLaunch) {
+        if (isShutDownOrAbort()) {
             return;
         }
 
@@ -1180,7 +1205,7 @@ public class BrowserApp extends GeckoApp
     @Override
     public void onStart() {
         super.onStart();
-        if (mIsAbortingAppLaunch) {
+        if (isShutDownOrAbort()) {
             return;
         }
 
@@ -1217,7 +1242,7 @@ public class BrowserApp extends GeckoApp
     @Override
     public void onStop() {
         super.onStop();
-        if (mIsAbortingAppLaunch) {
+        if (isShutDownOrAbort()) {
             return;
         }
 
@@ -1258,8 +1283,9 @@ public class BrowserApp extends GeckoApp
 
         mBrowserToolbar.setOnCommitListener(new BrowserToolbar.OnCommitListener() {
             @Override
-            public void onCommitByKey() {
-                if (commitEditingMode()) {
+            public void onCommit(CommitEventSource eventSource) {
+                final boolean didCommit = commitEditingMode();
+                if (didCommit && eventSource == CommitEventSource.KEY_EVENT) {
                     // We're committing in response to a key-down event. Since we'll be hiding the
                     // ToolbarEditLayout, the corresponding key-up event will end up being sent to
                     // Gecko which we don't want, as this messes up tracking of the last user input.
@@ -1510,7 +1536,7 @@ public class BrowserApp extends GeckoApp
 
     @Override
     public void onDestroy() {
-        if (mIsAbortingAppLaunch) {
+        if (isShutDownOrAbort()) {
             super.onDestroy();
             return;
         }
@@ -2178,20 +2204,6 @@ public class BrowserApp extends GeckoApp
     @Override
     public void addPrivateTab() {
         Tabs.getInstance().addPrivateTab();
-    }
-
-    public void showTrackingProtectionPromptIfApplicable() {
-        final SharedPreferences prefs = getSharedPreferences();
-
-        final boolean hasTrackingProtectionPromptBeShownBefore = prefs.getBoolean(GeckoPreferences.PREFS_TRACKING_PROTECTION_PROMPT_SHOWN, false);
-
-        if (hasTrackingProtectionPromptBeShownBefore) {
-            return;
-        }
-
-        prefs.edit().putBoolean(GeckoPreferences.PREFS_TRACKING_PROTECTION_PROMPT_SHOWN, true).apply();
-
-        startActivity(new Intent(BrowserApp.this, TrackingProtectionPrompt.class));
     }
 
     @Override
@@ -4187,7 +4199,7 @@ public class BrowserApp extends GeckoApp
 
     @Override
     public void onEditBookmark(@NonNull Bundle bundle) {
-        new EditBookmarkTask(this, bundle).execute();
+        new EditBookmarkTask(this, bundle, this).execute();
     }
 
     @Override
@@ -4241,5 +4253,19 @@ public class BrowserApp extends GeckoApp
         if (frag != null) {
             frag.dismiss();
         }
+    }
+
+    private boolean isShutDownOrAbort() {
+        return mIsAbortingAppLaunch || mShutdownOnDestroy;
+    }
+
+    @Override
+    public void onUndoEditBookmark(Bundle bundle) {
+        new UndoEditBookmarkTask(this, bundle).execute();
+    }
+
+    @Override
+    public void onUndoRemoveBookmark(HomeContextMenuInfo info, int position) {
+        new UndoRemoveBookmarkTask(this, info, position).execute();
     }
 }

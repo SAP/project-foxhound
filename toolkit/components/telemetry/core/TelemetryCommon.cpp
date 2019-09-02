@@ -35,8 +35,8 @@ bool IsInDataset(uint32_t aDataset, uint32_t aContainingDataset) {
 
   // The "optin on release channel" dataset is a superset of the
   // "optout on release channel one".
-  if (aContainingDataset == nsITelemetry::DATASET_RELEASE_CHANNEL_OPTIN &&
-      aDataset == nsITelemetry::DATASET_RELEASE_CHANNEL_OPTOUT) {
+  if (aContainingDataset == nsITelemetry::DATASET_PRERELEASE_CHANNELS &&
+      aDataset == nsITelemetry::DATASET_ALL_CHANNELS) {
     return true;
   }
 
@@ -54,7 +54,7 @@ bool CanRecordDataset(uint32_t aDataset, bool aCanRecordBase,
   // If base telemetry data is enabled and we're trying to record base
   // telemetry, allow it.
   if (aCanRecordBase &&
-      IsInDataset(aDataset, nsITelemetry::DATASET_RELEASE_CHANNEL_OPTOUT)) {
+      IsInDataset(aDataset, nsITelemetry::DATASET_ALL_CHANNELS)) {
     return true;
   }
 
@@ -114,7 +114,8 @@ void LogToBrowserConsole(uint32_t aLogLevel, const nsAString& aMsg) {
 
   nsCOMPtr<nsIScriptError> error(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
   error->Init(aMsg, EmptyString(), EmptyString(), 0, 0, aLogLevel,
-              "chrome javascript", false /* from private window */);
+              "chrome javascript", false /* from private window */,
+              true /* from chrome context */);
   console->LogMessage(error);
 }
 

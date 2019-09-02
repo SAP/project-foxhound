@@ -1,8 +1,7 @@
 // This file ensures that suspending a channel directly after opening it
 // suspends future notifications correctly.
 
-const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -15,15 +14,12 @@ var listener = {
   _lastEvent: 0,
   _gotData: false,
 
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsIStreamListener) ||
-        iid.equals(Ci.nsIRequestObserver) ||
-        iid.equals(Ci.nsISupports))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI([
+    "nsIStreamListener",
+    "nsIRequestObserver",
+  ]),
 
-  onStartRequest: function(request) {
+  onStartRequest(request) {
     this._lastEvent = Date.now();
     request.QueryInterface(Ci.nsIRequest);
 
@@ -31,11 +27,15 @@ var listener = {
     // works correctly
     request.suspend();
     request.suspend();
-    do_timeout(RESUME_DELAY, function() { request.resume(); });
-    do_timeout(RESUME_DELAY + 1000, function() { request.resume(); });
+    do_timeout(RESUME_DELAY, function() {
+      request.resume();
+    });
+    do_timeout(RESUME_DELAY + 1000, function() {
+      request.resume();
+    });
   },
 
-  onDataAvailable: function(request, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     Assert.ok(Date.now() - this._lastEvent >= MIN_TIME_DIFFERENCE);
     read_stream(stream, count);
 
@@ -48,15 +48,17 @@ var listener = {
     this._gotData = true;
   },
 
-  onStopRequest: function(request, status) {
+  onStopRequest(request, status) {
     Assert.ok(this._gotData);
     httpserv.stop(do_test_finished);
-  }
+  },
 };
 
 function makeChan(url) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true})
-                .QueryInterface(Ci.nsIHttpChannel);
+  return NetUtil.newChannel({
+    uri: url,
+    loadUsingSystemPrincipal: true,
+  }).QueryInterface(Ci.nsIHttpChannel);
 }
 
 var httpserv = null;

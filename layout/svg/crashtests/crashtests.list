@@ -75,7 +75,7 @@ load 441368-1.svg
 load 453754-1.svg
 load 455314-1.xhtml
 load 458453.html
-load 459666-1.html # bug 1323652
+load 459666-1.html
 load 459883.xhtml
 load 461289-1.svg
 load 464374-1.svg
@@ -148,7 +148,7 @@ load 780963-1.html
 load 782141-1.svg
 load 784061-1.svg
 load 788831-1.svg
-load 789390-1.html # bug 1323652
+load 789390-1.html
 load 790072.svg
 load 791826-1.svg
 load 808318-1.svg
@@ -182,6 +182,7 @@ load 898951-1.svg
 load 913990.html
 load 919371-1.xhtml
 load 950324-1.svg
+load 951904-1.html
 load 952270-1.svg
 load 963086-1.svg
 load 974746-1.svg
@@ -221,5 +222,10 @@ load 1502936.html
 load 1504918.svg
 load perspective-invalidation.html
 load invalid_url.html
+load 1535517-1.svg
 load 1504072.html
 load 1072758.html
+load 1536892.html
+load 1539318-1.svg
+load 1548985-1.html
+load 1548985-2.svg

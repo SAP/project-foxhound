@@ -100,12 +100,14 @@ case $cmd in
 
     ${MKDIR} -p ${tgtpath}/modules
     cp -pPR \
+        ${TOPSRCDIR}/modules/brotli \
         ${TOPSRCDIR}/modules/fdlibm \
         ${TOPSRCDIR}/modules/zlib \
         ${tgtpath}/modules/
 
     ${MKDIR} -p ${tgtpath}/mozglue
     cp -pPR \
+        ${TOPSRCDIR}/mozglue/baseprofiler \
         ${TOPSRCDIR}/mozglue/build \
         ${TOPSRCDIR}/mozglue/misc \
         ${TOPSRCDIR}/mozglue/moz.build \

@@ -1,11 +1,10 @@
- /* This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
 const { AutoRefreshHighlighter } = require("./auto-refresh");
-const Services = require("Services");
 const {
   CanvasFrameAnonymousContentHelper,
   createNode,
@@ -15,15 +14,19 @@ const {
   isNodeValid,
   moveInfobar,
 } = require("./utils/markup");
+const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const {
   getCurrentZoom,
   setIgnoreLayoutChanges,
- } = require("devtools/shared/layout/utils");
-const { getNodeDisplayName } = require("devtools/server/actors/inspector/utils");
+} = require("devtools/shared/layout/utils");
+const {
+  getNodeDisplayName,
+  getNodeGridFlexType,
+} = require("devtools/server/actors/inspector/utils");
 const nodeConstants = require("devtools/shared/dom-node-constants");
-
-loader.lazyRequireGetter(this, "FlexboxHighlighter",
-  "devtools/server/actors/highlighters/flexbox", true);
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const STRINGS_URI = "devtools/shared/locales/highlighters.properties";
+const L10N = new LocalizationHelper(STRINGS_URI);
 
 // Note that the order of items in this array is important because it is used
 // for drawing the BoxModelHighlighter's path elements correctly.
@@ -31,10 +34,6 @@ const BOX_MODEL_REGIONS = ["margin", "border", "padding", "content"];
 const BOX_MODEL_SIDES = ["top", "right", "bottom", "left"];
 // Width of boxmodelhighlighter guides
 const GUIDE_STROKE_WIDTH = 1;
-// FIXME: add ":visited" and ":link" after bug 713106 is fixed
-const PSEUDO_CLASSES = [":hover", ":active", ":focus", ":focus-within"];
-
-const FLEXBOX_HIGHLIGHTER_COMBINE_PREF = "devtools.inspector.flexboxHighlighter.combine";
 
 /**
  * The BoxModelHighlighter draws the box model regions on top of a node.
@@ -88,6 +87,8 @@ const FLEXBOX_HIGHLIGHTER_COMBINE_PREF = "devtools.inspector.flexboxHighlighter.
  *           <span class="box-model-infobar-id">Node id</span>
  *           <span class="box-model-infobar-classes">.someClass</span>
  *           <span class="box-model-infobar-pseudo-classes">:hover</span>
+ *           <span class="box-model-infobar-grid-type">Grid Type</span>
+ *           <span class="box-model-infobar-flex-type">Flex Type</span>
  *         </div>
  *       </div>
  *       <div class="box-model-infobar-arrow box-model-infobar-arrow-bottom"/>
@@ -101,8 +102,10 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
 
     this.ID_CLASS_PREFIX = "box-model-";
 
-    this.markup = new CanvasFrameAnonymousContentHelper(this.highlighterEnv,
-      this._buildMarkup.bind(this));
+    this.markup = new CanvasFrameAnonymousContentHelper(
+      this.highlighterEnv,
+      this._buildMarkup.bind(this)
+    );
 
     /**
      * Optionally customize each region's fill color by adding an entry to the
@@ -119,21 +122,6 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     pageListenerTarget.addEventListener("pagehide", this.onPageHide);
   }
 
-  /**
-   * Check whether we should show the combined flexbox highlighter. Because
-   * checking for prefs is slow and performance is paramount for the highlighter
-   * we cache the result. Because we cache the result the Toolbox needs to be
-   * closed and opened again for any pref changes to take affect.
-   */
-  get showCombinedFlexboxHighlighter() {
-    if (typeof this._showCombinedFlexboxHighlighter === "undefined") {
-      this._showCombinedFlexboxHighlighter =
-        Services.prefs.getBoolPref(FLEXBOX_HIGHLIGHTER_COMBINE_PREF);
-    }
-
-    return this._showCombinedFlexboxHighlighter;
-  }
-
   _buildMarkup() {
     const doc = this.win.document;
 
@@ -145,9 +133,9 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     const rootWrapper = createNode(this.win, {
       parent: highlighterContainer,
       attributes: {
-        "id": "root",
-        "class": "root",
-        "role": "presentation",
+        id: "root",
+        class: "root",
+        role: "presentation",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -158,11 +146,11 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       nodeType: "svg",
       parent: rootWrapper,
       attributes: {
-        "id": "elements",
-        "width": "100%",
-        "height": "100%",
-        "hidden": "true",
-        "role": "presentation",
+        id: "elements",
+        width: "100%",
+        height: "100%",
+        hidden: "true",
+        role: "presentation",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -171,8 +159,8 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       nodeType: "g",
       parent: svg,
       attributes: {
-        "class": "regions",
-        "role": "presentation",
+        class: "regions",
+        role: "presentation",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -182,9 +170,9 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
         nodeType: "path",
         parent: regions,
         attributes: {
-          "class": region,
-          "id": region,
-          "role": "presentation",
+          class: region,
+          id: region,
+          role: "presentation",
         },
         prefix: this.ID_CLASS_PREFIX,
       });
@@ -195,10 +183,10 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
         nodeType: "line",
         parent: svg,
         attributes: {
-          "class": "guide-" + side,
-          "id": "guide-" + side,
+          class: "guide-" + side,
+          id: "guide-" + side,
           "stroke-width": GUIDE_STROKE_WIDTH,
-          "role": "presentation",
+          role: "presentation",
         },
         prefix: this.ID_CLASS_PREFIX,
       });
@@ -209,10 +197,10 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     const infobarContainer = createNode(this.win, {
       parent: rootWrapper,
       attributes: {
-        "class": "infobar-container",
-        "id": "infobar-container",
-        "position": "top",
-        "hidden": "true",
+        class: "infobar-container",
+        id: "infobar-container",
+        position: "top",
+        hidden: "true",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -220,7 +208,7 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     const infobar = createNode(this.win, {
       parent: infobarContainer,
       attributes: {
-        "class": "infobar",
+        class: "infobar",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -228,7 +216,7 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     const texthbox = createNode(this.win, {
       parent: infobar,
       attributes: {
-        "class": "infobar-text",
+        class: "infobar-text",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -236,8 +224,8 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-tagname",
-        "id": "infobar-tagname",
+        class: "infobar-tagname",
+        id: "infobar-tagname",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -245,8 +233,8 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-id",
-        "id": "infobar-id",
+        class: "infobar-id",
+        id: "infobar-id",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -254,8 +242,8 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-classes",
-        "id": "infobar-classes",
+        class: "infobar-classes",
+        id: "infobar-classes",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -263,8 +251,8 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-pseudo-classes",
-        "id": "infobar-pseudo-classes",
+        class: "infobar-pseudo-classes",
+        id: "infobar-pseudo-classes",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -272,8 +260,28 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-dimensions",
-        "id": "infobar-dimensions",
+        class: "infobar-dimensions",
+        id: "infobar-dimensions",
+      },
+      prefix: this.ID_CLASS_PREFIX,
+    });
+
+    createNode(this.win, {
+      nodeType: "span",
+      parent: texthbox,
+      attributes: {
+        class: "infobar-grid-type",
+        id: "infobar-grid-type",
+      },
+      prefix: this.ID_CLASS_PREFIX,
+    });
+
+    createNode(this.win, {
+      nodeType: "span",
+      parent: texthbox,
+      attributes: {
+        class: "infobar-flex-type",
+        id: "infobar-flex-type",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -294,20 +302,7 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
 
     this.markup.destroy();
 
-    if (this._flexboxHighlighter) {
-      this._flexboxHighlighter.destroy();
-      this._flexboxHighlighter = null;
-    }
-
     AutoRefreshHighlighter.prototype.destroy.call(this);
-  }
-
-  get flexboxHighlighter() {
-    if (!this._flexboxHighlighter) {
-      this._flexboxHighlighter = new FlexboxHighlighter(this.highlighterEnv);
-    }
-
-    return this._flexboxHighlighter;
   }
 
   getElement(id) {
@@ -321,7 +316,9 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
    * @return {Boolean}
    */
   _isNodeValid(node) {
-    return node && (isNodeValid(node) || isNodeValid(node, nodeConstants.TEXT_NODE));
+    return (
+      node && (isNodeValid(node) || isNodeValid(node, nodeConstants.TEXT_NODE))
+    );
   }
 
   /**
@@ -346,7 +343,7 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     if (isNodeValid(this.currentNode)) {
       const win = this.currentNode.ownerGlobal;
       this.currentNodeObserver = new win.MutationObserver(this.update);
-      this.currentNodeObserver.observe(this.currentNode, {attributes: true});
+      this.currentNodeObserver.observe(this.currentNode, { attributes: true });
     }
   }
 
@@ -367,16 +364,14 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     let shown = false;
     setIgnoreLayoutChanges(true);
 
-    // We need to set this option before calling _updateBoxModel().
-    this.options.isFlexboxContainer =
-      !!(node && node.getAsFlexContainer && node.getAsFlexContainer());
-
     if (this._updateBoxModel()) {
       // Show the infobar only if configured to do so and the node is an element or a text
       // node.
-      if (!this.options.hideInfoBar && (
-          node.nodeType === node.ELEMENT_NODE ||
-          node.nodeType === node.TEXT_NODE)) {
+      if (
+        !this.options.hideInfoBar &&
+        (node.nodeType === node.ELEMENT_NODE ||
+          node.nodeType === node.TEXT_NODE)
+      ) {
         this._showInfobar();
       } else {
         this._hideInfobar();
@@ -388,89 +383,12 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       this._hide();
     }
 
-    if (this.showCombinedFlexboxHighlighter) {
-      this._updateFlexboxHighlighter();
-    }
-
-    setIgnoreLayoutChanges(false, this.highlighterEnv.window.document.documentElement);
+    setIgnoreLayoutChanges(
+      false,
+      this.highlighterEnv.window.document.documentElement
+    );
 
     return shown;
-  }
-
-  /**
-   * Update the flexbox highlighter on the current highlighted node. Show it
-   * if the current node is a flexbox container or flexbox item.
-   */
-  _updateFlexboxHighlighter() {
-    this._hideFlexboxHighlighter();
-
-    if (!this.currentNode) {
-      return;
-    }
-
-    const options = {};
-    let node = this.currentNode;
-    let showFlexboxHighlighter = false;
-
-    // If the current node is a flexbox container then remove the box model
-    // content region and make the other regions a little more transparent so
-    // that the flexbox highlighting is emphasized.
-    if (this.options.isFlexboxContainer) {
-      for (const region of BOX_MODEL_REGIONS) {
-        const box = this.getElement(region);
-
-        if (region === "content") {
-          // Hide the content region.
-          box.removeAttribute("d");
-        } else {
-          // Make the non-content regions a little more transparent.
-          box.setAttribute("half-faded", "");
-        }
-      }
-
-      // Stop the flexbox highlighter from showing an outline (the guides do a
-      // great job of that themselves).
-      options.noContainerOutline = true;
-
-      // Toggle the flag to show the flexbox highlighter.
-      showFlexboxHighlighter = true;
-    } else {
-      // The highlighted element is not a flexbox container so we need to check
-      // if it is a flex item.
-      const container = node.parentFlexElement;
-
-      if (container) {
-        for (const region of BOX_MODEL_REGIONS) {
-          const box = this.getElement(region);
-
-          // Ensure that the box model regions are not faded. The content region
-          // will reappear because it is regenerated by the highlighter.
-          box.setAttribute("half-faded", "");
-        }
-
-        // Hide the guides because we are only interested in the flex item's
-        // box model regions in relation to the flexbox overlay (and to make
-        // things less ugly).
-        this._hideGuides();
-
-        node = container;
-
-        // Toggle the flag to show the flexbox highlighter.
-        showFlexboxHighlighter = true;
-      }
-    }
-
-    if (showFlexboxHighlighter) {
-      // If the flag is set then show the flexbox highlighter.
-      this.flexboxHighlighter.show(node, options);
-    } else {
-      // Otherwise ensure that the box model regions are not faded.
-      for (const region of BOX_MODEL_REGIONS) {
-        const box = this.getElement(region);
-
-        box.removeAttribute("half-faded");
-      }
-    }
   }
 
   _scrollUpdate() {
@@ -486,18 +404,11 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     this._untrackMutations();
     this._hideBoxModel();
     this._hideInfobar();
-    this._hideFlexboxHighlighter();
 
-    setIgnoreLayoutChanges(false, this.highlighterEnv.window.document.documentElement);
-  }
-
-  /**
-   * Hide the Flexbox highlighter.
-   */
-  _hideFlexboxHighlighter() {
-    if (this._flexboxHighlighter) {
-      this.flexboxHighlighter.hide();
-    }
+    setIgnoreLayoutChanges(
+      false,
+      this.highlighterEnv.window.document.documentElement
+    );
   }
 
   /**
@@ -546,10 +457,10 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     }
 
     const quad = {
-      p1: {x: Infinity, y: Infinity},
-      p2: {x: -Infinity, y: Infinity},
-      p3: {x: -Infinity, y: -Infinity},
-      p4: {x: Infinity, y: -Infinity},
+      p1: { x: Infinity, y: Infinity },
+      p2: { x: -Infinity, y: Infinity },
+      p3: { x: -Infinity, y: -Infinity },
+      p4: { x: Infinity, y: -Infinity },
       bounds: {
         bottom: -Infinity,
         height: 0,
@@ -617,8 +528,8 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       for (let j = 0; j < this.currentQuads[boxType].length; j++) {
         const boxQuad = this.currentQuads[boxType][j];
         const nextBoxQuad = this.currentQuads[nextBoxType]
-                          ? this.currentQuads[nextBoxType][j]
-                          : null;
+          ? this.currentQuads[nextBoxType][j]
+          : null;
         path.push(this._getBoxPathCoordinates(boxQuad, nextBoxQuad));
       }
 
@@ -650,31 +561,85 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
   }
 
   _getBoxPathCoordinates(boxQuad, nextBoxQuad) {
-    const {p1, p2, p3, p4} = boxQuad;
-    const isFlexboxContainer = this.options.isFlexboxContainer;
+    const { p1, p2, p3, p4 } = boxQuad;
 
     let path;
-    if ((isFlexboxContainer && !nextBoxQuad) ||
-        (!isFlexboxContainer && (!nextBoxQuad || !this.options.onlyRegionArea))) {
+    if (!nextBoxQuad || !this.options.onlyRegionArea) {
       // If this is the content box (inner-most box) or if we're not being asked
       // to highlight only region areas, then draw a simple rectangle.
-      path = "M" + p1.x + "," + p1.y + " " +
-             "L" + p2.x + "," + p2.y + " " +
-             "L" + p3.x + "," + p3.y + " " +
-             "L" + p4.x + "," + p4.y;
+      path =
+        "M" +
+        p1.x +
+        "," +
+        p1.y +
+        " " +
+        "L" +
+        p2.x +
+        "," +
+        p2.y +
+        " " +
+        "L" +
+        p3.x +
+        "," +
+        p3.y +
+        " " +
+        "L" +
+        p4.x +
+        "," +
+        p4.y;
     } else {
       // Otherwise, just draw the region itself, not a filled rectangle.
-      const {p1: np1, p2: np2, p3: np3, p4: np4} = nextBoxQuad;
-      path = "M" + p1.x + "," + p1.y + " " +
-             "L" + p2.x + "," + p2.y + " " +
-             "L" + p3.x + "," + p3.y + " " +
-             "L" + p4.x + "," + p4.y + " " +
-             "L" + p1.x + "," + p1.y + " " +
-             "L" + np1.x + "," + np1.y + " " +
-             "L" + np4.x + "," + np4.y + " " +
-             "L" + np3.x + "," + np3.y + " " +
-             "L" + np2.x + "," + np2.y + " " +
-             "L" + np1.x + "," + np1.y;
+      const { p1: np1, p2: np2, p3: np3, p4: np4 } = nextBoxQuad;
+      path =
+        "M" +
+        p1.x +
+        "," +
+        p1.y +
+        " " +
+        "L" +
+        p2.x +
+        "," +
+        p2.y +
+        " " +
+        "L" +
+        p3.x +
+        "," +
+        p3.y +
+        " " +
+        "L" +
+        p4.x +
+        "," +
+        p4.y +
+        " " +
+        "L" +
+        p1.x +
+        "," +
+        p1.y +
+        " " +
+        "L" +
+        np1.x +
+        "," +
+        np1.y +
+        " " +
+        "L" +
+        np4.x +
+        "," +
+        np4.y +
+        " " +
+        "L" +
+        np3.x +
+        "," +
+        np3.y +
+        " " +
+        "L" +
+        np2.x +
+        "," +
+        np2.y +
+        " " +
+        "L" +
+        np1.x +
+        "," +
+        np1.y;
     }
 
     return path;
@@ -685,10 +650,12 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
    * @return {Boolean}
    */
   _nodeNeedsHighlighting() {
-    return this.currentQuads.margin.length ||
-           this.currentQuads.border.length ||
-           this.currentQuads.padding.length ||
-           this.currentQuads.content.length;
+    return (
+      this.currentQuads.margin.length ||
+      this.currentQuads.border.length ||
+      this.currentQuads.padding.length ||
+      this.currentQuads.content.length
+    );
   }
 
   _getOuterBounds() {
@@ -700,10 +667,10 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
         break;
       }
 
-      const {bottom, height, left, right, top, width, x, y} = quad.bounds;
+      const { bottom, height, left, right, top, width, x, y } = quad.bounds;
 
       if (width > 0 || height > 0) {
-        return {bottom, height, left, right, top, width, x, y};
+        return { bottom, height, left, right, top, width, x, y };
       }
     }
 
@@ -732,7 +699,7 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       return;
     }
 
-    const {p1, p2, p3, p4} = quad;
+    const { p1, p2, p3, p4 } = quad;
 
     const allX = [p1.x, p2.x, p3.x, p4.x].sort((a, b) => a - b);
     const allY = [p1.y, p2.y, p3.y, p4.y].sort((a, b) => a - b);
@@ -809,8 +776,9 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       return;
     }
 
-    const {bindingElement: node, pseudo} =
-        getBindingElementAndPseudo(this.currentNode);
+    const { bindingElement: node, pseudo } = getBindingElementAndPseudo(
+      this.currentNode
+    );
 
     // Update the tag, id, classes, pseudo-classes and dimensions
     const displayName = getNodeDisplayName(node);
@@ -818,8 +786,8 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     const id = node.id ? "#" + node.id : "";
 
     const classList = (node.classList || []).length
-                    ? "." + [...node.classList].join(".")
-                    : "";
+      ? "." + [...node.classList].join(".")
+      : "";
 
     let pseudos = this._getPseudoClasses(node).join("");
     if (pseudo) {
@@ -838,17 +806,37 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
     }
 
     const { width, height } = quad.bounds;
-    const dim = parseFloat((width / zoom).toPrecision(6)) +
-              " \u00D7 " +
-              parseFloat((height / zoom).toPrecision(6));
+    const dim =
+      parseFloat((width / zoom).toPrecision(6)) +
+      " \u00D7 " +
+      parseFloat((height / zoom).toPrecision(6));
+
+    const { grid: gridType, flex: flexType } = getNodeGridFlexType(node);
+    const gridLayoutTextType = this._getLayoutTextType("gridType", gridType);
+    const flexLayoutTextType = this._getLayoutTextType("flexType", flexType);
 
     this.getElement("infobar-tagname").setTextContent(displayName);
     this.getElement("infobar-id").setTextContent(id);
     this.getElement("infobar-classes").setTextContent(classList);
     this.getElement("infobar-pseudo-classes").setTextContent(pseudos);
     this.getElement("infobar-dimensions").setTextContent(dim);
+    this.getElement("infobar-grid-type").setTextContent(gridLayoutTextType);
+    this.getElement("infobar-flex-type").setTextContent(flexLayoutTextType);
 
     this._moveInfobar();
+  }
+
+  _getLayoutTextType(layoutTypeKey, { isContainer, isItem }) {
+    if (!isContainer && !isItem) {
+      return "";
+    }
+    if (isContainer && !isItem) {
+      return L10N.getStr(`${layoutTypeKey}.container`);
+    }
+    if (!isContainer && isItem) {
+      return L10N.getStr(`${layoutTypeKey}.item`);
+    }
+    return L10N.getStr(`${layoutTypeKey}.dual`);
   }
 
   _getPseudoClasses(node) {

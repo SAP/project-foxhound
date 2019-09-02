@@ -52,11 +52,15 @@ USE_LIBS += [
     'zlib',
 ]
 
+if CONFIG['JS_BUILD_BINAST']:
+    USE_LIBS += [
+        'brotli',
+    ]
+
 # Taintfox ensure tainting library is linked to
 USE_LIBS += [
     'taint',
 ]
-
 
 if CONFIG['OS_ARCH'] not in ('WINNT', 'HP-UX'):
     OS_LIBS += [
@@ -97,8 +101,7 @@ run_checks = GENERATED_FILES['spidermonkey_checks']
 run_checks.script = '/config/run_spidermonkey_checks.py'
 run_checks.inputs += [
     '!%sjs_static.%s' % (CONFIG['LIB_PREFIX'], CONFIG['LIB_SUFFIX']),
-#  Taintfox: disabling style checks at taint is outside js directory
-#    '/config/check_spidermonkey_style.py',
+    '/config/check_spidermonkey_style.py',
     '/config/check_macroassembler_style.py',
     '/config/check_js_opcode.py'
 ]

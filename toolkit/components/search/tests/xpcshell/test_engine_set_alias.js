@@ -1,18 +1,22 @@
 "use strict";
 
-function run_test() {
+add_task(async function setup() {
   useHttpServer();
-
-  run_next_test();
-}
+  await AddonTestUtils.promiseStartupManager();
+  await Services.search.init();
+});
 
 add_task(async function test_engine_set_alias() {
-  await asyncInit();
   info("Set engine alias");
   let [engine1] = await addTestEngines([
     {
       name: "bacon",
-      details: ["", "b", "Search Bacon", "GET", "http://www.bacon.test/find"],
+      details: {
+        alias: "b",
+        description: "Search Bacon",
+        method: "GET",
+        template: "http://www.bacon.test/find",
+      },
     },
   ]);
   Assert.equal(engine1.alias, "b");
@@ -26,7 +30,12 @@ add_task(async function test_engine_set_alias_with_left_space() {
   let [engine2] = await addTestEngines([
     {
       name: "bacon",
-      details: ["", "   a", "Search Bacon", "GET", "http://www.bacon.test/find"],
+      details: {
+        alias: "   a",
+        description: "Search Bacon",
+        method: "GET",
+        template: "http://www.bacon.test/find",
+      },
     },
   ]);
   Assert.equal(engine2.alias, "a");
@@ -40,7 +49,12 @@ add_task(async function test_engine_set_alias_with_right_space() {
   let [engine3] = await addTestEngines([
     {
       name: "bacon",
-      details: ["", "c   ", "Search Bacon", "GET", "http://www.bacon.test/find"],
+      details: {
+        alias: "c   ",
+        description: "Search Bacon",
+        method: "GET",
+        template: "http://www.bacon.test/find",
+      },
     },
   ]);
   Assert.equal(engine3.alias, "c");
@@ -54,7 +68,12 @@ add_task(async function test_engine_set_alias_with_right_left_space() {
   let [engine4] = await addTestEngines([
     {
       name: "bacon",
-      details: ["", " o  ", "Search Bacon", "GET", "http://www.bacon.test/find"],
+      details: {
+        alias: " o  ",
+        description: "Search Bacon",
+        method: "GET",
+        template: "http://www.bacon.test/find",
+      },
     },
   ]);
   Assert.equal(engine4.alias, "o");
@@ -68,7 +87,12 @@ add_task(async function test_engine_set_alias_with_space() {
   let [engine5] = await addTestEngines([
     {
       name: "bacon",
-      details: ["", " ", "Search Bacon", "GET", "http://www.bacon.test/find"],
+      details: {
+        alias: " ",
+        description: "Search Bacon",
+        method: "GET",
+        template: "http://www.bacon.test/find",
+      },
     },
   ]);
   Assert.equal(engine5.alias, null);

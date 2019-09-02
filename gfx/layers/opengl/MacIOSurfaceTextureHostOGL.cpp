@@ -18,9 +18,9 @@ MacIOSurfaceTextureHostOGL::MacIOSurfaceTextureHostOGL(
     TextureFlags aFlags, const SurfaceDescriptorMacIOSurface& aDescriptor)
     : TextureHost(aFlags) {
   MOZ_COUNT_CTOR(MacIOSurfaceTextureHostOGL);
-  mSurface = MacIOSurface::LookupSurface(aDescriptor.surfaceId(),
-                                         aDescriptor.scaleFactor(),
-                                         !aDescriptor.isOpaque());
+  mSurface = MacIOSurface::LookupSurface(
+      aDescriptor.surfaceId(), aDescriptor.scaleFactor(),
+      !aDescriptor.isOpaque(), aDescriptor.yUVColorSpace());
 }
 
 MacIOSurfaceTextureHostOGL::~MacIOSurfaceTextureHostOGL() {
@@ -115,6 +115,13 @@ gl::GLContext* MacIOSurfaceTextureHostOGL::gl() const {
   return mProvider ? mProvider->GetGLContext() : nullptr;
 }
 
+gfx::YUVColorSpace MacIOSurfaceTextureHostOGL::GetYUVColorSpace() const {
+  if (!mSurface) {
+    return gfx::YUVColorSpace::UNKNOWN;
+  }
+  return mSurface->GetYUVColorSpace();
+}
+
 void MacIOSurfaceTextureHostOGL::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
@@ -124,7 +131,7 @@ void MacIOSurfaceTextureHostOGL::CreateRenderTexture(
                                                  texture.forget());
 }
 
-uint32_t MacIOSurfaceTextureHostOGL::NumSubTextures() const {
+uint32_t MacIOSurfaceTextureHostOGL::NumSubTextures() {
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
     case gfx::SurfaceFormat::R8G8B8A8:
@@ -151,7 +158,8 @@ void MacIOSurfaceTextureHostOGL::PushResourceUpdates(
   auto method = aOp == TextureHost::ADD_IMAGE
                     ? &wr::TransactionBuilder::AddExternalImage
                     : &wr::TransactionBuilder::UpdateExternalImage;
-  auto bufferType = wr::WrExternalImageBufferType::TextureRectHandle;
+  auto imageType =
+      wr::ExternalImageType::TextureHandle(wr::TextureTarget::Rect);
 
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
@@ -164,7 +172,7 @@ void MacIOSurfaceTextureHostOGL::PushResourceUpdates(
                         ? gfx::SurfaceFormat::B8G8R8A8
                         : gfx::SurfaceFormat::B8G8R8X8;
       wr::ImageDescriptor descriptor(GetSize(), format);
-      (aResources.*method)(aImageKeys[0], descriptor, aExtID, bufferType, 0);
+      (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
       break;
     }
     case gfx::SurfaceFormat::YUV422: {
@@ -175,7 +183,7 @@ void MacIOSurfaceTextureHostOGL::PushResourceUpdates(
       MOZ_ASSERT(aImageKeys.length() == 1);
       MOZ_ASSERT(mSurface->GetPlaneCount() == 0);
       wr::ImageDescriptor descriptor(GetSize(), gfx::SurfaceFormat::B8G8R8X8);
-      (aResources.*method)(aImageKeys[0], descriptor, aExtID, bufferType, 0);
+      (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
       break;
     }
     case gfx::SurfaceFormat::NV12: {
@@ -189,11 +197,13 @@ void MacIOSurfaceTextureHostOGL::PushResourceUpdates(
           gfx::IntSize(mSurface->GetDevicePixelWidth(1),
                        mSurface->GetDevicePixelHeight(1)),
           gfx::SurfaceFormat::R8G8);
-      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, bufferType, 0);
-      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, bufferType, 1);
+      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0);
+      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1);
       break;
     }
-    default: { MOZ_ASSERT_UNREACHABLE("unexpected to be called"); }
+    default: {
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    }
   }
 }
 
@@ -219,7 +229,7 @@ void MacIOSurfaceTextureHostOGL::PushDisplayItems(
       // which only supports 8 bits color depth.
       aBuilder.PushYCbCrInterleavedImage(
           aBounds, aClip, true, aImageKeys[0], wr::ColorDepth::Color8,
-          wr::ToWrYuvColorSpace(YUVColorSpace::BT601), aFilter);
+          wr::ToWrYuvColorSpace(GetYUVColorSpace()), aFilter);
       break;
     }
     case gfx::SurfaceFormat::NV12: {
@@ -229,11 +239,13 @@ void MacIOSurfaceTextureHostOGL::PushDisplayItems(
       // which only supports 8 bits color depth.
       aBuilder.PushNV12Image(aBounds, aClip, true, aImageKeys[0], aImageKeys[1],
                              wr::ColorDepth::Color8,
-                             wr::ToWrYuvColorSpace(YUVColorSpace::BT601),
+                             wr::ToWrYuvColorSpace(GetYUVColorSpace()),
                              aFilter);
       break;
     }
-    default: { MOZ_ASSERT_UNREACHABLE("unexpected to be called"); }
+    default: {
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    }
   }
 }
 

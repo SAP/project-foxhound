@@ -52,12 +52,12 @@ class MediaTransportParent::Impl : public sigslot::has_slots<> {
     NS_ENSURE_TRUE_VOID(mParent->SendOnAlpnNegotiated(aAlpn));
   }
 
-  void OnGatheringStateChange(dom::PCImplIceGatheringState aState) {
+  void OnGatheringStateChange(dom::RTCIceGatheringState aState) {
     NS_ENSURE_TRUE_VOID(
         mParent->SendOnGatheringStateChange(static_cast<int>(aState)));
   }
 
-  void OnConnectionStateChange(dom::PCImplIceConnectionState aState) {
+  void OnConnectionStateChange(dom::RTCIceConnectionState aState) {
     NS_ENSURE_TRUE_VOID(
         mParent->SendOnConnectionStateChange(static_cast<int>(aState)));
   }
@@ -161,9 +161,10 @@ mozilla::ipc::IPCResult MediaTransportParent::RecvCreateIceCtx(
 }
 
 mozilla::ipc::IPCResult MediaTransportParent::RecvSetProxyServer(
-    const PBrowserOrId& browserOrId, const nsCString& alpn) {
+    const dom::TabId& tabId, const net::LoadInfoArgs& args,
+    const nsCString& alpn) {
   MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
-  mImpl->mHandler->SetProxyServer(NrSocketProxyConfig(browserOrId, alpn));
+  mImpl->mHandler->SetProxyServer(NrSocketProxyConfig(tabId, alpn, args));
   return ipc::IPCResult::Ok();
 }
 

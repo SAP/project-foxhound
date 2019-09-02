@@ -7,9 +7,9 @@ use api::{FontKey, FontInstanceKey, FontRenderMode, FontTemplate, FontVariation}
 use api::{ColorU, GlyphIndex, GlyphDimensions, SyntheticItalics};
 use api::units::*;
 use euclid::approxeq::ApproxEq;
-use internal_types::ResourceCacheError;
-use wr_malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use platform::font::FontContext;
+use crate::internal_types::ResourceCacheError;
+use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use crate::platform::font::FontContext;
 use rayon::ThreadPool;
 use std::cmp;
 use std::hash::{Hash, Hasher};
@@ -238,7 +238,7 @@ impl FontInstance {
     ) -> Self {
         FontInstance {
             transform: FontTransform::identity(),
-            color: color.into(),
+            color,
             size: base.size,
             base,
             render_mode,
@@ -395,9 +395,9 @@ impl SubpixelOffset {
         let apos = ((pos - pos.floor()) * 8.0) as i32;
 
         match apos {
-            1...2 => SubpixelOffset::Quarter,
-            3...4 => SubpixelOffset::Half,
-            5...6 => SubpixelOffset::ThreeQuarters,
+            1..=2 => SubpixelOffset::Quarter,
+            3..=4 => SubpixelOffset::Half,
+            5..=6 => SubpixelOffset::ThreeQuarters,
             _ => SubpixelOffset::Zero,
         }
     }
@@ -607,12 +607,12 @@ impl FontContexts {
     }
 }
 
-pub trait ForEach<T> {
-    fn for_each<F: Fn(MutexGuard<T>) + Send + 'static>(&self, f: F);
+pub trait AsyncForEach<T> {
+    fn async_for_each<F: Fn(MutexGuard<T>) + Send + 'static>(&self, f: F);
 }
 
-impl ForEach<FontContext> for Arc<FontContexts> {
-    fn for_each<F: Fn(MutexGuard<FontContext>) + Send + 'static>(&self, f: F) {
+impl AsyncForEach<FontContext> for Arc<FontContexts> {
+    fn async_for_each<F: Fn(MutexGuard<FontContext>) + Send + 'static>(&self, f: F) {
         // Reset the locked condition.
         let mut locked = self.locked_mutex.lock().unwrap();
         *locked = false;
@@ -718,7 +718,7 @@ impl GlyphRasterizer {
         #[cfg(feature = "pathfinder")]
         self.add_font_to_pathfinder(&font_key, &template);
 
-        self.font_contexts.for_each(move |mut context| {
+        self.font_contexts.async_for_each(move |mut context| {
             context.add_font(&font_key, &template);
         });
     }
@@ -771,7 +771,7 @@ impl GlyphRasterizer {
 
         let fonts_to_remove = mem::replace(&mut self.fonts_to_remove, Vec::new());
         let font_instances_to_remove = mem::replace(& mut self.font_instances_to_remove, Vec::new());
-        self.font_contexts.for_each(move |mut context| {
+        self.font_contexts.async_for_each(move |mut context| {
             for font_key in &fonts_to_remove {
                 context.delete_font(font_key);
             }
@@ -808,7 +808,7 @@ impl AddFont for FontContext {
 }
 
 #[allow(dead_code)]
-pub(in glyph_rasterizer) struct GlyphRasterJob {
+pub(in crate::glyph_rasterizer) struct GlyphRasterJob {
     key: GlyphKey,
     result: GlyphRasterResult,
 }
@@ -842,18 +842,18 @@ mod test_glyph_rasterizer {
         use rayon::ThreadPoolBuilder;
         use std::fs::File;
         use std::io::Read;
-        use texture_cache::TextureCache;
-        use glyph_cache::GlyphCache;
-        use gpu_cache::GpuCache;
-        use render_task::{RenderTaskCache, RenderTaskTree, RenderTaskTreeCounters};
-        use profiler::TextureCacheProfileCounters;
+        use crate::texture_cache::TextureCache;
+        use crate::glyph_cache::GlyphCache;
+        use crate::gpu_cache::GpuCache;
+        use crate::render_task::{RenderTaskCache, RenderTaskGraph, RenderTaskGraphCounters};
+        use crate::profiler::TextureCacheProfileCounters;
         use api::{FontKey, FontInstanceKey, FontTemplate, FontRenderMode,
                   IdNamespace, ColorU};
         use api::units::{Au, DevicePoint};
-        use render_backend::FrameId;
+        use crate::render_backend::FrameId;
         use thread_profiler::register_thread_with_profiler;
         use std::sync::Arc;
-        use glyph_rasterizer::{FontInstance, BaseFontInstance, GlyphKey, GlyphRasterizer};
+        use crate::glyph_rasterizer::{FontInstance, BaseFontInstance, GlyphKey, GlyphRasterizer};
 
         let worker = ThreadPoolBuilder::new()
             .thread_name(|idx|{ format!("WRWorker#{}", idx) })
@@ -863,11 +863,11 @@ mod test_glyph_rasterizer {
             .build();
         let workers = Arc::new(worker.unwrap());
         let mut glyph_rasterizer = GlyphRasterizer::new(workers).unwrap();
-        let mut glyph_cache = GlyphCache::new();
+        let mut glyph_cache = GlyphCache::new(GlyphCache::DEFAULT_MAX_BYTES_USED);
         let mut gpu_cache = GpuCache::new_for_testing();
         let mut texture_cache = TextureCache::new_for_testing(2048, 1024);
         let mut render_task_cache = RenderTaskCache::new();
-        let mut render_task_tree = RenderTaskTree::new(FrameId::INVALID, &RenderTaskTreeCounters::new());
+        let mut render_task_tree = RenderTaskGraph::new(FrameId::INVALID, &RenderTaskGraphCounters::new());
         let mut font_file =
             File::open("../wrench/reftests/text/VeraBd.ttf").expect("Couldn't open font file");
         let mut font_data = vec![];
@@ -927,7 +927,7 @@ mod test_glyph_rasterizer {
 
     #[test]
     fn test_subpx_quantize() {
-        use glyph_rasterizer::SubpixelOffset;
+        use crate::glyph_rasterizer::SubpixelOffset;
 
         assert_eq!(SubpixelOffset::quantize(0.0), SubpixelOffset::Zero);
         assert_eq!(SubpixelOffset::quantize(-0.0), SubpixelOffset::Zero);

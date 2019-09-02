@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8">
   <title>Test autocomplete on an HTTPS page using upgraded HTTP logins</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="../../../satchel/test/satchel_common.js"></script>
   <script type="text/javascript" src="pwmgr_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
@@ -30,9 +29,9 @@ runInParent(function addLogins() {
 
   // Same as above but HTTP instead of HTTPS (to test de-duping)
   let login2 = new nsLoginInfo("http://example.org", "http://example.org", null,
-                               "name1", "passHTTP", "uname", "pword");
+                               "name1", "pass1", "uname", "pword");
 
-  // Different HTTP login to upgrade with secure formSubmitURL
+  // Different HTTP login to upgrade with secure formActionOrigin
   let login3 = new nsLoginInfo("http://example.org", "https://example.org", null,
                                "name2", "passHTTPtoHTTPS", "uname", "pword");
 
@@ -68,17 +67,13 @@ function restoreForm() {
   uname.focus();
 }
 
-// Check for expected username/password in form.
-function checkACForm(expectedUsername, expectedPassword) {
-  let formID = uname.parentNode.id;
-  is(uname.value, expectedUsername, "Checking " + formID + " username");
-  is(pword.value, expectedPassword, "Checking " + formID + " password");
-}
+const HTTPS_FORM_URL = "https://example.org/tests/toolkit/components/passwordmgr/test/mochitest/form_basic.html";
+const HTTP_FORM_URL = "http://example.org/tests/toolkit/components/passwordmgr/test/mochitest/form_basic.html";
 
-add_task(async function setup() {
+async function setup(formUrl = HTTPS_FORM_URL) {
   await SpecialPowers.pushPrefEnv({"set": [["signon.schemeUpgrades", true]]});
 
-  iframe.src = "https://example.org/tests/toolkit/components/passwordmgr/test/mochitest/form_basic.html";
+  iframe.src = formUrl;
   await new Promise(resolve => {
     iframe.addEventListener("load", function() {
       resolve();
@@ -89,11 +84,39 @@ add_task(async function setup() {
   hostname = iframeDoc.documentURIObject.host;
   uname = iframeDoc.getElementById("form-basic-username");
   pword = iframeDoc.getElementById("form-basic-password");
+}
+
+add_task(async function test_autocomplete_http() {
+  info("test_autocomplete_http, setup with " + HTTP_FORM_URL);
+  await setup(HTTP_FORM_URL);
+
+  LoginManager.getAllLogins().then(logins => {
+    info("got logins: " + logins.map(l => l.origin));
+  });
+  // from a HTTP page, look for matching logins, we should never offer a login with an HTTPS scheme
+  // we're expecting just login2 as a match
+  // Make sure initial form is empty.
+  checkLoginForm(uname, "", pword, "");
+  // Trigger autocomplete popup
+  restoreForm();
+  let popupState = await getPopupState();
+  is(popupState.open, false, "Check popup is initially closed");
+  let shownPromise = promiseACShown();
+  synthesizeKey("KEY_ArrowDown");
+  let results = await shownPromise;
+  info("got results: " + results.join(", "));
+  popupState = await getPopupState();
+  is(popupState.selectedIndex, -1, "Check no entries are selected");
+  checkAutoCompleteResults(results, ["name1"], "http://example.org", "initial");
+});
+
+add_task(async function https_setup() {
+  await setup(HTTPS_FORM_URL);
 });
 
 add_task(async function test_empty_first_entry() {
   // Make sure initial form is empty.
-  checkACForm("", "");
+  checkLoginForm(uname, "", pword, "");
   // Trigger autocomplete popup
   restoreForm();
   let popupState = await getPopupState();
@@ -109,10 +132,10 @@ add_task(async function test_empty_first_entry() {
   let index0Promise = notifySelectedIndex(0);
   synthesizeKey("KEY_ArrowDown");
   await index0Promise;
-  checkACForm("", ""); // value shouldn't update
+  checkLoginForm(uname, "", pword, ""); // value shouldn't update
   synthesizeKey("KEY_Enter");
   await promiseFormsProcessed();
-  checkACForm("name", "pass");
+  checkLoginForm(uname, "name", pword, "pass");
 });
 
 add_task(async function test_empty_second_entry() {
@@ -124,7 +147,7 @@ add_task(async function test_empty_second_entry() {
   synthesizeKey("KEY_ArrowDown"); // second
   synthesizeKey("KEY_Enter");
   await promiseFormsProcessed();
-  checkACForm("name1", "pass1");
+  checkLoginForm(uname, "name1", pword, "pass1");
 });
 
 add_task(async function test_search() {
@@ -141,7 +164,7 @@ add_task(async function test_search() {
   synthesizeKey("KEY_ArrowDown"); // first
   synthesizeKey("KEY_Enter");
   await promiseFormsProcessed();
-  checkACForm("name1", "pass1");
+  checkLoginForm(uname, "name1", pword, "pass1");
 
   let popupState = await getPopupState();
   is(popupState.open, false, "Check popup is now closed");
@@ -163,7 +186,7 @@ add_task(async function test_delete_first_entry() {
   // On Win/Linux, shift-backspace does not work, delete and shift-delete do.
   synthesizeKey("KEY_Delete", {shiftKey: true});
   await deletionPromise;
-  checkACForm("", "");
+  checkLoginForm(uname, "", pword, "");
 
   let results = await notifyMenuChanged(3, "name1");
 
@@ -191,11 +214,11 @@ add_task(async function test_delete_duplicate_entry() {
   // On Win/Linux, shift-backspace does not work, delete and shift-delete do.
   synthesizeKey("KEY_Delete", {shiftKey: true});
   await deletionPromise;
-  checkACForm("", "");
+  checkLoginForm(uname, "", pword, "");
 
-  is(LoginManager.countLogins("http://example.org", "http://example.org", null), 1,
+  is(await LoginManager.countLogins("http://example.org", "http://example.org", null), 1,
      "Check that the HTTP login remains");
-  is(LoginManager.countLogins("https://example.org", "https://example.org", null), 0,
+  is(await LoginManager.countLogins("https://example.org", "https://example.org", null), 0,
      "Check that the HTTPS login was deleted");
 
   // Two menu items should remain as the HTTPS login should have been deleted but

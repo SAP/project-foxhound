@@ -69,8 +69,6 @@ pref("ui.caretBlinkCount", 10);
 
 /* cache prefs */
 pref("browser.cache.disk.enable", true);
-pref("browser.cache.disk.capacity", 20480); // kilobytes
-pref("browser.cache.disk.max_entry_size", 4096); // kilobytes
 pref("browser.cache.disk.smart_size.enabled", true);
 
 pref("browser.cache.memory.enable", true);
@@ -83,7 +81,6 @@ pref("image.cache.size", 1048576); // bytes
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", true);
-pref("browser.cache.offline.enable", true);
 pref("browser.cache.offline.capacity", 5120); // kilobytes
 pref("offline-apps.quota.warn", 1024); // kilobytes
 
@@ -101,7 +98,6 @@ pref("network.protocol-handler.warn-external.vnd.youtube", false);
 
 /* http prefs */
 pref("network.http.keep-alive.timeout", 109);
-pref("network.http.max-connections", 20);
 pref("network.http.max-persistent-connections-per-server", 6);
 pref("network.http.max-persistent-connections-per-proxy", 20);
 
@@ -144,9 +140,6 @@ pref("urlclassifier.downloadAllowTable", "");
 pref("urlclassifier.downloadBlockTable", "");
 
 /* these should help performance */
-pref("mozilla.widget.force-24bpp", true);
-pref("mozilla.widget.use-buffer-pixmap", true);
-pref("mozilla.widget.disable-native-theme", true);
 pref("layout.reflow.synthMouseMove", false);
 pref("layout.css.report_errors", false);
 
@@ -178,7 +171,6 @@ pref("browser.formfill.enable", true);
 pref("layout.spellcheckDefault", 0);
 
 /* new html5 forms */
-pref("dom.forms.datetime", true);
 pref("dom.forms.datetime.others", true);
 
 /* extension manager and xpinstall */
@@ -193,12 +185,11 @@ pref("xpinstall.signatures.required", true);
 // constants in AddonManager.jsm for values to use here, and Bug 1405528 for a rationale).
 pref("extensions.autoDisableScopes", 15);
 
-pref("extensions.enabledScopes", 1);
+pref("extensions.enabledScopes", 5);
 pref("extensions.autoupdate.enabled", true);
 pref("extensions.autoupdate.interval", 86400);
 pref("extensions.update.enabled", true);
 pref("extensions.update.interval", 86400);
-pref("lightweightThemes.update.enabled", true);
 pref("extensions.dss.enabled", false);
 pref("extensions.ignoreMTimeChanges", false);
 pref("extensions.logging.enabled", false);
@@ -350,9 +341,6 @@ pref("privacy.item.sessions", true);
 pref("privacy.item.geolocation", true);
 pref("privacy.item.siteSettings", true);
 pref("privacy.item.syncAccount", true);
-
-// enable geo
-pref("geo.enabled", true);
 
 // content sink control -- controls responsiveness during page load
 // see https://bugzilla.mozilla.org/show_bug.cgi?id=481566#c9
@@ -528,6 +516,9 @@ pref("apz.second_tap_tolerance", "0.3");
 pref("apz.touch_move_tolerance", "0.03");
 pref("apz.touch_start_tolerance", "0.06");
 
+// Enable the Visual Viewport API
+pref("dom.visualviewport.enabled", true);
+
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
 pref("layers.low-precision-resolution", "0.25");
@@ -540,7 +531,7 @@ pref("layers.low-precision-opacity", "1.0");
 pref("layers.max-active", 20);
 
 // Use containerless scrolling on Fennec.
-pref("layout.scroll.root-frame-containers", 0);
+pref("layout.scroll.root-frame-containers", false);
 
 pref("notification.feature.enabled", true);
 pref("dom.webnotifications.enabled", true);
@@ -551,12 +542,10 @@ pref("browser.chrome.toolbar_tips", false);
 // don't allow meta-refresh when backgrounded
 pref("browser.meta_refresh_when_inactive.disabled", true);
 
-// prevent video elements from preloading too much data
-pref("media.preload.default", 1); // default to preload none
-pref("media.preload.auto", 2);    // preload metadata if preload=auto
-// On mobile we'll throttle the download once the readahead_limit is hit,
-// even if the download is slow. This is to preserve battery and data.
-pref("media.throttle-regardless-of-download-rate", true);
+// On mobile we throttle the download once the readahead_limit is hit
+// if we're using a cellular connection, even if the download is slow.
+// This is to preserve battery and data.
+pref("media.throttle-cellular-regardless-of-download-rate", true);
 
 // Number of video frames we buffer while decoding video.
 // On Android this is decided by a similar value which varies for
@@ -587,6 +576,9 @@ pref("media.webspeech.synth.enabled", true);
 pref("media.gmp-gmpopenh264.visible", true);
 pref("media.gmp-gmpopenh264.enabled", true);
 
+// Disable future downloads of OpenH264 on Android
+pref("media.gmp-gmpopenh264.autoupdate", false);
+
 // optimize images memory usage
 pref("image.downscale-during-decode.enabled", true);
 
@@ -598,7 +590,7 @@ pref("urlclassifier.downloadAllowTable", "");
 pref("urlclassifier.downloadBlockTable", "");
 
 // The Potentially Harmful Apps list replaces the malware one on Android.
-pref("urlclassifier.malwareTable", "goog-harmful-proto,goog-unwanted-proto,test-harmful-simple,test-malware-simple,test-unwanted-simple");
+pref("urlclassifier.malwareTable", "goog-harmful-proto,goog-unwanted-proto,moztest-harmful-simple,moztest-malware-simple,moztest-unwanted-simple");
 
 // True if you always want dump() to work
 //
@@ -799,11 +791,6 @@ pref("consoleservice.logcat", false);
 pref("consoleservice.logcat", true);
 #endif
 
-#ifndef RELEASE_OR_BETA
-// Enable VR on mobile, making it enable by default.
-pref("dom.vr.enabled", true);
-#endif
-
 pref("browser.tabs.showAudioPlayingIcon", true);
 
 pref("dom.serviceWorkers.enabled", true);
@@ -834,20 +821,13 @@ pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com
 // Token server used by Firefox Account-authenticated Sync.
 pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sync/1.5");
 
-#ifndef RELEASE_OR_BETA
-// Enable Presentation API on Nightly
-pref("dom.presentation.enabled", true);
-pref("dom.presentation.controller.enabled", true); // enable 1-UA mode
-pref("dom.presentation.receiver.enabled", true); // enable 1-UA mode
-#endif
-
 pref("dom.audiochannel.audioCompeting", true);
 pref("dom.audiochannel.mediaControl", true);
 pref("media.block-autoplay-until-in-foreground", false);
 
 // Space separated list of URLS that are allowed to send objects (instead of
 // only strings) through webchannels. This list is duplicated in browser/app/profile/firefox.js
-pref("webchannel.allowObject.urlWhitelist", "https://accounts.firefox.com https://content.cdn.mozilla.net https://input.mozilla.org https://support.mozilla.org https://install.mozilla.org");
+pref("webchannel.allowObject.urlWhitelist", "https://accounts.firefox.com https://content.cdn.mozilla.net https://support.mozilla.org https://install.mozilla.org");
 
 pref("media.openUnsupportedTypeWithExternalApp", true);
 
@@ -858,8 +838,14 @@ pref("media.navigator.permission.device", true);
 
 // Allow system add-on updates
 pref("extensions.systemAddon.update.url", "https://aus5.mozilla.org/update/3/SystemAddons/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
+pref("extensions.systemAddon.update.enabled", true);
 
 // E10s stuff. We don't support 'file' or 'priveleged' process types.
 pref("browser.tabs.remote.separateFileUriProcess", false);
 pref("browser.tabs.remote.allowLinkedWebInFileUriProcess", true);
 pref("browser.tabs.remote.separatePrivilegedContentProcess", false);
+pref("browser.tabs.remote.enforceRemoteTypeRestrictions", false);
+
+// Allow Web Authentication
+pref("security.webauth.webauthn_enable_android_fido2", true);
+pref("browser.tabs.remote.separatePrivilegedMozillaWebContentProcess", false);

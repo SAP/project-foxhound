@@ -12,23 +12,27 @@ const TEST_URI = "data:text/html;charset=utf-8,Web Console test for bug 595350";
 
 add_task(async function() {
   requestLongerTimeout(3);
+  // Bug 1518138: GC heuristics are broken for this test, so that the test
+  // ends up running out of memory. Try to work-around the problem by GCing
+  // before the test begins.
+  Cu.forceShrinkingGC();
 
   const win1 = window;
 
   info("Add test tabs in first window");
-  const tab1 = await addTab(TEST_URI, {window: win1});
-  const tab2 = await addTab(TEST_URI, {window: win1});
+  const tab1 = await addTab(TEST_URI, { window: win1 });
+  const tab2 = await addTab(TEST_URI, { window: win1 });
   info("Test tabs added in first window");
 
   info("Open a second window");
   const win2 = OpenBrowserWindow();
   await new Promise(r => {
-    win2.addEventListener("load", r, {capture: true, once: true});
+    win2.addEventListener("load", r, { capture: true, once: true });
   });
 
   info("Add test tabs in second window");
-  const tab3 = await addTab(TEST_URI, {window: win2});
-  const tab4 = await addTab(TEST_URI, {window: win2});
+  const tab3 = await addTab(TEST_URI, { window: win2 });
+  const tab4 = await addTab(TEST_URI, { window: win2 });
 
   info("Opening console in each test tab");
   const tabs = [tab1, tab2, tab3, tab4];

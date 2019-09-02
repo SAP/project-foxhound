@@ -4,10 +4,9 @@
 
 use api::BorderRadius;
 use api::units::*;
-use euclid::{Point2D, Rect, Size2D, TypedPoint2D, TypedRect, TypedSize2D, Vector2D};
+use euclid::{TypedPoint2D, TypedRect, TypedSize2D, Vector2D};
 use euclid::{TypedTransform2D, TypedTransform3D, TypedVector2D, TypedScale};
 use malloc_size_of::{MallocShallowSizeOf, MallocSizeOf, MallocSizeOfOps};
-use num_traits::Zero;
 use plane_split::{Clipper, Polygon};
 use std::{i32, f32, fmt, ptr};
 use std::borrow::Cow;
@@ -188,9 +187,9 @@ impl ScaleOffset {
         )
     }
 
-    // Produce a ScaleOffset that includes both self
-    // and other. The 'self' ScaleOffset is applied
-    // after other.
+    /// Produce a ScaleOffset that includes both self and other.
+    /// The 'self' ScaleOffset is applied after other.
+    /// This is equivalent to `TypedTransform3D::pre_mul`.
     pub fn accumulate(&self, other: &ScaleOffset) -> Self {
         ScaleOffset {
             scale: Vector2D::new(
@@ -276,6 +275,9 @@ pub trait MatrixHelpers<Src, Dst> {
     /// It ignores the Z coordinate and is usable for "flattened" transformations,
     /// since they are not generally inversible.
     fn inverse_project_2d_origin(&self) -> Option<TypedPoint2D<f32, Src>>;
+    /// Turn Z transformation into identity. This is useful when crossing "flat"
+    /// transform styled stacking contexts upon traversing the coordinate systems.
+    fn flatten_z_output(&mut self);
 }
 
 impl<Src, Dst> MatrixHelpers<Src, Dst> for TypedTransform3D<f32, Src, Dst> {
@@ -393,6 +395,13 @@ impl<Src, Dst> MatrixHelpers<Src, Dst> for TypedTransform3D<f32, Src, Dst> {
             None
         }
     }
+
+    fn flatten_z_output(&mut self) {
+        self.m13 = 0.0;
+        self.m23 = 0.0;
+        self.m33 = 1.0;
+        self.m43 = 0.0;
+    }
 }
 
 pub trait RectHelpers<U>
@@ -414,18 +423,6 @@ impl<U> RectHelpers<U> for TypedRect<f32, U> {
     fn is_well_formed_and_nonempty(&self) -> bool {
         self.size.width > 0.0 && self.size.height > 0.0
     }
-}
-
-// Don't use `euclid`'s `is_empty` because that has effectively has an "and" in the conditional
-// below instead of an "or".
-pub fn rect_is_empty<N: PartialEq + Zero, U>(rect: &TypedRect<N, U>) -> bool {
-    rect.size.width == Zero::zero() || rect.size.height == Zero::zero()
-}
-
-#[allow(dead_code)]
-#[inline]
-pub fn rect_from_points_f(x0: f32, y0: f32, x1: f32, y1: f32) -> Rect<f32> {
-    Rect::new(Point2D::new(x0, y0), Size2D::new(x1 - x0, y1 - y0))
 }
 
 pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
@@ -649,6 +646,18 @@ impl<Src, Dst> FastTransform<Src, Dst> {
         FastTransform::Offset(offset)
     }
 
+    pub fn with_scale_offset(scale_offset: ScaleOffset) -> Self {
+        if scale_offset.scale == Vector2D::new(1.0, 1.0) {
+            FastTransform::Offset(TypedVector2D::from_untyped(&scale_offset.offset))
+        } else {
+            FastTransform::Transform {
+                transform: scale_offset.to_transform(),
+                inverse: Some(scale_offset.inverse().to_transform()),
+                is_2d: true,
+            }
+        }
+    }
+
     #[inline(always)]
     pub fn with_transform(transform: TypedTransform3D<f32, Src, Dst>) -> Self {
         if transform.is_simple_2d_translation() {
@@ -659,27 +668,12 @@ impl<Src, Dst> FastTransform<Src, Dst> {
         FastTransform::Transform { transform, inverse, is_2d}
     }
 
-    pub fn kind(&self) -> TransformedRectKind {
-        match *self {
-            FastTransform::Offset(_) => TransformedRectKind::AxisAligned,
-            FastTransform::Transform { ref transform, .. } if transform.preserves_2d_axis_alignment() => TransformedRectKind::AxisAligned,
-            FastTransform::Transform { .. } => TransformedRectKind::Complex,
-        }
-    }
-
     pub fn to_transform(&self) -> Cow<TypedTransform3D<f32, Src, Dst>> {
         match *self {
             FastTransform::Offset(offset) => Cow::Owned(
                 TypedTransform3D::create_translation(offset.x, offset.y, 0.0)
             ),
             FastTransform::Transform { ref transform, .. } => Cow::Borrowed(transform),
-        }
-    }
-
-    pub fn is_invertible(&self) -> bool {
-        match *self {
-            FastTransform::Offset(..) => true,
-            FastTransform::Transform { ref inverse, .. } => inverse.is_some(),
         }
     }
 
@@ -696,24 +690,48 @@ impl<Src, Dst> FastTransform<Src, Dst> {
         }
     }
 
-    #[inline(always)]
-    pub fn pre_mul<NewSrc>(
-        &self,
-        other: &FastTransform<NewSrc, Src>
-    ) -> FastTransform<NewSrc, Dst> {
-        match (self, other) {
-            (&FastTransform::Offset(ref offset), &FastTransform::Offset(ref other_offset)) => {
-                let offset = TypedVector2D::from_untyped(&offset.to_untyped());
-                FastTransform::Offset(offset + *other_offset)
+    pub fn post_mul<NewDst>(&self, other: &FastTransform<Dst, NewDst>) -> FastTransform<Src, NewDst> {
+        match *self {
+            FastTransform::Offset(offset) => match *other {
+                FastTransform::Offset(other_offset) => {
+                    FastTransform::Offset(offset + other_offset * TypedScale::<_, _, Src>::new(1.0))
+                }
+                FastTransform::Transform { transform: ref other_transform, .. } => {
+                    FastTransform::with_transform(
+                        other_transform
+                            .with_source::<Src>()
+                            .pre_translate(offset.to_3d())
+                    )
+                }
             }
-            _ => {
-                let new_transform = self.to_transform().pre_mul(&other.to_transform());
-                FastTransform::with_transform(new_transform)
+            FastTransform::Transform { ref transform, ref inverse, is_2d } => match *other {
+                FastTransform::Offset(other_offset) => {
+                    FastTransform::with_transform(
+                        transform
+                            .post_translate(other_offset.to_3d())
+                            .with_destination::<NewDst>()
+                    )
+                }
+                FastTransform::Transform { transform: ref other_transform, inverse: ref other_inverse, is_2d: other_is_2d } => {
+                    FastTransform::Transform {
+                        transform: transform.post_mul(other_transform),
+                        inverse: inverse.as_ref().and_then(|self_inv|
+                            other_inverse.as_ref().map(|other_inv| self_inv.pre_mul(other_inv))
+                        ),
+                        is_2d: is_2d & other_is_2d,
+                    }
+                }
             }
         }
     }
 
-    #[inline(always)]
+    pub fn pre_mul<NewSrc>(
+        &self,
+        other: &FastTransform<NewSrc, Src>
+    ) -> FastTransform<NewSrc, Dst> {
+        other.post_mul(self)
+    }
+
     pub fn pre_translate(&self, other_offset: &TypedVector2D<f32, Src>) -> Self {
         match *self {
             FastTransform::Offset(ref offset) =>
@@ -723,11 +741,15 @@ impl<Src, Dst> FastTransform<Src, Dst> {
         }
     }
 
-    #[inline(always)]
-    pub fn project_to_2d(&self) -> Self {
+    pub fn post_translate(&self, other_offset: &TypedVector2D<f32, Dst>) -> Self {
         match *self {
-            FastTransform::Offset(..) => self.clone(),
-            FastTransform::Transform { ref transform, .. } => FastTransform::with_transform(transform.project_to_2d()),
+            FastTransform::Offset(ref offset) => {
+                FastTransform::Offset(*offset + *other_offset * TypedScale::<_, _, Src>::new(1.0))
+            }
+            FastTransform::Transform { ref transform, .. } => {
+                let transform = transform.post_translate(other_offset.to_3d());
+                FastTransform::with_transform(transform)
+            }
         }
     }
 
@@ -750,31 +772,6 @@ impl<Src, Dst> FastTransform<Src, Dst> {
                 Some(TypedPoint2D::from_untyped(&new_point.to_untyped()))
             }
             FastTransform::Transform { ref transform, .. } => transform.transform_point2d(point),
-        }
-    }
-
-    pub fn unapply(&self, rect: &TypedRect<f32, Dst>) -> Option<TypedRect<f32, Src>> {
-        match *self {
-            FastTransform::Offset(offset) =>
-                Some(TypedRect::from_untyped(&rect.to_untyped().translate(&-offset.to_untyped()))),
-            FastTransform::Transform { inverse: Some(ref inverse), is_2d: true, .. }  =>
-                inverse.transform_rect(rect),
-            FastTransform::Transform { ref transform, is_2d: false, .. } =>
-                transform.inverse_rect_footprint(rect),
-            FastTransform::Transform { inverse: None, .. }  => None,
-        }
-    }
-
-    pub fn post_translate(&self, new_offset: TypedVector2D<f32, Dst>) -> Self {
-        match *self {
-            FastTransform::Offset(offset) => {
-                let offset = offset.to_untyped() + new_offset.to_untyped();
-                FastTransform::Offset(TypedVector2D::from_untyped(&offset))
-            }
-            FastTransform::Transform { ref transform, .. } => {
-                let transform = transform.post_translate(new_offset.to_3d());
-                FastTransform::with_transform(transform)
-            }
         }
     }
 
@@ -809,7 +806,6 @@ impl<Src, Dst> From<TypedVector2D<f32, Src>> for FastTransform<Src, Dst> {
 
 pub type LayoutFastTransform = FastTransform<LayoutPixel, LayoutPixel>;
 pub type LayoutToWorldFastTransform = FastTransform<LayoutPixel, WorldPixel>;
-pub type WorldToLayoutFastTransform = FastTransform<WorldPixel, LayoutPixel>;
 
 pub fn project_rect<F, T>(
     transform: &TypedTransform3D<f32, F, T>,
@@ -1062,6 +1058,15 @@ impl<T> ComparableVec<T> where T: PartialEq + Clone + fmt::Debug {
 
         // Increment where the next item will be pushed.
         self.current_index += 1;
+    }
+
+    #[allow(dead_code)]
+    pub fn dump(&self, tag: &str) {
+        println!("{}", tag);
+        let items = self.items();
+        for (i, item) in items.iter().enumerate() {
+            println!("{}/{}: {:?}", i, items.len(), item);
+        }
     }
 
     /// Return true if the contents of the vec are the same as the previous time.

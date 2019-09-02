@@ -18,29 +18,29 @@
 
 class gfxGDIFont : public gfxFont {
  public:
-  gfxGDIFont(GDIFontEntry *aFontEntry, const gfxFontStyle *aFontStyle,
+  gfxGDIFont(GDIFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
              AntialiasOption anAAOption = kAntialiasDefault);
 
   virtual ~gfxGDIFont();
 
   HFONT GetHFONT() { return mFont; }
 
-  cairo_font_face_t *CairoFontFace() { return mFontFace; }
+  cairo_font_face_t* CairoFontFace() { return mFontFace; }
 
   /* overrides for the pure virtual methods in gfxFont */
-  virtual uint32_t GetSpaceGlyph() override;
+  uint32_t GetSpaceGlyph() override;
 
-  virtual bool SetupCairoFont(DrawTarget *aDrawTarget) override;
+  bool SetupCairoFont(DrawTarget* aDrawTarget) override;
 
-  virtual already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
-      DrawTarget *aTarget) override;
+  already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
+      DrawTarget* aTarget) override;
 
   /* override Measure to add padding for antialiasing */
-  virtual RunMetrics Measure(
-      const gfxTextRun *aTextRun, uint32_t aStart, uint32_t aEnd,
-      BoundingBoxType aBoundingBoxType,
-      DrawTarget *aDrawTargetForTightBoundingBox, Spacing *aSpacing,
-      mozilla::gfx::ShapedTextFlags aOrientation) override;
+  RunMetrics Measure(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
+                     BoundingBoxType aBoundingBoxType,
+                     DrawTarget* aDrawTargetForTightBoundingBox,
+                     Spacing* aSpacing,
+                     mozilla::gfx::ShapedTextFlags aOrientation) override;
 
   /* required for MathML to suppress effects of ClearType "padding" */
   mozilla::UniquePtr<gfxFont> CopyWithAntialiasOption(
@@ -48,32 +48,30 @@ class gfxGDIFont : public gfxFont {
 
   // If the font has a cmap table, we handle it purely with harfbuzz;
   // but if not (e.g. .fon fonts), we'll use a GDI callback to get glyphs.
-  virtual bool ProvidesGetGlyph() const override {
-    return !mFontEntry->HasCmapTable();
-  }
+  bool ProvidesGetGlyph() const override { return !mFontEntry->HasCmapTable(); }
 
-  virtual uint32_t GetGlyph(uint32_t aUnicode, uint32_t aVarSelector) override;
+  uint32_t GetGlyph(uint32_t aUnicode, uint32_t aVarSelector) override;
 
-  virtual bool ProvidesGlyphWidths() const override { return true; }
+  bool ProvidesGlyphWidths() const override { return true; }
 
   // get hinted glyph width in pixels as 16.16 fixed-point value
-  virtual int32_t GetGlyphWidth(uint16_t aGID) override;
+  int32_t GetGlyphWidth(uint16_t aGID) override;
 
-  virtual void AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,
-                                      FontCacheSizes *aSizes) const;
-  virtual void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
-                                      FontCacheSizes *aSizes) const;
+  void AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,
+                              FontCacheSizes* aSizes) const;
+  void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
+                              FontCacheSizes* aSizes) const;
 
-  virtual FontType GetType() const override { return FONT_TYPE_GDI; }
+  FontType GetType() const override { return FONT_TYPE_GDI; }
 
  protected:
-  virtual const Metrics &GetHorizontalMetrics() override;
+  const Metrics& GetHorizontalMetrics() override;
 
   /* override to ensure the cairo font is set up properly */
-  bool ShapeText(DrawTarget *aDrawTarget, const char16_t *aText,
+  bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                  uint32_t aOffset, uint32_t aLength, Script aScript,
                  bool aVertical, RoundingFlags aRounding,
-                 gfxShapedText *aShapedText) override;
+                 gfxShapedText* aShapedText) override;
 
   void Initialize();  // creates metrics and Cairo fonts
 
@@ -81,12 +79,12 @@ class gfxGDIFont : public gfxFont {
   // (Synthetic italic is *not* handled here, because GDI may not reliably
   // use the face we expect if we tweak the lfItalic field, and because we
   // have generic support for this in gfxFont::Draw instead.)
-  void FillLogFont(LOGFONTW &aLogFont, gfxFloat aSize);
+  void FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize);
 
   HFONT mFont;
-  cairo_font_face_t *mFontFace;
+  cairo_font_face_t* mFontFace;
 
-  Metrics *mMetrics;
+  Metrics* mMetrics;
   uint32_t mSpaceGlyph;
 
   bool mNeedsSyntheticBold;

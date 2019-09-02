@@ -59,6 +59,7 @@ class DeclarationBlock final {
    */
   void AssertMutable() const {
     MOZ_ASSERT(IsMutable(), "someone forgot to call EnsureMutable");
+    MOZ_ASSERT(!OwnerIsReadOnly(), "User Agent sheets shouldn't be modified");
   }
 
   /**
@@ -85,6 +86,8 @@ class DeclarationBlock final {
    * Copy |this|, if necessary to ensure that it can be modified.
    */
   already_AddRefed<DeclarationBlock> EnsureMutable() {
+    MOZ_ASSERT(!OwnerIsReadOnly());
+
     if (!IsDirty()) {
       // In stylo, the old DeclarationBlock is stored in element's rule node
       // tree directly, to avoid new values replacing the DeclarationBlock in
@@ -136,6 +139,10 @@ class DeclarationBlock final {
     return c.mHTMLCSSStyleSheet;
   }
 
+  bool IsReadOnly() const;
+
+  size_t SizeofIncludingThis(MallocSizeOf);
+
   static already_AddRefed<DeclarationBlock> FromCssText(
       const nsAString& aCssText, URLExtraData* aExtraData,
       nsCompatibility aMode, css::Loader* aLoader);
@@ -148,15 +155,16 @@ class DeclarationBlock final {
     return reinterpret_cast<RawServoDeclarationBlock* const*>(&mRaw);
   }
 
-  const RawServoDeclarationBlockStrong* RefRawStrong() const {
+  const StyleStrong<RawServoDeclarationBlock>* RefRawStrong() const {
     static_assert(sizeof(RefPtr<RawServoDeclarationBlock>) ==
                       sizeof(RawServoDeclarationBlock*),
                   "RefPtr should just be a pointer");
     static_assert(
         sizeof(RefPtr<RawServoDeclarationBlock>) ==
-            sizeof(RawServoDeclarationBlockStrong),
+            sizeof(StyleStrong<RawServoDeclarationBlock>),
         "RawServoDeclarationBlockStrong should be the same as RefPtr");
-    return reinterpret_cast<const RawServoDeclarationBlockStrong*>(&mRaw);
+    return reinterpret_cast<const StyleStrong<RawServoDeclarationBlock>*>(
+        &mRaw);
   }
 
   void ToString(nsAString& aResult) const {
@@ -201,6 +209,9 @@ class DeclarationBlock final {
 
  private:
   ~DeclarationBlock() = default;
+
+  bool OwnerIsReadOnly() const;
+
   union {
     // We only ever have one of these since we have an
     // nsHTMLCSSStyleSheet only for style attributes, and style

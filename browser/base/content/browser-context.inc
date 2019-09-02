@@ -175,13 +175,11 @@
                 accesskey="&leaveDOMFullScreen.accesskey;"
                 label="&leaveDOMFullScreen.label;"
                 oncommand="gContextMenu.leaveDOMFullScreen();"/>
-#ifdef NIGHTLY_BUILD
-      <!-- Don't forget to add a properly localized label and access key
-           before letting this ride up to beta. -->
       <menuitem id="context-video-pictureinpicture"
-                label="Picture in Picture"
+                accesskey="&pictureInPicture.accesskey;"
+                label="&pictureInPicture.label;"
+                type="checkbox"
                 oncommand="gContextMenu.mediaCommand('pictureinpicture');"/>
-#endif
       <menuseparator id="context-media-sep-commands"/>
       <menuitem id="context-reloadimage"
                 label="&reloadImageCmd.label;"
@@ -322,7 +320,7 @@
                 accesskey="&keywordfield.accesskey;"
                 oncommand="AddKeywordForSearchField();"/>
       <menuitem id="context-searchselect"
-                oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms, this.principal);"/>
+                oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms, this.principal, this.csp);"/>
       <menuseparator id="context-sep-sendlinktodevice" class="sync-ui-item"
                      hidden="true"/>
       <menu id="context-sendlinktodevice"
@@ -376,6 +374,11 @@
                     label="&viewFrameInfoCmd.label;"
                     accesskey="&viewFrameInfoCmd.accesskey;"
                     oncommand="gContextMenu.viewFrameInfo();"/>
+#ifdef NIGHTLY_BUILD
+          <menuitem id="context-frameOsPid"
+                    label="PID: Unknown"
+                    disabled="true"/>
+#endif
         </menupopup>
       </menu>
       <menuitem id="context-viewpartialsource-selection"
@@ -437,6 +440,11 @@
                     label="&noLoginSuggestions.label;"
                     disabled="true"
                     hidden="true"/>
+          <menuseparator id="generated-password-separator"/>
+          <menuitem id="fill-login-generated-password"
+                    label="&fillSuggestedPassword.label;"
+                    hidden="true"
+                    oncommand="gContextMenu.fillGeneratedPassword();"/>
           <menuseparator id="saved-logins-separator"/>
           <menuitem id="fill-login-saved-passwords"
                     label="&viewSavedLogins.label;"

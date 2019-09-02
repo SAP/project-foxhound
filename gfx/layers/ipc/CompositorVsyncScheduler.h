@@ -40,9 +40,8 @@ class CompositorVsyncScheduler {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorVsyncScheduler)
 
  public:
-  explicit CompositorVsyncScheduler(
-      CompositorVsyncSchedulerOwner* aVsyncSchedulerOwner,
-      widget::CompositorWidget* aWidget);
+  CompositorVsyncScheduler(CompositorVsyncSchedulerOwner* aVsyncSchedulerOwner,
+                           widget::CompositorWidget* aWidget);
 
   /**
    * Notify this class of a vsync. This will trigger a composite if one is
@@ -121,6 +120,11 @@ class CompositorVsyncScheduler {
   // such a task already queued. Can be called from any thread.
   void PostVRTask(TimeStamp aTimestamp);
 
+  /**
+   * Cancel any VR task that has been scheduled but hasn't run yet.
+   */
+  void CancelCurrentVRTask();
+
   // This gets run at vsync time and "does" a composite (which really means
   // update internal state and call the owner to do the composite).
   void Composite(VsyncId aId, TimeStamp aVsyncTimestamp);
@@ -133,7 +137,7 @@ class CompositorVsyncScheduler {
   class Observer final : public VsyncObserver {
    public:
     explicit Observer(CompositorVsyncScheduler* aOwner);
-    virtual bool NotifyVsync(const VsyncEvent& aVsync) override;
+    bool NotifyVsync(const VsyncEvent& aVsync) override;
     void Destroy();
 
    private:
@@ -160,7 +164,7 @@ class CompositorVsyncScheduler {
   RefPtr<CancelableRunnable> mCurrentCompositeTask;
 
   mozilla::Monitor mCurrentVRTaskMonitor;
-  RefPtr<Runnable> mCurrentVRTask;
+  RefPtr<CancelableRunnable> mCurrentVRTask;
 };
 
 }  // namespace layers

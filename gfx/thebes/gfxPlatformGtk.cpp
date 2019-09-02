@@ -18,11 +18,11 @@
 #include "gfxUserFontSet.h"
 #include "gfxUtils.h"
 #include "gfxFT2FontBase.h"
-#include "gfxPrefs.h"
 #include "gfxTextRun.h"
 #include "VsyncSource.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/StaticPrefs.h"
 #include "base/task.h"
 #include "base/thread.h"
 #include "base/message_loop.h"
@@ -119,6 +119,17 @@ void gfxPlatformGtk::FlushContentDrawing() {
   if (gfxVars::UseXRender()) {
     XFlush(DefaultXDisplay());
   }
+}
+
+void gfxPlatformGtk::InitPlatformGPUProcessPrefs() {
+#ifdef MOZ_WAYLAND
+  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+    FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
+    gpuProc.ForceDisable(FeatureStatus::Blocked,
+                         "Wayland does not work in the GPU process",
+                         NS_LITERAL_CSTRING("FEATURE_FAILURE_WAYLAND"));
+  }
+#endif
 }
 
 already_AddRefed<gfxASurface> gfxPlatformGtk::CreateOffscreenSurface(
@@ -291,7 +302,7 @@ double gfxPlatformGtk::GetFontScaleFactor() {
 
 bool gfxPlatformGtk::UseImageOffscreenSurfaces() {
   return GetDefaultContentBackend() != mozilla::gfx::BackendType::CAIRO ||
-         gfxPrefs::UseImageOffscreenSurfaces();
+         StaticPrefs::layers_use_image_offscreen_surfaces();
 }
 
 gfxImageFormat gfxPlatformGtk::GetOffscreenFormat() {
@@ -329,9 +340,7 @@ uint32_t gfxPlatformGtk::MaxGenericSubstitions() {
   return uint32_t(mMaxGenericSubstitutions);
 }
 
-bool gfxPlatformGtk::AccelerateLayersByDefault() {
-  return gfxPrefs::WebRenderAll();
-}
+bool gfxPlatformGtk::AccelerateLayersByDefault() { return true; }
 
 void gfxPlatformGtk::GetPlatformCMSOutputProfile(void*& mem, size_t& size) {
   mem = nullptr;
@@ -362,7 +371,7 @@ void gfxPlatformGtk::GetPlatformCMSOutputProfile(void*& mem, size_t& size) {
   if (iccAtom) {
     // read once to get size, once for the data
     if (Success == XGetWindowProperty(dpy, root, iccAtom, 0,
-                                      INT_MAX /* length */, False,
+                                      INT_MAX /* length */, X11False,
                                       AnyPropertyType, &retAtom, &retFormat,
                                       &retLength, &retAfter, &retProperty)) {
       if (retLength > 0) {
@@ -387,7 +396,7 @@ void gfxPlatformGtk::GetPlatformCMSOutputProfile(void*& mem, size_t& size) {
 
   edidAtom = XInternAtom(dpy, EDID1_ATOM_NAME, TRUE);
   if (edidAtom) {
-    if (Success == XGetWindowProperty(dpy, root, edidAtom, 0, 32, False,
+    if (Success == XGetWindowProperty(dpy, root, edidAtom, 0, 32, X11False,
                                       AnyPropertyType, &retAtom, &retFormat,
                                       &retLength, &retAfter, &retProperty)) {
       double gamma;
@@ -619,7 +628,7 @@ class GtkVsyncSource final : public VsyncSource {
     }
 
    private:
-    virtual ~GLXDisplay() {}
+    virtual ~GLXDisplay() = default;
 
     void RunVsync() {
       MOZ_ASSERT(!NS_IsMainThread());

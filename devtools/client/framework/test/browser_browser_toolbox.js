@@ -4,27 +4,16 @@
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = scopedCuImport("resource://testing-common/PromiseTestUtils.jsm");
+const { PromiseTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromiseTestUtils.jsm"
+);
 PromiseTestUtils.whitelistRejectionsGlobally(/File closed/);
 
 // On debug test slave, it takes about 50s to run the test.
 requestLongerTimeout(4);
 
 add_task(async function() {
-  await new Promise(done => {
-    const options = {"set": [
-      ["devtools.debugger.prompt-connection", false],
-      ["devtools.debugger.remote-enabled", true],
-      ["devtools.chrome.enabled", true],
-      // Test-only pref to allow passing `testScript` argument to the browser
-      // toolbox
-      ["devtools.browser-toolbox.allow-unsafe-script", true],
-      // On debug test slave, it takes more than the default time (20s)
-      // to get a initialized console
-      ["devtools.debugger.remote-timeout", 120000],
-    ]};
-    SpecialPowers.pushPrefEnv(options, done);
-  });
+  await setupPreferencesForBrowserToolbox();
 
   // Wait for a notification sent by a script evaluated in the webconsole
   // of the browser toolbox.
@@ -37,16 +26,21 @@ add_task(async function() {
 
   // Be careful, this JS function is going to be executed in the addon toolbox,
   // which lives in another process. So do not try to use any scope variable!
-  const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
   /* global toolbox */
   const testScript = function() {
-    toolbox.selectTool("webconsole")
+    toolbox
+      .selectTool("webconsole")
       .then(console => {
         // This is for checking Browser Toolbox doesn't have a close button.
         const hasCloseButton = !!toolbox.doc.getElementById("toolbox-close");
         const { jsterm } = console.hud;
-        const js = "Services.obs.notifyObservers(null, 'browser-toolbox-console-works', " +
-            hasCloseButton + ");";
+        const js =
+          "Services.obs.notifyObservers(null, 'browser-toolbox-console-works', " +
+          hasCloseButton +
+          ");";
         return jsterm.execute(js);
       })
       .then(() => toolbox.destroy());
@@ -56,8 +50,14 @@ add_task(async function() {
     env.set("MOZ_TOOLBOX_TEST_SCRIPT", "");
   });
 
-  const { BrowserToolboxProcess } = ChromeUtils.import("resource://devtools/client/framework/ToolboxProcess.jsm");
-  is(BrowserToolboxProcess.getBrowserToolboxSessionState(), false, "No session state initially");
+  const { BrowserToolboxProcess } = ChromeUtils.import(
+    "resource://devtools/client/framework/ToolboxProcess.jsm"
+  );
+  is(
+    BrowserToolboxProcess.getBrowserToolboxSessionState(),
+    false,
+    "No session state initially"
+  );
 
   let closePromise;
   await new Promise(onRun => {
@@ -67,7 +67,11 @@ add_task(async function() {
     });
   });
   ok(true, "Browser toolbox started\n");
-  is(BrowserToolboxProcess.getBrowserToolboxSessionState(), true, "Has session state");
+  is(
+    BrowserToolboxProcess.getBrowserToolboxSessionState(),
+    true,
+    "Has session state"
+  );
 
   const hasCloseButton = await onCustomMessage;
   ok(true, "Received the custom message");
@@ -75,5 +79,9 @@ add_task(async function() {
 
   await closePromise;
   ok(true, "Browser toolbox process just closed");
-  is(BrowserToolboxProcess.getBrowserToolboxSessionState(), false, "No session state after closing");
+  is(
+    BrowserToolboxProcess.getBrowserToolboxSessionState(),
+    false,
+    "No session state after closing"
+  );
 });

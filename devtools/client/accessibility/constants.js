@@ -3,6 +3,34 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+const {
+  accessibility: {
+    AUDIT_TYPE,
+    ISSUE_TYPE: {
+      [AUDIT_TYPE.TEXT_LABEL]: {
+        AREA_NO_NAME_FROM_ALT,
+        DIALOG_NO_NAME,
+        DOCUMENT_NO_TITLE,
+        EMBED_NO_NAME,
+        FIGURE_NO_NAME,
+        FORM_FIELDSET_NO_NAME,
+        FORM_FIELDSET_NO_NAME_FROM_LEGEND,
+        FORM_NO_NAME,
+        FORM_NO_VISIBLE_NAME,
+        FORM_OPTGROUP_NO_NAME_FROM_LABEL,
+        FRAME_NO_NAME,
+        HEADING_NO_CONTENT,
+        HEADING_NO_NAME,
+        IFRAME_NO_NAME_FROM_TITLE,
+        IMAGE_NO_NAME,
+        INTERACTIVE_NO_NAME,
+        MATHML_GLYPH_NO_NAME,
+        TOOLBAR_NO_NAME,
+      },
+    },
+  },
+} = require("devtools/shared/constants");
+
 // Used in accessible component for properties tree rendering.
 exports.TREE_ROW_HEIGHT = 21;
 
@@ -29,6 +57,17 @@ exports.ENABLE = "ENABLE";
 exports.DISABLE = "DISABLE";
 exports.UPDATE_CAN_BE_DISABLED = "UPDATE_CAN_BE_DISABLED";
 exports.UPDATE_CAN_BE_ENABLED = "UPDATE_CAN_BE_ENABLED";
+exports.FILTER_TOGGLE = "FILTER_TOGGLE";
+exports.AUDIT = "AUDIT";
+exports.AUDITING = "AUDITING";
+exports.AUDIT_PROGRESS = "AUDIT_PROGRESS";
+
+// List of filters for accessibility checks.
+exports.FILTERS = {
+  ALL: "ALL",
+  [AUDIT_TYPE.CONTRAST]: "CONTRAST",
+  [AUDIT_TYPE.TEXT_LABEL]: "TEXT_LABEL",
+};
 
 // Ordered accessible properties to be displayed by the accessible component.
 exports.ORDERED_PROPS = [
@@ -62,8 +101,10 @@ exports.ACCESSIBLE_EVENTS = [
 ];
 
 // Telemetry name constants.
-exports.A11Y_SERVICE_DURATION = "DEVTOOLS_ACCESSIBILITY_SERVICE_TIME_ACTIVE_SECONDS";
-exports.A11Y_SERVICE_ENABLED_COUNT = "devtools.accessibility.service_enabled_count";
+exports.A11Y_SERVICE_DURATION =
+  "DEVTOOLS_ACCESSIBILITY_SERVICE_TIME_ACTIVE_SECONDS";
+exports.A11Y_SERVICE_ENABLED_COUNT =
+  "devtools.accessibility.service_enabled_count";
 
 // URL constants
 exports.A11Y_LEARN_MORE_LINK =
@@ -71,3 +112,39 @@ exports.A11Y_LEARN_MORE_LINK =
 exports.A11Y_CONTRAST_LEARN_MORE_LINK =
   "https://developer.mozilla.org/docs/Web/Accessibility/Understanding_WCAG/Perceivable/" +
   "Color_contrast?utm_source=devtools&utm_medium=a11y-panel-checks-color-contrast";
+
+const A11Y_TEXT_LABEL_LINK_BASE =
+  "https://developer.mozilla.org/docs/Web/Accessibility/Understanding_WCAG/Text_labels_and_names" +
+  "?utm_source=devtools&utm_medium=a11y-panel-checks-text-label";
+
+const A11Y_TEXT_LABEL_LINK_IDS = {
+  [AREA_NO_NAME_FROM_ALT]:
+    "Use_alt_attribute_to_label_area_elements_that_have_the_href_attribute",
+  [DIALOG_NO_NAME]: "Dialogs_should_be_labeled",
+  [DOCUMENT_NO_TITLE]: "Documents_must_have_a_title",
+  [EMBED_NO_NAME]: "Embedded_content_must_be_labeled",
+  [FIGURE_NO_NAME]: "Figures_with_optional_captions_should_be_labeled",
+  [FORM_FIELDSET_NO_NAME]: "Fieldset_elements_must_be_labeled",
+  [FORM_FIELDSET_NO_NAME_FROM_LEGEND]: "Use_a_legend_to_label_a_fieldset",
+  [FORM_NO_NAME]: "Form_elements_must_be_labeled",
+  [FORM_NO_VISIBLE_NAME]: "Form_elements_should_have_a_visible_text_label",
+  [FORM_OPTGROUP_NO_NAME_FROM_LABEL]:
+    "Use_label_attribute_on_optgroup_elements",
+  [FRAME_NO_NAME]: "Frame_elements_must_be_labeled",
+  [HEADING_NO_NAME]: "Headings_must_be_labeled",
+  [HEADING_NO_CONTENT]: "Headings_should_have_visible_text_content",
+  [IFRAME_NO_NAME_FROM_TITLE]: "Use_title_attribute_to_describe_iframe_content",
+  [IMAGE_NO_NAME]: "Content_with_images_must_be_labeled",
+  [INTERACTIVE_NO_NAME]: "Interactive_elements_must_be_labeled",
+  [MATHML_GLYPH_NO_NAME]: "Use_alt_attribute_to_label_mglyph_elements",
+  [TOOLBAR_NO_NAME]:
+    "Toolbars_must_be_labeled_when_there_is_more_than_one_toolbar",
+};
+
+const A11Y_TEXT_LABEL_LINKS = {};
+for (const key in A11Y_TEXT_LABEL_LINK_IDS) {
+  A11Y_TEXT_LABEL_LINKS[key] = `${A11Y_TEXT_LABEL_LINK_BASE}#${
+    A11Y_TEXT_LABEL_LINK_IDS[key]
+  }`;
+}
+exports.A11Y_TEXT_LABEL_LINKS = A11Y_TEXT_LABEL_LINKS;

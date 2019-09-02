@@ -5,12 +5,13 @@
 %endif
 
 /* Hide all conditional elements by default. */
-:-moz-any([when-connection],[when-mixedcontent],[when-ciphers],[when-loginforms]) {
+:-moz-any([when-connection],[when-customroot],[when-mixedcontent],[when-ciphers],[when-loginforms]) {
   display: none;
 }
 
-#identity-popup {
-  --identity-popup-width: 33rem;
+#identity-popup,
+#protections-popup {
+  --popup-width: 33rem;
 }
 
 /* This is used by screenshots tests to hide intermittently different
@@ -20,6 +21,7 @@
 }
 
 /* Show the right elements for the right connection states. */
+#identity-popup[customroot=true] [when-customroot=true],
 #identity-popup[connection=not-secure] [when-connection~=not-secure],
 #identity-popup[connection=secure-cert-user-overridden] [when-connection~=secure-cert-user-overridden],
 #identity-popup[connection=secure-ev] [when-connection~=secure-ev],
@@ -63,7 +65,8 @@
   display: none !important;
 }
 
-#identity-popup > .panel-arrowcontainer > .panel-arrowcontent {
+#identity-popup > .panel-arrowcontainer > .panel-arrowcontent,
+#protections-popup > .panel-arrowcontainer > .panel-arrowcontent {
   padding: 0;
   /* Set default fill for icons in the identity popup.
      Individual icons can override this. */
@@ -72,8 +75,22 @@
 }
 
 #identity-popup-mainView {
-  min-width: var(--identity-popup-width);
-  max-width: var(--identity-popup-width);
+  min-width: var(--popup-width);
+  max-width: var(--popup-width);
+}
+
+#protections-popup-mainView {
+  min-width: var(--popup-width);
+  max-width: var(--popup-width);
+}
+
+#protections-popup[toast] #protections-popup-mainView > :not(#protections-popup-mainView-panel-header),
+#protections-popup[toast] #protections-popup-main-header-label {
+  display: none;
+}
+
+#protections-popup[toast] #protections-popup-mainView-panel-header {
+  min-height: 30px;
 }
 
 .identity-popup-section {
@@ -167,9 +184,12 @@
 .identity-popup-cookiesView-list-header,
 .identity-popup-content-blocking-list-item > label,
 #identity-popup-mainView-panel-header > label,
+#protections-popup-mainView-panel-header > label,
+#protections-popup-mainView-panel-header > description,
 #identity-popup-trackersView > .panel-header,
 #identity-popup-securityView > .panel-header,
 #identity-popup-breakageReportView > .panel-header,
+#protections-popup-sendReportView > .panel-header,
 #identity-popup-content-blocking-report-breakage,
 .identity-popup-content-blocking-category-label,
 .identity-popup-content-blocking-category-state-label,
@@ -179,26 +199,53 @@
 #identity-popup-security-descriptions > description,
 #identity-popup-securityView-body > description,
 #identity-popup-permissions-content > description,
-#identity-popup-content-blocking-content > description {
+#identity-popup-content-blocking-content > description,
+.protections-popup-settings-label,
+#protections-popup-footer > description,
+#protections-popup-footer > label {
   font-size: 110%;
   margin: 0;
 }
 
-#identity-popup-mainView-panel-header {
+#identity-popup-mainView-panel-header,
+#protections-popup-mainView-panel-header,
+#protections-popup-siteNotWorkingView-footer {
   padding: 4px 1em;
   min-height: 40px;
   -moz-box-pack: center;
   -moz-box-align: center;
 }
 
-#identity-popup-mainView-panel-header-span {
+#protections-popup > .panel-arrowcontainer > .panel-arrowbox > .panel-arrow {
+  fill: rgb(100, 70, 228);
+}
+
+#protections-popup > .panel-arrowcontainer > .panel-arrowbox > .panel-arrow:-moz-locale-dir(rtl) {
+  fill: rgb(18, 90, 223);
+}
+
+#protections-popup-mainView-panel-header {
+  color: white;
+  background: linear-gradient(45deg, rgb(117, 67, 229), rgb(3, 96, 223));
+}
+
+#identity-popup-mainView-panel-header-span,
+#protections-popup-mainView-panel-header-span,
+#protections-popup-toast-panel-tp-on-desc,
+#protections-popup-toast-panel-tp-off-desc {
   display: inline-block;
   font-weight: 600;
   text-align: center;
   overflow-wrap: break-word;
   /* This is needed for the overflow-wrap to work correctly.
    * 33em is the panel width, panel-header has 1em padding on each side. */
-  max-width: calc(var(--identity-popup-width) - 2em);
+  max-width: calc(var(--popup-width) - 2em);
+}
+
+#protections-popup-mainView-panel-header-span,
+#protections-popup-toast-panel-tp-on-desc,
+#protections-popup-toast-panel-tp-off-desc {
+  max-width: calc(var(--popup-width) - 2em);
 }
 
 #identity-popup-permissions-content > description,
@@ -221,7 +268,7 @@
   /* This is needed for the overflow-wrap to work correctly.
    * 1em + 2em + 24px is .identity-popup-security-content padding
    * 33em is the panel width */
-  max-width: calc(var(--identity-popup-width) - 3rem - 24px);
+  max-width: calc(var(--popup-width) - 3rem - 24px);
 }
 
 .identity-popup-warning-gray {
@@ -329,29 +376,41 @@ description#identity-popup-content-verifier,
 
 /* CONTENT BLOCKING / TRACKING PROTECTION */
 
-#identity-popup-breakageReportView-footer {
+#identity-popup-breakageReportView-footer,
+#protections-popup-sendReportView-footer {
   display: flex;
 }
 
-#identity-popup-breakageReportView-footer > button {
+#identity-popup-breakageReportView-footer > button,
+#protections-popup-sendReportView-footer > button {
   flex: 1;
 }
 
 #identity-popup-breakageReportView-heading,
-#identity-popup-breakageReportView-body {
+#identity-popup-breakageReportView-body,
+#protections-popup-sendReportView-heading,
+#protections-popup-sendReportView-body {
   padding: 16px;
   font-size: 110%;
 }
 
-.identity-popup-breakageReportView-collection-section {
+.identity-popup-breakageReportView-collection-section,
+.protections-popup-sendReportView-collection-section {
   margin-bottom: 16px;
 }
 
-#identity-popup-breakageReportView-body {
+#identity-popup-breakageReportView-body,
+#protections-popup-sendReportView-body {
   border-top: 1px solid var(--panel-separator-color);
 }
 
-#identity-popup-breakageReportView-collection-comments {
+#identity-popup-breakageReportView-collection-url,
+#protections-popup-sendReportView-collection-url {
+  font: inherit;
+}
+
+#identity-popup-breakageReportView-collection-comments,
+#protections-popup-sendReportView-collection-comments {
   height: 120px;
 }
 
@@ -367,9 +426,11 @@ description#identity-popup-content-verifier,
 }
 
 .identity-popup-content-blocking-category:-moz-focusring,
-.identity-popup-content-blocking-category:hover {
+.identity-popup-content-blocking-category:hover,
+#protections-popup-settings-button:hover {
   border-radius: 2px;
   background-color: var(--arrowpanel-dimmed);
+  outline: none;
 }
 
 .identity-popup-content-blocking-category:hover:active {
@@ -497,8 +558,8 @@ description#identity-popup-content-verifier,
 #identity-popup-trackersView-strict-info {
   min-height: 40px;
   /* Limit to full width - margin */
-  max-width: calc(var(--identity-popup-width) - 12px);
-  min-width: calc(var(--identity-popup-width) - 12px);
+  max-width: calc(var(--popup-width) - 12px);
+  min-width: calc(var(--popup-width) - 12px);
   background-color: #45a1ff80;
   margin: 6px;
   text-align: center;
@@ -506,7 +567,6 @@ description#identity-popup-content-verifier,
   -moz-box-pack: center;
   padding: 5px 15px;
   border-radius: 3px;
-  color: #002275;
 }
 
 #identity-popup-trackersView-strict-info > image {
@@ -519,7 +579,7 @@ description#identity-popup-content-verifier,
 #identity-popup-trackersView-strict-info > label {
   overflow-wrap: break-word;
   /* Limit to full width - container margin - container padding - icon width - icon margin */
-  max-width: calc(var(--identity-popup-width) - 12px - 20px - 16px - 10px);
+  max-width: calc(var(--popup-width) - 12px - 20px - 16px - 10px);
 }
 
 /* Content Blocking categories */
@@ -612,9 +672,9 @@ description#identity-popup-content-verifier,
 
 /* Show the right action buttons depending on content state */
 /* Offer to temporarily add an exception in private mode. */
-#main-window:not([privatebrowsingmode]) #identity-popup-content-blocking-content[blocking]:not([hasException]) > #tracking-action-unblock,
+:root:not([privatebrowsingmode]) #identity-popup-content-blocking-content[blocking]:not([hasException]) > #tracking-action-unblock,
 /* Offer to permanently add an exception in normal mode. */
-#main-window[privatebrowsingmode] #identity-popup-content-blocking-content[blocking]:not([hasException]) > #tracking-action-unblock-private,
+:root[privatebrowsingmode] #identity-popup-content-blocking-content[blocking]:not([hasException]) > #tracking-action-unblock-private,
 /* If there's an exception just offer to remove the exception again. */
 #identity-popup-content-blocking-content[hasException] > #tracking-action-block {
   display: -moz-box;
@@ -686,7 +746,8 @@ description#identity-popup-content-verifier,
 .identity-popup-content-blocking-category-label,
 .identity-popup-content-blocking-category-state-label,
 .identity-popup-permission-label,
-.identity-popup-permission-state-label {
+.identity-popup-permission-state-label,
+.protections-popup-settings-label {
   /* We need to align the action buttons and permission icons with the text.
      This is tricky because the icon height is defined in pixels, while the
      font height can vary with platform and system settings, and at least on
@@ -700,7 +761,8 @@ description#identity-popup-content-verifier,
 }
 
 .identity-popup-content-blocking-category-label,
-.identity-popup-permission-label {
+.identity-popup-permission-label,
+.protections-popup-settings-label {
   margin-inline-start: 1em;
 }
 
@@ -756,4 +818,149 @@ description#identity-popup-content-verifier,
 
 .identity-popup-permission-remove-button:not(:-moz-focusring):hover:active {
   opacity: 0.8;
+}
+
+#protections-popup-mainView-panel-header > description {
+  display: none;
+}
+
+#protections-popup:not([hasException]) .protections-popup-tp-switch-on-header,
+#protections-popup[hasException] .protections-popup-tp-switch-off-header,
+#protections-popup:not([hasException])[toast] #protections-popup-toast-panel-tp-on-desc,
+#protections-popup[hasException][toast] #protections-popup-toast-panel-tp-off-desc {
+  display: unset;
+}
+
+#protections-popup-tp-switch-section {
+  padding: 4px;
+}
+
+#protections-popup[hasException] #protections-popup-tp-switch-section {
+  background: repeating-linear-gradient(
+    -56deg,
+    var(--arrowpanel-dimmed),
+    var(--arrowpanel-dimmed) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+}
+
+#protections-popup-siteNotWorkingView-body,
+.protections-popup-tp-switch-label-box,
+.protections-popup-tp-switch-box {
+  padding: 4px 1em;
+  min-height: 40px;
+  -moz-box-pack: center;
+  /* This is needed in order to make 'position' working for the badge alongside
+     the TP switch toggle.*/
+  position: relative;
+}
+
+.protections-popup-tp-switch-on-header,
+.protections-popup-tp-switch-off-header {
+  font-weight: 600;
+}
+
+.protections-popup-tp-switch {
+  -moz-appearance: none;
+  box-sizing: border-box;
+  min-width: 26px;
+  border-radius: 10px;
+  background-color: var(--arrowpanel-dimmed-even-further);
+  border: 1px solid transparent;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  margin-inline-start: 1px;
+  padding: 2px;
+  padding-inline-end: 0;
+  transition: padding .2s ease;
+}
+
+.protections-popup-tp-switch::before {
+  position: relative;
+  display: block;
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 10px;
+  background: white;
+}
+
+.protections-popup-tp-switch[enabled] {
+  background-color: #0a84ff;
+  border: 1px solid #0a84ff;
+  /* Push the toggle to the right. */
+  padding-inline-start: 12px;
+}
+
+.protections-popup-tp-switch:hover,
+.protections-popup-tp-switch:-moz-focusring {
+  border: 1px solid var(--panel-separator-color);
+}
+
+.protections-popup-tp-switch[enabled=true]:hover,
+.protections-popup-tp-switch[enabled=true]:-moz-focusring {
+  background-color: #45a1ff;
+}
+
+#protections-popup-siteNotWorkingView-body-issue-list {
+  padding-inline-start: 1em;
+}
+
+#protections-popup-siteNotWorkingView-footer {
+  border-top: 1px solid var(--panel-separator-color);
+}
+
+#protections-popup-settings-section {
+  padding: 4px;
+  -moz-context-properties: fill, fill-opacity;
+}
+
+#protections-popup-settings-button {
+  /* We need to align the setting button with the labels in the tp switch
+     section. So we add 6px to offset the margin of labels. */
+  padding-inline-start: calc(1em + 6px);
+  min-height: 37px;
+}
+
+.protection-settings-icon {
+  width: 16px;
+  height: 16px;
+  list-style-image: url(chrome://browser/skin/settings.svg);
+}
+
+#protections-popup-footer {
+  background-color: var(--arrowpanel-dimmed);
+  border-top: 1px solid var(--panel-separator-color);
+  min-height: 40px;
+  -moz-box-align: center;
+  /* The horizontal padding aligns the content of footer with other sections in
+     the protections panel */
+  padding: 4px calc(1em + 4px);
+}
+
+#protections-popup-trackers-blocked-counter-description {
+  font-weight: 600;
+  /* This padding is added to align the counter text with the beginning of texts
+     in other sections. */
+  padding-inline-start: 6px;
+}
+
+#protections-popup-tp-switch[showdotindicator]::after {
+  background: #00B3F4;
+  border: 1px rgba(0,144,237,0.5) solid;
+  content: " ";
+  border-radius: 6px;
+  position: absolute;
+  margin: auto;
+  top: 0;
+  bottom: 12px;
+  left: calc(1em + 20px);
+  height: 10px;
+  width: 10px;
+}
+
+#protections-popup-tp-switch[showdotindicator]:-moz-locale-dir(rtl)::after {
+  left: unset;
+  right: calc(1em + 20px);
 }

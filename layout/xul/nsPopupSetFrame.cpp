@@ -10,6 +10,7 @@
 #include "nsIContent.h"
 #include "nsPresContext.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/PresShell.h"
 #include "nsBoxLayoutState.h"
 #include "nsIScrollableFrame.h"
 #include "nsIPopupContainer.h"
@@ -17,7 +18,7 @@
 
 typedef mozilla::ComputedStyle ComputedStyle;
 
-nsIFrame* NS_NewPopupSetFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewPopupSetFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsPopupSetFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -108,7 +109,7 @@ nsPopupSetFrame::DoXULLayout(nsBoxLayoutState& aState) {
   // lay out all of our currently open popups.
   for (nsFrameList::Enumerator e(mPopupList); !e.AtEnd(); e.Next()) {
     nsMenuPopupFrame* popupChild = static_cast<nsMenuPopupFrame*>(e.get());
-    popupChild->LayoutPopup(aState, nullptr, nullptr, false);
+    popupChild->LayoutPopup(aState, nullptr, false);
   }
 
   return rv;

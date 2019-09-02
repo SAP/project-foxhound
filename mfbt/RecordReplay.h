@@ -258,10 +258,6 @@ static inline void RegisterThing(void* aThing);
 static inline void UnregisterThing(void* aThing);
 static inline size_t ThingIndex(void* aThing);
 
-// Give a directive to the record/replay system. For possible values for
-// aDirective, see ProcessRecordReplay.h. This is used for testing purposes.
-static inline void RecordReplayDirective(long aDirective);
-
 // Helper for record/replay asserts, try to determine a name for a C++ object
 // with virtual methods based on its vtable.
 static inline const char* VirtualThingName(void* aThing);
@@ -316,7 +312,7 @@ MFBT_API bool ShouldUpdateProgressCounter(const char* aURL);
 // kind.
 MFBT_API bool DefineRecordReplayControlObject(JSContext* aCx, JSObject* aObj);
 
-// Notify the infrastructure that some URL which contains JavaScript is
+// Notify the infrastructure that some URL which contains JavaScript or CSS is
 // being parsed. This is used to provide the complete contents of the URL to
 // devtools code when it is inspecting the state of this process; that devtools
 // code can't simply fetch the URL itself since it may have been changed since
@@ -440,8 +436,6 @@ MOZ_MAKE_RECORD_REPLAY_WRAPPER_VOID(UnregisterThing, (void* aThing), (aThing))
 MOZ_MAKE_RECORD_REPLAY_WRAPPER(ThingIndex, size_t, 0, (void* aThing), (aThing))
 MOZ_MAKE_RECORD_REPLAY_WRAPPER(VirtualThingName, const char*, nullptr,
                                (void* aThing), (aThing))
-MOZ_MAKE_RECORD_REPLAY_WRAPPER_VOID(RecordReplayDirective, (long aDirective),
-                                    (aDirective))
 
 #undef MOZ_MAKE_RECORD_REPLAY_WRAPPER_VOID
 #undef MOZ_MAKERECORDREPLAYWRAPPER

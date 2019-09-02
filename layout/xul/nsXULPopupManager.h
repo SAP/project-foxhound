@@ -58,6 +58,7 @@ class nsPIDOMWindowOuter;
 class nsRefreshDriver;
 
 namespace mozilla {
+class PresShell;
 namespace dom {
 class Event;
 class KeyboardEvent;
@@ -299,7 +300,7 @@ class nsXULMenuCommandEvent : public mozilla::Runnable {
                  "null menu supplied to nsXULMenuCommandEvent constructor");
   }
 
-  NS_IMETHOD Run() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
   void SetCloseMenuMode(CloseMenuMode aCloseMenuMode) {
     mCloseMenuMode = aCloseMenuMode;
@@ -332,6 +333,7 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   NS_DECL_NSIDOMEVENTLISTENER
 
   // nsIRollupListener
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual bool Rollup(uint32_t aCount, bool aFlush, const nsIntPoint* pos,
                       nsIContent** aLastRolledUp) override;
   virtual bool ShouldRollupOnMouseWheelEvent() override;
@@ -362,7 +364,7 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   // This should be called when a window is moved or resized to adjust the
   // popups accordingly.
   void AdjustPopupsOnWindowChange(nsPIDOMWindowOuter* aWindow);
-  void AdjustPopupsOnWindowChange(nsIPresShell* aPresShell);
+  void AdjustPopupsOnWindowChange(mozilla::PresShell* aPresShell);
 
   // given a menu frame, find the prevous or next menu frame. If aPopup is
   // true then navigate a menupopup, from one item on the menu to the previous
@@ -672,6 +674,7 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   ~nsXULPopupManager();
 
   // get the nsMenuPopupFrame, if any, for the given content node
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsMenuPopupFrame* GetPopupFrameForContent(nsIContent* aContent,
                                             bool aShouldFlush);
 
@@ -729,6 +732,7 @@ class nsXULPopupManager final : public nsIDOMEventListener,
    * aDeselectMenu - true to unhighlight the menu when hiding it
    * aIsCancel - true if this popup is hiding due to being cancelled.
    */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void FirePopupHidingEvent(nsIContent* aPopup, nsIContent* aNextPopup,
                             nsIContent* aLastPopup, nsPresContext* aPresContext,
                             nsPopupType aPopupType, bool aDeselectMenu,

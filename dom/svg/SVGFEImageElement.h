@@ -49,7 +49,7 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
   virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
                                          nsAtom* aAttribute) const override;
-  virtual SVGString& GetResultImageName() override {
+  virtual SVGAnimatedString& GetResultImageName() override {
     return mStringAttributes[RESULT];
   }
   virtual bool OutputIsTainted(const nsTArray<bool>& aInputsAreTainted,
@@ -65,9 +65,8 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
                                 const nsAttrValue* aOldValue,
                                 nsIPrincipal* aSubjectPrincipal,
                                 bool aNotify) override;
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent) override;
   virtual EventStates IntrinsicState() const override;
 
   NS_IMETHOD Notify(imgIRequest* aRequest, int32_t aType,
@@ -79,7 +78,7 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
   void MaybeLoadSVGImage();
 
   // WebIDL
-  already_AddRefed<SVGAnimatedString> Href();
+  already_AddRefed<DOMSVGAnimatedString> Href();
   already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
 
  private:
@@ -88,14 +87,15 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
  protected:
   virtual bool ProducesSRGB() override { return true; }
 
-  virtual SVGAnimatedPreserveAspectRatio* GetPreserveAspectRatio() override;
+  virtual SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio()
+      override;
   virtual StringAttributesInfo GetStringInfo() override;
 
   // Override for nsImageLoadingContent.
   nsIContent* AsContent() override { return this; }
 
   enum { RESULT, HREF, XLINK_HREF };
-  SVGString mStringAttributes[3];
+  SVGAnimatedString mStringAttributes[3];
   static StringInfo sStringInfo[3];
 
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;

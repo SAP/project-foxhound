@@ -745,10 +745,27 @@ public class Tokenizer implements Locator {
     // ]NOCPP]
 
     // For the token handler to call
+
     /**
      * Sets the tokenizer state and the associated element name. This should
      * only ever used to put the tokenizer into one of the states that have
      * a special end tag expectation.
+     *
+     * @param specialTokenizerState
+     *            the tokenizer state to set
+     */
+    public void setState(int specialTokenizerState) {
+        this.stateSave = specialTokenizerState;
+        this.endTagExpectation = null;
+        this.endTagExpectationAsArray = null;
+    }
+
+    // [NOCPP[
+
+    /**
+     * Sets the tokenizer state and the associated element name. This should
+     * only ever used to put the tokenizer into one of the states that have
+     * a special end tag expectation. For use from the tokenizer test harness.
      *
      * @param specialTokenizerState
      *            the tokenizer state to set
@@ -767,6 +784,8 @@ public class Tokenizer implements Locator {
         assert this.endTagExpectation != null;
         endTagExpectationToArray();
     }
+
+    // ]NOCPP]
 
     /**
      * Sets the tokenizer state and the associated element name. This should
@@ -2820,10 +2839,12 @@ public class Tokenizer implements Locator {
                                 continue stateloop;
                             case '\r':
                                 appendStrBufCarriageReturn();
+                                state = transition(state, Tokenizer.COMMENT, reconsume, pos);
                                 break stateloop;
                             case '\n':
                                 appendStrBufLineFeed();
-                                continue;
+                                state = transition(state, Tokenizer.COMMENT, reconsume, pos);
+                                continue stateloop;
                             case '\u0000':
                                 c = '\uFFFD';
                                 // CPPONLY: MOZ_FALLTHROUGH;
@@ -3856,11 +3877,17 @@ public class Tokenizer implements Locator {
                         c = checkChar(buf, pos);
                         /*
                          * ASSERT! when entering this state, set index to 0 and
-                         * call clearStrBufBeforeUse() assert (contentModelElement !=
-                         * null); Let's implement the above without lookahead.
-                         * strBuf is the 'temporary buffer'.
+                         * call clearStrBufBeforeUse(); Let's implement the above
+                         * without lookahead. strBuf is the 'temporary buffer'.
                          */
-                        if (index < endTagExpectationAsArray.length) {
+                        if (endTagExpectationAsArray == null) {
+                            tokenHandler.characters(Tokenizer.LT_SOLIDUS,
+                                    0, 2);
+                            cstart = pos;
+                            reconsume = true;
+                            state = transition(state, returnState, reconsume, pos);
+                            continue stateloop;
+                        } else if (index < endTagExpectationAsArray.length) {
                             char e = endTagExpectationAsArray[index];
                             char folded = c;
                             if (c >= 'A' && c <= 'Z') {
@@ -3947,12 +3974,9 @@ public class Tokenizer implements Locator {
                                     tokenHandler.characters(
                                             Tokenizer.LT_SOLIDUS, 0, 2);
                                     emitStrBuf();
-                                    if (c == '\u0000') {
-                                        emitReplacementCharacter(buf, pos);
-                                    } else {
-                                        cstart = pos; // don't drop the
-                                        // character
-                                    }
+                                    cstart = pos; // don't drop the
+                                                  // character
+                                    reconsume = true;
                                     state = transition(state, returnState, reconsume, pos);
                                     continue stateloop;
                             }

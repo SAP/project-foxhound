@@ -32,26 +32,16 @@ class MOZ_IS_SMARTPTR_TO_REFCOUNTED OwningNonNull {
   }
 
   // This is no worse than get() in terms of const handling.
-  operator T&() const {
-    MOZ_ASSERT(mInited);
-    MOZ_ASSERT(mPtr, "OwningNonNull<T> was set to null");
-    return *mPtr;
-  }
+  operator T&() const { return ref(); }
 
-  operator T*() const {
-    MOZ_ASSERT(mInited);
-    MOZ_ASSERT(mPtr, "OwningNonNull<T> was set to null");
-    return mPtr;
-  }
+  operator T*() const { return get(); }
 
   // Conversion to bool is always true, so delete to catch errors
   explicit operator bool() const = delete;
 
-  T* operator->() const {
-    MOZ_ASSERT(mInited);
-    MOZ_ASSERT(mPtr, "OwningNonNull<T> was set to null");
-    return mPtr;
-  }
+  T* operator->() const { return get(); }
+
+  T& operator*() const { return ref(); }
 
   OwningNonNull<T>& operator=(T* aValue) {
     init(aValue);
@@ -95,14 +85,14 @@ class MOZ_IS_SMARTPTR_TO_REFCOUNTED OwningNonNull {
 
   T& ref() const {
     MOZ_ASSERT(mInited);
-    MOZ_ASSERT(mPtr);
+    MOZ_ASSERT(mPtr, "OwningNonNull<T> was set to null");
     return *mPtr;
   }
 
   // Make us work with smart pointer helpers that expect a get().
   T* get() const {
     MOZ_ASSERT(mInited);
-    MOZ_ASSERT(mPtr);
+    MOZ_ASSERT(mPtr, "OwningNonNull<T> was set to null");
     return mPtr;
   }
 

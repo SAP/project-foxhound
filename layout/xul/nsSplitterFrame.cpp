@@ -20,7 +20,6 @@
 #include "nsNameSpaceManager.h"
 #include "nsScrollbarButtonFrame.h"
 #include "nsIDOMEventListener.h"
-#include "nsIPresShell.h"
 #include "nsFrameList.h"
 #include "nsHTMLParts.h"
 #include "mozilla/ComputedStyle.h"
@@ -35,6 +34,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/UniquePtr.h"
 #include "nsBindingManager.h"
 
@@ -195,7 +195,7 @@ nsSplitterFrameInner::State nsSplitterFrameInner::GetState() {
 //
 // Creates a new Toolbar frame and returns it
 //
-nsIFrame* NS_NewSplitterFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewSplitterFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsSplitterFrame(aStyle, aPresShell->GetPresContext());
 }
 
@@ -313,8 +313,7 @@ void nsSplitterFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // if the mouse is captured always return us as the frame.
   if (mInner->mDragging && aBuilder->IsForEventDelivery()) {
     // XXX It's probably better not to check visibility here, right?
-    aLists.Outlines()->AppendToTop(
-        MakeDisplayItem<nsDisplayEventReceiver>(aBuilder, this));
+    aLists.Outlines()->AppendNewToTop<nsDisplayEventReceiver>(aBuilder, this);
     return;
   }
 }
@@ -335,7 +334,7 @@ nsresult nsSplitterFrame::HandleEvent(nsPresContext* aPresContext,
       break;
 
     case eMouseUp:
-      if (aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
+      if (aEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
         inner->MouseUp(aPresContext, aEvent);
       }
       break;
@@ -353,8 +352,7 @@ void nsSplitterFrameInner::MouseUp(nsPresContext* aPresContext,
   if (mDragging && mOuter) {
     AdjustChildren(aPresContext);
     AddListener();
-    nsIPresShell::SetCapturingContent(nullptr,
-                                      0);  // XXXndeakin is this needed?
+    PresShell::ReleaseCapturingContent();  // XXXndeakin is this needed?
     mDragging = false;
     State newState = GetState();
     // if the state is dragging then make it Open.
@@ -518,7 +516,7 @@ nsresult nsSplitterFrameInner::MouseUp(Event* aMouseEvent) {
   NS_ENSURE_TRUE(mOuter, NS_OK);
   mPressed = false;
 
-  nsIPresShell::SetCapturingContent(nullptr, 0);
+  PresShell::ReleaseCapturingContent();
 
   return NS_OK;
 }
@@ -680,8 +678,8 @@ nsresult nsSplitterFrameInner::MouseDown(Event* aMouseEvent) {
 
   // printf("Pressed mDragStart=%d\n",mDragStart);
 
-  nsIPresShell::SetCapturingContent(mOuter->GetContent(),
-                                    CAPTURE_IGNOREALLOWED);
+  PresShell::SetCapturingContent(mOuter->GetContent(),
+                                 CaptureFlags::IgnoreAllowedState);
 
   return NS_OK;
 }
@@ -889,7 +887,7 @@ void nsSplitterFrameInner::SetPreferredSize(nsBoxLayoutState& aState,
   AutoWeakFrame weakBox(aChildBox);
   content->AsElement()->SetAttr(kNameSpaceID_None, attribute, prefValue, true);
   NS_ENSURE_TRUE_VOID(weakBox.IsAlive());
-  aState.PresShell()->FrameNeedsReflow(aChildBox, nsIPresShell::eStyleChange,
+  aState.PresShell()->FrameNeedsReflow(aChildBox, IntrinsicDirty::StyleChange,
                                        NS_FRAME_IS_DIRTY);
 }
 

@@ -19,9 +19,9 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/PendingAnimationTracker.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Tuple.h"
-#include "nsIPresShell.h"
 #include "nsIStreamListener.h"
 #include "nsMimeTypes.h"
 #include "nsPresContext.h"
@@ -68,7 +68,7 @@ class SVGRootRenderingObserver final : public SVGRenderingObserver {
     MOZ_ASSERT(elem, "no root SVG node for us to observe");
 
     SVGObserverUtils::AddRenderingObserver(elem, this);
-    mInObserverList = true;
+    mInObserverSet = true;
   }
 
   void ResumeHonoringInvalidations() { mHonoringInvalidations = true; }
@@ -103,9 +103,9 @@ class SVGRootRenderingObserver final : public SVGRenderingObserver {
 
     // Our caller might've removed us from rendering-observer list.
     // Add ourselves back!
-    if (!mInObserverList) {
+    if (!mInObserverSet) {
       SVGObserverUtils::AddRenderingObserver(elem, this);
-      mInObserverList = true;
+      mInObserverSet = true;
     }
   }
 
@@ -263,7 +263,7 @@ bool SVGDrawingCallback::operator()(gfxContext* aContext,
   MOZ_ASSERT(mSVGDocumentWrapper, "need an SVGDocumentWrapper");
 
   // Get (& sanity-check) the helper-doc's presShell
-  nsCOMPtr<nsIPresShell> presShell = mSVGDocumentWrapper->GetPresShell();
+  RefPtr<PresShell> presShell = mSVGDocumentWrapper->GetPresShell();
   MOZ_ASSERT(presShell, "GetPresShell returned null for an SVG image?");
 
 #ifdef MOZ_GECKO_PROFILER
@@ -297,9 +297,10 @@ bool SVGDrawingCallback::operator()(gfxContext* aContext,
   nsRect svgRect(0, 0, presContext->DevPixelsToAppUnits(mViewportSize.width),
                  presContext->DevPixelsToAppUnits(mViewportSize.height));
 
-  uint32_t renderDocFlags = nsIPresShell::RENDER_IGNORE_VIEWPORT_SCROLLING;
+  RenderDocumentFlags renderDocFlags =
+      RenderDocumentFlags::IgnoreViewportScrolling;
   if (!(mImageFlags & imgIContainer::FLAG_SYNC_DECODE)) {
-    renderDocFlags |= nsIPresShell::RENDER_ASYNC_DECODE_IMAGES;
+    renderDocFlags |= RenderDocumentFlags::AsyncDecodeImages;
   }
 
   presShell->RenderDocument(svgRect, renderDocFlags,
@@ -624,30 +625,27 @@ VectorImage::GetIntrinsicSize(nsSize* aSize) {
 
   *aSize = nsSize(-1, -1);
   IntrinsicSize rfSize = rootFrame->GetIntrinsicSize();
-  if (rfSize.width.GetUnit() == eStyleUnit_Coord) {
-    aSize->width = rfSize.width.GetCoordValue();
+  if (rfSize.width) {
+    aSize->width = *rfSize.width;
   }
-  if (rfSize.height.GetUnit() == eStyleUnit_Coord) {
-    aSize->height = rfSize.height.GetCoordValue();
+  if (rfSize.height) {
+    aSize->height = *rfSize.height;
   }
-
   return NS_OK;
 }
 
 //******************************************************************************
-NS_IMETHODIMP
-VectorImage::GetIntrinsicRatio(nsSize* aRatio) {
+Maybe<AspectRatio> VectorImage::GetIntrinsicRatio() {
   if (mError || !mIsFullyLoaded) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
   nsIFrame* rootFrame = mSVGDocumentWrapper->GetRootLayoutFrame();
   if (!rootFrame) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
-  *aRatio = rootFrame->GetIntrinsicRatio();
-  return NS_OK;
+  return Some(rootFrame->GetIntrinsicRatio());
 }
 
 NS_IMETHODIMP_(Orientation)
@@ -1104,8 +1102,7 @@ already_AddRefed<SourceSurface> VectorImage::CreateSurface(
   auto frame = MakeNotNull<RefPtr<imgFrame>>();
   nsresult rv = frame->InitWithDrawable(
       aSVGDrawable, aParams.size, SurfaceFormat::B8G8R8A8,
-      SamplingFilter::POINT, aParams.flags, backend,
-      aParams.context ? aParams.context->GetDrawTarget() : nullptr);
+      SamplingFilter::POINT, aParams.flags, backend);
 
   // If we couldn't create the frame, it was probably because it would end
   // up way too big. Generally it also wouldn't fit in the cache, but the prefs
@@ -1204,18 +1201,26 @@ void VectorImage::RecoverFromLossOfSurfaces() {
 }
 
 NS_IMETHODIMP
-VectorImage::StartDecoding(uint32_t aFlags) {
+VectorImage::StartDecoding(uint32_t aFlags, uint32_t aWhichFrame) {
   // Nothing to do for SVG images
   return NS_OK;
 }
 
-bool VectorImage::StartDecodingWithResult(uint32_t aFlags) {
+bool VectorImage::StartDecodingWithResult(uint32_t aFlags,
+                                          uint32_t aWhichFrame) {
+  // SVG images are ready to draw when they are loaded
+  return mIsFullyLoaded;
+}
+
+bool VectorImage::RequestDecodeWithResult(uint32_t aFlags,
+                                          uint32_t aWhichFrame) {
   // SVG images are ready to draw when they are loaded
   return mIsFullyLoaded;
 }
 
 NS_IMETHODIMP
-VectorImage::RequestDecodeForSize(const nsIntSize& aSize, uint32_t aFlags) {
+VectorImage::RequestDecodeForSize(const nsIntSize& aSize, uint32_t aFlags,
+                                  uint32_t aWhichFrame) {
   // Nothing to do for SVG images, though in theory we could rasterize to the
   // provided size ahead of time if we supported off-main-thread SVG
   // rasterization...

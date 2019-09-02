@@ -57,6 +57,10 @@ DEFINES += -DMOZ_GECKOVIEW_JAR=1
 MOZ_PKG_DIR = geckoview
 endif
 
+ifdef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+DEFINES += -DMOZ_ANDROID_FAT_AAR_ARCHITECTURES=1
+endif
+
 MOZ_PACKAGER_MINIFY=1
 
 include $(topsrcdir)/toolkit/mozapps/installer/packager.mk
@@ -67,7 +71,9 @@ include $(topsrcdir)/toolkit/mozapps/installer/packager.mk
 ifneq (,$(JS_BINARY))
 ifndef MOZ_DEBUG
 ifndef NIGHTLY_BUILD
+ifndef FENNEC_NIGHTLY
 MOZ_PACKAGER_MINIFY_JS=1
+endif
 endif
 endif
 endif

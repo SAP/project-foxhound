@@ -10,11 +10,10 @@
 #include <limits.h>
 
 #include "jspubtd.h"
+#include "Taint.h"
 
 #include "js/TraceKind.h"
 #include "js/Utility.h"
-
-#include "Taint.h"
 
 struct JSStringFinalizer;
 
@@ -252,6 +251,8 @@ struct Symbol {
  */
 class JS_FRIEND_API GCCellPtr {
  public:
+  GCCellPtr() : GCCellPtr(nullptr) {}
+
   // Construction from a void* and trace kind.
   GCCellPtr(void* gcthing, JS::TraceKind traceKind)
       : ptr(checkedCast(gcthing, traceKind)) {}
@@ -354,8 +355,8 @@ class JS_FRIEND_API GCCellPtr {
 template <typename F>
 auto MapGCThingTyped(GCCellPtr thing, F&& f) {
   switch (thing.kind()) {
-#define JS_EXPAND_DEF(name, type, _) \
-  case JS::TraceKind::name:          \
+#define JS_EXPAND_DEF(name, type, _, _1) \
+  case JS::TraceKind::name:              \
     return f(&thing.as<type>());
     JS_FOR_EACH_TRACEKIND(JS_EXPAND_DEF);
 #undef JS_EXPAND_DEF
@@ -552,10 +553,10 @@ extern JS_PUBLIC_API bool IsIncrementalBarrierNeeded(JSContext* cx);
 extern JS_PUBLIC_API void IncrementalPreWriteBarrier(JSObject* obj);
 
 /*
- * Notify the GC that a weak reference to a GC thing has been read.
- * This method must be called if IsIncrementalBarrierNeeded.
+ * Notify the GC that a reference to a tenured GC cell is about to be
+ * overwritten. This method must be called if IsIncrementalBarrierNeeded.
  */
-extern JS_PUBLIC_API void IncrementalReadBarrier(GCCellPtr thing);
+extern JS_PUBLIC_API void IncrementalPreWriteBarrier(GCCellPtr thing);
 
 /**
  * Unsets the gray bit for anything reachable from |thing|. |kind| should not be
@@ -568,6 +569,8 @@ extern JS_FRIEND_API bool UnmarkGrayGCThingRecursively(GCCellPtr thing);
 
 namespace js {
 namespace gc {
+
+extern JS_PUBLIC_API void PerformIncrementalReadBarrier(JS::GCCellPtr thing);
 
 static MOZ_ALWAYS_INLINE bool IsIncrementalBarrierNeededOnTenuredGCThing(
     const JS::GCCellPtr thing) {
@@ -598,12 +601,12 @@ static MOZ_ALWAYS_INLINE void ExposeGCThingToActiveJS(JS::GCCellPtr thing) {
   }
 
   if (IsIncrementalBarrierNeededOnTenuredGCThing(thing)) {
-    JS::IncrementalReadBarrier(thing);
-  } else if (js::gc::detail::TenuredCellIsMarkedGray(thing.asCell())) {
+    PerformIncrementalReadBarrier(thing);
+  } else if (detail::TenuredCellIsMarkedGray(thing.asCell())) {
     JS::UnmarkGrayGCThingRecursively(thing);
   }
 
-  MOZ_ASSERT(!js::gc::detail::TenuredCellIsMarkedGray(thing.asCell()));
+  MOZ_ASSERT(!detail::TenuredCellIsMarkedGray(thing.asCell()));
 }
 
 template <typename T>
@@ -645,6 +648,7 @@ static MOZ_ALWAYS_INLINE void ExposeObjectToActiveJS(JSObject* obj) {
 }
 
 static MOZ_ALWAYS_INLINE void ExposeScriptToActiveJS(JSScript* script) {
+  MOZ_ASSERT(script);
   MOZ_ASSERT(!js::gc::EdgeNeedsSweepUnbarrieredSlow(&script));
   js::gc::ExposeGCThingToActiveJS(GCCellPtr(script));
 }

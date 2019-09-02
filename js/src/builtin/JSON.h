@@ -9,10 +9,10 @@
 
 #include "mozilla/Range.h"
 
+#include "jstaint.h"
 #include "NamespaceImports.h"
 
 #include "js/RootingAPI.h"
-#include "jstaint.h"
 
 namespace js {
 

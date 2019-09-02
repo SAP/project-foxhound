@@ -26,8 +26,6 @@ pub mod easing;
 pub mod effects;
 pub mod flex;
 pub mod font;
-#[cfg(feature = "gecko")]
-pub mod gecko;
 pub mod grid;
 pub mod image;
 pub mod length;
@@ -43,7 +41,19 @@ pub mod url;
 // https://drafts.csswg.org/css-counter-styles/#typedef-symbols-type
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, ToComputedValue, ToCss)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 pub enum SymbolsType {
     Cyclic,
     Numeric,
@@ -85,7 +95,7 @@ impl SymbolsType {
 /// Since wherever <counter-style> is used, 'none' is a valid value as
 /// well, we combine them into one type to make code simpler.
 #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-#[derive(Clone, Debug, Eq, PartialEq, ToComputedValue, ToCss)]
+#[derive(Clone, Debug, Eq, PartialEq, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
 pub enum CounterStyleOrNone {
     /// `none`
     None,
@@ -93,7 +103,12 @@ pub enum CounterStyleOrNone {
     Name(CustomIdent),
     /// `symbols()`
     #[css(function)]
-    Symbols(SymbolsType, Symbols),
+    Symbols(#[css(skip_if = "is_symbolic")] SymbolsType, Symbols),
+}
+
+#[inline]
+fn is_symbolic(symbols_type: &SymbolsType) -> bool {
+    *symbols_type == SymbolsType::Symbolic
 }
 
 impl CounterStyleOrNone {
@@ -173,6 +188,8 @@ impl SpecifiedValueInfo for CounterStyleOrNone {
     ToAnimatedZero,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[repr(transparent)]
 pub struct NonNegative<T>(pub T);
@@ -210,8 +227,32 @@ impl<T: Zero> Zero for NonNegative<T> {
     ToAnimatedZero,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 pub struct GreaterThanOrEqualToOne<T>(pub T);
+
+/// A wrapper of values between zero and one.
+#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    Hash,
+    MallocSizeOf,
+    PartialEq,
+    PartialOrd,
+    SpecifiedValueInfo,
+    ToAnimatedZero,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(transparent)]
+pub struct ZeroToOne<T>(pub T);
 
 /// A clip rect for clip and image-region
 #[allow(missing_docs)]
@@ -227,6 +268,8 @@ pub struct GreaterThanOrEqualToOne<T>(pub T);
     ToAnimatedZero,
     ToComputedValue,
     ToCss,
+    ToResolvedValue,
+    ToShmem,
 )]
 #[css(function = "rect", comma)]
 pub struct ClipRect<LengthOrAuto> {

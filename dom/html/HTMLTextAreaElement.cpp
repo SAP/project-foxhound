@@ -16,6 +16,7 @@
 #include "mozilla/MappedDeclarations.h"
 #include "mozilla/MouseEvents.h"
 #include "nsAttrValueInlines.h"
+#include "nsBaseCommandController.h"
 #include "nsContentCID.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsError.h"
@@ -39,11 +40,8 @@
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
 #include "nsTextEditorState.h"
-#include "nsIController.h"
 #include "nsBaseCommandController.h"
 #include "nsXULControllers.h"
-
-#define NS_NO_CONTENT_DISPATCH (1 << 0)
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(TextArea)
 
@@ -53,7 +51,8 @@ namespace dom {
 HTMLTextAreaElement::HTMLTextAreaElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     FromParser aFromParser)
-    : nsGenericHTMLFormElementWithState(std::move(aNodeInfo), NS_FORM_TEXTAREA),
+    : nsGenericHTMLFormElementWithState(std::move(aNodeInfo), aFromParser,
+                                        NS_FORM_TEXTAREA),
       mValueChanged(false),
       mLastValueChangeWasInteractive(false),
       mHandlingSelect(false),
@@ -452,18 +451,6 @@ void HTMLTextAreaElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     mHandlingSelect = true;
   }
 
-  // If noContentDispatch is true we will not allow content to handle
-  // this event.  But to allow middle mouse button paste to work we must allow
-  // middle clicks to go to text fields anyway.
-  if (aVisitor.mEvent->mFlags.mNoContentDispatch) {
-    aVisitor.mItemFlags |= NS_NO_CONTENT_DISPATCH;
-  }
-  if (aVisitor.mEvent->mMessage == eMouseClick &&
-      aVisitor.mEvent->AsMouseEvent()->button ==
-          WidgetMouseEvent::eMiddleButton) {
-    aVisitor.mEvent->mFlags.mNoContentDispatch = false;
-  }
-
   if (aVisitor.mEvent->mMessage == eBlur) {
     // Set mWantsPreHandleEvent and fire change event in PreHandleEvent to
     // prevent it breaks event target chain creation.
@@ -520,10 +507,6 @@ nsresult HTMLTextAreaElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
     UpdateState(true);
   }
 
-  // Reset the flag for other content besides this text field
-  aVisitor.mEvent->mFlags.mNoContentDispatch =
-      ((aVisitor.mItemFlags & NS_NO_CONTENT_DISPATCH) != 0);
-
   return NS_OK;
 }
 
@@ -536,10 +519,8 @@ void HTMLTextAreaElement::DoneAddingChildren(bool aHaveNotified) {
     }
 
     if (!mInhibitStateRestoration) {
-      nsresult rv = GenerateStateKey();
-      if (NS_SUCCEEDED(rv)) {
-        RestoreFormControlState();
-      }
+      GenerateStateKey();
+      RestoreFormControlState();
     }
   }
 
@@ -558,22 +539,22 @@ nsIControllers* HTMLTextAreaElement::GetControllers(ErrorResult& aError) {
       return nullptr;
     }
 
-    nsCOMPtr<nsIController> controller =
+    RefPtr<nsBaseCommandController> commandController =
         nsBaseCommandController::CreateEditorController();
-    if (!controller) {
+    if (!commandController) {
       aError.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
 
-    mControllers->AppendController(controller);
+    mControllers->AppendController(commandController);
 
-    controller = nsBaseCommandController::CreateEditingController();
-    if (!controller) {
+    commandController = nsBaseCommandController::CreateEditingController();
+    if (!commandController) {
       aError.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
 
-    mControllers->AppendController(controller);
+    mControllers->AppendController(commandController);
   }
 
   return mControllers;
@@ -799,11 +780,10 @@ EventStates HTMLTextAreaElement::IntrinsicState() const {
   return state;
 }
 
-nsresult HTMLTextAreaElement::BindToTree(Document* aDocument,
-                                         nsIContent* aParent,
-                                         nsIContent* aBindingParent) {
-  nsresult rv = nsGenericHTMLFormElementWithState::BindToTree(
-      aDocument, aParent, aBindingParent);
+nsresult HTMLTextAreaElement::BindToTree(BindContext& aContext,
+                                         nsINode& aParent) {
+  nsresult rv =
+      nsGenericHTMLFormElementWithState::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // If there is a disabled fieldset in the parent chain, the element is now
@@ -817,8 +797,8 @@ nsresult HTMLTextAreaElement::BindToTree(Document* aDocument,
   return rv;
 }
 
-void HTMLTextAreaElement::UnbindFromTree(bool aDeep, bool aNullParent) {
-  nsGenericHTMLFormElementWithState::UnbindFromTree(aDeep, aNullParent);
+void HTMLTextAreaElement::UnbindFromTree(bool aNullParent) {
+  nsGenericHTMLFormElementWithState::UnbindFromTree(aNullParent);
 
   // We might be no longer disabled because of parent chain changed.
   UpdateValueMissingValidityState();
@@ -1017,10 +997,9 @@ nsresult HTMLTextAreaElement::GetValidationMessage(
       strMaxLength.AppendInt(maxLength);
       strTextLength.AppendInt(textLength);
 
-      const char16_t* params[] = {strMaxLength.get(), strTextLength.get()};
       rv = nsContentUtils::FormatLocalizedString(
-          nsContentUtils::eDOM_PROPERTIES, "FormValidationTextTooLong", params,
-          message);
+          message, nsContentUtils::eDOM_PROPERTIES, "FormValidationTextTooLong",
+          strMaxLength, strTextLength);
       aValidationMessage = message;
     } break;
     case VALIDITY_STATE_TOO_SHORT: {
@@ -1033,10 +1012,9 @@ nsresult HTMLTextAreaElement::GetValidationMessage(
       strMinLength.AppendInt(minLength);
       strTextLength.AppendInt(textLength);
 
-      const char16_t* params[] = {strMinLength.get(), strTextLength.get()};
       rv = nsContentUtils::FormatLocalizedString(
-          nsContentUtils::eDOM_PROPERTIES, "FormValidationTextTooShort", params,
-          message);
+          message, nsContentUtils::eDOM_PROPERTIES,
+          "FormValidationTextTooShort", strMinLength, strTextLength);
       aValidationMessage = message;
     } break;
     case VALIDITY_STATE_VALUE_MISSING: {

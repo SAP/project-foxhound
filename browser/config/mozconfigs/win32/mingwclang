@@ -34,6 +34,12 @@ ac_add_options --with-toolchain-prefix=i686-w64-mingw32-
 ac_add_options --disable-warnings-as-errors
 MOZ_COPY_PDBS=1
 
+# Bug 1547519
+ac_add_options --disable-jemalloc
+
+# This replicates Tor's configuration
+ac_add_options --enable-proxy-bypass-protection
+
 # These aren't supported on mingw at this time
 ac_add_options --disable-maintenance-service
 ac_add_options --disable-webrtc # Bug 1393901
@@ -52,11 +58,6 @@ RANLIB=llvm-ranlib
 
 # For Stylo
 BINDGEN_CFLAGS="-I$TOOLTOOL_DIR/clang/i686-w64-mingw32/include/c++/v1 -I$TOOLTOOL_DIR/clang/i686-w64-mingw32/include"
-
-# Bug 1471698 - Work around binutils corrupting mingw clang binaries.
-LDFLAGS="-Wl,-S"
-STRIP=/bin/true
-OBJCOPY=/bin/true
 
 # We want to make sure we use binutils and other binaries in the tooltool
 # package.

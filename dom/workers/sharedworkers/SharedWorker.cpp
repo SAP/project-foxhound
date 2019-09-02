@@ -12,7 +12,6 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/MessageChannel.h"
 #include "mozilla/dom/MessagePort.h"
-#include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/PMessagePort.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/dom/SharedWorkerBinding.h"
@@ -24,6 +23,7 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/StorageAccess.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsPIDOMWindow.h"
@@ -35,45 +35,6 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
-
-namespace {
-
-nsresult PopulateContentSecurityPolicyArray(
-    nsIPrincipal* aPrincipal, nsTArray<ContentSecurityPolicy>& policies,
-    nsTArray<ContentSecurityPolicy>& preloadPolicies) {
-  MOZ_ASSERT(aPrincipal);
-  MOZ_ASSERT(policies.IsEmpty());
-  MOZ_ASSERT(preloadPolicies.IsEmpty());
-
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  nsresult rv = BasePrincipal::Cast(aPrincipal)->GetCsp(getter_AddRefs(csp));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (csp) {
-    rv = PopulateContentSecurityPolicies(csp, policies);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
-  rv = BasePrincipal::Cast(aPrincipal)->GetPreloadCsp(getter_AddRefs(csp));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (csp) {
-    rv = PopulateContentSecurityPolicies(csp, preloadPolicies);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
-  return NS_OK;
-}
-
-}  // namespace
 
 SharedWorker::SharedWorker(nsPIDOMWindowInner* aWindow,
                            SharedWorkerChild* aActor, MessagePort* aMessagePort)
@@ -102,14 +63,15 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
       do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(window);
 
-  // If the window is blocked from accessing storage, do not allow it
-  // to connect to a SharedWorker.  This would potentially allow it
-  // to communicate with other windows that do have storage access.
-  // Allow private browsing, however, as we handle that isolation
-  // via the principal.
-  auto storageAllowed = nsContentUtils::StorageAllowedForWindow(window);
-  if (storageAllowed != nsContentUtils::StorageAccess::eAllow &&
-      storageAllowed != nsContentUtils::StorageAccess::ePrivateBrowsing) {
+  auto storageAllowed = StorageAllowedForWindow(window);
+  if (storageAllowed == StorageAccess::eDeny) {
+    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    return nullptr;
+  }
+
+  if (ShouldPartitionStorage(storageAllowed) &&
+      !StoragePartitioningEnabled(storageAllowed,
+                                  window->GetExtantDoc()->CookieSettings())) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
   }
@@ -117,7 +79,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   // Assert that the principal private browsing state matches the
   // StorageAccess value.
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-  if (storageAllowed == nsContentUtils::StorageAccess::ePrivateBrowsing) {
+  if (storageAllowed == StorageAccess::ePrivateBrowsing) {
     nsCOMPtr<Document> doc = window->GetExtantDoc();
     nsCOMPtr<nsIPrincipal> principal = doc ? doc->NodePrincipal() : nullptr;
     uint32_t privateBrowsingId = 0;
@@ -152,14 +114,6 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
     return nullptr;
   }
 
-  nsTArray<ContentSecurityPolicy> principalCSP;
-  nsTArray<ContentSecurityPolicy> principalPreloadCSP;
-  aRv = PopulateContentSecurityPolicyArray(loadInfo.mPrincipal, principalCSP,
-                                           principalPreloadCSP);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return nullptr;
-  }
-
   PrincipalInfo loadingPrincipalInfo;
   aRv = PrincipalToPrincipalInfo(loadInfo.mLoadingPrincipal,
                                  &loadingPrincipalInfo);
@@ -167,13 +121,46 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
     return nullptr;
   }
 
-  nsTArray<ContentSecurityPolicy> loadingPrincipalCSP;
-  nsTArray<ContentSecurityPolicy> loadingPrincipalPreloadCSP;
-  aRv = PopulateContentSecurityPolicyArray(loadInfo.mLoadingPrincipal,
-                                           loadingPrincipalCSP,
-                                           loadingPrincipalPreloadCSP);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return nullptr;
+  // Here, the StoragePrincipal is always equal to the SharedWorker's principal
+  // because the channel is not opened yet, and, because of this, it's not
+  // classified. We need to force the correct originAttributes.
+  if (ShouldPartitionStorage(storageAllowed)) {
+    nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(window);
+    if (!sop) {
+      aRv.Throw(NS_ERROR_FAILURE);
+      return nullptr;
+    }
+
+    nsIPrincipal* windowPrincipal = sop->GetPrincipal();
+    if (!windowPrincipal) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    nsIPrincipal* windowStoragePrincipal = sop->GetEffectiveStoragePrincipal();
+    if (!windowStoragePrincipal) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    if (!windowPrincipal->Equals(windowStoragePrincipal)) {
+      loadInfo.mStoragePrincipal =
+          BasePrincipal::Cast(loadInfo.mPrincipal)
+              ->CloneForcingOriginAttributes(
+                  BasePrincipal::Cast(windowStoragePrincipal)
+                      ->OriginAttributesRef());
+    }
+  }
+
+  PrincipalInfo storagePrincipalInfo;
+  if (loadInfo.mPrincipal->Equals(loadInfo.mStoragePrincipal)) {
+    storagePrincipalInfo = principalInfo;
+  } else {
+    aRv = PrincipalToPrincipalInfo(loadInfo.mStoragePrincipal,
+                                   &storagePrincipalInfo);
+    if (NS_WARN_IF(aRv.Failed())) {
+      return nullptr;
+    }
   }
 
   // We don't actually care about this MessageChannel, but we use it to 'steal'
@@ -204,15 +191,11 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
     ipcClientInfo.emplace(clientInfo.value().ToIPC());
   }
 
-  bool storageAccessAllowed =
-      storageAllowed > nsContentUtils::StorageAccess::eDeny;
-
   RemoteWorkerData remoteWorkerData(
       nsString(aScriptURL), baseURL, resolvedScriptURL, name,
-      loadingPrincipalInfo, loadingPrincipalCSP, loadingPrincipalPreloadCSP,
-      principalInfo, principalCSP, principalPreloadCSP, loadInfo.mDomain,
-      isSecureContext, ipcClientInfo, storageAccessAllowed,
-      true /* sharedWorker */);
+      loadingPrincipalInfo, principalInfo, storagePrincipalInfo,
+      loadInfo.mDomain, isSecureContext, ipcClientInfo, loadInfo.mReferrerInfo,
+      storageAllowed, true /* sharedWorker */);
 
   PSharedWorkerChild* pActor = actorChild->SendPSharedWorkerConstructor(
       remoteWorkerData, loadInfo.mWindowID, portIdentifier);

@@ -10,11 +10,14 @@ PHYSICAL_SIZES = ["width", "height"]
 LOGICAL_SIZES = ["block-size", "inline-size"]
 PHYSICAL_CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"]
 LOGICAL_CORNERS = ["start-start", "start-end", "end-start", "end-end"]
+PHYSICAL_AXES = ["x", "y"]
+LOGICAL_AXES = ["inline", "block"]
 
 # bool is True when logical
 ALL_SIDES = [(side, False) for side in PHYSICAL_SIDES] + [(side, True) for side in LOGICAL_SIDES]
 ALL_SIZES = [(size, False) for size in PHYSICAL_SIZES] + [(size, True) for size in LOGICAL_SIZES]
 ALL_CORNERS = [(corner, False) for corner in PHYSICAL_CORNERS] + [(corner, True) for corner in LOGICAL_CORNERS]
+ALL_AXES = [(axis, False) for axis in PHYSICAL_AXES] + [(axis, True) for axis in LOGICAL_AXES]
 
 SYSTEM_FONT_LONGHANDS = """font_family font_size font_style
                            font_variant_caps font_stretch font_kerning
@@ -159,10 +162,12 @@ def parse_property_aliases(alias_list):
     if alias_list:
         for alias in alias_list.split():
             (name, _, pref) = alias.partition(":")
-            if name.startswith("-webkit-") and not pref:
-                pref = "layout.css.prefixes.webkit"
             result.append((name, pref))
     return result
+
+
+def to_phys(name, logical, physical):
+    return name.replace(logical, physical).replace("inset-", "")
 
 
 class Longhand(object):
@@ -172,8 +177,9 @@ class Longhand(object):
                  gecko_ffi_name=None,
                  allowed_in_keyframe_block=True, cast_type='u8',
                  logical=False, logical_group=None, alias=None, extra_prefixes=None, boxed=False,
-                 flags=None, allowed_in_page_rule=False, allow_quirks=False,
+                 flags=None, allowed_in_page_rule=False, allow_quirks="No",
                  ignored_when_colors_disabled=False,
+                 simple_vector_bindings=False,
                  vector=False, servo_restyle_damage="repaint"):
         self.name = name
         if not spec:
@@ -210,6 +216,7 @@ class Longhand(object):
         self.allow_quirks = allow_quirks
         self.ignored_when_colors_disabled = ignored_when_colors_disabled
         self.is_vector = vector
+        self.simple_vector_bindings = simple_vector_bindings
 
         # https://drafts.csswg.org/css-animations/#keyframes
         # > The <declaration-list> inside of <keyframe-block> accepts any CSS property
@@ -241,16 +248,16 @@ class Longhand(object):
     # property names corresponding to it.
     def all_physical_mapped_properties(self):
         assert self.logical
-        logical_side = None
-        for s in LOGICAL_SIDES + LOGICAL_SIZES + LOGICAL_CORNERS:
-            if s in self.name:
-                assert not logical_side
-                logical_side = s
-        assert logical_side
+        candidates = [s for s in LOGICAL_SIDES + LOGICAL_SIZES + LOGICAL_CORNERS
+                      if s in self.name] + [s for s in LOGICAL_AXES if self.name.endswith(s)]
+        assert(len(candidates) == 1)
+        logical_side = candidates[0]
+
         physical = PHYSICAL_SIDES if logical_side in LOGICAL_SIDES \
             else PHYSICAL_SIZES if logical_side in LOGICAL_SIZES \
+            else PHYSICAL_AXES if logical_side in LOGICAL_AXES \
             else LOGICAL_CORNERS
-        return [self.name.replace(logical_side, physical_side).replace("inset-", "")
+        return [to_phys(self.name, logical_side, physical_side)
                 for physical_side in physical]
 
     def experimental(self, product):
@@ -323,11 +330,16 @@ class Longhand(object):
                 "JustifyContent",
                 "JustifyItems",
                 "JustifySelf",
+                "LineBreak",
                 "MozForceBrokenImageIcon",
+                "MozListReversed",
                 "MozScriptLevel",
                 "MozScriptMinSize",
                 "MozScriptSizeMultiplier",
+                "TextDecorationSkipInk",
                 "NonNegativeNumber",
+                "Number",
+                "OffsetRotate",
                 "Opacity",
                 "OutlineStyle",
                 "Overflow",
@@ -336,14 +348,18 @@ class Longhand(object):
                 "OverflowWrap",
                 "OverscrollBehavior",
                 "Percentage",
+                "PositiveIntegerOrNone",
                 "Resize",
                 "SVGOpacity",
                 "SVGPaintOrder",
                 "ScrollSnapAlign",
+                "ScrollSnapAxis",
+                "ScrollSnapStrictness",
                 "ScrollSnapType",
                 "TextAlign",
                 "TextDecorationLine",
                 "TextEmphasisPosition",
+                "TextTransform",
                 "TouchAction",
                 "TransformStyle",
                 "UserSelect",
@@ -396,8 +412,6 @@ class Shorthand(object):
             and allowed_in_keyframe_block != "False"
 
     def get_animatable(self):
-        if self.ident == "all":
-            return False
         for sub in self.sub_properties:
             if sub.animatable:
                 return True
@@ -535,10 +549,6 @@ class PropertiesData(object):
         #       See servo/servo#14941.
         if self.product == "gecko":
             for (prefix, pref) in property.extra_prefixes:
-                # All webkit prefixed properties are currently under
-                # control of this pref in Gecko currently.
-                if prefix == "webkit" and not pref:
-                    pref = "layout.css.prefixes.webkit"
                 property.alias.append(('-%s-%s' % (prefix, property.name), pref))
 
     def declare_longhand(self, name, products="gecko servo", **kwargs):
@@ -548,7 +558,7 @@ class PropertiesData(object):
 
         longhand = Longhand(self.current_style_struct, name, **kwargs)
         self.add_prefixed_aliases(longhand)
-        longhand.alias = list(map(lambda (x, p): Alias(x, longhand, p), longhand.alias))
+        longhand.alias = list(map(lambda xp: Alias(xp[0], longhand, xp[1]), longhand.alias))
         self.longhand_aliases += longhand.alias
         self.current_style_struct.longhands.append(longhand)
         self.longhands.append(longhand)
@@ -564,7 +574,7 @@ class PropertiesData(object):
         sub_properties = [self.longhands_by_name[s] for s in sub_properties]
         shorthand = Shorthand(name, sub_properties, *args, **kwargs)
         self.add_prefixed_aliases(shorthand)
-        shorthand.alias = list(map(lambda (x, p): Alias(x, shorthand, p), shorthand.alias))
+        shorthand.alias = list(map(lambda xp: Alias(xp[0], shorthand, xp[1]), shorthand.alias))
         self.shorthand_aliases += shorthand.alias
         self.shorthands.append(shorthand)
         return shorthand

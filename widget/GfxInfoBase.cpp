@@ -23,12 +23,13 @@
 #include "nsXULAppAPI.h"
 #include "nsIXULAppInfo.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/PaintThread.h"
-#include "gfxPrefs.h"
+
 #include "gfxPlatform.h"
 #include "gfxConfig.h"
 #include "DriverCrashGuard.h"
@@ -69,6 +70,11 @@ class ShutdownObserver : public nsIObserver {
     for (uint32_t i = 0; i < DeviceVendorMax; i++) {
       delete GfxDriverInfo::sDeviceVendors[i];
       GfxDriverInfo::sDeviceVendors[i] = nullptr;
+    }
+
+    for (uint32_t i = 0; i < DriverVendorMax; i++) {
+      delete GfxDriverInfo::sDriverVendors[i];
+      GfxDriverInfo::sDriverVendors[i] = nullptr;
     }
 
     GfxInfoBase::sShutdownOccurred = true;
@@ -471,6 +477,8 @@ static bool BlacklistEntryToDriverInfo(nsCString& aBlacklistEntry,
       aDriverInfo.mOperatingSystemVersion = strtoul(value.get(), nullptr, 10);
     } else if (key.EqualsLiteral("vendor")) {
       aDriverInfo.mAdapterVendor = dataValue;
+    } else if (key.EqualsLiteral("driverVendor")) {
+      aDriverInfo.mDriverVendor = dataValue;
     } else if (key.EqualsLiteral("feature")) {
       aDriverInfo.mFeature = BlacklistFeatureToGfxFeature(dataValue);
       if (aDriverInfo.mFeature < 0) {
@@ -581,7 +589,6 @@ GfxInfoBase::~GfxInfoBase() {}
 
 nsresult GfxInfoBase::Init() {
   InitGfxDriverInfoShutdownObserver();
-  gfxPrefs::GetSingleton();
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (os) {
@@ -594,7 +601,7 @@ nsresult GfxInfoBase::Init() {
 NS_IMETHODIMP
 GfxInfoBase::GetFeatureStatus(int32_t aFeature, nsACString& aFailureId,
                               int32_t* aStatus) {
-  int32_t blocklistAll = gfxPrefs::BlocklistAll();
+  int32_t blocklistAll = StaticPrefs::gfx_blocklist_all();
   if (blocklistAll > 0) {
     gfxCriticalErrorOnce(gfxCriticalError::DefaultOptions(false))
         << "Forcing blocklisting all features";
@@ -679,23 +686,26 @@ int32_t GfxInfoBase::FindBlocklistedDeviceInList(
   // Get the adapters once then reuse below
   nsAutoString adapterVendorID[2];
   nsAutoString adapterDeviceID[2];
+  nsAutoString adapterDriverVendor[2];
   nsAutoString adapterDriverVersionString[2];
   bool adapterInfoFailed[2];
 
   adapterInfoFailed[0] =
       (NS_FAILED(GetAdapterVendorID(adapterVendorID[0])) ||
        NS_FAILED(GetAdapterDeviceID(adapterDeviceID[0])) ||
+       NS_FAILED(GetAdapterDriverVendor(adapterDriverVendor[0])) ||
        NS_FAILED(GetAdapterDriverVersion(adapterDriverVersionString[0])));
   adapterInfoFailed[1] =
       (NS_FAILED(GetAdapterVendorID2(adapterVendorID[1])) ||
        NS_FAILED(GetAdapterDeviceID2(adapterDeviceID[1])) ||
+       NS_FAILED(GetAdapterDriverVendor2(adapterDriverVendor[1])) ||
        NS_FAILED(GetAdapterDriverVersion2(adapterDriverVersionString[1])));
   // No point in going on if we don't have adapter info
   if (adapterInfoFailed[0] && adapterInfoFailed[1]) {
     return 0;
   }
 
-#if defined(XP_WIN) || defined(ANDROID)
+#if defined(XP_WIN) || defined(ANDROID) || defined(MOZ_X11)
   uint64_t driverVersion[2] = {0, 0};
   if (!adapterInfoFailed[0]) {
     ParseDriverVersion(adapterDriverVersionString[0], &driverVersion[0]);
@@ -728,11 +738,12 @@ int32_t GfxInfoBase::FindBlocklistedDeviceInList(
       continue;
     }
 
-    if (!info[i].mAdapterVendor.Equals(
-            GfxDriverInfo::GetDeviceVendor(VendorAll),
-            nsCaseInsensitiveStringComparator()) &&
-        !info[i].mAdapterVendor.Equals(adapterVendorID[infoIndex],
-                                       nsCaseInsensitiveStringComparator())) {
+    if (!DoesVendorMatch(info[i].mAdapterVendor, adapterVendorID[infoIndex])) {
+      continue;
+    }
+
+    if (!DoesDriverVendorMatch(info[i].mDriverVendor,
+                               adapterDriverVendor[infoIndex])) {
       continue;
     }
 
@@ -769,7 +780,7 @@ int32_t GfxInfoBase::FindBlocklistedDeviceInList(
       continue;
     }
 
-#if defined(XP_WIN) || defined(ANDROID)
+#if defined(XP_WIN) || defined(ANDROID) || defined(MOZ_X11)
     switch (info[i].mComparisonOp) {
       case DRIVER_LESS_THAN:
         match = driverVersion[infoIndex] < info[i].mDriverVersion;
@@ -881,6 +892,23 @@ void GfxInfoBase::SetFeatureStatus(
     const nsTArray<dom::GfxInfoFeatureStatus>& aFS) {
   MOZ_ASSERT(!sFeatureStatus);
   sFeatureStatus = new nsTArray<dom::GfxInfoFeatureStatus>(aFS);
+}
+
+bool GfxInfoBase::DoesVendorMatch(const nsAString& aBlocklistVendor,
+                                  const nsAString& aAdapterVendor) {
+  return aBlocklistVendor.Equals(aAdapterVendor,
+                                 nsCaseInsensitiveStringComparator()) ||
+         aBlocklistVendor.Equals(GfxDriverInfo::GetDeviceVendor(VendorAll),
+                                 nsCaseInsensitiveStringComparator());
+}
+
+bool GfxInfoBase::DoesDriverVendorMatch(const nsAString& aBlocklistVendor,
+                                        const nsAString& aDriverVendor) {
+  return aBlocklistVendor.Equals(aDriverVendor,
+                                 nsCaseInsensitiveStringComparator()) ||
+         aBlocklistVendor.Equals(
+             GfxDriverInfo::GetDriverVendor(DriverVendorAll),
+             nsCaseInsensitiveStringComparator());
 }
 
 nsresult GfxInfoBase::GetFeatureStatusImpl(
@@ -1046,48 +1074,27 @@ GfxInfoBase::LogFailure(const nsACString& failure) {
       << "(LF) " << failure.BeginReading();
 }
 
-/* XPConnect method of returning arrays is very ugly. Would not recommend. */
-NS_IMETHODIMP GfxInfoBase::GetFailures(uint32_t* failureCount,
-                                       int32_t** indices, char*** failures) {
+NS_IMETHODIMP GfxInfoBase::GetFailures(nsTArray<int32_t>& indices,
+                                       nsTArray<nsCString>& failures) {
   MutexAutoLock lock(mMutex);
-
-  NS_ENSURE_ARG_POINTER(failureCount);
-  NS_ENSURE_ARG_POINTER(failures);
-
-  *failures = nullptr;
-  *failureCount = 0;
-
-  // indices is "allowed" to be null, the caller may not care about them,
-  // although calling from JS doesn't seem to get us there.
-  if (indices) *indices = nullptr;
 
   LogForwarder* logForwarder = Factory::GetLogForwarder();
   if (!logForwarder) {
     return NS_ERROR_UNEXPECTED;
   }
 
-  // There are two stirng copies in this method, starting with this one. We are
+  // There are two string copies in this method, starting with this one. We are
   // assuming this is not a big deal, as the size of the array should be small
   // and the strings in it should be small as well (the error messages in the
-  // code.)  The second copy happens with the Clone() calls.  Technically,
-  // we don't need the mutex lock after the StringVectorCopy() call.
+  // code.)  The second copy happens with the AppendElement() calls.
+  // Technically, we don't need the mutex lock after the StringVectorCopy()
+  // call.
   LoggingRecord loggedStrings = logForwarder->LoggingRecordCopy();
-  *failureCount = loggedStrings.size();
-
-  if (*failureCount != 0) {
-    *failures = (char**)moz_xmalloc(*failureCount * sizeof(char*));
-    if (indices) {
-      *indices = (int32_t*)moz_xmalloc(*failureCount * sizeof(int32_t));
-    }
-
-    /* copy over the failure messages into the array we just allocated */
-    LoggingRecord::const_iterator it;
-    uint32_t i = 0;
-    for (it = loggedStrings.begin(); it != loggedStrings.end(); ++it, i++) {
-      (*failures)[i] =
-          (char*)moz_xmemdup(Get<1>(*it).c_str(), Get<1>(*it).size() + 1);
-      if (indices) (*indices)[i] = Get<0>(*it);
-    }
+  LoggingRecord::const_iterator it;
+  for (it = loggedStrings.begin(); it != loggedStrings.end(); ++it) {
+    failures.AppendElement(
+        nsDependentCSubstring(Get<1>(*it).c_str(), Get<1>(*it).size()));
+    indices.AppendElement(Get<0>(*it));
   }
 
   return NS_OK;
@@ -1155,6 +1162,30 @@ void GfxInfoBase::RemoveCollector(GfxInfoCollectorBase* collector) {
     delete sCollectors;
     sCollectors = nullptr;
   }
+}
+
+nsresult GfxInfoBase::FindMonitors(JSContext* aCx, JS::HandleObject aOutArray) {
+  // If we have no platform specific implementation for detecting monitors, we
+  // can just get the screen size from gfxPlatform as the best guess.
+  if (!gfxPlatform::Initialized()) {
+    return NS_OK;
+  }
+
+  // If the screen size is empty, we are probably in xpcshell.
+  gfx::IntSize screenSize = gfxPlatform::GetPlatform()->GetScreenSize();
+
+  JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
+
+  JS::Rooted<JS::Value> screenWidth(aCx, JS::Int32Value(screenSize.width));
+  JS_SetProperty(aCx, obj, "screenWidth", screenWidth);
+
+  JS::Rooted<JS::Value> screenHeight(aCx, JS::Int32Value(screenSize.height));
+  JS_SetProperty(aCx, obj, "screenHeight", screenHeight);
+
+  JS::Rooted<JS::Value> element(aCx, JS::ObjectValue(*obj));
+  JS_SetElement(aCx, aOutArray, 0, element);
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1455,12 +1486,6 @@ GfxInfoBase::GetOffMainThreadPaintWorkerCount(
   } else {
     *aOffMainThreadPaintWorkerCount = 0;
   }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GfxInfoBase::GetLowEndMachine(bool* aLowEndMachine) {
-  *aLowEndMachine = gfxPlatform::ShouldAdjustForLowEndMachine();
   return NS_OK;
 }
 

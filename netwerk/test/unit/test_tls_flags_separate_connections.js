@@ -1,5 +1,4 @@
-const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
-const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -17,21 +16,21 @@ let httpserv = null;
 let gSecondRoundStarted = false;
 
 let randomFlagValues = [
-    0x00000000,
+  0x00000000,
 
-    0xFFFFFFFF,
+  0xffffffff,
 
-    0x12345678,
-    0x12345678,
+  0x12345678,
+  0x12345678,
 
-    0x11111111,
-    0x22222222,
+  0x11111111,
+  0x22222222,
 
-    0xAAAAAAAA,
-    0x77777777,
+  0xaaaaaaaa,
+  0x77777777,
 
-    0xBBBBBBBB,
-    0xCCCCCCCC
+  0xbbbbbbbb,
+  0xcccccccc,
 ];
 
 function handler(metadata, response) {
@@ -58,9 +57,10 @@ function Listener(tlsFlags) {
 
 let gTestsRun = 0;
 Listener.prototype = {
-  onStartRequest: function(request) {
-    request.QueryInterface(Ci.nsIHttpChannel)
-           .QueryInterface(Ci.nsIHttpChannelInternal);
+  onStartRequest(request) {
+    request
+      .QueryInterface(Ci.nsIHttpChannel)
+      .QueryInterface(Ci.nsIHttpChannelInternal);
 
     Assert.equal(request.tlsFlags, this.tlsFlags);
 
@@ -80,10 +80,10 @@ Listener.prototype = {
       previousHashKeys[this.tlsFlags] = hashKey;
     }
   },
-  onDataAvailable: function(request, stream, off, cnt) {
+  onDataAvailable(request, stream, off, cnt) {
     read_stream(stream, cnt);
   },
-  onStopRequest: function() {
+  onStopRequest() {
     gTestsRun++;
     if (gTestsRun == randomFlagValues.length) {
       gTestsRun = 0;
@@ -115,4 +115,3 @@ function run_test() {
 
   doTest();
 }
-

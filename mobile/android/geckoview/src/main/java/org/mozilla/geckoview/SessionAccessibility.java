@@ -148,7 +148,10 @@ public class SessionAccessibility {
                     if (virtualViewId == View.NO_ID) {
                         sendEvent(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED, View.NO_ID, CLASSNAME_WEBVIEW, null);
                     } else {
-                        if (mFocusedNode == virtualViewId) {
+                        if (mFocusedNode == virtualViewId && mHoveredOnNode != virtualViewId) {
+                            // If we are sending accessibility focus to the focused node, sync up the state with Gecko.
+                            // XXX: This is a stopgap for now until we remove the JS layer and manipulate the Gecko a11y virtual cursor directly
+                            // with the given virtualViewId
                             mSession.getEventDispatcher().dispatch("GeckoView:AccessibilityCursorToFocused", null);
                         } else {
                             sendEvent(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED, virtualViewId, CLASSNAME_UNKNOWN, null);
@@ -168,10 +171,24 @@ public class SessionAccessibility {
                     mSession.getEventDispatcher().dispatch("GeckoView:AccessibilityLongPress", null);
                     return true;
                 case AccessibilityNodeInfo.ACTION_SCROLL_FORWARD:
-                    mSession.getEventDispatcher().dispatch("GeckoView:AccessibilityScrollForward", null);
+                    if (virtualViewId == View.NO_ID) {
+                        // Scroll the viewport forwards by approximately 80%.
+                        mSession.getPanZoomController().scrollBy(
+                                ScreenLength.zero(), ScreenLength.fromViewportHeight(0.8),
+                                PanZoomController.SCROLL_BEHAVIOR_AUTO);
+                    } else {
+                        mSession.getEventDispatcher().dispatch("GeckoView:AccessibilityScrollForward", null);
+                    }
                     return true;
                 case AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD:
-                    mSession.getEventDispatcher().dispatch("GeckoView:AccessibilityScrollBackward", null);
+                    if (virtualViewId == View.NO_ID) {
+                        // Scroll the viewport backwards by approximately 80%.
+                        mSession.getPanZoomController().scrollBy(
+                                ScreenLength.zero(), ScreenLength.fromViewportHeight(-0.8),
+                                PanZoomController.SCROLL_BEHAVIOR_AUTO);
+                    } else {
+                        mSession.getEventDispatcher().dispatch("GeckoView:AccessibilityScrollBackward", null);
+                    }
                     return true;
                 case AccessibilityNodeInfo.ACTION_SELECT:
                     nativeProvider.click(virtualViewId);
@@ -486,6 +503,8 @@ public class SessionAccessibility {
     private int mAccessibilityFocusedNode = 0;
     // The current node with focus
     private int mFocusedNode = 0;
+    // A node with no accessibility focus that is currently being hovered.
+    private int mHoveredOnNode = 0;
     // Viewport cache
     final SparseArray<GeckoBundle> mViewportCache = new SparseArray<>();
     // Focus cache
@@ -746,8 +765,12 @@ public class SessionAccessibility {
                     mAccessibilityFocusedNode = 0;
                 }
                 break;
+            case AccessibilityEvent.TYPE_VIEW_HOVER_ENTER:
+                mHoveredOnNode = sourceId;
+                break;
             case AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED:
                 mAccessibilityFocusedNode = sourceId;
+                mHoveredOnNode = 0;
                 break;
             case AccessibilityEvent.TYPE_VIEW_FOCUSED:
                 mFocusedNode = sourceId;

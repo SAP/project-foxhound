@@ -146,7 +146,7 @@ bool ParseContext::Scope::propagateAndMarkAnnexBFunctionBoxes(
     uint32_t unused;
     for (FunctionBox* funbox : *possibleAnnexBFunctionBoxes_) {
       if (pc->annexBAppliesToLexicalFunctionInInnermostScope(funbox)) {
-        name = funbox->function()->explicitName()->asPropertyName();
+        name = funbox->explicitName()->asPropertyName();
         if (!pc->tryDeclareVar(
                 name, DeclarationKind::VarForAnnexBLexicalFunction,
                 DeclaredNameInfo::npos, &redeclaredKind, &unused)) {
@@ -241,7 +241,7 @@ ParseContext::ParseContext(JSContext* cx, ParseContext*& parent,
       isStandaloneFunctionBody_(false),
       superScopeNeedsHomeObject_(false) {
   if (isFunctionBox()) {
-    if (functionBox()->function()->isNamedLambda()) {
+    if (functionBox()->isNamedLambda()) {
       namedLambdaScope_.emplace(cx, parent, usedNames);
     }
     functionScope_.emplace(cx, parent, usedNames);
@@ -296,8 +296,7 @@ bool ParseContext::annexBAppliesToLexicalFunctionInInnermostScope(
     FunctionBox* funbox) {
   MOZ_ASSERT(!sc()->strict());
 
-  RootedPropertyName name(sc()->cx_,
-                          funbox->function()->explicitName()->asPropertyName());
+  RootedPropertyName name(sc()->cx_, funbox->explicitName()->asPropertyName());
   Maybe<DeclarationKind> redeclaredKind = isVarRedeclaredInInnermostScope(
       name, DeclarationKind::VarForAnnexBLexicalFunction);
 
@@ -507,7 +506,8 @@ bool ParseContext::declareFunctionThis(const UsedNameTracker& usedNames,
     declareThis = funbox->function()->lazyScript()->hasThisBinding();
   } else {
     declareThis = hasUsedFunctionSpecialName(usedNames, dotThis) ||
-                  funbox->isDerivedClassConstructor();
+                  funbox->function()->kind() ==
+                      JSFunction::FunctionKind::ClassConstructor;
   }
 
   if (declareThis) {
@@ -588,13 +588,6 @@ bool ParseContext::declareFunctionArgumentsObject(
 
     // Dynamic scope access destroys all hope of optimization.
     if (sc()->bindingsAccessedDynamically()) {
-      funbox->setDefinitelyNeedsArgsObj();
-    }
-
-    // If a script contains the debugger statement either directly or
-    // within an inner function, the arguments object should be created
-    // eagerly so the Debugger API may observe bindings.
-    if (sc()->hasDebuggerStatement()) {
       funbox->setDefinitelyNeedsArgsObj();
     }
   }

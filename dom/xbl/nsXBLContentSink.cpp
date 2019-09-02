@@ -171,16 +171,13 @@ nsresult nsXBLContentSink::ReportUnexpectedElement(nsAtom* aElementName,
   // instead of just letting the XML sink build the content model like
   // we do...
   mState = eXBL_Error;
-  nsAutoString elementName;
-  aElementName->ToString(elementName);
-
-  const char16_t* params[] = {elementName.get()};
+  AutoTArray<nsString, 1> params;
+  aElementName->ToString(*params.AppendElement());
 
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, NS_LITERAL_CSTRING("XBL Content Sink"),
       mDocument, nsContentUtils::eXBL_PROPERTIES, "UnexpectedElement", params,
-      ArrayLength(params), nullptr, EmptyString() /* source line */,
-      aLineNumber);
+      nullptr, EmptyString() /* source line */, aLineNumber);
 }
 
 void nsXBLContentSink::AddMember(nsXBLProtoImplMember* aMember) {
@@ -254,9 +251,6 @@ nsXBLContentSink::HandleEndElement(const char16_t* aName) {
           mHandler = nullptr;
         } else if (localName == nsGkAtoms::handler)
           mSecondaryState = eXBL_None;
-        return NS_OK;
-      } else if (mState == eXBL_InResources) {
-        if (localName == nsGkAtoms::resources) mState = eXBL_InBinding;
         return NS_OK;
       } else if (mState == eXBL_InImplementation) {
         if (localName == nsGkAtoms::implementation)
@@ -371,16 +365,6 @@ bool nsXBLContentSink::OnOpenContainer(const char16_t** aAtts,
     mSecondaryState = eXBL_InHandler;
     ConstructHandler(aAtts, aLineNumber);
     ret = false;
-  } else if (aTagName == nsGkAtoms::resources) {
-    ENSURE_XBL_STATE(mState == eXBL_InBinding && mBinding);
-    mState = eXBL_InResources;
-    // Note that this mState will cause us to return false, so no need
-    // to set ret to false.
-  } else if (aTagName == nsGkAtoms::stylesheet ||
-             aTagName == nsGkAtoms::image) {
-    ENSURE_XBL_STATE(mState == eXBL_InResources);
-    NS_ASSERTION(mBinding, "Must have binding here");
-    ConstructResource(aAtts, aTagName);
   } else if (aTagName == nsGkAtoms::implementation) {
     ENSURE_XBL_STATE(mState == eXBL_InBinding && mBinding);
     mState = eXBL_InImplementation;
@@ -462,7 +446,7 @@ bool nsXBLContentSink::OnOpenContainer(const char16_t** aAtts,
     mSecondaryState = eXBL_InBody;
   }
 
-  return ret && mState != eXBL_InResources && mState != eXBL_InImplementation;
+  return ret && mState != eXBL_InImplementation;
 }
 
 #undef ENSURE_XBL_STATE
@@ -495,8 +479,8 @@ nsresult nsXBLContentSink::ConstructBinding(uint32_t aLineNumber) {
   } else {
     nsContentUtils::ReportToConsole(
         nsIScriptError::errorFlag, NS_LITERAL_CSTRING("XBL Content Sink"),
-        nullptr, nsContentUtils::eXBL_PROPERTIES, "MissingIdAttr", nullptr, 0,
-        mDocumentURI, EmptyString(), aLineNumber);
+        nullptr, nsContentUtils::eXBL_PROPERTIES, "MissingIdAttr",
+        nsTArray<nsString>(), mDocumentURI, EmptyString(), aLineNumber);
   }
 
   return rv;
@@ -580,7 +564,8 @@ void nsXBLContentSink::ConstructHandler(const char16_t** aAtts,
     nsContentUtils::ReportToConsole(
         nsIScriptError::errorFlag, NS_LITERAL_CSTRING("XBL Content Sink"),
         mDocument, nsContentUtils::eXBL_PROPERTIES, "CommandNotInChrome",
-        nullptr, 0, nullptr, EmptyString() /* source line */, aLineNumber);
+        nsTArray<nsString>(), nullptr, EmptyString() /* source line */,
+        aLineNumber);
     return;  // Don't even make this handler.
   }
 
@@ -602,16 +587,6 @@ void nsXBLContentSink::ConstructHandler(const char16_t** aAtts,
   // Adjust our mHandler pointer to point to the new last handler in the
   // chain.
   mHandler = newHandler;
-}
-
-void nsXBLContentSink::ConstructResource(const char16_t** aAtts,
-                                         nsAtom* aResourceType) {
-  if (!mBinding) return;
-
-  const char16_t* src = nullptr;
-  if (FindValue(aAtts, nsGkAtoms::src, &src)) {
-    mBinding->AddResource(aResourceType, nsDependentString(src));
-  }
 }
 
 void nsXBLContentSink::ConstructImplementation(const char16_t** aAtts) {
@@ -770,9 +745,8 @@ nsresult nsXBLContentSink::CreateElement(
   // nsXBLPrototypeBinding::ReadContentNode.
 
   *aAppendContent = true;
-  RefPtr<nsXULPrototypeElement> prototype = new nsXULPrototypeElement();
-
-  prototype->mNodeInfo = aNodeInfo;
+  RefPtr<nsXULPrototypeElement> prototype =
+      new nsXULPrototypeElement(aNodeInfo);
 
   AddAttributesToXULPrototype(aAtts, aAttsCount, prototype);
 

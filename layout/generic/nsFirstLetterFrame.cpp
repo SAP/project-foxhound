@@ -8,20 +8,23 @@
 
 #include "nsFirstLetterFrame.h"
 #include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
+#include "mozilla/RestyleManager.h"
+#include "mozilla/ServoStyleSet.h"
 #include "nsIContent.h"
 #include "nsLineLayout.h"
 #include "nsGkAtoms.h"
-#include "mozilla/ServoStyleSet.h"
 #include "nsFrameManager.h"
-#include "mozilla/RestyleManager.h"
 #include "nsPlaceholderFrame.h"
 #include "nsCSSFrameConstructor.h"
 
 using namespace mozilla;
 using namespace mozilla::layout;
 
-nsFirstLetterFrame* NS_NewFirstLetterFrame(nsIPresShell* aPresShell,
+nsFirstLetterFrame* NS_NewFirstLetterFrame(PresShell* aPresShell,
                                            ComputedStyle* aStyle) {
   return new (aPresShell)
       nsFirstLetterFrame(aStyle, aPresShell->GetPresContext());
@@ -150,7 +153,7 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
 
   nsIFrame* kid = mFrames.FirstChild();
 
-  // Setup reflow state for our child
+  // Setup reflow input for our child
   WritingMode wm = aReflowInput.GetWritingMode();
   LogicalSize availSize = aReflowInput.AvailableSize();
   const LogicalMargin& bp = aReflowInput.ComputedLogicalBorderPadding();
@@ -288,7 +291,7 @@ nsresult nsFirstLetterFrame::CreateContinuationForFloatingParent(
 
   *aContinuation = nullptr;
 
-  nsIPresShell* presShell = aPresContext->PresShell();
+  mozilla::PresShell* presShell = aPresContext->PresShell();
   nsPlaceholderFrame* placeholderFrame = GetPlaceholderFrame();
   nsContainerFrame* parent = placeholderFrame->GetParent();
 

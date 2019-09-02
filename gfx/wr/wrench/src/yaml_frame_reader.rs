@@ -6,8 +6,8 @@ use clap;
 use euclid::SideOffsets2D;
 use image;
 use image::GenericImageView;
-use parse_function::parse_function;
-use premultiply::premultiply;
+use crate::parse_function::parse_function;
+use crate::premultiply::premultiply;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -15,10 +15,21 @@ use std::path::{Path, PathBuf};
 use std::usize;
 use webrender::api::*;
 use webrender::api::units::*;
-use wrench::{FontDescriptor, Wrench, WrenchThing};
-use yaml_helper::{StringEnum, YamlHelper, make_perspective};
+use crate::wrench::{FontDescriptor, Wrench, WrenchThing};
+use crate::yaml_helper::{StringEnum, YamlHelper, make_perspective};
 use yaml_rust::{Yaml, YamlLoader};
-use PLATFORM_DEFAULT_FACE_NAME;
+use crate::PLATFORM_DEFAULT_FACE_NAME;
+
+macro_rules! try_intersect {
+    ($first: expr, $second: expr) => {
+        if let Some(rect) = ($first).intersection($second) {
+            rect
+        } else {
+            warn!("skipping item with non-intersecting bounds and clip_rect");
+            return;
+        };
+    }
+}
 
 fn rsrc_path(item: &Yaml, aux_dir: &PathBuf) -> PathBuf {
     let filename = item.as_str().unwrap();
@@ -191,6 +202,7 @@ fn is_image_opaque(format: ImageFormat, bytes: &[u8]) -> bool {
             is_opaque
         }
         ImageFormat::RG8 => true,
+        ImageFormat::RG16 => true,
         ImageFormat::R8 => false,
         ImageFormat::R16 => false,
         ImageFormat::RGBAF32 |
@@ -350,7 +362,13 @@ impl YamlFrameReader {
 
         let content_size = self.get_root_size_from_yaml(wrench, yaml);
         let mut builder = DisplayListBuilder::new(pipeline_id, content_size);
-        let mut info = LayoutPrimitiveInfo::new(LayoutRect::zero());
+        let mut info = CommonItemProperties {
+            clip_rect: LayoutRect::zero(),
+            clip_id: ClipId::invalid(),
+            spatial_id: SpatialId::new(0, PipelineId::dummy()),
+            is_backface_visible: true,
+            hit_info: None,
+        };
         self.add_stacking_context_from_yaml(&mut builder, wrench, yaml, true, &mut info);
         self.display_lists.push(builder.finalize());
 
@@ -681,11 +699,17 @@ impl YamlFrameReader {
             return None;
         }
 
-        let file = match item["image"].as_str() {
+        let tiling = item["tile-size"].as_i64();
+
+        let (image_key, image_dims) = match item["image"].as_str() {
             Some(filename) => {
-                let mut file = self.aux_dir.clone();
-                file.push(filename);
-                file
+                if filename == "invalid" {
+                    (ImageKey::DUMMY, LayoutSize::new(100.0, 100.0))
+                } else {
+                    let mut file = self.aux_dir.clone();
+                    file.push(filename);
+                    self.add_or_get_image(&file, tiling, wrench)
+                }
             }
             None => {
                 warn!("No image provided for the image-mask!");
@@ -693,9 +717,6 @@ impl YamlFrameReader {
             }
         };
 
-        let tiling = item["tile-size"].as_i64();
-        let (image_key, image_dims) =
-            self.add_or_get_image(&file, tiling, wrench);
         let image_rect = item["rect"]
             .as_rect()
             .unwrap_or(LayoutRect::new(LayoutPoint::zero(), image_dims));
@@ -765,35 +786,55 @@ impl YamlFrameReader {
         &mut self,
         dl: &mut DisplayListBuilder,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let bounds_key = if item["type"].is_badvalue() {
             "rect"
         } else {
             "bounds"
         };
-        info.rect = self.resolve_rect(&item[bounds_key]);
+
+        info.clip_rect = try_intersect!(
+            self.resolve_rect(&item[bounds_key]),
+            &info.clip_rect
+        );
+
         let color = self.resolve_colorf(&item["color"], ColorF::BLACK);
-        dl.push_rect(&info, &self.top_space_and_clip(), color);
+        dl.push_rect(&info, color);
     }
 
     fn handle_clear_rect(
         &mut self,
         dl: &mut DisplayListBuilder,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
-        info.rect = item["bounds"]
-            .as_rect()
-            .expect("clear-rect type must have bounds");
-        dl.push_clear_rect(&info, &self.top_space_and_clip());
+        info.clip_rect = try_intersect!(
+            item["bounds"].as_rect().expect("clear-rect type must have bounds"),
+            &info.clip_rect
+        );
+        dl.push_clear_rect(&info);
+    }
+
+    fn handle_hit_test(
+        &mut self,
+        dl: &mut DisplayListBuilder,
+        item: &Yaml,
+        info: &mut CommonItemProperties,
+    ) {
+        info.clip_rect = try_intersect!(
+            item["bounds"].as_rect().expect("hit-test type must have bounds"),
+            &info.clip_rect
+        );
+
+        dl.push_hit_test(&info);
     }
 
     fn handle_line(
         &mut self,
         dl: &mut DisplayListBuilder,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let color = item["color"].as_colorf().unwrap_or(ColorF::BLACK);
         let orientation = item["orientation"]
@@ -811,6 +852,7 @@ impl YamlFrameReader {
             0.0
         };
 
+        let area;
         if item["baseline"].is_badvalue() {
             let bounds_key = if item["type"].is_badvalue() {
                 "rect"
@@ -818,7 +860,7 @@ impl YamlFrameReader {
                 "bounds"
             };
 
-            info.rect = item[bounds_key]
+            area = item[bounds_key]
                 .as_rect()
                 .expect("line type must have bounds");
         } else {
@@ -828,7 +870,7 @@ impl YamlFrameReader {
             let end = item["end"].as_f32().expect("line must have end");
             let width = item["width"].as_f32().expect("line must have width");
 
-            info.rect = match orientation {
+            area = match orientation {
                 LineOrientation::Horizontal => {
                     LayoutRect::new(LayoutPoint::new(start, baseline),
                                     LayoutSize::new(end - start, width))
@@ -842,7 +884,7 @@ impl YamlFrameReader {
 
         dl.push_line(
             &info,
-            &self.top_space_and_clip(),
+            &area,
             wavy_line_thickness,
             orientation,
             &color,
@@ -854,7 +896,7 @@ impl YamlFrameReader {
         &mut self,
         dl: &mut DisplayListBuilder,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let bounds_key = if item["type"].is_badvalue() {
             "gradient"
@@ -864,19 +906,25 @@ impl YamlFrameReader {
         let bounds = item[bounds_key]
             .as_rect()
             .expect("gradient must have bounds");
-        info.rect = bounds;
+
         let gradient = self.to_gradient(dl, item);
         let tile_size = item["tile-size"].as_size().unwrap_or(bounds.size);
         let tile_spacing = item["tile-spacing"].as_size().unwrap_or(LayoutSize::zero());
 
-        dl.push_gradient(&info, &self.top_space_and_clip(), gradient, tile_size, tile_spacing);
+        dl.push_gradient(
+            &info,
+            bounds,
+            gradient,
+            tile_size,
+            tile_spacing
+        );
     }
 
     fn handle_radial_gradient(
         &mut self,
         dl: &mut DisplayListBuilder,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let bounds_key = if item["type"].is_badvalue() {
             "radial-gradient"
@@ -886,14 +934,13 @@ impl YamlFrameReader {
         let bounds = item[bounds_key]
             .as_rect()
             .expect("radial gradient must have bounds");
-        info.rect = bounds;
         let gradient = self.to_radial_gradient(dl, item);
         let tile_size = item["tile-size"].as_size().unwrap_or(bounds.size);
         let tile_spacing = item["tile-spacing"].as_size().unwrap_or(LayoutSize::zero());
 
         dl.push_radial_gradient(
             &info,
-            &self.top_space_and_clip(),
+            bounds,
             gradient,
             tile_size,
             tile_spacing,
@@ -905,16 +952,14 @@ impl YamlFrameReader {
         dl: &mut DisplayListBuilder,
         wrench: &mut Wrench,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let bounds_key = if item["type"].is_badvalue() {
             "border"
         } else {
             "bounds"
         };
-        info.rect = item[bounds_key]
-            .as_rect()
-            .expect("borders must have bounds");
+        let bounds = item[bounds_key].as_rect().expect("borders must have bounds");
         let widths = item["width"]
             .as_vec_f32()
             .expect("borders must have width(s)");
@@ -983,10 +1028,10 @@ impl YamlFrameReader {
                 "image" | "gradient" | "radial-gradient" => {
                     let image_width = item["image-width"]
                         .as_i64()
-                        .unwrap_or(info.rect.size.width as i64);
+                        .unwrap_or(bounds.size.width as i64);
                     let image_height = item["image-height"]
                         .as_i64()
-                        .unwrap_or(info.rect.size.height as i64);
+                        .unwrap_or(bounds.size.height as i64);
                     let fill = item["fill"].as_bool().unwrap_or(false);
 
                     let slice = item["slice"].as_vec_u32();
@@ -1059,7 +1104,7 @@ impl YamlFrameReader {
             None
         };
         if let Some(details) = border_details {
-            dl.push_border(&info, &self.top_space_and_clip(), widths, details);
+            dl.push_border(&info, bounds, widths, details);
         }
     }
 
@@ -1067,7 +1112,7 @@ impl YamlFrameReader {
         &mut self,
         dl: &mut DisplayListBuilder,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let bounds_key = if item["type"].is_badvalue() {
             "box-shadow"
@@ -1077,7 +1122,6 @@ impl YamlFrameReader {
         let bounds = item[bounds_key]
             .as_rect()
             .expect("box shadow must have bounds");
-        info.rect = bounds;
         let box_bounds = item["box-bounds"].as_rect().unwrap_or(bounds);
         let offset = self.resolve_vector(&item["offset"], LayoutVector2D::zero());
         let color = item["color"]
@@ -1100,7 +1144,6 @@ impl YamlFrameReader {
 
         dl.push_box_shadow(
             &info,
-            &self.top_space_and_clip(),
             box_bounds,
             offset,
             color,
@@ -1116,7 +1159,7 @@ impl YamlFrameReader {
         dl: &mut DisplayListBuilder,
         wrench: &mut Wrench,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         // TODO(gw): Support other YUV color depth and spaces.
         let color_depth = ColorDepth::Color8;
@@ -1156,14 +1199,14 @@ impl YamlFrameReader {
         };
 
         let bounds = item["bounds"].as_vec_f32().unwrap();
-        info.rect = LayoutRect::new(
+        let bounds = LayoutRect::new(
             LayoutPoint::new(bounds[0], bounds[1]),
             LayoutSize::new(bounds[2], bounds[3]),
         );
 
         dl.push_yuv_image(
             &info,
-            &self.top_space_and_clip(),
+            bounds,
             yuv_data,
             color_depth,
             color_space,
@@ -1176,7 +1219,7 @@ impl YamlFrameReader {
         dl: &mut DisplayListBuilder,
         wrench: &mut Wrench,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let filename = &item[if item["type"].is_badvalue() {
                                  "image"
@@ -1189,7 +1232,7 @@ impl YamlFrameReader {
             self.add_or_get_image(&file, tiling, wrench);
 
         let bounds_raws = item["bounds"].as_vec_f32().unwrap();
-        info.rect = if bounds_raws.len() == 2 {
+        let bounds = if bounds_raws.len() == 2 {
             LayoutRect::new(LayoutPoint::new(bounds_raws[0], bounds_raws[1]), image_dims)
         } else if bounds_raws.len() == 4 {
             LayoutRect::new(
@@ -1202,7 +1245,6 @@ impl YamlFrameReader {
                 item["bounds"]
             );
         };
-
         let stretch_size = item["stretch-size"].as_size().unwrap_or(image_dims);
         let tile_spacing = item["tile-spacing"]
             .as_size()
@@ -1226,7 +1268,7 @@ impl YamlFrameReader {
         };
         dl.push_image(
             &info,
-            &self.top_space_and_clip(),
+            bounds,
             stretch_size,
             tile_spacing,
             rendering,
@@ -1241,7 +1283,7 @@ impl YamlFrameReader {
         dl: &mut DisplayListBuilder,
         wrench: &mut Wrench,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let size = item["size"].as_pt_to_au().unwrap_or(Au::from_f32_px(16.0));
         let color = item["color"].as_colorf().unwrap_or(ColorF::BLACK);
@@ -1306,6 +1348,7 @@ impl YamlFrameReader {
                 .map(|k| {
                     GlyphInstance {
                         index: *k.1,
+                        // In the future we want to change the API to be relative, eliminating this
                         point: LayoutPoint::new(
                             origin.x + glyph_offsets[k.0 * 2],
                             origin.y + glyph_offsets[k.0 * 2 + 1],
@@ -1346,11 +1389,10 @@ impl YamlFrameReader {
                 .collect::<Vec<_>>();
             (glyphs, bounds)
         };
-        info.rect = rect;
 
         dl.push_text(
             &info,
-            &self.top_space_and_clip(),
+            rect,
             &glyphs,
             font_instance_key,
             color,
@@ -1362,12 +1404,21 @@ impl YamlFrameReader {
         &mut self,
         dl: &mut DisplayListBuilder,
         item: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
-        info.rect = item["bounds"].as_rect().expect("iframe must have bounds");
+        let bounds = item["bounds"].as_rect().expect("iframe must have bounds");
         let pipeline_id = item["id"].as_pipeline_id().unwrap();
         let ignore = item["ignore_missing_pipeline"].as_bool().unwrap_or(true);
-        dl.push_iframe(&info, &self.top_space_and_clip(), pipeline_id, ignore);
+        dl.push_iframe(
+            bounds,
+            info.clip_rect,
+            &SpaceAndClipInfo {
+                spatial_id: info.spatial_id,
+                clip_id: info.clip_id
+            },
+            pipeline_id,
+            ignore
+        );
     }
 
     fn get_complex_clip_for_item(&mut self, yaml: &Yaml) -> Option<ComplexClipRegion> {
@@ -1453,12 +1504,18 @@ impl YamlFrameReader {
                 }
             }
 
-            let mut info = LayoutPrimitiveInfo::with_clip_rect(LayoutRect::zero(), clip_rect);
-            info.is_backface_visible = item["backface-visible"].as_bool().unwrap_or(true);;
-            info.tag = self.to_hit_testing_tag(&item["hit-testing-tag"]);
+            let space_and_clip = self.top_space_and_clip();
+            let mut info = CommonItemProperties {
+                clip_rect,
+                clip_id: space_and_clip.clip_id,
+                spatial_id: space_and_clip.spatial_id,
+                hit_info: self.to_hit_testing_tag(&item["hit-testing-tag"]),
+                is_backface_visible: item["backface-visible"].as_bool().unwrap_or(true),
+            };
 
             match item_type {
                 "rect" => self.handle_rect(dl, item, &mut info),
+                "hit-test" => self.handle_hit_test(dl, item, &mut info),
                 "clear-rect" => self.handle_clear_rect(dl, item, &mut info),
                 "line" => self.handle_line(dl, item, &mut info),
                 "image" => self.handle_image(dl, wrench, item, &mut info),
@@ -1627,21 +1684,20 @@ impl YamlFrameReader {
         &mut self,
         dl: &mut DisplayListBuilder,
         yaml: &Yaml,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let blur_radius = yaml["blur-radius"].as_f32().unwrap_or(0.0);
         let offset = yaml["offset"].as_vector().unwrap_or(LayoutVector2D::zero());
         let color = yaml["color"].as_colorf().unwrap_or(ColorF::BLACK);
 
         dl.push_shadow(
-            &info,
-            &self.top_space_and_clip(),
+            &SpaceAndClipInfo { spatial_id: info.spatial_id, clip_id: info.clip_id },
             Shadow {
                 blur_radius,
                 offset,
                 color,
-                should_inflate: true,
             },
+            true,
         );
     }
 
@@ -1750,7 +1806,7 @@ impl YamlFrameReader {
         };
 
         let reference_frame_id = dl.push_reference_frame(
-            &bounds,
+            bounds.origin,
             *self.spatial_id_stack.last().unwrap(),
             transform_style,
             transform.or_else(|| perspective).unwrap_or_default().into(),
@@ -1788,7 +1844,7 @@ impl YamlFrameReader {
         wrench: &mut Wrench,
         yaml: &Yaml,
         is_root: bool,
-        info: &mut LayoutPrimitiveInfo,
+        info: &mut CommonItemProperties,
     ) {
         let default_bounds = LayoutRect::new(LayoutPoint::zero(), wrench.window_size_f32());
         let mut bounds = yaml["bounds"].as_rect().unwrap_or(default_bounds);
@@ -1803,7 +1859,6 @@ impl YamlFrameReader {
             None
         };
 
-        // note: this API is deprecated, use the standard clip-and-scroll field instead
         let clip_node_id = self.to_clip_id(&yaml["clip-node"], dl.pipeline_id);
 
         let transform_style = yaml["transform-style"]
@@ -1827,12 +1882,10 @@ impl YamlFrameReader {
         let filters = yaml["filters"].as_vec_filter_op().unwrap_or(vec![]);
         let filter_datas = yaml["filter-datas"].as_vec_filter_data().unwrap_or(vec![]);
 
-        info.rect = bounds;
-        info.clip_rect = bounds;
-
         dl.push_stacking_context(
-            &info,
+            bounds.origin,
             *self.spatial_id_stack.last().unwrap(),
+            info.is_backface_visible,
             clip_node_id,
             transform_style,
             mix_blend_mode,

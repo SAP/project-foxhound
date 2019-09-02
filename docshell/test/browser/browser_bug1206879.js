@@ -1,18 +1,22 @@
 add_task(async function() {
-  let url = getRootDirectory(gTestPath) + "file_bug1206879.html";
+  let url =
+    getRootDirectory(gTestPath).replace(
+      "chrome://mochitests/content/",
+      "http://example.com/"
+    ) + "file_bug1206879.html";
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url, true);
 
   let numLocationChanges = 0;
 
   let listener = {
-    onLocationChange: function(browser, wp, request, uri, flags) {
+    onLocationChange(browser, wp, request, uri, flags) {
       if (browser != tab.linkedBrowser) {
         return;
       }
       info("onLocationChange: " + uri.spec);
       numLocationChanges++;
       this.resolve();
-    }
+    },
   };
   let locationPromise = new Promise((resolve, reject) => {
     listener.resolve = resolve;
@@ -26,6 +30,9 @@ add_task(async function() {
 
   gBrowser.removeTab(tab);
   gBrowser.removeTabsProgressListener(listener);
-  is(numLocationChanges, 1,
-     "pushState with a different URI should cause a LocationChange event.");
+  is(
+    numLocationChanges,
+    1,
+    "pushState with a different URI should cause a LocationChange event."
+  );
 });

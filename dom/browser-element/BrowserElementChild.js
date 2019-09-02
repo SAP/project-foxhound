@@ -2,12 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+/* global api, CopyPasteAssistent */
+
 "use strict";
 
-var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function debug(msg) {
-  //dump("BrowserElementChild - " + msg + "\n");
+  // dump("BrowserElementChild - " + msg + "\n");
 }
 
 // NB: this must happen before we process any messages from
@@ -19,7 +22,9 @@ function parentDocShell(docshell) {
     return null;
   }
   let treeitem = docshell.QueryInterface(Ci.nsIDocShellTreeItem);
-  return treeitem.parent ? treeitem.parent.QueryInterface(Ci.nsIDocShell) : null;
+  return treeitem.parent
+    ? treeitem.parent.QueryInterface(Ci.nsIDocShell)
+    : null;
 }
 
 function isTopBrowserElement(docShell) {
@@ -36,19 +41,28 @@ var BrowserElementIsReady;
 
 debug(`Might load BE scripts: BEIR: ${BrowserElementIsReady}`);
 if (!BrowserElementIsReady) {
-  debug("Loading BE scripts")
+  debug("Loading BE scripts");
   if (!("BrowserElementIsPreloaded" in this)) {
-    if(Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
+    if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
       // general content apps
       if (isTopBrowserElement(docShell)) {
-        Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js", this);
+        Services.scriptloader.loadSubScript(
+          "chrome://global/content/BrowserElementCopyPaste.js",
+          this
+        );
       }
     } else {
       // rocketbar in system app and other in-process case (ex. B2G desktop client)
-      Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js", this);
+      Services.scriptloader.loadSubScript(
+        "chrome://global/content/BrowserElementCopyPaste.js",
+        this
+      );
     }
 
-    Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementChildPreload.js", this);
+    Services.scriptloader.loadSubScript(
+      "chrome://global/content/BrowserElementChildPreload.js",
+      this
+    );
   }
 
   function onDestroy() {
@@ -70,4 +84,4 @@ if (!BrowserElementIsReady) {
   debug("BE already loaded, abort");
 }
 
-sendAsyncMessage('browser-element-api:call', { 'msg_name': 'hello' });
+sendAsyncMessage("browser-element-api:call", { msg_name: "hello" });

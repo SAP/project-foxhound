@@ -9,6 +9,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "nsRefPtrHashtable.h"
 #include "nsAutoPtr.h"
 
 namespace mozilla {
@@ -126,6 +127,13 @@ class BackgroundChildImpl : public PBackgroundChild {
   virtual bool DeallocPTemporaryIPCBlobChild(
       PTemporaryIPCBlobChild* aActor) override;
 
+  virtual PFileCreatorChild* AllocPFileCreatorChild(
+      const nsString& aFullPath, const nsString& aType, const nsString& aName,
+      const Maybe<int64_t>& aLastModified, const bool& aExistenceCheck,
+      const bool& aIsFromNsIFile) override;
+
+  virtual bool DeallocPFileCreatorChild(PFileCreatorChild* aActor) override;
+
   virtual mozilla::dom::PRemoteWorkerChild* AllocPRemoteWorkerChild(
       const RemoteWorkerData& aData) override;
 
@@ -212,14 +220,6 @@ class BackgroundChildImpl : public PBackgroundChild {
 
   virtual bool DeallocPParentToChildStreamChild(
       PParentToChildStreamChild* aActor) override;
-
-  virtual PAsmJSCacheEntryChild* AllocPAsmJSCacheEntryChild(
-      const dom::asmjscache::OpenMode& aOpenMode,
-      const dom::asmjscache::WriteParams& aWriteParams,
-      const PrincipalInfo& aPrincipalInfo) override;
-
-  virtual bool DeallocPAsmJSCacheEntryChild(
-      PAsmJSCacheEntryChild* aActor) override;
 
   virtual PQuotaChild* AllocPQuotaChild() override;
 

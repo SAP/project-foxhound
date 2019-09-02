@@ -6,10 +6,10 @@
 
 #include "nsNSSComponent.h"
 
+#include "CryptoTask.h"
 #include "EnterpriseRoots.h"
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
-#include "PKCS11ModuleDB.h"
 #include "ScopedNSSTypes.h"
 #include "SharedSSLState.h"
 #include "cert.h"
@@ -45,6 +45,7 @@
 #include "nsLiteralString.h"
 #include "nsNSSCertificateDB.h"
 #include "nsNSSHelper.h"
+#include "nsNetCID.h"
 #include "nsPK11TokenDB.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
@@ -530,7 +531,7 @@ void nsNSSComponent::MaybeImportEnterpriseRoots() {
   if (importEnterpriseRoots) {
     RefPtr<BackgroundImportEnterpriseCertsTask> task =
         new BackgroundImportEnterpriseCertsTask(this);
-    Unused << task->Dispatch("EnterpriseCrts");
+    Unused << task->Dispatch();
   }
 }
 
@@ -612,40 +613,22 @@ class LoadLoadableRootsTask final : public Runnable {
   bool mImportEnterpriseRoots;
   uint32_t mFamilySafetyMode;
   Vector<nsCString> mPossibleLoadableRootsLocations;
-  nsCOMPtr<nsIThread> mThread;
 };
 
 nsresult LoadLoadableRootsTask::Dispatch() {
-  // Can't add 'this' as the event to run, since mThread may not be set yet
-  nsresult rv = NS_NewNamedThread("LoadRoots", getter_AddRefs(mThread), nullptr,
-                                  nsIThreadManager::DEFAULT_STACK_SIZE);
-  if (NS_FAILED(rv)) {
-    return rv;
+  // The stream transport service (note: not the socket transport service) can
+  // be used to perform background tasks or I/O that would otherwise block the
+  // main thread.
+  nsCOMPtr<nsIEventTarget> target(
+      do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID));
+  if (!target) {
+    return NS_ERROR_FAILURE;
   }
-
-  // Note: event must not null out mThread!
-  return mThread->Dispatch(this, NS_DISPATCH_NORMAL);
+  return target->Dispatch(this, NS_DISPATCH_NORMAL);
 }
 
 NS_IMETHODIMP
 LoadLoadableRootsTask::Run() {
-  // First we Run() on the "LoadRoots" thread, do our work, and then we Run()
-  // again on the main thread so we can shut down the thread (since we don't
-  // need it any more). We can't shut down the thread while we're *on* the
-  // thread, which is why we do the dispatch to the main thread. CryptoTask.cpp
-  // (which informs this code) says that we can't null out mThread. This appears
-  // to be because its refcount could be decreased while this dispatch is being
-  // processed, so it might get prematurely destroyed. I'm not sure this makes
-  // sense but it'll get cleaned up in our destructor anyway, so it's fine to
-  // not null it out here (as long as we don't run twice on the main thread,
-  // which shouldn't be possible).
-  if (NS_IsMainThread()) {
-    if (mThread) {
-      mThread->Shutdown();
-    }
-    return NS_OK;
-  }
-
   nsresult loadLoadableRootsResult = LoadLoadableRoots();
   if (NS_WARN_IF(NS_FAILED(loadLoadableRootsResult))) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Error, ("LoadLoadableRoots failed"));
@@ -687,9 +670,7 @@ LoadLoadableRootsTask::Run() {
               ("failed to notify loadable roots loaded monitor"));
     }
   }
-
-  // Go back to the main thread to clean up this worker thread.
-  return NS_DispatchToMainThread(this);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1022,6 +1003,7 @@ static const bool FALSE_START_ENABLED_DEFAULT = true;
 static const bool ALPN_ENABLED_DEFAULT = false;
 static const bool ENABLED_0RTT_DATA_DEFAULT = false;
 static const bool HELLO_DOWNGRADE_CHECK_DEFAULT = false;
+static const bool ENABLED_POST_HANDSHAKE_AUTH_DEFAULT = false;
 
 static void ConfigureTLSSessionIdentifiers() {
   bool disableSessionIdentifiers =
@@ -1575,6 +1557,12 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("nocertdb mode or empty profile path -> NSS_NoDB_Init"));
     SECStatus srv = NSS_NoDB_Init(nullptr);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    if (srv != SECSuccess) {
+      MOZ_CRASH_UNSAFE_PRINTF("InitializeNSSWithFallbacks failed: %d",
+                              PR_GetError());
+    }
+#endif
     return srv == SECSuccess ? NS_OK : NS_ERROR_FAILURE;
   }
 
@@ -1628,6 +1616,10 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
       // Unload NSS so we can attempt to fix this situation for the user.
       srv = NSS_Shutdown();
       if (srv != SECSuccess) {
+#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+        MOZ_CRASH_UNSAFE_PRINTF("InitializeNSSWithFallbacks failed: %d",
+                                PR_GetError());
+#  endif
         return NS_ERROR_FAILURE;
       }
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("trying to rename module db"));
@@ -1636,6 +1628,12 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
       // fall back to NSS_NoDB_Init, which is the behavior we want.
       nsresult rv = AttemptToRenameBothPKCS11ModuleDBVersions(profilePath);
       if (NS_FAILED(rv)) {
+#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+        // An nsresult is a uint32_t, but at least one of our compilers doesn't
+        // like this format string unless we include the cast. <shruggie emoji>
+        MOZ_CRASH_UNSAFE_PRINTF("InitializeNSSWithFallbacks failed: %u",
+                                (uint32_t)rv);
+#  endif
         return rv;
       }
       srv = ::mozilla::psm::InitializeNSS(profilePath, false, true);
@@ -1654,6 +1652,12 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("last-resort NSS_NoDB_Init"));
   srv = NSS_NoDB_Init(nullptr);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  if (srv != SECSuccess) {
+    MOZ_CRASH_UNSAFE_PRINTF("InitializeNSSWithFallbacks failed: %d",
+                            PR_GetError());
+  }
+#endif
   return srv == SECSuccess ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -1671,6 +1675,7 @@ nsresult nsNSSComponent::InitializeNSS() {
 
   nsAutoCString profileStr;
   nsresult rv = GetNSSProfilePath(profileStr);
+  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
   if (NS_FAILED(rv)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -1687,6 +1692,7 @@ nsresult nsNSSComponent::InitializeNSS() {
   // modules will be loaded).
   if (runtime) {
     rv = runtime->GetInSafeMode(&inSafeMode);
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -1694,6 +1700,7 @@ nsresult nsNSSComponent::InitializeNSS() {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("inSafeMode: %u\n", inSafeMode));
 
   rv = InitializeNSSWithFallbacks(profileStr, nocertdb, inSafeMode);
+  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
   if (NS_FAILED(rv)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("failed to initialize NSS"));
     return rv;
@@ -1710,6 +1717,7 @@ nsresult nsNSSComponent::InitializeNSS() {
   SSL_OptionSetDefault(SSL_V2_COMPATIBLE_HELLO, false);
 
   rv = setEnabledTLSVersions();
+  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
   if (NS_FAILED(rv)) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -1747,7 +1755,14 @@ nsresult nsNSSComponent::InitializeNSS() {
                        Preferences::GetBool("security.tls.enable_0rtt_data",
                                             ENABLED_0RTT_DATA_DEFAULT));
 
-  if (NS_FAILED(InitializeCipherSuite())) {
+  SSL_OptionSetDefault(
+      SSL_ENABLE_POST_HANDSHAKE_AUTH,
+      Preferences::GetBool("security.tls.enable_post_handshake_auth",
+                           ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
+
+  rv = InitializeCipherSuite();
+  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+  if (NS_FAILED(rv)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Error,
             ("Unable to initialize cipher suite settings\n"));
     return NS_ERROR_FAILURE;
@@ -1757,28 +1772,6 @@ nsresult nsNSSComponent::InitializeNSS() {
 
   if (PK11_IsFIPS()) {
     Telemetry::Accumulate(Telemetry::FIPS_ENABLED, true);
-  }
-
-  // Gather telemetry on any PKCS#11 modules we have loaded. Note that because
-  // we load the built-in root module asynchronously after this, the telemetry
-  // will not include it.
-  {  // Introduce scope for the AutoSECMODListReadLock.
-    AutoSECMODListReadLock lock;
-    for (SECMODModuleList* list = SECMOD_GetDefaultModuleList(); list;
-         list = list->next) {
-      nsAutoString scalarKey;
-      GetModuleNameForTelemetry(list->module, scalarKey);
-      // Scalar keys must be between 0 and 70 characters (exclusive).
-      // GetModuleNameForTelemetry takes care of keys that are too long. If for
-      // some reason it couldn't come up with an appropriate name and returned
-      // an empty result, however, we need to not attempt to record this (it
-      // wouldn't give us anything useful anyway).
-      if (scalarKey.Length() > 0) {
-        Telemetry::ScalarSet(
-            Telemetry::ScalarID::SECURITY_PKCS11_MODULES_LOADED, scalarKey,
-            true);
-      }
-    }
   }
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("NSS Initialization done\n"));
@@ -1811,6 +1804,7 @@ nsresult nsNSSComponent::InitializeNSS() {
         Preferences::GetUint(kFamilySafetyModePref, kFamilySafetyModeDefault);
     Vector<nsCString> possibleLoadableRootsLocations;
     rv = ListPossibleLoadableRootsLocations(possibleLoadableRootsLocations);
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -1818,6 +1812,7 @@ nsresult nsNSSComponent::InitializeNSS() {
         new LoadLoadableRootsTask(this, importEnterpriseRoots, familySafetyMode,
                                   std::move(possibleLoadableRootsLocations)));
     rv = loadLoadableRootsTask->Dispatch();
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -1935,6 +1930,12 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
       SSL_OptionSetDefault(SSL_ENABLE_0RTT_DATA,
                            Preferences::GetBool("security.tls.enable_0rtt_data",
                                                 ENABLED_0RTT_DATA_DEFAULT));
+    } else if (prefName.EqualsLiteral(
+                   "security.tls.enable_post_handshake_auth")) {
+      SSL_OptionSetDefault(
+          SSL_ENABLE_POST_HANDSHAKE_AUTH,
+          Preferences::GetBool("security.tls.enable_post_handshake_auth",
+                               ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
     } else if (prefName.EqualsLiteral(
                    "security.ssl.disable_session_identifiers")) {
       ConfigureTLSSessionIdentifiers();

@@ -9,9 +9,9 @@ HAS_MISC_RULE = True
 FINAL_TARGET = '_tests/xpcshell/toolkit/mozapps/update/tests/data'
 
 if not CONFIG['MOZ_SUITE']:
-  BROWSER_CHROME_MANIFESTS += ['browser/browser.ini']
-
-MOCHITEST_CHROME_MANIFESTS += ['chrome/chrome.ini']
+    BROWSER_CHROME_MANIFESTS += ['browser/browser.ini']
+    if CONFIG['OS_ARCH'] == 'WINNT':
+        BROWSER_CHROME_MANIFESTS += ['browser/browser.bits.ini']
 
 XPCSHELL_TESTS_MANIFESTS += [
     'unit_aus_update/xpcshell.ini',
@@ -67,10 +67,6 @@ TEST_HARNESS_FILES.testing.mochitest.browser.toolkit.mozapps.update.tests.browse
     'data/simple.mar',
 ]
 
-TEST_HARNESS_FILES.testing.mochitest.chrome.toolkit.mozapps.update.tests.chrome += [
-    'data/simple.mar',
-]
-
 FINAL_TARGET_FILES += [
     'data/complete.exe',
     'data/complete.mar',
@@ -108,5 +104,5 @@ FINAL_TARGET_PP_FILES += [
     'data/xpcshellConstantsPP.js',
 ]
 
-with Files("browser/browser_TelemetryUpdatePing.js"):
+with Files("browser/browser_telemetry_updatePing_ready.js"):
     BUG_COMPONENT = ("Toolkit", "Telemetry")

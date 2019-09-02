@@ -9,6 +9,7 @@
 
 // Keep others in (case-insensitive) order:
 #include "ImgDrawResult.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "nsCSSFrameConstructor.h"
 #include "SVGObserverUtils.h"
@@ -29,7 +30,7 @@ NS_QUERYFRAME_HEAD(nsSVGDisplayContainerFrame)
   NS_QUERYFRAME_ENTRY(nsSVGDisplayableFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsSVGContainerFrame)
 
-nsIFrame* NS_NewSVGContainerFrame(nsIPresShell* aPresShell,
+nsIFrame* NS_NewSVGContainerFrame(PresShell* aPresShell,
                                   ComputedStyle* aStyle) {
   nsIFrame* frame = new (aPresShell) nsSVGContainerFrame(
       aStyle, aPresShell->GetPresContext(), nsSVGContainerFrame::kClassID);
@@ -123,7 +124,7 @@ void nsSVGContainerFrame::ReflowSVGNonDisplayText(nsIFrame* aContainer) {
 void nsSVGDisplayContainerFrame::Init(nsIContent* aContent,
                                       nsContainerFrame* aParent,
                                       nsIFrame* aPrevInFlow) {
-  if (!(GetStateBits() & NS_STATE_IS_OUTER_SVG)) {
+  if (!IsSVGOuterSVGFrame()) {
     AddStateBits(aParent->GetStateBits() & NS_STATE_SVG_CLIPPATH_CHILD);
   }
   nsSVGContainerFrame::Init(aContent, aParent, aPrevInFlow);
@@ -259,7 +260,8 @@ void nsSVGDisplayContainerFrame::PaintSVG(gfxContext& aContext,
       if (!element->HasValidDimensions()) {
         continue;  // nothing to paint for kid
       }
-      m = element->PrependLocalTransformsTo(m, eUserSpaceToParent);
+
+      m = nsSVGUtils::GetTransformMatrixInUserSpace(kid) * m;
       if (m.IsSingular()) {
         continue;
       }
@@ -312,7 +314,6 @@ void nsSVGDisplayContainerFrame::ReflowSVG() {
     if (SVGFrame) {
       MOZ_ASSERT(!(kid->GetStateBits() & NS_FRAME_IS_NONDISPLAY),
                  "Check for this explicitly in the |if|, then");
-      kid->AddStateBits(mState & NS_FRAME_IS_DIRTY);
       SVGFrame->ReflowSVG();
 
       // We build up our child frame overflows here instead of using
@@ -389,7 +390,8 @@ SVGBBox nsSVGDisplayContainerFrame::GetBBoxContribution(
       gfxMatrix transform = gfx::ThebesMatrix(aToBBoxUserspace);
       if (content->IsSVGElement()) {
         transform = static_cast<SVGElement*>(content)->PrependLocalTransformsTo(
-            transform);
+                        {}, eChildToUserSpace) *
+                    nsSVGUtils::GetTransformMatrixInUserSpace(kid) * transform;
       }
       // We need to include zero width/height vertical/horizontal lines, so we
       // have to use UnionEdges.

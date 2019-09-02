@@ -32,11 +32,7 @@ search-input-box =
            *[other] Find in Preferences
         }
 
-policies-notice =
-    { PLATFORM() ->
-        [windows] Your organization has disabled the ability to change some options.
-       *[other] Your organization has disabled the ability to change some preferences.
-    }
+managed-notice = Your browser is being managed by your organization.
 
 pane-general-title = General
 category-general =
@@ -364,11 +360,25 @@ update-enable-search-update =
     .label = Automatically update search engines
     .accesskey = e
 
-update-pref-write-failure-title = Write Failure
+update-setting-write-failure-title = Error saving Update preferences
 
 # Variables:
 #   $path (String) - Path to the configuration file
-update-pref-write-failure-message = Unable to save preference. Could not write to file: { $path }
+# The newlines between the main text and the line containing the path is
+# intentional so the path is easier to identify.
+update-setting-write-failure-message =
+    { -brand-short-name } encountered an error and didn’t save this change. Note that setting this update preference requires permission to write to the file below. You or a system administrator may be able resolve the error by granting the Users group full control to this file.
+
+    Could not write to file: { $path }
+
+update-in-progress-title = Update In Progress
+
+update-in-progress-message = Do you want { -brand-short-name } to continue with this update?
+
+update-in-progress-ok-button = &Discard
+# Continue is the cancel button so pressing escape or using a platform standard
+# method of closing the UI will not discard the update.
+update-in-progress-cancel-button = &Continue
 
 ## General Section - Performance
 
@@ -487,6 +497,53 @@ use-current-pages =
 choose-bookmark =
     .label = Use Bookmark…
     .accesskey = B
+
+## Home Section - Firefox Home Content Customization
+
+home-prefs-content-header = Firefox Home Content
+home-prefs-content-description = Choose what content you want on your Firefox Home screen.
+home-prefs-content-discovery-description = Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.
+
+home-prefs-search-header =
+    .label = Web Search
+home-prefs-topsites-header =
+    .label = Top Sites
+home-prefs-topsites-description = The sites you visit most
+
+# Variables:
+#  $provider (String): Name of the corresponding content provider, e.g "Pocket".
+home-prefs-recommended-by-header =
+    .label = Recommended by { $provider }
+home-prefs-recommended-by-description = Great content from around the web, personalized for you
+home-prefs-recommended-by-learn-more = How it works
+home-prefs-recommended-by-option-sponsored-stories =
+    .label = Sponsored Stories
+
+home-prefs-highlights-header =
+    .label = Highlights
+home-prefs-highlights-description = A selection of sites that you’ve saved or visited
+home-prefs-highlights-option-visited-pages =
+    .label = Visited Pages
+home-prefs-highlights-options-bookmarks =
+    .label = Bookmarks
+home-prefs-highlights-option-most-recent-download =
+    .label = Most Recent Download
+home-prefs-highlights-option-saved-to-pocket =
+    .label = Pages Saved to { -pocket-brand-name }
+
+# For the "Snippets" feature traditionally on about:home.
+# Alternative translation options: "Small Note" or something that
+# expresses the idea of "a small message, shortened from something else,
+# and non-essential but also not entirely trivial and useless.
+home-prefs-snippets-header =
+    .label = Snippets
+home-prefs-snippets-description = Updates from { -vendor-short-name } and { -brand-product-name }
+home-prefs-sections-rows-option =
+    .label =
+        { $num ->
+            [one] { $num } row
+           *[other] { $num } rows
+        }
 
 ## Search Section
 
@@ -689,6 +746,9 @@ forms-ask-to-save-logins =
 forms-exceptions =
     .label = Exceptions…
     .accesskey = x
+forms-generate-passwords =
+    .label = Suggest and generate strong passwords
+    .accesskey = u
 forms-saved-logins =
     .label = Saved Logins…
     .accesskey = L
@@ -824,7 +884,7 @@ addressbar-suggestions-settings = Change preferences for search engine suggestio
 
 content-blocking-header = Content Blocking
 
-content-blocking-description = Block third-party content that tracks you around the web. Control how much of your online activity gets stored and shared between websites.
+content-blocking-section-description = Protect your privacy while you browse. Block invisible content that tracks the sites you visit and profiles you. Blocking some of this content may make pages load faster.
 
 content-blocking-learn-more = Learn more
 
@@ -840,15 +900,18 @@ content-blocking-setting-custom =
   .label = Custom
   .accesskey = C
 
-content-blocking-standard-description = Only blocks known trackers in Private Windows.
 content-blocking-standard-desc = Balanced for protection and performance. Allows some trackers so websites function properly.
-content-blocking-strict-desc = Blocks all trackers { -brand-short-name } detects. May cause some sites to break.
+content-blocking-strict-description = Stronger protection, may cause some sites to break.
 content-blocking-custom-desc = Choose what to block.
 
 content-blocking-private-trackers = Known trackers only in Private Windows
 content-blocking-third-party-cookies = Third-party tracking cookies
+content-blocking-all-cookies = All cookies
+content-blocking-unvisited-cookies = Cookies from unvisited sites
 content-blocking-all-windows-trackers = Known trackers in all windows
 content-blocking-all-third-party-cookies = All third-party cookies
+content-blocking-cryptominers = Cryptominers
+content-blocking-fingerprinters = Fingerprinters
 
 content-blocking-warning-title = Heads up!
 content-blocking-warning-description = Blocking content can cause some websites to break. It’s easy to disable blocking for sites you trust.
@@ -874,7 +937,7 @@ content-blocking-cookies-label =
   .label = Cookies
   .accesskey = C
 
-content-blocking-expand-section = 
+content-blocking-expand-section =
   .tooltiptext = More information
 
 # Cryptomining refers to using scripts on websites that can use a computer’s resources to mine cryptocurrency without a user’s knowledge.
@@ -923,13 +986,11 @@ permissions-notification-pause =
     .label = Pause notifications until { -brand-short-name } restarts
     .accesskey = n
 
-permissions-block-autoplay-media2 =
-    .label = Block websites from automatically playing sound
-    .accesskey = B
+permissions-autoplay = Autoplay
 
-permissions-block-autoplay-media-exceptions =
-    .label = Exceptions…
-    .accesskey = E
+permissions-autoplay-settings =
+    .label = Settings…
+    .accesskey = t
 
 permissions-block-popups =
     .label = Block pop-up windows

@@ -26,6 +26,7 @@
 #  include "mozilla/ReentrantMonitor.h"
 #  include "mozilla/StateMirroring.h"
 #  include "mozilla/StateWatching.h"
+#  include "mozilla/dom/MediaDebugInfoBinding.h"
 #  include "nsAutoPtr.h"
 #  include "nsCOMPtr.h"
 #  include "nsIObserver.h"
@@ -124,6 +125,10 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   // Return the principal of the current URI being played or downloaded.
   virtual already_AddRefed<nsIPrincipal> GetCurrentPrincipal() = 0;
+
+  // Return true if the loading of this resource required cross-origin
+  // redirects.
+  virtual bool HadCrossOriginRedirects() = 0;
 
   // Return the time position in the video stream being
   // played measured in seconds.
@@ -389,14 +394,9 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   virtual MediaDecoderOwner::NextFrameStatus NextFrameBufferedStatus();
 
-  // Returns a string describing the state of the media player internal
-  // data. Used for debugging purposes.
-  virtual void GetMozDebugReaderData(nsACString& aString);
+  RefPtr<GenericPromise> RequestDebugInfo(dom::MediaDecoderDebugInfo& aInfo);
 
-  RefPtr<GenericPromise> DumpDebugInfo();
-
-  using DebugInfoPromise = MozPromise<nsCString, bool, true>;
-  RefPtr<DebugInfoPromise> RequestDebugInfo();
+  void GetDebugInfo(dom::MediaDecoderDebugInfo& aInfo);
 
  protected:
   virtual ~MediaDecoder();
@@ -469,8 +469,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // An arbitrary value of 250ms is used.
   static constexpr auto DEFAULT_NEXT_FRAME_AVAILABLE_BUFFERED =
       media::TimeUnit::FromMicroseconds(250000);
-
-  virtual nsCString GetDebugInfo();
 
  private:
   // Called when the owner's activity changed.

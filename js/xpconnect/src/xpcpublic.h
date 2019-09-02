@@ -19,7 +19,6 @@
 #include "nsIURI.h"
 #include "nsIPrincipal.h"
 #include "nsIGlobalObject.h"
-#include "nsPIDOMWindow.h"
 #include "nsWrapperCache.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -31,6 +30,7 @@
 #include "mozilla/Preferences.h"
 
 class nsGlobalWindowInner;
+class nsIGlobalObject;
 class nsIPrincipal;
 class nsIHandleReportCallback;
 struct nsXPTInterfaceInfo;
@@ -634,11 +634,13 @@ class ErrorReport : public ErrorBase {
 void DispatchScriptErrorEvent(nsPIDOMWindowInner* win,
                               JS::RootingContext* rootingCx,
                               xpc::ErrorReport* xpcReport,
-                              JS::Handle<JS::Value> exception);
+                              JS::Handle<JS::Value> exception,
+                              JS::Handle<JSObject*> exceptionStack);
 
 // Get a stack (as stackObj outparam) of the sort that can be passed to
 // xpc::ErrorReport::LogToConsoleWithStack from the given exception value.  Can
-// be nullptr if the exception value doesn't have an associated stack.  The
+// be nullptr if the exception value doesn't have an associated stack, and if
+// there is no stack supplied by the JS engine in exceptionStack.  The
 // returned stack, if any, may also not be in the same compartment as
 // exceptionValue.
 //
@@ -654,6 +656,7 @@ void DispatchScriptErrorEvent(nsPIDOMWindowInner* win,
 // unwrapped global object and is same-compartment with stackObj.
 void FindExceptionStackForConsoleReport(nsPIDOMWindowInner* win,
                                         JS::HandleValue exceptionValue,
+                                        JS::HandleObject exceptionStack,
                                         JS::MutableHandleObject stackObj,
                                         JS::MutableHandleObject stackGlobal);
 
@@ -755,7 +758,7 @@ bool IsCrossOriginWhitelistedProp(JSContext* cx, JS::HandleId id);
 // Appends to props the jsids for property names (strings or symbols) whose
 // value can be gotten cross-origin.
 bool AppendCrossOriginWhitelistedPropNames(JSContext* cx,
-                                           JS::AutoIdVector& props);
+                                           JS::MutableHandleIdVector props);
 }  // namespace xpc
 
 namespace mozilla {

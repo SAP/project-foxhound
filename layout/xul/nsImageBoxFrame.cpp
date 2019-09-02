@@ -24,8 +24,8 @@
 #include "nsHTMLParts.h"
 #include "nsString.h"
 #include "nsLeafFrame.h"
-#include "nsIPresShell.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsImageMap.h"
 #include "nsILinkHandler.h"
 #include "nsIURL.h"
@@ -50,6 +50,7 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/PresShell.h"
 #include "SVGImageContext.h"
 #include "Units.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -119,11 +120,14 @@ static void FireImageDOMEvent(nsIContent* aContent, EventMessage aMessage) {
 //
 // Creates a new image frame and returns it
 //
-nsIFrame* NS_NewImageBoxFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
+nsIFrame* NS_NewImageBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsImageBoxFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsImageBoxFrame)
+NS_QUERYFRAME_HEAD(nsImageBoxFrame)
+  NS_QUERYFRAME_ENTRY(nsImageBoxFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsLeafBoxFrame)
 
 nsresult nsImageBoxFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
@@ -133,7 +137,7 @@ nsresult nsImageBoxFrame::AttributeChanged(int32_t aNameSpaceID,
 
   if (aAttribute == nsGkAtoms::src) {
     UpdateImage();
-    PresShell()->FrameNeedsReflow(this, nsIPresShell::eStyleChange,
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
                                   NS_FRAME_IS_DIRTY);
   } else if (aAttribute == nsGkAtoms::validate)
     UpdateLoadFlags();
@@ -193,6 +197,20 @@ void nsImageBoxFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   UpdateLoadFlags();
   UpdateImage();
+}
+
+void nsImageBoxFrame::RestartAnimation() {
+  if (mImageRequest && !mRequestRegistered) {
+    nsLayoutUtils::RegisterImageRequestIfAnimated(PresContext(), mImageRequest,
+                                                  &mRequestRegistered);
+  }
+}
+
+void nsImageBoxFrame::StopAnimation() {
+  if (mImageRequest && mRequestRegistered) {
+    nsLayoutUtils::DeregisterImageRequest(PresContext(), mImageRequest,
+                                          &mRequestRegistered);
+  }
 }
 
 void nsImageBoxFrame::UpdateImage() {
@@ -308,7 +326,7 @@ void nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       aBuilder, this, clipFlags);
 
   nsDisplayList list;
-  list.AppendToTop(MakeDisplayItem<nsDisplayXULImage>(aBuilder, this));
+  list.AppendNewToTop<nsDisplayXULImage>(aBuilder, this);
 
   CreateOwnLayerIfNeeded(aBuilder, &list);
 
@@ -456,16 +474,17 @@ nsRect nsImageBoxFrame::GetDestRect(const nsPoint& aOffset,
     // Determine dest rect based on intrinsic size & ratio, along with
     // 'object-fit' & 'object-position' properties:
     IntrinsicSize intrinsicSize;
-    nsSize intrinsicRatio;
+    AspectRatio intrinsicRatio;
     if (mIntrinsicSize.width > 0 && mIntrinsicSize.height > 0) {
       // Image has a valid size; use it as intrinsic size & ratio.
-      intrinsicSize.width.SetCoordValue(mIntrinsicSize.width);
-      intrinsicSize.height.SetCoordValue(mIntrinsicSize.height);
-      intrinsicRatio = mIntrinsicSize;
+      intrinsicSize =
+          IntrinsicSize(mIntrinsicSize.width, mIntrinsicSize.height);
+      intrinsicRatio =
+          AspectRatio::FromSize(mIntrinsicSize.width, mIntrinsicSize.height);
     } else {
       // Image doesn't have a (valid) intrinsic size.
       // Try to look up intrinsic ratio and use that at least.
-      imgCon->GetIntrinsicRatio(&intrinsicRatio);
+      intrinsicRatio = imgCon->GetIntrinsicRatio().valueOr(AspectRatio());
     }
     aAnchorPoint.emplace();
     dest = nsLayoutUtils::ComputeObjectDestRect(clientRect, intrinsicSize,
@@ -656,28 +675,28 @@ nsSize nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
   bool widthSet, heightSet;
   nsIFrame::AddXULPrefSize(this, size, widthSet, heightSet);
   NS_ASSERTION(
-      size.width != NS_INTRINSICSIZE && size.height != NS_INTRINSICSIZE,
+      size.width != NS_UNCONSTRAINEDSIZE && size.height != NS_UNCONSTRAINEDSIZE,
       "non-intrinsic size expected");
 
   nsSize minSize = GetXULMinSize(aState);
   nsSize maxSize = GetXULMaxSize(aState);
 
   if (!widthSet && !heightSet) {
-    if (minSize.width != NS_INTRINSICSIZE)
+    if (minSize.width != NS_UNCONSTRAINEDSIZE)
       minSize.width -= borderPadding.LeftRight();
-    if (minSize.height != NS_INTRINSICSIZE)
+    if (minSize.height != NS_UNCONSTRAINEDSIZE)
       minSize.height -= borderPadding.TopBottom();
-    if (maxSize.width != NS_INTRINSICSIZE)
+    if (maxSize.width != NS_UNCONSTRAINEDSIZE)
       maxSize.width -= borderPadding.LeftRight();
-    if (maxSize.height != NS_INTRINSICSIZE)
+    if (maxSize.height != NS_UNCONSTRAINEDSIZE)
       maxSize.height -= borderPadding.TopBottom();
 
     size = nsLayoutUtils::ComputeAutoSizeWithIntrinsicDimensions(
         minSize.width, minSize.height, maxSize.width, maxSize.height,
         intrinsicSize.width, intrinsicSize.height);
-    NS_ASSERTION(
-        size.width != NS_INTRINSICSIZE && size.height != NS_INTRINSICSIZE,
-        "non-intrinsic size expected");
+    NS_ASSERTION(size.width != NS_UNCONSTRAINEDSIZE &&
+                     size.height != NS_UNCONSTRAINEDSIZE,
+                 "non-intrinsic size expected");
     size.width += borderPadding.LeftRight();
     size.height += borderPadding.TopBottom();
     return size;
@@ -780,7 +799,7 @@ nsresult nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
                         nsPresContext::CSSPixelsToAppUnits(h));
 
   if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
-    PresShell()->FrameNeedsReflow(this, nsIPresShell::eStyleChange,
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
                                   NS_FRAME_IS_DIRTY);
   }
 
@@ -801,7 +820,7 @@ nsresult nsImageBoxFrame::OnLoadComplete(imgIRequest* aRequest,
   } else {
     // Fire an onerror DOM event.
     mIntrinsicSize.SizeTo(0, 0);
-    PresShell()->FrameNeedsReflow(this, nsIPresShell::eStyleChange,
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
                                   NS_FRAME_IS_DIRTY);
     FireImageDOMEvent(mContent, eLoadError);
   }

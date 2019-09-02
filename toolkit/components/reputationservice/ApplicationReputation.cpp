@@ -162,7 +162,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".001",
     //".7z",
     //".ace",
-    //".action", // Mac script
+    ".action",  // Mac script
     //".ad", exec // Windows
     //".ade", exec  // MS Access
     //".adp", exec // MS Access
@@ -193,6 +193,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".bz2",        // Linux archive (bzip2)
     ".bzip2",      // Linux archive (bzip2)
     ".cab",        // Windows archive
+    ".caction",    // Automator action
     ".cdr",        // Mac disk image
     ".cfg",        // Windows
     ".chi",        // Windows Help
@@ -200,10 +201,11 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".class",  // Java
     //".cmd", exec // Windows executable
     //".com", exec // Windows executable
-    ".command",  // Mac script
-    ".cpgz",     // Mac archive
-    ".cpi",      // Control Panel Item. Executable used for adding icons
-                 // to Control Panel
+    ".command",        // Mac script
+    ".configprofile",  // Configuration file for Apple systems
+    ".cpgz",           // Mac archive
+    ".cpi",            // Control Panel Item. Executable used for adding icons
+                       // to Control Panel
     //".cpio",
     //".cpl", exec  // Windows executable
     //".crt", exec  // Windows signed certificate
@@ -213,6 +215,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".dart",        // Mac disk image
     ".dc42",        // Apple DiskCopy Image
     ".deb",         // Linux package
+    ".definition",  // Automator action
     ".desktop",     // A shortcut that runs other files
     ".dex",         // Android
     ".dht",         // HTML
@@ -232,6 +235,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".dotx",        // MS Word
     ".drv",         // Windows driver
     ".dvdr",        // Mac Disk image
+    ".dylib",       // Mach object dynamic library file
     ".efi",         // Firmware
     ".eml",         // MS Outlook
     //".exe", exec // Windows executable
@@ -255,6 +259,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".inf", exec // Windows installer
     ".ini",  // Generic config file
     //".ins", exec // IIS config
+    ".internetconnect",  // Configuration file for Apple system
     //".inx", // InstallShield
     ".iso",  // CD image
     //".isp", exec // IIS config
@@ -297,8 +302,9 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".mhtml",  // MS HTML
     ".mim",    // MS Mail
     //".mkv",
-    ".mmc",  // MS Office
-    ".mof",  // Windows
+    ".mmc",           // MS Office
+    ".mobileconfig",  // Configuration file for Apple systems
+    ".mof",           // Windows
     //".mov",
     //".mp3",
     //".mp4",
@@ -314,7 +320,8 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".msi", exec  // Windows installer
     //".msp", exec  // Windows installer
     //".mst", exec  // Windows installer
-    ".ndif",  // Mac disk image
+    ".ndif",            // Mac disk image
+    ".networkconnect",  // Configuration file for Apple systems
     //".ntfs", // 7z
     ".ocx",  // ActiveX
     //".ops", exec  // MS Office
@@ -410,6 +417,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".sct", exec         // Windows shell
     ".search-ms",  // Windows
     ".seplugin",   // AppleScript
+    ".service",    // Systemd service unit file
     //".settingcontent-ms", exec // Windows settings
     ".sh",    // Linux shell
     ".shar",  // Linux shell
@@ -473,9 +481,10 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".vtx",  exec  // MS Visio
     //".wav",
     //".webp",
-    ".website",  // Windows
-    ".wim",      // Windows Imaging
-    //".workflow", // Mac Automator
+    ".website",   // Windows
+    ".wflow",     // Automator action
+    ".wim",       // Windows Imaging
+    ".workflow",  // Mac Automator
     //".wrc", // FreeArc archive
     //".ws",  exec  // Windows script
     //".wsc", exec  // Windows script
@@ -1505,14 +1514,12 @@ nsresult PendingLookup::ParseCertificates(nsIArray* aSigArray) {
       nsCOMPtr<nsIX509Cert> cert = do_QueryInterface(certSupports, &rv);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      uint8_t* data = nullptr;
-      uint32_t len = 0;
-      rv = cert->GetRawDER(&len, &data);
+      nsTArray<uint8_t> data;
+      rv = cert->GetRawDER(data);
       NS_ENSURE_SUCCESS(rv, rv);
 
       // Add this certificate to the protobuf to send remotely.
-      certChain->add_element()->set_certificate(data, len);
-      free(data);
+      certChain->add_element()->set_certificate(data.Elements(), data.Length());
 
       rv = chainElt->HasMoreElements(&hasMoreCerts);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -1673,6 +1680,8 @@ nsresult PendingLookup::SendRemoteQueryInternal(Reason& aReason) {
                        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                        nsIContentPolicy::TYPE_OTHER, getter_AddRefs(mChannel));
   NS_ENSURE_SUCCESS(rv, rv);
+
+  mChannel->SetLoadFlags(nsIChannel::LOAD_BYPASS_URL_CLASSIFIER);
 
   nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
   mozilla::OriginAttributes attrs;

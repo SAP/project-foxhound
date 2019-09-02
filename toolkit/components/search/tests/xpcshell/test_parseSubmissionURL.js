@@ -7,11 +7,10 @@
 
 "use strict";
 
-function run_test() {
+add_task(async function setup() {
   useHttpServer();
-
-  run_next_test();
-}
+  await AddonTestUtils.promiseStartupManager();
+});
 
 add_task(async function test_parseSubmissionURL() {
   // Hide the default engines to prevent them from being used in the search.
@@ -22,14 +21,35 @@ add_task(async function test_parseSubmissionURL() {
   let [engine1, engine2, engine3, engine4] = await addTestEngines([
     { name: "Test search engine", xmlFileName: "engine.xml" },
     { name: "Test search engine (fr)", xmlFileName: "engine-fr.xml" },
-    { name: "bacon_addParam", details: ["", "bacon_addParam", "Search Bacon",
-                                        "GET", "http://www.bacon.test/find"] },
-    { name: "idn_addParam", details: ["", "idn_addParam", "Search IDN",
-                                        "GET", "http://www.xn--bcher-kva.ch/search"] },
+    {
+      name: "bacon_addParam",
+      details: {
+        alias: "bacon_addParam",
+        description: "Search Bacon",
+        method: "GET",
+        template: "http://www.bacon.test/find",
+      },
+    },
+    {
+      name: "idn_addParam",
+      details: {
+        alias: "idn_addParam",
+        description: "Search IDN",
+        method: "GET",
+        template: "http://www.xn--bcher-kva.ch/search",
+      },
+    },
     // The following engines cannot identify the search parameter.
     { name: "A second test engine", xmlFileName: "engine2.xml" },
-    { name: "bacon", details: ["", "bacon", "Search Bacon", "GET",
-                               "http://www.bacon.moz/search?q={searchTerms}"] },
+    {
+      name: "bacon",
+      details: {
+        alias: "bacon",
+        description: "Search Bacon",
+        method: "GET",
+        template: "http://www.bacon.moz/search?q={searchTerms}",
+      },
+    },
   ]);
 
   engine3.addParam("q", "{searchTerms}", null);
@@ -96,12 +116,18 @@ add_task(async function test_parseSubmissionURL() {
   Assert.equal(result.termsLength, "foo+bar".length);
 
   // Parsing of parameters from an engine template URL is not supported.
-  Assert.equal(Services.search.parseSubmissionURL(
-                               "http://www.bacon.moz/search?q=").engine, null);
-  Assert.equal(Services.search.parseSubmissionURL(
-                               "https://duckduckgo.com?q=test").engine, null);
-  Assert.equal(Services.search.parseSubmissionURL(
-                               "https://duckduckgo.com/?q=test").engine, null);
+  Assert.equal(
+    Services.search.parseSubmissionURL("http://www.bacon.moz/search?q=").engine,
+    null
+  );
+  Assert.equal(
+    Services.search.parseSubmissionURL("https://duckduckgo.com?q=test").engine,
+    null
+  );
+  Assert.equal(
+    Services.search.parseSubmissionURL("https://duckduckgo.com/?q=test").engine,
+    null
+  );
 
   // HTTP and HTTPS schemes are interchangeable.
   url = "https://www.google.com/search?q=caff%C3%A8";
@@ -112,7 +138,8 @@ add_task(async function test_parseSubmissionURL() {
 
   // Decoding search terms with multiple spaces should work.
   result = Services.search.parseSubmissionURL(
-             "http://www.google.com/search?q=+with++spaces+");
+    "http://www.google.com/search?q=+with++spaces+"
+  );
   Assert.equal(result.engine, engine1);
   Assert.equal(result.terms, " with  spaces ");
 
@@ -125,21 +152,22 @@ add_task(async function test_parseSubmissionURL() {
 
   // There should be no match when the path is different.
   result = Services.search.parseSubmissionURL(
-             "http://www.google.com/search/?q=test");
+    "http://www.google.com/search/?q=test"
+  );
   Assert.equal(result.engine, null);
   Assert.equal(result.terms, "");
   Assert.equal(result.termsOffset, -1);
 
   // There should be no match when the argument is different.
   result = Services.search.parseSubmissionURL(
-             "http://www.google.com/search?q2=test");
+    "http://www.google.com/search?q2=test"
+  );
   Assert.equal(result.engine, null);
   Assert.equal(result.terms, "");
   Assert.equal(result.termsOffset, -1);
 
   // There should be no match for URIs that are not HTTP or HTTPS.
-  result = Services.search.parseSubmissionURL(
-             "file://localhost/search?q=test");
+  result = Services.search.parseSubmissionURL("file://localhost/search?q=test");
   Assert.equal(result.engine, null);
   Assert.equal(result.terms, "");
   Assert.equal(result.termsOffset, -1);

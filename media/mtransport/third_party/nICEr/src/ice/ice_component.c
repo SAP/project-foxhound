@@ -707,6 +707,20 @@ void nr_ice_component_stop_gathering(nr_ice_component *component)
     }
   }
 
+int nr_ice_component_is_done_gathering(nr_ice_component *comp)
+  {
+    nr_ice_candidate *cand=TAILQ_FIRST(&comp->candidates);
+    while(cand){
+      if(cand->state != NR_ICE_CAND_STATE_INITIALIZED &&
+         cand->state != NR_ICE_CAND_STATE_FAILED){
+        return 0;
+      }
+      cand=TAILQ_NEXT(cand,entry_comp);
+    }
+    return 1;
+  }
+
+
 static int nr_ice_any_peer_paired(nr_ice_candidate* cand) {
   nr_ice_peer_ctx* pctx=STAILQ_FIRST(&cand->ctx->peers);
   while(pctx && pctx->state == NR_ICE_PEER_STATE_UNPAIRED){
@@ -1088,6 +1102,11 @@ int nr_ice_component_pair_candidate(nr_ice_peer_ctx *pctx, nr_ice_component *pco
         continue;
       if(!nr_ice_component_can_candidate_tcptype_pair(lcand->tcp_type, pcand->tcp_type))
         continue;
+
+      /* https://tools.ietf.org/html/draft-ietf-rtcweb-mdns-ice-candidates-03#section-3.3.2 */
+      if(lcand->type == RELAYED && pcand->mdns_addr && strlen(pcand->mdns_addr)) {
+        continue;
+      }
 
       /*
         Two modes, depending on |pair_all_remote|

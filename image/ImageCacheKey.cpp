@@ -13,10 +13,13 @@
 #include "nsLayoutUtils.h"
 #include "nsString.h"
 #include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/HashFunctions.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/Document.h"
+#include "nsHashKeys.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla {
@@ -43,6 +46,7 @@ ImageCacheKey::ImageCacheKey(nsIURI* aURI, const OriginAttributes& aAttrs,
     : mURI(aURI),
       mOriginAttributes(aAttrs),
       mControlledDocument(GetSpecialCaseDocumentToken(aDocument, aURI)),
+      mTopLevelBaseDomain(GetTopLevelBaseDomain(aDocument, aURI)),
       mIsChrome(false) {
   if (SchemeIs("blob")) {
     mBlobSerial = BlobSerial(mURI);
@@ -57,6 +61,7 @@ ImageCacheKey::ImageCacheKey(const ImageCacheKey& aOther)
       mBlobRef(aOther.mBlobRef),
       mOriginAttributes(aOther.mOriginAttributes),
       mControlledDocument(aOther.mControlledDocument),
+      mTopLevelBaseDomain(aOther.mTopLevelBaseDomain),
       mHash(aOther.mHash),
       mIsChrome(aOther.mIsChrome) {}
 
@@ -66,6 +71,7 @@ ImageCacheKey::ImageCacheKey(ImageCacheKey&& aOther)
       mBlobRef(std::move(aOther.mBlobRef)),
       mOriginAttributes(aOther.mOriginAttributes),
       mControlledDocument(aOther.mControlledDocument),
+      mTopLevelBaseDomain(aOther.mTopLevelBaseDomain),
       mHash(aOther.mHash),
       mIsChrome(aOther.mIsChrome) {}
 
@@ -73,6 +79,12 @@ bool ImageCacheKey::operator==(const ImageCacheKey& aOther) const {
   // Don't share the image cache between a controlled document and anything
   // else.
   if (mControlledDocument != aOther.mControlledDocument) {
+    return false;
+  }
+  // Don't share the image cache between two top-level documents of different
+  // base domains.
+  if (!mTopLevelBaseDomain.Equals(aOther.mTopLevelBaseDomain,
+                                  nsCaseInsensitiveCStringComparator())) {
     return false;
   }
   // The origin attributes always have to match.
@@ -127,7 +139,8 @@ void ImageCacheKey::EnsureHash() const {
     hash = HashString(spec);
   }
 
-  hash = AddToHash(hash, HashString(suffix), HashString(ptr));
+  hash = AddToHash(hash, HashString(suffix), HashString(mTopLevelBaseDomain),
+                   HashString(ptr));
   mHash.emplace(hash);
 }
 
@@ -153,27 +166,44 @@ void* ImageCacheKey::GetSpecialCaseDocumentToken(Document* aDocument,
     return aDocument;
   }
 
+  return nullptr;
+}
+
+/* static */
+nsCString ImageCacheKey::GetTopLevelBaseDomain(Document* aDocument,
+                                               nsIURI* aURI) {
+  if (!aDocument || !aDocument->GetInnerWindow()) {
+    return EmptyCString();
+  }
+
   // If the window is 3rd party resource, let's see if first-party storage
   // access is granted for this image.
   if (nsContentUtils::IsThirdPartyTrackingResourceWindow(
           aDocument->GetInnerWindow())) {
-    return nsContentUtils::StorageDisabledByAntiTracking(aDocument, aURI)
-               ? aDocument
-               : nullptr;
+    return StorageDisabledByAntiTracking(aDocument, aURI)
+               ? aDocument->GetBaseDomain()
+               : EmptyCString();
   }
 
   // Another scenario is if this image is a 3rd party resource loaded by a
   // first party context. In this case, we should check if the nsIChannel has
   // been marked as tracking resource, but we don't have the channel yet at
   // this point.  The best approach here is to be conservative: if we are sure
-  // that the permission is granted, let's return a nullptr. Otherwise, let's
-  // make a unique image cache.
+  // that the permission is granted, let's return 0. Otherwise, let's make a
+  // unique image cache per the top-level document eTLD+1.
   if (!AntiTrackingCommon::MaybeIsFirstPartyStorageAccessGrantedFor(
           aDocument->GetInnerWindow(), aURI)) {
-    return aDocument;
+    nsPIDOMWindowOuter* top = aDocument->GetInnerWindow()->GetScriptableTop();
+    nsPIDOMWindowInner* topInner = top ? top->GetCurrentInnerWindow() : nullptr;
+    if (!topInner) {
+      return aDocument
+          ->GetBaseDomain();  // because we don't have anything better!
+    }
+    return topInner->GetExtantDoc() ? topInner->GetExtantDoc()->GetBaseDomain()
+                                    : EmptyCString();
   }
 
-  return nullptr;
+  return EmptyCString();
 }
 
 }  // namespace image

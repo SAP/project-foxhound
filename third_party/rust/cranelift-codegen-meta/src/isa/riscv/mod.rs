@@ -1,6 +1,12 @@
+use crate::cdsl::cpu_modes::CpuMode;
+use crate::cdsl::instructions::InstructionGroupBuilder;
 use crate::cdsl::isa::TargetIsa;
 use crate::cdsl::regs::{IsaRegs, IsaRegsBuilder, RegBankBuilder, RegClassBuilder};
 use crate::cdsl::settings::{PredicateNode, SettingGroup, SettingGroupBuilder};
+
+use crate::shared::types::Float::{F32, F64};
+use crate::shared::types::Int::{I32, I64};
+use crate::shared::Definitions as SharedDefinitions;
 
 fn define_settings(shared: &SettingGroup) -> SettingGroup {
     let mut setting = SettingGroupBuilder::new("riscv");
@@ -35,7 +41,7 @@ fn define_settings(shared: &SettingGroup) -> SettingGroup {
     setting.add_bool(
         "enable_e",
         "Enable the 'RV32E' instruction set with only 16 registers",
-        true,
+        false,
     );
 
     let shared_enable_atomics = shared.get_bool("enable_atomics");
@@ -51,7 +57,7 @@ fn define_settings(shared: &SettingGroup) -> SettingGroup {
         predicate!(shared_enable_simd && supports_f && supports_d),
     );
 
-    setting.finish()
+    setting.build()
 }
 
 fn define_registers() -> IsaRegs {
@@ -73,11 +79,40 @@ fn define_registers() -> IsaRegs {
     let builder = RegClassBuilder::new_toplevel("FPR", float_regs);
     regs.add_class(builder);
 
-    regs.finish()
+    regs.build()
 }
 
-pub fn define(shared_settings: &SettingGroup) -> TargetIsa {
-    let settings = define_settings(shared_settings);
+pub fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
+    let settings = define_settings(&shared_defs.settings);
     let regs = define_registers();
-    TargetIsa::new("riscv", settings, regs)
+
+    let inst_group = InstructionGroupBuilder::new(
+        "riscv",
+        "riscv specific instruction set",
+        &shared_defs.format_registry,
+    )
+    .build();
+
+    // CPU modes for 32-bit and 64-bit operation.
+    let mut rv_32 = CpuMode::new("RV32");
+    let mut rv_64 = CpuMode::new("RV64");
+
+    let expand = shared_defs.transform_groups.by_name("expand");
+    let narrow = shared_defs.transform_groups.by_name("narrow");
+    rv_32.legalize_monomorphic(expand);
+    rv_32.legalize_default(narrow);
+    rv_32.legalize_type(I32, expand);
+    rv_32.legalize_type(F32, expand);
+    rv_32.legalize_type(F64, expand);
+
+    rv_64.legalize_monomorphic(expand);
+    rv_64.legalize_default(narrow);
+    rv_64.legalize_type(I32, expand);
+    rv_64.legalize_type(I64, expand);
+    rv_64.legalize_type(F32, expand);
+    rv_64.legalize_type(F64, expand);
+
+    let cpu_modes = vec![rv_32, rv_64];
+
+    TargetIsa::new("riscv", inst_group, settings, regs, cpu_modes)
 }

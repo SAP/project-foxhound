@@ -6,7 +6,6 @@
 #include "nsISupports.idl"
 
 [scriptable, uuid(2030770e-542e-40cd-8061-cd9d4ad4227f)]
-
 interface nsILoginManagerCrypto : nsISupports {
 
   const unsigned long ENCTYPE_BASE64 = 0; // obsolete
@@ -52,6 +51,18 @@ interface nsILoginManagerCrypto : nsISupports {
    * encrypted with some other key).
    */
   AString decrypt(in AString cipherText);
+
+  /**
+   * @param cipherTexts
+   *        The strings to be decrypted.
+   *
+   * Decrypts the specified strings, returning the plaintext values.
+   *
+   * Can throw if the user cancels entry of their master password, or if the
+   * cipherText value can not be successfully decrypted (eg, if it was
+   * encrypted with some other key).
+   */
+  jsval decryptMany(in jsval cipherTexts);
 
   /**
    * uiBusy

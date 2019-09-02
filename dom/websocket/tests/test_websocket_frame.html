@@ -4,7 +4,7 @@
 -->
 <head>
   <title>Basic websocket frame interception test</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"?>
 </head>
 <body>
@@ -45,12 +45,13 @@ var listener = {
     webSocketCreatedCounter++;
   },
 
-  webSocketOpened: function(aWebSocketSerialID, aEffectiveURI, aProtocols, aExtensions) {
+  webSocketOpened: function(aWebSocketSerialID, aEffectiveURI, aProtocols, aExtensions, httpChannelId) {
     info("WebSocketOpened");
 
     is(aEffectiveURI, URI, "EffectiveURI matches");
     is(aProtocols, "frame", "Protocol matches");
     is(aExtensions, "permessage-deflate", "No extensions");
+    ok(httpChannelId > 0, "Channel ID received");
 
     webSocketOpenedCounter++;
   },

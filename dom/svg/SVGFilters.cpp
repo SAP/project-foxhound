@@ -8,22 +8,21 @@
 
 #include <algorithm>
 #include "DOMSVGAnimatedNumberList.h"
+#include "DOMSVGAnimatedLength.h"
 #include "imgIContainer.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
-#include "SVGAnimatedNumberList.h"
-#include "SVGEnum.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedNumberPair.h"
+#include "SVGAnimatedString.h"
 #include "nsSVGFilterInstance.h"
 #include "SVGNumberList.h"
-#include "SVGNumberPair.h"
-#include "SVGString.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/SVGContentUtils.h"
 #include "nsSVGUtils.h"
-#include "mozilla/dom/SVGAnimatedLength.h"
 #include "mozilla/dom/SVGComponentTransferFunctionElement.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGFEDistantLightElement.h"
@@ -93,23 +92,23 @@ bool SVGFE::AttributeAffectsRendering(int32_t aNameSpaceID,
           aAttribute == nsGkAtoms::result);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGFE::X() {
+already_AddRefed<DOMSVGAnimatedLength> SVGFE::X() {
   return mLengthAttributes[ATTR_X].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGFE::Y() {
+already_AddRefed<DOMSVGAnimatedLength> SVGFE::Y() {
   return mLengthAttributes[ATTR_Y].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGFE::Width() {
+already_AddRefed<DOMSVGAnimatedLength> SVGFE::Width() {
   return mLengthAttributes[ATTR_WIDTH].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength> SVGFE::Height() {
+already_AddRefed<DOMSVGAnimatedLength> SVGFE::Height() {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedString> SVGFE::Result() {
+already_AddRefed<DOMSVGAnimatedString> SVGFE::Result() {
   return GetResultImageName().ToDOMAnimatedString(this);
 }
 
@@ -145,15 +144,15 @@ bool SVGFE::HasValidDimensions() const {
 }
 
 Size SVGFE::GetKernelUnitLength(nsSVGFilterInstance* aInstance,
-                                SVGNumberPair* aKernelUnitLength) {
+                                SVGAnimatedNumberPair* aKernelUnitLength) {
   if (!aKernelUnitLength->IsExplicitlySet()) {
     return Size(1, 1);
   }
 
   float kernelX = aInstance->GetPrimitiveNumber(
-      SVGContentUtils::X, aKernelUnitLength, SVGNumberPair::eFirst);
+      SVGContentUtils::X, aKernelUnitLength, SVGAnimatedNumberPair::eFirst);
   float kernelY = aInstance->GetPrimitiveNumber(
-      SVGContentUtils::Y, aKernelUnitLength, SVGNumberPair::eSecond);
+      SVGContentUtils::Y, aKernelUnitLength, SVGAnimatedNumberPair::eSecond);
   return Size(kernelX, kernelY);
 }
 
@@ -212,7 +211,7 @@ bool SVGComponentTransferFunctionElement::AttributeAffectsRendering(
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedEnumeration>
+already_AddRefed<DOMSVGAnimatedEnumeration>
 SVGComponentTransferFunctionElement::Type() {
   return mEnumAttributes[TYPE].ToDOMAnimatedEnum(this);
 }
@@ -223,27 +222,27 @@ SVGComponentTransferFunctionElement::TableValues() {
       &mNumberListAttributes[TABLEVALUES], this, TABLEVALUES);
 }
 
-already_AddRefed<SVGAnimatedNumber>
+already_AddRefed<DOMSVGAnimatedNumber>
 SVGComponentTransferFunctionElement::Slope() {
   return mNumberAttributes[SLOPE].ToDOMAnimatedNumber(this);
 }
 
-already_AddRefed<SVGAnimatedNumber>
+already_AddRefed<DOMSVGAnimatedNumber>
 SVGComponentTransferFunctionElement::Intercept() {
   return mNumberAttributes[INTERCEPT].ToDOMAnimatedNumber(this);
 }
 
-already_AddRefed<SVGAnimatedNumber>
+already_AddRefed<DOMSVGAnimatedNumber>
 SVGComponentTransferFunctionElement::Amplitude() {
   return mNumberAttributes[AMPLITUDE].ToDOMAnimatedNumber(this);
 }
 
-already_AddRefed<SVGAnimatedNumber>
+already_AddRefed<DOMSVGAnimatedNumber>
 SVGComponentTransferFunctionElement::Exponent() {
   return mNumberAttributes[EXPONENT].ToDOMAnimatedNumber(this);
 }
 
-already_AddRefed<SVGAnimatedNumber>
+already_AddRefed<DOMSVGAnimatedNumber>
 SVGComponentTransferFunctionElement::Offset() {
   return mNumberAttributes[OFFSET].ToDOMAnimatedNumber(this);
 }

@@ -160,6 +160,7 @@ class XPCShellTestThread(Thread):
         self.app_dir_key = kwargs.get('app_dir_key')
         self.interactive = kwargs.get('interactive')
         self.prefsFile = kwargs.get('prefsFile')
+        self.verboseIfFails = kwargs.get('verboseIfFails')
 
         # only one of these will be set to 1. adding them to the totals in
         # the harness
@@ -276,7 +277,10 @@ class XPCShellTestThread(Thread):
           Simple wrapper to check for crashes.
           On a remote system, this is more complex and we need to overload this function.
         """
-        return mozcrash.check_for_crashes(dump_directory, symbols_path, test_name=test_name)
+        return mozcrash.log_crashes(self.log,
+                                    dump_directory,
+                                    symbols_path,
+                                    test=test_name)
 
     def logCommand(self, name, completeCmd, testdir):
         self.log.info("%s | full command: %r" % (name, completeCmd))
@@ -758,6 +762,8 @@ class XPCShellTestThread(Thread):
                     self.log.test_end(name, status, expected=status,
                                       message="Test failed or timed out, will retry")
                     self.clean_temp_dirs(path)
+                    if self.verboseIfFails and not self.verbose:
+                        self.log_full_output()
                     return
 
                 self.log.test_end(name, status, expected=expected, message=message)
@@ -1015,6 +1021,12 @@ class XPCShellTests(object):
         # compatible with the sandbox.
         self.env["MOZ_DISABLE_CONTENT_SANDBOX"] = "1"
 
+        if self.enable_webrender:
+            self.env["MOZ_WEBRENDER"] = "1"
+            self.env["MOZ_ACCELERATED"] = "1"
+        else:
+            self.env["MOZ_WEBRENDER"] = "0"
+
     def buildEnvironment(self):
         """
           Create and returns a dictionary of self.env to include all the appropriate env
@@ -1098,6 +1110,8 @@ class XPCShellTests(object):
         # We try to find the node executable in the path given to us by the user in
         # the MOZ_NODE_PATH environment variable
         nodeBin = os.getenv('MOZ_NODE_PATH', None)
+        if not nodeBin and build:
+            nodeBin = build.substs.get('NODEJS')
         if not nodeBin:
             self.log.warning('MOZ_NODE_PATH environment variable not set. '
                              'Tests requiring http/2 will fail.')
@@ -1129,9 +1143,11 @@ class XPCShellTests(object):
                 # tell us it's started
                 msg = process.stdout.readline()
                 if 'server listening' in msg:
-                    searchObj = re.search(r'HTTP2 server listening on port (.*)', msg, 0)
+                    searchObj = re.search(r'HTTP2 server listening on ports ([0-9]+),([0-9]+)',
+                                          msg, 0)
                     if searchObj:
                         self.env["MOZHTTP2_PORT"] = searchObj.group(1)
+                        self.env["MOZHTTP2_PROXY_PORT"] = searchObj.group(2)
             except OSError as e:
                 # This occurs if the subprocess couldn't be started
                 self.log.error('Could not run %s server: %s' % (name, str(e)))
@@ -1198,8 +1214,10 @@ class XPCShellTests(object):
             fixedInfo[k] = v
         self.mozInfo = fixedInfo
 
+        self.mozInfo['fission'] = prefs.get('fission.autostart', False)
         self.mozInfo['serviceworker_e10s'] = prefs.get(
             'dom.serviceWorkers.parent_intercept', False)
+        self.mozInfo['webrender'] = self.enable_webrender
 
         mozinfo.update(self.mozInfo)
 
@@ -1274,6 +1292,7 @@ class XPCShellTests(object):
         self.dump_tests = options.get('dump_tests')
         self.interactive = options.get('interactive')
         self.verbose = options.get('verbose')
+        self.verboseIfFails = options.get('verboseIfFails')
         self.keepGoing = options.get('keepGoing')
         self.logfiles = options.get('logfiles')
         self.totalChunks = options.get('totalChunks')
@@ -1286,6 +1305,7 @@ class XPCShellTests(object):
         self.failure_manifest = options.get('failure_manifest')
         self.threadCount = options.get('threadCount') or NUM_THREADS
         self.jscovdir = options.get('jscovdir')
+        self.enable_webrender = options.get('enable_webrender')
 
         self.testCount = 0
         self.passCount = 0
@@ -1366,6 +1386,7 @@ class XPCShellTests(object):
             'interactive': self.interactive,
             'app_dir_key': appDirKey,
             'prefsFile': self.prefsFile,
+            'verboseIfFails': self.verboseIfFails,
         }
 
         if self.sequential:

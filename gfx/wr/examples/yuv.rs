@@ -10,7 +10,7 @@ extern crate winit;
 #[path = "common/boilerplate.rs"]
 mod boilerplate;
 
-use boilerplate::Example;
+use crate::boilerplate::Example;
 use gleam::gl;
 use webrender::api::*;
 use webrender::api::units::*;
@@ -21,7 +21,7 @@ fn init_gl_texture(
     internal: gl::GLenum,
     external: gl::GLenum,
     bytes: &[u8],
-    gl: &gl::Gl,
+    gl: &dyn gl::Gl,
 ) {
     gl.bind_texture(gl::TEXTURE_2D, id);
     gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::GLint);
@@ -47,7 +47,7 @@ struct YuvImageProvider {
 }
 
 impl YuvImageProvider {
-    fn new(gl: &gl::Gl) -> Self {
+    fn new(gl: &dyn gl::Gl) -> Self {
         let texture_ids = gl.gen_textures(4);
 
         init_gl_texture(texture_ids[0], gl::RED, gl::RED, &[127; 100 * 100], gl);
@@ -89,17 +89,17 @@ impl Example for App {
         api: &RenderApi,
         builder: &mut DisplayListBuilder,
         txn: &mut Transaction,
-        _framebuffer_size: FramebufferIntSize,
+        _device_size: DeviceIntSize,
         pipeline_id: PipelineId,
         _document_id: DocumentId,
     ) {
         let bounds = LayoutRect::new(LayoutPoint::zero(), builder.content_size());
-        let info = LayoutPrimitiveInfo::new(bounds);
         let space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         builder.push_simple_stacking_context(
-            &info,
+            bounds.origin,
             space_and_clip.spatial_id,
+            true,
         );
 
         let yuv_chanel1 = api.generate_image_key();
@@ -155,26 +155,26 @@ impl Example for App {
             None,
         );
 
-        let info = LayoutPrimitiveInfo::with_clip_rect(
+        let info = CommonItemProperties::new(
             LayoutRect::new(LayoutPoint::new(100.0, 0.0), LayoutSize::new(100.0, 100.0)),
-            bounds,
+            space_and_clip,
         );
         builder.push_yuv_image(
             &info,
-            &space_and_clip,
+            bounds,
             YuvData::NV12(yuv_chanel1, yuv_chanel2),
             ColorDepth::Color8,
             YuvColorSpace::Rec601,
             ImageRendering::Auto,
         );
 
-        let info = LayoutPrimitiveInfo::with_clip_rect(
+        let info = CommonItemProperties::new(
             LayoutRect::new(LayoutPoint::new(300.0, 0.0), LayoutSize::new(100.0, 100.0)),
-            bounds,
+            space_and_clip,
         );
         builder.push_yuv_image(
             &info,
-            &space_and_clip,
+            bounds,
             YuvData::PlanarYCbCr(yuv_chanel1, yuv_chanel2_1, yuv_chanel3),
             ColorDepth::Color8,
             YuvColorSpace::Rec601,
@@ -195,15 +195,15 @@ impl Example for App {
 
     fn get_image_handlers(
         &mut self,
-        gl: &gl::Gl,
-    ) -> (Option<Box<webrender::ExternalImageHandler>>,
-          Option<Box<webrender::OutputImageHandler>>) {
+        gl: &dyn gl::Gl,
+    ) -> (Option<Box<dyn webrender::ExternalImageHandler>>,
+          Option<Box<dyn webrender::OutputImageHandler>>) {
         let provider = YuvImageProvider::new(gl);
         self.texture_id = provider.texture_ids[0];
         (Some(Box::new(provider)), None)
     }
 
-    fn draw_custom(&mut self, gl: &gl::Gl) {
+    fn draw_custom(&mut self, gl: &dyn gl::Gl) {
         init_gl_texture(self.texture_id, gl::RED, gl::RED, &[self.current_value; 100 * 100], gl);
         self.current_value = self.current_value.wrapping_add(1);
     }

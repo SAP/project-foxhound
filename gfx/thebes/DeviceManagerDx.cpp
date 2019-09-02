@@ -7,9 +7,9 @@
 #include "D3D11Checks.h"
 #include "gfxConfig.h"
 #include "GfxDriverInfo.h"
-#include "gfxPrefs.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/D3DMessageUtils.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/GPUParent.h"
@@ -183,7 +183,7 @@ bool DeviceManagerDx::CreateCompositorDevices() {
   FeatureState& d3d11 = gfxConfig::GetFeature(Feature::D3D11_COMPOSITING);
   MOZ_ASSERT(d3d11.IsEnabled());
 
-  if (int32_t sleepSec = gfxPrefs::Direct3D11SleepOnCreateDevice()) {
+  if (int32_t sleepSec = StaticPrefs::gfx_direct3d11_sleep_on_create_device()) {
     printf_stderr("Attach to PID: %d\n", GetCurrentProcessId());
     Sleep(sleepSec * 1000);
   }
@@ -262,6 +262,44 @@ bool DeviceManagerDx::CreateVRDevice() {
   if (FAILED(hr) || !mVRDevice) {
     NS_WARNING("Failed to acquire a D3D11 device for VR");
     return false;
+  }
+
+  return true;
+}
+
+bool DeviceManagerDx::CreateCanvasDevice() {
+  MOZ_ASSERT(ProcessOwnsCompositor());
+
+  if (mCanvasDevice) {
+    return true;
+  }
+
+  if (!LoadD3D11()) {
+    return false;
+  }
+
+  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapter();
+  if (!adapter) {
+    NS_WARNING("Failed to acquire a DXGI adapter for Canvas");
+    return false;
+  }
+
+  UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+
+  HRESULT hr;
+  if (!CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, flags, hr,
+                    mCanvasDevice)) {
+    gfxCriticalError() << "Crash during D3D11 device creation for Canvas";
+    return false;
+  }
+
+  if (FAILED(hr) || !mCanvasDevice) {
+    NS_WARNING("Failed to acquire a D3D11 device for Canvas");
+    return false;
+  }
+
+  if (XRE_IsGPUProcess()) {
+    Factory::SetDirect3D11Device(mCanvasDevice);
   }
 
   return true;
@@ -404,7 +442,7 @@ bool DeviceManagerDx::CreateCompositorDeviceHelper(
     FeatureState& aD3d11, IDXGIAdapter1* aAdapter, bool aAttemptVideoSupport,
     RefPtr<ID3D11Device>& aOutDevice) {
   // Check if a failure was injected for testing.
-  if (gfxPrefs::DeviceFailForTesting()) {
+  if (StaticPrefs::gfx_testing_device_fail()) {
     aD3d11.SetFailed(FeatureStatus::Failed,
                      "Direct3D11 device failure simulated by preference",
                      NS_LITERAL_CSTRING("FEATURE_FAILURE_D3D11_SIM"));
@@ -463,7 +501,7 @@ static inline int32_t GetNextDeviceCounter() {
 }
 
 void DeviceManagerDx::CreateCompositorDevice(FeatureState& d3d11) {
-  if (gfxPrefs::LayersD3D11ForceWARP()) {
+  if (StaticPrefs::layers_d3d11_force_warp()) {
     CreateWARPCompositorDevice();
     return;
   }
@@ -533,8 +571,8 @@ bool DeviceManagerDx::CreateDevice(IDXGIAdapter* aAdapter,
                                    D3D_DRIVER_TYPE aDriverType, UINT aFlags,
                                    HRESULT& aResOut,
                                    RefPtr<ID3D11Device>& aOutDevice) {
-  if (gfxPrefs::Direct3D11EnableDebugLayer() ||
-      gfxPrefs::Direct3D11BreakOnError()) {
+  if (StaticPrefs::gfx_direct3d11_enable_debug_layer() ||
+      StaticPrefs::gfx_direct3d11_break_on_error()) {
     aFlags |= D3D11_CREATE_DEVICE_DEBUG;
   }
 
@@ -546,7 +584,7 @@ bool DeviceManagerDx::CreateDevice(IDXGIAdapter* aAdapter,
   }
   MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { return false; }
 
-  if (gfxPrefs::Direct3D11BreakOnError()) {
+  if (StaticPrefs::gfx_direct3d11_break_on_error()) {
     do {
       if (!aOutDevice) break;
 
@@ -582,7 +620,7 @@ bool DeviceManagerDx::CreateDevice(IDXGIAdapter* aAdapter,
 
 void DeviceManagerDx::CreateWARPCompositorDevice() {
   ScopedGfxFeatureReporter reporterWARP("D3D11-WARP",
-                                        gfxPrefs::LayersD3D11ForceWARP());
+                                        StaticPrefs::layers_d3d11_force_warp());
   FeatureState& d3d11 = gfxConfig::GetFeature(Feature::D3D11_COMPOSITING);
 
   HRESULT hr;
@@ -707,13 +745,13 @@ RefPtr<ID3D11Device> DeviceManagerDx::CreateDecoderDevice() {
   }
 
   bool reuseDevice = false;
-  if (gfxPrefs::Direct3D11ReuseDecoderDevice() < 0) {
+  if (StaticPrefs::gfx_direct3d11_reuse_decoder_device() < 0) {
     // Use the default logic, which is to allow reuse of devices on AMD, but
     // create separate devices everywhere else.
     if (isAMD) {
       reuseDevice = true;
     }
-  } else if (gfxPrefs::Direct3D11ReuseDecoderDevice() > 0) {
+  } else if (StaticPrefs::gfx_direct3d11_reuse_decoder_device() > 0) {
     reuseDevice = true;
   }
 
@@ -866,6 +904,7 @@ void DeviceManagerDx::ResetDevices() {
   mMLGDevice = nullptr;
   mCompositorDevice = nullptr;
   mContentDevice = nullptr;
+  mCanvasDevice = nullptr;
   mImageDevice = nullptr;
   mDeviceStatus = Nothing();
   mDeviceResetReason = Nothing();
@@ -888,6 +927,7 @@ bool DeviceManagerDx::MaybeResetAndReacquireDevices() {
 
   bool createCompositorDevice = !!mCompositorDevice;
   bool createContentDevice = !!mContentDevice;
+  bool createCanvasDevice = !!mCanvasDevice;
 
   ResetDevices();
 
@@ -897,6 +937,9 @@ bool DeviceManagerDx::MaybeResetAndReacquireDevices() {
   }
   if (createContentDevice) {
     CreateContentDevices();
+  }
+  if (createCanvasDevice) {
+    CreateCanvasDevice();
   }
 
   return true;
@@ -986,13 +1029,14 @@ bool DeviceManagerDx::GetAnyDeviceRemovedReason(DeviceResetReason* aOutReason) {
   mDeviceLock.AssertCurrentThreadOwns();
 
   if (DidDeviceReset(mCompositorDevice, aOutReason) ||
-      DidDeviceReset(mContentDevice, aOutReason)) {
+      DidDeviceReset(mContentDevice, aOutReason) ||
+      DidDeviceReset(mCanvasDevice, aOutReason)) {
     return true;
   }
 
   if (XRE_IsParentProcess() && NS_IsMainThread() &&
-      gfxPrefs::DeviceResetForTesting()) {
-    gfxPrefs::SetDeviceResetForTesting(0);
+      StaticPrefs::gfx_testing_device_reset()) {
+    Preferences::SetInt("gfx.testing.device-reset", 0);
     *aOutReason = DeviceResetReason::FORCED_RESET;
     return true;
   }
@@ -1069,6 +1113,14 @@ RefPtr<ID3D11Device> DeviceManagerDx::GetVRDevice() {
   return mVRDevice;
 }
 
+RefPtr<ID3D11Device> DeviceManagerDx::GetCanvasDevice() {
+  MutexAutoLock lock(mDeviceLock);
+  if (!mCanvasDevice) {
+    CreateCanvasDevice();
+  }
+  return mCanvasDevice;
+}
+
 RefPtr<IDCompositionDevice> DeviceManagerDx::GetDirectCompositionDevice() {
   MutexAutoLock lock(mDeviceLock);
   return mDirectCompositionDevice;
@@ -1091,7 +1143,7 @@ bool DeviceManagerDx::TextureSharingWorks() {
 
 bool DeviceManagerDx::CanInitializeKeyedMutexTextures() {
   MutexAutoLock lock(mDeviceLock);
-  return mDeviceStatus && gfxPrefs::Direct3D11AllowKeyedMutex() &&
+  return mDeviceStatus && StaticPrefs::gfx_direct3d11_allow_keyed_mutex() &&
          gfxVars::AllowD3D11KeyedMutex();
 }
 

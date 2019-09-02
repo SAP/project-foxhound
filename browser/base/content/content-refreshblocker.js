@@ -4,7 +4,8 @@
 
 /* eslint-env mozilla/frame-script */
 
-var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 var RefreshBlocker = {
   PREF: "accessibility.blockautorefresh",
@@ -68,21 +69,24 @@ var RefreshBlocker = {
   },
 
   enable() {
-    this._filter = Cc["@mozilla.org/appshell/component/browser-status-filter;1"]
-                     .createInstance(Ci.nsIWebProgress);
+    this._filter = Cc[
+      "@mozilla.org/appshell/component/browser-status-filter;1"
+    ].createInstance(Ci.nsIWebProgress);
     this._filter.addProgressListener(this, Ci.nsIWebProgress.NOTIFY_ALL);
     this._filter.target = tabEventTarget;
 
-    let webProgress = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                              .getInterface(Ci.nsIWebProgress);
+    let webProgress = docShell
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIWebProgress);
     webProgress.addProgressListener(this._filter, Ci.nsIWebProgress.NOTIFY_ALL);
 
     addMessageListener("RefreshBlocker:Refresh", this);
   },
 
   disable() {
-    let webProgress = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                              .getInterface(Ci.nsIWebProgress);
+    let webProgress = docShell
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIWebProgress);
     webProgress.removeProgressListener(this._filter);
 
     this._filter.removeProgressListener(this);
@@ -92,7 +96,12 @@ var RefreshBlocker = {
   },
 
   send(data) {
-    sendAsyncMessage("RefreshBlocker:Blocked", data);
+    // Due to the |nsDocLoader| calling its |nsIWebProgressListener|s in
+    // reverse order, this will occur *before* the |BrowserChild| can send its
+    // |OnLocationChange| event to the parent, but we need this message to
+    // arrive after to ensure that the refresh blocker notification is not
+    // immediately cleared by the |OnLocationChange| from |BrowserChild|.
+    setTimeout(() => sendAsyncMessage("RefreshBlocker:Blocked", data), 0);
   },
 
   /**
@@ -101,8 +110,10 @@ var RefreshBlocker = {
    * blockedWindows.
    */
   onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
-    if (aStateFlags & Ci.nsIWebProgressListener.STATE_IS_WINDOW &&
-        aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) {
+    if (
+      aStateFlags & Ci.nsIWebProgressListener.STATE_IS_WINDOW &&
+      aStateFlags & Ci.nsIWebProgressListener.STATE_STOP
+    ) {
       this.blockedWindows.delete(aWebProgress.DOMWindow);
     }
   },
@@ -168,7 +179,11 @@ var RefreshBlocker = {
     }
   },
 
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener2, Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIWebProgressListener2,
+    Ci.nsIWebProgressListener,
+    Ci.nsISupportsWeakReference,
+  ]),
 };
 
 RefreshBlocker.init();

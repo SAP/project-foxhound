@@ -232,8 +232,12 @@ MemoryPorts* GetMemoryPortsForPid(pid_t pid) {
 }
 
 // We just received a port representing a region of shared memory, reply to
-// the process that set it with the mach_port_t that represents it in this process.
-// That will be the Handle to be shared over normal IPC
+// the process that set it with the mach_port_t that represents it in this
+// process. That will be the Handle to be shared over normal IPC.
+//
+// WARNING: this function is called while gMutex is not held and must not
+// reference structures protected by gMutex. See the deadlock warning in
+// ShareToProcess().
 void HandleSharePortsMessage(MachReceiveMessage* rmsg, MemoryPorts* ports) {
   mach_port_t port = rmsg->GetTranslatedPort(0);
   uint64_t* serial = reinterpret_cast<uint64_t*>(rmsg->GetData());
@@ -332,6 +336,7 @@ void HandleGetPortsMessage(MachReceiveMessage* rmsg, MemoryPorts* ports) {
 }
 
 static void* PortServerThread(void* argument) {
+  pthread_setname_np("PortServerThread");
   MemoryPorts* ports = static_cast<MemoryPorts*>(argument);
   MachReceiveMessage child_message;
   while (true) {
@@ -352,15 +357,32 @@ static void* PortServerThread(void* argument) {
     } else if (rmsg.GetMessageID() == kUpdateTextureLocksMsg) {
       layers::TextureSync::DispatchCheckTexturesForUnlock();
     } else {
-      StaticMutexAutoLock smal(gMutex);
       switch (rmsg.GetMessageID()) {
-        case kSharePortsMsg:
+        case kSharePortsMsg: {
+          // Don't acquire gMutex here while calling HandleSharePortsMessage()
+          // to avoid deadlock. If gMutex is held by ShareToProcess(), we will
+          // block and create the following deadlock chain.
+          //
+          // 1) local:PortServerThread() blocked on local:gMutex held by
+          // 2) local:ShareToProcess() waiting for reply from
+          // 3) peer:PortServerThread() blocked on peer:gMutex held by
+          // 4) peer:ShareToProcess() waiting for reply from 1.
+          //
+          // It's safe to call HandleSharePortsMessage() without gMutex
+          // because HandleSharePortsMessage() only sends an outgoing message
+          // without referencing data structures protected by gMutex. The
+          // |ports| struct is deallocated on this thread in the kShutdownMsg
+          // message handling before this thread exits.
           HandleSharePortsMessage(&rmsg, ports);
           break;
-        case kGetPortsMsg:
+        }
+        case kGetPortsMsg: {
+          StaticMutexAutoLock smal(gMutex);
           HandleGetPortsMessage(&rmsg, ports);
           break;
-        case kCleanupMsg:
+        }
+        case kCleanupMsg: {
+          StaticMutexAutoLock smal(gMutex);
           if (gParentPid == 0) {
             LOG_ERROR("Cleanup message not valid for parent process");
             continue;
@@ -374,8 +396,11 @@ static void* PortServerThread(void* argument) {
           pid = reinterpret_cast<pid_t*>(rmsg.GetData());
           SharedMemoryBasic::CleanupForPid(*pid);
           break;
-        default:
+        }
+        default: {
+          // gMutex not required
           LOG_ERROR("Unknown message\n");
+        }
       }
     }
   }
@@ -512,7 +537,7 @@ bool SharedMemoryBasic::Create(size_t size) {
   return true;
 }
 
-bool SharedMemoryBasic::Map(size_t size) {
+bool SharedMemoryBasic::Map(size_t size, void* fixed_address) {
   MOZ_ASSERT(mMemory == nullptr);
 
   if (MACH_PORT_NULL == mPort) {
@@ -520,24 +545,48 @@ bool SharedMemoryBasic::Map(size_t size) {
   }
 
   kern_return_t kr;
-  mach_vm_address_t address = 0;
+  mach_vm_address_t address = toVMAddress(fixed_address);
 
   vm_prot_t vmProtection = VM_PROT_READ;
   if (mOpenRights == RightsReadWrite) {
     vmProtection |= VM_PROT_WRITE;
   }
 
-  kr = mach_vm_map(mach_task_self(), &address, round_page(size), 0, VM_FLAGS_ANYWHERE, mPort, 0,
-                   false, vmProtection, vmProtection, VM_INHERIT_NONE);
+  kr = mach_vm_map(mach_task_self(), &address, round_page(size), 0,
+                   fixed_address ? VM_FLAGS_FIXED : VM_FLAGS_ANYWHERE, mPort, 0, false,
+                   vmProtection, vmProtection, VM_INHERIT_NONE);
   if (kr != KERN_SUCCESS) {
-    LOG_ERROR("Failed to map shared memory (%zu bytes) into %x, port %x. %s (%x)\n", size,
-              mach_task_self(), mPort, mach_error_string(kr), kr);
+    if (!fixed_address) {
+      LOG_ERROR("Failed to map shared memory (%zu bytes) into %x, port %x. %s (%x)\n", size,
+                mach_task_self(), mPort, mach_error_string(kr), kr);
+    }
+    return false;
+  }
+
+  if (fixed_address && fixed_address != toPointer(address)) {
+    kr = vm_deallocate(mach_task_self(), address, size);
+    if (kr != KERN_SUCCESS) {
+      LOG_ERROR("Failed to unmap shared memory at unsuitable address "
+                "(%zu bytes) from %x, port %x. %s (%x)\n",
+                size, mach_task_self(), mPort, mach_error_string(kr), kr);
+    }
     return false;
   }
 
   mMemory = toPointer(address);
   Mapped(size);
   return true;
+}
+
+void* SharedMemoryBasic::FindFreeAddressSpace(size_t size) {
+  mach_vm_address_t address = 0;
+  size = round_page(size);
+  if (mach_vm_map(mach_task_self(), &address, size, 0, VM_FLAGS_ANYWHERE, MEMORY_OBJECT_NULL, 0,
+                  false, VM_PROT_NONE, VM_PROT_NONE, VM_INHERIT_NONE) != KERN_SUCCESS ||
+      vm_deallocate(mach_task_self(), address, size) != KERN_SUCCESS) {
+    return nullptr;
+  }
+  return toPointer(address);
 }
 
 bool SharedMemoryBasic::ShareToProcess(base::ProcessId pid, Handle* aNewHandle) {

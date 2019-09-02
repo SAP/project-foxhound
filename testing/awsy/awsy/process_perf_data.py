@@ -68,10 +68,11 @@ def update_checkpoint_paths(checkpoint_files, checkpoints):
             if indices:
                 checkpoints[indices[0]]['path'] = paths[idx]
             else:
-                print "found files but couldn't find %s" % name
+                print("found files but couldn't find {}").format(name)
 
 
-def create_suite(name, node, data_path, checkpoints=CHECKPOINTS, alertThreshold=None):
+def create_suite(name, node, data_path, checkpoints=CHECKPOINTS,
+                 alertThreshold=None, extra_opts=None):
     """
     Creates a suite suitable for adding to a perfherder blob. Calculates the
     geometric mean of the checkpoint values and adds that to the suite as
@@ -93,18 +94,25 @@ def create_suite(name, node, data_path, checkpoints=CHECKPOINTS, alertThreshold=
     if alertThreshold:
         suite['alertThreshold'] = alertThreshold
 
-    extra_opts = []
+    opts = []
+    if extra_opts:
+        opts.extend(extra_opts)
+
     # The stylo attributes override each other.
+    stylo_opt = None
     if 'STYLO_FORCE_ENABLED' in os.environ and os.environ['STYLO_FORCE_ENABLED']:
-        extra_opts = ["stylo"]
+        stylo_opt = "stylo"
     if 'STYLO_THREADS' in os.environ and os.environ['STYLO_THREADS'] == '1':
-        extra_opts = ["stylo-sequential"]
+        stylo_opt = "stylo-sequential"
+
+    if stylo_opt:
+        opts.append(stylo_opt)
 
     if 'DMD' in os.environ and os.environ['DMD']:
-        extra_opts.append("dmd")
+        opts.append("dmd")
 
     if extra_opts:
-        suite['extraOptions'] = extra_opts
+        suite['extraOptions'] = opts
 
     update_checkpoint_paths(glob.glob(os.path.join(data_path, "memory-report*")), checkpoints)
 
@@ -150,12 +158,13 @@ def create_suite(name, node, data_path, checkpoints=CHECKPOINTS, alertThreshold=
     return suite
 
 
-def create_perf_data(data_path, perf_suites=PERF_SUITES, checkpoints=CHECKPOINTS):
+def create_perf_data(data_path, perf_suites=PERF_SUITES, checkpoints=CHECKPOINTS,
+                     extra_opts=None):
     """
     Builds up a performance data blob suitable for submitting to perfherder.
     """
     if ("GCOV_PREFIX" in os.environ) or ("JS_CODE_COVERAGE_OUTPUT_DIR" in os.environ):
-        print "Code coverage is being collected, performance data will not be gathered."
+        print("Code coverage is being collected, performance data will not be gathered.")
         return {}
 
     perf_blob = {
@@ -166,7 +175,7 @@ def create_perf_data(data_path, perf_suites=PERF_SUITES, checkpoints=CHECKPOINTS
     for suite in perf_suites:
         perf_blob['suites'].append(create_suite(
             suite['name'], suite['node'], data_path, checkpoints,
-            suite.get('alertThreshold')))
+            suite.get('alertThreshold'), extra_opts))
 
     return perf_blob
 
@@ -174,12 +183,12 @@ def create_perf_data(data_path, perf_suites=PERF_SUITES, checkpoints=CHECKPOINTS
 if __name__ == '__main__':
     args = sys.argv[1:]
     if not args:
-        print "Usage: process_perf_data.py data_path"
+        print("Usage: process_perf_data.py data_path")
         sys.exit(1)
 
     # Determine which revisions we need to process.
     data_path = args[0]
     perf_blob = create_perf_data(data_path)
-    print "PERFHERDER_DATA: %s" % json.dumps(perf_blob)
+    print("PERFHERDER_DATA: {}").format(json.dumps(perf_blob))
 
     sys.exit(0)

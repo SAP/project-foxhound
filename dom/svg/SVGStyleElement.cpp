@@ -50,8 +50,6 @@ SVGStyleElement::SVGStyleElement(
   AddMutationObserver(this);
 }
 
-SVGStyleElement::~SVGStyleElement() {}
-
 //----------------------------------------------------------------------
 // nsINode methods
 
@@ -60,10 +58,8 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGStyleElement)
 //----------------------------------------------------------------------
 // nsIContent methods
 
-nsresult SVGStyleElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                     nsIContent* aBindingParent) {
-  nsresult rv =
-      SVGStyleElementBase::BindToTree(aDocument, aParent, aBindingParent);
+nsresult SVGStyleElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = SVGStyleElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   void (SVGStyleElement::*update)() =
@@ -74,10 +70,10 @@ nsresult SVGStyleElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return rv;
 }
 
-void SVGStyleElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void SVGStyleElement::UnbindFromTree(bool aNullParent) {
   nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
   ShadowRoot* oldShadow = GetContainingShadow();
-  SVGStyleElementBase::UnbindFromTree(aDeep, aNullParent);
+  SVGStyleElementBase::UnbindFromTree(aNullParent);
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
 }
 
@@ -199,6 +195,7 @@ Maybe<nsStyleLinkElement::SheetInfo> SVGStyleElement::GetStyleSheetInfo() {
       media,
       HasAlternateRel::No,
       IsInline::Yes,
+      IsExplicitlyEnabled::No,
   });
 }
 

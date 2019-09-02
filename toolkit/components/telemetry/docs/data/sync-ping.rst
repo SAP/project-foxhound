@@ -79,6 +79,23 @@ Structure:
               // Optional, excluded if there were no errors
               failureReason: { ... }, // Same as above.
 
+              // Timings and counts for detailed steps that the engine reported
+              // as part of its sync. Optional; omitted if the engine didn't
+              // report any extra steps.
+              steps: {
+                name: <string>, // The step name.
+                took: <integer duration in milliseconds>, // Omitted if 0.
+                // Optional, extra named counts (e.g., number of items handled
+                // in this step). Omitted if the engine didn't report extra
+                // counts.
+                counts: [
+                  {
+                    name: <string>, // The counter name.
+                    count: <integer>, // The counter value.
+                  },
+                ],
+              },
+
               // Optional, excluded if it would be empty or if the engine cannot
               // or did not run validation on itself.
               validation: {
@@ -219,7 +236,6 @@ PWMGR_LOGIN_PAGE_SAFETY
 PWMGR_MANAGE_COPIED_PASSWORD
 PWMGR_MANAGE_COPIED_USERNAME
 PWMGR_MANAGE_DELETED
-PWMGR_MANAGE_OPENED
 PWMGR_MANAGE_VISIBILITY_TOGGLED
 PWMGR_NUM_PASSWORDS_PER_HOSTNAME
 PWMGR_NUM_SAVED_PASSWORDS

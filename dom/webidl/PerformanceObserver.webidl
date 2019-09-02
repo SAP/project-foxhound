@@ -8,18 +8,20 @@
  */
 
 dictionary PerformanceObserverInit {
-  required sequence<DOMString> entryTypes;
-  boolean buffered = false;
+  sequence<DOMString> entryTypes;
+	DOMString type;
+  boolean buffered;
 };
 
 callback PerformanceObserverCallback = void (PerformanceObserverEntryList entries,
                                              PerformanceObserver observer);
 
-[Func="mozilla::dom::DOMPrefs::dom_enable_performance_observer",
+[Pref="dom.enable_performance_observer",
  Constructor(PerformanceObserverCallback callback),
  Exposed=(Window,Worker)]
 interface PerformanceObserver {
-    void observe(PerformanceObserverInit options);
+    [Throws] void observe(optional PerformanceObserverInit options = {});
     void disconnect();
     PerformanceEntryList takeRecords();
+    static readonly attribute object supportedEntryTypes;
 };

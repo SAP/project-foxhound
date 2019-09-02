@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=743615
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 743615</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="utils_bug743615.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -54,8 +54,7 @@ function windowMessage(evt) {
   ok(checkPattern(imageData, pattern),
      'postMessage from self worked correctly');
 
-  // We're not spec compliant on this yet.
-  todo_is(imageData.data, evt.data.dataRef,
+  is(imageData.data, evt.data.dataRef,
           'Should have backrefs for imagedata buffer');
 
   // Make a new pattern, and send it to a worker.

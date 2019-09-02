@@ -3,14 +3,44 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-const {NewTabUtils} = ChromeUtils.import("resource://gre/modules/NewTabUtils.jsm");
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "NewTabUtils",
+  "resource://gre/modules/NewTabUtils.jsm"
+);
+const { setTimeout, clearTimeout } = ChromeUtils.import(
+  "resource://gre/modules/Timer.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
-ChromeUtils.defineModuleGetter(this, "perfService", "resource://activity-stream/common/PerfService.jsm");
-
-const {actionTypes: at, actionCreators: ac} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm");
-const {PersistentCache} = ChromeUtils.import("resource://activity-stream/lib/PersistentCache.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "perfService",
+  "resource://activity-stream/common/PerfService.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "UserDomainAffinityProvider",
+  "resource://activity-stream/lib/UserDomainAffinityProvider.jsm"
+);
+const { actionTypes: at, actionCreators: ac } = ChromeUtils.import(
+  "resource://activity-stream/common/Actions.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PersistentCache",
+  "resource://activity-stream/lib/PersistentCache.jsm"
+);
+XPCOMUtils.defineLazyServiceGetters(this, {
+  gUUIDGenerator: ["@mozilla.org/uuid-generator;1", "nsIUUIDGenerator"],
+});
 
 const CACHE_KEY = "discovery_stream";
 const LAYOUT_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
@@ -18,13 +48,24 @@ const STARTUP_CACHE_EXPIRE_TIME = 7 * 24 * 60 * 60 * 1000; // 1 week
 const COMPONENT_FEEDS_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
 const SPOCS_FEEDS_UPDATE_TIME = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_RECS_EXPIRE_TIME = 60 * 60 * 1000; // 1 hour
+const MIN_DOMAIN_AFFINITIES_UPDATE_TIME = 12 * 60 * 60 * 1000; // 12 hours
 const MAX_LIFETIME_CAP = 500; // Guard against misconfiguration on the server
+const DEFAULT_MAX_HISTORY_QUERY_RESULTS = 1000;
+const FETCH_TIMEOUT = 45 * 1000;
 const PREF_CONFIG = "discoverystream.config";
 const PREF_ENDPOINTS = "discoverystream.endpoints";
-const PREF_OPT_OUT = "discoverystream.optOut.0";
+const PREF_IMPRESSION_ID = "browser.newtabpage.activity-stream.impressionId";
+const PREF_ENABLED = "discoverystream.enabled";
+const PREF_HARDCODED_BASIC_LAYOUT = "discoverystream.hardcoded-basic-layout";
+const PREF_SPOCS_ENDPOINT = "discoverystream.spocs-endpoint";
+const PREF_TOPSTORIES = "feeds.section.topstories";
+const PREF_SPOCS_CLEAR_ENDPOINT = "discoverystream.endpointSpocsClear";
 const PREF_SHOW_SPONSORED = "showSponsored";
 const PREF_SPOC_IMPRESSIONS = "discoverystream.spoc.impressions";
 const PREF_REC_IMPRESSIONS = "discoverystream.rec.impressions";
+
+let defaultLayoutResp;
+let basicLayoutResp;
 
 this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   constructor() {
@@ -33,13 +74,53 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
 
     // Persistent cache for remote endpoint data.
     this.cache = new PersistentCache(CACHE_KEY, true);
+    this._impressionId = this.getOrCreateImpressionId();
     // Internal in-memory cache for parsing json prefs.
     this._prefCache = {};
   }
 
+  getOrCreateImpressionId() {
+    let impressionId = Services.prefs.getCharPref(PREF_IMPRESSION_ID, "");
+    if (!impressionId) {
+      impressionId = String(gUUIDGenerator.generateUUID());
+      Services.prefs.setCharPref(PREF_IMPRESSION_ID, impressionId);
+    }
+    return impressionId;
+  }
+
+  /**
+   * Send SPOCS Fill telemetry.
+   * @param {object} filteredItems An object keyed on filter reasons, and the value
+   *                 is a list of SPOCS.
+   * @param {boolean} fullRecalc A boolean indicating if it's a full recalculation.
+   *                  Calling `loadSpocs` will be treated as a full recalculation.
+   *                  Whereas responding the action "DISCOVERY_STREAM_SPOC_IMPRESSION"
+   *                  is not a full recalculation.
+   */
+  _sendSpocsFill(filteredItems, fullRecalc) {
+    const full_recalc = fullRecalc ? 1 : 0;
+    const spocsFill = [];
+    for (const [reason, items] of Object.entries(filteredItems)) {
+      items.forEach(item => {
+        // Only send SPOCS (i.e. it has a campaign_id)
+        if (item.campaign_id) {
+          spocsFill.push({ reason, full_recalc, id: item.id, displayed: 0 });
+        }
+      });
+    }
+
+    if (spocsFill.length) {
+      this.store.dispatch(
+        ac.DiscoveryStreamSpocsFill({ spoc_fills: spocsFill })
+      );
+    }
+  }
+
   finalLayoutEndpoint(url, apiKey) {
     if (url.includes("$apiKey") && !apiKey) {
-      throw new Error(`Layout Endpoint - An API key was specified but none configured: ${url}`);
+      throw new Error(
+        `Layout Endpoint - An API key was specified but none configured: ${url}`
+      );
     }
     return url.replace("$apiKey", apiKey);
   }
@@ -49,34 +130,54 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       return this._prefCache.config;
     }
     try {
-      this._prefCache.config = JSON.parse(this.store.getState().Prefs.values[PREF_CONFIG]);
+      this._prefCache.config = JSON.parse(
+        this.store.getState().Prefs.values[PREF_CONFIG]
+      );
       const layoutUrl = this._prefCache.config.layout_endpoint;
+
       const apiKeyPref = this._prefCache.config.api_key_pref;
       if (layoutUrl && apiKeyPref) {
         const apiKey = Services.prefs.getCharPref(apiKeyPref, "");
-        this._prefCache.config.layout_endpoint = this.finalLayoutEndpoint(layoutUrl, apiKey);
+        this._prefCache.config.layout_endpoint = this.finalLayoutEndpoint(
+          layoutUrl,
+          apiKey
+        );
       }
-
-      // Modify the cached config with the user set opt-out for other consumers
-      this._prefCache.config.enabled = this._prefCache.config.enabled &&
-        !this.store.getState().Prefs.values[PREF_OPT_OUT];
     } catch (e) {
       // istanbul ignore next
       this._prefCache.config = {};
       // istanbul ignore next
-      Cu.reportError(`Could not parse preference. Try resetting ${PREF_CONFIG} in about:config. ${e}`);
+      Cu.reportError(
+        `Could not parse preference. Try resetting ${PREF_CONFIG} in about:config. ${e}`
+      );
     }
+    this._prefCache.config.enabled =
+      this._prefCache.config.enabled &&
+      this.store.getState().Prefs.values[PREF_ENABLED];
+
     return this._prefCache.config;
   }
 
   get showSpocs() {
     // Combine user-set sponsored opt-out with Mozilla-set config
-    return this.store.getState().Prefs.values[PREF_SHOW_SPONSORED] && this.config.show_spocs;
+    return (
+      this.store.getState().Prefs.values[PREF_SHOW_SPONSORED] &&
+      this.config.show_spocs
+    );
+  }
+
+  get personalized() {
+    return this.config.personalized;
   }
 
   setupPrefs() {
     // Send the initial state of the pref on our reducer
-    this.store.dispatch(ac.BroadcastToContent({type: at.DISCOVERY_STREAM_CONFIG_SETUP, data: this.config}));
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.DISCOVERY_STREAM_CONFIG_SETUP,
+        data: this.config,
+      })
+    );
   }
 
   uninitPrefs() {
@@ -84,22 +185,47 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     this._prefCache = {};
   }
 
-  async fetchFromEndpoint(endpoint) {
-    if (!endpoint) {
+  async fetchFromEndpoint(rawEndpoint, options = {}) {
+    if (!rawEndpoint) {
       Cu.reportError("Tried to fetch endpoint but none was configured.");
       return null;
     }
+
+    const apiKeyPref = this._prefCache.config.api_key_pref;
+    const apiKey = Services.prefs.getCharPref(apiKeyPref, "");
+
+    // The server somtimes returns this value already replaced, but we try this for two reasons:
+    // 1. Layout endpoints are not from the server.
+    // 2. Hardcoded layouts don't have this already done for us.
+    const endpoint = rawEndpoint.replace("$apiKey", apiKey);
+
     try {
       // Make sure the requested endpoint is allowed
-      const allowed = this.store.getState().Prefs.values[PREF_ENDPOINTS].split(",");
+      const allowed = this.store
+        .getState()
+        .Prefs.values[PREF_ENDPOINTS].split(",");
       if (!allowed.some(prefix => endpoint.startsWith(prefix))) {
         throw new Error(`Not one of allowed prefixes (${allowed})`);
       }
 
-      const response = await fetch(endpoint, {credentials: "omit"});
+      const controller = new AbortController();
+      const { signal } = controller;
+
+      const fetchPromise = fetch(endpoint, {
+        ...options,
+        credentials: "omit",
+        signal,
+      });
+      // istanbul ignore next
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, FETCH_TIMEOUT);
+
+      const response = await fetchPromise;
       if (!response.ok) {
         throw new Error(`Unexpected status (${response.status})`);
       }
+      clearTimeout(timeoutId);
       return response.json();
     } catch (error) {
       Cu.reportError(`Failed to fetch ${endpoint}: ${error.message}`);
@@ -114,21 +240,31 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    * @param {string?} url for "feed" only, the URL of the feed.
    * @param {boolean} is this check done at initial browser load
    */
-  isExpired({cachedData, key, url, isStartup}) {
-    const {layout, spocs, feeds} = cachedData;
+  isExpired({ cachedData, key, url, isStartup }) {
+    const { layout, spocs, feeds } = cachedData;
     const updateTimePerComponent = {
-      "layout": LAYOUT_UPDATE_TIME,
-      "spocs": SPOCS_FEEDS_UPDATE_TIME,
-      "feed": COMPONENT_FEEDS_UPDATE_TIME,
+      layout: LAYOUT_UPDATE_TIME,
+      spocs: SPOCS_FEEDS_UPDATE_TIME,
+      feed: COMPONENT_FEEDS_UPDATE_TIME,
     };
-    const EXPIRATION_TIME = isStartup ? STARTUP_CACHE_EXPIRE_TIME : updateTimePerComponent[key];
+    const EXPIRATION_TIME = isStartup
+      ? STARTUP_CACHE_EXPIRE_TIME
+      : updateTimePerComponent[key];
     switch (key) {
       case "layout":
-        return (!layout || !(Date.now() - layout.lastUpdated < EXPIRATION_TIME));
+        // This never needs to expire, as it's not expected to change.
+        if (this.config.hardcoded_layout) {
+          return false;
+        }
+        return !layout || !(Date.now() - layout.lastUpdated < EXPIRATION_TIME);
       case "spocs":
-        return (!spocs || !(Date.now() - spocs.lastUpdated < EXPIRATION_TIME));
+        return !spocs || !(Date.now() - spocs.lastUpdated < EXPIRATION_TIME);
       case "feed":
-        return (!feeds || !feeds[url] || !(Date.now() - feeds[url].lastUpdated < EXPIRATION_TIME));
+        return (
+          !feeds ||
+          !feeds[url] ||
+          !(Date.now() - feeds[url].lastUpdated < EXPIRATION_TIME)
+        );
       default:
         // istanbul ignore next
         throw new Error(`${key} is not a valid key`);
@@ -136,12 +272,16 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   async _checkExpirationPerComponent() {
-    const cachedData = await this.cache.get() || {};
-    const {feeds} = cachedData;
+    const cachedData = (await this.cache.get()) || {};
+    const { feeds } = cachedData;
     return {
-      layout: this.isExpired({cachedData, key: "layout"}),
-      spocs: this.isExpired({cachedData, key: "spocs"}),
-      feeds: !feeds || Object.keys(feeds).some(url => this.isExpired({cachedData, key: "feed", url})),
+      layout: this.isExpired({ cachedData, key: "layout" }),
+      spocs: this.isExpired({ cachedData, key: "spocs" }),
+      feeds:
+        !feeds ||
+        Object.keys(feeds).some(url =>
+          this.isExpired({ cachedData, key: "feed", url })
+        ),
     };
   }
 
@@ -150,37 +290,75 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    */
   async checkIfAnyCacheExpired() {
     const expirationPerComponent = await this._checkExpirationPerComponent();
-    return expirationPerComponent.layout ||
+    return (
+      expirationPerComponent.layout ||
       expirationPerComponent.spocs ||
-      expirationPerComponent.feeds;
+      expirationPerComponent.feeds
+    );
   }
 
-  async loadLayout(sendUpdate, isStartup) {
-    const cachedData = await this.cache.get() || {};
-    let {layout} = cachedData;
-    if (this.isExpired({cachedData, key: "layout", isStartup})) {
+  async fetchLayout(isStartup) {
+    const cachedData = (await this.cache.get()) || {};
+    let { layout } = cachedData;
+    if (this.isExpired({ cachedData, key: "layout", isStartup })) {
       const start = perfService.absNow();
-      const layoutResponse = await this.fetchFromEndpoint(this.config.layout_endpoint);
+      const layoutResponse = await this.fetchFromEndpoint(
+        this.config.layout_endpoint
+      );
       if (layoutResponse && layoutResponse.layout) {
         this.layoutRequestTime = Math.round(perfService.absNow() - start);
         layout = {
           lastUpdated: Date.now(),
           spocs: layoutResponse.spocs,
           layout: layoutResponse.layout,
+          status: "success",
         };
+
         await this.cache.set("layout", layout);
       } else {
         Cu.reportError("No response for response.layout prop");
       }
     }
+    return layout;
+  }
 
-    if (layout && layout.layout) {
-      sendUpdate({
-        type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
-        data: layout,
-      });
+  async loadLayout(sendUpdate, isStartup) {
+    let layout = {};
+    if (!this.config.hardcoded_layout) {
+      layout = await this.fetchLayout(isStartup);
     }
-    if (layout && layout.spocs && layout.spocs.url) {
+
+    if (!layout || !layout.layout) {
+      if (
+        this.config.hardcoded_basic_layout ||
+        this.store.getState().Prefs.values[PREF_HARDCODED_BASIC_LAYOUT]
+      ) {
+        layout = { lastUpdate: Date.now(), ...basicLayoutResp };
+      } else {
+        layout = { lastUpdate: Date.now(), ...defaultLayoutResp };
+      }
+    }
+
+    if (
+      layout.spocs &&
+      (this.store.getState().Prefs.values[PREF_SPOCS_ENDPOINT] ||
+        this.config.spocs_endpoint)
+    ) {
+      layout.spocs.url =
+        this.store.getState().Prefs.values[PREF_SPOCS_ENDPOINT] ||
+        this.config.spocs_endpoint;
+    }
+
+    sendUpdate({
+      type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
+      data: layout,
+    });
+    if (
+      layout.spocs &&
+      layout.spocs.url &&
+      layout.spocs.url !==
+        this.store.getState().DiscoveryStream.spocs.spocs_endpoint
+    ) {
       sendUpdate({
         type: at.DISCOVERY_STREAM_SPOCS_ENDPOINT,
         data: layout.spocs.url,
@@ -197,29 +375,66 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    *                     the scope for isStartup and the promises object.
    *                     Combines feed results and promises for each component with a feed.
    */
-  buildFeedPromise({newFeedsPromises, newFeeds}, isStartup) {
+  buildFeedPromise({ newFeedsPromises, newFeeds }, isStartup, sendUpdate) {
     return component => {
-      const {url} = component.feed;
+      const { url } = component.feed;
 
       if (!newFeeds[url]) {
         // We initially stub this out so we don't fetch dupes,
         // we then fill in with the proper object inside the promise.
         newFeeds[url] = {};
         const feedPromise = this.getComponentFeed(url, isStartup);
-        feedPromise.then(feed => {
-          newFeeds[url] = this.filterRecommendations(feed);
-        }).catch(/* istanbul ignore next */ error => {
-          Cu.reportError(`Error trying to load component feed ${url}: ${error}`);
-        });
 
+        feedPromise
+          .then(feed => {
+            newFeeds[url] = this.filterRecommendations(feed);
+            sendUpdate({
+              type: at.DISCOVERY_STREAM_FEED_UPDATE,
+              data: {
+                feed: newFeeds[url],
+                url,
+              },
+            });
+
+            // We grab affinities off the first feed for the moment.
+            // Ideally this would be returned from the server on the layout,
+            // or from another endpoint.
+            if (!this.affinities) {
+              const { settings } = feed.data;
+              this.affinities = {
+                timeSegments: settings.timeSegments,
+                parameterSets: settings.domainAffinityParameterSets,
+                maxHistoryQueryResults:
+                  settings.maxHistoryQueryResults ||
+                  DEFAULT_MAX_HISTORY_QUERY_RESULTS,
+                version: settings.version,
+              };
+            }
+          })
+          .catch(
+            /* istanbul ignore next */ error => {
+              Cu.reportError(
+                `Error trying to load component feed ${url}: ${error}`
+              );
+            }
+          );
         newFeedsPromises.push(feedPromise);
       }
     };
   }
 
   filterRecommendations(feed) {
-    if (feed && feed.data && feed.data.recommendations && feed.data.recommendations.length) {
-      return {data: this.filterBlocked(feed.data, "recommendations")};
+    if (
+      feed &&
+      feed.data &&
+      feed.data.recommendations &&
+      feed.data.recommendations.length
+    ) {
+      const { data } = this.filterBlocked(feed.data, "recommendations");
+      return {
+        ...feed,
+        data,
+      };
     }
     return feed;
   }
@@ -231,11 +446,11 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    * @returns {Function} We return a function so we can contain the scope for isStartup.
    *                     Reduces feeds into promises and feed data.
    */
-  reduceFeedComponents(isStartup) {
+  reduceFeedComponents(isStartup, sendUpdate) {
     return (accumulator, row) => {
       row.components
         .filter(component => component && component.feed)
-        .forEach(this.buildFeedPromise(accumulator, isStartup));
+        .forEach(this.buildFeedPromise(accumulator, isStartup, sendUpdate));
       return accumulator;
     };
   }
@@ -248,18 +463,18 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    * @returns {Object} An object with newFeedsPromises (Array) and newFeeds (Object),
    *                   we can Promise.all newFeedsPromises to get completed data in newFeeds.
    */
-  buildFeedPromises(layout, isStartup) {
+  buildFeedPromises(layout, isStartup, sendUpdate) {
     const initialData = {
       newFeedsPromises: [],
       newFeeds: {},
     };
     return layout
       .filter(row => row && row.components)
-      .reduce(this.reduceFeedComponents(isStartup), initialData);
+      .reduce(this.reduceFeedComponents(isStartup, sendUpdate), initialData);
   }
 
   async loadComponentFeeds(sendUpdate, isStartup) {
-    const {DiscoveryStream} = this.store.getState();
+    const { DiscoveryStream } = this.store.getState();
 
     if (!DiscoveryStream || !DiscoveryStream.layout) {
       return;
@@ -269,28 +484,52 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     // was issued to fetch the component feed in `getComponentFeed()`.
     this.componentFeedFetched = false;
     const start = perfService.absNow();
-    const {newFeedsPromises, newFeeds} = this.buildFeedPromises(DiscoveryStream.layout, isStartup);
+    const { newFeedsPromises, newFeeds } = this.buildFeedPromises(
+      DiscoveryStream.layout,
+      isStartup,
+      sendUpdate
+    );
 
     // Each promise has a catch already built in, so no need to catch here.
     await Promise.all(newFeedsPromises);
+
     if (this.componentFeedFetched) {
       this.cleanUpTopRecImpressionPref(newFeeds);
       this.componentFeedRequestTime = Math.round(perfService.absNow() - start);
     }
     await this.cache.set("feeds", newFeeds);
-    sendUpdate({type: at.DISCOVERY_STREAM_FEEDS_UPDATE, data: newFeeds});
+    sendUpdate({
+      type: at.DISCOVERY_STREAM_FEEDS_UPDATE,
+    });
   }
 
   async loadSpocs(sendUpdate, isStartup) {
-    const cachedData = await this.cache.get() || {};
+    const cachedData = (await this.cache.get()) || {};
     let spocs;
 
     if (this.showSpocs) {
       spocs = cachedData.spocs;
-      if (this.isExpired({cachedData, key: "spocs", isStartup})) {
-        const endpoint = this.store.getState().DiscoveryStream.spocs.spocs_endpoint;
+      if (this.isExpired({ cachedData, key: "spocs", isStartup })) {
+        const endpoint = this.store.getState().DiscoveryStream.spocs
+          .spocs_endpoint;
         const start = perfService.absNow();
-        const spocsResponse = await this.fetchFromEndpoint(endpoint);
+
+        const headers = new Headers();
+        headers.append("content-type", "application/json");
+
+        const apiKeyPref = this._prefCache.config.api_key_pref;
+        const apiKey = Services.prefs.getCharPref(apiKeyPref, "");
+
+        const spocsResponse = await this.fetchFromEndpoint(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            pocket_id: this._impressionId,
+            version: 1,
+            consumer_key: apiKey,
+          }),
+        });
+
         if (spocsResponse) {
           this.spocsRequestTime = Math.round(perfService.absNow() - start);
           spocs = {
@@ -310,68 +549,221 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     // We can have no data if spocs set to off.
     // We can have no data if request fails and there is no good cache.
     // We want to send an update spocs or not, so client can render something.
-    spocs = spocs || {
-      lastUpdated: Date.now(),
-      data: {},
-    };
+    spocs =
+      spocs && spocs.data
+        ? spocs
+        : {
+            lastUpdated: Date.now(),
+            data: {},
+          };
+
+    let { data, filtered: frequencyCapped } = this.frequencyCapSpocs(
+      spocs.data
+    );
+    let { data: newSpocs, filtered } = this.transform(data);
 
     sendUpdate({
       type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
       data: {
         lastUpdated: spocs.lastUpdated,
-        spocs: this.transform(this.frequencyCapSpocs(spocs.data)),
+        spocs: newSpocs,
       },
+    });
+    this._sendSpocsFill({ ...filtered, frequency_cap: frequencyCapped }, true);
+  }
+
+  async clearSpocs() {
+    const endpoint = this.store.getState().Prefs.values[
+      PREF_SPOCS_CLEAR_ENDPOINT
+    ];
+    if (!endpoint) {
+      return;
+    }
+    const headers = new Headers();
+    headers.append("content-type", "application/json");
+
+    await this.fetchFromEndpoint(endpoint, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({
+        pocket_id: this._impressionId,
+      }),
     });
   }
 
+  async loadAffinityScoresCache() {
+    const cachedData = (await this.cache.get()) || {};
+    const { affinities } = cachedData;
+    if (this.personalized && affinities && affinities.scores) {
+      this.affinityProvider = new UserDomainAffinityProvider(
+        affinities.timeSegments,
+        affinities.parameterSets,
+        affinities.maxHistoryQueryResults,
+        affinities.version,
+        affinities.scores
+      );
+
+      this.domainAffinitiesLastUpdated = affinities._timestamp;
+    }
+  }
+
+  updateDomainAffinityScores() {
+    if (
+      !this.personalized ||
+      !this.affinities ||
+      !this.affinities.parameterSets ||
+      Date.now() - this.domainAffinitiesLastUpdated <
+        MIN_DOMAIN_AFFINITIES_UPDATE_TIME
+    ) {
+      return;
+    }
+
+    this.affinityProvider = new UserDomainAffinityProvider(
+      this.affinities.timeSegments,
+      this.affinities.parameterSets,
+      this.affinities.maxHistoryQueryResults,
+      this.affinities.version,
+      undefined
+    );
+
+    const affinities = this.affinityProvider.getAffinities();
+    this.domainAffinitiesLastUpdated = Date.now();
+    affinities._timestamp = this.domainAffinitiesLastUpdated;
+    this.cache.set("affinities", affinities);
+  }
+
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "idle-daily":
+        this.updateDomainAffinityScores();
+        break;
+    }
+  }
+
+  scoreItems(items) {
+    const filtered = [];
+    const data = items
+      .map(item => this.scoreItem(item))
+      // Remove spocs that are scored too low.
+      .filter(s => {
+        if (s.score >= s.min_score) {
+          return true;
+        }
+        filtered.push(s);
+        return false;
+      })
+      // Sort by highest scores.
+      .sort((a, b) => b.score - a.score);
+    return { data, filtered };
+  }
+
+  scoreItem(item) {
+    item.score = item.item_score;
+    item.min_score = item.min_score || 0;
+    if (item.score !== 0 && !item.score) {
+      item.score = 1;
+    }
+    if (this.personalized && this.affinityProvider) {
+      const scoreResult = this.affinityProvider.calculateItemRelevanceScore(
+        item
+      );
+      if (scoreResult === 0 || scoreResult) {
+        item.score = scoreResult;
+      }
+    }
+    return item;
+  }
+
   filterBlocked(data, type) {
+    const filtered = [];
     if (data && data[type] && data[type].length) {
-      const filteredItems = data[type].filter(item => !NewTabUtils.blockedLinks.isBlocked({"url": item.url}));
+      const filteredItems = data[type].filter(item => {
+        const blocked = NewTabUtils.blockedLinks.isBlocked({ url: item.url });
+        if (blocked) {
+          filtered.push(item);
+        }
+        return !blocked;
+      });
       return {
-        ...data,
-        [type]: filteredItems,
+        data: {
+          ...data,
+          [type]: filteredItems,
+        },
+        filtered,
       };
     }
-    return data;
+    return { data, filtered };
   }
 
   transform(spocs) {
-    const data = this.filterBlocked(spocs, "spocs");
+    const { data, filtered: blockedItems } = this.filterBlocked(spocs, "spocs");
     if (data && data.spocs && data.spocs.length) {
-      const spocsPerDomain = this.store.getState().DiscoveryStream.spocs.spocs_per_domain || 1;
+      const spocsPerDomain =
+        this.store.getState().DiscoveryStream.spocs.spocs_per_domain || 1;
       const campaignMap = {};
+      const campaignDuplicates = [];
+
+      // This order of operations is intended.
+      // scoreItems must be first because it creates this.score.
+      const { data: items, filtered: belowMinScoreItems } = this.scoreItems(
+        data.spocs
+      );
+      // This removes campaign dupes.
+      // We do this only after scoring and sorting because that way
+      // we can keep the first item we see, and end up keeping the highest scored.
+      const newSpocs = items.filter(s => {
+        if (!campaignMap[s.campaign_id]) {
+          campaignMap[s.campaign_id] = 1;
+          return true;
+        } else if (campaignMap[s.campaign_id] < spocsPerDomain) {
+          campaignMap[s.campaign_id]++;
+          return true;
+        }
+        campaignDuplicates.push(s);
+        return false;
+      });
       return {
-        ...data,
-        spocs: data.spocs
-          .map(s => ({...s, score: s.item_score}))
-          .filter(s => s.score >= s.min_score)
-          .sort((a, b) => b.score - a.score)
-          .filter(s => {
-            if (!campaignMap[s.campaign_id]) {
-              campaignMap[s.campaign_id] = 1;
-              return true;
-            } else if (campaignMap[s.campaign_id] < spocsPerDomain) {
-              campaignMap[s.campaign_id]++;
-              return true;
-            }
-            return false;
-          }),
+        data: { ...data, spocs: newSpocs },
+        filtered: {
+          blocked_by_user: blockedItems,
+          below_min_score: belowMinScoreItems,
+          campaign_duplicate: campaignDuplicates,
+        },
       };
     }
-    return data;
+    return { data, filtered: { blocked: blockedItems } };
   }
 
   // Filter spocs based on frequency caps
+  //
+  // @param {Object} data  An object that might have a SPOCS array.
+  // @returns {Object} An object with a property `data` as the result, and a property
+  //                   `filterItems` as the frequency capped items.
   frequencyCapSpocs(data) {
     if (data && data.spocs && data.spocs.length) {
-      const {spocs} = data;
+      const { spocs } = data;
       const impressions = this.readImpressionsPref(PREF_SPOC_IMPRESSIONS);
-      return {
+      const caps = [];
+      const result = {
         ...data,
-        spocs: spocs.filter(s => this.isBelowFrequencyCap(impressions, s)),
+        spocs: spocs.filter(s => {
+          const isBelow = this.isBelowFrequencyCap(impressions, s);
+          if (!isBelow) {
+            caps.push(s);
+          }
+          return isBelow;
+        }),
       };
+      // send caps to redux if any.
+      if (caps.length) {
+        this.store.dispatch({
+          type: at.DISCOVERY_STREAM_SPOCS_CAPS,
+          data: caps,
+        });
+      }
+      return { data: result, filtered: caps };
     }
-    return data;
+    return { data, filtered: [] };
   }
 
   // Frequency caps are based on campaigns, which may include multiple spocs.
@@ -397,7 +789,10 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
 
     const lifetime = spoc.caps && spoc.caps.lifetime;
 
-    const lifeTimeCap = Math.min(lifetime || MAX_LIFETIME_CAP, MAX_LIFETIME_CAP);
+    const lifeTimeCap = Math.min(
+      lifetime || MAX_LIFETIME_CAP,
+      MAX_LIFETIME_CAP
+    );
     const lifeTimeCapExceeded = campaignImpressions.length >= lifeTimeCap;
     if (lifeTimeCapExceeded) {
       return false;
@@ -405,31 +800,65 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
 
     const campaignCap = spoc.caps && spoc.caps.campaign;
     if (campaignCap) {
-      const campaignCapExceeded = campaignImpressions
-        .filter(i => (Date.now() - i) < (campaignCap.period * 1000)).length >= campaignCap.count;
+      const campaignCapExceeded =
+        campaignImpressions.filter(
+          i => Date.now() - i < campaignCap.period * 1000
+        ).length >= campaignCap.count;
       return !campaignCapExceeded;
     }
     return true;
   }
 
+  async retryFeed(feed) {
+    const { url } = feed;
+    const result = await this.getComponentFeed(url);
+    const newFeed = this.filterRecommendations(result);
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.DISCOVERY_STREAM_FEED_UPDATE,
+        data: {
+          feed: newFeed,
+          url,
+        },
+      })
+    );
+  }
+
   async getComponentFeed(feedUrl, isStartup) {
-    const cachedData = await this.cache.get() || {};
-    const {feeds} = cachedData;
+    const cachedData = (await this.cache.get()) || {};
+    const { feeds } = cachedData;
+
     let feed = feeds ? feeds[feedUrl] : null;
-    if (this.isExpired({cachedData, key: "feed", url: feedUrl, isStartup})) {
+    if (this.isExpired({ cachedData, key: "feed", url: feedUrl, isStartup })) {
       const feedResponse = await this.fetchFromEndpoint(feedUrl);
       if (feedResponse) {
+        const { data: scoredItems } = this.scoreItems(
+          feedResponse.recommendations
+        );
+        const { recsExpireTime } = feedResponse.settings;
+        const recommendations = this.rotate(scoredItems, recsExpireTime);
         this.componentFeedFetched = true;
         feed = {
           lastUpdated: Date.now(),
-          data: this.rotate(feedResponse),
+          data: {
+            settings: feedResponse.settings,
+            recommendations,
+            status: "success",
+          },
         };
       } else {
         Cu.reportError("No response for feed");
       }
     }
 
-    return feed;
+    // If we have no feed at this point, both fetch and cache failed for some reason.
+    return (
+      feed || {
+        data: {
+          status: "failed",
+        },
+      }
+    );
   }
 
   /**
@@ -459,49 +888,56 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    * @param {RefreshAllOptions} options
    */
   async refreshAll(options = {}) {
-    const {updateOpenTabs, isStartup} = options;
-    const dispatch = updateOpenTabs ?
-      action => this.store.dispatch(ac.BroadcastToContent(action)) :
-      this.store.dispatch;
+    const { updateOpenTabs, isStartup } = options;
+    const dispatch = updateOpenTabs
+      ? action => this.store.dispatch(ac.BroadcastToContent(action))
+      : this.store.dispatch;
 
+    this.loadAffinityScoresCache();
     await this.loadLayout(dispatch, isStartup);
     await Promise.all([
-      this.loadComponentFeeds(dispatch, isStartup).catch(error => Cu.reportError(`Error trying to load component feeds: ${error}`)),
-      this.loadSpocs(dispatch, isStartup).catch(error => Cu.reportError(`Error trying to load spocs feed: ${error}`)),
+      this.loadSpocs(dispatch, isStartup).catch(error =>
+        Cu.reportError(`Error trying to load spocs feed: ${error}`)
+      ),
+      this.loadComponentFeeds(dispatch, isStartup).catch(error =>
+        Cu.reportError(`Error trying to load component feeds: ${error}`)
+      ),
     ]);
     if (isStartup) {
       await this._maybeUpdateCachedData();
     }
-
-    this.loaded = true;
   }
 
   // We have to rotate stories on the client so that
   // active stories are at the front of the list, followed by stories that have expired
   // impressions i.e. have been displayed for longer than recsExpireTime.
-  rotate(feedResponse) {
-    const {recommendations} = feedResponse;
-
-    const maxImpressionAge = Math.max(feedResponse.settings.recsExpireTime * 1000 || DEFAULT_RECS_EXPIRE_TIME, DEFAULT_RECS_EXPIRE_TIME);
+  rotate(recommendations, recsExpireTime) {
+    const maxImpressionAge = Math.max(
+      recsExpireTime * 1000 || DEFAULT_RECS_EXPIRE_TIME,
+      DEFAULT_RECS_EXPIRE_TIME
+    );
     const impressions = this.readImpressionsPref(PREF_REC_IMPRESSIONS);
     const expired = [];
     const active = [];
     for (const item of recommendations) {
-      if (impressions[item.id] && Date.now() - impressions[item.id] >= maxImpressionAge) {
+      if (
+        impressions[item.id] &&
+        Date.now() - impressions[item.id] >= maxImpressionAge
+      ) {
         expired.push(item);
       } else {
         active.push(item);
       }
     }
-    return {...feedResponse, recommendations: active.concat(expired)};
+    return active.concat(expired);
   }
 
   /**
    * Reports the cache age in second for Discovery Stream.
    */
   async reportCacheAge() {
-    const cachedData = await this.cache.get() || {};
-    const {layout, spocs, feeds} = cachedData;
+    const cachedData = (await this.cache.get()) || {};
+    const { layout, spocs, feeds } = cachedData;
     let cacheAge = Date.now();
     let updated = false;
 
@@ -526,10 +962,12 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     }
 
     if (updated) {
-      this.store.dispatch(ac.PerfEvent({
-        event: "DS_CACHE_AGE_IN_SEC",
-        value: Math.round((Date.now() - cacheAge) / 1000),
-      }));
+      this.store.dispatch(
+        ac.PerfEvent({
+          event: "DS_CACHE_AGE_IN_SEC",
+          value: Math.round((Date.now() - cacheAge) / 1000),
+        })
+      );
     }
   }
 
@@ -546,28 +984,36 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    */
   reportRequestTime() {
     if (this.layoutRequestTime) {
-      this.store.dispatch(ac.PerfEvent({
-        event: "LAYOUT_REQUEST_TIME",
-        value: this.layoutRequestTime,
-      }));
+      this.store.dispatch(
+        ac.PerfEvent({
+          event: "LAYOUT_REQUEST_TIME",
+          value: this.layoutRequestTime,
+        })
+      );
     }
     if (this.spocsRequestTime) {
-      this.store.dispatch(ac.PerfEvent({
-        event: "SPOCS_REQUEST_TIME",
-        value: this.spocsRequestTime,
-      }));
+      this.store.dispatch(
+        ac.PerfEvent({
+          event: "SPOCS_REQUEST_TIME",
+          value: this.spocsRequestTime,
+        })
+      );
     }
     if (this.componentFeedRequestTime) {
-      this.store.dispatch(ac.PerfEvent({
-        event: "COMPONENT_FEED_REQUEST_TIME",
-        value: this.componentFeedRequestTime,
-      }));
+      this.store.dispatch(
+        ac.PerfEvent({
+          event: "COMPONENT_FEED_REQUEST_TIME",
+          value: this.componentFeedRequestTime,
+        })
+      );
     }
     if (this.totalRequestTime) {
-      this.store.dispatch(ac.PerfEvent({
-        event: "DS_FEED_TOTAL_REQUEST_TIME",
-        value: this.totalRequestTime,
-      }));
+      this.store.dispatch(
+        ac.PerfEvent({
+          event: "DS_FEED_TOTAL_REQUEST_TIME",
+          value: this.totalRequestTime,
+        })
+      );
     }
   }
 
@@ -575,15 +1021,39 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     // Note that cache age needs to be reported prior to refreshAll.
     await this.reportCacheAge();
     const start = perfService.absNow();
-    await this.refreshAll({updateOpenTabs: true, isStartup: true});
+    await this.refreshAll({ updateOpenTabs: true, isStartup: true });
+    Services.obs.addObserver(this, "idle-daily");
+    this.loaded = true;
     this.totalRequestTime = Math.round(perfService.absNow() - start);
     this.reportRequestTime();
   }
 
-  async disable() {
-    await this.clearCache();
+  async reset() {
+    this.resetImpressionPrefs();
+    await this.resetCache();
+    if (this.loaded) {
+      Services.obs.removeObserver(this, "idle-daily");
+    }
+    this.resetState();
+  }
+
+  async resetCache() {
+    await this.cache.set("layout", {});
+    await this.cache.set("feeds", {});
+    await this.cache.set("spocs", {});
+    await this.cache.set("affinities", {});
+  }
+
+  resetImpressionPrefs() {
+    this.writeImpressionsPref(PREF_SPOC_IMPRESSIONS, {});
+    this.writeImpressionsPref(PREF_REC_IMPRESSIONS, {});
+  }
+
+  resetState() {
     // Reset reducer
-    this.store.dispatch(ac.BroadcastToContent({type: at.DISCOVERY_STREAM_LAYOUT_RESET}));
+    this.store.dispatch(
+      ac.BroadcastToContent({ type: at.DISCOVERY_STREAM_LAYOUT_RESET })
+    );
     this.loaded = false;
     this.layoutRequestTime = undefined;
     this.spocsRequestTime = undefined;
@@ -591,29 +1061,12 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     this.totalRequestTime = undefined;
   }
 
-  async clearCache() {
-    await this.cache.set("layout", {});
-    await this.cache.set("feeds", {});
-    await this.cache.set("spocs", {});
-  }
-
-  clearImpressionPrefs() {
-    this.writeImpressionsPref(PREF_SPOC_IMPRESSIONS, {});
-    this.writeImpressionsPref(PREF_REC_IMPRESSIONS, {});
-  }
-
   async onPrefChange() {
-    this.clearImpressionPrefs();
+    // We always want to clear the cache/state if the pref has changed
+    await this.reset();
     if (this.config.enabled) {
-      // We always want to clear the cache if the pref has changed
-      await this.clearCache();
       // Load data from all endpoints
       await this.enable();
-    }
-
-    // Clear state and relevant listeners if config.enabled = false.
-    if (this.loaded && !this.config.enabled) {
-      await this.disable();
     }
   }
 
@@ -622,7 +1075,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
 
     const timeStamps = impressions[campaignId] || [];
     timeStamps.push(Date.now());
-    impressions = {...impressions, [campaignId]: timeStamps};
+    impressions = { ...impressions, [campaignId]: timeStamps };
 
     this.writeImpressionsPref(PREF_SPOC_IMPRESSIONS, impressions);
   }
@@ -630,7 +1083,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   recordTopRecImpressions(recId) {
     let impressions = this.readImpressionsPref(PREF_REC_IMPRESSIONS);
     if (!impressions[recId]) {
-      impressions = {...impressions, [recId]: Date.now()};
+      impressions = { ...impressions, [recId]: Date.now() };
       this.writeImpressionsPref(PREF_REC_IMPRESSIONS, impressions);
     }
   }
@@ -638,7 +1091,10 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   cleanUpCampaignImpressionPref(data) {
     if (data.spocs && data.spocs.length) {
       const campaignIds = data.spocs.map(s => `${s.campaign_id}`);
-      this.cleanUpImpressionPref(id => !campaignIds.includes(id), PREF_SPOC_IMPRESSIONS);
+      this.cleanUpImpressionPref(
+        id => !campaignIds.includes(id),
+        PREF_SPOC_IMPRESSIONS
+      );
     }
   }
 
@@ -646,11 +1102,16 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   // longer part of the response.
   cleanUpTopRecImpressionPref(newFeeds) {
     // Need to build a single list of stories.
-    const activeStories = Object.keys(newFeeds).reduce((accumulator, currentValue) => {
-      const {recommendations} = newFeeds[currentValue].data;
-      return accumulator.concat(recommendations.map(i => `${i.id}`));
-    }, []);
-    this.cleanUpImpressionPref(id => !activeStories.includes(id), PREF_REC_IMPRESSIONS);
+    const activeStories = Object.keys(newFeeds)
+      .filter(currentValue => newFeeds[currentValue].data)
+      .reduce((accumulator, currentValue) => {
+        const { recommendations } = newFeeds[currentValue].data;
+        return accumulator.concat(recommendations.map(i => `${i.id}`));
+      }, []);
+    this.cleanUpImpressionPref(
+      id => !activeStories.includes(id),
+      PREF_REC_IMPRESSIONS
+    );
   }
 
   writeImpressionsPref(pref, impressions) {
@@ -666,14 +1127,12 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     const impressions = this.readImpressionsPref(pref);
     let changed = false;
 
-    Object
-      .keys(impressions)
-      .forEach(id => {
-        if (isExpired(id)) {
-          changed = true;
-          delete impressions[id];
-        }
-      });
+    Object.keys(impressions).forEach(id => {
+      if (isExpired(id)) {
+        changed = true;
+        delete impressions[id];
+      }
+    });
 
     if (changed) {
       this.writeImpressionsPref(pref, impressions);
@@ -693,32 +1152,40 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         break;
       case at.SYSTEM_TICK:
         // Only refresh if we loaded once in .enable()
-        if (this.config.enabled && this.loaded && await this.checkIfAnyCacheExpired()) {
-          await this.refreshAll({updateOpenTabs: false});
+        if (
+          this.config.enabled &&
+          this.loaded &&
+          (await this.checkIfAnyCacheExpired())
+        ) {
+          await this.refreshAll({ updateOpenTabs: false });
         }
         break;
       case at.DISCOVERY_STREAM_CONFIG_SET_VALUE:
-        // Disable opt-out if we're explicitly trying to enable
-        if (action.data.name === "enabled" && action.data.value) {
-          this.store.dispatch(ac.SetPref(PREF_OPT_OUT, false));
-        }
-
         // Use the original string pref to then set a value instead of
         // this.config which has some modifications
-        this.store.dispatch(ac.SetPref(PREF_CONFIG, JSON.stringify({
-          ...JSON.parse(this.store.getState().Prefs.values[PREF_CONFIG]),
-          [action.data.name]: action.data.value,
-        })));
+        this.store.dispatch(
+          ac.SetPref(
+            PREF_CONFIG,
+            JSON.stringify({
+              ...JSON.parse(this.store.getState().Prefs.values[PREF_CONFIG]),
+              [action.data.name]: action.data.value,
+            })
+          )
+        );
+        break;
+      case at.DISCOVERY_STREAM_RETRY_FEED:
+        this.retryFeed(action.data.feed);
         break;
       case at.DISCOVERY_STREAM_CONFIG_CHANGE:
         // When the config pref changes, load or unload data as needed.
         await this.onPrefChange();
         break;
-      case at.DISCOVERY_STREAM_OPT_OUT:
-        this.store.dispatch(ac.SetPref(PREF_OPT_OUT, true));
-        break;
       case at.DISCOVERY_STREAM_IMPRESSION_STATS:
-        if (action.data.tiles && action.data.tiles[0] && action.data.tiles[0].id) {
+        if (
+          action.data.tiles &&
+          action.data.tiles[0] &&
+          action.data.tiles[0].id
+        ) {
           this.recordTopRecImpressions(action.data.tiles[0].id);
         }
         break;
@@ -726,17 +1193,56 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         if (this.showSpocs) {
           this.recordCampaignImpression(action.data.campaignId);
 
-          const cachedData = await this.cache.get() || {};
-          const {spocs} = cachedData;
-
-          this.store.dispatch(ac.AlsoToPreloaded({
-            type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
-            data: {
-              lastUpdated: spocs.lastUpdated,
-              spocs: this.transform(this.frequencyCapSpocs(spocs.data)),
-            },
-          }));
+          // Apply frequency capping to SPOCs in the redux store, only update the
+          // store if the SPOCs are changed.
+          const { spocs } = this.store.getState().DiscoveryStream;
+          const { data: newSpocs, filtered } = this.frequencyCapSpocs(
+            spocs.data
+          );
+          if (filtered.length) {
+            this.store.dispatch(
+              ac.AlsoToPreloaded({
+                type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
+                data: {
+                  lastUpdated: spocs.lastUpdated,
+                  spocs: newSpocs,
+                },
+              })
+            );
+            this._sendSpocsFill({ frequency_cap: filtered }, false);
+          }
         }
+        break;
+      case at.PLACES_LINK_BLOCKED:
+        if (this.showSpocs) {
+          const { spocs } = this.store.getState().DiscoveryStream;
+          const spocsList = spocs.data.spocs || [];
+          const filtered = spocsList.filter(s => s.url === action.data.url);
+          if (filtered.length) {
+            this._sendSpocsFill({ blocked_by_user: filtered }, false);
+
+            // If we're blocking a spoc, we want a slightly different treatment for open tabs.
+            this.store.dispatch(
+              ac.AlsoToPreloaded({
+                type: at.DISCOVERY_STREAM_LINK_BLOCKED,
+                data: action.data,
+              })
+            );
+            this.store.dispatch(
+              ac.BroadcastToContent({
+                type: at.DISCOVERY_STREAM_SPOC_BLOCKED,
+                data: action.data,
+              })
+            );
+            return;
+          }
+        }
+        this.store.dispatch(
+          ac.BroadcastToContent({
+            type: at.DISCOVERY_STREAM_LINK_BLOCKED,
+            data: action.data,
+          })
+        );
         break;
       case at.UNINIT:
         // When this feed is shutting down:
@@ -745,22 +1251,247 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       case at.PREF_CHANGED:
         switch (action.data.name) {
           case PREF_CONFIG:
-          case PREF_OPT_OUT:
+          case PREF_ENABLED:
+          case PREF_HARDCODED_BASIC_LAYOUT:
+          case PREF_SPOCS_ENDPOINT:
             // Clear the cached config and broadcast the newly computed value
             this._prefCache.config = null;
-            this.store.dispatch(ac.BroadcastToContent({
-              type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
-              data: this.config,
-            }));
+            this.store.dispatch(
+              ac.BroadcastToContent({
+                type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
+                data: this.config,
+              })
+            );
+            break;
+          case PREF_TOPSTORIES:
+            if (!action.data.value) {
+              // Ensure we delete any remote data potentially related to spocs.
+              this.clearSpocs();
+            }
             break;
           // Check if spocs was disabled. Remove them if they were.
           case PREF_SHOW_SPONSORED:
-            await this.loadSpocs(update => this.store.dispatch(ac.BroadcastToContent(update)));
+            if (!action.data.value) {
+              // Ensure we delete any remote data potentially related to spocs.
+              this.clearSpocs();
+            }
+            await this.loadSpocs(update =>
+              this.store.dispatch(ac.BroadcastToContent(update))
+            );
             break;
         }
         break;
     }
   }
+};
+
+// Hardcoded version of layout_variant `3-col-7-row-octr`
+defaultLayoutResp = {
+  spocs: {
+    url: "https://spocs.getpocket.com/spocs",
+    spocs_per_domain: 1,
+  },
+  layout: [
+    {
+      width: 12,
+      components: [
+        {
+          type: "TopSites",
+          header: {
+            title: "Top Sites",
+          },
+          properties: {},
+        },
+      ],
+    },
+    {
+      width: 12,
+      components: [
+        {
+          type: "Message",
+          header: {
+            title: "Recommended by Pocket",
+            subtitle: "",
+            link_text: "How it works",
+            link_url: "https://getpocket.com/firefox/new_tab_learn_more",
+            icon:
+              "resource://activity-stream/data/content/assets/glyph-pocket-16.svg",
+          },
+          properties: {},
+          styles: {
+            ".ds-message": "margin-bottom: -20px",
+          },
+        },
+      ],
+    },
+    {
+      width: 12,
+      components: [
+        {
+          type: "CardGrid",
+          properties: {
+            items: 21,
+          },
+          header: {
+            title: "",
+          },
+          feed: {
+            embed_reference: null,
+            url:
+              "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=en-US&count=30",
+          },
+          spocs: {
+            probability: 1,
+            positions: [
+              {
+                index: 2,
+              },
+              {
+                index: 4,
+              },
+              {
+                index: 11,
+              },
+              {
+                index: 20,
+              },
+            ],
+          },
+        },
+        {
+          type: "Navigation",
+          properties: {
+            alignment: "left-align",
+            links: [
+              {
+                name: "Must Reads",
+                url: "https://getpocket.com/explore/must-reads?src=fx_new_tab",
+              },
+              {
+                name: "Productivity",
+                url:
+                  "https://getpocket.com/explore/productivity?src=fx_new_tab",
+              },
+              {
+                name: "Health",
+                url: "https://getpocket.com/explore/health?src=fx_new_tab",
+              },
+              {
+                name: "Finance",
+                url: "https://getpocket.com/explore/finance?src=fx_new_tab",
+              },
+              {
+                name: "Technology",
+                url: "https://getpocket.com/explore/technology?src=fx_new_tab",
+              },
+              {
+                name: "More Recommendations ›",
+                url: "https://getpocket.com/explore/trending?src=fx_new_tab",
+              },
+            ],
+          },
+          header: {
+            title: "Popular Topics",
+          },
+          styles: {
+            ".ds-navigation": "margin-top: -10px;",
+          },
+        },
+      ],
+    },
+  ],
+};
+
+// Hardcoded version of layout_variant `basic`
+basicLayoutResp = {
+  spocs: {
+    url: "https://spocs.getpocket.com/spocs",
+    spocs_per_domain: 1,
+  },
+  layout: [
+    {
+      width: 12,
+      components: [
+        {
+          type: "TopSites",
+          header: {
+            title: "Top Sites",
+          },
+          properties: {},
+        },
+        {
+          type: "Message",
+          header: {
+            title: "Recommended by Pocket",
+            subtitle: "",
+            link_text: "How it works",
+            link_url: "https://getpocket.com/firefox/new_tab_learn_more",
+            icon:
+              "resource://activity-stream/data/content/assets/glyph-pocket-16.svg",
+          },
+          properties: {},
+          styles: {
+            ".ds-message": "margin-bottom: -20px",
+          },
+        },
+        {
+          type: "CardGrid",
+          properties: {
+            items: 3,
+          },
+          header: {
+            title: "",
+          },
+          feed: {
+            embed_reference: null,
+            url:
+              "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=en-US&feed_variant=default_spocs_on",
+          },
+          spocs: {
+            probability: 1,
+            positions: [
+              {
+                index: 2,
+              },
+            ],
+          },
+        },
+        {
+          type: "Navigation",
+          properties: {
+            alignment: "left-align",
+            links: [
+              {
+                name: "Must Reads",
+                url: "https://getpocket.com/explore/must-reads?src=fx_new_tab",
+              },
+              {
+                name: "Productivity",
+                url:
+                  "https://getpocket.com/explore/productivity?src=fx_new_tab",
+              },
+              {
+                name: "Health",
+                url: "https://getpocket.com/explore/health?src=fx_new_tab",
+              },
+              {
+                name: "Finance",
+                url: "https://getpocket.com/explore/finance?src=fx_new_tab",
+              },
+              {
+                name: "Technology",
+                url: "https://getpocket.com/explore/technology?src=fx_new_tab",
+              },
+              {
+                name: "More Recommendations ›",
+                url: "https://getpocket.com/explore/trending?src=fx_new_tab",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  ],
 };
 
 const EXPORTED_SYMBOLS = ["DiscoveryStreamFeed"];

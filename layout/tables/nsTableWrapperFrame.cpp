@@ -5,10 +5,11 @@
 
 #include "nsTableWrapperFrame.h"
 
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/PresShell.h"
 #include "nsFrameManager.h"
 #include "nsTableFrame.h"
 #include "nsTableCellFrame.h"
-#include "mozilla/ComputedStyle.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsCSSRendering.h"
@@ -16,7 +17,6 @@
 #include "prinrval.h"
 #include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
-#include "nsIPresShell.h"
 #include "nsIServiceManager.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
@@ -31,6 +31,12 @@ using namespace mozilla::layout;
 /* virtual */
 nscoord nsTableWrapperFrame::GetLogicalBaseline(
     WritingMode aWritingMode) const {
+  if (StyleDisplay()->IsContainLayout()) {
+    // We have no baseline. Fall back to the inherited impl which is
+    // appropriate for this situation.
+    return nsContainerFrame::GetLogicalBaseline(aWritingMode);
+  }
+
   nsIFrame* kid = mFrames.FirstChild();
   if (!kid) {
     MOZ_ASSERT_UNREACHABLE("no inner table");
@@ -82,6 +88,12 @@ void nsTableWrapperFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
 void nsTableWrapperFrame::SetInitialChildList(ChildListID aListID,
                                               nsFrameList& aChildList) {
   if (kCaptionList == aListID) {
+#ifdef DEBUG
+    nsFrame::VerifyDirtyBitSet(aChildList);
+    for (nsIFrame* f : aChildList) {
+      MOZ_ASSERT(f->GetParent() == this, "Unexpected parent");
+    }
+#endif
     // the frame constructor already checked for table-caption display type
     MOZ_ASSERT(mCaptionFrames.IsEmpty(),
                "already have child frames in CaptionList");
@@ -103,11 +115,11 @@ void nsTableWrapperFrame::AppendFrames(ChildListID aListID,
   MOZ_ASSERT(kCaptionList == aListID, "unexpected child list");
   MOZ_ASSERT(aFrameList.IsEmpty() || aFrameList.FirstChild()->IsTableCaption(),
              "appending non-caption frame to captionList");
-  mCaptionFrames.AppendFrames(this, aFrameList);
+  mCaptionFrames.AppendFrames(nullptr, aFrameList);
 
   // Reflow the new caption frame. It's already marked dirty, so
   // just tell the pres shell.
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   // The presence of caption frames makes us sort our display
   // list differently, so mark us as changed for the new
@@ -127,7 +139,7 @@ void nsTableWrapperFrame::InsertFrames(ChildListID aListID,
 
   // Reflow the new caption frame. It's already marked dirty, so
   // just tell the pres shell.
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   MarkNeedsDisplayItemRebuild();
 }
@@ -141,13 +153,13 @@ void nsTableWrapperFrame::RemoveFrame(ChildListID aListID,
   if (HasSideCaption()) {
     // The old caption isize had an effect on the inner table isize, so
     // we're going to need to reflow it. Mark it dirty
-    InnerTableFrame()->AddStateBits(NS_FRAME_IS_DIRTY);
+    InnerTableFrame()->MarkSubtreeDirty();
   }
 
   // Remove the frame and destroy it
   mCaptionFrames.DestroyFrame(aOldFrame);
 
-  PresShell()->FrameNeedsReflow(this, nsIPresShell::eTreeChange,
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   MarkNeedsDisplayItemRebuild();
 }
@@ -242,8 +254,7 @@ void nsTableWrapperFrame::InitChildReflowInput(nsPresContext& aPresContext,
       cbSize.emplace(aOuterRI.mContainingBlockSize);
     }
   }
-  aReflowInput.Init(&aPresContext, cbSize.ptrOr(nullptr), pCollapseBorder,
-                    pCollapsePadding);
+  aReflowInput.Init(&aPresContext, cbSize, pCollapseBorder, pCollapsePadding);
 }
 
 // get the margin and padding data. ReflowInput doesn't handle the
@@ -256,14 +267,14 @@ void nsTableWrapperFrame::GetChildMargin(nsPresContext* aPresContext,
   NS_ASSERTION(!aChildFrame->IsTableCaption(),
                "didn't expect caption frame; writing-mode may be wrong!");
 
-  // construct a reflow state to compute margin and padding. Auto margins
+  // construct a reflow input to compute margin and padding. Auto margins
   // will not be computed at this time.
 
-  // create and init the child reflow state
-  // XXX We really shouldn't construct a reflow state to do this.
+  // create and init the child reflow input
+  // XXX We really shouldn't construct a reflow input to do this.
   WritingMode wm = aOuterRI.GetWritingMode();
   LogicalSize availSize(wm, aAvailISize, aOuterRI.AvailableSize(wm).BSize(wm));
-  ReflowInput childRI(aPresContext, aOuterRI, aChildFrame, availSize, nullptr,
+  ReflowInput childRI(aPresContext, aOuterRI, aChildFrame, availSize, Nothing(),
                       ReflowInput::CALLER_WILL_INIT);
   InitChildReflowInput(*aPresContext, aOuterRI, childRI);
 
@@ -455,12 +466,9 @@ uint8_t nsTableWrapperFrame::GetCaptionSide() {
   }
 }
 
-uint8_t nsTableWrapperFrame::GetCaptionVerticalAlign() {
-  const nsStyleCoord& va =
-      mCaptionFrames.FirstChild()->StyleDisplay()->mVerticalAlign;
-
-  return (va.GetUnit() == eStyleUnit_Enumerated) ? va.GetIntValue()
-                                                 : NS_STYLE_VERTICAL_ALIGN_TOP;
+StyleVerticalAlignKeyword nsTableWrapperFrame::GetCaptionVerticalAlign() const {
+  const auto& va = mCaptionFrames.FirstChild()->StyleDisplay()->mVerticalAlign;
+  return va.IsKeyword() ? va.AsKeyword() : StyleVerticalAlignKeyword::Top;
 }
 
 void nsTableWrapperFrame::SetDesiredSize(uint8_t aCaptionSide,
@@ -583,12 +591,12 @@ nsresult nsTableWrapperFrame::GetCaptionOrigin(
     case NS_STYLE_CAPTION_SIDE_LEFT:
       aOrigin.B(aWM) = aInnerMargin.BStart(aWM);
       switch (GetCaptionVerticalAlign()) {
-        case NS_STYLE_VERTICAL_ALIGN_MIDDLE:
+        case StyleVerticalAlignKeyword::Middle:
           aOrigin.B(aWM) = std::max(
               0, aInnerMargin.BStart(aWM) +
                      ((aInnerSize.BSize(aWM) - aCaptionSize.BSize(aWM)) / 2));
           break;
-        case NS_STYLE_VERTICAL_ALIGN_BOTTOM:
+        case StyleVerticalAlignKeyword::Bottom:
           aOrigin.B(aWM) =
               std::max(0, aInnerMargin.BStart(aWM) + aInnerSize.BSize(aWM) -
                               aCaptionSize.BSize(aWM));
@@ -672,12 +680,12 @@ nsresult nsTableWrapperFrame::GetInnerOrigin(
     case NS_STYLE_CAPTION_SIDE_RIGHT:
       aOrigin.B(aWM) = aInnerMargin.BStart(aWM);
       switch (GetCaptionVerticalAlign()) {
-        case NS_STYLE_VERTICAL_ALIGN_MIDDLE:
+        case StyleVerticalAlignKeyword::Middle:
           aOrigin.B(aWM) =
               std::max(aInnerMargin.BStart(aWM),
                        (aCaptionSize.BSize(aWM) - aInnerSize.BSize(aWM)) / 2);
           break;
-        case NS_STYLE_VERTICAL_ALIGN_BOTTOM:
+        case StyleVerticalAlignKeyword::Bottom:
           aOrigin.B(aWM) =
               std::max(aInnerMargin.BStart(aWM),
                        aCaptionSize.BSize(aWM) - aInnerSize.BSize(aWM));
@@ -727,9 +735,9 @@ void nsTableWrapperFrame::OuterBeginReflowChild(nsPresContext* aPresContext,
     }
   }
   LogicalSize availSize(wm, aAvailISize, availBSize);
-  // create and init the child reflow state, using passed-in Maybe<>,
+  // create and init the child reflow input, using passed-in Maybe<>,
   // so that caller can use it after we return.
-  aChildRI.emplace(aPresContext, aOuterRI, aChildFrame, availSize, nullptr,
+  aChildRI.emplace(aPresContext, aOuterRI, aChildFrame, availSize, Nothing(),
                    ReflowInput::CALLER_WILL_INIT);
   InitChildReflowInput(*aPresContext, aOuterRI, *aChildRI);
 
@@ -1002,7 +1010,7 @@ nsIContent* nsTableWrapperFrame::GetCellAt(uint32_t aRowIdx,
   return cell->GetContent();
 }
 
-nsTableWrapperFrame* NS_NewTableWrapperFrame(nsIPresShell* aPresShell,
+nsTableWrapperFrame* NS_NewTableWrapperFrame(PresShell* aPresShell,
                                              ComputedStyle* aStyle) {
   return new (aPresShell)
       nsTableWrapperFrame(aStyle, aPresShell->GetPresContext());

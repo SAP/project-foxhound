@@ -16,6 +16,10 @@
 #include "nsTableRowFrame.h"
 #include "mozilla/WritingModes.h"
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
 /**
  * nsTableCellFrame
  * data structure to maintain information about a single table cell's frame
@@ -33,7 +37,7 @@ class nsTableCellFrame : public nsContainerFrame,
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::image::ImgDrawResult ImgDrawResult;
 
-  friend nsTableCellFrame* NS_NewTableCellFrame(nsIPresShell* aPresShell,
+  friend nsTableCellFrame* NS_NewTableCellFrame(mozilla::PresShell* aPresShell,
                                                 ComputedStyle* aStyle,
                                                 nsTableFrame* aTableFrame);
 
@@ -120,12 +124,12 @@ class nsTableCellFrame : public nsContainerFrame,
   /*
    * Get the value of vertical-align adjusted for CSS 2's rules for a
    * table cell, which means the result is always
-   * NS_STYLE_VERTICAL_ALIGN_{TOP,MIDDLE,BOTTOM,BASELINE}.
+   * StyleVerticalAlignKeyword::{Top,Middle,Bottom,Baseline}.
    */
-  virtual uint8_t GetVerticalAlign() const;
+  virtual mozilla::StyleVerticalAlignKeyword GetVerticalAlign() const;
 
   bool HasVerticalAlignBaseline() const {
-    return GetVerticalAlign() == NS_STYLE_VERTICAL_ALIGN_BASELINE;
+    return GetVerticalAlign() == mozilla::StyleVerticalAlignKeyword::Baseline;
   }
 
   bool CellHasVisibleContent(nscoord aBSize, nsTableFrame* tableFrame,

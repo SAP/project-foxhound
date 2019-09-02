@@ -233,7 +233,9 @@ PrintParameterUsage()
         "     ecdsa_secp521r1_sha512,\n"
         "     rsa_pss_rsae_sha256, rsa_pss_rsae_sha384, rsa_pss_rsae_sha512,\n"
         "     rsa_pss_pss_sha256, rsa_pss_pss_sha384, rsa_pss_pss_sha512,\n"
-        "-Z enable 0-RTT (for TLS 1.3; also use -u)\n",
+        "-Z enable 0-RTT (for TLS 1.3; also use -u)\n"
+        "-E enable post-handshake authentication\n"
+        "   (for TLS 1.3; only has an effect with 3 or more -r options)\n",
         stderr);
 }
 
@@ -803,7 +805,9 @@ PRBool enableSessionTickets = PR_FALSE;
 PRBool failedToNegotiateName = PR_FALSE;
 PRBool enableExtendedMasterSecret = PR_FALSE;
 PRBool zeroRTT = PR_FALSE;
+SSLAntiReplayContext *antiReplay = NULL;
 PRBool enableALPN = PR_FALSE;
+PRBool enablePostHandshakeAuth = PR_FALSE;
 SSLNamedGroup *enabledGroups = NULL;
 unsigned int enabledGroupsCount = 0;
 const SSLSignatureScheme *enabledSigSchemes = NULL;
@@ -1431,15 +1435,28 @@ handle_connection(PRFileDesc *tcp_sock, PRFileDesc *model_sock)
                         errWarn("second SSL_OptionSet SSL_REQUIRE_CERTIFICATE");
                         break;
                     }
-                    rv = SSL_ReHandshake(ssl_sock, PR_TRUE);
-                    if (rv != 0) {
-                        errWarn("SSL_ReHandshake");
-                        break;
-                    }
-                    rv = SSL_ForceHandshake(ssl_sock);
-                    if (rv < 0) {
-                        errWarn("SSL_ForceHandshake");
-                        break;
+                    if (enablePostHandshakeAuth) {
+                        rv = SSL_SendCertificateRequest(ssl_sock);
+                        if (rv != SECSuccess) {
+                            errWarn("SSL_SendCertificateRequest");
+                            break;
+                        }
+                        rv = SSL_ForceHandshake(ssl_sock);
+                        if (rv != SECSuccess) {
+                            errWarn("SSL_ForceHandshake");
+                            break;
+                        }
+                    } else {
+                        rv = SSL_ReHandshake(ssl_sock, PR_TRUE);
+                        if (rv != 0) {
+                            errWarn("SSL_ReHandshake");
+                            break;
+                        }
+                        rv = SSL_ForceHandshake(ssl_sock);
+                        if (rv < 0) {
+                            errWarn("SSL_ForceHandshake");
+                            break;
+                        }
                     }
                 }
             }
@@ -1909,7 +1926,7 @@ server_main(
     for (i = 0; i < certNicknameIndex; i++) {
         if (cert[i] != NULL) {
             const SSLExtraServerCertData ocspData = {
-                ssl_auth_null, NULL, certStatus[i], NULL
+                ssl_auth_null, NULL, certStatus[i], NULL, NULL, NULL
             };
 
             secStatus = SSL_ConfigServerCert(model_sock, cert[i],
@@ -1938,13 +1955,23 @@ server_main(
         if (enabledVersions.max < SSL_LIBRARY_VERSION_TLS_1_3) {
             errExit("You tried enabling 0RTT without enabling TLS 1.3!");
         }
-        rv = SSL_SetupAntiReplay(10 * PR_USEC_PER_SEC, 7, 14);
+        rv = SSL_SetAntiReplayContext(model_sock, antiReplay);
         if (rv != SECSuccess) {
             errExit("error configuring anti-replay ");
         }
         rv = SSL_OptionSet(model_sock, SSL_ENABLE_0RTT_DATA, PR_TRUE);
         if (rv != SECSuccess) {
             errExit("error enabling 0RTT ");
+        }
+    }
+
+    if (enablePostHandshakeAuth) {
+        if (enabledVersions.max < SSL_LIBRARY_VERSION_TLS_1_3) {
+            errExit("You tried enabling post-handshake auth without enabling TLS 1.3!");
+        }
+        rv = SSL_OptionSet(model_sock, SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
+        if (rv != SECSuccess) {
+            errExit("error enabling post-handshake auth");
         }
     }
 
@@ -2223,7 +2250,7 @@ main(int argc, char **argv)
     **      in 3.28, please leave some time before resuing those.
     **      'z' was removed in 3.39. */
     optstate = PL_CreateOptState(argc, argv,
-                                 "2:A:C:DGH:I:J:L:M:NP:QRS:T:U:V:W:YZa:bc:d:e:f:g:hi:jk:lmn:op:rst:uvw:y");
+                                 "2:A:C:DEGH:I:J:L:M:NP:QRS:T:U:V:W:YZa:bc:d:e:f:g:hi:jk:lmn:op:rst:uvw:y");
     while ((status = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
         ++optionsFound;
         switch (optstate->option) {
@@ -2243,6 +2270,11 @@ main(int argc, char **argv)
             case 'D':
                 noDelay = PR_TRUE;
                 break;
+
+            case 'E':
+                enablePostHandshakeAuth = PR_TRUE;
+                break;
+
             case 'H':
                 configureDHE = (PORT_Atoi(optstate->value) != 0);
                 break;
@@ -2692,6 +2724,12 @@ main(int argc, char **argv)
         }
         fprintf(stderr, "selfserv: Done creating dynamic weak DH parameters\n");
     }
+    if (zeroRTT) {
+        rv = SSL_CreateAntiReplayContext(PR_Now(), 10L * PR_USEC_PER_SEC, 7, 14, &antiReplay);
+        if (rv != SECSuccess) {
+            errExit("Unable to create anti-replay context for 0-RTT.");
+        }
+    }
 
     /* allocate the array of thread slots, and launch the worker threads. */
     rv = launch_threads(&jobLoop, 0, 0, useLocalThreads);
@@ -2766,6 +2804,9 @@ cleanup:
     }
     if (enabledGroups) {
         PORT_Free(enabledGroups);
+    }
+    if (antiReplay) {
+        SSL_ReleaseAntiReplayContext(antiReplay);
     }
     if (NSS_Shutdown() != SECSuccess) {
         SECU_PrintError(progName, "NSS_Shutdown");

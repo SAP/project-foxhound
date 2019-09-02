@@ -4,13 +4,15 @@
 // Test that the mozprivatebrowsing attribute works.
 "use strict";
 
+/* global browserElementTestHelpers */
+
 SimpleTest.waitForExplicitFinish();
 browserElementTestHelpers.setEnabledPref(true);
 browserElementTestHelpers.addPermission();
 
 function createFrame(aIsPrivate) {
   var iframe = document.createElement("iframe");
-  iframe.setAttribute('mozbrowser', 'true');
+  iframe.setAttribute("mozbrowser", "true");
   if (aIsPrivate) {
     iframe.setAttribute("mozprivatebrowsing", "true");
   }
@@ -30,7 +32,6 @@ function createTest(aIsPrivate, aExpected, aClearStorage) {
 
     var src = "file_browserElement_PrivateBrowsing.html";
     iframe.src = aClearStorage ? src + "?clear=true" : src;
-
   });
 }
 
@@ -40,10 +41,16 @@ function runTest() {
   // Finally, open it in private browsing mode and check that localstorage
   // is clear.
   createTest(false, "CLEAR", true)
-  .then(() => { return createTest(false, "EMPTY", false); })
-  .then(() => { return createTest(false, "bar", false); })
-  .then(() => { return createTest(true, "EMPTY", false); })
-  .then(SimpleTest.finish);
+    .then(() => {
+      return createTest(false, "EMPTY", false);
+    })
+    .then(() => {
+      return createTest(false, "bar", false);
+    })
+    .then(() => {
+      return createTest(true, "EMPTY", false);
+    })
+    .then(SimpleTest.finish);
 }
 
 addEventListener("testready", runTest);

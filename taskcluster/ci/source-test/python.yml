@@ -1,11 +1,15 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
 job-defaults:
     platform: linux64/opt
     always-target: true
     worker-type:
         by-platform:
-            linux64.*: aws-provisioner-v1/gecko-t-linux-xlarge
-            macosx64.*: releng-hardware/gecko-t-osx-1010
-            windows10-64.*: aws-provisioner-v1/gecko-t-win10-64
+            linux64.*: t-linux-xlarge
+            macosx1014-64.*: t-osx-1014
+            windows10-64.*: t-win10-64
     worker:
         by-platform:
             linux64.*:
@@ -35,6 +39,22 @@ taskgraph-tests:
         files-changed:
             - 'taskcluster/**/*.py'
             - 'python/mach/**/*.py'
+
+mach:
+    description: python/mach unit tests
+    platform:
+        - linux64/opt
+        - macosx1014-64/opt
+        - windows10-64/opt
+    python-version: [2, 3]
+    treeherder:
+        symbol: mach
+    run:
+        using: python-test
+        subsuite: mach
+    when:
+        files-changed:
+            - 'python/mach/**'
 
 marionette-harness:
     description: testing/marionette/harness unit tests
@@ -98,7 +118,7 @@ mozbase:
     description: testing/mozbase unit tests
     platform:
         - linux64/opt
-        - macosx64/opt
+        - macosx1014-64/opt
         - windows10-64/opt
     python-version: [2, 3]
     treeherder:
@@ -128,7 +148,7 @@ mozlint:
     description: python/mozlint unit tests
     platform:
         - linux64/opt
-        - macosx64/opt
+        - macosx1014-64/opt
         - windows10-64/opt
     python-version: [2]
     treeherder:
@@ -247,4 +267,6 @@ tryselect:
         subsuite: try
     when:
         files-changed:
+            - 'taskcluster/ci/test/**'
+            - 'taskcluster/taskgraph/transforms/**'
             - 'tools/tryselect/**'

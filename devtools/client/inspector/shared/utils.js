@@ -8,9 +8,24 @@
 
 const promise = require("promise");
 
-loader.lazyRequireGetter(this, "KeyCodes", "devtools/client/shared/keycodes", true);
-loader.lazyRequireGetter(this, "getCSSLexer", "devtools/shared/css/lexer", true);
-loader.lazyRequireGetter(this, "parseDeclarations", "devtools/shared/css/parsing-utils", true);
+loader.lazyRequireGetter(
+  this,
+  "KeyCodes",
+  "devtools/client/shared/keycodes",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "getCSSLexer",
+  "devtools/shared/css/lexer",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "parseDeclarations",
+  "devtools/shared/css/parsing-utils",
+  true
+);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -72,7 +87,7 @@ function appendText(parent, text) {
  * multiple CSS properties as the value.
  */
 function blurOnMultipleProperties(cssProperties) {
-  return (e) => {
+  return e => {
     setTimeout(() => {
       const props = parseDeclarations(cssProperties.isKnown, e.target.value);
       if (props.length > 1) {
@@ -117,12 +132,14 @@ function createChild(parent, tagName, attributes = {}) {
  * @return {Promise} promise resolving with the retrieved string as argument
  */
 function getLongString(longStringActorPromise) {
-  return longStringActorPromise.then(longStringActor => {
-    return longStringActor.string().then(string => {
-      longStringActor.release().catch(console.error);
-      return string;
-    });
-  }).catch(console.error);
+  return longStringActorPromise
+    .then(longStringActor => {
+      return longStringActor.string().then(string => {
+        longStringActor.release().catch(console.error);
+        return string;
+      });
+    })
+    .catch(console.error);
 }
 
 /**
@@ -139,10 +156,15 @@ function getSelectorFromGrip(grip) {
     nodeName,
     isAfterPseudoElement,
     isBeforePseudoElement,
+    isMarkerPseudoElement,
   } = grip.preview;
 
-  if (isAfterPseudoElement || isBeforePseudoElement) {
-    return `::${isAfterPseudoElement ? "after" : "before"}`;
+  if (isAfterPseudoElement) {
+    return "::after";
+  } else if (isBeforePseudoElement) {
+    return "::before";
+  } else if (isMarkerPseudoElement) {
+    return "::marker";
   }
 
   let selector = nodeName;
@@ -189,7 +211,7 @@ function translateNodeFrontToGrip(nodeFront) {
   // The main difference between NodeFront and grips is that attributes are treated as
   // a map in grips and as an array in NodeFronts.
   const attributesMap = {};
-  for (const {name, value} of attributes) {
+  for (const { name, value } of attributes) {
     attributesMap[name] = value;
   }
 
@@ -200,6 +222,7 @@ function translateNodeFrontToGrip(nodeFront) {
       attributesLength: attributes.length,
       isAfterPseudoElement: nodeFront.isAfterPseudoElement,
       isBeforePseudoElement: nodeFront.isBeforePseudoElement,
+      isMarkerPseudoElement: nodeFront.isMarkerPseudoElement,
       // All the grid containers are assumed to be in the DOM tree.
       isConnected: true,
       // nodeName is already lowerCased in Node grips

@@ -7,33 +7,34 @@ use api::{LineStyle, LineOrientation, ClipMode, DirtyRect};
 use api::units::*;
 #[cfg(feature = "pathfinder")]
 use api::FontRenderMode;
-use border::BorderSegmentCacheKey;
-use box_shadow::{BoxShadowCacheKey};
-use clip::{ClipDataStore, ClipItem, ClipStore, ClipNodeRange, ClipNodeFlags};
-use clip_scroll_tree::SpatialNodeIndex;
-use device::TextureFilter;
+use crate::border::BorderSegmentCacheKey;
+use crate::box_shadow::{BoxShadowCacheKey};
+use crate::clip::{ClipDataStore, ClipItem, ClipStore, ClipNodeRange, ClipNodeFlags};
+use crate::clip_scroll_tree::SpatialNodeIndex;
+use crate::device::TextureFilter;
 #[cfg(feature = "pathfinder")]
 use euclid::{TypedPoint2D, TypedVector2D};
-use frame_builder::FrameBuilderConfig;
-use freelist::{FreeList, FreeListHandle, WeakFreeListHandle};
-use glyph_rasterizer::GpuGlyphCacheKey;
-use gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
-use gpu_types::{BorderInstance, ImageSource, UvRectKind, SnapOffsets};
-use internal_types::{CacheTextureId, FastHashMap, LayerIndex, SavedTargetIndex};
+use crate::frame_builder::FrameBuilderConfig;
+use crate::freelist::{FreeList, FreeListHandle, WeakFreeListHandle};
+use crate::glyph_rasterizer::GpuGlyphCacheKey;
+use crate::gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
+use crate::gpu_types::{BorderInstance, ImageSource, UvRectKind, SnapOffsets};
+use crate::internal_types::{CacheTextureId, FastHashMap, LayerIndex, SavedTargetIndex, TextureSource};
 #[cfg(feature = "pathfinder")]
 use pathfinder_partitioner::mesh::Mesh;
-use prim_store::PictureIndex;
-use prim_store::image::ImageCacheKey;
-use prim_store::gradient::{GRADIENT_FP_STOPS, GradientCacheKey, GradientStopKey};
-use prim_store::line_dec::LineDecorationCacheKey;
+use crate::prim_store::{PictureIndex, PrimitiveVisibilityMask};
+use crate::prim_store::image::ImageCacheKey;
+use crate::prim_store::gradient::{GRADIENT_FP_STOPS, GradientCacheKey, GradientStopKey};
+use crate::prim_store::line_dec::LineDecorationCacheKey;
 #[cfg(feature = "debugger")]
-use print_tree::{PrintTreePrinter};
-use render_backend::FrameId;
-use resource_cache::{CacheItem, ResourceCache};
+use crate::print_tree::{PrintTreePrinter};
+use crate::render_backend::FrameId;
+use crate::resource_cache::{CacheItem, ResourceCache};
 use std::{ops, mem, usize, f32, i32, u32};
-use texture_cache::{TextureCache, TextureCacheHandle, Eviction};
-use tiling::{RenderPass, RenderTargetIndex};
-use tiling::{RenderTargetKind};
+use crate::texture_cache::{TextureCache, TextureCacheHandle, Eviction};
+use crate::tiling::{RenderPass, RenderTargetIndex};
+use crate::tiling::{RenderTargetKind};
+use std::io;
 
 
 const RENDER_TASK_SIZE_SANITY_CHECK: i32 = 16000;
@@ -72,12 +73,11 @@ impl RenderTaskId {
 #[repr(C)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct RenderTaskAddress(pub u32);
+pub struct RenderTaskAddress(pub u16);
 
-#[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct RenderTaskTree {
+pub struct RenderTaskGraph {
     pub tasks: Vec<RenderTask>,
     pub task_data: Vec<RenderTaskData>,
     /// Tasks that don't have dependencies, and that may be shared between
@@ -90,15 +90,15 @@ pub struct RenderTaskTree {
 }
 
 #[derive(Debug)]
-pub struct RenderTaskTreeCounters {
+pub struct RenderTaskGraphCounters {
     tasks_len: usize,
     task_data_len: usize,
     cacheable_render_tasks_len: usize,
 }
 
-impl RenderTaskTreeCounters {
+impl RenderTaskGraphCounters {
     pub fn new() -> Self {
-        RenderTaskTreeCounters {
+        RenderTaskGraphCounters {
             tasks_len: 0,
             task_data_len: 0,
             cacheable_render_tasks_len: 0,
@@ -106,12 +106,12 @@ impl RenderTaskTreeCounters {
     }
 }
 
-impl RenderTaskTree {
-    pub fn new(frame_id: FrameId, counters: &RenderTaskTreeCounters) -> Self {
+impl RenderTaskGraph {
+    pub fn new(frame_id: FrameId, counters: &RenderTaskGraphCounters) -> Self {
         // Preallocate a little more than what we needed in the previous frame so that small variations
         // in the number of items don't cause us to constantly reallocate.
         let extra_items = 8;
-        RenderTaskTree {
+        RenderTaskGraph {
             tasks: Vec::with_capacity(counters.tasks_len + extra_items),
             task_data: Vec::with_capacity(counters.task_data_len + extra_items),
             cacheable_render_tasks: Vec::with_capacity(counters.cacheable_render_tasks_len + extra_items),
@@ -120,8 +120,8 @@ impl RenderTaskTree {
         }
     }
 
-    pub fn counters(&self) -> RenderTaskTreeCounters {
-        RenderTaskTreeCounters {
+    pub fn counters(&self) -> RenderTaskGraphCounters {
+        RenderTaskGraphCounters {
             tasks_len: self.tasks.len(),
             task_data_len: self.task_data.len(),
             cacheable_render_tasks_len: self.cacheable_render_tasks.len(),
@@ -138,53 +138,259 @@ impl RenderTaskTree {
         }
     }
 
-    /// Assign the render tasks from the tree rooted at `id` to the `passes`
-    /// vector, so that the passes that we depend on end up _later_ in the pass
-    /// list.
-    ///
-    /// It is the caller's responsibility to reverse the list after calling into
-    /// us so that the passes end up in the right order.
-    pub fn assign_to_passes(
-        &self,
-        id: RenderTaskId,
-        pass_index: usize,
-        screen_size: DeviceIntSize,
-        passes: &mut Vec<RenderPass>,
-        gpu_supports_fast_clears: bool,
+    /// Express a render task dependency between a parent and child task.
+    /// This is used to assign tasks to render passes.
+    pub fn add_dependency(
+        &mut self,
+        parent_id: RenderTaskId,
+        child_id: RenderTaskId,
     ) {
-        debug_assert!(pass_index < passes.len());
-        #[cfg(debug_assertions)]
-        debug_assert_eq!(self.frame_id, id.frame_id);
-        let task = &self.tasks[id.index as usize];
+        let parent = &mut self[parent_id];
+        parent.children.push(child_id);
+    }
 
-        if !task.children.is_empty() {
-            let child_index = pass_index + 1;
-            if passes.len() == child_index {
-                passes.push(RenderPass::new_off_screen(screen_size, gpu_supports_fast_clears));
+    /// Assign this frame's render tasks to render passes ordered so that passes appear
+    /// earlier than the ones that depend on them.
+    pub fn generate_passes(
+        &mut self,
+        main_render_task: Option<RenderTaskId>,
+        screen_size: DeviceIntSize,
+        gpu_supports_fast_clears: bool,
+    ) -> Vec<RenderPass> {
+        let mut passes = Vec::new();
+
+        if !self.cacheable_render_tasks.is_empty() {
+            self.generate_passes_impl(
+                &self.cacheable_render_tasks[..],
+                screen_size,
+                gpu_supports_fast_clears,
+                false,
+                &mut passes,
+            );
+        }
+
+        if let Some(main_task) = main_render_task {
+            self.generate_passes_impl(
+                &[main_task],
+                screen_size,
+                gpu_supports_fast_clears,
+                true,
+                &mut passes,
+            );
+        }
+
+
+        self.resolve_target_conflicts(&mut passes);
+
+        passes
+    }
+
+    /// Assign the render tasks from the tree rooted at root_task to render passes and
+    /// append them to the `passes` vector so that the passes that we depend on end up
+    /// _earlier_ in the pass list.
+    fn generate_passes_impl(
+        &self,
+        root_tasks: &[RenderTaskId],
+        screen_size: DeviceIntSize,
+        gpu_supports_fast_clears: bool,
+        for_main_framebuffer: bool,
+        passes: &mut Vec<RenderPass>,
+    ) {
+        // We recursively visit tasks from the roots (main and cached render tasks), to figure out
+        // which ones affect the frame and which passes they should be assigned to.
+        //
+        // We track the maximum depth of each task (how far it is from the roots) as well as the total
+        // maximum depth of the graph to determine each tasks' pass index. In a nutshell, depth 0 is
+        // for the last render pass (for example the main framebuffer), while the highest depth
+        // corresponds to the first pass.
+
+        fn assign_task_depth(
+            tasks: &[RenderTask],
+            task_id: RenderTaskId,
+            task_depth: i32,
+            task_max_depths: &mut [i32],
+            max_depth: &mut i32,
+        ) {
+            *max_depth = std::cmp::max(*max_depth, task_depth);
+
+            {
+                let task_max_depth = &mut task_max_depths[task_id.index as usize];
+                *task_max_depth = std::cmp::max(*task_max_depth, task_depth);
             }
+
+            let task = &tasks[task_id.index as usize];
             for child in &task.children {
-                self.assign_to_passes(*child, child_index, screen_size, passes, gpu_supports_fast_clears);
+                assign_task_depth(
+                    tasks,
+                    *child,
+                    task_depth + 1,
+                    task_max_depths,
+                    max_depth,
+                );
             }
         }
 
-        passes[pass_index].add_render_task(
-            id,
-            task.get_dynamic_size(),
-            task.target_kind(),
-            &task.location,
-        );
+        // The maximum depth of each task. Values that are still equal to -1 after recursively visiting
+        // the nodes correspond to tasks that don't contribute to the frame.
+        let mut task_max_depths = vec![-1; self.tasks.len()];
+        let mut max_depth = 0;
+
+        for root_task in root_tasks {
+            assign_task_depth(
+                &self.tasks,
+                *root_task,
+                0,
+                &mut task_max_depths,
+                &mut max_depth,
+            );
+        }
+
+        let offset = passes.len();
+
+        passes.reserve(max_depth as usize + 1);
+        for _ in 0..max_depth {
+            passes.push(RenderPass::new_off_screen(screen_size, gpu_supports_fast_clears));
+        }
+
+        if for_main_framebuffer {
+            passes.push(RenderPass::new_main_framebuffer(screen_size, gpu_supports_fast_clears));
+        } else {
+            passes.push(RenderPass::new_off_screen(screen_size, gpu_supports_fast_clears));
+        }
+
+        // Assign tasks to their render passes.
+        for task_index in 0..self.tasks.len() {
+            if task_max_depths[task_index] < 0 {
+                // The task wasn't visited, it means it doesn't contribute to this frame.
+                continue;
+            }
+            let pass_index = offset + (max_depth - task_max_depths[task_index]) as usize;
+            let task_id = RenderTaskId {
+                index: task_index as u32,
+                #[cfg(debug_assertions)]
+                frame_id: self.frame_id,
+            };
+            let task = &self.tasks[task_index];
+            passes[pass_index as usize].add_render_task(
+                task_id,
+                task.get_dynamic_size(),
+                task.target_kind(),
+                &task.location,
+            );
+        }
     }
 
-    pub fn prepare_for_render(&mut self) {
-        for task in &mut self.tasks {
-            task.prepare_for_render();
+    /// Resolve conflicts between the generated passes and the limitiations of our target
+    /// allocation scheme.
+    ///
+    /// The render task graph operates with a ping-pong target allocation scheme where
+    /// a set of targets is written to by even passes and a different set of targets is
+    /// written to by odd passes.
+    /// Since tasks cannot read and write the same target, we can run into issues if a
+    /// task pass in N + 2 reads the result of a task in pass N.
+    /// To avoid such cases have to insert blit tasks to copy the content of the task
+    /// into pass N + 1 which is readable by pass N + 2.
+    ///
+    /// In addition, allocated rects of pass N are currently not tracked and can be
+    /// overwritten by allocations in later passes on the same target, unless the task
+    /// has been marked for saving, which perserves the allocated rect until the end of
+    /// the frame. This is a big hammer, hopefully we won't need to mark many passes
+    /// for saving. A better solution would be to track allocations through the entire
+    /// graph, there is a prototype of that in https://github.com/nical/toy-render-graph/
+    fn resolve_target_conflicts(&mut self, passes: &mut [RenderPass]) {
+        // Keep track of blit tasks we inserted to avoid adding several blits for the same
+        // task.
+        let mut task_redirects = vec![None; self.tasks.len()];
+
+        let mut task_passes = vec![-1; self.tasks.len()];
+        for pass_index in 0..passes.len() {
+            for task in &passes[pass_index].tasks {
+                task_passes[task.index as usize] = pass_index as i32;
+            }
+        }
+
+        for task_index in 0..self.tasks.len() {
+            if task_passes[task_index] < 0 {
+                // The task doesn't contribute to this frame.
+                continue;
+            }
+
+            let pass_index = task_passes[task_index];
+
+            // Go through each dependency and check whether they belong
+            // to a pass that uses the same targets and/or are more than
+            // one pass behind.
+            for nth_child in 0..self.tasks[task_index].children.len() {
+                let child_task_index = self.tasks[task_index].children[nth_child].index as usize;
+                let child_pass_index = task_passes[child_task_index];
+
+                if child_pass_index == pass_index - 1 {
+                    // This should be the most common case.
+                    continue;
+                }
+
+                if child_pass_index % 2 != pass_index % 2 {
+                    // The tasks and its dependency aren't on the same targets,
+                    // but the dependency needs to be kept alive.
+                    self.tasks[child_task_index].mark_for_saving();
+                    continue;
+                }
+
+                if let Some(blit_id) = task_redirects[child_task_index] {
+                    // We already resolved a similar conflict with a blit task,
+                    // reuse the same blit instead of creating a new one.
+                    self.tasks[task_index].children[nth_child] = blit_id;
+
+                    // Mark for saving if the blit is more than pass appart from
+                    // our task.
+                    if child_pass_index < pass_index - 2 {
+                        self.tasks[blit_id.index as usize].mark_for_saving();
+                    }
+
+                    continue;
+                }
+
+                // Our dependency is an even number of passes behind, need
+                // to insert a blit to ensure we don't read and write from
+                // the same target.
+
+                let task_id = RenderTaskId {
+                    index: child_task_index as u32,
+                    #[cfg(debug_assertions)]
+                    frame_id: self.frame_id,
+                };
+
+                let mut blit = RenderTask::new_blit(
+                    self.tasks[task_index].location.size(),
+                    BlitSource::RenderTask { task_id },
+                );
+
+                // Mark for saving if the blit is more than pass appart from
+                // our task.
+                if child_pass_index < pass_index - 2 {
+                    blit.mark_for_saving();
+                }
+
+                let blit_id = RenderTaskId {
+                    index: self.tasks.len() as u32,
+                    #[cfg(debug_assertions)]
+                    frame_id: self.frame_id,
+                };
+
+                self.tasks.push(blit);
+
+                passes[child_pass_index as usize + 1].tasks.push(blit_id);
+
+                self.tasks[task_index].children[nth_child] = blit_id;
+                task_redirects[task_index] = Some(blit_id);
+            }
         }
     }
 
     pub fn get_task_address(&self, id: RenderTaskId) -> RenderTaskAddress {
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, not(feature = "replay")))]
         debug_assert_eq!(self.frame_id, id.frame_id);
-        RenderTaskAddress(id.index)
+        RenderTaskAddress(id.index as u16)
     }
 
     pub fn write_task_data(&mut self) {
@@ -205,18 +411,18 @@ impl RenderTaskTree {
     }
 }
 
-impl ops::Index<RenderTaskId> for RenderTaskTree {
+impl ops::Index<RenderTaskId> for RenderTaskGraph {
     type Output = RenderTask;
     fn index(&self, id: RenderTaskId) -> &RenderTask {
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, not(feature = "replay")))]
         debug_assert_eq!(self.frame_id, id.frame_id);
         &self.tasks[id.index as usize]
     }
 }
 
-impl ops::IndexMut<RenderTaskId> for RenderTaskTree {
+impl ops::IndexMut<RenderTaskId> for RenderTaskGraph {
     fn index_mut(&mut self, id: RenderTaskId) -> &mut RenderTask {
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, not(feature = "replay")))]
         debug_assert_eq!(self.frame_id, id.frame_id);
         &mut self.tasks[id.index as usize]
     }
@@ -250,6 +456,16 @@ pub enum RenderTaskLocation {
         /// The target region within the above layer.
         rect: DeviceIntRect,
     },
+    /// This render task will be drawn to a picture cache texture that is
+    /// persisted between both frames and scenes, if the content remains valid.
+    PictureCache {
+        /// The texture ID to draw to.
+        texture: TextureSource,
+        /// Slice index in the texture array to draw to.
+        layer: i32,
+        /// Size in device pixels of this picture cache tile.
+        size: DeviceIntSize,
+    },
 }
 
 impl RenderTaskLocation {
@@ -258,6 +474,15 @@ impl RenderTaskLocation {
         match *self {
             RenderTaskLocation::Dynamic(..) => true,
             _ => false,
+        }
+    }
+
+    pub fn size(&self) -> DeviceIntSize {
+        match self {
+            RenderTaskLocation::Fixed(rect) => rect.size,
+            RenderTaskLocation::Dynamic(_, size) => *size,
+            RenderTaskLocation::TextureCache { rect, .. } => rect.size,
+            RenderTaskLocation::PictureCache { size, .. } => *size,
         }
     }
 }
@@ -282,17 +507,6 @@ pub struct ClipRegionTask {
     pub device_pixel_scale: DevicePixelScale,
 }
 
-#[derive(Debug)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct TileBlit {
-    pub target: CacheItem,
-    pub src_offset: DeviceIntPoint,
-    pub dest_offset: DeviceIntPoint,
-    pub size: DeviceIntSize,
-}
-
-#[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct PictureTask {
@@ -300,9 +514,12 @@ pub struct PictureTask {
     pub can_merge: bool,
     pub content_origin: DeviceIntPoint,
     pub uv_rect_handle: GpuCacheHandle,
-    pub root_spatial_node_index: SpatialNodeIndex,
+    pub surface_spatial_node_index: SpatialNodeIndex,
     uv_rect_kind: UvRectKind,
     device_pixel_scale: DevicePixelScale,
+    /// A bitfield that describes which dirty regions should be included
+    /// in batches built for this picture task.
+    pub vis_mask: PrimitiveVisibilityMask,
 }
 
 #[derive(Debug)]
@@ -328,7 +545,6 @@ impl BlurTask {
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ScalingTask {
     pub target_kind: RenderTargetKind,
-    pub uv_rect_handle: GpuCacheHandle,
     uv_rect_kind: UvRectKind,
 }
 
@@ -406,7 +622,6 @@ pub struct RenderTaskData {
     pub data: [f32; FLOATS_PER_RENDER_TASK_INFO],
 }
 
-#[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub enum RenderTaskKind {
@@ -423,6 +638,29 @@ pub enum RenderTaskKind {
     Border(BorderTask),
     LineDecoration(LineDecorationTask),
     Gradient(GradientTask),
+    #[cfg(test)]
+    Test(RenderTargetKind),
+}
+
+impl RenderTaskKind {
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            RenderTaskKind::Picture(..) => "Picture",
+            RenderTaskKind::CacheMask(..) => "CacheMask",
+            RenderTaskKind::ClipRegion(..) => "ClipRegion",
+            RenderTaskKind::VerticalBlur(..) => "VerticalBlur",
+            RenderTaskKind::HorizontalBlur(..) => "HorizontalBlur",
+            RenderTaskKind::Glyph(..) => "Glyph",
+            RenderTaskKind::Readback(..) => "Readback",
+            RenderTaskKind::Scaling(..) => "Scaling",
+            RenderTaskKind::Blit(..) => "Blit",
+            RenderTaskKind::Border(..) => "Border",
+            RenderTaskKind::LineDecoration(..) => "LineDecoration",
+            RenderTaskKind::Gradient(..) => "Gradient",
+            #[cfg(test)]
+            RenderTaskKind::Test(..) => "Test",
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -439,7 +677,32 @@ pub enum ClearMode {
     Transparent,
 }
 
-#[derive(Debug)]
+/// In order to avoid duplicating the down-scaling and blur passes when a picture has several blurs,
+/// we use a local (primitive-level) cache of the render tasks generated for a single shadowed primitive
+/// in a single frame.
+pub type BlurTaskCache = FastHashMap<BlurTaskKey, RenderTaskId>;
+
+/// Since we only use it within a single primitive, the key only needs to contain the down-scaling level
+/// and the blur std deviation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum BlurTaskKey {
+    DownScale(u32),
+    Blur { downscale_level: u32, stddev_x: u32, stddev_y: u32 },
+}
+
+impl BlurTaskKey {
+    fn downscale_and_blur(downscale_level: u32, blur_stddev: DeviceSize) -> Self {
+        // Quantise the std deviations and store it as integers to work around
+        // Eq and Hash's f32 allergy.
+        // The blur radius is rounded before RenderTask::new_blur so we don't need
+        // a lot of precision.
+        const QUANTIZATION_FACTOR: f32 = 1024.0;
+        let stddev_x = (blur_stddev.width * QUANTIZATION_FACTOR) as u32;
+        let stddev_y = (blur_stddev.height * QUANTIZATION_FACTOR) as u32;
+        BlurTaskKey::Blur { downscale_level, stddev_x, stddev_y }
+    }
+}
+
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct RenderTask {
@@ -469,20 +732,36 @@ impl RenderTask {
         }
     }
 
+    #[cfg(test)]
+    pub fn new_test(
+        target: RenderTargetKind,
+        location: RenderTaskLocation,
+        children: Vec<RenderTaskId>,
+    ) -> Self {
+        RenderTask {
+            location,
+            children,
+            kind: RenderTaskKind::Test(target),
+            clear_mode: ClearMode::Transparent,
+            saved_index: None,
+        }
+    }
+
     pub fn new_picture(
         location: RenderTaskLocation,
         unclipped_size: DeviceSize,
         pic_index: PictureIndex,
         content_origin: DeviceIntPoint,
-        children: Vec<RenderTaskId>,
         uv_rect_kind: UvRectKind,
-        root_spatial_node_index: SpatialNodeIndex,
+        surface_spatial_node_index: SpatialNodeIndex,
         device_pixel_scale: DevicePixelScale,
+        vis_mask: PrimitiveVisibilityMask,
     ) -> Self {
         let size = match location {
             RenderTaskLocation::Dynamic(_, size) => size,
             RenderTaskLocation::Fixed(rect) => rect.size,
             RenderTaskLocation::TextureCache { rect, .. } => rect.size,
+            RenderTaskLocation::PictureCache { size, .. } => size,
         };
 
         render_task_sanity_check(&size);
@@ -492,15 +771,16 @@ impl RenderTask {
 
         RenderTask {
             location,
-            children,
+            children: Vec::new(),
             kind: RenderTaskKind::Picture(PictureTask {
                 pic_index,
                 content_origin,
                 can_merge,
                 uv_rect_handle: GpuCacheHandle::new(),
                 uv_rect_kind,
-                root_spatial_node_index,
+                surface_spatial_node_index,
                 device_pixel_scale,
+                vis_mask,
             }),
             clear_mode: ClearMode::Transparent,
             saved_index: None,
@@ -600,7 +880,7 @@ impl RenderTask {
         clip_store: &mut ClipStore,
         gpu_cache: &mut GpuCache,
         resource_cache: &mut ResourceCache,
-        render_tasks: &mut RenderTaskTree,
+        render_tasks: &mut RenderTaskGraph,
         clip_data_store: &mut ClipDataStore,
         snap_offsets: SnapOffsets,
         device_pixel_scale: DevicePixelScale,
@@ -653,15 +933,14 @@ impl RenderTask {
                             let mask_task_id = render_tasks.add(mask_task);
 
                             // Blur it
-                            let blur_render_task = RenderTask::new_blur(
+                            RenderTask::new_blur(
                                 DeviceSize::new(blur_radius_dp, blur_radius_dp),
                                 mask_task_id,
                                 render_tasks,
                                 RenderTargetKind::Alpha,
                                 ClearMode::Zero,
-                            );
-
-                            render_tasks.add(blur_render_task)
+                                None,
+                            )
                         }
                     ));
                 }
@@ -768,10 +1047,11 @@ impl RenderTask {
     pub fn new_blur(
         blur_std_deviation: DeviceSize,
         src_task_id: RenderTaskId,
-        render_tasks: &mut RenderTaskTree,
+        render_tasks: &mut RenderTaskGraph,
         target_kind: RenderTargetKind,
         clear_mode: ClearMode,
-    ) -> Self {
+        mut blur_cache: Option<&mut BlurTaskCache>,
+    ) -> RenderTaskId {
         // Adjust large std deviation value.
         let mut adjusted_blur_std_deviation = blur_std_deviation;
         let (blur_target_size, uv_rect_kind) = {
@@ -781,6 +1061,7 @@ impl RenderTask {
         let mut adjusted_blur_target_size = blur_target_size;
         let mut downscaling_src_task_id = src_task_id;
         let mut scale_factor = 1.0;
+        let mut n_downscales = 1;
         while adjusted_blur_std_deviation.width > MAX_BLUR_STD_DEVIATION &&
               adjusted_blur_std_deviation.height > MAX_BLUR_STD_DEVIATION {
             if adjusted_blur_target_size.width < MIN_DOWNSCALING_RT_SIZE ||
@@ -790,40 +1071,72 @@ impl RenderTask {
             adjusted_blur_std_deviation = adjusted_blur_std_deviation * 0.5;
             scale_factor *= 2.0;
             adjusted_blur_target_size = (blur_target_size.to_f32() / scale_factor).to_i32();
-            let downscaling_task = RenderTask::new_scaling(
-                downscaling_src_task_id,
-                render_tasks,
-                target_kind,
-                adjusted_blur_target_size,
-            );
-            downscaling_src_task_id = render_tasks.add(downscaling_task);
+
+            let cached_task = match blur_cache {
+                Some(ref mut cache) => cache.get(&BlurTaskKey::DownScale(n_downscales)).cloned(),
+                None => None,
+            };
+
+            downscaling_src_task_id = cached_task.unwrap_or_else(|| {
+                let downscaling_task = RenderTask::new_scaling(
+                    downscaling_src_task_id,
+                    render_tasks,
+                    target_kind,
+                    adjusted_blur_target_size,
+                );
+                render_tasks.add(downscaling_task)
+            });
+
+            if let Some(ref mut cache) = blur_cache {
+                cache.insert(BlurTaskKey::DownScale(n_downscales), downscaling_src_task_id);
+            }
+
+            n_downscales += 1;
         }
 
-        let blur_task_v = RenderTask::with_dynamic_location(
-            adjusted_blur_target_size,
-            vec![downscaling_src_task_id],
-            RenderTaskKind::VerticalBlur(BlurTask {
-                blur_std_deviation: adjusted_blur_std_deviation.height,
-                target_kind,
-                uv_rect_handle: GpuCacheHandle::new(),
-                uv_rect_kind,
-            }),
-            clear_mode,
-        );
 
-        let blur_task_v_id = render_tasks.add(blur_task_v);
+        let blur_key = BlurTaskKey::downscale_and_blur(n_downscales, adjusted_blur_std_deviation);
 
-        RenderTask::with_dynamic_location(
-            adjusted_blur_target_size,
-            vec![blur_task_v_id],
-            RenderTaskKind::HorizontalBlur(BlurTask {
-                blur_std_deviation: adjusted_blur_std_deviation.width,
-                target_kind,
-                uv_rect_handle: GpuCacheHandle::new(),
-                uv_rect_kind,
-            }),
-            clear_mode,
-        )
+        let cached_task = match blur_cache {
+            Some(ref mut cache) => cache.get(&blur_key).cloned(),
+            None => None,
+        };
+
+        let blur_task_id = cached_task.unwrap_or_else(|| {
+            let blur_task_v = RenderTask::with_dynamic_location(
+                adjusted_blur_target_size,
+                vec![downscaling_src_task_id],
+                RenderTaskKind::VerticalBlur(BlurTask {
+                    blur_std_deviation: adjusted_blur_std_deviation.height,
+                    target_kind,
+                    uv_rect_handle: GpuCacheHandle::new(),
+                    uv_rect_kind,
+                }),
+                clear_mode,
+            );
+
+            let blur_task_v_id = render_tasks.add(blur_task_v);
+
+            let blur_task_h = RenderTask::with_dynamic_location(
+                adjusted_blur_target_size,
+                vec![blur_task_v_id],
+                RenderTaskKind::HorizontalBlur(BlurTask {
+                    blur_std_deviation: adjusted_blur_std_deviation.width,
+                    target_kind,
+                    uv_rect_handle: GpuCacheHandle::new(),
+                    uv_rect_kind,
+                }),
+                clear_mode,
+            );
+
+            render_tasks.add(blur_task_h)
+        });
+
+        if let Some(ref mut cache) = blur_cache {
+            cache.insert(blur_key, blur_task_id);
+        }
+
+        blur_task_id
     }
 
     pub fn new_border_segment(
@@ -842,7 +1155,7 @@ impl RenderTask {
 
     pub fn new_scaling(
         src_task_id: RenderTaskId,
-        render_tasks: &mut RenderTaskTree,
+        render_tasks: &mut RenderTaskGraph,
         target_kind: RenderTargetKind,
         target_size: DeviceIntSize,
     ) -> Self {
@@ -853,7 +1166,6 @@ impl RenderTask {
             vec![src_task_id],
             RenderTaskKind::Scaling(ScalingTask {
                 target_kind,
-                uv_rect_handle: GpuCacheHandle::new(),
                 uv_rect_kind,
             }),
             ClearMode::DontCare,
@@ -912,6 +1224,11 @@ impl RenderTask {
             RenderTaskKind::Blit(..) => {
                 UvRectKind::Rect
             }
+
+            #[cfg(test)]
+            RenderTaskKind::Test(..) => {
+                unreachable!("Unexpected render task");
+            }
         }
     }
 
@@ -969,6 +1286,11 @@ impl RenderTask {
             RenderTaskKind::Blit(..) => {
                 [0.0; 3]
             }
+
+            #[cfg(test)]
+            RenderTaskKind::Test(..) => {
+                unreachable!();
+            }
         };
 
         let (mut target_rect, target_index) = self.get_target_rect();
@@ -1013,6 +1335,10 @@ impl RenderTask {
             RenderTaskKind::Glyph(..) => {
                 panic!("texture handle not supported for this task kind");
             }
+            #[cfg(test)]
+            RenderTaskKind::Test(..) => {
+                panic!("RenderTask tests aren't expected to exercise this code");
+            }
         }
     }
 
@@ -1021,6 +1347,7 @@ impl RenderTask {
             RenderTaskLocation::Fixed(..) => DeviceIntSize::zero(),
             RenderTaskLocation::Dynamic(_, size) => size,
             RenderTaskLocation::TextureCache { rect, .. } => rect.size,
+            RenderTaskLocation::PictureCache { size, .. } => size,
         }
     }
 
@@ -1051,6 +1378,15 @@ impl RenderTask {
             }
             RenderTaskLocation::TextureCache {layer, rect, .. } => {
                 (rect, RenderTargetIndex(layer as usize))
+            }
+            RenderTaskLocation::PictureCache { size, layer, .. } => {
+                (
+                    DeviceIntRect::new(
+                        DeviceIntPoint::zero(),
+                        size,
+                    ),
+                    RenderTargetIndex(layer as usize),
+                )
             }
         }
     }
@@ -1088,14 +1424,10 @@ impl RenderTask {
             RenderTaskKind::Blit(..) => {
                 RenderTargetKind::Color
             }
-        }
-    }
 
-    // Optionally, prepare the render task for drawing. This is executed
-    // after all resource cache items (textures and glyphs) have been
-    // resolved and can be queried. It also allows certain render tasks
-    // to defer calculating an exact size until now, if desired.
-    pub fn prepare_for_render(&mut self) {
+            #[cfg(test)]
+            RenderTaskKind::Test(kind) => kind,
+        }
     }
 
     pub fn write_gpu_blocks(
@@ -1123,12 +1455,15 @@ impl RenderTask {
             RenderTaskKind::Glyph(..) => {
                 return;
             }
+            #[cfg(test)]
+            RenderTaskKind::Test(..) => {
+                panic!("RenderTask tests aren't expected to exercise this code");
+            }
         };
 
         if let Some(mut request) = gpu_cache.request(cache_handle) {
             let p0 = target_rect.origin.to_f32();
             let p1 = target_rect.bottom_right().to_f32();
-
             let image_source = ImageSource {
                 p0,
                 p1,
@@ -1141,7 +1476,7 @@ impl RenderTask {
     }
 
     #[cfg(feature = "debugger")]
-    pub fn print_with<T: PrintTreePrinter>(&self, pt: &mut T, tree: &RenderTaskTree) -> bool {
+    pub fn print_with<T: PrintTreePrinter>(&self, pt: &mut T, tree: &RenderTaskGraph) -> bool {
         match self.kind {
             RenderTaskKind::Picture(ref task) => {
                 pt.new_level(format!("Picture of {:?}", task.pic_index));
@@ -1185,6 +1520,10 @@ impl RenderTask {
             RenderTaskKind::Gradient(..) => {
                 pt.new_level("Gradient".to_owned());
             }
+            #[cfg(test)]
+            RenderTaskKind::Test(..) => {
+                pt.new_level("Test".to_owned());
+            }
         }
 
         pt.add_item(format!("clear to: {:?}", self.clear_mode));
@@ -1206,7 +1545,8 @@ impl RenderTask {
             RenderTaskLocation::Dynamic(..) => {
                 self.saved_index = Some(SavedTargetIndex::PENDING);
             }
-            RenderTaskLocation::TextureCache { .. } => {
+            RenderTaskLocation::TextureCache { .. } |
+            RenderTaskLocation::PictureCache { .. } => {
                 panic!("Unable to mark a permanently cached task for saving!");
             }
         }
@@ -1238,7 +1578,6 @@ pub struct RenderTaskCacheKey {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct RenderTaskCacheEntry {
-    pending_render_task_id: Option<RenderTaskId>,
     user_data: Option<[f32; 3]>,
     is_opaque: bool,
     pub handle: TextureCacheHandle,
@@ -1304,82 +1643,75 @@ impl RenderTaskCache {
         });
     }
 
-    pub fn update(
-        &mut self,
+    fn alloc_render_task(
+        entry: &mut RenderTaskCacheEntry,
+        render_task_id: RenderTaskId,
         gpu_cache: &mut GpuCache,
         texture_cache: &mut TextureCache,
-        render_tasks: &mut RenderTaskTree,
+        render_tasks: &mut RenderTaskGraph,
     ) {
-        // Iterate the list of render task cache entries,
-        // and allocate / update the texture cache location
-        // if the entry has been evicted or not yet allocated.
-        for (_, handle) in &self.map {
-            let entry = self.cache_entries.get_mut(handle);
+        let render_task = &mut render_tasks[render_task_id];
+        let target_kind = render_task.target_kind();
 
-            if let Some(pending_render_task_id) = entry.pending_render_task_id.take() {
-                let render_task = &mut render_tasks[pending_render_task_id];
-                let target_kind = render_task.target_kind();
-
-                // Find out what size to alloc in the texture cache.
-                let size = match render_task.location {
-                    RenderTaskLocation::Fixed(..) |
-                    RenderTaskLocation::TextureCache { .. } => {
-                        panic!("BUG: dynamic task was expected");
-                    }
-                    RenderTaskLocation::Dynamic(_, size) => size,
-                };
-
-                // Select the right texture page to allocate from.
-                let image_format = match target_kind {
-                    RenderTargetKind::Color => ImageFormat::BGRA8,
-                    RenderTargetKind::Alpha => ImageFormat::R8,
-                };
-
-                let descriptor = ImageDescriptor::new(
-                    size.width,
-                    size.height,
-                    image_format,
-                    entry.is_opaque,
-                    false,
-                );
-
-                // Allocate space in the texture cache, but don't supply
-                // and CPU-side data to be uploaded.
-                //
-                // Note that we currently use Eager eviction for cached render
-                // tasks, which means that any cached item not used in the last
-                // frame is discarded. There's room to be a lot smarter here,
-                // especially by considering the relative costs of re-rendering
-                // each type of item (box shadow blurs are an order of magnitude
-                // more expensive than borders, for example). Telemetry could
-                // inform our decisions here as well.
-                texture_cache.update(
-                    &mut entry.handle,
-                    descriptor,
-                    TextureFilter::Linear,
-                    None,
-                    entry.user_data.unwrap_or([0.0; 3]),
-                    DirtyRect::All,
-                    gpu_cache,
-                    None,
-                    render_task.uv_rect_kind(),
-                    Eviction::Eager,
-                );
-
-                // Get the allocation details in the texture cache, and store
-                // this in the render task. The renderer will draw this
-                // task into the appropriate layer and rect of the texture
-                // cache on this frame.
-                let (texture_id, texture_layer, uv_rect, _) =
-                    texture_cache.get_cache_location(&entry.handle);
-
-                render_task.location = RenderTaskLocation::TextureCache {
-                    texture: texture_id,
-                    layer: texture_layer,
-                    rect: uv_rect.to_i32(),
-                };
+        // Find out what size to alloc in the texture cache.
+        let size = match render_task.location {
+            RenderTaskLocation::Fixed(..) |
+            RenderTaskLocation::PictureCache { .. } |
+            RenderTaskLocation::TextureCache { .. } => {
+                panic!("BUG: dynamic task was expected");
             }
-        }
+            RenderTaskLocation::Dynamic(_, size) => size,
+        };
+
+        // Select the right texture page to allocate from.
+        let image_format = match target_kind {
+            RenderTargetKind::Color => ImageFormat::BGRA8,
+            RenderTargetKind::Alpha => ImageFormat::R8,
+        };
+
+        let descriptor = ImageDescriptor::new(
+            size.width,
+            size.height,
+            image_format,
+            entry.is_opaque,
+            false,
+        );
+
+        // Allocate space in the texture cache, but don't supply
+        // and CPU-side data to be uploaded.
+        //
+        // Note that we currently use Eager eviction for cached render
+        // tasks, which means that any cached item not used in the last
+        // frame is discarded. There's room to be a lot smarter here,
+        // especially by considering the relative costs of re-rendering
+        // each type of item (box shadow blurs are an order of magnitude
+        // more expensive than borders, for example). Telemetry could
+        // inform our decisions here as well.
+        texture_cache.update(
+            &mut entry.handle,
+            descriptor,
+            TextureFilter::Linear,
+            None,
+            entry.user_data.unwrap_or([0.0; 3]),
+            DirtyRect::All,
+            gpu_cache,
+            None,
+            render_task.uv_rect_kind(),
+            Eviction::Eager,
+        );
+
+        // Get the allocation details in the texture cache, and store
+        // this in the render task. The renderer will draw this
+        // task into the appropriate layer and rect of the texture
+        // cache on this frame.
+        let (texture_id, texture_layer, uv_rect, _) =
+            texture_cache.get_cache_location(&entry.handle);
+
+        render_task.location = RenderTaskLocation::TextureCache {
+            texture: texture_id,
+            layer: texture_layer,
+            rect: uv_rect.to_i32(),
+        };
     }
 
     pub fn request_render_task<F>(
@@ -1387,13 +1719,13 @@ impl RenderTaskCache {
         key: RenderTaskCacheKey,
         texture_cache: &mut TextureCache,
         gpu_cache: &mut GpuCache,
-        render_tasks: &mut RenderTaskTree,
+        render_tasks: &mut RenderTaskGraph,
         user_data: Option<[f32; 3]>,
         is_opaque: bool,
         f: F,
     ) -> Result<RenderTaskCacheEntryHandle, ()>
     where
-        F: FnOnce(&mut RenderTaskTree) -> Result<RenderTaskId, ()>,
+        F: FnOnce(&mut RenderTaskGraph) -> Result<RenderTaskId, ()>,
     {
         // Get the texture cache handle for this cache key,
         // or create one.
@@ -1401,7 +1733,6 @@ impl RenderTaskCache {
         let entry_handle = self.map.entry(key).or_insert_with(|| {
             let entry = RenderTaskCacheEntry {
                 handle: TextureCacheHandle::invalid(),
-                pending_render_task_id: None,
                 user_data,
                 is_opaque,
             };
@@ -1409,18 +1740,23 @@ impl RenderTaskCache {
         });
         let cache_entry = cache_entries.get_mut(entry_handle);
 
-        if cache_entry.pending_render_task_id.is_none() {
-            // Check if this texture cache handle is valid.
-            if texture_cache.request(&cache_entry.handle, gpu_cache) {
-                // Invoke user closure to get render task chain
-                // to draw this into the texture cache.
-                let render_task_id = f(render_tasks)?;
-                render_tasks.cacheable_render_tasks.push(render_task_id);
+        // Check if this texture cache handle is valid.
+        if texture_cache.request(&cache_entry.handle, gpu_cache) {
+            // Invoke user closure to get render task chain
+            // to draw this into the texture cache.
+            let render_task_id = f(render_tasks)?;
+            render_tasks.cacheable_render_tasks.push(render_task_id);
 
-                cache_entry.pending_render_task_id = Some(render_task_id);
-                cache_entry.user_data = user_data;
-                cache_entry.is_opaque = is_opaque;
-            }
+            cache_entry.user_data = user_data;
+            cache_entry.is_opaque = is_opaque;
+
+            RenderTaskCache::alloc_render_task(
+                cache_entry,
+                render_task_id,
+                gpu_cache,
+                texture_cache,
+                render_tasks,
+            );
         }
 
         Ok(entry_handle.weak())
@@ -1447,13 +1783,13 @@ impl RenderTaskCache {
     }
 
     #[allow(dead_code)]
-    pub fn cache_item_is_allocated_for_render_task(&self,
-                                                   texture_cache: &TextureCache,
-                                                   key: &RenderTaskCacheKey)
-                                                   -> bool {
+    pub fn get_allocated_size_for_render_task(&self,
+                                              texture_cache: &TextureCache,
+                                              key: &RenderTaskCacheKey)
+                                              -> Option<usize> {
         let handle = self.map.get(key).unwrap();
         let cache_entry = self.cache_entries.get(handle);
-        texture_cache.is_allocated(&cache_entry.handle)
+        texture_cache.get_allocated_size(&cache_entry.handle)
     }
 }
 
@@ -1462,11 +1798,365 @@ impl RenderTaskCache {
 // the extra part pixel in the case of fractional sizes is correctly
 // handled. For now, just use rounding which passes the existing
 // Gecko tests.
-// Note: zero-square tasks are prohibited in WR task tree, so
+// Note: zero-square tasks are prohibited in WR task graph, so
 // we ensure each dimension to be at least the length of 1 after rounding.
 pub fn to_cache_size(size: DeviceSize) -> DeviceIntSize {
     DeviceIntSize::new(
         1.max(size.width.round() as i32),
         1.max(size.height.round() as i32),
     )
+}
+
+// Dump an SVG visualization of the render graph for debugging purposes
+#[allow(dead_code)]
+pub fn dump_render_tasks_as_svg(
+    render_tasks: &RenderTaskGraph,
+    passes: &[RenderPass],
+    output: &mut dyn io::Write,
+) -> io::Result<()> {
+    use svg_fmt::*;
+
+    let node_width = 80.0;
+    let node_height = 30.0;
+    let vertical_spacing = 8.0;
+    let horizontal_spacing = 20.0;
+    let margin = 10.0;
+    let text_size = 10.0;
+
+    let mut pass_rects = Vec::new();
+    let mut nodes = vec![None; render_tasks.tasks.len()];
+
+    let mut x = margin;
+    let mut max_y: f32 = 0.0;
+
+    #[derive(Clone)]
+    struct Node {
+        rect: Rectangle,
+        label: Text,
+        size: Text,
+    }
+
+    for pass in passes {
+        let mut layout = VerticalLayout::new(x, margin, node_width);
+
+        for task_id in &pass.tasks {
+            let task_index = task_id.index as usize;
+            let task = &render_tasks.tasks[task_index];
+
+            let rect = layout.push_rectangle(node_height);
+
+            let tx = rect.x + rect.w / 2.0;
+            let ty = rect.y + 10.0;
+
+            let label = text(tx, ty, task.kind.as_str());
+            let size = text(tx, ty + 12.0, format!("{}", task.location.size()));
+
+            nodes[task_index] = Some(Node { rect, label, size });
+
+            layout.advance(vertical_spacing);
+        }
+
+        pass_rects.push(layout.total_rectangle());
+
+        x += node_width + horizontal_spacing;
+        max_y = max_y.max(layout.y + margin);
+    }
+
+    let mut links = Vec::new();
+    for node_index in 0..nodes.len() {
+        if nodes[node_index].is_none() {
+            continue;
+        }
+
+        let task = &render_tasks.tasks[node_index];
+        for dep in &task.children {
+            let dep_index = dep.index as usize;
+
+            if let (&Some(ref node), &Some(ref dep_node)) = (&nodes[node_index], &nodes[dep_index]) {
+                links.push((
+                    dep_node.rect.x + dep_node.rect.w,
+                    dep_node.rect.y + dep_node.rect.h / 2.0,
+                    node.rect.x,
+                    node.rect.y + node.rect.h / 2.0,
+                ));
+            }
+        }
+    }
+
+    let svg_w = x + margin;
+    let svg_h = max_y + margin;
+    writeln!(output, "{}", BeginSvg { w: svg_w, h: svg_h })?;
+
+    // Background.
+    writeln!(output,
+        "    {}",
+        rectangle(0.0, 0.0, svg_w, svg_h)
+            .inflate(1.0, 1.0)
+            .fill(rgb(50, 50, 50))
+    )?;
+
+    // Passes.
+    for rect in pass_rects {
+        writeln!(output,
+            "    {}",
+            rect.inflate(3.0, 3.0)
+                .border_radius(4.0)
+                .opacity(0.4)
+                .fill(black())
+        )?;
+    }
+
+    // Links.
+    for (x1, y1, x2, y2) in links {
+        dump_task_dependency_link(output, x1, y1, x2, y2);
+    }
+
+    // Tasks.
+    for node in &nodes {
+        if let Some(node) = node {
+            writeln!(output,
+                "    {}",
+                node.rect
+                    .clone()
+                    .fill(black())
+                    .border_radius(3.0)
+                    .opacity(0.5)
+                    .offset(0.0, 2.0)
+            )?;
+            writeln!(output,
+                "    {}",
+                node.rect
+                    .clone()
+                    .fill(rgb(200, 200, 200))
+                    .border_radius(3.0)
+                    .opacity(0.8)
+            )?;
+
+            writeln!(output,
+                "    {}",
+                node.label
+                    .clone()
+                    .size(text_size)
+                    .align(Align::Center)
+                    .color(rgb(50, 50, 50))
+            )?;
+            writeln!(output,
+                "    {}",
+                node.size
+                    .clone()
+                    .size(text_size * 0.7)
+                    .align(Align::Center)
+                    .color(rgb(50, 50, 50))
+            )?;
+        }
+    }
+
+    writeln!(output, "{}", EndSvg)
+}
+
+#[allow(dead_code)]
+fn dump_task_dependency_link(
+    output: &mut dyn io::Write,
+    x1: f32, y1: f32,
+    x2: f32, y2: f32,
+) {
+    use svg_fmt::*;
+
+    // If the link is a straight horizontal line and spans over multiple passes, it
+    // is likely to go straight though unrelated nodes in a way that makes it look like
+    // they are connected, so we bend the line upward a bit to avoid that.
+    let simple_path = (y1 - y2).abs() > 1.0 || (x2 - x1) < 45.0;
+
+    let mid_x = (x1 + x2) / 2.0;
+    if simple_path {
+        write!(output, "    {}",
+            path().move_to(x1, y1)
+                .cubic_bezier_to(mid_x, y1, mid_x, y2, x2, y2)
+                .fill(Fill::None)
+                .stroke(Stroke::Color(rgb(100, 100, 100), 3.0))
+        ).unwrap();
+    } else {
+        let ctrl1_x = (mid_x + x1) / 2.0;
+        let ctrl2_x = (mid_x + x2) / 2.0;
+        let ctrl_y = y1 - 25.0;
+        write!(output, "    {}",
+            path().move_to(x1, y1)
+                .cubic_bezier_to(ctrl1_x, y1, ctrl1_x, ctrl_y, mid_x, ctrl_y)
+                .cubic_bezier_to(ctrl2_x, ctrl_y, ctrl2_x, y2, x2, y2)
+                .fill(Fill::None)
+                .stroke(Stroke::Color(rgb(100, 100, 100), 3.0))
+        ).unwrap();
+    }
+}
+
+#[cfg(test)]
+use euclid::{size2, rect};
+
+#[cfg(test)]
+fn dyn_location(w: i32, h: i32) -> RenderTaskLocation {
+    RenderTaskLocation::Dynamic(None, size2(w, h))
+}
+
+
+#[test]
+fn diamond_task_graph() {
+    // A simple diamon shaped task graph.
+    //
+    //     [b1]
+    //    /    \
+    // [a]      [main_pic]
+    //    \    /
+    //     [b2]
+
+    let color = RenderTargetKind::Color;
+
+    let counters = RenderTaskGraphCounters::new();
+    let mut tasks = RenderTaskGraph::new(FrameId::first(), &counters);
+
+    let a = tasks.add(RenderTask::new_test(color, dyn_location(640, 640), Vec::new()));
+    let b1 = tasks.add(RenderTask::new_test(color, dyn_location(320, 320), vec![a]));
+    let b2 = tasks.add(RenderTask::new_test(color, dyn_location(320, 320), vec![a]));
+
+    let main_pic = tasks.add(RenderTask::new_test(
+        color,
+        RenderTaskLocation::Fixed(rect(0, 0, 3200, 1800)),
+        vec![b1, b2],
+    ));
+
+    let initial_number_of_tasks = tasks.tasks.len();
+
+    let passes = tasks.generate_passes(Some(main_pic), size2(3200, 1800), true);
+
+    // We should not have added any blits.
+    assert_eq!(tasks.tasks.len(), initial_number_of_tasks);
+
+    assert_eq!(passes.len(), 3);
+    assert_eq!(passes[0].tasks, vec![a]);
+
+    assert_eq!(passes[1].tasks.len(), 2);
+    assert!(passes[1].tasks.contains(&b1));
+    assert!(passes[1].tasks.contains(&b2));
+
+    assert_eq!(passes[2].tasks, vec![main_pic]);
+}
+
+#[test]
+fn blur_task_graph() {
+    // This test simulates a complicated shadow stack effect with target allocation
+    // conflicts to resolve.
+
+    let color = RenderTargetKind::Color;
+
+    let counters = RenderTaskGraphCounters::new();
+    let mut tasks = RenderTaskGraph::new(FrameId::first(), &counters);
+
+    let pic = tasks.add(RenderTask::new_test(color, dyn_location(640, 640), Vec::new()));
+    let scale1 = tasks.add(RenderTask::new_test(color, dyn_location(320, 320), vec![pic]));
+    let scale2 = tasks.add(RenderTask::new_test(color, dyn_location(160, 160), vec![scale1]));
+    let scale3 = tasks.add(RenderTask::new_test(color, dyn_location(80, 80), vec![scale2]));
+    let scale4 = tasks.add(RenderTask::new_test(color, dyn_location(40, 40), vec![scale3]));
+
+    let vblur1 = tasks.add(RenderTask::new_test(color, dyn_location(40, 40), vec![scale4]));
+    let hblur1 = tasks.add(RenderTask::new_test(color, dyn_location(40, 40), vec![vblur1]));
+
+    let vblur2 = tasks.add(RenderTask::new_test(color, dyn_location(40, 40), vec![scale4]));
+    let hblur2 = tasks.add(RenderTask::new_test(color, dyn_location(40, 40), vec![vblur2]));
+
+    // Insert a task that is an even number of passes away from its dependency.
+    // This means the source and destination are on the same target and we have to resolve
+    // this conflict by automatically inserting a blit task.
+    let vblur3 = tasks.add(RenderTask::new_test(color, dyn_location(80, 80), vec![scale3]));
+    let hblur3 = tasks.add(RenderTask::new_test(color, dyn_location(80, 80), vec![vblur3]));
+
+    // Insert a task that is an odd number > 1 of passes away from its dependency.
+    // This should force us to mark the dependency "for saving" to keep its content valid
+    // until the task can access it.
+    let vblur4 = tasks.add(RenderTask::new_test(color, dyn_location(160, 160), vec![scale2]));
+    let hblur4 = tasks.add(RenderTask::new_test(color, dyn_location(160, 160), vec![vblur4]));
+
+    let main_pic = tasks.add(RenderTask::new_test(
+        color,
+        RenderTaskLocation::Fixed(rect(0, 0, 3200, 1800)),
+        vec![hblur1, hblur2, hblur3, hblur4],
+    ));
+
+    let initial_number_of_tasks = tasks.tasks.len();
+
+    let passes = tasks.generate_passes(Some(main_pic), size2(3200, 1800), true);
+
+    // We should have added a single blit task.
+    assert_eq!(tasks.tasks.len(), initial_number_of_tasks + 1);
+
+    // vblur3's dependency to scale3 should be replaced by a blit.
+    let blit = tasks[vblur3].children[0];
+    assert!(blit != scale3);
+
+    match tasks[blit].kind {
+        RenderTaskKind::Blit(..) => {}
+        _ => { panic!("This should be a blit task."); }
+    }
+
+    assert_eq!(passes.len(), 8);
+
+    assert_eq!(passes[0].tasks, vec![pic]);
+    assert_eq!(passes[1].tasks, vec![scale1]);
+    assert_eq!(passes[2].tasks, vec![scale2]);
+    assert_eq!(passes[3].tasks, vec![scale3]);
+
+    assert_eq!(passes[4].tasks.len(), 2);
+    assert!(passes[4].tasks.contains(&scale4));
+    assert!(passes[4].tasks.contains(&blit));
+
+    assert_eq!(passes[5].tasks.len(), 4);
+    assert!(passes[5].tasks.contains(&vblur1));
+    assert!(passes[5].tasks.contains(&vblur2));
+    assert!(passes[5].tasks.contains(&vblur3));
+    assert!(passes[5].tasks.contains(&vblur4));
+
+    assert_eq!(passes[6].tasks.len(), 4);
+    assert!(passes[6].tasks.contains(&hblur1));
+    assert!(passes[6].tasks.contains(&hblur2));
+    assert!(passes[6].tasks.contains(&hblur3));
+    assert!(passes[6].tasks.contains(&hblur4));
+
+    assert_eq!(passes[7].tasks, vec![main_pic]);
+
+    // See vblur4's comment above.
+    assert!(tasks[scale2].saved_index.is_some());
+}
+
+#[test]
+fn culled_tasks() {
+    // This test checks that tasks that do not contribute to the frame don't appear in the
+    // generated passes.
+
+    let color = RenderTargetKind::Color;
+
+    let counters = RenderTaskGraphCounters::new();
+    let mut tasks = RenderTaskGraph::new(FrameId::first(), &counters);
+
+    let a1 = tasks.add(RenderTask::new_test(color, dyn_location(640, 640), Vec::new()));
+    let _a2 = tasks.add(RenderTask::new_test(color, dyn_location(320, 320), vec![a1]));
+
+    let b1 = tasks.add(RenderTask::new_test(color, dyn_location(640, 640), Vec::new()));
+    let b2 = tasks.add(RenderTask::new_test(color, dyn_location(320, 320), vec![b1]));
+    let _b3 = tasks.add(RenderTask::new_test(color, dyn_location(320, 320), vec![b2]));
+
+    let main_pic = tasks.add(RenderTask::new_test(
+        color,
+        RenderTaskLocation::Fixed(rect(0, 0, 3200, 1800)),
+        vec![b2],
+    ));
+
+    let initial_number_of_tasks = tasks.tasks.len();
+
+    let passes = tasks.generate_passes(Some(main_pic), size2(3200, 1800), true);
+
+    // We should not have added any blits.
+    assert_eq!(tasks.tasks.len(), initial_number_of_tasks);
+
+    assert_eq!(passes.len(), 3);
+    assert_eq!(passes[0].tasks, vec![b1]);
+    assert_eq!(passes[1].tasks, vec![b2]);
+    assert_eq!(passes[2].tasks, vec![main_pic]);
 }

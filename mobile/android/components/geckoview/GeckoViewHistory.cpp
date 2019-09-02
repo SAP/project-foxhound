@@ -14,7 +14,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Link.h"
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 
 #include "mozilla/ipc/URIUtils.h"
 
@@ -78,14 +78,14 @@ GeckoViewHistory::GetName(nsACString& aName) {
 void GeckoViewHistory::QueryVisitedStateInContentProcess() {
   // Holds an array of new tracked URIs for a tab in the content process.
   struct NewURIEntry {
-    explicit NewURIEntry(TabChild* aTabChild, nsIURI* aURI)
-        : mTabChild(aTabChild) {
+    explicit NewURIEntry(BrowserChild* aBrowserChild, nsIURI* aURI)
+        : mBrowserChild(aBrowserChild) {
       AddURI(aURI);
     }
 
     void AddURI(nsIURI* aURI) { SerializeURI(aURI, *mURIs.AppendElement()); }
 
-    TabChild* mTabChild;
+    BrowserChild* mBrowserChild;
     nsTArray<URIParams> mURIs;
   };
 
@@ -106,13 +106,13 @@ void GeckoViewHistory::QueryVisitedStateInContentProcess() {
         while (linksIter.HasMore()) {
           Link* link = linksIter.GetNext();
 
-          TabChild* tabChild = nullptr;
+          BrowserChild* browserChild = nullptr;
           nsIWidget* widget =
               nsContentUtils::WidgetForContent(link->GetElement());
           if (widget) {
-            tabChild = widget->GetOwningTabChild();
+            browserChild = widget->GetOwningBrowserChild();
           }
-          if (!tabChild) {
+          if (!browserChild) {
             // We need the link's tab child to find the matching window in the
             // parent process, so stop tracking it if it doesn't have one.
             linksIter.Remove();
@@ -122,14 +122,14 @@ void GeckoViewHistory::QueryVisitedStateInContentProcess() {
           // Add to the list of new URIs for this document, or make a new entry.
           bool hasEntry = false;
           for (NewURIEntry& entry : newEntries) {
-            if (entry.mTabChild == tabChild) {
+            if (entry.mBrowserChild == browserChild) {
               entry.AddURI(uri);
               hasEntry = true;
               break;
             }
           }
           if (!hasEntry) {
-            newEntries.AppendElement(NewURIEntry(tabChild, uri));
+            newEntries.AppendElement(NewURIEntry(browserChild, uri));
           }
         }
       }
@@ -145,7 +145,8 @@ void GeckoViewHistory::QueryVisitedStateInContentProcess() {
 
   // Send the request to the parent process, one message per tab child.
   for (const NewURIEntry& entry : newEntries) {
-    Unused << NS_WARN_IF(!entry.mTabChild->SendQueryVisitedState(entry.mURIs));
+    Unused << NS_WARN_IF(
+        !entry.mBrowserChild->SendQueryVisitedState(entry.mURIs));
   }
 }
 
@@ -310,17 +311,10 @@ class OnVisitedCallback final : public nsIAndroidEventCallback {
   NS_DECL_ISUPPORTS
 
   NS_IMETHOD
-  OnSuccess(JS::HandleValue aData) override {
+  OnSuccess(JS::HandleValue aData, JSContext* aCx) override {
     bool shouldNotify = false;
-    {
-      // Scope `jsapi`.
-      dom::AutoJSAPI jsapi;
-      if (NS_WARN_IF(!jsapi.Init(mGlobalObject))) {
-        return NS_ERROR_FAILURE;
-      }
-      shouldNotify = ShouldNotifyVisited(jsapi.cx(), aData);
-      JS_ClearPendingException(jsapi.cx());
-    }
+    shouldNotify = ShouldNotifyVisited(aCx, aData);
+    JS_ClearPendingException(aCx);
     if (shouldNotify) {
       AutoTArray<VisitedURI, 1> visitedURIs;
       visitedURIs.AppendElement(VisitedURI{mURI, true});
@@ -330,7 +324,7 @@ class OnVisitedCallback final : public nsIAndroidEventCallback {
   }
 
   NS_IMETHOD
-  OnError(JS::HandleValue aData) override { return NS_OK; }
+  OnError(JS::HandleValue aData, JSContext* aCx) override { return NS_OK; }
 
  private:
   virtual ~OnVisitedCallback() {}
@@ -369,11 +363,12 @@ GeckoViewHistory::VisitURI(nsIWidget* aWidget, nsIURI* aURI,
     if (NS_WARN_IF(!aWidget)) {
       return NS_OK;
     }
-    TabChild* tabChild = aWidget->GetOwningTabChild();
-    if (NS_WARN_IF(!tabChild)) {
+    BrowserChild* browserChild = aWidget->GetOwningBrowserChild();
+    if (NS_WARN_IF(!browserChild)) {
       return NS_OK;
     }
-    Unused << NS_WARN_IF(!tabChild->SendVisitURI(uri, lastVisitedURI, aFlags));
+    Unused << NS_WARN_IF(
+        !browserChild->SendVisitURI(uri, lastVisitedURI, aFlags));
     return NS_OK;
   }
 
@@ -502,25 +497,18 @@ class GetVisitedCallback final : public nsIAndroidEventCallback {
   NS_DECL_ISUPPORTS
 
   NS_IMETHOD
-  OnSuccess(JS::HandleValue aData) override {
+  OnSuccess(JS::HandleValue aData, JSContext* aCx) override {
     nsTArray<VisitedURI> visitedURIs;
-    {
-      // Scope `jsapi`.
-      dom::AutoJSAPI jsapi;
-      if (NS_WARN_IF(!jsapi.Init(mGlobalObject))) {
-        return NS_ERROR_FAILURE;
-      }
-      if (!ExtractVisitedURIs(jsapi.cx(), aData, visitedURIs)) {
-        JS_ClearPendingException(jsapi.cx());
-        return NS_ERROR_FAILURE;
-      }
+    if (!ExtractVisitedURIs(aCx, aData, visitedURIs)) {
+      JS_ClearPendingException(aCx);
+      return NS_ERROR_FAILURE;
     }
     mHistory->HandleVisitedState(visitedURIs);
     return NS_OK;
   }
 
   NS_IMETHOD
-  OnError(JS::HandleValue aData) override { return NS_OK; }
+  OnError(JS::HandleValue aData, JSContext* aCx) override { return NS_OK; }
 
  private:
   virtual ~GetVisitedCallback() {}

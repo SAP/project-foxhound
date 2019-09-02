@@ -111,6 +111,10 @@ detail-last-updated =
 
 detail-contributions-description = The developer of this add-on asks that you help support its continued development by making a small contribution.
 
+detail-contributions-button = Contribute
+    .title = Contribute to the development of this add-on
+    .accesskey = C
+
 detail-update-type =
     .value = Automatic Updates
 
@@ -132,7 +136,7 @@ detail-private-browsing-label = Run in Private Windows
 detail-private-browsing-description2 = When allowed, the extension will have access to your online activities while private browsing. <label data-l10n-name="detail-private-browsing-learn-more">Learn more</label>
 
 # Some add-ons may elect to not run in private windows by setting incognito: not_allowed in the manifest.  This
-# cannot be overriden by the user.
+# cannot be overridden by the user.
 detail-private-disallowed-label = Not Allowed in Private Windows
 detail-private-disallowed-description = This extension does not run while private browsing. <label data-l10n-name="detail-private-browsing-learn-more">Learn more</label>
 
@@ -219,9 +223,9 @@ private-browsing-description2 =
     there. We’ve made this change to keep your private browsing private.
     <label data-l10n-name="private-browsing-learn-more">Learn how to manage extension settings</label>
 
-extensions-view-discover =
-    .name = Get Add-ons
-    .tooltiptext = { extensions-view-discover.name }
+extensions-view-discopane =
+    .name = Recommendations
+    .tooltiptext = { extensions-view-discopane.name }
 
 extensions-view-recent-updates =
     .name = Recent Updates
@@ -324,6 +328,10 @@ shortcuts-modifier-other = Include Ctrl or Alt
 shortcuts-invalid = Invalid combination
 shortcuts-letter = Type a letter
 shortcuts-system = Can’t override a { -brand-short-name } shortcut
+# String displayed when a keyboard shortcut is already used by another add-on
+# Variables:
+#   $addon (string) - Name of the add-on
+shortcuts-exists = Already in use by { $addon }
 
 shortcuts-card-expand-button =
     { $numberToShow ->
@@ -335,11 +343,128 @@ shortcuts-card-collapse-button = Show Less
 go-back-button =
     .tooltiptext = Go back
 
+## Recommended add-ons page
+
+# Explanatory introduction to the list of recommended add-ons. The action word
+# ("recommends") in the final sentence is a link to external documentation.
+discopane-intro =
+    Extensions and themes are like apps for your browser, and they let you
+    protect passwords, download videos, find deals, block annoying ads, change
+    how your browser looks, and much more. These small software programs are
+    often developed by a third party. Here’s a selection { -brand-product-name }
+    <a data-l10n-name="learn-more-trigger">recommends</a> for exceptional
+    security, performance, and functionality.
+
+# Notice to make user aware that the recommendations are personalized.
+discopane-notice-recommendations =
+    Some of these recommendations are personalized. They are based on other
+    extensions you’ve installed, profile preferences, and usage statistics.
+discopane-notice-learn-more = Learn more
+
+privacy-policy = Privacy Policy
+
+# Refers to the author of an add-on, shown below the name of the add-on.
+# Variables:
+#   $author (string) - The name of the add-on developer.
+created-by-author = by <a data-l10n-name="author">{ $author }</a>
+# Shows the number of daily users of the add-on.
+# Variables:
+#   $dailyUsers (number) - The number of daily users.
+user-count = Users: { $dailyUsers }
+install-extension-button = Add to { -brand-product-name }
+install-theme-button = Install Theme
+# The label of the button that appears after installing an add-on. Upon click,
+# the detailed add-on view is opened, from where the add-on can be managed.
+manage-addon-button = Manage
+find-more-addons = Find more add-ons
+
 ## Add-on actions
+report-addon-button = Report
 remove-addon-button = Remove
 disable-addon-button = Disable
 enable-addon-button = Enable
 expand-addon-button = More Options
+preferences-addon-button =
+    { PLATFORM() ->
+        [windows] Options
+       *[other] Preferences
+    }
+details-addon-button = Details
+release-notes-addon-button = Release Notes
+permissions-addon-button = Permissions
 
 addons-enabled-heading = Enabled
 addons-disabled-heading = Disabled
+
+ask-to-activate-button = Ask to Activate
+always-activate-button = Always Activate
+never-activate-button = Never Activate
+
+addon-detail-author-label = Author
+addon-detail-version-label = Version
+addon-detail-last-updated-label = Last Updated
+addon-detail-homepage-label = Homepage
+addon-detail-rating-label = Rating
+
+# The average rating that the add-on has received.
+# Variables:
+#   $rating (number) - A number between 0 and 5. The translation should show at most one digit after the comma.
+five-star-rating =
+  .title = Rated { NUMBER($rating, maximumFractionDigits: 1) } out of 5
+
+# This string is used to show that an add-on is disabled.
+# Variables:
+#   $name (string) - The name of the add-on
+addon-name-disabled = { $name } (disabled)
+
+# The number of reviews that an add-on has received on AMO.
+# Variables:
+#   $numberOfReviews (number) - The number of reviews received
+addon-detail-reviews-link =
+    { $numberOfReviews ->
+        [one] { $numberOfReviews } review
+       *[other] { $numberOfReviews } reviews
+    }
+
+## Pending uninstall message bar
+
+# Variables:
+#   $addon (string) - Name of the add-on
+pending-uninstall-description = <span data-l10n-name="addon-name">{ $addon }</span> has been removed.
+pending-uninstall-undo-button = Undo
+
+addon-detail-updates-label = Allow automatic updates
+addon-detail-updates-radio-default = Default
+addon-detail-updates-radio-on = On
+addon-detail-updates-radio-off = Off
+addon-detail-update-check-label = Check for Updates
+install-update-button = Update
+
+# This is the tooltip text for the private browsing badge in about:addons. The
+# badge is the private browsing icon included next to the extension's name.
+addon-badge-private-browsing-allowed =
+    .title = Allowed in private windows
+addon-detail-private-browsing-help = When allowed, the extension will have access to your online activities while private browsing. <a data-l10n-name="learn-more">Learn more</a>
+addon-detail-private-browsing-allow = Allow
+addon-detail-private-browsing-disallow = Don’t Allow
+
+# This is the tooltip text for the recommended badge for an extension in about:addons. The
+# badge is a small icon displayed next to an extension when it is recommended on AMO.
+addon-badge-recommended =
+  .title = Recommended
+  .alt = Recommended
+
+available-updates-heading = Available Updates
+recent-updates-heading = Recent Updates
+
+release-notes-loading = Loading…
+release-notes-error = Sorry, but there was an error loading the release notes.
+
+addon-permissions-empty = This extension doesn’t require any permissions
+
+recommended-extensions-heading = Recommended Extensions
+recommended-themes-heading = Recommended Themes
+
+# A recommendation for the Firefox Color theme shown at the bottom of the theme
+# list view. The "Firefox Color" name itself should not be translated.
+recommended-theme-1 = Feeling creative? <a data-l10n-name="link">Build your own theme with Firefox Color.</a>

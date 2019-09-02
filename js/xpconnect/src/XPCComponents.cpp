@@ -179,7 +179,7 @@ NS_IMPL_ISUPPORTS(nsXPCComponents_Interfaces, nsIXPCComponents_Interfaces,
 NS_IMETHODIMP
 nsXPCComponents_Interfaces::NewEnumerate(nsIXPConnectWrappedNative* wrapper,
                                          JSContext* cx, JSObject* obj,
-                                         JS::AutoIdVector& properties,
+                                         JS::MutableHandleIdVector properties,
                                          bool enumerableOnly, bool* _retval) {
   if (!properties.reserve(nsXPTInterfaceInfo::InterfaceCount())) {
     *_retval = false;
@@ -332,7 +332,7 @@ NS_IMPL_ISUPPORTS(nsXPCComponents_Classes, nsIXPCComponents_Classes,
 NS_IMETHODIMP
 nsXPCComponents_Classes::NewEnumerate(nsIXPConnectWrappedNative* wrapper,
                                       JSContext* cx, JSObject* obj,
-                                      JS::AutoIdVector& properties,
+                                      JS::MutableHandleIdVector properties,
                                       bool enumerableOnly, bool* _retval) {
   nsCOMPtr<nsIComponentRegistrar> compMgr;
   if (NS_FAILED(NS_GetComponentRegistrar(getter_AddRefs(compMgr))) ||
@@ -485,7 +485,7 @@ NS_IMPL_ISUPPORTS(nsXPCComponents_Results, nsIXPCComponents_Results,
 NS_IMETHODIMP
 nsXPCComponents_Results::NewEnumerate(nsIXPConnectWrappedNative* wrapper,
                                       JSContext* cx, JSObject* obj,
-                                      JS::AutoIdVector& properties,
+                                      JS::MutableHandleIdVector properties,
                                       bool enumerableOnly, bool* _retval) {
   const char* name;
   const void* iter = nullptr;
@@ -1336,8 +1336,7 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
     return NS_OK;
   }
 
-  nsGlobalWindowInner* globalWin = CurrentWindowOrNull(cx);
-  nsPIDOMWindowInner* win = globalWin ? globalWin->AsInner() : nullptr;
+  nsGlobalWindowInner* win = CurrentWindowOrNull(cx);
   const uint64_t innerWindowID = win ? win->WindowID() : 0;
 
   RootedObject errorObj(cx, error.isObject() ? &error.toObject() : nullptr);
@@ -1348,7 +1347,8 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
   if (errorObj) {
     JS::RootedObject stackVal(cx);
     JS::RootedObject stackGlobal(cx);
-    FindExceptionStackForConsoleReport(win, error, &stackVal, &stackGlobal);
+    FindExceptionStackForConsoleReport(win, error, nullptr, &stackVal,
+                                       &stackGlobal);
     if (stackVal) {
       scripterr = new nsScriptErrorWithStack(stackVal, stackGlobal);
     }
@@ -1667,7 +1667,7 @@ nsXPCComponents_Utils::ForceShrinkingGC() {
 
 class PreciseGCRunnable : public Runnable {
  public:
-  PreciseGCRunnable(ScheduledGCCallback* aCallback, bool aShrinking)
+  PreciseGCRunnable(nsIScheduledGCCallback* aCallback, bool aShrinking)
       : mozilla::Runnable("PreciseGCRunnable"),
         mCallback(aCallback),
         mShrinking(aShrinking) {}
@@ -1682,19 +1682,19 @@ class PreciseGCRunnable : public Runnable {
   }
 
  private:
-  RefPtr<ScheduledGCCallback> mCallback;
+  nsCOMPtr<nsIScheduledGCCallback> mCallback;
   bool mShrinking;
 };
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::SchedulePreciseGC(ScheduledGCCallback* aCallback) {
+nsXPCComponents_Utils::SchedulePreciseGC(nsIScheduledGCCallback* aCallback) {
   RefPtr<PreciseGCRunnable> event = new PreciseGCRunnable(aCallback, false);
   return NS_DispatchToMainThread(event);
 }
 
 NS_IMETHODIMP
 nsXPCComponents_Utils::SchedulePreciseShrinkingGC(
-    ScheduledGCCallback* aCallback) {
+    nsIScheduledGCCallback* aCallback) {
   RefPtr<PreciseGCRunnable> event = new PreciseGCRunnable(aCallback, true);
   return NS_DispatchToMainThread(event);
 }
@@ -2226,7 +2226,7 @@ class WrappedJSHolder : public nsISupports {
 NS_IMPL_ADDREF(WrappedJSHolder)
 NS_IMPL_RELEASE(WrappedJSHolder)
 
-// nsINamed is always supported by nsXPCWrappedJSClass.
+// nsINamed is always supported by nsXPCWrappedJS::DelegatedQueryInterface().
 // We expose this interface only for the identity in telemetry analysis.
 NS_INTERFACE_TABLE_HEAD(WrappedJSHolder)
   if (aIID.Equals(NS_GET_IID(nsINamed))) {
@@ -2406,12 +2406,6 @@ NS_IMETHODIMP
 nsXPCComponents_Utils::Now(double* aRetval) {
   TimeStamp start = TimeStamp::ProcessCreation();
   *aRetval = (TimeStamp::Now() - start).ToMilliseconds();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::RecordReplayDirective(int aDirective) {
-  recordreplay::RecordReplayDirective(aDirective);
   return NS_OK;
 }
 

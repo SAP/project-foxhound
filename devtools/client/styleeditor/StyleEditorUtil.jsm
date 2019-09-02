@@ -15,13 +15,26 @@ this.EXPORTED_SYMBOLS = [
   "text",
   "wire",
   "showFilePicker",
+  "optionsPopupMenu",
 ];
 
 const PROPERTIES_URL = "chrome://devtools/locale/styleeditor.properties";
 
-const {require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { loader, require } = ChromeUtils.import(
+  "resource://devtools/shared/Loader.jsm"
+);
 const Services = require("Services");
 const gStringBundle = Services.strings.createBundle(PROPERTIES_URL);
+
+loader.lazyRequireGetter(this, "Menu", "devtools/client/framework/menu");
+loader.lazyRequireGetter(
+  this,
+  "MenuItem",
+  "devtools/client/framework/menu-item"
+);
+
+const PREF_MEDIA_SIDEBAR = "devtools.styleeditor.showMediaSidebar";
+const PREF_ORIG_SOURCES = "devtools.source-map.client-service.enabled";
 
 /**
  * Returns a localized string with the given key name from the string bundle.
@@ -37,11 +50,12 @@ function getString(name) {
       return gStringBundle.GetStringFromName(name);
     }
     const rest = Array.prototype.slice.call(arguments, 1);
-    return gStringBundle.formatStringFromName(name, rest, rest.length);
+    return gStringBundle.formatStringFromName(name, rest);
   } catch (ex) {
     console.error(ex);
-    throw new Error("L10N error. '" + name + "' is missing from " +
-                    PROPERTIES_URL);
+    throw new Error(
+      "L10N error. '" + name + "' is missing from " + PROPERTIES_URL
+    );
   }
 }
 
@@ -147,7 +161,7 @@ function wire(root, selectorOrElement, descriptor) {
   }
 
   if (typeof descriptor == "function") {
-    descriptor = {events: {click: descriptor}};
+    descriptor = { events: { click: descriptor } };
   }
 
   for (let i = 0; i < matches.length; i++) {
@@ -175,8 +189,13 @@ function wire(root, selectorOrElement, descriptor) {
  * @param AString suggestedFilename
  *        The suggested filename when toSave is true.
  */
-function showFilePicker(path, toSave, parentWindow, callback,
-                        suggestedFilename) {
+function showFilePicker(
+  path,
+  toSave,
+  parentWindow,
+  callback,
+  suggestedFilename
+) {
   if (typeof path == "string") {
     try {
       if (Services.io.extractScheme(path) == "file") {
@@ -190,8 +209,7 @@ function showFilePicker(path, toSave, parentWindow, callback,
       return;
     }
     try {
-      const file =
-          Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+      const file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
       file.initWithPath(path);
       callback(file);
       return;
@@ -225,4 +243,39 @@ function showFilePicker(path, toSave, parentWindow, callback,
   fp.appendFilter(getString(key + ".filter"), "*.css");
   fp.appendFilters(fp.filterAll);
   fp.open(fpCallback);
+}
+
+/**
+ * Returns a Popup Menu for the Options ("gear") Button
+ * @param {function} toggleOrigSources
+ *        To toggle the original source pref
+ * @param {function} toggleMediaSources
+ *        To toggle the pref to show @media side bar
+ * @return {object} popupMenu
+ *         A Menu object holding the MenuItems
+ */
+function optionsPopupMenu(toggleOrigSources, toggleMediaSidebar) {
+  const popupMenu = new Menu();
+  popupMenu.append(
+    new MenuItem({
+      id: "options-origsources",
+      label: getString("showOriginalSources.label"),
+      accesskey: getString("showOriginalSources.accesskey"),
+      type: "checkbox",
+      checked: Services.prefs.getBoolPref(PREF_ORIG_SOURCES),
+      click: () => toggleOrigSources(),
+    })
+  );
+  popupMenu.append(
+    new MenuItem({
+      id: "options-show-media",
+      label: getString("showMediaSidebar.label"),
+      accesskey: getString("showMediaSidebar.accesskey"),
+      type: "checkbox",
+      checked: Services.prefs.getBoolPref(PREF_MEDIA_SIDEBAR),
+      click: () => toggleMediaSidebar(),
+    })
+  );
+
+  return popupMenu;
 }

@@ -14,15 +14,16 @@ const actionTypes = {
   AUTOCOMPLETE_RETRIEVE_FROM_CACHE: "AUTOCOMPLETE_RETRIEVE_FROM_CACHE",
   BATCH_ACTIONS: "BATCH_ACTIONS",
   CLEAR_HISTORY: "CLEAR_HISTORY",
-  DEFAULT_FILTERS_RESET: "DEFAULT_FILTERS_RESET",
+  EDITOR_TOGGLE: "EDITOR_TOGGLE",
   FILTER_TEXT_SET: "FILTER_TEXT_SET",
   FILTER_TOGGLE: "FILTER_TOGGLE",
   FILTERS_CLEAR: "FILTERS_CLEAR",
+  FILTERBAR_DISPLAY_MODE_SET: "FILTERBAR_DISPLAY_MODE_SET",
   HISTORY_LOADED: "HISTORY_LOADED",
   INITIALIZE: "INITIALIZE",
   MESSAGE_CLOSE: "MESSAGE_CLOSE",
   MESSAGE_OPEN: "MESSAGE_OPEN",
-  MESSAGE_TABLE_RECEIVE: "MESSAGE_TABLE_RECEIVE",
+  MESSAGE_UPDATE_PAYLOAD: "MESSAGE_UPDATE_PAYLOAD",
   MESSAGES_ADD: "MESSAGES_ADD",
   MESSAGES_CLEAR: "MESSAGES_CLEAR",
   MESSAGES_CLEAR_LOGPOINT: "MESSAGES_CLEAR_LOGPOINT",
@@ -35,6 +36,7 @@ const actionTypes = {
   REVERSE_SEARCH_INPUT_TOGGLE: "REVERSE_SEARCH_INPUT_TOGGLE",
   SELECT_NETWORK_MESSAGE_TAB: "SELECT_NETWORK_MESSAGE_TAB",
   SHOW_OBJECT_IN_SIDEBAR: "SHOW_OBJECT_IN_SIDEBAR",
+  SHOW_CONTENT_MESSAGES_TOGGLE: "SHOW_CONTENT_MESSAGES_TOGGLE",
   SIDEBAR_CLOSE: "SIDEBAR_CLOSE",
   SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE: "SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE",
   TIMESTAMPS_TOGGLE: "TIMESTAMPS_TOGGLE",
@@ -43,6 +45,7 @@ const actionTypes = {
   REVERSE_SEARCH_NEXT: "REVERSE_SEARCH_NEXT",
   REVERSE_SEARCH_BACK: "REVERSE_SEARCH_BACK",
   PAUSED_EXCECUTION_POINT: "PAUSED_EXCECUTION_POINT",
+  WARNING_GROUPS_TOGGLE: "WARNING_GROUPS_TOGGLE",
   WILL_NAVIGATE: "WILL_NAVIGATE",
 };
 
@@ -67,11 +70,18 @@ const prefs = {
       INPUT_HISTORY_COUNT: "devtools.webconsole.inputHistoryCount",
       // Is editor mode enabled.
       EDITOR: "devtools.webconsole.input.editor",
+      // Display content messages in the browser console.
+      CONTENT_MESSAGES: "devtools.browserconsole.contentMessages",
+      // Display timestamp in messages.
+      MESSAGE_TIMESTAMP: "devtools.webconsole.timestampMessages",
     },
     FEATURES: {
       // We use the same pref to enable the sidebar on webconsole and browser console.
       SIDEBAR_TOGGLE: "devtools.webconsole.sidebarToggle",
       JSTERM_CODE_MIRROR: "devtools.webconsole.jsterm.codeMirror",
+      AUTOCOMPLETE: "devtools.webconsole.input.autocomplete",
+      GROUP_WARNINGS: "devtools.webconsole.groupWarningMessages",
+      EDITOR: "devtools.webconsole.features.editor",
     },
   },
 };
@@ -100,8 +110,9 @@ const DEFAULT_FILTERS_VALUES = {
   [FILTERS.NETXHR]: false,
 };
 
-const DEFAULT_FILTERS = Object.keys(DEFAULT_FILTERS_VALUES)
-  .filter(filter => DEFAULT_FILTERS_VALUES[filter] !== false);
+const DEFAULT_FILTERS = Object.keys(DEFAULT_FILTERS_VALUES).filter(
+  filter => DEFAULT_FILTERS_VALUES[filter] !== false
+);
 
 const chromeRDPEnums = {
   MESSAGE_SOURCE: {
@@ -110,6 +121,9 @@ const chromeRDPEnums = {
     JAVASCRIPT: "javascript",
     NETWORK: "network",
     CONSOLE_API: "console-api",
+    // Messages emitted by the console frontend itself (i.e. similar messages grouping
+    // header).
+    CONSOLE_FRONTEND: "console-frontend",
     STORAGE: "storage",
     APPCACHE: "appcache",
     RENDERING: "rendering",
@@ -126,6 +140,10 @@ const chromeRDPEnums = {
     START_GROUP: "startGroup",
     START_GROUP_COLLAPSED: "startGroupCollapsed",
     END_GROUP: "endGroup",
+    CONTENT_BLOCKING_GROUP: "contentBlockingWarningGroup",
+    TRACKING_PROTECTION_GROUP: "trackingProtectionWarningGroup",
+    CORS_GROUP: "CORSWarningGroup",
+    CSP_GROUP: "CSPWarningGroup",
     ASSERT: "assert",
     DEBUG: "debug",
     PROFILE: "profile",
@@ -161,14 +179,19 @@ const historyCommands = {
 };
 
 // Combine into a single constants object
-module.exports = Object.assign({
-  FILTERS,
-  DEFAULT_FILTERS,
-  DEFAULT_FILTERS_VALUES,
-},
+module.exports = Object.assign(
+  {
+    FILTERS,
+    DEFAULT_FILTERS,
+    DEFAULT_FILTERS_VALUES,
+    FILTERBAR_DISPLAY_MODES: {
+      NARROW: "narrow",
+      WIDE: "wide",
+    },
+  },
   actionTypes,
   chromeRDPEnums,
   jstermCommands,
   prefs,
-  historyCommands,
+  historyCommands
 );

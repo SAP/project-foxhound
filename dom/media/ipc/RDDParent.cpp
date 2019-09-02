@@ -18,6 +18,7 @@
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
+#include "mozilla/gfx/gfxVars.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Sandbox.h"
@@ -31,6 +32,7 @@
 #  include "mozilla/Sandbox.h"
 #  include "nsMacUtilsImpl.h"
 #  include <Carbon/Carbon.h>  // for CGSSetDenyWindowServerConnections
+#  include "RDDProcessHost.h"
 #endif
 
 #include "nsDebugImpl.h"
@@ -40,6 +42,7 @@
 namespace mozilla {
 
 using namespace ipc;
+using namespace gfx;
 
 static RDDParent* sRDDParent;
 
@@ -82,6 +85,8 @@ bool RDDParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
     return false;
   }
 
+  gfxVars::Initialize();
+
   mozilla::ipc::SetThisProcessName("RDD Process");
   return true;
 }
@@ -93,11 +98,6 @@ void CGSShutdownServerConnections();
 };
 
 static void StartRDDMacSandbox() {
-  // Close all current connections to the WindowServer. This ensures that the
-  // Activity Monitor will not label the content process as "Not responding"
-  // because it's not running a native event loop. See bug 1384336.
-  CGSShutdownServerConnections();
-
   // Actual security benefits are only acheived when we additionally deny
   // future connections.
   CGError result = CGSSetDenyWindowServerConnections(true);
@@ -106,19 +106,9 @@ static void StartRDDMacSandbox() {
   Unused << result;
 #  endif
 
-  nsAutoCString appPath;
-  nsMacUtilsImpl::GetAppPath(appPath);
-
   MacSandboxInfo info;
-  info.type = MacSandboxType_Plugin;
-  info.shouldLog = Preferences::GetBool("security.sandbox.logging.enabled") ||
-                   PR_GetEnv("MOZ_SANDBOX_LOGGING");
-  info.appPath.assign(appPath.get());
-  // Per Haik, set appBinaryPath and pluginBinaryPath to '/dev/null' to
-  // make sure OSX sandbox policy isn't confused by empty strings for
-  // the paths.
-  info.appBinaryPath.assign("/dev/null");
-  info.pluginInfo.pluginBinaryPath.assign("/dev/null");
+  RDDProcessHost::StaticFillMacSandboxInfo(info);
+
   std::string err;
   bool rv = mozilla::StartMacSandbox(info, err);
   if (!rv) {
@@ -129,11 +119,28 @@ static void StartRDDMacSandbox() {
 #endif
 
 mozilla::ipc::IPCResult RDDParent::RecvInit(
-    const Maybe<FileDescriptor>& aBrokerFd) {
+    nsTArray<GfxVarUpdate>&& vars, const Maybe<FileDescriptor>& aBrokerFd,
+    bool aStartMacSandbox) {
   Unused << SendInitComplete();
+
+  for (const auto& var : vars) {
+    gfxVars::ApplyUpdate(var);
+  }
+
 #if defined(MOZ_SANDBOX)
 #  if defined(XP_MACOSX)
-  StartRDDMacSandbox();
+  // Close all current connections to the WindowServer. This ensures that the
+  // Activity Monitor will not label the content process as "Not responding"
+  // because it's not running a native event loop. See bug 1384336.
+  CGSShutdownServerConnections();
+
+  if (aStartMacSandbox) {
+    StartRDDMacSandbox();
+  } else {
+#    ifdef DEBUG
+    AssertMacSandboxEnabled();
+#    endif
+  }
 #  elif defined(XP_LINUX)
   int fd = -1;
   if (aBrokerFd.isSome()) {
@@ -143,6 +150,11 @@ mozilla::ipc::IPCResult RDDParent::RecvInit(
 #  endif  // XP_MACOSX/XP_LINUX
 #endif    // MOZ_SANDBOX
 
+  return IPC_OK();
+}
+
+IPCResult RDDParent::RecvUpdateVar(const GfxVarUpdate& aUpdate) {
+  gfxVars::ApplyUpdate(aUpdate);
   return IPC_OK();
 }
 
@@ -162,6 +174,15 @@ mozilla::ipc::IPCResult RDDParent::RecvNewContentRemoteDecoderManager(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult RDDParent::RecvCreateVideoBridgeToParentProcess(
+    Endpoint<PVideoBridgeChild>&& aEndpoint) {
+  if (!RemoteDecoderManagerParent::CreateVideoBridgeToParentProcess(
+          std::move(aEndpoint))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult RDDParent::RecvRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
     const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile) {
@@ -175,6 +196,11 @@ mozilla::ipc::IPCResult RDDParent::RecvRequestMemoryReport(
       [&](const uint32_t& aGeneration) {
         return GetSingleton()->SendFinishMemoryReport(aGeneration);
       });
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult RDDParent::RecvPreferenceUpdate(const Pref& aPref) {
+  Preferences::SetPreference(aPref);
   return IPC_OK();
 }
 
@@ -197,6 +223,9 @@ void RDDParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
 #endif
 
+  RemoteDecoderManagerParent::ShutdownVideoBridge();
+
+  gfxVars::Shutdown();
   CrashReporterClient::DestroySingleton();
   XRE_ShutdownChildProcess();
 }

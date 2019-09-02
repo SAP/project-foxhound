@@ -369,6 +369,8 @@ bool SpinEventLoopUntil(Pred&& aPredicate, nsIThread* aThread = nullptr) {
  */
 extern bool NS_IsInCompositorThread();
 
+extern bool NS_IsInCanvasThread();
+
 extern bool NS_IsInVRThread();
 
 //-----------------------------------------------------------------------------
@@ -1168,17 +1170,6 @@ class RunnableMethodImpl final
   }
 
   NS_IMETHOD Run() {
-#if defined(XP_WIN)
-    // Defeat ICF by giving every instance of Run something unique to the
-    // instance.  Stop the compiler from complaining about unused variables.
-    static bool defeat_icf MOZ_MAYBE_UNUSED = [this]() {
-      if (this == (decltype(this))0x100) {
-        __debugbreak();
-      }
-      return false;
-    }();
-#endif
-
     CancelTimer();
 
     if (MOZ_LIKELY(mReceiver.Get())) {

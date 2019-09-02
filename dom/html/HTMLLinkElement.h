@@ -39,7 +39,8 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
 
   // EventTarget
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  MOZ_CAN_RUN_SCRIPT
+  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
   // nsINode
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -47,10 +48,8 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
                              JS::Handle<JSObject*> aGivenProto) override;
 
   // nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;
@@ -77,8 +76,8 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   virtual bool HasDeferredDNSPrefetchRequest() override;
 
   // WebIDL
-  bool Disabled();
-  void SetDisabled(bool aDisabled);
+  bool Disabled() const;
+  void SetDisabled(bool aDisabled, ErrorResult& aRv);
 
   void GetHref(nsAString& aValue) {
     GetURIAttr(nsGkAtoms::href, nullptr, aValue);
@@ -169,8 +168,14 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   // nsStyleLinkElement
   Maybe<SheetInfo> GetStyleSheetInfo() final;
 
- protected:
   RefPtr<nsDOMTokenList> mRelList;
+
+  // The "explicitly enabled" flag. This flag is set whenever the `disabled`
+  // attribute is explicitly unset, and makes alternate stylesheets not be
+  // disabled by default anymore.
+  //
+  // See https://github.com/whatwg/html/issues/3840#issuecomment-481034206.
+  bool mExplicitlyEnabled = false;
 };
 
 }  // namespace dom

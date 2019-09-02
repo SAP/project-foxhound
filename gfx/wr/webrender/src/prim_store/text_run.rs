@@ -2,24 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, GlyphInstance, LayoutPrimitiveInfo, RasterSpace, Shadow};
+use api::{ColorF, GlyphInstance, RasterSpace, Shadow};
 use api::units::{DevicePixelScale, LayoutToWorldTransform, LayoutVector2D};
-use display_list_flattener::{CreateShadow, IsVisible};
-use frame_builder::{FrameBuildingState, PictureContext};
-use glyph_rasterizer::{FontInstance, FontTransform, GlyphKey, FONT_SIZE_LIMIT};
-use gpu_cache::GpuCache;
-use intern;
-use prim_store::{PrimitiveOpacity, PrimitiveSceneData,  PrimitiveScratchBuffer};
-use prim_store::{PrimitiveStore, PrimKeyCommonData, PrimTemplateCommonData};
-use render_task::{RenderTaskTree};
-use renderer::{MAX_VERTEX_TEXTURE_WIDTH};
-use resource_cache::{ResourceCache};
-use util::{MatrixHelpers};
-use prim_store::{InternablePrimitive, PrimitiveInstanceKind};
+use crate::display_list_flattener::{CreateShadow, IsVisible};
+use crate::frame_builder::FrameBuildingState;
+use crate::glyph_rasterizer::{FontInstance, FontTransform, GlyphKey, FONT_SIZE_LIMIT};
+use crate::gpu_cache::GpuCache;
+use crate::intern;
+use crate::internal_types::LayoutPrimitiveInfo;
+use crate::picture::{SubpixelMode, SurfaceInfo};
+use crate::prim_store::{PrimitiveOpacity, PrimitiveSceneData,  PrimitiveScratchBuffer};
+use crate::prim_store::{PrimitiveStore, PrimKeyCommonData, PrimTemplateCommonData};
+use crate::render_task::{RenderTaskGraph};
+use crate::renderer::{MAX_VERTEX_TEXTURE_WIDTH};
+use crate::resource_cache::{ResourceCache};
+use crate::util::{MatrixHelpers};
+use crate::prim_store::{InternablePrimitive, PrimitiveInstanceKind};
 use std::ops;
 use std::sync::Arc;
-use storage;
-use util::PrimaryArc;
+use crate::storage;
+use crate::util::PrimaryArc;
 
 /// A run of glyphs, with associated font information.
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -101,6 +103,7 @@ impl TextRunTemplate {
         &mut self,
         frame_state: &mut FrameBuildingState,
     ) {
+        // corresponds to `fetch_glyph` in the shaders
         if let Some(mut request) = frame_state.gpu_cache.request(&mut self.common.gpu_cache_handle) {
             request.push(ColorF::from(self.font.color).premultiplied());
             // this is the only case where we need to provide plain color to GPU
@@ -192,7 +195,7 @@ impl CreateShadow for TextRun {
         TextRun {
             font,
             glyphs: self.glyphs.clone(),
-            shadow: true
+            shadow: true,
         }
     }
 }
@@ -219,7 +222,7 @@ impl TextRunPrimitive {
         specified_font: &FontInstance,
         device_pixel_scale: DevicePixelScale,
         transform: &LayoutToWorldTransform,
-        allow_subpixel_aa: bool,
+        subpixel_mode: SubpixelMode,
         raster_space: RasterSpace,
     ) -> bool {
         // If local raster space is specified, include that in the scale
@@ -235,16 +238,13 @@ impl TextRunPrimitive {
 
         // Determine if rasterizing glyphs in local or screen space.
         // Only support transforms that can be coerced to simple 2D transforms.
-        let transform_glyphs = if transform.has_perspective_component() ||
-           !transform.has_2d_inverse() ||
-           // Font sizes larger than the limit need to be scaled, thus can't use subpixels.
-           transform.exceeds_2d_scale(FONT_SIZE_LIMIT / device_font_size.to_f64_px()) ||
-           // Otherwise, ensure the font is rasterized in screen-space.
-           raster_space != RasterSpace::Screen {
-            false
-        } else {
-            true
-        };
+        let transform_glyphs =
+            !transform.has_perspective_component() &&
+            transform.has_2d_inverse() &&
+            // Font sizes larger than the limit need to be scaled, thus can't use subpixels.
+            !transform.exceeds_2d_scale(FONT_SIZE_LIMIT / device_font_size.to_f64_px()) &&
+            // Otherwise, ensure the font is rasterized in screen-space.
+            raster_space == RasterSpace::Screen;
 
         // Get the font transform matrix (skew / scale) from the complete transform.
         let font_transform = if transform_glyphs {
@@ -272,34 +272,38 @@ impl TextRunPrimitive {
         // If subpixel AA is disabled due to the backing surface the glyphs
         // are being drawn onto, disable it (unless we are using the
         // specifial subpixel mode that estimates background color).
-        if (!allow_subpixel_aa && self.used_font.bg_color.a == 0) ||
+        if (subpixel_mode == SubpixelMode::Deny && self.used_font.bg_color.a == 0) ||
             // If using local space glyphs, we don't want subpixel AA.
-            !transform_glyphs {
+            !transform_glyphs
+        {
             self.used_font.disable_subpixel_aa();
         }
 
         cache_dirty
     }
 
-    pub fn prepare_for_render(
+    pub fn request_resources(
         &mut self,
         prim_offset: LayoutVector2D,
         specified_font: &FontInstance,
         glyphs: &[GlyphInstance],
-        device_pixel_scale: DevicePixelScale,
         transform: &LayoutToWorldTransform,
-        pic_context: &PictureContext,
+        surface: &SurfaceInfo,
+        raster_space: RasterSpace,
+        subpixel_mode: SubpixelMode,
         resource_cache: &mut ResourceCache,
         gpu_cache: &mut GpuCache,
-        render_tasks: &mut RenderTaskTree,
+        render_tasks: &mut RenderTaskGraph,
         scratch: &mut PrimitiveScratchBuffer,
     ) {
+        let device_pixel_scale = surface.device_pixel_scale;
+
         let cache_dirty = self.update_font_instance(
             specified_font,
             device_pixel_scale,
             transform,
-            pic_context.allow_subpixel_aa,
-            pic_context.raster_space,
+            subpixel_mode,
+            raster_space,
         );
 
         if self.glyph_keys_range.is_empty() || cache_dirty {

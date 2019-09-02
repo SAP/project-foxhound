@@ -18,6 +18,7 @@ class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
   constructor(client) {
     super(client);
 
+    this.before("audited", this.audited.bind(this));
     this.before("name-change", this.nameChange.bind(this));
     this.before("value-change", this.valueChange.bind(this));
     this.before("description-change", this.descriptionChange.bind(this));
@@ -78,9 +79,14 @@ class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
     return this._form.attributes;
   }
 
+  get checks() {
+    return this._form.checks;
+  }
+
   form(form) {
     this.actorID = form.actor;
-    this._form = form;
+    this._form = this._form || {};
+    Object.assign(this._form, form);
   }
 
   nameChange(name, parent, walker) {
@@ -135,6 +141,17 @@ class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
 
   attributesChange(attributes) {
     this._form.attributes = attributes;
+  }
+
+  audited(checks) {
+    this._form.checks = this._form.checks || {};
+    Object.assign(this._form.checks, checks);
+  }
+
+  hydrate() {
+    return super.hydrate().then(properties => {
+      Object.assign(this._form, properties);
+    });
   }
 }
 

@@ -9,6 +9,7 @@
   height: 100%;
   position: fixed;
   top: 0;
+  left: 0;
   width: 100%;
   display: none;
   z-index: 1100;
@@ -20,9 +21,8 @@
 
 .modalOverlayInner {
   width: 960px;
-  height: 570px;
   position: fixed;
-  top: calc(50% - 285px); // halfway down minus half the height of the modal
+  top: 15%;
   left: calc(50% - 480px); // halfway across minus half the width of the modal
   background: $white;
   box-shadow: 0 1px 15px 0 $black-30;
@@ -41,14 +41,9 @@
     border-radius: 0;
   }
 
-  // if modal is short enough, add a vertical scroll bar
-  @media(max-width: 850px) and (max-height: 730px) {
-    overflow-y: scroll;
-  }
-
-  // if modal is narrow enough, add a vertical scroll bar
-  @media(max-width: 650px) and (max-height: 600px) {
-    overflow-y: scroll;
+  // if modal is short enough, reduce the top margin
+  @media(max-height: 730px) {
+    top: 5%;
   }
 
   &.active {
@@ -75,6 +70,7 @@
 
   .footer {
     border-top: 1px solid $grey-30;
+    border-radius: 4px;
     height: 70px;
     width: 100%;
     position: absolute;

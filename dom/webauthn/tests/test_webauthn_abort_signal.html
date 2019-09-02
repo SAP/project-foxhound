@@ -2,8 +2,7 @@
 <meta charset=utf-8>
 <head>
   <title>Test for aborting W3C Web Authentication request</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/AddTask.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="u2futil.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -29,6 +28,7 @@
         ["security.webauth.webauthn", true],
         ["security.webauth.webauthn_enable_softtoken", false],
         ["security.webauth.webauthn_enable_usbtoken", true],
+        ["security.webauth.webauthn_enable_android_fido2", false],
       ]});
     });
 

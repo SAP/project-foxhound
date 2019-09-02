@@ -1,7 +1,5 @@
 .SnippetBaseContainer {
   position: fixed;
-  // Make sure ASR snippets show on top of legacy snippets
-  // This can happen when ASR preview is used with legacy snippets
   z-index: 2;
   bottom: 0;
   left: 0;
@@ -23,7 +21,7 @@
       text-decoration: underline;
     }
 
-    [lwt-newtab-brighttext]:not(.force-light-theme) & {
+    [lwt-newtab-brighttext] & {
       font-weight: bold;
     }
   }
@@ -98,5 +96,25 @@
 
   span {
     vertical-align: middle;
+  }
+}
+
+// We show snippet icons for both themes and conditionally hide
+// based on which theme is currently active
+body {
+  &:not([lwt-newtab-brighttext]) {
+    .icon-dark-theme,
+    .icon.icon-dark-theme,
+    .scene2Icon .icon-dark-theme {
+      display: none;
+    }
+  }
+
+  &[lwt-newtab-brighttext] {
+    .icon-light-theme,
+    .icon.icon-light-theme,
+    .scene2Icon .icon-light-theme {
+      display: none;
+    }
   }
 }

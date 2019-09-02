@@ -37,9 +37,9 @@ use crate::error::StoreError;
 
 use crate::Rkv;
 
-/// A process is only permitted to have one open handle to each Rkv environment.
-/// This manager exists to enforce that constraint: don't open environments directly.
 lazy_static! {
+    /// A process is only permitted to have one open handle to each Rkv environment.
+    /// This manager exists to enforce that constraint: don't open environments directly.
     static ref MANAGER: RwLock<Manager> = RwLock::new(Manager::new());
 }
 
@@ -57,6 +57,8 @@ where
     Ok(canonical)
 }
 
+/// A process is only permitted to have one open handle to each Rkv environment.
+/// This manager exists to enforce that constraint: don't open environments directly.
 pub struct Manager {
     environments: BTreeMap<PathBuf, Arc<RwLock<Rkv>>>,
 }

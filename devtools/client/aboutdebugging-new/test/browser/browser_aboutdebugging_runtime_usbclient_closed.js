@@ -29,12 +29,13 @@ add_task(async function testUsbDeviceUnplugged() {
   info("Simulate a device unplugged");
   mocks.removeUSBRuntime(USB_RUNTIME_ID);
   mocks.emitUSBUpdate();
+  await waitUntilUsbDeviceIsUnplugged(USB_DEVICE_NAME, document);
 
-  info("Wait until the sidebar item for this runtime disappears");
-  await waitUntil(() => !findSidebarItemByText(USB_DEVICE_NAME, document));
-
-  is(document.location.hash, `#/runtime/this-firefox`,
-    "Redirection to the default page (this-firefox)");
+  is(
+    document.location.hash,
+    `#/runtime/this-firefox`,
+    "Redirection to the default page (this-firefox)"
+  );
 
   await removeTab(tab);
 });
@@ -63,11 +64,14 @@ add_task(async function testUsbClientDisconnected() {
   info("Wait until the connect button for this runtime appears");
   await waitUntil(() => {
     const item = findSidebarItemByText(USB_DEVICE_NAME, document);
-    return item && item.querySelector(".js-connect-button");
+    return item && item.querySelector(".qa-connect-button");
   });
 
-  is(document.location.hash, `#/runtime/this-firefox`,
-    "Redirection to the default page (this-firefox)");
+  is(
+    document.location.hash,
+    `#/runtime/this-firefox`,
+    "Redirection to the default page (this-firefox)"
+  );
   await removeTab(tab);
 });
 
@@ -93,10 +97,13 @@ add_task(async function testNetworkClientDisconnected() {
   info("Wait until the connect button for this runtime appears");
   await waitUntil(() => {
     const item = findSidebarItemByText(NETWORK_RUNTIME_HOST, document);
-    return item && item.querySelector(".js-connect-button");
+    return item && item.querySelector(".qa-connect-button");
   });
 
-  is(document.location.hash, `#/runtime/this-firefox`,
-    "Redirection to the default page (this-firefox)");
+  is(
+    document.location.hash,
+    `#/runtime/this-firefox`,
+    "Redirection to the default page (this-firefox)"
+  );
   await removeTab(tab);
 });

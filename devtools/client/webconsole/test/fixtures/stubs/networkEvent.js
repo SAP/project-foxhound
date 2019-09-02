@@ -37,7 +37,8 @@ stubPreparedMessages.set("GET request", new NetworkEventMessage({
     "host": "example.com",
     "scheme": "http",
     "unicodeUrl": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html",
-    "isLocal": null
+    "isLocal": null,
+    "url": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html"
   },
   "method": "GET",
   "cause": {
@@ -83,7 +84,8 @@ stubPreparedMessages.set("GET request update", new NetworkEventMessage({
     "host": "example.com",
     "scheme": "http",
     "unicodeUrl": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html",
-    "isLocal": null
+    "isLocal": null,
+    "url": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html"
   },
   "method": "GET"
 }));
@@ -112,7 +114,8 @@ stubPreparedMessages.set("XHR GET request", new NetworkEventMessage({
     "host": "example.com",
     "scheme": "http",
     "unicodeUrl": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html",
-    "isLocal": null
+    "isLocal": null,
+    "url": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html"
   },
   "method": "GET",
   "cause": {
@@ -158,7 +161,8 @@ stubPreparedMessages.set("XHR GET request update", new NetworkEventMessage({
     "host": "example.com",
     "scheme": "http",
     "unicodeUrl": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html",
-    "isLocal": null
+    "isLocal": null,
+    "url": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html"
   },
   "method": "GET"
 }));
@@ -187,7 +191,8 @@ stubPreparedMessages.set("XHR POST request", new NetworkEventMessage({
     "host": "example.com",
     "scheme": "http",
     "unicodeUrl": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html",
-    "isLocal": null
+    "isLocal": null,
+    "url": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html"
   },
   "method": "POST",
   "cause": {
@@ -233,7 +238,8 @@ stubPreparedMessages.set("XHR POST request update", new NetworkEventMessage({
     "host": "example.com",
     "scheme": "http",
     "unicodeUrl": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html",
-    "isLocal": null
+    "isLocal": null,
+    "url": "http://example.com/browser/devtools/client/webconsole/test/fixtures/stub-generators/inexistent.html"
   },
   "method": "POST"
 }));
@@ -259,6 +265,7 @@ stubPackets.set(`GET request`, {
   "private": false,
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "no-referrer-when-downgrade",
+  "channelId": 22673132355586,
   "from": "server1.conn0.child1/consoleActor2"
 });
 
@@ -309,6 +316,7 @@ stubPackets.set(`XHR GET request`, {
   "private": false,
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "no-referrer-when-downgrade",
+  "channelId": 22673132355587,
   "from": "server1.conn1.child1/consoleActor2"
 });
 
@@ -359,6 +367,7 @@ stubPackets.set(`XHR POST request`, {
   "private": false,
   "isThirdPartyTrackingResource": false,
   "referrerPolicy": "no-referrer-when-downgrade",
+  "channelId": 22673132355588,
   "from": "server1.conn2.child1/consoleActor2"
 });
 

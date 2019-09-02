@@ -19,7 +19,7 @@
 #include "mozilla/dom/HTMLTextAreaElement.h"
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/ProcessingInstruction.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/TreeWalker.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
@@ -39,7 +39,7 @@
 #include "nsIProtocolHandler.h"
 #include "nsISHEntry.h"
 #include "nsISupportsPrimitives.h"
-#include "nsITabParent.h"
+#include "nsIRemoteTab.h"
 #include "nsIURIMutator.h"
 #include "nsIWebBrowserPersist.h"
 #include "nsIWebNavigation.h"
@@ -345,7 +345,10 @@ nsresult ResourceReader::OnWalkURI(const nsACString& aURISpec,
 
   rv = NS_NewURI(getter_AddRefs(uri), aURISpec, mParent->GetCharacterSet(),
                  mCurrentBaseURI);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    // We don't want to break saving a page in case of a malformed URI.
+    return NS_OK;
+  }
   return OnWalkURI(uri, aContentPolicyType);
 }
 

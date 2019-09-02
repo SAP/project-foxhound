@@ -68,13 +68,16 @@ xul|radio[focused="true"] > .radio-check {
   -moz-outline-radius: 100%;
 }
 
-textbox[type="search"] {
+textbox[is="search-textbox"] {
   -moz-appearance: none;
   padding-inline-start: 8px;
   padding-inline-end: 8px;
 }
 
-xul|textbox[type="search"] > moz-input-box > .textbox-search-sign {
+xul|textbox[is="search-textbox"] > .textbox-search-sign {
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.8;
   list-style-image: url(chrome://global/skin/icons/search-textbox.svg);
   margin-inline-end: 5px;
 }
@@ -82,4 +85,13 @@ xul|textbox[type="search"] > moz-input-box > .textbox-search-sign {
 html|button {
   /* XUL button min-width */
   min-width: 79px;
+}
+
+html|input[type="email"],
+html|input[type="tel"],
+html|input[type="text"],
+html|input[type="password"],
+html|input[type="number"],
+html|textarea {
+  margin: 4px;
 }

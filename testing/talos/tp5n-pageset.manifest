@@ -1,9 +1,10 @@
 [
     {
-        "filename": "tp5n.zip",
-        "size": 81753814,
-        "digest": "fa74bb06abc4c097ab2cd013f1a7b5f629cb4b2943244aa1547a2d37eb5e4622671174baa22cee194ab3550870aa5d9f1443e61506519c0875f9ee0a1ad0d737",
+        "size": 82197883,
+        "visibility": "public",
+        "digest": "f9f68948db06cfc1d427f14db8e60a0c9ab2f41386c92efa408477ea656e76c73b1dd1e7dc558b08e5067f1a2d90efe6f2852518c690384d99fece0e353bf1cb",
         "algorithm": "sha512",
+        "filename": "tp5n.zip",
         "unpack": false
     }
 ]
