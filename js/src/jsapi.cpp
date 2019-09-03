@@ -4784,6 +4784,42 @@ JS_PUBLIC_API void JS_ReportErrorNumberUCArray(JSContext* cx,
                            errorNumber, args);
 }
 
+JS_PUBLIC_API bool JS_ReportWarningASCII(JSContext* cx, const char* format,
+                                         ...) {
+  va_list ap;
+  bool ok;
+
+  AssertHeapIsIdle();
+  va_start(ap, format);
+  ok = ReportErrorVA(cx, JSREPORT_WARNING, format, ArgumentsAreASCII, ap);
+  va_end(ap);
+  return ok;
+}
+
+JS_PUBLIC_API bool JS_ReportWarningLatin1(JSContext* cx, const char* format,
+                                          ...) {
+  va_list ap;
+  bool ok;
+
+  AssertHeapIsIdle();
+  va_start(ap, format);
+  ok = ReportErrorVA(cx, JSREPORT_WARNING, format, ArgumentsAreLatin1, ap);
+  va_end(ap);
+  return ok;
+}
+
+JS_PUBLIC_API bool JS_ReportWarningUTF8(JSContext* cx, const char* format,
+                                        ...) {
+  va_list ap;
+  bool ok;
+
+  AssertHeapIsIdle();
+  va_start(ap, format);
+  ok = ReportErrorVA(cx, JSREPORT_WARNING, format, ArgumentsAreUTF8, ap);
+  va_end(ap);
+  return ok;
+}
+
 JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberASCII(
     JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
     const unsigned errorNumber, ...) {
@@ -5856,7 +5892,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
     // DumpBacktrace(cx);
 
     // Report a warning to show up on the web console
-    JS_ReportErrorUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
+    JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
 
     // Trigger a custom event that can be caught by an extension.
     // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile
@@ -5910,8 +5946,12 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
     }
 
     RootedObject stack(cx);
-    CaptureCurrentStack(cx, &stack);
-    
+    if (!JS::CaptureCurrentStack(cx, &stack,
+                                 JS::StackCapture(JS::AllFrames()))) {
+      JS_ReportErrorUTF8(cx, "Invalid stack object in CaptureCurrentStack!");
+      return;
+    }
+
     JS::AutoValueArray<3> arguments(cx);
     arguments[0].setString(str);
     arguments[1].setString(NewStringCopyZ<CanGC>(cx, sink));

@@ -280,7 +280,7 @@ nsresult CharacterData::SetTextInternal(
     bool bidi = mText.IsBidi();
 
     StringTaint newTaint = mText.Taint();
-    newTaint.replace(aOffset, aOffset + aCount, aLength, aTaint);
+    newTaint.replace(aOffset, endOffset, aLength, aTaint);
 
     // Allocate new buffer
     int32_t newLength = textLength - aCount + aLength;

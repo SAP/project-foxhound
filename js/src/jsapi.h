@@ -2553,6 +2553,24 @@ extern JS_PUBLIC_API void JS_ReportErrorNumberUCArray(
     JSContext* cx, JSErrorCallback errorCallback, void* userRef,
     const unsigned errorNumber, const char16_t** args);
 
+/**
+ * As above, but report a warning instead (JSREPORT_IS_WARNING(report.flags)).
+ * Return true if there was no error trying to issue the warning, and if the
+ * warning was not converted into an error due to the JSOPTION_WERROR option
+ * being set, false otherwise.
+ */
+extern JS_PUBLIC_API bool JS_ReportWarningASCII(JSContext* cx,
+                                                const char* format, ...)
+    MOZ_FORMAT_PRINTF(2, 3);
+
+extern JS_PUBLIC_API bool JS_ReportWarningLatin1(JSContext* cx,
+                                                 const char* format, ...)
+    MOZ_FORMAT_PRINTF(2, 3);
+
+extern JS_PUBLIC_API bool JS_ReportWarningUTF8(JSContext* cx,
+                                               const char* format, ...)
+    MOZ_FORMAT_PRINTF(2, 3);
+
 extern JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberASCII(
     JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
     const unsigned errorNumber, ...);
