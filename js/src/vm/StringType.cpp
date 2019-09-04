@@ -806,13 +806,17 @@ JSString* js::ConcatStrings(
     if (str->length() > 0) {
         StringTaint newTaint = left->taint();
         newTaint.concat(right->taint(), left->length());
-        str->setTaint(newTaint);
+        str->setTaint(StringTaint::extend(newTaint, TaintOperation("concat")));
     }
     return str;
   }
 
   // TaintFox: JSRope handles taint propagation itself.
-  return JSRope::new_<allowGC>(cx, left, right, wholeLength);
+  JSString* rope = JSRope::new_<allowGC>(cx, left, right, wholeLength);
+  // TaintFox: add concat operation to taint flow.
+  rope->setTaint(StringTaint::extend(rope->taint(), TaintOperation("concat")));
+
+  return rope;
 }
 
 template JSString* js::ConcatStrings<CanGC>(JSContext* cx, HandleString left,

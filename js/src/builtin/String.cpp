@@ -3702,9 +3702,6 @@ bool js::str_concat(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  // TaintFox: add concat operation to taint flow.
-  str->setTaint(StringTaint::extend(str->taint(), TaintOperation("concat", arguments)));
-
   args.rval().setString(str);
   return true;
 }
