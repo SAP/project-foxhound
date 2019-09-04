@@ -551,7 +551,7 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
   }
 
   // Taintfox: XMLHttpRequest.response source
-  aResponseText.AssignTaint(StringTaint(0, aResponseText.Length(), TaintSource("XMLHttpRequest.reponse")));
+  aResponseText.AssignTaint(StringTaint(0, aResponseText.Length(), TaintSource("XMLHttpRequest.response")));
 }
 
 void XMLHttpRequestMainThread::GetResponseText(

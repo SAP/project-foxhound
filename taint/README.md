@@ -117,7 +117,7 @@ In dom/websocket/WebSocket.cpp
 * WebSocket.send (for a String payload)
 
 In dom/events/MessageEvent.cpp
-* window.messageEvent
+* window.MessageEvent
 
 #### Local Storage
 The window.localStorage.setItem is a potential sink. As with sources,
