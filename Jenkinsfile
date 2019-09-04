@@ -27,109 +27,61 @@ node ('master') {
     )
     {
         node (uniqueId) {
-
-            jdk = tool name: 'openjdk-12.0.1'
-            env.JAVA_HOME = "${jdk}"
             env.SHELL = "/bin/bash"
-
             echo "Execute container content in Kubernetes pod"        
-            container('container-exec'){
+            container('container-exec') {
               
                 stage('Slave Prepare') { 
                     // unstash content from Jenkins master workspace
-                    sh """
-		       apt-get update &&    \
-    		       apt-get install -y   \
-		       wget         \
-		       python       \
-	    	       clang        \
-	    	       llvm	 \
-	    	       rustc        \
-	    	       cargo        \
-	    	       autoconf2.13 \
-	    	       libgtk-3-dev \
-	    	       libgconf2-dev \
-	    	       libdbus-glib-1-dev \
-	    	       libpulse-dev \
-	    	       libnotify-bin \
-	    	       yasm \
-	    	       nasm \
-	    	       mercurial \
-	    	       ccache \
-	    	       libnspr4-dev \
-	    	       software-properties-common
-		       """
-		    sh """#!/bin/bash
-		          wget -q https://raw.githubusercontent.com/creationix/nvm/v0.33.11/install.sh -O /tmp/install.sh
-    		      bash /tmp/install.sh
-		          rm /tmp/install.sh
-		          [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
-		       """
-		    sh """
-		       cargo install cbindgen
-		       """
-		    sh """
-		       wget -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key && \
-    		       apt-key add /tmp/llvm-snapshot.gpg.key && \
-    		       apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main' && \
-    		       apt-get update && \
-    		       apt-get install -y clang-6.0 && \
-    		       apt-get remove -y clang && \
-    		       update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-6.0 1000 && \
-    		       update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 1000 && \
-    		       update-alternatives --config clang && \
-    		       update-alternatives --config clang++
-		       """
-		    sh """
-		       apt-get remove -y nasm && \
-    		       mkdir -p /tmp/nasm && \
-    		       cd /tmp/nasm && \
-    		       wget -O /tmp/nasm/nasm.tar.gz https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.gz && \
-    		       tar -xzvf /tmp/nasm/nasm.tar.gz && \
-    		       cd /tmp/nasm/nasm-2.14.02 && \
-    		       ./configure --prefix=/usr && \
-    		       make install && \
-    		       rm -rf /tmp/nasm
-		       """
-		    sh """
-		       wget -q https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O /tmp/bootstrap.py && \
-		       python /tmp/bootstrap.py --application-choice=browser --no-interactive || true && \
-    		       rm /tmp/bootstrap.py
-		       """
+                    sh  """
+                        apt-get update &&    \
+                        apt-get install -y   \
+                        wget         \
+                        python       \
+                        autoconf2.13 \
+                        mercurial \
+                        ccache \
+                        libnspr4-dev \
+                        software-properties-common \
+                        git
+                        """
                 }
 
-		stage('Checkout') {
-//		    git branch: 'master', depth: "1", url: 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git'
-            sh """
-                wget --no-check-certificate https://github.wdf.sap.corp/i505600/taintfox/archive/master.zip
-                unzip -q master.zip
-                rm master.zip
-            """
-		}
-                 
-                stage('Build') {
-                    dir ('taintfox-master') {
-		            sh "cp taintfox_mozconfig_ubuntu .mozconfig"
+                stage('Checkout') {
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: '*/master']],
+                        extensions: [[$class: 'CloneOption', timeout: 120]],
+                        gitTool: 'Default',
+                        depth: "1",
+                        userRemoteConfigs: [[url: 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git']]
+                    ])
+                }
+
+                stage('Bootstrap') {
                     sh """#!/bin/bash
                           [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
-                          ./mach build
+                          ./mach bootstrap --application-choice=browser --no-interactive 
                     """
-                    }
+                }
+                
+                stage('Build') {
+                    sh "cp taintfox_mozconfig_ubuntu .mozconfig"
+                    sh  """#!/bin/bash
+                          [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
+                          ./mach build
+                        """
                 }
                 
                 stage('Package') {
-                    dir ('taintfox-master') {
                     sh """#!/bin/bash
                           [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
                           ./mach package
                     """
-                    }
                 }
-        
             }
             
             stage('Slave Cleanup') {
-		        archiveArtifacts artifacts: 'taintfox-master/obj-tf-release/dist/taintfox-*.en-US.linux-x86_64.tar.bz2', fingerprint: true
+		        archiveArtifacts artifacts: 'obj-tf-release/dist/taintfox-*.en-US.linux-x86_64.tar.bz2', fingerprint: true
             }
         }
     }
