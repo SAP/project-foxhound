@@ -81,14 +81,14 @@ using JS::AutoStableStringChars;
 template <typename Handler>
 void ForEachElement(JSContext* cx, HandleObject obj, Handler handler)
 {
-    if (!obj->is<NativeObject>())
-        return;
+  if (!obj->is<NativeObject>())
+    return;
 
-    NativeObject& array = obj->as<NativeObject>();
-    for (uint32_t i = 0; i < array.getDenseInitializedLength(); i++) {
-        const Value& v = array.getDenseElement(i);
-        handler(i, v);
-    }
+  NativeObject& array = obj->as<NativeObject>();
+  for (uint32_t i = 0; i < array.getDenseInitializedLength(); i++) {
+    const Value& v = array.getDenseElement(i);
+    handler(i, v);
+  }
 }
 
 static JSLinearString* ArgToLinearString(JSContext* cx, const CallArgs& args,
@@ -127,25 +127,27 @@ static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp);
 bool
 js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
+  CallArgs args = CallArgsFromVp(argc, vp);
 
-    RootedString str(cx, ArgToLinearString(cx, args, 0));
-    if (!str || str->length() == 0)
-        return false;
+  RootedString str(cx, ArgToLinearString(cx, args, 0));
+  if (!str || str->length() == 0)
+    return false;
 
-    // We store the string as argument for a manual taint operation. This way it's easy to see what
-    // the original value of a manually tainted string was for debugging/testing.
-    StringTaint taint(0, str->length(), TaintSource("manual taint source", { taintarg(cx, str) }));
+  // We store the string as argument for a manual taint operation. This way it's easy to see what
+  // the original value of a manually tainted string was for debugging/testing.
+  StringTaint taint(0, str->length(), TaintSource("manual taint source",
+                                                  TaintLocationFromContext(cx),
+                                                  { taintarg(cx, str) }));
 
-    JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
-    if (!tainted_str)
-        return false;
-    tainted_str->setTaint(taint);
+  JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
+  if (!tainted_str)
+    return false;
+  tainted_str->setTaint(taint);
 
-    MOZ_ASSERT(tainted_str->isTainted());
+  MOZ_ASSERT(tainted_str->isTainted());
 
-    args.rval().setString(tainted_str);
-    return true;
+  args.rval().setString(tainted_str);
+  return true;
 }
 
 /*
@@ -156,183 +158,203 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
 static bool
 str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
+  CallArgs args = CallArgsFromVp(argc, vp);
 
-    RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
-    if (!str)
+  RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
+  if (!str)
+    return false;
+
+  // Wrap all taint ranges of the string.
+  RootedValueVector ranges(cx);
+  for (const TaintRange& taint_range : str->taint()) {
+    RootedObject range(cx, JS_NewObject(cx, nullptr));
+    if(!range)
+      return false;
+
+    if (!JS_DefineProperty(cx, range, "begin", taint_range.begin(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+        !JS_DefineProperty(cx, range, "end", taint_range.end(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+      return false;
+
+    // Wrap the taint flow for the current range.
+    RootedValueVector taint_flow(cx);
+    for (TaintNode& taint_node : taint_range.flow()) {
+      RootedObject node(cx, JS_NewObject(cx, nullptr));
+      if (!node)
         return false;
 
-    // Wrap all taint ranges of the string.
-    RootedValueVector ranges(cx);
-    for (const TaintRange& taint_range : str->taint()) {
-        RootedObject range(cx, JS_NewObject(cx, nullptr));
-        if(!range)
-            return false;
+      RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node.operation().name()));
+      if (!operation)
+        return false;
 
-        if (!JS_DefineProperty(cx, range, "begin", taint_range.begin(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
-           !JS_DefineProperty(cx, range, "end", taint_range.end(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-            return false;
+      if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+        return false;
 
-        // Wrap the taint flow for the current range.
-        RootedValueVector taint_flow(cx);
-        for (TaintNode& taint_node : taint_range.flow()) {
-            RootedObject node(cx, JS_NewObject(cx, nullptr));
-            if (!node)
-                return false;
+      // Wrap the location
+      RootedObject location(cx, JS_NewObject(cx, nullptr));
+      if (!location)
+        return false;
+      RootedString filename(cx, JS_NewUCStringCopyZ(cx, taint_node.operation().location().filename().c_str()));
+      if (!filename)
+        return false;
+      RootedString function(cx, JS_NewUCStringCopyZ(cx, taint_node.operation().location().function().c_str()));
+      if (!function)
+        return false;
 
-            RootedString operation(cx, JS_NewStringCopyZ(cx, taint_node.operation().name()));
-            if (!operation)
-                return false;
+      if (!JS_DefineProperty(cx, location, "filename", filename, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "function", function, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "line", taint_node.operation().location().line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "pos", taint_node.operation().location().pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+        return false;
 
-            if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-                return false;
+      if (!JS_DefineProperty(cx, node, "location", location, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+        return false;
 
-            // Wrap the arguments.
-            RootedValueVector taint_arguments(cx);
-            for (auto& taint_argument : taint_node.operation().arguments()) {
-                RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
-                if (!argument)
-                    return false;
+      // Wrap the arguments
+      RootedValueVector taint_arguments(cx);
+      for (auto& taint_argument : taint_node.operation().arguments()) {
+        RootedString argument(cx, JS_NewUCStringCopyZ(cx, taint_argument.c_str()));
+        if (!argument)
+          return false;
 
-                if (!taint_arguments.append(StringValue(argument)))
-                    return false;
-            }
+        if (!taint_arguments.append(StringValue(argument)))
+          return false;
+      }
 
-            RootedObject arguments(cx, NewDenseCopiedArray(cx, taint_arguments.length(), taint_arguments.begin()));
-            if (!JS_DefineProperty(cx, node, "arguments", arguments, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-                return false;
+      RootedObject arguments(cx, NewDenseCopiedArray(cx, taint_arguments.length(), taint_arguments.begin()));
+      if (!JS_DefineProperty(cx, node, "arguments", arguments, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+        return false;
 
-            if (!taint_flow.append(ObjectValue(*node)))
-              return false;
-        }
-
-        RootedObject flow(cx, NewDenseCopiedArray(cx, taint_flow.length(), taint_flow.begin()));
-        if (!flow)
-            return false;
-        if (!JS_DefineProperty(cx, range, "flow", flow, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
-                return false;
-
-        if (!ranges.append(ObjectValue(*range)))
-            return false;
+      if (!taint_flow.append(ObjectValue(*node)))
+        return false;
     }
 
-    JSObject* array = NewDenseCopiedArray(cx, ranges.length(), ranges.begin());
-    if (!array)
-        return false;
+    RootedObject flow(cx, NewDenseCopiedArray(cx, taint_flow.length(), taint_flow.begin()));
+    if (!flow)
+      return false;
+    if (!JS_DefineProperty(cx, range, "flow", flow, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+      return false;
 
-    args.rval().setObject(*array);
-    return true;
+    if (!ranges.append(ObjectValue(*range)))
+      return false;
+  }
+
+  JSObject* array = NewDenseCopiedArray(cx, ranges.length(), ranges.begin());
+  if (!array)
+    return false;
+
+  args.rval().setObject(*array);
+  return true;
 }
 
 static bool
 construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
 {
-    if (!flow)
-        return false;
+  if (!flow)
+    return false;
 
-    bool is_array;
-    if (!JS_IsArrayObject(cx, flow_object, &is_array) || !is_array)
-        return false;
+  bool is_array;
+  if (!JS_IsArrayObject(cx, flow_object, &is_array) || !is_array)
+    return false;
 
-    uint32_t length;
-    if (!JS_GetArrayLength(cx, flow_object, &length))
-        return false;
+  uint32_t length;
+  if (!JS_GetArrayLength(cx, flow_object, &length))
+    return false;
 
-    RootedValue v(cx);
-    *flow = nullptr;
+  RootedValue v(cx);
+  *flow = nullptr;
 
-    MOZ_ASSERT(length <= 0x7fffffff);
-    for (int32_t i = length - 1; i >= 0; --i) {
-        if (!JS_GetElement(cx, flow_object, i, &v) || !v.isObject())
-            return false;
-        RootedObject node(cx, &v.toObject());
+  MOZ_ASSERT(length <= 0x7fffffff);
+  for (int32_t i = length - 1; i >= 0; --i) {
+    if (!JS_GetElement(cx, flow_object, i, &v) || !v.isObject())
+      return false;
+    RootedObject node(cx, &v.toObject());
 
-        if (!JS_GetProperty(cx, node, "operation", &v) || !v.isString())
-            return false;
-        RootedString operation(cx, v.toString());
+    if (!JS_GetProperty(cx, node, "operation", &v) || !v.isString())
+      return false;
+    RootedString operation(cx, v.toString());
 
-        // TODO process arguments as well
-        UniqueChars op_str = JS_EncodeStringToUTF8(cx, operation);
+    // TODO process arguments as well
+    UniqueChars op_str = JS_EncodeStringToUTF8(cx, operation);
 
-        *flow = new TaintNode(*flow, TaintOperation(op_str.get()));
-        if ((*flow)->parent())
-            (*flow)->parent()->release();
-    }
+    *flow = new TaintNode(*flow, TaintOperation(op_str.get()));
+    if ((*flow)->parent())
+      (*flow)->parent()->release();
+  }
 
-    return true;
+  return true;
 }
 
 static bool
 str_taint_setter(JSContext* cx, unsigned argc, Value* vp)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
+  CallArgs args = CallArgsFromVp(argc, vp);
 
-    RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
-    if (!str)
-        return false;
+  RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
+  if (!str)
+    return false;
 
-    RootedObject array(cx, ToObject(cx, args.get(0)));
-    if (!array)
-        return false;
+  RootedObject array(cx, ToObject(cx, args.get(0)));
+  if (!array)
+    return false;
 
-    bool is_array;
-    if (!JS_IsArrayObject(cx, array, &is_array) || !is_array)
-        return false;
+  bool is_array;
+  if (!JS_IsArrayObject(cx, array, &is_array) || !is_array)
+    return false;
 
-    uint32_t length;
-    if (!JS_GetArrayLength(cx, array, &length))
-        return false;
+  uint32_t length;
+  if (!JS_GetArrayLength(cx, array, &length))
+    return false;
 
-    RootedValue v(cx);
-    StringTaint taint;
+  RootedValue v(cx);
+  StringTaint taint;
 
-    for (uint32_t i = 0; i < length; ++i) {
-        if (!JS_GetElement(cx, array, i, &v) || !v.isObject())
-            return false;
-        RootedObject range(cx, &v.toObject());
+  for (uint32_t i = 0; i < length; ++i) {
+    if (!JS_GetElement(cx, array, i, &v) || !v.isObject())
+      return false;
+    RootedObject range(cx, &v.toObject());
 
-        uint32_t begin, end;
+    uint32_t begin, end;
 
-        if (!JS_GetProperty(cx, range, "begin", &v))
-            return false;
-        if (!ToUint32(cx, v, &begin))
-            return false;
+    if (!JS_GetProperty(cx, range, "begin", &v))
+      return false;
+    if (!ToUint32(cx, v, &begin))
+      return false;
 
-        if (!JS_GetProperty(cx, range, "end", &v))
-            return false;
-        if (!ToUint32(cx, v, &end))
-            return false;
+    if (!JS_GetProperty(cx, range, "end", &v))
+      return false;
+    if (!ToUint32(cx, v, &end))
+      return false;
 
-        if (!JS_GetProperty(cx, range, "flow", &v) || !v.isObject())
-            return false;
-        RootedObject flow_object(cx, &v.toObject());
+    if (!JS_GetProperty(cx, range, "flow", &v) || !v.isObject())
+      return false;
+    RootedObject flow_object(cx, &v.toObject());
 
-        TaintNode* flow = nullptr;
-        if (!construct_taint_flow(cx, flow_object, &flow))
-            return false;
+    TaintNode* flow = nullptr;
+    if (!construct_taint_flow(cx, flow_object, &flow))
+      return false;
 
-        taint.append(TaintRange(begin, end, TaintFlow(flow)));
-    }
+    taint.append(TaintRange(begin, end, TaintFlow(flow)));
+  }
 
-    str->setTaint(taint);
+  str->setTaint(taint);
 
-    args.rval().setUndefined();
-    return true;
+  args.rval().setUndefined();
+  return true;
 }
 
 static bool
 str_untaint(JSContext* cx, unsigned argc, Value* vp)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
+  CallArgs args = CallArgsFromVp(argc, vp);
 
-    RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
-    if (!str)
-        return false;
+  RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
+  if (!str)
+    return false;
 
-    str->clearTaint();
+  str->clearTaint();
 
-    args.rval().setUndefined();
-    return true;
+  args.rval().setUndefined();
+  return true;
 }
 
 
@@ -394,7 +416,6 @@ static bool Escape(JSContext* cx, const CharT* chars, uint32_t length,
   // TaintFox: Make sure output taint is empty.
   outTaint->clear();
 
-  TaintOperation operation("escape");
   auto current = inTaint.begin();
 
   static const char digits[] = "0123456789ABCDEF";
@@ -423,7 +444,7 @@ static bool Escape(JSContext* cx, const CharT* chars, uint32_t length,
     // TaintFox: Build new taint ranges.
     if (current != inTaint.end()) {
         if (i == current->end()) {
-            outTaint->append(TaintRange(ti, ni, TaintFlow::extend(current->flow(), operation)));
+            outTaint->append(TaintRange(ti, ni, current->flow()));
             current++;
         }
         if (i == current->begin()) {
@@ -475,6 +496,8 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  // Taintfox: set new taint
+  newtaint.extend(TaintOperationFromContext(cx, "escape"));
   res->setTaint(newtaint);
 
   args.rval().setString(res);
@@ -540,7 +563,7 @@ static bool Unescape(StringBuffer& sb,
 
   // TaintFox: make sure output taint is empty.
   outTaint->clear();
-  TaintOperation operation("unescape");
+
   auto current = inTaint.begin();
 
   // Step 5.
@@ -582,7 +605,7 @@ static bool Unescape(StringBuffer& sb,
       // Note: if just the '%' of an escaped sequence is tainted, then this will still mark
       // the resulting character as tainted.
       if (k >= current->end()) {
-        outTaint->append(TaintRange(ti, ni, TaintFlow::extend(current->flow(), operation)));
+        outTaint->append(TaintRange(ti, ni, current->flow()));
         current++;
       }
       if (k <= current->begin()) {
@@ -638,6 +661,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: add taint operation.
+  newtaint.extend(TaintOperationFromContext(cx, "unescape"));
   result->setTaint(newtaint);
 
   args.rval().setString(result);
@@ -1121,7 +1145,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length) {
-      str->taint().extend(TaintOperation("toLowerCase"));
+      str->taint().extend(TaintOperationFromContext(cx, "toLowerCase"));
       return str;
     }
 
@@ -1154,7 +1178,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   if (!res)
     return nullptr;
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLowerCase")));
+  res->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLowerCase")));
 
   return res;
 }
@@ -1304,7 +1328,7 @@ bool js::str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLocaleLowerCase")));
+    result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase")));
 
     args.rval().set(result);
     return true;
@@ -1551,7 +1575,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length) {
-      str->taint().extend(TaintOperation("toUpperCase"));
+      str->taint().extend(TaintOperationFromContext(cx, "toUpperCase"));
       return str;
     }
 
@@ -1606,7 +1630,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
                 : newChars.ref<TwoByteBuffer>().toStringDontDeflate(cx, resultLength);
 
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(StringTaint::extend(str->taint(), TaintOperation("toUpperCase")));
+  res->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toUpperCase")));
 
   return res;
 }
@@ -1730,7 +1754,7 @@ bool js::str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperation("toLocaleUpperCase")));
+    result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase")));
 
     args.rval().set(result);
     return true;
@@ -1922,7 +1946,7 @@ bool js::str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: Add taint operation.
-  ns->setTaint(StringTaint::extend(str->taint(), TaintOperation("normalize")));
+  ns->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize")));
 
   // Step 7.
   args.rval().setString(ns);
@@ -1962,7 +1986,7 @@ bool js::str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
   if (str->isTainted()) {
     str = NewDependentString(cx, str, i, 1);
-    str->taint().extend(TaintOperation("charAt", { taintarg(cx, i) }));
+    str->taint().extend(TaintOperation("charAt", TaintLocationFromContext(cx), { taintarg(cx, i) }));
   } else {
     str = cx->staticStrings().getUnitStringForElement(cx, str, i);
   }
@@ -2915,13 +2939,13 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
   // the acutal trimming of taint ranges has been done in
   // NewDependentString (StringType-inl.h, JSDependentString::init)
   if (trimStart && trimEnd)
-      result->taint().extend(TaintOperation("trim"));
+    result->taint().extend(TaintOperationFromContext(cx, "trim"));
   else if (trimStart)
-      result->taint().extend(TaintOperation("trimLeft"));
+    result->taint().extend(TaintOperationFromContext(cx, "trimLeft"));
   else if (trimEnd)
-      result->taint().extend(TaintOperation("trimRight"));
+    result->taint().extend(TaintOperationFromContext(cx, "trimRight"));
   else
-      result->taint().extend(TaintOperation("trim"));
+    result->taint().extend(TaintOperationFromContext(cx, "trim"));
 
   args.rval().setString(result);
   return true;
@@ -3482,7 +3506,8 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
     }
 
     // TaintFox: extend taint flow
-    sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) }));
+    sub->taint().extend(TaintOperation("split", TaintLocationFromContext(cx),
+                                       { taintarg(cx, sep), taintarg(cx, count++) }));
 
     // Step 14.c.ii.5.
     if (splits.length() == limit) {
@@ -3507,7 +3532,7 @@ static ArrayObject* SplitHelper(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: extend taint flow
-  sub->taint().extend(TaintOperation("split", { taintarg(cx, sep), taintarg(cx, count++) }));
+  sub->taint().extend(TaintOperation("split", TaintLocationFromContext(cx), { taintarg(cx, sep), taintarg(cx, count++) }));
 
   // Step 18.
   return NewCopiedArrayTryUseGroup(cx, group, splits.begin(), splits.length());
@@ -3548,7 +3573,7 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
     }
 
     // TaintFox: extend taint flow
-    sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) }));
+    sub->taint().extend(TaintOperation("split", TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
 
     splits->initDenseElement(i, StringValue(sub));
   }
@@ -3594,7 +3619,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
       splits->initDenseElement(splitsIndex++, StringValue(sub));
 
       // TaintFox: extend taint flow
-      sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) }));
+      sub->taint().extend(TaintOperation("split", TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
 
       lastEndIndex = index + 1;
     }
@@ -3607,7 +3632,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
     return nullptr;
   }
   // TaintFox: extend taint flow
-  sub->taint().extend(TaintOperation("split", { taintarg(cx, u""), taintarg(cx, count++) }));
+  sub->taint().extend(TaintOperation("split", TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
 
   splits->initDenseElement(splitsIndex++, StringValue(sub));
 
@@ -4347,9 +4372,9 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
 
   // TaintFox: Add encode operation to output taint.
   if (unescapedSet == js_isUriReservedPlusPound)
-    sb.taint().extend(TaintOperation("encodeURI"));
+    sb.taint().extend(TaintOperationFromContext(cx, "encodeURI"));
   else
-    sb.taint().extend(TaintOperation("encodeURIComponent"));
+    sb.taint().extend(TaintOperationFromContext(cx, "encodeURIComponent"));
 
   MOZ_ASSERT(res == Encode_Success);
   return TransferBufferToString(sb, str, rval);
@@ -4511,9 +4536,9 @@ static bool Decode(JSContext* cx, HandleLinearString str,
 
   // TaintFox: Add decode operation to output taint.
   if(reservedSet == js_isUriReservedPlusPound)
-    sb.taint().extend(TaintOperation("decodeURI"));
+    sb.taint().extend(TaintOperationFromContext(cx, "decodeURI"));
   else
-    sb.taint().extend(TaintOperation("decodeURIComponent"));
+    sb.taint().extend(TaintOperationFromContext(cx, "decodeURIComponent"));
 
   MOZ_ASSERT(res == Decode_Success);
   return TransferBufferToString(sb, str, rval);

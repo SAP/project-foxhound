@@ -3291,7 +3291,7 @@ void nsGlobalWindowOuter::GetNameOuter(nsAString& aName) {
   }
 
   // TaintFox: window.name taint source.
-  aName.AssignTaint(StringTaint(0, aName.Length(), TaintSource("window.name")));
+  MarkTaintSource(aName, "window.name");
 }
 
 void nsGlobalWindowOuter::SetNameOuter(const nsAString& aName,

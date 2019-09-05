@@ -588,8 +588,7 @@ void LSObject::GetItem(const nsAString& aKey, nsAString& aResult,
   aResult = result;
 
   // TaintFox: localStorage.getItem source
-  aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("localStorage.getItem")));
-
+  MarkTaintSource(aResult, "localStorage.getItem");
 }
 
 void LSObject::GetSupportedNames(nsTArray<nsString>& aNames) {
@@ -642,7 +641,7 @@ void LSObject::SetItem(const nsAString& aKey, const nsAString& aValue,
   }
 
   // TaintFox: localStorage.setItem sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aValue, "localStorage.setItem");
+  ReportTaintSink(aValue, "localStorage.setItem");
 }
 
 void LSObject::RemoveItem(const nsAString& aKey,

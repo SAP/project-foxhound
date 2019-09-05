@@ -31,6 +31,16 @@ std::u16string taintarg(JSContext* cx, JS::HandleValue str);
 // Converts an integer to a taint argument string.
 std::u16string taintarg(JSContext* cx, int32_t num);
 
+// Converts a JS Handle to a taint argument string.
+std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleValue str);
+
+// Extracts the current filename, linenumber and function from the JSContext
+TaintLocation TaintLocationFromContext(JSContext* cx);
+
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args);
+
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name);
+
 // Mark all tainted arguments of a function call.
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);

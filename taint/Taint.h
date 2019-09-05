@@ -28,6 +28,8 @@
  * There are a couple of central data structures (classes) that are used to
  * manage taint information. These are:
  *
+ *   TaintLocation      Information about where a taint operation took place
+ *
  *   TaintOperation     An operation performed on tainted data. These could be
  *                      operations like substr(), replace(), concat(), ...
  *
@@ -62,6 +64,40 @@
  * These could also be shared between taint nodes, but it's most likely not worth
  * the effort.
  */
+class TaintLocation
+{
+  public:
+
+    TaintLocation(std::u16string filename, int32_t line, int32_t pos, std::u16string function);
+
+    TaintLocation();
+
+    // These work fine as long as we are using stl classes.
+    TaintLocation(const TaintLocation& other) = default;
+    TaintLocation& operator=(const TaintLocation& other) = default;
+
+    // MSVC doesn't let us = default these :(
+    TaintLocation(TaintLocation&& other);
+    TaintLocation& operator=(TaintLocation&& other);
+
+    const std::u16string& filename() const { return filename_; }
+    uint32_t line() const { return line_; }
+    uint32_t pos() const { return pos_; }
+    const std::u16string& function() const { return function_; }
+
+  private:
+    std::u16string filename_;
+    uint32_t line_;
+    uint32_t pos_;
+    std::u16string function_;
+};
+
+/*
+ * An operation performed on tainted data.
+ *
+ * These could also be shared between taint nodes, but it's most likely not worth
+ * the effort.
+ */
 class TaintOperation
 {
   public:
@@ -69,8 +105,14 @@ class TaintOperation
     TaintOperation(const char* name, std::initializer_list<std::u16string> args);
     TaintOperation(const char* name, std::vector<std::u16string> args);
 
+    TaintOperation(const char* name, TaintLocation location, std::initializer_list<std::u16string> args);
+    TaintOperation(const char* name, TaintLocation location, std::vector<std::u16string> args);
+
     // Constructs a taint operation with no arguments.
     TaintOperation(const char* name);
+
+    // Constructs a taint operation with location information
+    TaintOperation(const char* name, TaintLocation location);
 
     // These work fine as long as we are using stl classes.
     TaintOperation(const TaintOperation& other) = default;
@@ -81,8 +123,8 @@ class TaintOperation
     TaintOperation& operator=(TaintOperation&& other);
 
     const char* name() const { return name_.c_str(); }
-
     const std::vector<std::u16string>& arguments() const { return arguments_; }
+    const TaintLocation& location() const { return location_; }
 
   private:
     // The operation name is owned by this instance. It will be copied from the
@@ -91,6 +133,8 @@ class TaintOperation
 
     // The argument strings are owned by node instances as well.
     std::vector<std::u16string> arguments_;
+
+    TaintLocation location_;
 };
 
 // An alias to make the code at taint sources a bit more intuitive.

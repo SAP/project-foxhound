@@ -5,18 +5,55 @@
 
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
-TaintOperation::TaintOperation(const char* name, std::initializer_list<std::u16string> args) : name_(name), arguments_(args) { }
+TaintLocation::TaintLocation(std::u16string filename, int32_t line, int32_t pos, std::u16string function)
+  : filename_(filename), line_(line), pos_(pos), function_(function) {}
 
-TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> args) : name_(name), arguments_(args) { }
+TaintLocation::TaintLocation()
+  : filename_(), line_(0), pos_(0), function_() {}
 
-TaintOperation::TaintOperation(const char* name) : name_(name), arguments_() { }
+TaintLocation::TaintLocation(TaintLocation&& other)
+  : filename_(std::move(other.filename_)),
+    line_(std::move(other.line_)),
+    pos_(std::move(other.pos_)),
+    function_(std::move(other.function_)) {}
 
-TaintOperation::TaintOperation(TaintOperation&& other) : name_(std::move(other.name_)), arguments_(std::move(other.arguments_)) { }
+TaintLocation& TaintLocation::operator=(TaintLocation&& other)
+{
+    filename_ = std::move(other.filename_);
+    line_ = std::move(other.line_);
+    pos_ = std::move(other.pos_);
+    function_ = std::move(other.function_);
+    return *this;
+}
+
+TaintOperation::TaintOperation(const char* name, TaintLocation location, std::initializer_list<std::u16string> args)
+  : name_(name), arguments_(args), location_(location) {}
+
+TaintOperation::TaintOperation(const char* name, TaintLocation location, std::vector<std::u16string> args)
+  : name_(name), arguments_(args), location_(location) {}
+
+TaintOperation::TaintOperation(const char* name, std::initializer_list<std::u16string> args)
+  : name_(name), arguments_(args), location_() {}
+
+TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> args)
+  : name_(name), arguments_(args), location_() {}
+
+TaintOperation::TaintOperation(const char* name)
+  : name_(name), arguments_(), location_() {}
+
+TaintOperation::TaintOperation(const char* name, TaintLocation location)
+  : name_(name), arguments_(), location_(location) {}
+
+TaintOperation::TaintOperation(TaintOperation&& other)
+  : name_(std::move(other.name_)),
+    arguments_(std::move(other.arguments_)),
+    location_(std::move(other.location_)) {}
 
 TaintOperation& TaintOperation::operator=(TaintOperation&& other)
 {
     name_ = std::move(other.name_);
     arguments_ = std::move(other.arguments_);
+    location_ = std::move(other.location_);
     return *this;
 }
 

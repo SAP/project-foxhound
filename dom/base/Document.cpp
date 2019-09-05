@@ -5426,7 +5426,7 @@ void Document::GetReferrer(nsAString& aReferrer) const {
   CopyUTF8toUTF16(uri, aReferrer);
 
   // TaintFox: document.referrer taint source.
-  aReferrer.AssignTaint(StringTaint(0, aReferrer.Length(), TaintSource("document.referrer")));
+  MarkTaintSource(aReferrer, "document.referrer");
 }
 
 void Document::GetCookie(nsAString& aCookie, ErrorResult& rv) {
@@ -5492,7 +5492,7 @@ void Document::GetCookie(nsAString& aCookie, ErrorResult& rv) {
     // TaintFox: document.cookie source.
     // TODO(samuel) what's the use case for this?
     if (!aCookie.isTainted() && aCookie.Length() > 0) {
-      aCookie.AssignTaint(StringTaint(0, aCookie.Length(), TaintSource("document.cookie")));
+      MarkTaintSource(aCookie, "document.cookie");
     }
   }
 }
@@ -5540,7 +5540,7 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& rv) {
     }
 
     // TaintFox: document.cookie sink.
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aCookie, "document.cookie");
+    ReportTaintSink(aCookie, "document.cookie");
 
     nsCOMPtr<nsIChannel> channel(mChannel);
     if (!channel) {
@@ -9122,7 +9122,7 @@ void Document::WriteCommon(const nsAString& aText, bool aNewlineTerminate,
   }
 
   // TaintFox: document.write sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aText, "document.write");
+  ReportTaintSink(aText, "document.write");
 
   static NS_NAMED_LITERAL_STRING(new_line, "\n");
 
@@ -9205,7 +9205,7 @@ nsresult Document::GetDocumentURI(nsString& aDocumentURI) const {
     CopyUTF8toUTF16(uri, aDocumentURI);
 
     // TaintFox: document.documentURI taint source.
-    aDocumentURI.AssignTaint(StringTaint(0, aDocumentURI.Length(), TaintSource("document.documentURI")));
+    MarkTaintSource(aDocumentURI, "document.documentURI");
   } else {
     aDocumentURI.Truncate();
   }
@@ -9233,7 +9233,7 @@ void Document::GetDocumentURIFromJS(nsString& aDocumentURI,
   CopyUTF8toUTF16(uri, aDocumentURI);
 
   // TaintFox: document.documentURI taint source.
-  aDocumentURI.AssignTaint(StringTaint(0, aDocumentURI.Length(), TaintSource("document.documentURI")));
+  MarkTaintSource(aDocumentURI, "document.documentURI");
 }
 
 nsIURI* Document::GetDocumentURIObject() const {

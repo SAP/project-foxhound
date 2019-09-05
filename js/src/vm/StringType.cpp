@@ -806,7 +806,8 @@ JSString* js::ConcatStrings(
     if (str->length() > 0) {
         StringTaint newTaint = left->taint();
         newTaint.concat(right->taint(), left->length());
-        str->setTaint(StringTaint::extend(newTaint, TaintOperation("concat")));
+        newTaint.extend(js::TaintOperationFromContext(cx, "concat"));
+        str->setTaint(newTaint);
     }
     return str;
   }
@@ -814,8 +815,7 @@ JSString* js::ConcatStrings(
   // TaintFox: JSRope handles taint propagation itself.
   JSString* rope = JSRope::new_<allowGC>(cx, left, right, wholeLength);
   // TaintFox: add concat operation to taint flow.
-  rope->setTaint(StringTaint::extend(rope->taint(), TaintOperation("concat")));
-
+  rope->taint().extend(js::TaintOperationFromContext(cx, "concat"));
   return rope;
 }
 

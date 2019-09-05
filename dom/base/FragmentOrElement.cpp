@@ -2027,9 +2027,6 @@ void FragmentOrElement::SetInnerHTMLInternal(const nsAString& aInnerHTML,
     target = frag;
   }
 
-  // TaintFox: innerHTML sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aInnerHTML, "innerHTML");
-
   // Fast-path for strings with no markup. Limit this to short strings, to
   // avoid ContainsMarkup taking too long. The choice for 100 is based on
   // gut feeling.

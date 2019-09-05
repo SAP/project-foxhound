@@ -264,7 +264,7 @@ void Location::GetHash(nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
   }
 
   // TaintFox: location.hash source.
-  aHash.AssignTaint(StringTaint(0, aHash.Length(), TaintSource("location.hash")));
+  MarkTaintSource(aHash, "location.hash");
 
   if (aHash == mCachedHash) {
     // Work around ShareThis stupidly polling location.hash every
@@ -301,7 +301,7 @@ void Location::SetHash(const nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
 
   // TaintFox: location.hash sink.
   // TODO(samuel) why?
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHash, "location.hash");
+  ReportTaintSink(aHash, "location.hash");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -329,7 +329,7 @@ void Location::GetHost(nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
       AppendUTF8toUTF16(hostport, aHost);
 
       // TaintFox: location.host source.
-      aHost.AssignTaint(StringTaint(0, aHost.Length(), TaintSource("location.host")));
+      MarkTaintSource(aHost, "location.host");
     }
   }
 }
@@ -354,7 +354,7 @@ void Location::SetHost(const nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
   }
 
   // TaintFox: location.host sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHost, "location.host");
+  ReportTaintSink(aHost, "location.host");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -374,7 +374,7 @@ void Location::GetHostname(nsAString& aHostname,
     nsContentUtils::GetHostOrIPv6WithBrackets(uri, aHostname);
 
     // TaintFox: location.hostname source.
-    aHostname.AssignTaint(StringTaint(0, aHostname.Length(), TaintSource("location.hostname")));
+    MarkTaintSource(aHostname, "location.hostname");
   }
 }
 
@@ -418,7 +418,7 @@ nsresult Location::GetHref(nsAString& aHref) {
   AppendUTF8toUTF16(uriString, aHref);
 
   // TaintFox: location.href source.
-  aHref.AssignTaint(StringTaint(0, aHref.Length(), TaintSource("location.href")));
+  MarkTaintSource(aHref, "location.href");
 
   return NS_OK;
 }
@@ -429,7 +429,7 @@ void Location::SetHref(const nsAString& aHref, nsIPrincipal& aSubjectPrincipal,
   // TaintFox: location.href sink.
   // TODO: Tainting is also done in SetURL (which this eventaully calls)
   // so this call might not be needed?
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHref, "location.href");
+  ReportTaintSink(aHref, "location.href");
 
 }
 
@@ -516,8 +516,7 @@ void Location::GetOrigin(nsAString& aOrigin, nsIPrincipal& aSubjectPrincipal,
   aOrigin = origin;
 
   // TaintFox: location.origin source.
-  aOrigin.AssignTaint(StringTaint(0, aOrigin.Length(), TaintSource("location.origin")));
-
+  MarkTaintSource(aOrigin, "location.origin");
 }
 
 void Location::GetPathname(nsAString& aPathname,
@@ -545,7 +544,7 @@ void Location::GetPathname(nsAString& aPathname,
   AppendUTF8toUTF16(file, aPathname);
 
   // TaintFox: location.pathname source.
-  aPathname.AssignTaint(StringTaint(0, aPathname.Length(), TaintSource("location.pathname")));
+  MarkTaintSource(aPathname, "location.pathname");
 }
 
 void Location::SetPathname(const nsAString& aPathname,
@@ -570,7 +569,7 @@ void Location::SetPathname(const nsAString& aPathname,
   }
 
   // Taintfox: location.pathname sink
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
+  ReportTaintSink(aPathname, "location.pathname");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -633,7 +632,7 @@ void Location::SetPort(const nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
   }
 
   // TaintFox: location.port sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPort, "location.port");
+  ReportTaintSink(aPort, "location.port");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
@@ -716,7 +715,7 @@ void Location::SetProtocol(const nsAString& aProtocol,
   }
 
   // TaintFox: location.protocol sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aProtocol, "location.protocol");
+  ReportTaintSink(aProtocol, "location.protocol");
 
   bool isHttps;
   aRv = uri->SchemeIs("https", &isHttps);
@@ -758,7 +757,7 @@ void Location::GetSearch(nsAString& aSearch, nsIPrincipal& aSubjectPrincipal,
       AppendUTF8toUTF16(search, aSearch);
 
       // TaintFox: location.search source.
-      aSearch.AssignTaint(StringTaint(0, aSearch.Length(), TaintSource("location.search")));
+      MarkTaintSource(aSearch, "location.search");
     }
   }
 }
@@ -792,7 +791,7 @@ void Location::SetSearch(const nsAString& aSearch,
   }
 
   // TaintFox: location.search sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aSearch, "location.search");
+  ReportTaintSink(aSearch, "location.search");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }

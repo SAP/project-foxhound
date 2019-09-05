@@ -1,3 +1,6 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
+ */
 #include "jstaint.h"
 
 #include <iostream>
@@ -59,6 +62,55 @@ std::u16string js::taintarg(JSContext* cx, int32_t num)
     return taintarg(cx, val);
 }
 
+std::vector<std::u16string> js::taintargs(JSContext* cx, HandleValue val)
+{
+    std::vector<std::u16string> args;
+    // Taintfox: TODO: Expand this to check if val is an array
+    args.push_back(taintarg(cx, val));
+    return args;
+}
+
+TaintLocation js::TaintLocationFromContext(JSContext* cx)
+{
+    if (!cx)
+	return TaintLocation();
+
+    AllFramesIter i(cx);
+
+    if (i.done()) {
+	return TaintLocation();
+    }
+
+    const char* filename;
+    unsigned line;
+    unsigned pos;
+    RootedString function(cx);
+
+    if (i.hasScript()) {
+	filename = JS_GetScriptFilename(i.script());
+	line = PCToLineNumber(i.script(), i.pc());
+	pos = i.script()->pcToOffset(i.pc());
+    } else {
+	filename = i.filename();
+	line = i.computeLine();
+	pos = 0;
+    }
+
+    if (i.maybeFunctionDisplayAtom()) {
+	function = i.maybeFunctionDisplayAtom();
+    }
+
+    return TaintLocation(ascii2utf16(std::string(filename)), line, pos, taintarg(cx, function));
+}
+
+TaintOperation js::TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args) {
+    return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, args));
+}
+
+TaintOperation js::TaintOperationFromContext(JSContext* cx, const char* name) {
+    return TaintOperation(name, TaintLocationFromContext(cx));
+}
+
 void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const CallArgs& args)
 {
     if (!function)
@@ -81,11 +133,12 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
         }
     }
 
+    TaintLocation location = TaintLocationFromContext(cx);
     for (unsigned i = 0; i < args.length(); i++) {
         if (args[i].isString()) {
             RootedString arg(cx, args[i].toString());
             if (arg->isTainted())
-                arg->taint().extend(TaintOperation("function call argument", { taintarg(cx, name), sourceinfo, taintarg(cx, i) } ));
+	      arg->taint().extend(TaintOperation("function call argument", location, { taintarg(cx, name), sourceinfo, taintarg(cx, i) } ));
         }
     }
 }

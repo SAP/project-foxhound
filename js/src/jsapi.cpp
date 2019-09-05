@@ -5819,147 +5819,178 @@ JS_PUBLIC_API bool JS::StartIncrementalEncoding(JSContext* cx,
 JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSString* str)
 {
-    return str->taint();
+  return str->taint();
 }
 
 JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSFlatString* str)
 {
-    return str->taint();
+  return str->taint();
 }
 
 JS_PUBLIC_API void
 JS_SetStringTaint(JSString* str, const StringTaint& taint)
 {
-    str->setTaint(taint);
+  str->setTaint(taint);
 }
 
 JS_PUBLIC_API void
 JS_SetStringTaint(JSString* str, const char* source)
 {
-    JS_SetStringTaint(str, StringTaint(0, str->length(), TaintOperation(source)));
+  JS_SetStringTaint(str, StringTaint(0, str->length(), TaintOperation(source)));
 }
 
 JS_PUBLIC_API void
 JS_SetStringTaint(JS::MutableHandleValue value, const char* source)
 {
-    if (value.isString()) {
-        // If we have a string, set taint directly
-        JS_SetStringTaint(value.toString(), source);
-    } else if (value.isObject()) {
-        // If it is an object, loop over contents
-        // This function is used for convenience to taint all
-        // strings in an object like '{ payload : "hello!" }'
-        NativeObject *obj = MaybeNativeObject(value.toObjectOrNull());
-        if (obj) {
-            for (size_t i = 0; i < obj->slotSpan(); i++) {
-                JS::Value slot = obj->getSlot(i);
-                if (slot.isString()) {
-                    JS_SetStringTaint(slot.toString(), source);
-                }
-            }
+  if (value.isString()) {
+    // If we have a string, set taint directly
+    JS_SetStringTaint(value.toString(), source);
+  } else if (value.isObject()) {
+    // If it is an object, loop over contents
+    // This function is used for convenience to taint all
+    // strings in an object like '{ payload : "hello!" }'
+    NativeObject *obj = MaybeNativeObject(value.toObjectOrNull());
+    if (obj) {
+      for (size_t i = 0; i < obj->slotSpan(); i++) {
+        JS::Value slot = obj->getSlot(i);
+        if (slot.isString()) {
+          JS_SetStringTaint(slot.toString(), source);
         }
+      }
     }
+  }
+}
+
+JS_PUBLIC_API TaintOperation
+JS_GetTaintOperation(JSContext* cx, const char* sink, JS::HandleValue arg)
+{
+  return TaintOperationFromContext(cx, sink, arg);
+}
+
+JS_PUBLIC_API TaintOperation
+JS_GetTaintOperation(JSContext* cx, const char* sink)
+{
+  return TaintOperationFromContext(cx, sink);
 }
 
 JS_PUBLIC_API void
-JS_ReportTaintSink(JSContext* cx, JS::HandleValue value, const char* sink)
+JS_ReportTaintSink(JSContext* cx, JS::HandleValue val, const char* sink)
 {
-    if (value.isString()) {
-        JSString *str = value.toString();
-        if (str) {
-            JS::RootedString strobj(cx, str);
-            JS_ReportTaintSink(cx, strobj, sink);
-        }
-    }
+  RootedValue arg(cx);
+  arg.setNull();
+  JS_ReportTaintSink(cx, val, sink, arg);
 }
 
 JS_PUBLIC_API void
 JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
 {
-    const unsigned TAINT_REPORT_FUNCTION_SLOT = 5;
+  RootedValue arg(cx);
+  arg.setNull();
+  JS_ReportTaintSink(cx, str, sink, arg);
+}
 
-    if (!str->isTainted()) {
-      return;
+JS_PUBLIC_API void
+JS_ReportTaintSink(JSContext* cx, JS::HandleValue value, const char* sink, JS::HandleValue arg)
+{
+  if (value.isString()) {
+    JSString *str = value.toString();
+    if (str) {
+      JS::RootedString strobj(cx, str);
+      JS_ReportTaintSink(cx, strobj, sink, arg);
     }
+  }
+}
 
-    MOZ_ASSERT(!cx->isExceptionPending());
+JS_PUBLIC_API void
+JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::HandleValue arg)
+{
+  const unsigned TAINT_REPORT_FUNCTION_SLOT = 5;
 
-    // Print a message to stdout. Also include the current JS backtrace.
-    auto& firstRange = *str->taint().begin();
+  if (!str->isTainted()) {
+    return;
+  }
 
-    std::cerr << "!!! Tainted flow into " << sink << " from " << firstRange.flow().source().name() << " !!!" << std::endl;
-    // DumpBacktrace(cx);
+  MOZ_ASSERT(!cx->isExceptionPending());
 
-    // Report a warning to show up on the web console
-    JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
+  // Print a message to stdout. Also include the current JS backtrace.
+  auto& firstRange = *str->taint().begin();
 
-    // Trigger a custom event that can be caught by an extension.
-    // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile
-    // this code everytime we detect a tainted flow, we store the compiled function into a reserved
-    // slot of the current global object.
-    RootedFunction report(cx);
+  std::cerr << "!!! Tainted flow into " << sink << " from " << firstRange.flow().source().name() << " !!!" << std::endl;
+  // DumpBacktrace(cx);
 
-    JSObject* global = cx->global();
-    MOZ_ASSERT(global->isNative());
+  // Report a warning to show up on the web console
+  JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
 
-    RootedValue slot(cx, JS_GetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT));
-    if (slot.isUndefined()) {
-        // Need to compile.
-        const char* argnames[3] = {"str", "sink", "stack"};
-        const char* funbody =
-            "if (typeof window !== 'undefined' && typeof document !== 'undefined') {\n"
-            "    var t = window;\n"
-            "    if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') {\n"
-            "        t = parent.window;\n"
-            "    }\n"
-            "    var pl;\n"
-            "    try {\n"
-            "        pl = parent.location.href;\n"
-            "    } catch (e) {\n"
-            "        pl = 'different origin';\n"
-            "    }\n"
-            "    var e = document.createEvent('CustomEvent');\n"
-            "    e.initCustomEvent('__taintreport', true, false, {\n"
-            "        subframe: t !== window,\n"
-            "        loc: location.href,\n"
-            "        parentloc: pl,\n"
-            "        str: str,\n"
-            "        sink: sink,\n"
-            "        stack: stack\n"
-            "    });\n"
-            "    t.dispatchEvent(e);\n"
-            "}";
-        CompileOptions options(cx);
-        options.setFile("taint_reporting.js");
+  // Extend the taint flow to include the sink function
+  str->taint().extend(TaintOperationFromContext(cx, sink, arg));
 
-        RootedObjectVector emptyScopeChain(cx);
-        report = CompileFunctionUtf8(cx, emptyScopeChain,
-                                     options, "ReportTaintSink", 3,
-                                     argnames, funbody, strlen(funbody));
-        MOZ_ASSERT(report);
+  // Trigger a custom event that can be caught by an extension.
+  // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile
+  // this code everytime we detect a tainted flow, we store the compiled function into a reserved
+  // slot of the current global object.
+  RootedFunction report(cx);
 
-        // Store the compiled function into the current global object.
-        JS_SetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT, ObjectValue(*report));
-    } else {
-        report = JS_ValueToFunction(cx, slot);
-    }
+  JSObject* global = cx->global();
+  MOZ_ASSERT(global->isNative());
 
-    RootedObject stack(cx);
-    if (!JS::CaptureCurrentStack(cx, &stack,
-                                 JS::StackCapture(JS::AllFrames()))) {
-      JS_ReportErrorUTF8(cx, "Invalid stack object in CaptureCurrentStack!");
-      return;
-    }
+  RootedValue slot(cx, JS_GetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT));
+  if (slot.isUndefined()) {
+    // Need to compile.
+    const char* argnames[3] = {"str", "sink", "stack"};
+    const char* funbody =
+      "if (typeof window !== 'undefined' && typeof document !== 'undefined') {\n"
+      "    var t = window;\n"
+      "    if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') {\n"
+      "        t = parent.window;\n"
+      "    }\n"
+      "    var pl;\n"
+      "    try {\n"
+      "        pl = parent.location.href;\n"
+      "    } catch (e) {\n"
+      "        pl = 'different origin';\n"
+      "    }\n"
+      "    var e = document.createEvent('CustomEvent');\n"
+      "    e.initCustomEvent('__taintreport', true, false, {\n"
+      "        subframe: t !== window,\n"
+      "        loc: location.href,\n"
+      "        parentloc: pl,\n"
+      "        str: str,\n"
+      "        sink: sink,\n"
+      "        stack: stack\n"
+      "    });\n"
+      "    t.dispatchEvent(e);\n"
+      "}";
+    CompileOptions options(cx);
+    options.setFile("taint_reporting.js");
 
-    JS::AutoValueArray<3> arguments(cx);
-    arguments[0].setString(str);
-    arguments[1].setString(NewStringCopyZ<CanGC>(cx, sink));
-    arguments[2].setObject(*stack);
+    RootedObjectVector emptyScopeChain(cx);
+    report = CompileFunctionUtf8(cx, emptyScopeChain,
+                                 options, "ReportTaintSink", 3,
+                                 argnames, funbody, strlen(funbody));
+    MOZ_ASSERT(report);
 
-    RootedValue rval(cx);
-    JS_CallFunction(cx, nullptr, report, arguments, &rval);
-    MOZ_ASSERT(!cx->isExceptionPending());
+    // Store the compiled function into the current global object.
+    JS_SetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT, ObjectValue(*report));
+  } else {
+    report = JS_ValueToFunction(cx, slot);
+  }
+
+  RootedObject stack(cx);
+  if (!JS::CaptureCurrentStack(cx, &stack,
+                               JS::StackCapture(JS::AllFrames()))) {
+    JS_ReportErrorUTF8(cx, "Invalid stack object in CaptureCurrentStack!");
+    return;
+  }
+
+  JS::AutoValueArray<3> arguments(cx);
+  arguments[0].setString(str);
+  arguments[1].setString(NewStringCopyZ<CanGC>(cx, sink));
+  arguments[2].setObject(*stack);
+
+  RootedValue rval(cx);
+  JS_CallFunction(cx, nullptr, report, arguments, &rval);
+  MOZ_ASSERT(!cx->isExceptionPending());
 }
 
 JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,

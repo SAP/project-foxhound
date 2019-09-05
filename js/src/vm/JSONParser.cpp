@@ -131,7 +131,7 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
         // The 'if' is currently required since we don't handle atom tainting.
         ptrdiff_t offset = start - begin;
         StringTaint taint = StringTaint::substr(inputTaint, offset, offset + length);
-        str->setTaint(taint.extend(TaintOperation("JSON.parse")));
+        str->setTaint(taint.extend(TaintOperationFromContext(cx, "JSON.parse")));
       }
       return stringToken(str);
     }
@@ -176,7 +176,7 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
       }
 
       // TaintFox: Add taint operation.
-      str->taint().extend(TaintOperation("JSON.parse"));
+      str->taint().extend(TaintOperationFromContext(cx, "JSON.parse"));
 
       return stringToken(str);
     }

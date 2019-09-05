@@ -80,11 +80,7 @@ void SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
   mCache->GetItem(DATASET, aKey, aResult);
 
   // TaintFox: sessionStorage.getItem source
-  if (aResult.isTainted()) {
-    aResult.Taint().extend(TaintOperation("sessionStorage.getItem"));
-  } else {
-    aResult.AssignTaint(StringTaint(0, aResult.Length(), TaintSource("sessionStorage.getItem")));
-  }
+  MarkTaintSource(aResult, "sessionStorage.getItem");
 
 }
 
@@ -116,6 +112,9 @@ void SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
   if (rv == NS_SUCCESS_DOM_NO_OPERATION) {
     return;
   }
+
+  // TaintFox: sessionStorage.setItem sink.
+  ReportTaintSink(aValue, "sessionStorage.setItem");
 
   BroadcastChangeNotification(aKey, oldValue, aValue);
 }

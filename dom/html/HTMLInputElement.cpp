@@ -1418,7 +1418,9 @@ void HTMLInputElement::GetValue(nsAString& aValue, CallerType aCallerType) {
   // This will taint *all* input types, including those where the actual values
   // could be limited. Still, these inputs should still not change the syntax
   // of any sink calls
-  aValue.AssignTaint(StringTaint(0, aValue.Length(), TaintSource("input.value")));
+  nsAutoString id;
+  this->GetId(id);
+  MarkTaintSource(aValue, "input.value", id);
 
   // Don't return non-sanitized value for types that are experimental on mobile
   // or datetime types

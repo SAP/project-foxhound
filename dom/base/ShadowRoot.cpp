@@ -573,6 +573,9 @@ void ShadowRoot::GetInnerHTML(nsAString& aInnerHTML) {
 
 void ShadowRoot::SetInnerHTML(const nsAString& aInnerHTML,
                               ErrorResult& aError) {
+  // TaintFox: innerHTML sink.
+  ReportTaintSink(aInnerHTML, "innerHTML");
+
   SetInnerHTMLInternal(aInnerHTML, aError);
 }
 

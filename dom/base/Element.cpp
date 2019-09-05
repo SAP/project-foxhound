@@ -2205,7 +2205,7 @@ nsresult Element::SetEventHandler(nsAtom* aEventName, const nsAString& aValue,
   if (aValue.isTainted()) {
     nsCString eventName;
     aEventName->ToUTF8String(eventName);
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aValue, eventName.get());
+    ReportTaintSink(aValue, eventName.get());
   }
 
   defer = defer && aDefer;  // only defer if everyone agrees...
@@ -3547,6 +3547,12 @@ void Element::GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError) {
 void Element::SetInnerHTML(const nsAString& aInnerHTML,
                            nsIPrincipal* aSubjectPrincipal,
                            ErrorResult& aError) {
+
+  // TaintFox: innerHTML sink.
+  nsAutoString id;
+  this->GetId(id);
+  ReportTaintSink(aInnerHTML, "innerHTML", id);
+
   SetInnerHTMLInternal(aInnerHTML, aError);
 }
 
@@ -3566,7 +3572,9 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
   }
 
   // TaintFox: outerHTML sink.
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
+  nsAutoString id;
+  this->GetId(id);
+  ReportTaintSink(aOuterHTML, "outerHTML", id);
 
   if (OwnerDoc()->IsHTMLDocument()) {
     nsAtom* localName;

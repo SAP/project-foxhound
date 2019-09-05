@@ -3049,14 +3049,28 @@ JS_SetStringTaint(JSString* str, const char* source);
 extern JS_PUBLIC_API void
 JS_SetStringTaint(JS::MutableHandleValue value, const char* source);
 
+// Taintfox: Create new String Taint Location from the context
+extern JS_PUBLIC_API TaintOperation
+JS_GetTaintOperation(JSContext* cx, const char* name, JS::HandleValue args);
+
+// Taintfox: Create new String Taint Location from the context
+extern JS_PUBLIC_API TaintOperation
+JS_GetTaintOperation(JSContext* cx, const char* name);
+
 // TaintFox: Report tainted flows into a sink.
 //
 // This will print to stdout and trigger a custom JavaScript event on the current page.
-extern JS_PUBLIC_API void 
+extern JS_PUBLIC_API void
+JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::HandleValue args);
+
+extern JS_PUBLIC_API void
+JS_ReportTaintSink(JSContext* cx, JS::HandleValue value, const char* sink, JS::HandleValue args);
+
+extern JS_PUBLIC_API void
 JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink);
 
-extern JS_PUBLIC_API void 
-JS_ReportTaintSink(JSContext* cx, JS::HandleValue value, const char* sink);
+extern JS_PUBLIC_API void
+JS_ReportTaintSink(JSContext* cx, JS::HandleValue str, const char* sink);
 
 namespace JS {
 

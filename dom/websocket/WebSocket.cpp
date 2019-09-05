@@ -2259,7 +2259,7 @@ void WebSocket::Send(const nsAString& aData, ErrorResult& aRv) {
   AssertIsOnTargetThread();
 
   // Taintfox: WebSocket.send() sink
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aData, "WebSocket.send");
+  ReportTaintSink(aData, "WebSocket.send");
 
   NS_ConvertUTF16toUTF8 msgString(aData);
   Send(nullptr, msgString, msgString.Length(), false, aRv);

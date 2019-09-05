@@ -551,7 +551,7 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
   }
 
   // Taintfox: XMLHttpRequest.response source
-  aResponseText.AssignTaint(StringTaint(0, aResponseText.Length(), TaintSource("XMLHttpRequest.response")));
+  MarkTaintSource(aResponseText, "XMLHttpRequest.response");
 }
 
 void XMLHttpRequestMainThread::GetResponseText(
@@ -1345,9 +1345,9 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
                         aAsync ? 0 : 1);
 
   // TaintFox: XMLHttpRequest.open sink
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), NS_ConvertUTF8toUTF16(aUrl), "XMLHttpRequest.open(url)");
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aUsername, "XMLHttpRequest.open(username)");
-  ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPassword, "XMLHttpRequest.open(password)");
+  ReportTaintSink(NS_ConvertUTF8toUTF16(aUrl), "XMLHttpRequest.open(url)");
+  ReportTaintSink(aUsername, "XMLHttpRequest.open(username)");
+  ReportTaintSink(aPassword, "XMLHttpRequest.open(password)");
 
   // Step 1
   nsCOMPtr<Document> responsibleDocument = GetDocumentIfCurrent();
@@ -2737,7 +2737,7 @@ void XMLHttpRequestMainThread::Send(
   if (aData.Value().IsUSVString()) {
     BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
     // Taintfox: XMLHttpRequest.send() sink
-    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aData.Value().GetAsUSVString(), "XMLHttpRequest.send");
+    ReportTaintSink(aData.Value().GetAsUSVString(), "XMLHttpRequest.send");
     aRv = SendInternal(&body, true);
     return;
   }

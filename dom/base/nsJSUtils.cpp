@@ -672,18 +672,96 @@ bool nsAutoJSString::init(const JS::Value& v) {
 
 LazyLogModule gTaintLog("Taint");
 
-// TaintFox: ReportTaintSink implementation.
+nsresult MarkTaintSource(nsAString &str, const char* name)
+{
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+
+  if (cx) {
+    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name)));
+  } else {
+    str.AssignTaint(StringTaint(0, str.Length(), TaintOperation(name)));
+  }
+  return NS_OK;
+}
+
+nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
+{
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+
+  if (cx) {
+    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name)));
+  } else {
+    str.AssignTaint(StringTaint(0, str.Length(), TaintOperation(name)));
+  }
+  return NS_OK;
+}
+
+nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
+{
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+
+  if (cx) {
+    JS::RootedValue argval(cx);
+
+    if (!mozilla::dom::ToJSValue(cx, arg, &argval))
+      return NS_ERROR_FAILURE;
+    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name, argval)));
+  } else {
+    str.AssignTaint(StringTaint(0, str.Length(), TaintOperation(name)));
+  }
+  return NS_OK;
+}
+
+nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)
+{
+  if (!str.isTainted()) {
+    return NS_OK;
+  }
+
+  if (!cx) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JS::RootedValue argval(cx);
+  if (!mozilla::dom::ToJSValue(cx, arg, &argval))
+    return NS_ERROR_FAILURE;
+
+  JS::RootedValue strval(cx);
+  if (!mozilla::dom::ToJSValue(cx, str, &strval))
+    return NS_ERROR_FAILURE;
+
+  JS_ReportTaintSink(cx, strval, name, argval);
+
+  return NS_OK;
+}
+
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
 {
-    if (!str.isTainted()) {
-      return NS_OK;
-    }
-
-    JS::RootedValue strval(cx);
-    if (!mozilla::dom::ToJSValue(cx, str, &strval))
-      return NS_ERROR_FAILURE;;
-
-    JS_ReportTaintSink(cx, strval, name);
-
+  if (!str.isTainted()) {
     return NS_OK;
+  }
+
+  if (!cx) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JS::RootedValue strval(cx);
+  if (!mozilla::dom::ToJSValue(cx, str, &strval)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JS_ReportTaintSink(cx, strval, name);
+
+  return NS_OK;
+}
+
+
+nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg)
+{
+  return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
+}
+
+nsresult ReportTaintSink(const nsAString &str, const char* name)
+{
+  return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);
 }

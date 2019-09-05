@@ -17,7 +17,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/StaticPrefs.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
-
 #include "GeckoProfiler.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -323,7 +322,23 @@ class nsAutoJSString : public nsAutoString {
   ~nsAutoJSString() {}
 };
 
+// TaintFox: Add taint source information to a string
+nsresult MarkTaintSource(nsAString &str, const char* name);
+
+// TaintFox: Add taint source information to a string
+nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg);
+
+// TaintFox: Add taint source information to a string
+nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name);
+
 // TaintFox: Report taint flows into DOM related sinks.
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name);
+
+// TaintFox: Report taint flows into DOM related sinks.
+nsresult ReportTaintSink(const nsAString &str, const char* name);
+
+nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg);
+
+nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg);
 
 #endif /* nsJSUtils_h__ */

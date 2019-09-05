@@ -624,7 +624,7 @@ void nsINode::GetBaseURIFromJS(nsAString& aURI, CallerType aCallerType,
   CopyUTF8toUTF16(spec, aURI);
 
   // TaintFox: document.baseURI taint source.
-  aURI.AssignTaint(StringTaint(0, aURI.Length(), TaintSource("document.baseURI")));
+  MarkTaintSource(aURI, "document.baseURI");
 }
 
 already_AddRefed<nsIURI> nsINode::GetBaseURIObject() const {
