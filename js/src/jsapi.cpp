@@ -5955,6 +5955,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
       "        subframe: t !== window,\n"
       "        loc: location.href,\n"
       "        parentloc: pl,\n"
+      "        referrer: document.referrer,\n"
       "        str: str,\n"
       "        sink: sink,\n"
       "        stack: stack\n"
