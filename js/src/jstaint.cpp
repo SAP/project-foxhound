@@ -82,18 +82,16 @@ TaintLocation js::TaintLocationFromContext(JSContext* cx)
     }
 
     const char* filename;
-    unsigned line;
-    unsigned pos;
+    uint32_t line;
+    uint32_t pos;
     RootedString function(cx);
 
     if (i.hasScript()) {
 	filename = JS_GetScriptFilename(i.script());
-	line = PCToLineNumber(i.script(), i.pc());
-	pos = i.script()->pcToOffset(i.pc());
+	line = PCToLineNumber(i.script(), i.pc(), &pos);
     } else {
 	filename = i.filename();
-	line = i.computeLine();
-	pos = 0;
+	line = i.computeLine(&pos);
     }
 
     if (i.maybeFunctionDisplayAtom()) {
