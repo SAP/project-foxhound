@@ -74,6 +74,10 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
   void GetSrc(nsAString& aSrc) { GetURIAttr(nsGkAtoms::src, nullptr, aSrc); }
   void SetSrc(const nsAString& aSrc, nsIPrincipal* aTriggeringPrincipal,
               ErrorResult& aRv) {
+    // Taintfox: script.src sink
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aSrc, "script.src", id);
     SetHTMLAttr(nsGkAtoms::src, aSrc, aTriggeringPrincipal, aRv);
   }
 

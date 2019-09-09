@@ -59,10 +59,9 @@
  */
 
 /*
- * An operation performed on tainted data.
+ * Information on the location of a taint operation/source/sink
  *
- * These could also be shared between taint nodes, but it's most likely not worth
- * the effort.
+ * Used to track exact operation locations in a taint flow.
  */
 class TaintLocation
 {
