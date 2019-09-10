@@ -5924,7 +5924,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
 
   // Extend the taint flow to include the sink function
   str->taint().extend(TaintOperationFromContext(cx, sink, arg));
-
+ 
   // Trigger a custom event that can be caught by an extension.
   // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile
   // this code everytime we detect a tainted flow, we store the compiled function into a reserved

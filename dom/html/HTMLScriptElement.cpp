@@ -128,6 +128,10 @@ void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
                                      nsIPrincipal* aScriptedPrincipal,
                                      ErrorResult& aError) {
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
+  // Taintfox: script.text sink
+  nsAutoString id;
+  this->GetId(id);
+  ReportTaintSink(aInnerHTML, "script.innerHTML", id); 
 }
 
 void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) {
@@ -138,6 +142,10 @@ void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) {
 
 void HTMLScriptElement::SetText(const nsAString& aValue, ErrorResult& aRv) {
   aRv = nsContentUtils::SetNodeTextContent(this, aValue, true);
+  // Taintfox: script.text sink
+  nsAutoString id;
+  this->GetId(id);
+  ReportTaintSink(aValue, "script.text", id); 
 }
 
 // variation of this code in nsSVGScriptElement - check if changes

@@ -1318,6 +1318,8 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
       IsHTMLElement() && IsInHTMLDocument() ? eIgnoreCase : eCaseMatters);
   if (val) {
     val->ToString(aReturn);
+    // Taintfox: getAttribute source
+    MarkTaintSource(aReturn, "element.getAttribute", aName);
   } else {
     if (IsXULElement()) {
       // XXX should be SetDOMStringToNull(aReturn);
@@ -1446,6 +1448,9 @@ void Element::GetAttributeNS(const nsAString& aNamespaceURI,
   bool hasAttr = GetAttr(nsid, name, aReturn);
   if (!hasAttr) {
     SetDOMStringToNull(aReturn);
+  } else {
+    // Taintfox: getAttributeNS source
+    MarkTaintSource(aReturn, "element.getAttributeNS", aLocalName);
   }
 }
 
@@ -2203,14 +2208,15 @@ nsresult Element::SetEventHandler(nsAtom* aEventName, const nsAString& aValue,
 
   // TaintFox: Event handler sink.
   if (aValue.isTainted()) {
-    nsCString eventName;
-    aEventName->ToUTF8String(eventName);
-    ReportTaintSink(aValue, eventName.get());
+    nsAutoString eventName;
+    aEventName->ToString(eventName);
+    ReportTaintSink(aValue, "eventHandler", eventName);
   }
 
   defer = defer && aDefer;  // only defer if everyone agrees...
   manager->SetEventHandler(aEventName, aValue, defer,
                            !nsContentUtils::IsChromeDoc(ownerDoc), this);
+
   return NS_OK;
 }
 
@@ -3542,6 +3548,7 @@ void Element::GetAnimationsUnsorted(Element* aElement,
 
 void Element::GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError) {
   GetMarkup(false, aInnerHTML);
+  MarkTaintSource(aInnerHTML, "element.innerHTML");
 }
 
 void Element::SetInnerHTML(const nsAString& aInnerHTML,
@@ -3558,6 +3565,7 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
 
 void Element::GetOuterHTML(nsAString& aOuterHTML) {
   GetMarkup(true, aOuterHTML);
+  MarkTaintSource(aOuterHTML, "element.outerHTML");
 }
 
 void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
@@ -3623,6 +3631,9 @@ enum nsAdjacentPosition { eBeforeBegin, eAfterBegin, eBeforeEnd, eAfterEnd };
 
 void Element::InsertAdjacentHTML(const nsAString& aPosition,
                                  const nsAString& aText, ErrorResult& aError) {
+  // TaintFox: insertAdjacentHTML sink
+  ReportTaintSink(aText, "insertAdjacentHTML");
+
   nsAdjacentPosition position;
   if (aPosition.LowerCaseEqualsLiteral("beforebegin")) {
     position = eBeforeBegin;
@@ -3749,6 +3760,10 @@ Element* Element::InsertAdjacentElement(const nsAString& aWhere,
 void Element::InsertAdjacentText(const nsAString& aWhere,
                                  const nsAString& aData, ErrorResult& aError) {
   RefPtr<nsTextNode> textNode = OwnerDoc()->CreateTextNode(aData);
+
+  // TaintFox: insertAdjacentHTML sink
+  ReportTaintSink(aData, "insertAdjacentText");
+
   InsertAdjacent(aWhere, textNode, aError);
 }
 

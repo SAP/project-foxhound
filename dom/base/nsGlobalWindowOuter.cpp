@@ -7104,6 +7104,9 @@ nsresult nsGlobalWindowOuter::OpenInternal(
 
   NS_ASSERTION(mDocShell, "Must have docshell here");
 
+  // TaintFox window.open sink
+  ReportTaintSink(aUrl, "window.open");
+
   nsAutoCString options;
   bool forceNoOpener = aForceNoOpener;
   bool forceNoReferrer = false;

@@ -696,6 +696,23 @@ nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
   return NS_OK;
 }
 
+nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg)
+{
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+
+  if (cx) {
+    JS::RootedValue argval(cx);
+    if (!mozilla::dom::ToJSValue(cx, arg, &argval))
+      return NS_ERROR_FAILURE;
+
+    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name, argval)));
+  } else {
+    str.AssignTaint(StringTaint(0, str.Length(), TaintOperation(name)));
+  }
+  return NS_OK;
+}
+
+
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
 {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
@@ -722,6 +739,10 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, 
     return NS_ERROR_FAILURE;
   }
 
+  if (!nsContentUtils::IsSafeToRunScript()) {
+    return NS_ERROR_FAILURE;
+  }
+  
   JS::RootedValue argval(cx);
   if (!mozilla::dom::ToJSValue(cx, arg, &argval))
     return NS_ERROR_FAILURE;
@@ -742,6 +763,10 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
   }
 
   if (!cx) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!nsContentUtils::IsSafeToRunScript()) {
     return NS_ERROR_FAILURE;
   }
 

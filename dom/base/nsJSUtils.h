@@ -331,6 +331,9 @@ nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
 // TaintFox: Add taint source information to a string
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name);
 
+// TaintFox: Add taint source information to a string
+nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg);
+
 // TaintFox: Report taint flows into DOM related sinks.
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name);
 

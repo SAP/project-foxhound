@@ -269,22 +269,34 @@ class MOZ_STACK_CLASS DOMString {
 
   // TaintFox: convenience method to assign taint information to a DOMString
   void AssignTaint(const StringTaint& aTaint) {
-    MOZ_ASSERT(mString || mStringBuffer, "Must have a string or stringbuffer when setting taint information");
-    if (mString)
-      mString->AssignTaint(aTaint);
-    else if (mStringBuffer)
+    if (IsNull() || IsEmpty()) {
+      return;
+    } else if (HasStringBuffer()) {
       mStringBuffer->AssignTaint(aTaint);
+    } else if (HasLiteral() || HasAtom()) {
+      // TODO: taintfox: warning if trying to taint a literal
+      return;
+    } else {
+      AsAString().AssignTaint(aTaint);
+    }
   }
 
   // TaintFox: added for convenience
   uint32_t Length() {
-    MOZ_ASSERT(mString || mStringBuffer, "Must have a string or stringbuffer when retrieving the length");
-    if (mString)
-      return mString->Length();
-    else if (mStringBuffer)
-      return mLength;
-    else
+    if (IsNull()) {
       return 0;
+    } else if (IsEmpty()) {
+      return 0;
+    } else if (HasStringBuffer()) {
+      return StringBufferLength();
+    } else if (HasLiteral()) {
+      return LiteralLength();
+    } else if (HasAtom()) {
+      return mAtom->GetLength();
+    } else {
+      return mString->Length();
+    }
+    return 0;
   }
 
  private:

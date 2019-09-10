@@ -990,6 +990,10 @@ class Element : public FragmentOrElement {
     const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
     if (val) {
       val->ToString(aResult);
+      // Taintfox element.getAttr source
+      // This is a catch all for GetAttr, could be reset in child
+      // classes to get a more specific location
+      MarkTaintSource(aResult, "element.getAttr");
       return true;
     }
     // else DOMString comes pre-emptied.
@@ -1004,6 +1008,10 @@ class Element : public FragmentOrElement {
     const nsAttrValue* val = mAttrs.GetAttr(aName);
     if (val) {
       val->ToString(aResult);
+      // Taintfox element.getAttr source
+      // This is a catch all for GetAttr, could be reset in child
+      // classes to get a more specific location
+      MarkTaintSource(aResult, "element.getAttr", aName);
       return true;
     }
     // else DOMString comes pre-emptied.

@@ -845,6 +845,9 @@ nsresult Location::Reload(bool aForceget) {
 
 void Location::Replace(const nsAString& aUrl, nsIPrincipal& aSubjectPrincipal,
                        ErrorResult& aRv) {
+  // Taintfox: location.replace sink
+  ReportTaintSink(aUrl, "location.replace");
+
   DoSetHref(aUrl, aSubjectPrincipal, true, aRv);
 }
 
@@ -854,6 +857,9 @@ void Location::Assign(const nsAString& aUrl, nsIPrincipal& aSubjectPrincipal,
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
+
+  // Taintfox: location.assign sink
+  ReportTaintSink(aUrl, "location.assign");
 
   DoSetHref(aUrl, aSubjectPrincipal, false, aRv);
 }
