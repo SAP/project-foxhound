@@ -3345,7 +3345,7 @@ static JSString* CloneString(JSContext* cx, JSFlatString* selfHostedString) {
     }
     if (clone) {
       // TaintFox: clone taint information as well.
-      clone->setTaint(selfHostedString->taint());
+      clone->setTaint(cx, selfHostedString->taint());
       return clone;
     }
   }
@@ -3359,7 +3359,7 @@ static JSString* CloneString(JSContext* cx, JSFlatString* selfHostedString) {
              ? NewStringCopyN<CanGC>(cx, chars.latin1Range().begin().get(), len)
              : NewStringCopyNDontDeflate<CanGC>(
                    cx, chars.twoByteRange().begin().get(), len);
-  clone->setTaint(selfHostedString->taint());             // TODO see above, might want to remove this
+  clone->setTaint(cx, selfHostedString->taint());             // TODO see above, might want to remove this
   return clone;
 }
 

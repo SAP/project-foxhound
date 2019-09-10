@@ -46,7 +46,7 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name);
 void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
 
 // Print a message to stdout.
-void TaintFoxReport(const char* msg);
+void TaintFoxReport(JSContext* cx, const char* msg);
 
 }
 

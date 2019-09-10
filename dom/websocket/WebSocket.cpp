@@ -1911,7 +1911,7 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
     NS_ENSURE_TRUE(jsString, NS_ERROR_FAILURE);
 
     // Taintfox: WebSocket.MessageEvent.data
-    JS_SetStringTaint(jsString, "WebSocket.MessageEvent.data");
+    JS_SetStringTaint(cx, jsString, "WebSocket.MessageEvent.data");
 
     jsData.setString(jsString);
   }

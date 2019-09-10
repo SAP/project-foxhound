@@ -415,10 +415,10 @@ class JSString : public js::gc::Cell {
  public:
   // TaintFox: (statically) overwrite setTaint to avoid tainting the empty string.
   // Currently, we disallow tainting empty strings. This might change in the future.
-  void setTaint(const StringTaint& taint) {
+  void setTaint(JSContext* cx, const StringTaint& taint) {
     if (length() > 0 && taint.hasTaint()) {
       if (isAtom()) {
-        js::TaintFoxReport("Warning: cannot taint atomized string!");
+        js::TaintFoxReport(cx, "Warning: cannot taint atomized string!");
         return;
       }
       d.taint_ = taint;

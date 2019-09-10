@@ -88,7 +88,7 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
   s->initTaint();
   if (base->isTainted()) {
     StringTaint newTaint = base->taint().subtaint(start, start + length);
-    s->setTaint(newTaint);
+    s->setTaint(cx, newTaint);
   }
 
   JS::AutoCheckCannotGC nogc;
@@ -161,7 +161,7 @@ MOZ_ALWAYS_INLINE void JSRope::init(JSContext* cx, JSString* left,
   // TaintFox: Construct new taint information.
   initTaint();
   if (left->isTainted() || right->isTainted())
-    setTaint(StringTaint::concat(left->taint(), left->length(), right->taint()));
+    setTaint(cx, StringTaint::concat(left->taint(), left->length(), right->taint()));
 
   // Post-barrier by inserting into the whole cell buffer if either
   // this -> left or this -> right is a tenured -> nursery edge.
@@ -214,9 +214,9 @@ MOZ_ALWAYS_INLINE void JSDependentString::init(JSContext* cx,
   // TaintFox: copy taint information from the base string.
   this->initTaint();
   if (optTaint != nullptr) {
-    this->setTaint(*optTaint);
+    this->setTaint(cx, *optTaint);
   } else if (base->isTainted()) {
-    this->setTaint(base->taint().subtaint(start, start + length));
+    this->setTaint(cx, base->taint().subtaint(start, start + length));
   }
 }
 

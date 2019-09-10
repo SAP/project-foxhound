@@ -1062,7 +1062,7 @@ js::AtomizeCharsIfUntainted(JSContext* cx, const CharT* chars, size_t length,
         return nullptr;
     }
 
-    flat->setTaint(taint);
+    flat->setTaint(cx, taint);
 
     return flat;
 }

@@ -3041,13 +3041,13 @@ extern JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSFlatString* str);
 
 extern JS_PUBLIC_API void
-JS_SetStringTaint(JSString* str, const StringTaint& taint);
+JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint);
 
 extern JS_PUBLIC_API void
-JS_SetStringTaint(JSString* str, const char* source);
+JS_SetStringTaint(JSContext* cx, JSString* str, const char* source);
 
 extern JS_PUBLIC_API void
-JS_SetStringTaint(JS::MutableHandleValue value, const char* source);
+JS_SetStringTaint(JSContext* cx, JS::MutableHandleValue value, const char* source);
 
 // Taintfox: Create new String Taint Location from the context
 extern JS_PUBLIC_API TaintOperation

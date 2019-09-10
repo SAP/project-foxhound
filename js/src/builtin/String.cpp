@@ -142,7 +142,7 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
   if (!tainted_str)
     return false;
-  tainted_str->setTaint(taint);
+  tainted_str->setTaint(cx, taint);
 
   MOZ_ASSERT(tainted_str->isTainted());
 
@@ -336,7 +336,7 @@ str_taint_setter(JSContext* cx, unsigned argc, Value* vp)
     taint.append(TaintRange(begin, end, TaintFlow(flow)));
   }
 
-  str->setTaint(taint);
+  str->setTaint(cx, taint);
 
   args.rval().setUndefined();
   return true;
@@ -498,7 +498,7 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
 
   // Taintfox: set new taint
   newtaint.extend(TaintOperationFromContext(cx, "escape"));
-  res->setTaint(newtaint);
+  res->setTaint(cx, newtaint);
 
   args.rval().setString(res);
   return true;
@@ -662,7 +662,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
 
   // TaintFox: add taint operation.
   newtaint.extend(TaintOperationFromContext(cx, "unescape"));
-  result->setTaint(newtaint);
+  result->setTaint(cx, newtaint);
 
   args.rval().setString(result);
   return true;
@@ -910,12 +910,12 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
     }
 
     JSString* res = JSRope::new_<CanGC>(cx, lhs, rhs, len);
-    res->setTaint(newTaint);
+    res->setTaint(cx, newTaint);
     return res;
   }
 
   JSString* res = NewDependentString(cx, str, begin, len);
-  res->setTaint(newTaint);
+  res->setTaint(cx, newTaint);
   return res;
 }
 
@@ -1178,7 +1178,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   if (!res)
     return nullptr;
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLowerCase")));
+  res->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLowerCase")));
 
   return res;
 }
@@ -1328,7 +1328,7 @@ bool js::str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase")));
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase")));
 
     args.rval().set(result);
     return true;
@@ -1630,7 +1630,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
                 : newChars.ref<TwoByteBuffer>().toStringDontDeflate(cx, resultLength);
 
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toUpperCase")));
+  res->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toUpperCase")));
 
   return res;
 }
@@ -1754,7 +1754,7 @@ bool js::str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase")));
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase")));
 
     args.rval().set(result);
     return true;
@@ -1946,7 +1946,7 @@ bool js::str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: Add taint operation.
-  ns->setTaint(StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize")));
+  ns->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize")));
 
   // Step 7.
   args.rval().setString(ns);

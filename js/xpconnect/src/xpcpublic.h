@@ -250,7 +250,7 @@ class XPCStringConvert {
     }
 
     // TaintFox: Transfer taint information to newly created JS string.
-    JS_SetStringTaint(str, buf->taint());
+    JS_SetStringTaint(cx, str, buf->taint());
 
     rval.setString(str);
     return true;
@@ -268,7 +268,7 @@ class XPCStringConvert {
     }
 
     // TaintFox: empty taint
-    JS_SetStringTaint(str, EmptyTaint);
+    JS_SetStringTaint(cx, str, EmptyTaint);
 
     rval.setString(str);
     return true;

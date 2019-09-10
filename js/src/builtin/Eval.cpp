@@ -263,8 +263,7 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
   }
 
   // TaintFox: eval() sink.
-  if (str->isTainted())
-    JS_ReportTaintSink(cx, str, "eval");
+  JS_ReportTaintSink(cx, str, "eval");
 
   EvalScriptGuard esg(cx);
 
@@ -369,6 +368,9 @@ bool js::DirectEvalStringFromIon(JSContext* cx, HandleObject env,
   if (ejr != EvalJSON_NotJSON) {
     return ejr == EvalJSON_Success;
   }
+
+  // TaintFox: eval() sink.
+  JS_ReportTaintSink(cx, str, "eval");
 
   EvalScriptGuard esg(cx);
 

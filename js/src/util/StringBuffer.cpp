@@ -101,7 +101,7 @@ JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
   cx->updateMallocCounter(sizeof(CharT) * len);
 
   // TaintFox: Propagate taint to newly created string.
-  str->setTaint(taint());
+  str->setTaint(cx, taint());
   // Taintfox: clear the stringbuffer taint information
   clearTaint();
 

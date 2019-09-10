@@ -807,7 +807,7 @@ JSString* js::ConcatStrings(
         StringTaint newTaint = left->taint();
         newTaint.concat(right->taint(), left->length());
         newTaint.extend(js::TaintOperationFromContext(cx, "concat"));
-        str->setTaint(newTaint);
+        str->setTaint(cx, newTaint);
     }
     return str;
   }
@@ -1496,7 +1496,7 @@ JSFlatString* JSExternalString::ensureFlat(JSContext* cx) {
   setLengthAndFlags(n, INIT_FLAT_FLAGS);
   setNonInlineChars<char16_t>(s.release());
   // Taintfox: set taint
-  this->setTaint(taint);
+  this->setTaint(cx, taint);
 
   return &this->asFlat();
 }

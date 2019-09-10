@@ -5829,23 +5829,23 @@ JS_GetStringTaint(const JSFlatString* str)
 }
 
 JS_PUBLIC_API void
-JS_SetStringTaint(JSString* str, const StringTaint& taint)
+JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint)
 {
-  str->setTaint(taint);
+  str->setTaint(cx, taint);
 }
 
 JS_PUBLIC_API void
-JS_SetStringTaint(JSString* str, const char* source)
+JS_SetStringTaint(JSContext* cx, JSString* str, const char* source)
 {
-  JS_SetStringTaint(str, StringTaint(0, str->length(), TaintOperation(source)));
+  JS_SetStringTaint(cx, str, StringTaint(0, str->length(), TaintOperation(source)));
 }
 
 JS_PUBLIC_API void
-JS_SetStringTaint(JS::MutableHandleValue value, const char* source)
+JS_SetStringTaint(JSContext* cx, JS::MutableHandleValue value, const char* source)
 {
   if (value.isString()) {
     // If we have a string, set taint directly
-    JS_SetStringTaint(value.toString(), source);
+    JS_SetStringTaint(cx, value.toString(), source);
   } else if (value.isObject()) {
     // If it is an object, loop over contents
     // This function is used for convenience to taint all
@@ -5855,7 +5855,7 @@ JS_SetStringTaint(JS::MutableHandleValue value, const char* source)
       for (size_t i = 0; i < obj->slotSpan(); i++) {
         JS::Value slot = obj->getSlot(i);
         if (slot.isString()) {
-          JS_SetStringTaint(slot.toString(), source);
+          JS_SetStringTaint(cx, slot.toString(), source);
         }
       }
     }

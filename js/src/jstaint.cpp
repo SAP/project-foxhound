@@ -142,7 +142,7 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
 }
 
 // Print a message to stdout.
-void js::TaintFoxReport(const char* msg)
+void js::TaintFoxReport(JSContext* cx, const char* msg)
 {
-    std::cerr << msg << std::endl;
+  JS_ReportWarningUTF8(cx, "%s", msg);
 }
