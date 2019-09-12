@@ -155,7 +155,7 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuote(
       *dstPtr++ = c;
       appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
       *dstPtr++ = *src++;
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
+      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin++, dstBegin, dstCharBegin, dstPtr);
       continue;
     }
 

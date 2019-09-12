@@ -307,7 +307,6 @@ void StringTaint::shift(uint32_t index, int amount)
     StringTaint newtaint;
     for (auto& range : *this) {
         if (range.begin() >= index) {
-            MOZ_ASSERT_IF(ranges_, range.begin() + amount >= ranges_->back().end());
             ranges->emplace_back(range.begin() + amount, range.end() + amount, range.flow());
         } else if (range.end() > index) {
             MOZ_ASSERT(amount >= 0);
