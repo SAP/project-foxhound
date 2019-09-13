@@ -322,6 +322,9 @@ class nsAutoJSString : public nsAutoString {
   ~nsAutoJSString() {}
 };
 
+// Extend the taintflow
+nsresult MarkTaintOperation(nsAString &str, const char* name);
+
 // TaintFox: Add taint source information to a string
 nsresult MarkTaintSource(nsAString &str, const char* name);
 

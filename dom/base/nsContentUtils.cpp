@@ -850,7 +850,12 @@ nsresult nsContentUtils::Btoa(const nsAString& aBinaryData,
     return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
   }
 
-  return Base64Encode(aBinaryData, aAsciiBase64String);
+  nsresult rv = Base64Encode(aBinaryData, aAsciiBase64String);
+
+  // Taintfox: Extend taint flow
+  MarkTaintOperation(aAsciiBase64String, "btoa");
+
+  return rv;
 }
 
 nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
@@ -863,6 +868,7 @@ nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
   const char16_t* start = aAsciiBase64String.BeginReading();
   const char16_t* cur = start;
   const char16_t* end = aAsciiBase64String.EndReading();
+  uint32_t i = 0;
   bool hasWhitespace = false;
 
   while (cur < end) {
@@ -871,6 +877,7 @@ nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
       break;
     }
     cur++;
+    i++;
   }
 
   nsresult rv;
@@ -882,13 +889,17 @@ nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
       return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
     }
 
+    // Taintfox: also remove any taint associated with the whitespace
+    trimmedString.AppendTaint(aAsciiBase64String.Taint().subtaint(0, i + 1));
     trimmedString.Append(start, cur - start);
 
     while (cur < end) {
       if (!nsContentUtils::IsHTMLWhitespace(*cur)) {
+        trimmedString.AppendTaint(aAsciiBase64String.Taint().subtaint(i, i + 1));
         trimmedString.Append(*cur);
       }
       cur++;
+      i++;
     }
     rv = Base64Decode(trimmedString, aBinaryData);
   } else {
@@ -898,6 +909,10 @@ nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
   if (NS_FAILED(rv) && rv == NS_ERROR_INVALID_ARG) {
     return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
   }
+
+  // Taintfox: Extend taint flow
+  MarkTaintOperation(aBinaryData, "atob");
+
   return rv;
 }
 

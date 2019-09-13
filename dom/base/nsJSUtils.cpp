@@ -672,6 +672,22 @@ bool nsAutoJSString::init(const JS::Value& v) {
 
 LazyLogModule gTaintLog("Taint");
 
+nsresult MarkTaintOperation(nsAString &str, const char* name)
+{
+  if (!str.isTainted()) {
+    return NS_OK;
+  }
+
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+
+  if (cx) {
+    str.Taint().extend(JS_GetTaintOperation(cx, name));
+  } else {
+    str.Taint().extend(TaintOperation(name));
+  }
+  return NS_OK;
+}
+
 nsresult MarkTaintSource(nsAString &str, const char* name)
 {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();

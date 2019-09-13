@@ -353,7 +353,16 @@ class TaintRange {
     // Resizes this range.
     void resize(uint32_t begin, uint32_t end);
 
+    // Re-sizes the range to convert from ASCII to base64
+    void toBase64();
+    // Re-sizes the range to convert from base64 to ASCII
+    void fromBase64();
+
   private:
+
+    static uint32_t convertBaseBegin(uint32_t ntet, uint32_t nwidth, uint32_t m_tet);
+    static uint32_t convertBaseEnd(uint32_t ntet, uint32_t nwidth, uint32_t m_tet);
+
     uint32_t begin_, end_;
 
     TaintFlow flow_;
@@ -494,6 +503,11 @@ class StringTaint
     // TODO rename to append
     StringTaint& concat(const StringTaint& other, uint32_t offset);
 
+    // Re-sizes all taint ranges to convert from ASCII to base64
+    StringTaint& toBase64();
+    // Re-sizes all taint ranges to convert from base64 to ASCII
+    StringTaint& fromBase64();
+
     // Iterate over the taint ranges.
     std::vector<TaintRange>::iterator begin();
     std::vector<TaintRange>::iterator end();
@@ -517,9 +531,17 @@ class StringTaint
     // by the given taint operation.
     static StringTaint extend(const StringTaint& taint, const TaintOperation& operation);
 
+    // Creates a copy of the provided taint information with each range adjusted to base64
+    static StringTaint toBase64(const StringTaint& taint);
+    // Creates a copy of the provided taint information with each range adjusted from base64
+    static StringTaint fromBase64(const StringTaint& taint);
+
   private:
     // Assign a new range vector and delete the old one.
     void assign(std::vector<TaintRange>* ranges);
+
+    // Resize any overlapping ranges
+    void removeOverlaps();
 
     // Here we optimize for the (common) case of untainted strings by only
     // storing a single pointer per instance. This keeps untainted strings

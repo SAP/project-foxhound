@@ -207,6 +207,59 @@ void TaintRange::resize(uint32_t begin, uint32_t end)
     end_ = end;
 }
 
+/**
+ * Some helper functions for converting between ASCII (octets) and base64 (sextets)
+ *
+ * Octet  |0              |1               |2             |
+ * --------------------------------------------------------
+ * Bit    |           |   |       |        |  |           |
+ * --------------------------------------------------------
+ * Sextet |0          |1          |2          |3          |
+ *
+ * In both convertBaseBegin and convertBaseEnd:
+ *
+ * ntet:   is the index of the input character
+ * nwidth: is the bit width of the input (for ASCII = 8)
+ * mwidth: is the bit width of the output (for Base64 = 6)
+ *
+ * In the case of convertBaseBegin, the bit index of the first bit is computed
+ * and converted.
+ *
+ * For convertBaseEnd, the bit index of the last bit in the ntet is computed and
+ * converted.
+ *
+ * Note that this means there will be some slight over-tainting on converting to
+ * and from base64
+ *
+ **/
+uint32_t TaintRange::convertBaseBegin(uint32_t ntet, uint32_t nwidth, uint32_t mwidth)
+{
+    MOZ_ASSERT(ntet >= 0);
+    MOZ_ASSERT(nwidth > 0);
+    MOZ_ASSERT(mwidth > 0);
+
+    return (ntet * nwidth) / mwidth;
+}
+
+uint32_t TaintRange::convertBaseEnd(uint32_t ntet, uint32_t nwidth, uint32_t mwidth)
+{
+    MOZ_ASSERT(ntet >= 0);
+    MOZ_ASSERT(nwidth > 0);
+    MOZ_ASSERT(mwidth > 0);
+
+    return (ntet * nwidth + nwidth - 1) / mwidth;
+}
+
+void TaintRange::toBase64()
+{
+    resize(convertBaseBegin(begin_, 8, 6), convertBaseEnd(end_, 8, 6));
+}
+
+void TaintRange::fromBase64()
+{
+    resize(convertBaseBegin(begin_, 6, 8), convertBaseEnd(end_, 6, 8));
+}
+
 StringTaint::StringTaint() : ranges_(nullptr) { }
 
 StringTaint::StringTaint(TaintRange range)
@@ -486,4 +539,70 @@ void StringTaint::assign(std::vector<TaintRange>* ranges)
 	// XXX is this really correct?
         delete ranges;
     }
+}
+
+void StringTaint::removeOverlaps()
+{
+    // Nothing to do if empty or only one range
+    if (!ranges_ || ranges_->size() < 2) {
+	return;
+    }
+
+    auto last = begin();
+    auto current = begin();
+
+    // Move to second range
+    current++;
+
+    while (current != end()) {
+	// Internal methods should ensure that ranges are self-consistent
+	MOZ_ASSERT(last->begin() <= last->end());
+	MOZ_ASSERT(current->begin() <= current->end());
+	MOZ_ASSERT(current->begin() > last->begin());
+	// Check if two adjacent ranges overlap
+	if (last->end() > current->begin()) {
+	    // Assign current iterator
+	    *current = TaintRange(last->end(), current->end(), current->flow());
+	}
+	// Check we didn't make an invalid range
+	if (current->begin() >= current->end()) {
+	    current = ranges_->erase(current);
+	    // Don't need to set last it is still the previous range
+	} else {
+	    last = current;
+	    current++;
+	}
+    }
+}
+
+StringTaint& StringTaint::toBase64()
+{
+    for (auto& range : *this) {
+	range.toBase64();
+    }
+    removeOverlaps();
+
+    return *this;
+}
+
+StringTaint& StringTaint::fromBase64()
+{
+    for (auto& range : *this) {
+	range.fromBase64();
+    }
+    removeOverlaps();
+
+    return *this;
+}
+
+StringTaint StringTaint::toBase64(const StringTaint& taint)
+{
+    StringTaint newTaint = taint;
+    return newTaint.toBase64();
+}
+
+StringTaint StringTaint::fromBase64(const StringTaint& taint)
+{
+    StringTaint newTaint = taint;
+    return newTaint.fromBase64();
 }

@@ -3057,6 +3057,10 @@ JS_GetTaintOperation(JSContext* cx, const char* name, JS::HandleValue args);
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name);
 
+// Taintfox add an operation to the taintflow of all taint ranges
+JS_PUBLIC_API void
+JS_ExtendStringTaint(JSContext* cx, JSString* str, const char* operation);
+
 // TaintFox: Report tainted flows into a sink.
 //
 // This will print to stdout and trigger a custom JavaScript event on the current page.

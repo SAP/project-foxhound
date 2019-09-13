@@ -5831,13 +5831,17 @@ JS_GetStringTaint(const JSFlatString* str)
 JS_PUBLIC_API void
 JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint)
 {
-  str->setTaint(cx, taint);
+  if (str) {
+    str->setTaint(cx, taint);
+  }
 }
 
 JS_PUBLIC_API void
 JS_SetStringTaint(JSContext* cx, JSString* str, const char* source)
 {
-  JS_SetStringTaint(cx, str, StringTaint(0, str->length(), TaintOperation(source)));
+  if (str) {
+    JS_SetStringTaint(cx, str, StringTaint(0, str->length(), TaintOperation(source)));
+  }
 }
 
 JS_PUBLIC_API void
@@ -5872,6 +5876,14 @@ JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* sink)
 {
   return TaintOperationFromContext(cx, sink);
+}
+
+JS_PUBLIC_API void
+JS_ExtendStringTaint(JSContext* cx, JSString* str, const char* operation)
+{
+  if (str) {
+    str->taint().extend(TaintOperationFromContext(cx, operation));
+  }
 }
 
 JS_PUBLIC_API void
@@ -5924,7 +5936,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
 
   // Extend the taint flow to include the sink function
   str->taint().extend(TaintOperationFromContext(cx, sink, arg));
- 
+
   // Trigger a custom event that can be caught by an extension.
   // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile
   // this code everytime we detect a tainted flow, we store the compiled function into a reserved

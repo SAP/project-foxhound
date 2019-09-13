@@ -890,7 +890,7 @@ bool Base64Encode(JSContext* cx, HandleValue val, MutableHandleValue out) {
   if (!str) {
     return false;
   }
-
+  JS_SetStringTaint(cx, str, result.Taint());
   out.setString(str);
   return true;
 }
@@ -913,7 +913,7 @@ bool Base64Decode(JSContext* cx, HandleValue val, MutableHandleValue out) {
   if (!str) {
     return false;
   }
-
+  JS_SetStringTaint(cx, str, result.Taint());
   out.setString(str);
   return true;
 }
