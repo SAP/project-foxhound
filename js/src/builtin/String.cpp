@@ -1108,15 +1108,16 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
 
     // One element Latin-1 strings can be directly retrieved from the
     // static strings cache.
-    if (IsSame<CharT, Latin1Char>::value) {
-      if (length == 1) {
-        char16_t lower = unicode::ToLowerCase(chars[0]);
-        MOZ_ASSERT(lower <= JSString::MAX_LATIN1_CHAR);
-        MOZ_ASSERT(StaticStrings::hasUnit(lower));
+    // Taintfox: disable this in order to prevent atoms
+    // if (IsSame<CharT, Latin1Char>::value) {
+    //   if (length == 1) {
+    //     char16_t lower = unicode::ToLowerCase(chars[0]);
+    //     MOZ_ASSERT(lower <= JSString::MAX_LATIN1_CHAR);
+    //     MOZ_ASSERT(StaticStrings::hasUnit(lower));
 
-        return cx->staticStrings().getUnit(lower);
-      }
-    }
+    //     return cx->staticStrings().getUnit(lower);
+    //   }
+    // }
 
     // Look for the first character that changes when lowercased.
     size_t i = 0;
@@ -1527,23 +1528,24 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
 
     // Most one element Latin-1 strings can be directly retrieved from the
     // static strings cache.
-    if (IsSame<CharT, Latin1Char>::value) {
-      if (length == 1) {
-        Latin1Char c = chars[0];
-        if (c != unicode::MICRO_SIGN &&
-            c != unicode::LATIN_SMALL_LETTER_Y_WITH_DIAERESIS &&
-            c != unicode::LATIN_SMALL_LETTER_SHARP_S) {
-          char16_t upper = unicode::ToUpperCase(c);
-          MOZ_ASSERT(upper <= JSString::MAX_LATIN1_CHAR);
-          MOZ_ASSERT(StaticStrings::hasUnit(upper));
+    // Taintfox: disable this to prevent atoms
+    // if (IsSame<CharT, Latin1Char>::value) {
+    //   if (length == 1) {
+    //     Latin1Char c = chars[0];
+    //     if (c != unicode::MICRO_SIGN &&
+    //         c != unicode::LATIN_SMALL_LETTER_Y_WITH_DIAERESIS &&
+    //         c != unicode::LATIN_SMALL_LETTER_SHARP_S) {
+    //       char16_t upper = unicode::ToUpperCase(c);
+    //       MOZ_ASSERT(upper <= JSString::MAX_LATIN1_CHAR);
+    //       MOZ_ASSERT(StaticStrings::hasUnit(upper));
 
-          return cx->staticStrings().getUnit(upper);
-        }
+    //       return cx->staticStrings().getUnit(upper);
+    //     }
 
-        MOZ_ASSERT(unicode::ToUpperCase(c) > JSString::MAX_LATIN1_CHAR ||
-                   ToUpperCaseHasSpecialCasing(c));
-      }
-    }
+    //     MOZ_ASSERT(unicode::ToUpperCase(c) > JSString::MAX_LATIN1_CHAR ||
+    //                ToUpperCaseHasSpecialCasing(c));
+    //   }
+    // }
 
     // Look for the first character that changes when uppercased.
     size_t i = 0;
@@ -3546,7 +3548,8 @@ static ArrayObject* CharSplitHelper(JSContext* cx, HandleLinearString str,
     return NewFullyAllocatedArrayTryUseGroup(cx, group, 0);
   }
 
-  js::StaticStrings& staticStrings = cx->staticStrings();
+  // Taintfox: not needed
+  //  js::StaticStrings& staticStrings = cx->staticStrings();
   uint32_t resultlen = (limit < strLength ? limit : strLength);
   size_t count = 0;
       

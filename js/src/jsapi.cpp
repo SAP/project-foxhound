@@ -5928,7 +5928,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   // Print a message to stdout. Also include the current JS backtrace.
   auto& firstRange = *str->taint().begin();
 
-  std::cerr << "!!! Tainted flow into " << sink << " from " << firstRange.flow().source().name() << " !!!" << std::endl;
+  // std::cerr << "!!! Tainted flow into " << sink << " from " << firstRange.flow().source().name() << " !!!" << std::endl;
   // DumpBacktrace(cx);
 
   // Report a warning to show up on the web console

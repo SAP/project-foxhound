@@ -117,9 +117,10 @@ class MOZ_NON_PARAM InlineCharBuffer {
           !heapStorage,
           "expected only inline storage when length fits in inline string");
 
-      if (JSString* str = TryEmptyOrStaticString(cx, inlineStorage, length)) {
-        return str;
-      }
+      // Taintfox: disable
+      // if (JSString* str = TryEmptyOrStaticString(cx, inlineStorage, length)) {
+      //   return str;
+      // }
 
       mozilla::Range<const CharT> range(inlineStorage, length);
       return NewInlineString<CanGC>(cx, range);
