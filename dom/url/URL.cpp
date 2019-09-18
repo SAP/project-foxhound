@@ -152,6 +152,7 @@ void URL::URLSearchParamsUpdated(URLSearchParams* aSearchParams) {
   nsresult rv = mURI->func(tmp); \
   if (NS_SUCCEEDED(rv)) {        \
     CopyUTF8toUTF16(tmp, value); \
+    value.AssignTaint(tmp.Taint()); \
   }
 
 void URL::GetHref(nsAString& aHref) const { URL_GETTER(aHref, GetSpec); }

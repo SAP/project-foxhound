@@ -1089,7 +1089,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   // input is a Latin-1 string, the output is also a Latin-1 string.
 
   InlineCharBuffer<CharT> newChars;
-
+  StringTaint taint = str->taint();
   const size_t length = str->length();
   size_t resultLength;
   {
@@ -1179,7 +1179,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   if (!res)
     return nullptr;
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLowerCase")));
+  res->setTaint(cx, StringTaint::extend(taint, TaintOperationFromContext(cx, "toLowerCase")));
 
   return res;
 }
@@ -1521,6 +1521,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
 
   mozilla::MaybeOneOf<Latin1Buffer, TwoByteBuffer> newChars;
   const size_t length = str->length();
+  StringTaint taint = str->taint();
   size_t resultLength;
   {
     AutoCheckCannotGC nogc;
@@ -1632,7 +1633,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
                 : newChars.ref<TwoByteBuffer>().toStringDontDeflate(cx, resultLength);
 
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toUpperCase")));
+  res->setTaint(cx, StringTaint::extend(taint, TaintOperationFromContext(cx, "toUpperCase")));
 
   return res;
 }

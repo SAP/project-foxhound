@@ -2688,7 +2688,7 @@ HttpBaseChannel::GetEntityID(nsACString& aEntityID) {
     Unused << mResponseHead->GetHeader(nsHttp::ETag, etag);
   }
   nsCString entityID;
-  NS_EscapeURL(etag.BeginReading(), etag.Length(),
+  NS_EscapeURL(etag.BeginReading(), etag.Length(), etag.Taint(),
                esc_AlwaysCopy | esc_FileBaseName | esc_Forced, entityID);
   entityID.Append('/');
   entityID.AppendInt(int64_t(size));

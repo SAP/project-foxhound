@@ -110,7 +110,8 @@ class nsStandardURL : public nsIFileURL,
     // Encode the given segment if necessary, and return the length of
     // the encoded segment.  The encoded segment is appended to |buf|
     // if and only if encoding is required.
-    int32_t EncodeSegmentCount(const char* str, const URLSegment& segment,
+    int32_t EncodeSegmentCount(const char* str, const StringTaint& taint,
+                               const URLSegment& segment,
                                int16_t mask, nsCString& buf, bool& appended,
                                uint32_t extraLen = 0);
 
@@ -192,13 +193,15 @@ class nsStandardURL : public nsIFileURL,
   nsresult CheckIfHostIsAscii();
   void CoalescePath(netCoalesceFlags coalesceFlag, char* path);
 
-  uint32_t AppendSegmentToBuf(char*, uint32_t, const char*,
+  uint32_t AppendSegmentToBuf(char*, uint32_t, StringTaint&,
+                              const char*, const StringTaint&,
                               const URLSegment& input, URLSegment& output,
                               const nsCString* esc = nullptr,
                               bool useEsc = false, int32_t* diff = nullptr);
   uint32_t AppendToBuf(char*, uint32_t, const char*, uint32_t);
 
-  nsresult BuildNormalizedSpec(const char* spec, const Encoding* encoding);
+  nsresult BuildNormalizedSpec(const char* spec, const Encoding* encoding,
+                               StringTaint& taint);
   nsresult SetSpecWithEncoding(const nsACString& input,
                                const Encoding* encoding);
 
@@ -210,7 +213,7 @@ class nsStandardURL : public nsIFileURL,
                  bool ignoreCase = false);
 
   int32_t ReplaceSegment(uint32_t pos, uint32_t len, const char* val,
-                         uint32_t valLen);
+                         uint32_t valLen, const StringTaint& taint);
   int32_t ReplaceSegment(uint32_t pos, uint32_t len, const nsACString& val);
 
   nsresult ParseURL(const char* spec, int32_t specLen);

@@ -123,11 +123,21 @@ enum EscapeMask {
  * @return true if aResult was written to (i.e. at least one character was
  *              escaped or esc_AlwaysCopy was requested), false otherwise.
  */
-bool NS_EscapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
-                  nsACString& aResult);
+bool NS_EscapeURL(const char* aStr, int32_t aLen, const StringTaint& aTaint,
+                  uint32_t aFlags, nsACString& aResult);
 
-bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, uint32_t aFlags,
-                      nsACString& aResult);
+bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, const StringTaint& aTaint,
+                      uint32_t aFlags, nsACString& aResult);
+
+inline bool NS_EscapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
+                         nsACString& aResult) {
+  return NS_EscapeURL(aStr, aLen, EmptyTaint, aFlags, aResult);
+}
+
+inline bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, uint32_t aFlags,
+                               nsACString& aResult) {
+  return NS_EscapeURLSpan(aStr, EmptyTaint, aFlags, aResult);
+}
 
 /**
  * Expands URL escape sequences... beware embedded null bytes!
@@ -142,8 +152,14 @@ bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, uint32_t aFlags,
  * @return true if aResult was written to (i.e. at least one character was
  *              unescaped or esc_AlwaysCopy was requested), false otherwise.
  */
-bool NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
-                    nsACString& aResult);
+bool NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTaint,
+                    uint32_t aFlags, nsACString& aResult);
+
+inline bool NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
+                           nsACString& aResult) {
+  return NS_UnescapeURL(aStr, aLen, EmptyTaint, aFlags, aResult);
+}
+
 
 /**
  * Fallible version of |NS_UnescapeURL|. See above for details.
@@ -152,9 +168,15 @@ bool NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
  *                  one character was unescaped or esc_AlwaysCopy was
  *                  requested), false otherwise.
  */
-nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
-                        nsACString& aResult, bool& aAppended,
+nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTaint,
+                        uint32_t aFlags, nsACString& aResult, bool& aAppended,
                         const mozilla::fallible_t&);
+
+inline nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
+                        nsACString& aResult, bool& aAppended,
+                        const mozilla::fallible_t&) {
+  return NS_UnescapeURL(aStr, aLen, EmptyTaint, aFlags, aResult, aAppended, mozilla::fallible);
+}
 
 /** returns resultant string length **/
 inline int32_t NS_UnescapeURL(char* aStr) { return nsUnescapeCount(aStr); }
@@ -164,7 +186,7 @@ inline int32_t NS_UnescapeURL(char* aStr) { return nsUnescapeCount(aStr); }
  */
 inline const nsACString& NS_EscapeURL(const nsACString& aStr, uint32_t aFlags,
                                       nsACString& aResult) {
-  if (NS_EscapeURLSpan(aStr, aFlags, aResult)) {
+  if (NS_EscapeURLSpan(aStr, aStr.Taint(), aFlags, aResult)) {
     return aResult;
   }
   return aStr;
@@ -219,7 +241,7 @@ inline bool NS_Escape(const nsACString& aOriginal, nsACString& aEscaped,
                       nsEscapeMask aMask) {
   size_t escLen = 0;
   char* esc =
-      nsEscape(aOriginal.BeginReading(), aOriginal.Length(), &escLen, aMask);
+    nsEscape(aOriginal.BeginReading(), aOriginal.Length(), &escLen, aMask);
   if (!esc) {
     return false;
   }

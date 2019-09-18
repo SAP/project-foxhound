@@ -1247,6 +1247,11 @@ void nsTSubstring<T>::StripTaggedASCII(const ASCIIMaskArray& aToStrip) {
     if (!mozilla::ASCIIMask::IsMasked(aToStrip, theChar)) {
       // Not stripped, copy this char.
       *to++ = (char_type)theChar;
+    } else {
+      // TaintFox: remove taint information for the removed character.
+      if (this->isTainted()) {
+        this->mTaint.clearAt(from - this->mData - 1);
+      }
     }
   }
   *to = char_type(0);  // add the null

@@ -288,7 +288,8 @@ static uint16_t dontNeedEscape(uint16_t aChar, uint32_t aFlags) {
  */
 template <class T>
 static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
-                            uint32_t aFlags, const ASCIIMaskArray* aFilterMask,
+                            const StringTaint& aTaint, uint32_t aFlags,
+                            const ASCIIMaskArray* aFilterMask,
                             T& aResult, bool& aDidAppend) {
   typedef nsCharTraits<typename T::char_type> traits;
   typedef typename traits::unsigned_char_type unsigned_char_type;
@@ -310,6 +311,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
   auto src = reinterpret_cast<const unsigned_char_type*>(aPart);
 
   typename T::char_type tempBuffer[100];
+  StringTaint tempTaint;
   unsigned int tempBufferPos = 0;
 
   bool previousIsNonASCII = false;
@@ -321,6 +323,10 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     // filtered characters.
     if (aFilterMask && mozilla::ASCIIMask::IsMasked(*aFilterMask, c)) {
       if (!writing) {
+
+        // Taintfox: propagate taint before string append
+        aResult.Taint().concat(aTaint.subtaint(0, i), aResult.Length());
+
         if (!aResult.Append(aPart, i, mozilla::fallible)) {
           return NS_ERROR_OUT_OF_MEMORY;
         }
@@ -354,12 +360,20 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
       }
     } else { /* do the escape magic */
       if (!writing) {
+
+        // Taintfox: propagate taint before string append
+        aResult.Taint().concat(aTaint.subtaint(0, i), aResult.Length());
+
         if (!aResult.Append(aPart, i, mozilla::fallible)) {
           return NS_ERROR_OUT_OF_MEMORY;
         }
         writing = true;
       }
       uint32_t len = ::AppendPercentHex(tempBuffer + tempBufferPos, c);
+      // Taintfox: propagate taint
+      if (aTaint.at(i)) {
+        tempTaint.append(TaintRange(tempBufferPos, tempBufferPos + len, *aTaint.at(i)));
+      }
       tempBufferPos += len;
       MOZ_ASSERT(len <= ENCODE_MAX_LEN, "potential buffer overflow");
     }
@@ -367,15 +381,23 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     // Flush the temp buffer if it doesnt't have room for another encoded char.
     if (tempBufferPos >= mozilla::ArrayLength(tempBuffer) - ENCODE_MAX_LEN) {
       NS_ASSERTION(writing, "should be writing");
+
+      // Taintfox: append the taint (before actually appending the string)
+      aResult.Taint().concat(tempTaint, aResult.Length());
+
       if (!aResult.Append(tempBuffer, tempBufferPos, mozilla::fallible)) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
+      tempTaint.clear();
       tempBufferPos = 0;
     }
 
     previousIsNonASCII = (c > 0x7f);
   }
   if (writing) {
+    // Taintfox: append the taint (before actually appending the string)
+    aResult.Taint().concat(tempTaint, aResult.Length());
+
     if (!aResult.Append(tempBuffer, tempBufferPos, mozilla::fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -384,8 +406,8 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
   return NS_OK;
 }
 
-bool NS_EscapeURL(const char* aPart, int32_t aPartLen, uint32_t aFlags,
-                  nsACString& aResult) {
+bool NS_EscapeURL(const char* aPart, int32_t aPartLen, const StringTaint& aTaint,
+                  uint32_t aFlags, nsACString& aResult) {
   size_t partLen;
   if (aPartLen < 0) {
     partLen = strlen(aPart);
@@ -393,14 +415,14 @@ bool NS_EscapeURL(const char* aPart, int32_t aPartLen, uint32_t aFlags,
     partLen = aPartLen;
   }
 
-  return NS_EscapeURLSpan(MakeSpan(aPart, partLen), aFlags, aResult);
+  return NS_EscapeURLSpan(MakeSpan(aPart, partLen), aTaint, aFlags, aResult);
 }
 
-bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, uint32_t aFlags,
-                      nsACString& aResult) {
+bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, const StringTaint& aTaint,
+                      uint32_t aFlags, nsACString& aResult) {
   bool appended = false;
-  nsresult rv = T_EscapeURL(aStr.Elements(), aStr.Length(), aFlags, nullptr,
-                            aResult, appended);
+  nsresult rv = T_EscapeURL(aStr.Elements(), aStr.Length(), aTaint,
+                            aFlags, nullptr, aResult, appended);
   if (NS_FAILED(rv)) {
     ::NS_ABORT_OOM(aResult.Length() * sizeof(nsACString::char_type));
   }
@@ -411,8 +433,8 @@ bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, uint32_t aFlags,
 nsresult NS_EscapeURL(const nsACString& aStr, uint32_t aFlags,
                       nsACString& aResult, const mozilla::fallible_t&) {
   bool appended = false;
-  nsresult rv = T_EscapeURL(aStr.Data(), aStr.Length(), aFlags, nullptr,
-                            aResult, appended);
+  nsresult rv = T_EscapeURL(aStr.Data(), aStr.Length(), aStr.Taint(),
+                            aFlags, nullptr, aResult, appended);
   if (NS_FAILED(rv)) {
     aResult.Truncate();
     return rv;
@@ -430,8 +452,8 @@ nsresult NS_EscapeAndFilterURL(const nsACString& aStr, uint32_t aFlags,
                                nsACString& aResult,
                                const mozilla::fallible_t&) {
   bool appended = false;
-  nsresult rv = T_EscapeURL(aStr.Data(), aStr.Length(), aFlags, aFilterMask,
-                            aResult, appended);
+  nsresult rv = T_EscapeURL(aStr.Data(), aStr.Length(), aStr.Taint(),
+                            aFlags, aFilterMask, aResult, appended);
   if (NS_FAILED(rv)) {
     aResult.Truncate();
     return rv;
@@ -449,8 +471,8 @@ nsresult NS_EscapeAndFilterURL(const nsACString& aStr, uint32_t aFlags,
 const nsAString& NS_EscapeURL(const nsAString& aStr, uint32_t aFlags,
                               nsAString& aResult) {
   bool result = false;
-  nsresult rv = T_EscapeURL<nsAString>(aStr.Data(), aStr.Length(), aFlags,
-                                       nullptr, aResult, result);
+  nsresult rv = T_EscapeURL<nsAString>(aStr.Data(), aStr.Length(), aStr.Taint(),
+                                       aFlags, nullptr, aResult, result);
 
   if (NS_FAILED(rv)) {
     ::NS_ABORT_OOM(aResult.Length() * sizeof(nsAString::char_type));
@@ -511,11 +533,11 @@ const nsAString& NS_EscapeURL(const nsString& aStr,
   return aStr;
 }
 
-bool NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
+bool NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTaint, uint32_t aFlags,
                     nsACString& aResult) {
   bool didAppend = false;
   nsresult rv =
-      NS_UnescapeURL(aStr, aLen, aFlags, aResult, didAppend, mozilla::fallible);
+    NS_UnescapeURL(aStr, aLen, aTaint, aFlags, aResult, didAppend, mozilla::fallible);
   if (rv == NS_ERROR_OUT_OF_MEMORY) {
     ::NS_ABORT_OOM(aLen * sizeof(nsACString::char_type));
   }
@@ -523,8 +545,8 @@ bool NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
   return didAppend;
 }
 
-nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
-                        nsACString& aResult, bool& aDidAppend,
+nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTaint,
+                        uint32_t aFlags, nsACString& aResult, bool& aDidAppend,
                         const mozilla::fallible_t&) {
   if (!aStr) {
     MOZ_ASSERT_UNREACHABLE("null pointer");
@@ -533,6 +555,9 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
 
   MOZ_ASSERT(aResult.IsEmpty(),
              "Passing a non-empty string as an out parameter!");
+
+  // Taintfox: clear taint
+  aResult.Taint().clear();
 
   uint32_t len;
   if (aLen < 0) {
@@ -553,6 +578,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
 
   unsigned char* destPtr;
   uint32_t destPos;
+  uint32_t srcPos = 0;
 
   if (writing) {
     if (!aResult.SetLength(len, mozilla::fallible)) {
@@ -586,14 +612,24 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
         if (p > last) {
           auto toCopy = p - last;
           memcpy(destPtr + destPos, last, toCopy);
+          // Taintfox: direct copy taint for unescaped chars
+          aResult.Taint().concat(aTaint.subtaint(srcPos, srcPos + toCopy), destPos);
           destPos += toCopy;
+          srcPos += toCopy;
           MOZ_ASSERT(destPos <= len);
           last = p;
         }
         destPtr[destPos] = u;
+        // Taintfox: copy single taint from source
+        if (aTaint.hasTaint()) {
+          StringTaint charTaint = aTaint.subtaint(srcPos, srcPos + 3);
+          // Take the taintflow of the first tainted character
+          aResult.Taint().set(destPos, charTaint.begin()->flow());
+        }
         destPos += 1;
         MOZ_ASSERT(destPos <= len);
         p += 2;
+        srcPos += 3;
         last += 3;
       }
     }
@@ -601,6 +637,10 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, uint32_t aFlags,
   if (writing && last < end) {
     auto toCopy = end - last;
     memcpy(destPtr + destPos, last, toCopy);
+
+    // Taintfox: direct copy taint for unescaped chars
+    aResult.Taint().concat(aTaint.subtaint(srcPos, srcPos + toCopy), destPos);
+
     destPos += toCopy;
     MOZ_ASSERT(destPos <= len);
   }

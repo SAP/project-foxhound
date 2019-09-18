@@ -7118,6 +7118,7 @@ nsresult nsContentUtils::GetHostOrIPv6WithBrackets(nsIURI* aURI,
     MOZ_ASSERT(!aHost.Length() ||
                (aHost[0] != '[' && aHost[aHost.Length() - 1] != ']'));
     aHost.Insert('[', 0);
+    aHost.Taint().shift(0, 1);
     aHost.Append(']');
   }
 
@@ -7132,6 +7133,7 @@ nsresult nsContentUtils::GetHostOrIPv6WithBrackets(nsIURI* aURI,
     return rv;
   }
   CopyUTF8toUTF16(hostname, aHost);
+  aHost.AssignTaint(hostname.Taint());
   return NS_OK;
 }
 

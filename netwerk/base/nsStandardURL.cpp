@@ -92,8 +92,8 @@ nsStandardURL::nsSegmentEncoder::nsSegmentEncoder(const Encoding* encoding)
 }
 
 int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
-    const char* aStr, const URLSegment& aSeg, int16_t aMask, nsCString& aOut,
-    bool& aAppended, uint32_t aExtraLen) {
+  const char* aStr, const StringTaint& taint, const URLSegment& aSeg, int16_t aMask, nsCString& aOut,
+  bool& aAppended, uint32_t aExtraLen) {
   // aExtraLen is characters outside the segment that will be
   // added when the segment is not empty (like the @ following
   // a username).
@@ -106,6 +106,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
   uint32_t origLen = aOut.Length();
 
   Span<const char> span = MakeSpan(aStr + aSeg.mPos, aSeg.mLen);
+  StringTaint subtaint = taint.subtaint(aSeg.mPos, aSeg.mPos + aSeg.mLen);
 
   // first honor the origin charset if appropriate. as an optimization,
   // only do this if the segment is non-ASCII.  Further, if mEncoding is
@@ -143,9 +144,15 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
         Tie(encoderResult, read, written) =
             encoder->EncodeFromUTF8WithoutReplacement(
                 AsBytes(span.From(totalRead)), AsWritableBytes(buffer), true);
+
+        // Taintfox: Calculate taint for this chunk
+        StringTaint subsubTaint = subtaint.subtaint(totalRead, totalRead + read);
+
         totalRead += read;
         auto bufferWritten = buffer.To(written);
-        if (!NS_EscapeURLSpan(bufferWritten, aMask, aOut)) {
+        if (!NS_EscapeURLSpan(bufferWritten, subsubTaint, aMask, aOut)) {
+          // Taintfox: append the taint
+          aOut.Taint().concat(subsubTaint, aOut.Length());
           aOut.Append(bufferWritten);
         }
         if (encoderResult == kInputEmpty) {
@@ -167,7 +174,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     }
   }
 
-  if (NS_EscapeURLSpan(span, aMask, aOut)) {
+  if (NS_EscapeURLSpan(span, subtaint, aMask, aOut)) {
     aAppended = true;
     // Difference between original and current output
     // string lengths plus extra length
@@ -182,7 +189,7 @@ const nsACString& nsStandardURL::nsSegmentEncoder::EncodeSegment(
     const nsACString& str, int16_t mask, nsCString& result) {
   const char* text;
   bool encoded;
-  EncodeSegmentCount(str.BeginReading(text), URLSegment(0, str.Length()), mask,
+  EncodeSegmentCount(str.BeginReading(text), str.Taint(), URLSegment(0, str.Length()), mask,
                      result, encoded);
   if (encoded) return result;
   return str;
@@ -533,6 +540,11 @@ nsresult nsStandardURL::NormalizeIPv4(const nsACString& host,
   NetworkEndian::writeUint32(ipSegments, ipv4);
   result = nsPrintfCString("%d.%d.%d.%d", ipSegments[0], ipSegments[1],
                            ipSegments[2], ipSegments[3]);
+  // Taintfox: propagate taint
+  if (host.Taint().hasTaint()) {
+    // Just take the first taint range
+    result.AssignTaint(StringTaint(TaintRange(0, result.Length(), host.Taint().begin()->flow())));
+  }
   return NS_OK;
 }
 
@@ -556,6 +568,7 @@ nsresult nsStandardURL::NormalizeIDN(const nsACString& host,
   if (NS_FAILED(rv)) {
     return rv;
   }
+  normalized.AssignTaint(host.Taint());
 
   // The result is ASCII. No need to convert to ACE.
   if (isAscii) {
@@ -569,6 +582,7 @@ nsresult nsStandardURL::NormalizeIDN(const nsACString& host,
   if (NS_FAILED(rv)) {
     return rv;
   }
+  result.AssignTaint(normalized.Taint());
 
   mCheckedIfHostA = true;
   mDisplayHost = normalized;
@@ -622,7 +636,9 @@ void nsStandardURL::CoalescePath(netCoalesceFlags coalesceFlag, char* path) {
 }
 
 uint32_t nsStandardURL::AppendSegmentToBuf(char* buf, uint32_t i,
+                                           StringTaint& bufTaint,
                                            const char* str,
+                                           const StringTaint& strTaint,
                                            const URLSegment& segInput,
                                            URLSegment& segOutput,
                                            const nsCString* escapedStr,
@@ -637,8 +653,12 @@ uint32_t nsStandardURL::AppendSegmentToBuf(char* buf, uint32_t i,
       segOutput.mLen = escapedStr->Length();
       *diff = segOutput.mLen - segInput.mLen;
       memcpy(buf + i, escapedStr->get(), segOutput.mLen);
+      // Taintfox: propagate taint
+      bufTaint.concat(escapedStr->Taint(), i);
     } else {
       memcpy(buf + i, str + segInput.mPos, segInput.mLen);
+      // Taintfox: propagate taint
+      bufTaint.concat(strTaint.subtaint(segInput.mPos, segInput.mPos + segInput.mLen), i);
     }
     segOutput.mPos = i;
     i += segOutput.mLen;
@@ -660,7 +680,8 @@ uint32_t nsStandardURL::AppendToBuf(char* buf, uint32_t i, const char* str,
 //  3- write url segments
 //  4- update url segment positions and lengths
 nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
-                                            const Encoding* encoding) {
+                                            const Encoding* encoding,
+                                            StringTaint& taint) {
   // Assumptions: all member URLSegments must be relative the |spec| argument
   // passed to this function.
 
@@ -693,13 +714,13 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     nsSegmentEncoder encoder;
     nsSegmentEncoder queryEncoder(encoding);
     // Username@
-    approxLen += encoder.EncodeSegmentCount(spec, mUsername, esc_Username,
+    approxLen += encoder.EncodeSegmentCount(spec, taint, mUsername, esc_Username,
                                             encUsername, useEncUsername, 0);
     approxLen += 1;  // reserve length for @
     // :password - we insert the ':' even if there's no actual password if
     // "user:@" was in the spec
     if (mPassword.mLen > 0) {
-      approxLen += 1 + encoder.EncodeSegmentCount(spec, mPassword, esc_Password,
+      approxLen += 1 + encoder.EncodeSegmentCount(spec, taint, mPassword, esc_Password,
                                                   encPassword, useEncPassword);
     }
     // mHost is handled differently below due to encoding differences
@@ -713,34 +734,37 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     approxLen +=
         1;  // reserve space for possible leading '/' - may not be needed
     // Should just use mPath?  These are pessimistic, and thus waste space
-    approxLen += encoder.EncodeSegmentCount(spec, mDirectory, esc_Directory,
+    approxLen += encoder.EncodeSegmentCount(spec, taint, mDirectory, esc_Directory,
                                             encDirectory, useEncDirectory, 1);
-    approxLen += encoder.EncodeSegmentCount(spec, mBasename, esc_FileBaseName,
+    approxLen += encoder.EncodeSegmentCount(spec, taint, mBasename, esc_FileBaseName,
                                             encBasename, useEncBasename);
-    approxLen += encoder.EncodeSegmentCount(spec, mExtension, esc_FileExtension,
+    approxLen += encoder.EncodeSegmentCount(spec, taint, mExtension, esc_FileExtension,
                                             encExtension, useEncExtension, 1);
 
     // These next ones *always* add their leading character even if length is 0
     // Handles items like "http://#"
     // ?query
     if (mQuery.mLen >= 0)
-      approxLen += 1 + queryEncoder.EncodeSegmentCount(spec, mQuery, esc_Query,
+      approxLen += 1 + queryEncoder.EncodeSegmentCount(spec, taint, mQuery, esc_Query,
                                                        encQuery, useEncQuery);
     // #ref
 
     if (mRef.mLen >= 0) {
-      approxLen += 1 + encoder.EncodeSegmentCount(spec, mRef, esc_Ref, encRef,
+      approxLen += 1 + encoder.EncodeSegmentCount(spec, taint, mRef, esc_Ref, encRef,
                                                   useEncRef);
     }
   }
-  // TODO: taintfox samuel???
   // do not escape the hostname, if IPv6 address literal, mHost will
   // already point to a [ ] delimited IPv6 address literal.
   // However, perform Unicode normalization on it, as IDN does.
   // Note that we don't disallow URLs without a host - file:, etc
   if (mHost.mLen > 0) {
     nsAutoCString tempHost;
-    NS_UnescapeURL(spec + mHost.mPos, mHost.mLen, esc_AlwaysCopy | esc_Host,
+    StringTaint mHostTaint;
+    if (taint.hasTaint()) {
+      mHostTaint = taint.subtaint(mHost.mPos, mHost.mPos + mHost.mLen);
+    }
+    NS_UnescapeURL(spec + mHost.mPos, mHost.mLen, mHostTaint, esc_AlwaysCopy | esc_Host,
                    tempHost);
     if (tempHost.Contains('\0'))
       return NS_ERROR_MALFORMED_URI;  // null embedded in hostname
@@ -810,7 +834,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
   int32_t diff = 0;
 
   if (mScheme.mLen > 0) {
-    i = AppendSegmentToBuf(buf, i, spec, mScheme, mScheme);
+    i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, mScheme, mScheme);
     net_ToLowerCase(buf + mScheme.mPos, mScheme.mLen);
     i = AppendToBuf(buf, i, "://", 3);
   }
@@ -821,7 +845,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
   // append authority
   if (mUsername.mLen > 0 || mPassword.mLen > 0) {
     if (mUsername.mLen > 0) {
-      i = AppendSegmentToBuf(buf, i, spec, username, mUsername, &encUsername,
+      i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, username, mUsername, &encUsername,
                              useEncUsername, &diff);
       ShiftFromPassword(diff);
     } else {
@@ -829,7 +853,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     }
     if (password.mLen > 0) {
       buf[i++] = ':';
-      i = AppendSegmentToBuf(buf, i, spec, password, mPassword, &encPassword,
+      i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, password, mPassword, &encPassword,
                              useEncPassword, &diff);
       ShiftFromHost(diff);
     } else {
@@ -841,7 +865,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     mPassword.mLen = -1;
   }
   if (host.mLen > 0) {
-    i = AppendSegmentToBuf(buf, i, spec, host, mHost, &encHost, useEncHost,
+    i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, host, mHost, &encHost, useEncHost,
                            &diff);
     ShiftFromPath(diff);
 
@@ -882,7 +906,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     // record corrected (file)path starting position
     mPath.mPos = mFilepath.mPos = i - leadingSlash;
 
-    i = AppendSegmentToBuf(buf, i, spec, directory, mDirectory, &encDirectory,
+    i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, directory, mDirectory, &encDirectory,
                            useEncDirectory, &diff);
     ShiftFromBasename(diff);
 
@@ -892,7 +916,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
       mDirectory.mLen++;
     }
 
-    i = AppendSegmentToBuf(buf, i, spec, basename, mBasename, &encBasename,
+    i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, basename, mBasename, &encBasename,
                            useEncBasename, &diff);
     ShiftFromExtension(diff);
 
@@ -907,7 +931,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
 
     if (mExtension.mLen >= 0) {
       buf[i++] = '.';
-      i = AppendSegmentToBuf(buf, i, spec, extension, mExtension, &encExtension,
+      i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, extension, mExtension, &encExtension,
                              useEncExtension, &diff);
       ShiftFromQuery(diff);
     }
@@ -916,13 +940,13 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
 
     if (mQuery.mLen >= 0) {
       buf[i++] = '?';
-      i = AppendSegmentToBuf(buf, i, spec, query, mQuery, &encQuery,
+      i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, query, mQuery, &encQuery,
                              useEncQuery, &diff);
       ShiftFromRef(diff);
     }
     if (mRef.mLen >= 0) {
       buf[i++] = '#';
-      i = AppendSegmentToBuf(buf, i, spec, ref, mRef, &encRef, useEncRef,
+      i = AppendSegmentToBuf(buf, i, mSpec.Taint(), spec, taint, ref, mRef, &encRef, useEncRef,
                              &diff);
     }
     // calculate corrected path length
@@ -1003,17 +1027,20 @@ bool nsStandardURL::SegmentIs(const URLSegment& seg1, const char* val,
 }
 
 int32_t nsStandardURL::ReplaceSegment(uint32_t pos, uint32_t len,
-                                      const char* val, uint32_t valLen) {
+                                      const char* val, uint32_t valLen,
+                                      const StringTaint& taint) {
   if (val && valLen) {
     if (len == 0)
       mSpec.Insert(val, pos, valLen);
     else
       mSpec.Replace(pos, len, nsDependentCString(val, valLen));
+    mSpec.Taint().replace(pos, pos + len, valLen, taint);
     return valLen - len;
   }
 
   // else remove the specified segment
   mSpec.Cut(pos, len);
+  mSpec.Taint().clearBetween(pos, pos + len);
   return -int32_t(len);
 }
 
@@ -1467,6 +1494,7 @@ nsresult nsStandardURL::SetSpecWithEncoding(const nsACString& input,
 
   // filter out unexpected chars "\r\n\t" if necessary
   nsAutoCString filteredURI;
+  // Taintfox: FilterURIString is now taint-aware
   net_FilterURIString(flat, filteredURI);
 
   if (filteredURI.Length() == 0) {
@@ -1502,7 +1530,7 @@ nsresult nsStandardURL::SetSpecWithEncoding(const nsACString& input,
   if (NS_SUCCEEDED(rv)) {
     // finally, use the URLSegment member variables to build a normalized
     // copy of |spec|
-    rv = BuildNormalizedSpec(spec, encoding);
+    rv = BuildNormalizedSpec(spec, encoding, filteredURI.Taint());
   }
 
   // Make sure that a URLTYPE_AUTHORITY has a non-empty hostname.
@@ -1617,13 +1645,13 @@ nsresult nsStandardURL::SetUserPass(const nsACString& input) {
     nsSegmentEncoder encoder;
     bool ignoredOut;
     usernameLen = encoder.EncodeSegmentCount(
-        userpass.get(), URLSegment(usernamePos, usernameLen),
-        esc_Username | esc_AlwaysCopy, buf, ignoredOut);
+      userpass.get(), userpass.Taint(), URLSegment(usernamePos, usernameLen),
+      esc_Username | esc_AlwaysCopy, buf, ignoredOut);
     if (passwordLen > 0) {
       buf.Append(':');
       passwordLen = encoder.EncodeSegmentCount(
-          userpass.get(), URLSegment(passwordPos, passwordLen),
-          esc_Password | esc_AlwaysCopy, buf, ignoredOut);
+        userpass.get(), userpass.Taint(), URLSegment(passwordPos, passwordLen),
+        esc_Password | esc_AlwaysCopy, buf, ignoredOut);
     } else {
       passwordLen = -1;
     }
@@ -1901,6 +1929,7 @@ nsresult nsStandardURL::SetHost(const nsACString& input) {
   // Do percent decoding on the the input.
   nsAutoCString flat;
   NS_UnescapeURL(unescapedHost.BeginReading(), unescapedHost.Length(),
+                 hostname.Taint(),
                  esc_AlwaysCopy | esc_Host, flat);
   const char* host = flat.get();
 
@@ -1978,7 +2007,7 @@ nsresult nsStandardURL::SetHost(const nsACString& input) {
     }
   }
 
-  int32_t shift = ReplaceSegment(mHost.mPos, mHost.mLen, host, len);
+  int32_t shift = ReplaceSegment(mHost.mPos, mHost.mLen, host, len, hostBuf.Taint());
 
   if (shift) {
     mHost.mLen = len;
@@ -2781,14 +2810,14 @@ nsresult nsStandardURL::SetQueryWithEncoding(const nsACString& input,
   nsAutoCString buf;
   bool encoded;
   nsSegmentEncoder encoder(encoding);
-  encoder.EncodeSegmentCount(query, URLSegment(0, queryLen), esc_Query, buf,
+  encoder.EncodeSegmentCount(query, flat.Taint(), URLSegment(0, queryLen), esc_Query, buf,
                              encoded);
   if (encoded) {
     query = buf.get();
     queryLen = buf.Length();
   }
 
-  int32_t shift = ReplaceSegment(mQuery.mPos, mQuery.mLen, query, queryLen);
+  int32_t shift = ReplaceSegment(mQuery.mPos, mQuery.mLen, query, queryLen, buf.Taint());
 
   if (shift) {
     mQuery.mLen = queryLen;
@@ -2844,13 +2873,13 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
   // encode ref if necessary
   bool encoded;
   nsSegmentEncoder encoder;
-  encoder.EncodeSegmentCount(ref, URLSegment(0, refLen), esc_Ref, buf, encoded);
+  encoder.EncodeSegmentCount(ref, flat.Taint(), URLSegment(0, refLen), esc_Ref, buf, encoded);
   if (encoded) {
     ref = buf.get();
     refLen = buf.Length();
   }
 
-  int32_t shift = ReplaceSegment(mRef.mPos, mRef.mLen, ref, refLen);
+  int32_t shift = ReplaceSegment(mRef.mPos, mRef.mLen, ref, refLen, buf.Taint());
   mPath.mLen += shift;
   mRef.mLen = refLen;
   return NS_OK;
@@ -2905,13 +2934,13 @@ nsresult nsStandardURL::SetFileNameInternal(const nsACString& input) {
       bool ignoredOut;
       nsSegmentEncoder encoder;
       basename.mLen = encoder.EncodeSegmentCount(
-          filename, basename, esc_FileBaseName | esc_AlwaysCopy, newFilename,
-          ignoredOut);
+        filename, flat.Taint(), basename, esc_FileBaseName | esc_AlwaysCopy, newFilename,
+        ignoredOut);
       if (extension.mLen >= 0) {
         newFilename.Append('.');
         extension.mLen = encoder.EncodeSegmentCount(
-            filename, extension, esc_FileExtension | esc_AlwaysCopy,
-            newFilename, ignoredOut);
+          filename, flat.Taint(), extension, esc_FileExtension | esc_AlwaysCopy,
+          newFilename, ignoredOut);
       }
 
       if (mBasename.mLen < 0) {
