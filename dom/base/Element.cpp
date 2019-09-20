@@ -1319,7 +1319,7 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
   if (val) {
     val->ToString(aReturn);
     // Taintfox: getAttribute source
-    MarkTaintSourceAttribute(aReturn, this, aName);
+    MarkTaintSourceAttribute(aReturn, "element.getAttribute", this, aName);
   } else {
     if (IsXULElement()) {
       // XXX should be SetDOMStringToNull(aReturn);
@@ -1450,7 +1450,7 @@ void Element::GetAttributeNS(const nsAString& aNamespaceURI,
     SetDOMStringToNull(aReturn);
   } else {
     // Taintfox: getAttributeNS source
-    MarkTaintSourceAttribute(aReturn, this, aLocalName);
+    MarkTaintSourceAttribute(aReturn, "element.getAttributeNS", this, aLocalName);
   }
 }
 

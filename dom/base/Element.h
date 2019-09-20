@@ -993,7 +993,7 @@ class Element : public FragmentOrElement {
       // Taintfox element.getAttr source
       // This is a catch all for GetAttr, could be reset in child
       // classes to get a more specific location
-      MarkTaintSourceAttribute(aResult, this, nsAtomString(aName));
+      MarkTaintSourceAttribute(aResult, "element.getAttribute", this, nsAtomString(aName));
       return true;
     }
     // else DOMString comes pre-emptied.
@@ -1011,7 +1011,7 @@ class Element : public FragmentOrElement {
       // Taintfox element.getAttr source
       // This is a catch all for GetAttr, could be reset in child
       // classes to get a more specific location
-      MarkTaintSourceAttribute(aResult, this, aName);
+      MarkTaintSourceAttribute(aResult, "element.getAttribute", this, aName);
       return true;
     }
     // else DOMString comes pre-emptied.
