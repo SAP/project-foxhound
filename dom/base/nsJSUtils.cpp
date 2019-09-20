@@ -700,49 +700,97 @@ nsresult MarkTaintSource(nsAString &str, const char* name)
   return NS_OK;
 }
 
-nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
+nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg)
 {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
 
   if (cx) {
-    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name)));
+    JS::RootedValue argval(cx);
+
+    if (!mozilla::dom::ToJSValue(cx, arg, &argval))
+      return NS_ERROR_FAILURE;
+    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name, argval)));
   } else {
     str.AssignTaint(StringTaint(0, str.Length(), TaintOperation(name)));
   }
   return NS_OK;
+}
+
+nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element) {
+  if (!element) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsTArray<nsString> args;
+
+  nsAutoString elementDesc;
+  element->Describe(elementDesc);
+  args.AppendElement(elementDesc);
+
+  return MarkTaintSource(str, name, args);
+}
+
+nsresult MarkTaintSourceAttribute(nsAString &str, const mozilla::dom::Element* element,
+                                  const nsAString &attr) {
+  if (!element) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsTArray<nsString> args;
+
+  nsAutoString elementDesc;
+  element->Describe(elementDesc);
+  args.AppendElement(elementDesc);
+
+  nsAutoString attributeName;
+  attributeName.Append(attr);
+  attributeName.AppendLiteral("=\"");
+  nsAutoString value;
+  value.Append(str);
+  for (uint32_t i = value.Length(); i > 0; --i) {
+    if (value[i - 1] == char16_t('"')) value.Insert(char16_t('\\'), i - 1);
+  }
+  attributeName.Append(value);
+  attributeName.Append('"');
+  args.AppendElement(attributeName);
+
+  return MarkTaintSource(str, "element.attribute", args);
+}
+
+nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
+{
+  nsAutoString nsStr;
+  str.ToString(nsStr);
+  return MarkTaintSource(nsStr, name);
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg)
 {
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
-
-  if (cx) {
-    JS::RootedValue argval(cx);
-    if (!mozilla::dom::ToJSValue(cx, arg, &argval))
-      return NS_ERROR_FAILURE;
-
-    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name, argval)));
-  } else {
-    str.AssignTaint(StringTaint(0, str.Length(), TaintOperation(name)));
-  }
-  return NS_OK;
+  nsAutoString nsStr;
+  str.ToString(nsStr);
+  return MarkTaintSource(nsStr, name, arg);
 }
 
-
-nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
+nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsTArray<nsString> &arg)
 {
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+  nsAutoString nsStr;
+  str.ToString(nsStr);
+  return MarkTaintSource(nsStr, name, arg);
+}
 
-  if (cx) {
-    JS::RootedValue argval(cx);
+nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element)
+{
+  nsAutoString nsStr;
+  str.ToString(nsStr);
+  return MarkTaintSourceElement(nsStr, name, element);
+}
 
-    if (!mozilla::dom::ToJSValue(cx, arg, &argval))
-      return NS_ERROR_FAILURE;
-    str.AssignTaint(StringTaint(0, str.Length(), JS_GetTaintOperation(cx, name, argval)));
-  } else {
-    str.AssignTaint(StringTaint(0, str.Length(), TaintOperation(name)));
-  }
-  return NS_OK;
+nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const mozilla::dom::Element* element,
+                         const nsAString &attr)
+{
+  nsAutoString nsStr;
+  str.ToString(nsStr);
+  return MarkTaintSourceAttribute(nsStr, element, attr);
 }
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)

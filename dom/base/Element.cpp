@@ -1319,7 +1319,7 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
   if (val) {
     val->ToString(aReturn);
     // Taintfox: getAttribute source
-    MarkTaintSource(aReturn, "element.getAttribute", aName);
+    MarkTaintSourceAttribute(aReturn, this, aName);
   } else {
     if (IsXULElement()) {
       // XXX should be SetDOMStringToNull(aReturn);
@@ -1450,7 +1450,7 @@ void Element::GetAttributeNS(const nsAString& aNamespaceURI,
     SetDOMStringToNull(aReturn);
   } else {
     // Taintfox: getAttributeNS source
-    MarkTaintSource(aReturn, "element.getAttributeNS", aLocalName);
+    MarkTaintSourceAttribute(aReturn, this, aLocalName);
   }
 }
 
@@ -3548,7 +3548,7 @@ void Element::GetAnimationsUnsorted(Element* aElement,
 
 void Element::GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError) {
   GetMarkup(false, aInnerHTML);
-  MarkTaintSource(aInnerHTML, "element.innerHTML");
+  MarkTaintSourceElement(aInnerHTML, "element.innerHTML", this);
 }
 
 void Element::SetInnerHTML(const nsAString& aInnerHTML,
@@ -3565,7 +3565,7 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
 
 void Element::GetOuterHTML(nsAString& aOuterHTML) {
   GetMarkup(true, aOuterHTML);
-  MarkTaintSource(aOuterHTML, "element.outerHTML");
+  MarkTaintSourceElement(aOuterHTML, "element.outerHTML", this);
 }
 
 void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {

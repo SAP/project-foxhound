@@ -5999,7 +5999,11 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   JS::AutoValueArray<3> arguments(cx);
   arguments[0].setString(str);
   arguments[1].setString(NewStringCopyZ<CanGC>(cx, sink));
-  arguments[2].setObject(*stack);
+  if (stack) {
+    arguments[2].setObject(*stack);
+  } else {
+    arguments[2].setUndefined();
+  }
 
   RootedValue rval(cx);
   JS_CallFunction(cx, nullptr, report, arguments, &rval);

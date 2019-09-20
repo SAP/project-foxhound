@@ -122,13 +122,15 @@ void HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML,
   if (!nsContentUtils::GetNodeTextContent(this, false, aInnerHTML, fallible)) {
     aError.ReportOOM();
   }
+  // Taintfox: script.innerHTML source
+  MarkTaintSourceElement(aInnerHTML, "script.innerHTML", this);
 }
 
 void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
                                      nsIPrincipal* aScriptedPrincipal,
                                      ErrorResult& aError) {
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
-  // Taintfox: script.text sink
+  // Taintfox: script.innerHTML sink
   nsAutoString id;
   this->GetId(id);
   ReportTaintSink(aInnerHTML, "script.innerHTML", id); 

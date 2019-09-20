@@ -65,8 +65,28 @@ std::u16string js::taintarg(JSContext* cx, int32_t num)
 std::vector<std::u16string> js::taintargs(JSContext* cx, HandleValue val)
 {
     std::vector<std::u16string> args;
-    // Taintfox: TODO: Expand this to check if val is an array
-    args.push_back(taintarg(cx, val));
+    bool isArray;
+
+    if (!JS_IsArrayObject(cx, val, &isArray)) {
+      return args;
+    }
+
+    if (isArray) {
+      RootedObject array(cx, &val.toObject());
+      uint32_t length;
+      if (!JS_GetArrayLength(cx, array, &length)) {
+        return args;
+      }
+      for (uint32_t i = 0; i < length; ++i) {
+        RootedValue v(cx);
+        if (!JS_GetElement(cx, array, i, &v)) {
+          continue;
+        }
+        args.push_back(taintarg(cx, v));
+      }
+    } else {
+      args.push_back(taintarg(cx, val));
+    }
     return args;
 }
 

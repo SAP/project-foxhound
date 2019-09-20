@@ -1479,10 +1479,11 @@ bool nsGenericHTMLElement::GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr,
       baseURI.swap(baseAttrURI);
     }
   }
-
+  nsAutoString spec(attr->GetStringValue());
+  MarkTaintSourceAttribute(spec, this, nsAtomString(aAttr));
   // Don't care about return value.  If it fails, we still want to
   // return true, and *aURI will be null.
-  nsContentUtils::NewURIWithDocumentCharset(aURI, attr->GetStringValue(),
+  nsContentUtils::NewURIWithDocumentCharset(aURI, spec,
                                             OwnerDoc(), baseURI);
   return true;
 }
