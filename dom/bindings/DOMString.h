@@ -51,7 +51,7 @@ namespace dom {
  */
 class MOZ_STACK_CLASS DOMString {
  public:
-  DOMString() : mStringBuffer(nullptr), mLength(0), mState(State::Empty) {}
+  DOMString() : mStringBuffer(nullptr), mLength(0), mState(State::Empty), mTaint() {}
   ~DOMString() {
     MOZ_ASSERT(!mString || !mStringBuffer, "Shouldn't have both present!");
     if (mState == State::OwnedStringBuffer) {
@@ -216,6 +216,7 @@ class MOZ_STACK_CLASS DOMString {
     } else if (aNullHandling == eTreatNullAsNull) {
       SetNull();
     }
+    mTaint = EmptyTaint;
   }
 
   void SetNull() {
@@ -253,16 +254,22 @@ class MOZ_STACK_CLASS DOMString {
       auto chars = static_cast<char16_t*>(buf->Data());
       if (chars[len] == '\0') {
         // Safe to share the buffer.
+        // Taintfox: ToString already propagates taint
         buf->ToString(len, aString);
       } else {
         // We need to copy, unfortunately.
         aString.Assign(chars, len);
+        // Taintfox: propagate taint by hand here
+        aString.AssignTaint(buf->taint());
       }
     } else if (HasLiteral()) {
       aString.AssignLiteral(Literal(), LiteralLength());
+      aString.AssignTaint(mTaint);
     } else if (HasAtom()) {
       mAtom->ToString(aString);
+      aString.AssignTaint(mTaint);
     } else {
+      // Taintfox: AsAString already propagates taint
       aString = AsAString();
     }
   }
@@ -274,8 +281,7 @@ class MOZ_STACK_CLASS DOMString {
     } else if (HasStringBuffer()) {
       mStringBuffer->AssignTaint(aTaint);
     } else if (HasLiteral() || HasAtom()) {
-      // TODO: taintfox: warning if trying to taint a literal
-      return;
+      mTaint = aTaint;
     } else {
       AsAString().AssignTaint(aTaint);
     }
@@ -316,6 +322,7 @@ class MOZ_STACK_CLASS DOMString {
     mLiteral = aLiteral;
     mLength = aLength;
     mState = State::Literal;
+    mTaint = EmptyTaint;
   }
 
   enum class State : uint8_t {
@@ -358,6 +365,10 @@ class MOZ_STACK_CLASS DOMString {
   uint32_t mLength;
 
   State mState;
+
+  // Taint for the literal and atom cases
+  StringTaint mTaint;
+
 };
 
 }  // namespace dom
