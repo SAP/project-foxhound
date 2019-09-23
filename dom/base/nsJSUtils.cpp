@@ -685,7 +685,7 @@ static TaintOperation GetTaintOperation(const char* name)
 static TaintOperation GetTaintOperation(const char* name, const nsAString& arg)
 {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
-  if (cx) {
+  if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
     if (mozilla::dom::ToJSValue(cx, arg, &argval)) {
       return JS_GetTaintOperation(cx, name, argval);
@@ -698,7 +698,7 @@ static TaintOperation GetTaintOperation(const char* name, const nsAString& arg)
 static TaintOperation GetTaintOperation(const char* name, const nsTArray<nsString> &args)
 {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
-  if (cx) {
+  if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
 
     if (mozilla::dom::ToJSValue(cx, args, &argval)) {
@@ -833,7 +833,7 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, 
     return NS_ERROR_FAILURE;
   }
 
-  if (!nsContentUtils::IsSafeToRunScript()) {
+  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
     return NS_ERROR_FAILURE;
   }
   
@@ -860,7 +860,7 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
     return NS_ERROR_FAILURE;
   }
 
-  if (!nsContentUtils::IsSafeToRunScript()) {
+  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
     return NS_ERROR_FAILURE;
   }
 
