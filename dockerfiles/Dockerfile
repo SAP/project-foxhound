@@ -1,4 +1,4 @@
-FROM ubuntu:16.04 as taintfox-build
+FROM ubuntu:16.04 as taintfox-dev
 
 ENV SHELL /bin/bash
 
@@ -19,6 +19,10 @@ RUN GIT_SSL_NO_VERIFY=true git clone --depth=1 https://github.wdf.sap.corp/WebSe
 
 RUN apt-get remove -y nasm
 
+WORKDIR /usr/local/src/taintfox
+
+FROM taintfox-dev as taintfox-build
+
 RUN \. "$NVM_DIR/nvm.sh" && \
     cp taintfox_mozconfig_ubuntu .mozconfig && \
     ./mach build
@@ -26,7 +30,7 @@ RUN \. "$NVM_DIR/nvm.sh" && \
 RUN \. "$NVM_DIR/nvm.sh" && \
     ./mach package
 
-from ubuntu:16.04 as taintfox
+FROM ubuntu:16.04 AS taintfox
 
 WORKDIR /opt/taintfox
 
@@ -36,9 +40,9 @@ RUN apt-get update &&    \
     firefox
 
 # Get the install package from the build container
-COPY --from=taintfox-build /usr/local/src/taintfox-master/obj-tf-release/dist/taintfox-69.0.1.en-US.linux-x86_64.tar.bz2 /tmp/
+COPY --from=taintfox-build /usr/local/src/taintfox-master/obj-tf-release/dist/taintfox-*.en-US.linux-x86_64.tar.bz2 /tmp/
 
-RUN tar -xjvf /tmp/taintfox-66.0.3.en-US.linux-x86_64.tar.bz2 -C /opt && \
+RUN tar -xjvf /tmp/taintfox-*.en-US.linux-x86_64.tar.bz2 -C /opt && \
     rm -rf /tmp/*.tar.bz && \
     ln -s /opt/taintfox/taintfox /usr/bin/taintfox
 

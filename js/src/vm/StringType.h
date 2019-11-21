@@ -343,12 +343,6 @@ class JSString : public js::gc::CellWithLengthAndFlags<js::gc::Cell> {
 
     /* Ensure js::shadow::String has the same layout. */
     using JS::shadow::String;
-    static_assert(JSString::offsetOfRawFlagsField() == offsetof(String, flags_),
-                  "shadow::String flags offset must match JSString");
-#if JS_BITS_PER_WORD == 32
-    static_assert(JSString::offsetOfLength() == offsetof(String, length_),
-                  "shadow::String length offset must match JSString");
-#endif
     static_assert(offsetof(JSString, d.s.u2.nonInlineCharsLatin1) ==
                       offsetof(String, nonInlineCharsLatin1),
                   "shadow::String nonInlineChars offset must match JSString");
@@ -385,9 +379,6 @@ class JSString : public js::gc::CellWithLengthAndFlags<js::gc::Cell> {
     /* TaintFox: taint info offset assertion. */
     static_assert(offsetof(JSString, d.taint_) == offsetof(String, taint),
                   "shadow::String taint offset must match JSString");
-    static_assert(offsetof(JSString, d.flags_) == 0x0,
-                  "JSString flags must be at start of memory for GC!");
-
   }
 
   /* Avoid silly compile errors in JSRope::flatten */
