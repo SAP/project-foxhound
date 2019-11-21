@@ -50,7 +50,7 @@ node ('master') {
                 stage('Checkout') {
                     checkout([$class: 'GitSCM',
                         branches: [[name: '*/master']],
-                        extensions: [[$class: 'CloneOption', timeout: 120]],
+                        extensions: [[$class: 'CloneOption', timeout: 300]],
                         gitTool: 'Default',
                         depth: "1",
                         userRemoteConfigs: [[url: 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git']]
