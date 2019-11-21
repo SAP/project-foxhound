@@ -60,6 +60,7 @@ node ('master') {
                 stage('Bootstrap') {
                     sh """#!/bin/bash
                           [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
+			  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.38.0
                           ./mach bootstrap --application-choice=browser --no-interactive 
                     """
                 }
